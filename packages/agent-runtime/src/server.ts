@@ -692,7 +692,7 @@ const browserLogFile = fileLog(
   join(homeDir, ".local/share/platform/browser-preview.log"),
 );
 const browserPreview = createBrowserPreview({
-  run: agentBrowserCommand(envStore, browserPreviewProfile),
+  run: agentBrowserCommand(envStore),
   profileDir: browserPreviewProfile,
   log: (msg) => {
     process.stderr.write(`[browser-preview] ${msg}\n`);

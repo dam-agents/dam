@@ -320,12 +320,12 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         <p className="px-4 pt-2 text-xs text-danger">{stream.error}</p>
       )}
 
-      <div className="relative min-h-0 flex-1 overscroll-none bg-muted/30">
+      <div className="relative min-h-0 flex-1 overflow-hidden overscroll-none bg-muted/30">
         <canvas
           ref={canvasRef}
           tabIndex={0}
           aria-label={`Browser in ${agentName}'s sandbox`}
-          className="h-full w-full touch-none object-contain outline-none"
+          className="block touch-none outline-none"
           onPointerDown={(e) => {
             e.currentTarget.focus();
             e.currentTarget.setPointerCapture(e.pointerId);
@@ -360,10 +360,23 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           }}
           onContextMenu={(e) => e.preventDefault()}
         />
-        {stream.state === "connecting" && (
+        {(stream.state === "connecting" ||
+          (stream.state === "live" && stream.browser.state === "starting")) && (
           <div className="absolute inset-0 flex items-center justify-center gap-3 bg-background/80 text-sm text-muted-foreground">
             <Spinner size={18} />
             Starting the agent's browser…
+          </div>
+        )}
+        {stream.state === "live" && stream.browser.state === "failed" && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80 px-6 text-center">
+            <ErrorFilled size={24} className="text-danger" />
+            <p className="text-sm text-muted-foreground">
+              {stream.browser.message ?? "The agent's browser did not start."}{" "}
+              Retrying…
+            </p>
+            <Button variant="outline" onClick={stream.restartBrowser}>
+              Restart browser
+            </Button>
           </div>
         )}
         {stream.state === "unsupported" && (
@@ -380,7 +393,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80 text-center">
             <ErrorFilled size={24} className="text-danger" />
             <p className="text-sm text-muted-foreground">
-              The connection to the agent's browser closed.
+              The connection to the agent's browser closed. Retrying…
             </p>
             <Button variant="outline" onClick={stream.reconnect}>
               Reconnect

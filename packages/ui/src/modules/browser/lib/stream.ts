@@ -12,9 +12,12 @@ export interface StreamInfo {
   fps: number;
 }
 
+export type BrowserState = "starting" | "ready" | "failed";
+
 export type StreamMessage =
   | { type: "url"; url: string }
   | { type: "preview_error"; message: string }
+  | { type: "browser_state"; state: BrowserState; message: string | null }
   | StreamInfo;
 
 export interface Box {
@@ -45,6 +48,15 @@ export function parseStreamMessage(raw: string): StreamMessage | null {
     return { type: "url", url: m.url };
   if (m.type === "preview_error" && typeof m.message === "string")
     return { type: "preview_error", message: m.message };
+  if (
+    m.type === "browser_state" &&
+    (m.state === "starting" || m.state === "ready" || m.state === "failed")
+  )
+    return {
+      type: "browser_state",
+      state: m.state,
+      message: typeof m.message === "string" ? m.message : null,
+    };
   if (
     m.type === "stream_info" &&
     typeof m.codec === "string" &&
@@ -205,7 +217,7 @@ export function viewportFor(
   pixelRatio: number,
 ): { width: number; height: number; scale: number } {
   const side = (v: number) =>
-    Math.min(VIEWPORT_MAX, Math.max(VIEWPORT_MIN, Math.round(v)));
+    Math.min(VIEWPORT_MAX, Math.max(VIEWPORT_MIN, Math.floor(v / 2) * 2));
   const scale = Math.min(
     SCALE_MAX,
     Math.max(1, Math.round((pixelRatio || 1) * 4) / 4),

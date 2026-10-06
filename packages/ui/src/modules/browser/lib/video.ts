@@ -29,6 +29,7 @@ export function createVideoPlayer(opts: {
   onError: (error: Error) => void;
 }): VideoPlayer {
   let configuredFor: string | null = null;
+  let cssSize = { width: 0, height: 0 };
   const decoder = new VideoDecoder({
     output: (frame) => {
       const canvas = opts.canvas();
@@ -38,6 +39,8 @@ export function createVideoPlayer(opts: {
           canvas.width = frame.displayWidth;
         if (canvas.height !== frame.displayHeight)
           canvas.height = frame.displayHeight;
+        canvas.style.width = `${cssSize.width}px`;
+        canvas.style.height = `${cssSize.height}px`;
         ctx.drawImage(frame, 0, 0);
         opts.onDrawn();
       }
@@ -54,6 +57,10 @@ export function createVideoPlayer(opts: {
         configuredFor = size;
       }
       if (!configuredFor || decoder.state !== "configured") return;
+      cssSize = {
+        width: frame.metadata.deviceWidth,
+        height: frame.metadata.deviceHeight,
+      };
       decoder.decode(
         new EncodedVideoChunk({
           type: frame.key ? "key" : "delta",

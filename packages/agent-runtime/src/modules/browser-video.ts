@@ -229,6 +229,7 @@ export function startVideo(opts: {
   scale: number;
   top: number;
   onFrame: (frame: Buffer, key: boolean) => void;
+  onExit: () => void;
   log: (msg: string) => void;
 }): VideoStream {
   const region = captureRegion(
@@ -252,9 +253,17 @@ export function startVideo(opts: {
     timer = setTimeout(() => splitter.flush(), FLUSH_AFTER_MS);
   });
   ffmpeg.stderr.on("data", (d: Buffer) => opts.log(d.toString().trim()));
+  let stopped = false;
   ffmpeg.on("error", (err) => opts.log(`ffmpeg: ${err.message}`));
+  ffmpeg.on("close", (code, signal) => {
+    if (timer) clearTimeout(timer);
+    if (stopped) return;
+    opts.log(`ffmpeg exited (${signal ?? code})`);
+    opts.onExit();
+  });
   return {
     stop() {
+      stopped = true;
       if (timer) clearTimeout(timer);
       ffmpeg.kill("SIGKILL");
     },

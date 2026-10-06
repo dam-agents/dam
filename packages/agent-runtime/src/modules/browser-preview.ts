@@ -17,7 +17,11 @@ export const PREVIEW_SESSION = "preview";
 export const PREVIEW_IDLE_CLOSE_MS = 10 * 60_000;
 
 const VIDEO_BACKLOG_BYTES = 1024 * 1024;
-const VIEWPORT_CHECK_MS = 3_000;
+const HEALTH_CHECK_MS = 3_000;
+const UNRESPONSIVE_RESTART_MS = 60_000;
+const RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 20_000];
+const KEYFRAME_MIN_INTERVAL_MS = 1_000;
+const ENCODER_RESTART_DELAY_MS = 1_000;
 const FPS_REPORT_MS = 5_000;
 const LOW_FPS = 20;
 
@@ -37,6 +41,14 @@ export function parseViewport(out: string): Viewport | null {
       }
     : null;
 }
+
+const sameViewport = (a: Viewport | null, b: Viewport | null) =>
+  !!a &&
+  !!b &&
+  a.width === b.width &&
+  a.height === b.height &&
+  a.scale === b.scale;
+
 const VIEWPORT_MIN = 200;
 const VIEWPORT_MAX = 4096;
 
@@ -63,6 +75,8 @@ const PAGE_NAVIGATION = {
   forward: "history.forward()",
 } as const;
 
+export type BrowserState = "starting" | "ready" | "failed";
+
 export type BrowserCommand = (args: string[]) => Promise<string>;
 
 export interface BrowserVideo {
@@ -74,6 +88,7 @@ export interface BrowserVideo {
     scale: number;
     top: number;
     onFrame: (frame: Buffer, key: boolean) => void;
+    onExit: () => void;
     log: (msg: string) => void;
   }): VideoStream;
 }
@@ -143,33 +158,20 @@ export function isScreencastFrame(raw: Buffer): boolean {
   return raw.subarray(0, 32).toString().includes('"type":"frame"');
 }
 
-export function browserCommandLine(
-  args: string[],
-  profileDir: string,
-): [string, string[]] {
-  return args[0] === "close"
-    ? [
-        "agent-browser",
-        ["--session", PREVIEW_SESSION, "--profile", profileDir, ...args],
-      ]
-    : ["platform-browser", args];
-}
-
 export function commandTimeoutMs(args: string[]): number {
-  return args[0] === "open" ? 45_000 : 15_000;
+  if (args[0] === "launch") return 60_000;
+  if (args[0] === "open") return 45_000;
+  if (args[0] === "shutdown") return 30_000;
+  return 15_000;
 }
 
 export function agentBrowserCommand(
   envReader: RuntimeEnvReader,
-  profileDir: string,
 ): BrowserCommand {
   return (args) =>
     new Promise((resolve, reject) => {
-      const [command, argv] = browserCommandLine(args, profileDir);
-      const child = spawn(command, argv, {
-        env: {
-          ...mergedSpawnEnv(envReader),
-        },
+      const child = spawn("platform-browser", args, {
+        env: mergedSpawnEnv(envReader),
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -263,51 +265,87 @@ export function screenVideo(run: BrowserCommand): BrowserVideo {
   };
 }
 
+export function createCommandQueue(run: BrowserCommand): {
+  run: BrowserCommand;
+  idle(): boolean;
+} {
+  let tail: Promise<unknown> = Promise.resolve();
+  let pending = 0;
+  return {
+    run(args) {
+      pending++;
+      const result = tail.then(() => run(args));
+      tail = result
+        .catch(() => {})
+        .finally(() => {
+          pending--;
+        });
+      return result;
+    },
+    idle: () => pending === 0,
+  };
+}
+
+interface Viewer {
+  waitingForKey: boolean;
+  framesSent: number;
+}
+
 export function createBrowserPreview(deps: {
   run: BrowserCommand;
   profileDir: string;
   streamUrl?: (port: number) => string;
   idleCloseMs?: number;
   video?: BrowserVideo;
-  viewportCheckMs?: number;
+  healthCheckMs?: number;
+  unresponsiveRestartMs?: number;
+  retryDelaysMs?: number[];
   stopBrowser?: () => Promise<void>;
   log: (msg: string) => void;
 }): BrowserPreview {
+  const commands = createCommandQueue(deps.run);
+  const exec = commands.run;
   const stopBrowser =
     deps.stopBrowser ??
     (async () => {
-      await deps.run(["close"]).catch(() => "");
+      await deps
+        .run(["shutdown"])
+        .catch((err: Error) => deps.log(`shutdown: ${err.message}`));
       await killPreviewProcesses(deps.profileDir);
     });
   const idleCloseMs = deps.idleCloseMs ?? PREVIEW_IDLE_CLOSE_MS;
-  const video = deps.video ?? screenVideo(deps.run);
+  const unresponsiveRestartMs =
+    deps.unresponsiveRestartMs ?? UNRESPONSIVE_RESTART_MS;
+  const retryDelays = deps.retryDelaysMs ?? RETRY_DELAYS_MS;
+  const video = deps.video ?? screenVideo(exec);
   const streamUrl =
     deps.streamUrl ?? ((port: number) => `ws://127.0.0.1:${port}/`);
-  const clients = new Set<WebSocket>();
-  let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
+  const viewers = new Map<WebSocket, Viewer>();
+  let state: BrowserState = "starting";
+  let failure: string | null = null;
+  let browserUp = false;
+  let failedLaunches = 0;
+  let upstream: WebSocket | null = null;
+  let pageUrl: string | null = null;
+  let wanted: Viewport | null = null;
+  let applied: Viewport | null = null;
+  let encoder: VideoStream | null = null;
+  let encoderFor: Viewport | null = null;
+  let encoderBroken = false;
+  let lastKeyframeRequest = 0;
   const contentTops = new Map<number, number>();
-  let lastStreamPort: number | null = null;
+  let pendingNavigation: string | null = null;
+  let lastAnswerAt = Date.now();
+  let generation = 0;
 
-  async function streamPort(): Promise<number> {
-    const out = await deps.run(["stream", "status", "--json"]);
-    const port = (JSON.parse(out) as { data?: { port?: unknown } }).data?.port;
-    if (typeof port !== "number") throw new Error("browser stream has no port");
-    if (port !== lastStreamPort) contentTops.clear();
-    lastStreamPort = port;
-    return port;
-  }
-
-  async function contentTop(width: number, height: number, scale: number) {
-    const cached = contentTops.get(scale);
-    if (cached !== undefined) return cached;
-    const top = await video.calibrate(
-      Math.round(width * scale),
-      Math.round(height * scale),
-    );
-    contentTops.set(scale, top);
-    return top;
-  }
+  let dirty = false;
+  let reconciling = false;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  let healthTimer: ReturnType<typeof setInterval> | null = null;
+  let fpsTimer: ReturnType<typeof setInterval> | null = null;
+  let closed = false;
 
   const timed = async <T>(label: string, step: () => Promise<T>) => {
     const started = Date.now();
@@ -318,14 +356,330 @@ export function createBrowserPreview(deps: {
     }
   };
 
-  async function open(url: string | null): Promise<number> {
-    if (url) await deps.run(["open", url]);
-    return streamPort();
+  function sendJson(client: WebSocket, msg: object) {
+    if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(msg));
   }
 
-  function sendError(client: WebSocket, message: string) {
-    if (client.readyState === WebSocket.OPEN)
-      client.send(JSON.stringify({ type: "preview_error", message }));
+  function broadcast(msg: object) {
+    for (const client of viewers.keys()) sendJson(client, msg);
+  }
+
+  function stateMessage() {
+    return {
+      type: "browser_state",
+      state,
+      ...(failure ? { message: failure } : {}),
+    };
+  }
+
+  function setState(next: BrowserState, message: string | null = null) {
+    if (state === next && failure === message) return;
+    state = next;
+    failure = message;
+    deps.log(`browser ${next}${message ? `: ${message}` : ""}`);
+    broadcast(stateMessage());
+  }
+
+  function streamInfo(v: Viewport) {
+    return {
+      type: "stream_info",
+      codec: "h264",
+      width: Math.round(v.width * v.scale),
+      height: Math.round(v.height * v.scale),
+      scale: v.scale,
+      fps: VIDEO_FPS,
+    };
+  }
+
+  function stopEncoder() {
+    encoder?.stop();
+    encoder = null;
+    encoderFor = null;
+  }
+
+  function closeUpstream() {
+    const us = upstream;
+    upstream = null;
+    us?.removeAllListeners();
+    us?.on("error", () => {});
+    us?.close();
+  }
+
+  function browserGone(reason: string) {
+    if (!browserUp) return;
+    deps.log(`browser lost: ${reason}`);
+    browserUp = false;
+    applied = null;
+    contentTops.clear();
+    stopEncoder();
+    closeUpstream();
+    generation++;
+  }
+
+  function schedule() {
+    dirty = true;
+    if (!reconciling) void reconcile();
+  }
+
+  function scheduleRetry() {
+    if (retryTimer || closed) return;
+    const delay =
+      retryDelays[Math.min(failedLaunches - 1, retryDelays.length - 1)] ??
+      1_000;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      schedule();
+    }, delay);
+    retryTimer.unref?.();
+  }
+
+  async function streamPort(): Promise<number> {
+    const out = await exec(["stream", "status", "--json"]);
+    const port = (JSON.parse(out) as { data?: { port?: unknown } }).data?.port;
+    if (typeof port !== "number") throw new Error("browser stream has no port");
+    return port;
+  }
+
+  async function ensureBrowser(): Promise<boolean> {
+    if (browserUp && upstream) return true;
+    setState("starting");
+    const gen = generation;
+    try {
+      await timed("launch", () => exec(["launch"]));
+      const port = await streamPort();
+      await connectUpstream(port);
+      if (gen !== generation) {
+        closeUpstream();
+        dirty = true;
+        return false;
+      }
+      browserUp = true;
+      failedLaunches = 0;
+      lastAnswerAt = Date.now();
+      return true;
+    } catch (err) {
+      if (gen !== generation) {
+        dirty = true;
+        return false;
+      }
+      failedLaunches++;
+      const message = (err as Error).message.split("\n")[0] ?? "";
+      deps.log(`launch failed (${failedLaunches}): ${message}`);
+      closeUpstream();
+      if (failedLaunches % 2 === 0) await stopBrowser();
+      if (failedLaunches >= 3)
+        setState("failed", `The browser did not start: ${message}`);
+      scheduleRetry();
+      return false;
+    }
+  }
+
+  function connectUpstream(port: number): Promise<void> {
+    closeUpstream();
+    return new Promise((resolve, reject) => {
+      const us = new WebSocket(streamUrl(port));
+      upstream = us;
+      const gen = generation;
+      us.once("open", () => {
+        us.send(JSON.stringify({ type: "screencast_stop" }));
+        resolve();
+      });
+      us.on("message", (d: Buffer, isBinary) => {
+        if (isBinary || isScreencastFrame(d)) return;
+        const text = d.toString();
+        try {
+          const msg = JSON.parse(text) as { type?: unknown; url?: unknown };
+          if (msg.type === "url" && typeof msg.url === "string")
+            pageUrl = msg.url;
+        } catch {}
+        for (const client of viewers.keys())
+          if (client.readyState === WebSocket.OPEN) client.send(text);
+      });
+      us.on("error", (err) => {
+        deps.log(`stream: ${err.message}`);
+        reject(err);
+      });
+      us.on("close", () => {
+        reject(new Error("browser stream closed"));
+        if (upstream !== us || gen !== generation) return;
+        browserGone("stream closed");
+        if (viewers.size > 0) schedule();
+      });
+    });
+  }
+
+  async function applyViewport(v: Viewport): Promise<void> {
+    await timed("resize", () =>
+      exec([
+        "set",
+        "viewport",
+        String(v.width),
+        String(v.height),
+        String(v.scale),
+      ]),
+    );
+    applied = v;
+    lastAnswerAt = Date.now();
+  }
+
+  async function contentTop(v: Viewport): Promise<number> {
+    const cached = contentTops.get(v.scale);
+    if (cached !== undefined) return cached;
+    const top = await timed("calibrate", () =>
+      video.calibrate(
+        Math.round(v.width * v.scale),
+        Math.round(v.height * v.scale),
+      ),
+    );
+    contentTops.set(v.scale, top);
+    return top;
+  }
+
+  function sendFrame(frame: Buffer, key: boolean) {
+    for (const [client, viewer] of viewers) {
+      if (client.readyState !== WebSocket.OPEN) continue;
+      if (client.bufferedAmount > VIDEO_BACKLOG_BYTES) {
+        if (!viewer.waitingForKey)
+          deps.log(
+            `video: viewer behind (${client.bufferedAmount} bytes queued), skipping to the next keyframe`,
+          );
+        viewer.waitingForKey = true;
+        continue;
+      }
+      if (viewer.waitingForKey && !key) continue;
+      viewer.waitingForKey = false;
+      viewer.framesSent++;
+      client.send(frame, { binary: true });
+    }
+    if ([...viewers.values()].some((v) => v.waitingForKey)) requestKeyframe();
+  }
+
+  function requestKeyframe() {
+    const now = Date.now();
+    if (now - lastKeyframeRequest < KEYFRAME_MIN_INTERVAL_MS) return;
+    lastKeyframeRequest = now;
+    stopEncoder();
+    schedule();
+  }
+
+  async function startEncoder(v: Viewport): Promise<void> {
+    const top = await contentTop(v);
+    if (!sameViewport(wanted, v) || !browserUp) return;
+    const started = video.start({
+      ...v,
+      top,
+      onFrame: sendFrame,
+      onExit: () => {
+        if (encoder !== started) return;
+        encoder = null;
+        encoderFor = null;
+        encoderBroken = true;
+        setTimeout(() => {
+          encoderBroken = false;
+          if (viewers.size > 0) schedule();
+        }, ENCODER_RESTART_DELAY_MS).unref?.();
+      },
+      log: (msg) => deps.log(`video: ${msg}`),
+    });
+    encoder = started;
+    encoderFor = v;
+    const info = streamInfo(v);
+    deps.log(
+      `video: started ${info.width}x${info.height} at ${info.fps} fps, top ${top}`,
+    );
+    broadcast(info);
+  }
+
+  async function reconcile(): Promise<void> {
+    reconciling = true;
+    try {
+      while (dirty && !closed) {
+        dirty = false;
+        if (viewers.size === 0) {
+          stopEncoder();
+          closeUpstream();
+          browserUp = false;
+          continue;
+        }
+        if (!(await ensureBrowser())) continue;
+        if (pendingNavigation) {
+          const url = pendingNavigation;
+          pendingNavigation = null;
+          await exec(["eval", `location.href = ${JSON.stringify(url)}`]).catch(
+            (err: Error) => deps.log(`navigate: ${err.message}`),
+          );
+        }
+        const target = wanted;
+        if (!target) {
+          setState("ready");
+          continue;
+        }
+        if (!sameViewport(applied, target)) {
+          try {
+            await applyViewport(target);
+          } catch (err) {
+            deps.log(`resize: ${(err as Error).message}`);
+            continue;
+          }
+          if (!sameViewport(wanted, target)) {
+            dirty = true;
+            continue;
+          }
+          stopEncoder();
+        }
+        if (!encoder && !encoderBroken) {
+          try {
+            await startEncoder(target);
+          } catch (err) {
+            deps.log(`video: ${(err as Error).message}`);
+          }
+        }
+        setState("ready");
+        if (!sameViewport(wanted, target)) dirty = true;
+      }
+    } finally {
+      reconciling = false;
+    }
+  }
+
+  async function healthCheck() {
+    if (!browserUp || reconciling || !commands.idle() || viewers.size === 0)
+      return;
+    const actual = parseViewport(
+      await exec([
+        "eval",
+        "innerWidth + 'x' + innerHeight + '@' + devicePixelRatio",
+      ]).catch(() => ""),
+    );
+    if (!actual) {
+      const silentFor = Date.now() - lastAnswerAt;
+      if (silentFor < unresponsiveRestartMs) return;
+      deps.log(`browser unresponsive for ${silentFor}ms, restarting it`);
+      await restart();
+      return;
+    }
+    lastAnswerAt = Date.now();
+    if (wanted && !sameViewport(actual, wanted)) {
+      deps.log(
+        `viewport is ${actual.width}x${actual.height}@${actual.scale}, putting the panel's back`,
+      );
+      applied = null;
+      schedule();
+    }
+  }
+
+  async function restart(clearData = false) {
+    browserGone(clearData ? "clearing data" : "restart");
+    browserUp = false;
+    generation++;
+    setState("starting");
+    await timed("shutdown", stopBrowser);
+    if (clearData)
+      await rm(deps.profileDir, { recursive: true, force: true }).catch(
+        (err: Error) => deps.log(`clear data: ${err.message}`),
+      );
+    failedLaunches = 0;
+    schedule();
   }
 
   async function control(
@@ -334,30 +688,59 @@ export function createBrowserPreview(deps: {
   ) {
     if (msg.type === "navigate") {
       const url = previewUrl(msg.url);
-      if (!url) return sendError(client, "Only http and https addresses open");
-      await deps.run(["eval", `location.href = ${JSON.stringify(url)}`]);
+      if (!url)
+        return sendJson(client, {
+          type: "preview_error",
+          message: "Only http and https addresses open",
+        });
+      if (!browserUp) {
+        pendingNavigation = url;
+        return schedule();
+      }
+      await exec(["eval", `location.href = ${JSON.stringify(url)}`]);
     } else if (
       msg.type === "reload" ||
       msg.type === "back" ||
       msg.type === "forward"
     ) {
-      await deps.run(["eval", PAGE_NAVIGATION[msg.type]]);
-    } else if (msg.type === "restart_browser") {
-      contentTops.clear();
-      await stopBrowser();
-      for (const c of clients) c.close(1012, "browser restarted");
+      if (browserUp) await exec(["eval", PAGE_NAVIGATION[msg.type]]);
     } else {
-      await stopBrowser();
-      await rm(deps.profileDir, { recursive: true, force: true });
-      for (const c of clients) c.close(1012, "browser data cleared");
+      await restart(msg.type === "clear_data");
     }
+  }
+
+  function startTimers() {
+    healthTimer ??= setInterval(
+      () => void healthCheck(),
+      deps.healthCheckMs ?? HEALTH_CHECK_MS,
+    );
+    healthTimer.unref?.();
+    fpsTimer ??= setInterval(() => {
+      for (const viewer of viewers.values()) {
+        const fps = viewer.framesSent / (FPS_REPORT_MS / 1000);
+        viewer.framesSent = 0;
+        if (encoder && fps < LOW_FPS)
+          deps.log(
+            `video: ${fps.toFixed(1)} fps to a viewer at ${encoderFor?.width}x${encoderFor?.height}@${encoderFor?.scale}`,
+          );
+      }
+    }, FPS_REPORT_MS);
+    fpsTimer.unref?.();
+  }
+
+  function stopTimers() {
+    if (healthTimer) clearInterval(healthTimer);
+    if (fpsTimer) clearInterval(fpsTimer);
+    healthTimer = null;
+    fpsTimer = null;
   }
 
   function scheduleIdleClose() {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       idleTimer = null;
-      if (clients.size > 0) return;
+      if (viewers.size > 0) return;
+      deps.log("no viewer for the idle window, closing the browser");
       stopBrowser().catch((err: Error) => deps.log(err.message));
     }, idleCloseMs);
     idleTimer.unref?.();
@@ -365,195 +748,10 @@ export function createBrowserPreview(deps: {
 
   function attach(client: WebSocket, query: URLSearchParams) {
     if (!video.available()) {
-      sendError(client, VIDEO_UNAVAILABLE);
+      sendJson(client, { type: "preview_error", message: VIDEO_UNAVAILABLE });
       client.close(1011, "video unavailable");
       return;
     }
-    clients.add(client);
-    if (idleTimer) {
-      clearTimeout(idleTimer);
-      idleTimer = null;
-    }
-
-    let upstream: WebSocket | null = null;
-    const pending: [Buffer, boolean][] = [];
-    let videoStream: VideoStream | null = null;
-    let viewport: Viewport | null = null;
-    let dropping = false;
-    let restarting = false;
-
-    let framesSent = 0;
-    const sendVideoFrame = (frame: Buffer, key: boolean) => {
-      if (client.readyState !== WebSocket.OPEN) return;
-      if (client.bufferedAmount > VIDEO_BACKLOG_BYTES) {
-        if (!dropping)
-          deps.log(
-            `video: viewer behind (${client.bufferedAmount} bytes queued), dropping frames`,
-          );
-        dropping = true;
-        return;
-      }
-      if (dropping && !key) {
-        if (!restarting) {
-          deps.log("video: restarting the encoder for a keyframe");
-          void restartVideo(true);
-        }
-        return;
-      }
-      dropping = false;
-      framesSent++;
-      client.send(frame, { binary: true });
-    };
-    const fpsReport = setInterval(() => {
-      const fps = framesSent / (FPS_REPORT_MS / 1000);
-      framesSent = 0;
-      if (videoStream && fps < LOW_FPS)
-        deps.log(
-          `video: ${fps.toFixed(1)} fps to this viewer at ${viewport?.width}x${viewport?.height}@${viewport?.scale}`,
-        );
-    }, FPS_REPORT_MS);
-    fpsReport.unref?.();
-
-    async function applyViewport(wanted: Viewport) {
-      const actual = parseViewport(
-        await deps
-          .run([
-            "eval",
-            "innerWidth + 'x' + innerHeight + '@' + devicePixelRatio",
-          ])
-          .catch(() => ""),
-      );
-      if (
-        actual?.width === wanted.width &&
-        actual.height === wanted.height &&
-        actual.scale === wanted.scale
-      )
-        return false;
-      await deps.run([
-        "set",
-        "viewport",
-        String(wanted.width),
-        String(wanted.height),
-        String(wanted.scale),
-      ]);
-      return true;
-    }
-
-    async function restartVideo(viewportJustSet = false) {
-      restarting = true;
-      videoStream?.stop();
-      videoStream = null;
-      const wanted = viewport;
-      if (!wanted || client.readyState !== WebSocket.OPEN) {
-        restarting = false;
-        return;
-      }
-      if (!viewportJustSet)
-        await timed("viewport check", () => applyViewport(wanted)).catch(
-          () => false,
-        );
-      const top = await timed("calibrate", () =>
-        contentTop(wanted.width, wanted.height, wanted.scale),
-      );
-      restarting = false;
-      if (viewport !== wanted || client.readyState !== WebSocket.OPEN) return;
-      videoStream = video.start({
-        ...wanted,
-        top,
-        onFrame: sendVideoFrame,
-        log: (msg) => deps.log(`video: ${msg}`),
-      });
-      const info = {
-        type: "stream_info",
-        codec: "h264",
-        width: Math.round(wanted.width * wanted.scale),
-        height: Math.round(wanted.height * wanted.scale),
-        scale: wanted.scale,
-        fps: VIDEO_FPS,
-      };
-      deps.log(
-        `video: started ${info.width}x${info.height} at ${info.fps} fps, top ${top}`,
-      );
-      if (client.readyState === WebSocket.OPEN)
-        client.send(JSON.stringify(info));
-    }
-
-    let resizeTo: Viewport | null = null;
-    let resizing = false;
-    async function applyResizes() {
-      if (resizing) return;
-      resizing = true;
-      try {
-        while (resizeTo && client.readyState === WebSocket.OPEN) {
-          const wanted = resizeTo;
-          resizeTo = null;
-          const set = await timed("resize", () =>
-            deps.run([
-              "set",
-              "viewport",
-              String(wanted.width),
-              String(wanted.height),
-              String(wanted.scale),
-            ]),
-          ).then(
-            () => true,
-            (err: Error) => {
-              deps.log(`resize: ${err.message}; the viewport check retries`);
-              return false;
-            },
-          );
-          if (resizeTo) continue;
-          viewport = wanted;
-          if (set) await restartVideo(true);
-        }
-      } finally {
-        resizing = false;
-      }
-    }
-
-    let checking = false;
-    const viewportCheck = setInterval(() => {
-      const wanted = viewport;
-      if (!wanted || restarting || checking || resizing) return;
-      checking = true;
-      applyViewport(wanted)
-        .then((changed) => {
-          if (changed && viewport === wanted) return restartVideo();
-        })
-        .catch(() => {})
-        .finally(() => {
-          checking = false;
-        });
-    }, deps.viewportCheckMs ?? VIEWPORT_CHECK_MS);
-    viewportCheck.unref?.();
-
-    client.on("message", (data: Buffer, isBinary: boolean) => {
-      const msg = isBinary ? null : parseControl(data.toString());
-      if (msg?.type === "resize") {
-        resizeTo = { width: msg.width, height: msg.height, scale: msg.scale };
-        void applyResizes();
-        return;
-      }
-      if (msg) {
-        timed(msg.type, () => control(client, msg)).catch((err: Error) =>
-          sendError(client, err.message),
-        );
-        return;
-      }
-      if (upstream?.readyState === WebSocket.OPEN)
-        upstream.send(data, { binary: isBinary });
-      else pending.push([data, isBinary]);
-    });
-    client.on("close", () => {
-      clients.delete(client);
-      clearInterval(viewportCheck);
-      clearInterval(fpsReport);
-      videoStream?.stop();
-      videoStream = null;
-      upstream?.close();
-      if (clients.size === 0) scheduleIdleClose();
-    });
-
     const rawUrl = query.get("url");
     const url = rawUrl === null ? null : previewUrl(rawUrl);
     if (rawUrl !== null && !url) {
@@ -561,43 +759,59 @@ export function createBrowserPreview(deps: {
       return;
     }
 
-    timed("connect", () => open(url))
-      .then((port) => {
-        if (client.readyState !== WebSocket.OPEN) return;
-        const target = new URL(streamUrl(port));
-        const us = new WebSocket(target);
-        upstream = us;
-        us.on("open", () => {
-          us.send(JSON.stringify({ type: "screencast_stop" }));
-          for (const [d, b] of pending.splice(0)) us.send(d, { binary: b });
-        });
-        us.on("message", (d: Buffer, isBinary) => {
-          if (client.readyState !== WebSocket.OPEN) return;
-          if (!isBinary && isScreencastFrame(d)) return;
-          client.send(d, { binary: isBinary });
-        });
-        us.on("close", () => {
-          if (client.readyState === WebSocket.OPEN)
-            client.close(1011, "browser stream closed");
-        });
-        us.on("error", (err) => {
-          deps.log(`stream: ${err.message}`);
-          us.close();
-        });
-      })
-      .catch((err: Error) => {
-        deps.log(`open: ${err.message}`);
-        if (client.readyState === WebSocket.OPEN)
-          client.close(1011, "browser failed to start");
-      });
+    viewers.set(client, { waitingForKey: true, framesSent: 0 });
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+    startTimers();
+    sendJson(client, stateMessage());
+    if (pageUrl) sendJson(client, { type: "url", url: pageUrl });
+    if (encoderFor) sendJson(client, streamInfo(encoderFor));
+    if (url) pendingNavigation = url;
+    if (encoder) requestKeyframe();
+    schedule();
+
+    client.on("message", (data: Buffer, isBinary: boolean) => {
+      const msg = isBinary ? null : parseControl(data.toString());
+      if (msg?.type === "resize") {
+        wanted = { width: msg.width, height: msg.height, scale: msg.scale };
+        schedule();
+        return;
+      }
+      if (msg) {
+        timed(msg.type, () => control(client, msg)).catch((err: Error) =>
+          sendJson(client, { type: "preview_error", message: err.message }),
+        );
+        return;
+      }
+      if (upstream?.readyState === WebSocket.OPEN)
+        upstream.send(data, { binary: isBinary });
+    });
+    client.on("close", () => {
+      viewers.delete(client);
+      if (viewers.size > 0) return;
+      stopTimers();
+      stopEncoder();
+      closeUpstream();
+      browserUp = false;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = null;
+      scheduleIdleClose();
+    });
   }
 
   return {
     attach,
-    viewers: () => clients.size,
+    viewers: () => viewers.size,
     close() {
+      closed = true;
       if (idleTimer) clearTimeout(idleTimer);
-      for (const c of clients) c.close(1001, "runtime shutting down");
+      if (retryTimer) clearTimeout(retryTimer);
+      stopTimers();
+      stopEncoder();
+      closeUpstream();
+      for (const c of viewers.keys()) c.close(1001, "runtime shutting down");
     },
   };
 }

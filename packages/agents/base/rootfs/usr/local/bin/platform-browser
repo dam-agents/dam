@@ -1,71 +1,190 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, renameSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 const SESSION = "preview";
 const PROFILE = join(homedir(), ".local/share/platform/browser-preview");
+const SOCKET_DIR = join(homedir(), ".agent-browser");
+const LOCK = join(SOCKET_DIR, `${SESSION}.launch.lock`);
 const LINK_PREFIX = "platform://browser?url=";
 
 const DISPLAY = ":99";
 const X_SOCKET = "/tmp/.X11-unix/X99";
 const SCREEN = "3840x2400x24";
+const XVFB = "/usr/bin/Xvfb";
 const CHROMIUM = "/opt/ms-playwright/chromium";
+const HEADLESS_SHELL = "/opt/ms-playwright/headless-shell";
+const HEADED = existsSync(XVFB) && existsSync(CHROMIUM);
 
-const running = (command) =>
-  spawnSync("pgrep", ["-f", `^${command}( |$)`], { stdio: "ignore" })
-    .status === 0;
+const BASE_ARGS = ["--no-sandbox", "--disable-dev-shm-usage"];
+const HEADED_ARGS = [
+  "--kiosk",
+  "--hide-scrollbars",
+  "--no-first-run",
+  "--test-type",
+];
 
-const detached = (command, args, env = process.env) =>
-  spawn(command, args, { env, detached: true, stdio: "ignore" }).unref();
-
-const waitFor = (check, ms) => {
-  const until = Date.now() + ms;
-  while (!check() && Date.now() < until)
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
-  return check();
+const fail = (message, code = 1) => {
+  process.stderr.write(`platform-browser: ${message}\n`);
+  process.exit(code);
 };
 
-const startDisplay = () => {
-  if (!existsSync("/usr/bin/Xvfb") || !existsSync(CHROMIUM)) return false;
-  if (!existsSync(X_SOCKET))
-    detached("Xvfb", [DISPLAY, "-screen", "0", SCREEN, "-nolisten", "tcp"]);
-  if (!waitFor(() => existsSync(X_SOCKET), 5_000)) return false;
-  if (!running("matchbox-window-manager"))
-    detached(
-      "matchbox-window-manager",
-      ["-use_titlebar", "no", "-use_cursor", "no"],
-      { ...process.env, DISPLAY },
-    );
-  return true;
+const browserEnv = () => {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => !key.startsWith("AGENT_BROWSER_"),
+    ),
+  );
+  delete env.DISPLAY;
+  return {
+    ...env,
+    AGENT_BROWSER_EXECUTABLE_PATH: HEADED ? CHROMIUM : HEADLESS_SHELL,
+    AGENT_BROWSER_ARGS: [...BASE_ARGS, ...(HEADED ? HEADED_ARGS : [])].join(
+      ",",
+    ),
+    ...(HEADED ? { DISPLAY, AGENT_BROWSER_NO_XVFB: "1" } : {}),
+  };
 };
-
-const headed = startDisplay();
-const ENV = headed
-  ? {
-      ...process.env,
-      DISPLAY,
-      AGENT_BROWSER_EXECUTABLE_PATH: CHROMIUM,
-      AGENT_BROWSER_ARGS: [
-        process.env.AGENT_BROWSER_ARGS,
-        "--kiosk",
-        "--hide-scrollbars",
-        "--no-first-run",
-        "--test-type",
-      ]
-        .filter(Boolean)
-        .join(","),
-    }
-  : process.env;
+const ENV = browserEnv();
 const BROWSER = [
   "--session",
   SESSION,
   "--profile",
   PROFILE,
-  ...(headed ? ["--headed"] : []),
+  ...(HEADED ? ["--headed"] : []),
 ];
+
+const agentBrowser = (args, options = {}) =>
+  spawnSync("agent-browser", [...BROWSER, ...args], {
+    env: ENV,
+    encoding: "utf8",
+    ...options,
+  });
+
+const sleep = (ms) =>
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+const waitFor = (check, ms) => {
+  const until = Date.now() + ms;
+  while (!check() && Date.now() < until) sleep(50);
+  return check();
+};
+
+const cmdline = (pid) => {
+  try {
+    return readFileSync(`/proc/${pid}/cmdline`, "utf8");
+  } catch {
+    return "";
+  }
+};
+
+const processes = () =>
+  readdirSync("/proc")
+    .map(Number)
+    .filter((pid) => pid > 1 && pid !== process.pid && pid !== process.ppid)
+    .map((pid) => ({ pid, cmdline: cmdline(pid) }))
+    .filter((p) => p.cmdline);
+
+const daemonPid = () => {
+  try {
+    const pid = Number(readFileSync(join(SOCKET_DIR, `${SESSION}.pid`), "utf8"));
+    return pid > 1 && cmdline(pid).includes("agent-browser") ? pid : null;
+  } catch {
+    return null;
+  }
+};
+
+const profileChromes = () =>
+  processes().filter((p) =>
+    p.cmdline.split("\0").includes(`--user-data-dir=${PROFILE}`),
+  );
+
+const kill = (pids, signal) => {
+  for (const pid of pids) {
+    try {
+      process.kill(pid, signal);
+    } catch {}
+  }
+};
+
+const stopProfileChromes = () => {
+  const pids = profileChromes().map((p) => p.pid);
+  if (pids.length === 0) return;
+  kill(pids, "SIGTERM");
+  if (!waitFor(() => profileChromes().length === 0, 3_000))
+    kill(
+      profileChromes().map((p) => p.pid),
+      "SIGKILL",
+    );
+};
+
+const clearStaleProfileLocks = () => {
+  for (const name of ["SingletonLock", "SingletonSocket", "SingletonCookie"])
+    rmSync(join(PROFILE, name), { force: true });
+};
+
+const displayRunning = () =>
+  existsSync(X_SOCKET) &&
+  processes().some((p) => p.cmdline.split("\0")[0]?.endsWith("Xvfb"));
+
+const windowManagerRunning = () =>
+  processes().some((p) =>
+    p.cmdline.split("\0")[0]?.endsWith("matchbox-window-manager"),
+  );
+
+const detached = (command, args, env = process.env) =>
+  spawn(command, args, { env, detached: true, stdio: "ignore" }).unref();
+
+const startDisplay = () => {
+  if (!displayRunning()) {
+    rmSync(X_SOCKET, { force: true });
+    rmSync("/tmp/.X99-lock", { force: true });
+    detached(XVFB, [DISPLAY, "-screen", "0", SCREEN, "-nolisten", "tcp"]);
+    if (!waitFor(displayRunning, 10_000))
+      fail("the virtual display did not start");
+  }
+  if (!windowManagerRunning())
+    detached(
+      "matchbox-window-manager",
+      ["-use_titlebar", "no", "-use_cursor", "no"],
+      { ...process.env, DISPLAY },
+    );
+};
+
+const browserAnswers = () =>
+  daemonPid() !== null &&
+  agentBrowser(["get", "url"], { timeout: 10_000 }).status === 0;
+
+const launch = (relaunch) => {
+  if (HEADED) startDisplay();
+  if (!relaunch && browserAnswers()) return;
+  agentBrowser(["close"], { timeout: 10_000 });
+  kill([daemonPid()].filter(Boolean), "SIGKILL");
+  stopProfileChromes();
+  clearStaleProfileLocks();
+  const started = agentBrowser(["get", "url"], { timeout: 45_000 });
+  if (started.status !== 0)
+    fail(
+      `the browser did not start: ${(started.stderr || started.error?.message || "").trim()}`,
+    );
+};
+
+const shutdown = () => {
+  agentBrowser(["close"], { timeout: 15_000 });
+  kill([daemonPid()].filter(Boolean), "SIGKILL");
+  stopProfileChromes();
+  clearStaleProfileLocks();
+};
 
 const usage = () => {
   process.stderr.write(
@@ -79,24 +198,59 @@ const usage = () => {
   process.exit(2);
 };
 
-const args = process.argv.slice(2);
+const LOCKED = "--platform-browser-locked";
+
+const RELAUNCH = "PLATFORM_BROWSER_RELAUNCH";
+
+const underLock = (args, relaunch = false) => {
+  mkdirSync(SOCKET_DIR, { recursive: true });
+  const locked = spawnSync(
+    "flock",
+    ["-w", "90", LOCK, process.execPath, process.argv[1], LOCKED, ...args],
+    {
+      stdio: "inherit",
+      env: { ...process.env, ...(relaunch ? { [RELAUNCH]: "1" } : {}) },
+    },
+  );
+  if (locked.error) fail(locked.error.message, 127);
+  process.exit(locked.status ?? 1);
+};
+
+let args = process.argv.slice(2);
+const locked = args[0] === LOCKED;
+if (locked) args = args.slice(1);
 const [command, address, ...rest] = args;
 if (!command || command === "--help" || command === "-h") usage();
 
-if (command === "close") {
-  process.stderr.write(
-    "platform-browser: not closing — the user's browser panel is attached to this browser\n",
+if (command === "close")
+  fail(
+    "not closing — the user's browser panel is attached to this browser",
+    2,
   );
-  process.exit(2);
+
+if (command === "launch" || command === "shutdown") {
+  if (!locked) underLock([command]);
+  if (command === "launch") launch(process.env[RELAUNCH] === "1");
+  else shutdown();
+  process.exit(0);
 }
+
+if (!locked && daemonPid() === null) underLock(args);
+if (locked) launch(process.env[RELAUNCH] === "1");
+
+const otherConfiguration = (result) =>
+  /different daemon configuration/i.test(result.stderr ?? "");
+
+const run = (runArgs, options) => {
+  const result = agentBrowser(runArgs, options);
+  if (!locked && otherConfiguration(result)) underLock(args, true);
+  return result;
+};
 
 if (command === "screenshot") {
   const devicePixels = args.includes("--device-pixels");
   const shotArgs = args.filter((a) => a !== "--device-pixels");
-  const shot = spawnSync("agent-browser", [...BROWSER, ...shotArgs], {
-    encoding: "utf8",
-    env: ENV,
-  });
+  const shot = run(shotArgs);
   process.stdout.write(shot.stdout ?? "");
   process.stderr.write(shot.stderr ?? "");
   if (shot.error || shot.status !== 0 || devicePixels)
@@ -105,12 +259,7 @@ if (command === "screenshot") {
     shotArgs.slice(1).find((a) => /\.(png|jpe?g)$/i.test(a)) ??
     /([^\s'"]+\.(?:png|jpe?g))/i.exec(shot.stdout ?? "")?.[1];
   const ratio = Number(
-    (
-      spawnSync("agent-browser", [...BROWSER, "eval", "devicePixelRatio"], {
-        encoding: "utf8",
-        env: ENV,
-      }).stdout ?? ""
-    )
+    (agentBrowser(["eval", "devicePixelRatio"]).stdout ?? "")
       .trim()
       .replace(/"/g, ""),
   );
@@ -118,7 +267,16 @@ if (command === "screenshot") {
     const scaled = `${path}.css${/\.png$/i.test(path) ? ".png" : ".jpg"}`;
     const ok = spawnSync(
       "ffmpeg",
-      ["-y", "-loglevel", "error", "-i", path, "-vf", `scale=trunc(iw/${ratio}):trunc(ih/${ratio})`, scaled],
+      [
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        path,
+        "-vf",
+        `scale=trunc(iw/${ratio}):trunc(ih/${ratio})`,
+        scaled,
+      ],
       { stdio: "ignore" },
     );
     if (ok.status === 0) renameSync(scaled, path);
@@ -127,14 +285,10 @@ if (command === "screenshot") {
 }
 
 if (command !== "open") {
-  const passed = spawnSync("agent-browser", [...BROWSER, ...args], {
-    stdio: "inherit",
-    env: ENV,
-  });
-  if (passed.error) {
-    process.stderr.write(`platform-browser: ${passed.error.message}\n`);
-    process.exit(127);
-  }
+  const passed = run(args);
+  process.stdout.write(passed.stdout ?? "");
+  process.stderr.write(passed.stderr ?? "");
+  if (passed.error) fail(passed.error.message, 127);
   process.exit(passed.status ?? 1);
 }
 
@@ -147,26 +301,15 @@ let url;
 try {
   url = new URL(withScheme);
 } catch {
-  process.stderr.write(`platform-browser: not a web address: ${address}\n`);
-  process.exit(2);
+  fail(`not a web address: ${address}`, 2);
 }
-if (url.protocol !== "http:" && url.protocol !== "https:") {
-  process.stderr.write("platform-browser: only http and https addresses open\n");
-  process.exit(2);
-}
+if (url.protocol !== "http:" && url.protocol !== "https:")
+  fail("only http and https addresses open", 2);
 
-const opened = spawnSync("agent-browser", [...BROWSER, "open", url.href], {
-  stdio: ["ignore", "ignore", "pipe"],
-  encoding: "utf8",
-  env: ENV,
-});
+const opened = run(["open", url.href]);
 const currentHost = () => {
-  const got = spawnSync("agent-browser", [...BROWSER, "get", "url"], {
-    encoding: "utf8",
-    env: ENV,
-  });
   try {
-    return new URL(got.stdout.trim()).host;
+    return new URL(agentBrowser(["get", "url"]).stdout.trim()).host;
   } catch {
     return null;
   }
@@ -178,10 +321,9 @@ if (opened.error || opened.status !== 0) {
     currentHost() === url.host;
   if (!stillLoading) {
     process.stderr.write(opened.stderr ?? "");
-    process.stderr.write(
-      `platform-browser: the browser did not open ${url.href}${opened.error ? `: ${opened.error.message}` : ""}\n`,
+    fail(
+      `the browser did not open ${url.href}${opened.error ? `: ${opened.error.message}` : ""}`,
     );
-    process.exit(1);
   }
   process.stderr.write(
     "platform-browser: the page is open but still loading; wait before you snapshot it (platform-browser wait --load domcontentloaded)\n",

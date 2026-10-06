@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getAccessToken } from "../../../auth.js";
 import {
+  type BrowserState,
   createLatencyMeter,
   type FrameMetadata,
   parseBinaryFrame,
@@ -19,9 +20,8 @@ import {
 const STATS_INTERVAL_MS = 500;
 const RESIZE_DEBOUNCE_MS = 250;
 const VIEWPORT_RESEND_MS = 1_000;
-const CLEARED_CLOSE_CODE = 1012;
-const RECONNECT_DELAY_MS = 1_000;
-const RECONNECT_ATTEMPTS = 3;
+const RECONNECT_DELAYS_MS = [500, 1_000, 2_000, 5_000, 10_000];
+const GIVE_UP_NOTICE_AFTER = 3;
 const ERROR_SHOWN_MS = 6_000;
 
 export type BrowserStreamState =
@@ -44,6 +44,10 @@ export function useBrowserStream(
   const [pageUrl, setPageUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [streamInfo, setStreamInfo] = useState<StreamInfo | null>(null);
+  const [browser, setBrowser] = useState<{
+    state: BrowserState;
+    message: string | null;
+  }>({ state: "starting", message: null });
   const [stats, setStats] = useState<BrowserStats>({
     roundTripMs: null,
     fps: 0,
@@ -86,12 +90,11 @@ export function useBrowserStream(
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let viewportSentAt = 0;
     const wantedViewport = () => {
-      const canvas = canvasRef.current;
-      if (!canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0)
-        return null;
+      const box = canvasRef.current?.parentElement;
+      if (!box || box.clientWidth === 0 || box.clientHeight === 0) return null;
       return viewportFor(
-        canvas.clientWidth,
-        canvas.clientHeight,
+        box.clientWidth,
+        box.clientHeight,
         window.devicePixelRatio,
       );
     };
@@ -112,7 +115,8 @@ export function useBrowserStream(
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(sendViewport, RESIZE_DEBOUNCE_MS);
     });
-    if (canvasRef.current) resizeObserver.observe(canvasRef.current);
+    const box = canvasRef.current?.parentElement;
+    if (box) resizeObserver.observe(box);
 
     void (async () => {
       setState("connecting");
@@ -130,6 +134,7 @@ export function useBrowserStream(
       wsRef.current = ws;
       ws.onopen = () => {
         if (cancelled) return;
+        failedAttemptsRef.current = 0;
         setState("live");
         sendViewport();
         if (pendingUrlRef.current) {
@@ -141,7 +146,6 @@ export function useBrowserStream(
         if (e.data instanceof ArrayBuffer) {
           const frame = parseBinaryFrame(e.data);
           if (!frame) return;
-          failedAttemptsRef.current = 0;
           deviceRef.current = frame.metadata;
           snapViewport(frame.metadata);
           lastChunkBytes = frame.data.byteLength;
@@ -162,18 +166,24 @@ export function useBrowserStream(
         if (!msg) return;
         if (msg.type === "url") setPageUrl(msg.url);
         else if (msg.type === "stream_info") setStreamInfo(msg);
+        else if (msg.type === "browser_state")
+          setBrowser({ state: msg.state, message: msg.message });
         else setError(msg.message);
       };
       ws.onclose = (e) => {
         if (cancelled) return;
-        if (e.code === CLEARED_CLOSE_CODE) return setConnectKey((k) => k + 1);
-        failedAttemptsRef.current += 1;
-        if (failedAttemptsRef.current > RECONNECT_ATTEMPTS)
+        if (e.code === 1011 && e.reason === "video unavailable")
           return setState("disconnected");
-        setState("connecting");
+        failedAttemptsRef.current += 1;
+        const attempt = failedAttemptsRef.current;
+        setState(
+          attempt > GIVE_UP_NOTICE_AFTER ? "disconnected" : "connecting",
+        );
         reconnectTimer = setTimeout(
           () => setConnectKey((k) => k + 1),
-          RECONNECT_DELAY_MS,
+          RECONNECT_DELAYS_MS[
+            Math.min(attempt - 1, RECONNECT_DELAYS_MS.length - 1)
+          ],
         );
       };
       window.addEventListener("focus", sendViewport);
@@ -201,6 +211,7 @@ export function useBrowserStream(
 
   return {
     state,
+    browser,
     pageUrl,
     error,
     stats,

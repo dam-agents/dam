@@ -117,7 +117,8 @@ describe("keyboardInput", () => {
 });
 
 describe("parseStreamMessage", () => {
-  test("reads url updates and errors, and ignores the rest", () => {
+  // TEST_SCENARIO: the runtime keeps the panel connected while the browser starts, restarts or fails, and says which with a browser_state message; the panel shows a spinner or the failure from it. An unknown state is ignored rather than shown.
+  test("reads url updates, browser state and errors, and ignores the rest", () => {
     expect(parseStreamMessage('{"type":"url","url":"http://a/"}')).toEqual({
       type: "url",
       url: "http://a/",
@@ -125,6 +126,36 @@ describe("parseStreamMessage", () => {
     expect(
       parseStreamMessage('{"type":"preview_error","message":"no"}'),
     ).toEqual({ type: "preview_error", message: "no" });
+    expect(
+      parseStreamMessage(
+        '{"type":"browser_state","state":"failed","message":"Chrome exited"}',
+      ),
+    ).toEqual({
+      type: "browser_state",
+      state: "failed",
+      message: "Chrome exited",
+    });
+    expect(
+      parseStreamMessage('{"type":"browser_state","state":"ready"}'),
+    ).toEqual({ type: "browser_state", state: "ready", message: null });
+    expect(
+      parseStreamMessage('{"type":"browser_state","state":"exploded"}'),
+    ).toBeNull();
+    expect(
+      parseStreamMessage(
+        '{"type":"browser_state","state":"failed","message":"Chrome exited"}',
+      ),
+    ).toEqual({
+      type: "browser_state",
+      state: "failed",
+      message: "Chrome exited",
+    });
+    expect(
+      parseStreamMessage('{"type":"browser_state","state":"ready"}'),
+    ).toEqual({ type: "browser_state", state: "ready", message: null });
+    expect(
+      parseStreamMessage('{"type":"browser_state","state":"exploded"}'),
+    ).toBeNull();
     expect(parseStreamMessage('{"type":"frame","data":"AA"}')).toBeNull();
     expect(parseStreamMessage('{"type":"status"}')).toBeNull();
     expect(parseStreamMessage("{")).toBeNull();
@@ -231,11 +262,11 @@ describe("stream info", () => {
 });
 
 describe("viewportFor", () => {
-  // TEST_SCENARIO: the sandbox browser's viewport follows the panel's CSS size, so the page lays out at the size the user sees it, and renders at the screen's pixel ratio, rounded to a quarter and capped — at 1 for now, since a sandbox with one CPU cannot capture and encode four times the pixels at 30 frames a second. Fractional sizes round to whole pixels, and a collapsed or huge panel stays within what the runtime accepts.
-  test("rounds the panel size, carries the pixel ratio, and keeps both within bounds", () => {
-    expect(viewportFor(812.4, 633.6, 1)).toEqual({
+  // TEST_SCENARIO: the sandbox browser's viewport follows the panel's CSS size, so the page lays out at the size the user sees it, and renders at the screen's pixel ratio, rounded to a quarter and capped — at 1 for now, since a sandbox with one CPU cannot capture and encode four times the pixels at 30 frames a second. Sizes round down to even pixels: the encoder captures only even sides, and the panel draws the video one to one, never stretched — a 757-pixel viewport sent as a 756-pixel video and stretched back blurred every line of text. A collapsed or huge panel stays within what the runtime accepts.
+  test("rounds the panel size down to even pixels, carries the pixel ratio, and keeps both within bounds", () => {
+    expect(viewportFor(813.4, 633.6, 1)).toEqual({
       width: 812,
-      height: 634,
+      height: 632,
       scale: 1,
     });
     expect(viewportFor(0, 50, 1.1)).toEqual({

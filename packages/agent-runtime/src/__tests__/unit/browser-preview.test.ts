@@ -2,9 +2,9 @@ import { describe, it, expect, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import {
-  browserCommandLine,
   VIDEO_UNAVAILABLE,
   commandTimeoutMs,
+  createCommandQueue,
   isPreviewProcess,
   killablePreviewPids,
   parseViewport,
@@ -15,7 +15,7 @@ import {
   type BrowserPreview,
 } from "../../modules/browser-preview.js";
 
-// TEST_OVERVIEW: The browser preview gives the chat's browser panel a live view of the agent's shared `preview` agent-browser session. It opens the session at the asked address, pipes the session's stream server (frames out, input in) to the panel, handles the panel's own navigate, reload and clear-data messages itself, and closes the browser a while after the last viewer leaves.
+// TEST_OVERVIEW: The browser preview gives every open browser panel a live view of the agent's one shared `preview` browser. A single supervisor owns that browser for all panels: it launches it once, runs browser commands one at a time, sets the viewport to the newest panel size, runs one video encoder whose frames go to every panel, and brings the browser back — without dropping the panels — when it fails to start, dies, or stops answering. Panels are told the browser's state instead of being disconnected.
 
 const closers: (() => Promise<void> | void)[] = [];
 
@@ -27,11 +27,9 @@ async function fakeStream() {
   const wss = new WebSocketServer({ port: 0 });
   await new Promise<void>((r) => wss.once("listening", () => r()));
   const received: string[] = [];
-  const urls: string[] = [];
   const sockets: WebSocket[] = [];
-  wss.on("connection", (ws, req) => {
+  wss.on("connection", (ws) => {
     sockets.push(ws);
-    urls.push(req.url ?? "");
     ws.on("message", (d) => received.push(d.toString()));
     ws.send(JSON.stringify({ type: "frame", seq: 1, data: "AAAA" }));
   });
@@ -39,36 +37,53 @@ async function fakeStream() {
   return {
     port: (wss.address() as { port: number }).port,
     received,
-    urls,
     sockets,
+    dropAll: () => {
+      for (const s of sockets.splice(0)) s.terminate();
+    },
   };
 }
 
-function fakeRun(port: number) {
+function fakeBrowser(port: number) {
   const calls: string[][] = [];
-  const browser = { viewport: "1280x720@1" };
+  const browser = {
+    alive: false,
+    viewport: "1280x720@1",
+    launchFailures: 0,
+    hangEval: false,
+    failEval: false,
+  };
   const run = async (args: string[]) => {
     calls.push(args);
+    if (args[0] === "launch") {
+      if (browser.launchFailures > 0) {
+        browser.launchFailures--;
+        throw new Error("Chrome exited early");
+      }
+      browser.alive = true;
+      return "";
+    }
+    if (!browser.alive) throw new Error("no browser running");
     if (args[0] === "stream")
       return JSON.stringify({ success: true, data: { port } });
     if (args[0] === "set" && args[1] === "viewport")
       browser.viewport = `${args[2]}x${args[3]}@${args[4]}`;
-    if (args[0] === "eval") return JSON.stringify(browser.viewport);
+    if (args[0] === "eval") {
+      if (browser.hangEval) return new Promise<string>(() => {});
+      if (browser.failEval) throw new Error("eval timed out");
+      if (args[1]?.startsWith("innerWidth"))
+        return JSON.stringify(browser.viewport);
+    }
     return "";
   };
   return { calls, run, browser };
 }
 
-const stubVideo: BrowserVideo = {
-  available: () => true,
-  calibrate: async () => 56,
-  start: () => ({ stop: () => {} }),
-};
-
 function fakeVideo() {
   const starts: { width: number; height: number; top: number }[] = [];
   const stops: number[] = [];
   let emit: ((frame: Buffer, key: boolean) => void) | null = null;
+  let exit: (() => void) | null = null;
   const video: BrowserVideo = {
     available: () => true,
     calibrate: async () => 56,
@@ -79,6 +94,7 @@ function fakeVideo() {
         top: opts.top,
       });
       emit = opts.onFrame;
+      exit = opts.onExit;
       return { stop: () => stops.push(n) };
     },
   };
@@ -87,6 +103,7 @@ function fakeVideo() {
     starts,
     stops,
     emit: (f: Buffer, k: boolean) => emit?.(f, k),
+    crash: () => exit?.(),
   };
 }
 
@@ -116,11 +133,19 @@ async function host(preview: BrowserPreview) {
       ws.once("open", () => res());
       ws.once("error", rej);
     });
-    return { ws, messages };
+    const json = () =>
+      messages
+        .filter((m): m is string => typeof m === "string")
+        .map((m) => JSON.parse(m) as Record<string, unknown>);
+    const states = () =>
+      json()
+        .filter((m) => m.type === "browser_state")
+        .map((m) => m.state);
+    return { ws, messages, json, states };
   };
 }
 
-async function until(check: () => boolean, ms = 2_000) {
+async function until(check: () => boolean, ms = 3_000) {
   const start = Date.now();
   while (!check()) {
     if (Date.now() - start > ms) throw new Error("timed out");
@@ -128,10 +153,25 @@ async function until(check: () => boolean, ms = 2_000) {
   }
 }
 
-const closed = (ws: WebSocket) =>
-  new Promise<{ code: number; reason: string }>((r) =>
-    ws.once("close", (code, reason) => r({ code, reason: reason.toString() })),
-  );
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function preview(
+  run: (args: string[]) => Promise<string>,
+  extra: Partial<Parameters<typeof createBrowserPreview>[0]> = {},
+) {
+  return createBrowserPreview({
+    run,
+    profileDir: "/tmp/x",
+    video: fakeVideo().video,
+    stopBrowser: async () => {},
+    retryDelaysMs: [10],
+    log: () => {},
+    ...extra,
+  });
+}
+
+const resize = (ws: WebSocket, width: number, height: number) =>
+  ws.send(JSON.stringify({ type: "resize", width, height }));
 
 describe("previewUrl", () => {
   // TEST_SCENARIO: The panel's address field takes any web address — loopback dev servers and external sign-in pages alike — but nothing that is not http or https, so `file:` or `javascript:` never reach the browser.
@@ -186,111 +226,95 @@ describe("parseControl", () => {
 });
 
 describe("browser preview", () => {
-  // TEST_SCENARIO: A panel opens on an address. The session is opened there, the panel's frame-rate setting reaches the stream server, frames flow to the panel as binary messages and the panel's input flows to the browser.
-  it("opens the address, drops screencast frames and pipes input", async () => {
+  // TEST_SCENARIO: A panel opens on an address. The browser is launched and navigated there, agent-browser's own screencast is stopped and any screencast frame still sent is dropped, address updates reach the panel, and the panel's input reaches the browser.
+  it("launches, navigates, pipes address updates and input", async () => {
     const stream = await fakeStream();
-    const { calls, run } = fakeRun(stream.port);
-    const connect = await host(
-      createBrowserPreview({
-        run,
-        profileDir: "/tmp/x",
-        video: stubVideo,
-        log: () => {},
-      }),
+    const { calls, run } = fakeBrowser(stream.port);
+    const connect = await host(preview(run));
+    const { ws, messages, states } = await connect(
+      "url=http%3A%2F%2F127.0.0.1%3A5173%2F",
+    );
+    await until(() => stream.sockets.length === 1);
+    expect(calls[0]).toEqual(["launch"]);
+    await until(() =>
+      calls.some(
+        (c) =>
+          c[0] === "eval" &&
+          c[1] === 'location.href = "http://127.0.0.1:5173/"',
+      ),
+    );
+    expect(states()).toContain("ready");
+    expect(stream.received[0]).toBe(
+      JSON.stringify({ type: "screencast_stop" }),
     );
 
-    const { ws, messages } = await connect(
-      "url=http%3A%2F%2F127.0.0.1%3A5173%2F&token=secret",
+    stream.sockets[0]!.send(JSON.stringify({ type: "url", url: "http://a/" }));
+    await until(() =>
+      messages.some((m) => typeof m === "string" && m.includes("http://a/")),
     );
-    await until(() => stream.received.length > 0);
-
-    expect(calls[0]).toEqual(["open", "http://127.0.0.1:5173/"]);
-    expect(stream.urls[0]).toBe("/");
-    expect(JSON.parse(stream.received[0]!)).toEqual({
-      type: "screencast_stop",
-    });
-
-    ws.send(JSON.stringify({ type: "input_mouse", eventType: "mousePressed" }));
-    await until(() => stream.received.length > 1);
-    expect(JSON.parse(stream.received[1]!)).toMatchObject({
-      type: "input_mouse",
-    });
     expect(
       messages.some((m) => typeof m === "string" && m.includes('"frame"')),
     ).toBe(false);
-    expect(messages.some((m) => Buffer.isBuffer(m))).toBe(false);
+
+    ws.send(JSON.stringify({ type: "input_mouse", x: 1, y: 2 }));
+    await until(() => stream.received.some((r) => r.includes("input_mouse")));
   });
 
   // TEST_SCENARIO: an agent whose image lacks the virtual display or ffmpeg cannot stream; the panel is told so in words and the connection closes, rather than showing a blank panel.
   it("refuses a panel when the image cannot stream video", async () => {
     const stream = await fakeStream();
-    const { calls, run } = fakeRun(stream.port);
+    const { calls, run } = fakeBrowser(stream.port);
     const connect = await host(
-      createBrowserPreview({
-        run,
-        profileDir: "/tmp/x",
-        video: { ...stubVideo, available: () => false },
-        log: () => {},
+      preview(run, {
+        video: { ...fakeVideo().video, available: () => false },
       }),
     );
-    const { ws, messages } = await connect("");
-    const done = closed(ws);
-    expect((await done).code).toBe(1011);
-    expect(JSON.parse(messages[0] as string)).toEqual({
+    const { ws, json } = await connect("");
+    const code = await new Promise<number>((r) => ws.once("close", r));
+    expect(code).toBe(1011);
+    expect(json()).toContainEqual({
       type: "preview_error",
       message: VIDEO_UNAVAILABLE,
     });
     expect(calls).toEqual([]);
   });
 
-  // TEST_SCENARIO: A panel that reconnects without an address must not reload the page the user was on: the session is only asked for its stream, never navigated.
+  // TEST_SCENARIO: A panel that reconnects without an address must not reload the page the user was on: the browser is only launched or found, never navigated.
   it("reattaches without navigating when no address is given", async () => {
     const stream = await fakeStream();
-    const { calls, run } = fakeRun(stream.port);
-    const connect = await host(
-      createBrowserPreview({
-        run,
-        profileDir: "/tmp/x",
-        video: stubVideo,
-        log: () => {},
-      }),
-    );
-
+    const { calls, run } = fakeBrowser(stream.port);
+    const connect = await host(preview(run));
     await connect("");
-    await until(() => stream.received.length > 0);
-    expect(calls).toEqual([["stream", "status", "--json"]]);
+    await until(() => stream.sockets.length === 1);
+    expect(calls.some((c) => c[0] === "open" || c[0] === "eval")).toBe(false);
   });
 
-  // TEST_SCENARIO: The address bar sends navigate, reload, back and forward, and the panel sends its size as resize, all as control messages. The viewport is set at the panel's pixel ratio, so the video is sharp on a high-density screen; platform-browser scales the agent's screenshots back to CSS pixels. The runtime runs them as agent-browser commands and does not pass them on to the stream server; a non-web address is answered with an error message rather than opened. Navigation runs in the page rather than through `open`, which holds agent-browser's one-at-a-time command queue until the page has loaded — a slow page held every resize behind it for up to 20 seconds.
-  it("handles control messages itself", async () => {
+  // TEST_SCENARIO: An address given on connect that is not http or https is refused before any browser command runs.
+  it("refuses a non-web address on connect", async () => {
     const stream = await fakeStream();
-    const { calls, run } = fakeRun(stream.port);
-    const connect = await host(
-      createBrowserPreview({
-        run,
-        profileDir: "/tmp/x",
-        video: stubVideo,
-        log: () => {},
-      }),
-    );
-    const { ws, messages } = await connect("");
-    await until(() => stream.received.length > 0);
+    const { calls, run } = fakeBrowser(stream.port);
+    const connect = await host(preview(run));
+    const { ws } = await connect("url=file%3A%2F%2F%2Fetc%2Fpasswd");
+    const code = await new Promise<number>((r) => ws.once("close", r));
+    expect(code).toBe(1008);
+    expect(calls).toEqual([]);
+  });
+
+  // TEST_SCENARIO: The address bar sends navigate, reload, back and forward as control messages. They run inside the page rather than through `open`, which holds agent-browser's one-at-a-time command queue until the page has loaded — a slow page held every resize behind it for up to 20 seconds. A non-web address is answered with an error message rather than opened.
+  it("runs navigation in the page and refuses non-web addresses", async () => {
+    const stream = await fakeStream();
+    const { calls, run } = fakeBrowser(stream.port);
+    const connect = await host(preview(run));
+    const { ws, json } = await connect("");
+    await until(() => stream.sockets.length === 1);
 
     ws.send(JSON.stringify({ type: "navigate", url: "https://example.com" }));
     ws.send(JSON.stringify({ type: "reload" }));
     ws.send(JSON.stringify({ type: "back" }));
     ws.send(JSON.stringify({ type: "forward" }));
-    ws.send(
-      JSON.stringify({ type: "resize", width: 900, height: 640, scale: 2 }),
-    );
     ws.send(JSON.stringify({ type: "navigate", url: "file:///etc/passwd" }));
-    await until(
-      () =>
-        calls.length >= 6 &&
-        messages.some(
-          (m) => typeof m === "string" && m.includes("preview_error"),
-        ),
-    );
+    await until(() => json().some((m) => m.type === "preview_error"));
+    await until(() => calls.filter((c) => c[0] === "eval").length >= 4);
 
     expect(calls).toContainEqual([
       "eval",
@@ -300,124 +324,68 @@ describe("browser preview", () => {
     expect(calls).toContainEqual(["eval", "history.back()"]);
     expect(calls).toContainEqual(["eval", "history.forward()"]);
     expect(calls.some((c) => c[0] === "open")).toBe(false);
-    expect(calls).toContainEqual(["set", "viewport", "900", "640", "2"]);
     expect(calls.flat()).not.toContain("file:///etc/passwd");
-    expect(
-      messages
-        .filter((m): m is string => typeof m === "string")
-        .map((m) => JSON.parse(m) as { type: string })
-        .some((m) => m.type === "preview_error"),
-    ).toBe(true);
     expect(stream.received).toEqual([
       JSON.stringify({ type: "screencast_stop" }),
     ]);
   });
 
-  // TEST_SCENARIO: An address given on connect that is not http or https is refused before any browser command runs.
-  it("refuses a non-web address on connect", async () => {
-    const stream = await fakeStream();
-    const { calls, run } = fakeRun(stream.port);
-    const connect = await host(
-      createBrowserPreview({
-        run,
-        profileDir: "/tmp/x",
-        video: stubVideo,
-        log: () => {},
-      }),
-    );
-    const { ws } = await connect("url=file%3A%2F%2F%2Fetc%2Fpasswd");
-    expect((await closed(ws)).code).toBe(1008);
-    expect(calls).toEqual([]);
-  });
-
   // TEST_SCENARIO: A Chromium costs the agent memory, so the browser is closed once nobody has watched it for the idle window; a viewer who comes back inside the window keeps it open.
   it("closes the browser after the last viewer leaves", async () => {
     const stream = await fakeStream();
-    const { calls, run } = fakeRun(stream.port);
-    const preview = createBrowserPreview({
-      run,
-      profileDir: "/tmp/x",
-      video: stubVideo,
-      idleCloseMs: 80,
-      log: () => {},
-    });
-    const connect = await host(preview);
-
-    const first = await connect("");
-    await until(() => stream.received.length > 0);
-    first.ws.close();
-    await until(() => preview.viewers() === 0);
-    const second = await connect("");
-    await new Promise((r) => setTimeout(r, 150));
-    expect(calls).not.toContainEqual(["close"]);
-
-    second.ws.close();
-    await until(() => calls.some((c) => c[0] === "close"));
-  });
-});
-
-describe("browserCommandLine", () => {
-  // TEST_SCENARIO: the panel and the agent must launch the same browser — headed on the virtual display when the image can — so every command the runtime runs goes through platform-browser, the one launcher. Only close goes to agent-browser directly, since platform-browser refuses it on the agent's behalf.
-  it("runs commands through platform-browser and close through agent-browser", () => {
-    expect(browserCommandLine(["open", "http://a/"], "/p")).toEqual([
-      "platform-browser",
-      ["open", "http://a/"],
-    ]);
-    expect(browserCommandLine(["close"], "/p")).toEqual([
-      "agent-browser",
-      ["--session", "preview", "--profile", "/p", "close"],
-    ]);
-  });
-});
-
-describe("browser preview video", () => {
-  // TEST_SCENARIO: a panel that asks for h264 gets video instead of the JPEG screencast. The runtime stops agent-browser's screencast (whose socket still carries input and address updates), drops any JPEG frame that still arrives, starts the encoder at the panel's size below the measured top offset, and restarts it — with a fresh keyframe — whenever the panel resizes.
-  it("streams video sized to the panel and restarts it on resize", async () => {
-    const stream = await fakeStream();
-    const { calls, run } = fakeRun(stream.port);
-    const fake = fakeVideo();
+    const { run } = fakeBrowser(stream.port);
+    let stops = 0;
     const connect = await host(
-      createBrowserPreview({
-        run,
-        profileDir: "/tmp/x",
-        video: fake.video,
-        log: () => {},
+      preview(run, {
+        idleCloseMs: 80,
+        stopBrowser: async () => {
+          stops++;
+        },
       }),
     );
-    const { ws, messages } = await connect("");
-    await until(() => stream.received.length > 0);
-    expect(JSON.parse(stream.received[0]!)).toEqual({
-      type: "screencast_stop",
-    });
-
-    ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
-    await until(() => fake.starts.length === 1);
-    expect(fake.starts[0]).toEqual({ width: 900, height: 700, top: 56 });
-    expect(calls).toContainEqual(["set", "viewport", "900", "700", "1"]);
-
-    fake.emit(Buffer.from("video-1"), true);
-    await until(() =>
-      messages.some((m) => Buffer.isBuffer(m) && m.toString() === "video-1"),
-    );
-    expect(
-      messages.some((m) => Buffer.isBuffer(m) && m.toString() !== "video-1"),
-    ).toBe(false);
-
-    ws.send(JSON.stringify({ type: "resize", width: 600, height: 500 }));
-    await until(() => fake.starts.length === 2);
-    expect(fake.stops).toContain(1);
-    expect(fake.starts[1]).toEqual({ width: 600, height: 500, top: 56 });
-
-    ws.close();
-    await until(() => fake.stops.includes(2));
+    const first = await connect("");
+    await until(() => stream.sockets.length === 1);
+    first.ws.close();
+    await pause(30);
+    const second = await connect("");
+    await pause(100);
+    expect(stops).toBe(0);
+    second.ws.close();
+    await until(() => stops === 1);
   });
 });
 
-describe("resizing", () => {
-  // TEST_SCENARIO: dragging the panel's edge sends a size each time it settles, and agent-browser runs one command at a time. Run side by side, the sizes queued behind each other, each restarting the encoder, and the panel took seconds to catch up. While a size is being set, newer ones replace each other, and only the newest is set next, with one encoder restart.
+describe("one browser for every panel", () => {
+  // TEST_SCENARIO: two panels — two tabs, or a reconnect racing the old socket — must not launch the browser twice; launching twice is what crashed Chrome on its locked profile. They share one launch, one stream connection and one encoder, a newcomer gets a fresh keyframe, and every frame goes to both.
+  it("shares one launch and one encoder between panels", async () => {
+    const stream = await fakeStream();
+    const { calls, run } = fakeBrowser(stream.port);
+    const fake = fakeVideo();
+    const connect = await host(preview(run, { video: fake.video }));
+    const a = await connect("");
+    const b = await connect("");
+    resize(a.ws, 900, 700);
+    await until(() => fake.starts.length === 1);
+    expect(calls.filter((c) => c[0] === "launch")).toHaveLength(1);
+    expect(stream.sockets).toHaveLength(1);
+
+    const c = await connect("");
+    await until(() => fake.starts.length === 2);
+    expect(fake.stops).toContain(1);
+
+    fake.emit(Buffer.from("key"), true);
+    for (const panel of [a, b, c])
+      await until(() =>
+        panel.messages.some(
+          (m) => Buffer.isBuffer(m) && m.toString() === "key",
+        ),
+      );
+  });
+
+  // TEST_SCENARIO: dragging the panel's edge sends a size each time it settles, and agent-browser runs one command at a time. While a size is being set, newer ones replace each other, and only the newest is set next, with one encoder start.
   it("sets only the newest size while one is in flight", async () => {
     const stream = await fakeStream();
-    const { calls, run } = fakeRun(stream.port);
+    const { calls, run } = fakeBrowser(stream.port);
     let release: () => void = () => {};
     const slowRun = async (args: string[]) => {
       if (args[0] === "set" && calls.every((c) => c[0] !== "set"))
@@ -425,39 +393,132 @@ describe("resizing", () => {
       return run(args);
     };
     const fake = fakeVideo();
-    const connect = await host(
-      createBrowserPreview({
-        run: slowRun,
-        profileDir: "/tmp/x",
-        video: fake.video,
-        log: () => {},
-      }),
-    );
+    const connect = await host(preview(slowRun, { video: fake.video }));
     const { ws } = await connect("");
-    await until(() => stream.received.length > 0);
+    await until(() => stream.sockets.length === 1);
 
-    ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
-    await new Promise((r) => setTimeout(r, 50));
-    for (const width of [800, 700, 600])
-      ws.send(JSON.stringify({ type: "resize", width, height: 500 }));
-    await new Promise((r) => setTimeout(r, 50));
+    resize(ws, 900, 700);
+    await pause(50);
+    for (const width of [800, 700, 600]) resize(ws, width, 500);
+    await pause(50);
     release();
 
     await until(() => fake.starts.length === 1);
-    await new Promise((r) => setTimeout(r, 50));
+    await pause(50);
     expect(calls.filter((c) => c[0] === "set")).toEqual([
       ["set", "viewport", "900", "700", "1"],
       ["set", "viewport", "600", "500", "1"],
     ]);
     expect(fake.starts).toEqual([{ width: 600, height: 500, top: 56 }]);
   });
+});
 
-  // TEST_SCENARIO: a size that fails to apply — the browser busy past the command's deadline — is not the user's error to read: the panel stayed on "set timed out" long after. It is logged, and the viewport check puts the size right once the browser answers.
-  it("logs a size that failed instead of telling the panel", async () => {
+describe("recovery", () => {
+  // TEST_SCENARIO: right after a boot the browser can fail to start a few times — a profile lock from the last boot, a second launcher. The panel stays connected and is told the browser is starting, later that it failed; the supervisor keeps retrying with a growing delay, and the panel goes live once a launch works, without reconnecting.
+  it("retries a failed launch while the panel stays connected", async () => {
     const stream = await fakeStream();
-    const { calls, run, browser } = fakeRun(stream.port);
+    const { calls, run, browser } = fakeBrowser(stream.port);
+    browser.launchFailures = 3;
+    const fake = fakeVideo();
+    const connect = await host(preview(run, { video: fake.video }));
+    const { ws, states, json } = await connect("");
+    resize(ws, 900, 700);
+    await until(() => fake.starts.length === 1);
+    expect(calls.filter((c) => c[0] === "launch")).toHaveLength(4);
+    expect(states()).toEqual(["starting", "failed", "starting", "ready"]);
+    expect(json().find((m) => m.state === "failed")?.message).toContain(
+      "Chrome exited early",
+    );
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+  });
+
+  // TEST_SCENARIO: the browser can die under an open panel — the agent closed it, Chrome crashed, the display went away. Its stream connection closes; the panel is not dropped but told the browser is starting, and the supervisor launches it again, puts the panel's size back and restarts the encoder.
+  it("brings a dead browser back under an open panel", async () => {
+    const stream = await fakeStream();
+    const { calls, run, browser } = fakeBrowser(stream.port);
+    const fake = fakeVideo();
+    const connect = await host(preview(run, { video: fake.video }));
+    const { ws, states } = await connect("");
+    resize(ws, 900, 700);
+    await until(() => fake.starts.length === 1);
+
+    browser.alive = false;
+    browser.viewport = "1280x720@1";
+    stream.dropAll();
+    await until(() => fake.starts.length === 2);
+    expect(calls.filter((c) => c[0] === "launch")).toHaveLength(2);
+    expect(browser.viewport).toBe("900x700@1");
+    expect(states().slice(-2)).toEqual(["starting", "ready"]);
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+  });
+
+  // TEST_SCENARIO: a browser that stops answering — every command timing out — is restarted once it has been silent past the limit, rather than leaving the panel frozen until someone notices.
+  it("restarts a browser that stopped answering", async () => {
+    const stream = await fakeStream();
+    const { run, browser } = fakeBrowser(stream.port);
+    const fake = fakeVideo();
+    let stops = 0;
+    const connect = await host(
+      preview(run, {
+        video: fake.video,
+        healthCheckMs: 20,
+        unresponsiveRestartMs: 100,
+        stopBrowser: async () => {
+          stops++;
+          browser.alive = false;
+          browser.failEval = false;
+          stream.dropAll();
+        },
+      }),
+    );
+    const { ws } = await connect("");
+    resize(ws, 900, 700);
+    await until(() => fake.starts.length === 1);
+
+    browser.failEval = true;
+    await until(() => stops === 1);
+    await until(() => fake.starts.length === 2);
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+  });
+
+  // TEST_SCENARIO: with the browser stuck, a health check never returns; the next checks must wait for it rather than pile up — piled-up commands are what starved the sandbox.
+  it("runs one health check at a time", async () => {
+    const stream = await fakeStream();
+    const { calls, run, browser } = fakeBrowser(stream.port);
+    const fake = fakeVideo();
+    const connect = await host(
+      preview(run, { video: fake.video, healthCheckMs: 20 }),
+    );
+    const { ws } = await connect("");
+    resize(ws, 900, 700);
+    await until(() => fake.starts.length === 1);
+    browser.hangEval = true;
+    await pause(300);
+    expect(calls.filter((c) => c[0] === "eval")).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: the agent launched the browser itself, or reset its viewport, so the browser runs at another size than the panel's and the encoder captures only part of the page. The health check reads the browser's real viewport, puts the panel's size back, and restarts the encoder at it.
+  it("puts the panel's size back when the browser is at another one", async () => {
+    const stream = await fakeStream();
+    const { run, browser } = fakeBrowser(stream.port);
+    const fake = fakeVideo();
+    const connect = await host(
+      preview(run, { video: fake.video, healthCheckMs: 30 }),
+    );
+    const { ws } = await connect("");
+    resize(ws, 900, 700);
+    await until(() => fake.starts.length === 1);
+    browser.viewport = "1280x720@1";
+    await until(() => fake.starts.length === 2);
+    expect(browser.viewport).toBe("900x700@1");
+  });
+
+  // TEST_SCENARIO: a size that fails to apply — the browser busy past the command's deadline — is not the user's error to read: the panel stayed on "set timed out" long after. It is logged, and the health check sets the size again once the browser answers.
+  it("retries a size that failed without telling the panel", async () => {
+    const stream = await fakeStream();
+    const { calls, run, browser } = fakeBrowser(stream.port);
     let failing = true;
-    const flakyRun = async (args: string[]) => {
+    const flaky = async (args: string[]) => {
       if (failing && args[0] === "set") {
         calls.push(args);
         throw new Error("set timed out");
@@ -465,33 +526,88 @@ describe("resizing", () => {
       return run(args);
     };
     const fake = fakeVideo();
-    const logs: string[] = [];
     const connect = await host(
-      createBrowserPreview({
-        run: flakyRun,
-        profileDir: "/tmp/x",
-        video: fake.video,
-        viewportCheckMs: 50,
-        log: (m) => logs.push(m),
-      }),
+      preview(flaky, { video: fake.video, healthCheckMs: 30 }),
     );
-    const { ws, messages } = await connect("");
-    await until(() => stream.received.length > 0);
-
-    ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
-    await until(() => logs.some((l) => l.includes("set timed out")));
+    const { ws, json } = await connect("");
+    resize(ws, 900, 700);
+    await until(() => calls.some((c) => c[0] === "set"));
     failing = false;
     await until(() => fake.starts.length === 1);
     expect(browser.viewport).toBe("900x700@1");
-    expect(
-      messages.some(
-        (m) => typeof m === "string" && m.includes("preview_error"),
-      ),
-    ).toBe(false);
+    expect(json().some((m) => m.type === "preview_error")).toBe(false);
+  });
+
+  // TEST_SCENARIO: the encoder can exit on its own — the display restarted, ffmpeg crashed. The supervisor starts it again after a short pause, so the panel's picture comes back by itself.
+  it("restarts an encoder that exited", async () => {
+    const stream = await fakeStream();
+    const { run } = fakeBrowser(stream.port);
+    const fake = fakeVideo();
+    const connect = await host(preview(run, { video: fake.video }));
+    const { ws } = await connect("");
+    resize(ws, 900, 700);
+    await until(() => fake.starts.length === 1);
+    fake.crash();
+    await until(() => fake.starts.length === 2, 3_000);
+  });
+
+  // TEST_SCENARIO: Restart browser and Clear browser data stop the shared browser — on Clear, its profile is deleted — and the supervisor launches a fresh one. The panels stay connected through it and see the browser starting, then ready.
+  it("restarts the browser without dropping the panels", async () => {
+    const stream = await fakeStream();
+    const { calls, run, browser } = fakeBrowser(stream.port);
+    const fake = fakeVideo();
+    let stops = 0;
+    const connect = await host(
+      preview(run, {
+        video: fake.video,
+        stopBrowser: async () => {
+          stops++;
+          browser.alive = false;
+          stream.dropAll();
+        },
+      }),
+    );
+    const { ws, states } = await connect("");
+    resize(ws, 900, 700);
+    await until(() => fake.starts.length === 1);
+    ws.send(JSON.stringify({ type: "restart_browser" }));
+    await until(() => fake.starts.length === 2);
+    expect(stops).toBe(1);
+    expect(calls.filter((c) => c[0] === "launch")).toHaveLength(2);
+    expect(states().slice(-2)).toEqual(["starting", "ready"]);
+    expect(ws.readyState).toBe(WebSocket.OPEN);
   });
 });
 
-describe("viewport check", () => {
+describe("command queue", () => {
+  // TEST_SCENARIO: agent-browser runs one command at a time anyway; sending it several at once only queued them inside it, past their deadlines. The runtime keeps its own commands in one line, and a failed command does not stop the ones after it.
+  it("runs one command at a time and survives failures", async () => {
+    const running: string[] = [];
+    let overlap = false;
+    const queue = createCommandQueue(async (args) => {
+      if (running.length > 0) overlap = true;
+      running.push(args[0]!);
+      await pause(10);
+      running.pop();
+      if (args[0] === "bad") throw new Error("bad");
+      return args[0]!;
+    });
+    const results = await Promise.allSettled([
+      queue.run(["a"]),
+      queue.run(["bad"]),
+      queue.run(["c"]),
+    ]);
+    expect(overlap).toBe(false);
+    expect(results.map((r) => r.status)).toEqual([
+      "fulfilled",
+      "rejected",
+      "fulfilled",
+    ]);
+    expect(queue.idle()).toBe(true);
+  });
+});
+
+describe("viewport", () => {
   it("reads agent-browser's eval output", () => {
     expect(parseViewport('"570x774@2"')).toEqual({
       width: 570,
@@ -500,49 +616,18 @@ describe("viewport check", () => {
     });
     expect(parseViewport("")).toBeNull();
   });
-
-  // TEST_SCENARIO: the agent launched the browser after the panel had sent its size, so the new browser came up at agent-browser's default 1280x720 and the encoder captured only part of the page. The runtime reads the browser's real viewport while video runs, puts the panel's size back, and restarts the encoder at it.
-  it("restores the panel's size when the browser comes back at another one", async () => {
-    const stream = await fakeStream();
-    const { calls, run, browser } = fakeRun(stream.port);
-    const starts: number[] = [];
-    const video: BrowserVideo = {
-      available: () => true,
-      calibrate: async () => 56,
-      start: (opts) => {
-        starts.push(opts.width);
-        return { stop: () => {} };
-      },
-    };
-    const connect = await host(
-      createBrowserPreview({
-        run,
-        profileDir: "/tmp/x",
-        video,
-        viewportCheckMs: 50,
-        log: () => {},
-      }),
-    );
-    const { ws } = await connect("");
-    ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
-    await until(() => starts.length === 1);
-
-    browser.viewport = "1280x720@1";
-    const before = calls.filter((c) => c[0] === "set").length;
-    await until(() => starts.length === 2);
-    expect(browser.viewport).toBe("900x700@1");
-    expect(calls.filter((c) => c[0] === "set").length).toBeGreaterThan(before);
-  });
 });
 
 describe("stopping a stuck browser", () => {
-  // TEST_SCENARIO: a page that stops answering leaves every browser command hanging. Commands get a short deadline — longer for open, which loads a page — so none can hang the panel for a minute.
-  it("gives commands a short deadline, open a longer one", () => {
+  // TEST_SCENARIO: a page that stops answering leaves every browser command hanging. Commands get a short deadline — longer for open, which loads a page, and for launching and shutting the browser down — so none can hang the panel for a minute.
+  it("gives commands a short deadline, loading and lifecycle a longer one", () => {
     expect(commandTimeoutMs(["open", "http://a/"])).toBe(45_000);
+    expect(commandTimeoutMs(["launch"])).toBe(60_000);
+    expect(commandTimeoutMs(["shutdown"])).toBe(30_000);
     expect(commandTimeoutMs(["set", "viewport", "1", "1", "1"])).toBe(15_000);
   });
 
-  // TEST_SCENARIO: restarting the panel's browser kills only what belongs to it — the Chromium on the panel's profile and agent-browser processes for the preview session — never the agent's own browser sessions or anything else.
+  // TEST_SCENARIO: stopping the panel's browser kills only what belongs to it — the Chromium on the panel's profile and agent-browser processes for the preview session — never the agent's own browser sessions or anything else.
   it("recognises only the preview browser's processes", () => {
     const profile = "/home/agent/.local/share/platform/browser-preview";
     expect(
@@ -574,62 +659,6 @@ describe("stopping a stuck browser", () => {
         profile,
       ),
     ).toBe(false);
-  });
-
-  // TEST_SCENARIO: the panel's Restart browser stops the shared browser and drops every viewer with the reconnect code, so each reconnects and launches a fresh browser on the same profile — sign-ins kept.
-  it("restarts the browser and reconnects viewers", async () => {
-    const stream = await fakeStream();
-    const { run } = fakeRun(stream.port);
-    let stops = 0;
-    const connect = await host(
-      createBrowserPreview({
-        run,
-        profileDir: "/tmp/x",
-        video: stubVideo,
-        stopBrowser: async () => {
-          stops++;
-        },
-        log: () => {},
-      }),
-    );
-    const { ws } = await connect("");
-    await until(() => stream.received.length > 0);
-    const done = closed(ws);
-    ws.send(JSON.stringify({ type: "restart_browser" }));
-    expect((await done).code).toBe(1012);
-    expect(stops).toBe(1);
-  });
-
-  // TEST_SCENARIO: with the browser stuck, a viewport check never returns; the next checks must wait for it rather than pile up — piled-up commands are what starved the sandbox.
-  it("runs one viewport check at a time", async () => {
-    const stream = await fakeStream();
-    const { run: baseRun } = fakeRun(stream.port);
-    let evals = 0;
-    const run = async (args: string[]) => {
-      if (args[0] === "eval") {
-        evals++;
-        return new Promise<string>(() => {});
-      }
-      return baseRun(args);
-    };
-    const video: BrowserVideo = {
-      available: () => true,
-      calibrate: async () => 56,
-      start: () => ({ stop: () => {} }),
-    };
-    const connect = await host(
-      createBrowserPreview({
-        run,
-        profileDir: "/tmp/x",
-        video,
-        viewportCheckMs: 20,
-        log: () => {},
-      }),
-    );
-    const { ws } = await connect("");
-    ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
-    await new Promise((r) => setTimeout(r, 300));
-    expect(evals).toBe(1);
   });
 });
 
