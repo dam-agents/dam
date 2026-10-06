@@ -1,5 +1,5 @@
 import { Idea, OverflowMenuVertical, Power } from "@carbon/icons-react";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,17 @@ import {
   CharAvatar,
   type CharName,
 } from "../agents/components/char-avatar.js";
-import { MysteryAvatar } from "../agents/components/mystery-avatar.js";
+import { AgentSetupView } from "../agents/views/agent-setup-view.js";
 import { EyeBeeMRebus } from "./eye-bee-m.js";
+import { AppFrame, SetupColumn } from "./first-agent-screens.js";
+
+const CHOOSE_AVATAR_POOL: CharName[] = [
+  "shield",
+  "compass",
+  "spark",
+  "wave",
+  "lens",
+];
 
 type CardState = "running" | "idle" | "hibernated" | "starting";
 
@@ -445,110 +454,6 @@ function ChatSpecimen() {
   );
 }
 
-function AvatarPickerSpecimen({ mode }: { mode: "returning" | "first-time" }) {
-  const [selected, setSelected] = useState<CharName>("stack");
-  const returning = mode === "returning";
-
-  return (
-    <div className="overflow-hidden rounded-xl border-2 border-border">
-      <div className="bg-background p-6">
-        <span className="mb-3 block text-sm font-medium text-muted-foreground">
-          {returning
-            ? "Returning user — all avatars unlocked"
-            : "First-time user — no avatars yet"}
-        </span>
-        <div className="flex items-start gap-4">
-          <button
-            type="button"
-            className={cn(
-              "relative flex size-16 shrink-0 items-center justify-center rounded-xl border bg-card transition-colors hover:bg-muted/40",
-              returning ? "border-border" : "border-dashed border-border",
-            )}
-          >
-            {returning ? (
-              <div className="group flex">
-                <CharAvatar
-                  name={selected}
-                  state="running"
-                  colors={CHAR_COLORS[selected]}
-                  className="size-12"
-                />
-              </div>
-            ) : (
-              <MysteryAvatar className="size-10" />
-            )}
-          </button>
-          <div className="flex-1">
-            <label className="mb-1 block text-sm font-medium text-foreground">
-              Name
-            </label>
-            <div className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground">
-              {returning ? "spring-campaign" : ""}
-              <span className="text-muted-foreground">
-                {returning ? "" : "my-first-agent"}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {returning && (
-          <div className="mt-4 rounded-lg border border-border bg-card p-4">
-            <span className="mb-3 block text-sm font-medium text-foreground">
-              Choose an avatar
-            </span>
-            <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
-              {CHAR_NAMES.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setSelected(n)}
-                  className={cn(
-                    "group flex size-16 items-center justify-center rounded-lg border transition-colors",
-                    n === selected
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:bg-muted/40",
-                  )}
-                >
-                  <CharAvatar
-                    name={n}
-                    state="running"
-                    colors={CHAR_COLORS[n]}
-                    className="size-11"
-                  />
-                </button>
-              ))}
-            </div>
-            <p className="mt-3 text-sm text-muted-foreground">
-              8 of 8 unlocked
-            </p>
-          </div>
-        )}
-
-        {!returning && (
-          <div className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 p-4">
-            <span className="mb-3 block text-sm font-medium text-foreground">
-              Your avatars
-            </span>
-            <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
-              {CHAR_NAMES.map((_, i) => (
-                <div
-                  key={i}
-                  className="flex size-16 items-center justify-center rounded-lg border border-dashed border-border bg-muted/30"
-                >
-                  <MysteryAvatar className="size-9" />
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-sm text-muted-foreground">
-              Create this agent to unlock your first avatar. It&apos;s a
-              surprise!
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function SheetToggle({
   active,
@@ -705,16 +610,17 @@ export function AvatarSheetView() {
       </section>
 
       <section className="mb-12">
-        <SectionLabel>Agent Creation — Avatar Picker</SectionLabel>
+        <SectionLabel>Create Agent — Choose an Avatar</SectionLabel>
         <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
-          When creating an agent, the avatar picker sits next to the name field.
-          Returning users see their unlocked characters; first-time users see a
-          mystery placeholder that unlocks on first agent creation.
+          Once a user has unlocked avatars, the creation screen shows an avatar
+          button next to the name. Click it to pick from the unlocked ones; this
+          example has five unlocked and three still in eggs.
         </p>
-        <div className="flex flex-col gap-6">
-          <AvatarPickerSpecimen mode="returning" />
-          <AvatarPickerSpecimen mode="first-time" />
-        </div>
+        <AppFrame height={900}>
+          <SetupColumn>
+            <AgentSetupView embedded avatarPool={CHOOSE_AVATAR_POOL} />
+          </SetupColumn>
+        </AppFrame>
       </section>
 
       <section className="mb-12">
