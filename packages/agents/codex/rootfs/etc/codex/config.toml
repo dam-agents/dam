@@ -1,3 +1,5 @@
+# also the app-server's: codex-acp asks it whether to require OpenAI login before any session exists
+model_provider = "openai-platform"
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 cli_auth_credentials_store = "file"

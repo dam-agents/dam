@@ -2,6 +2,6 @@
   "name": "mise-npm-install",
   "private": true,
   "dependencies": {
-    "@zed-industries/codex-acp": "0.16.0"
+    "@agentclientprotocol/codex-acp": "2.0.0"
   }
 }

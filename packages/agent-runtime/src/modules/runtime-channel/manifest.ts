@@ -31,6 +31,9 @@ export const modelDiscoverySpec = modelListing.extend({
   urlEnv: z.array(z.string().min(1)).nonempty(),
   redirectEnv: z.array(z.string().min(1)).optional(),
   pinEnv: z.array(z.string().min(1)).optional(),
+  namePrefix: z.string().min(1).optional(),
+  lowercaseNames: z.boolean().optional(),
+  extendsCatalog: z.boolean().optional(),
   fallback: modelListing.optional(),
 });
 export type ModelDiscoverySpec = z.infer<typeof modelDiscoverySpec>;

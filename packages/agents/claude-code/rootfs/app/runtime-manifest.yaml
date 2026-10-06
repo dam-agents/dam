@@ -86,3 +86,14 @@ drivers:
         haiku:
           mode: ["default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"]
           effort: []
+    # On a LiteLLM provider the tiers above all resolve to the gateway's
+    # "latest" model, so the provider's other models are listed after them.
+    # Names match what model-gateway.mjs publishes (and /model writes):
+    # lowercased, claude/-prefixed. No redirectEnv: the gateway maps the tiers,
+    # so nothing is seeded.
+    modelDiscovery:
+      urlEnv:
+        - ANTHROPIC_BASE_URL
+      namePrefix: "claude/"
+      lowercaseNames: true
+      extendsCatalog: true
