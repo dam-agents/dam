@@ -1,5 +1,11 @@
 import {
+  Add,
+  ArrowsVertical,
+  ChevronDown,
+  Document,
+  Folder,
   Idea,
+  Image,
   OverflowMenuVertical,
   Power,
   Send,
@@ -21,6 +27,7 @@ import {
   CharAvatar,
   type CharName,
 } from "../agents/components/char-avatar.js";
+import { unlockAllCharacters } from "../agents/lib/character-unlocks.js";
 import { AgentSetupView } from "../agents/views/agent-setup-view.js";
 import { SidebarSection } from "../sessions/components/sidebar-section.js";
 import { EyeBeeMRebus } from "./eye-bee-m.js";
@@ -443,7 +450,7 @@ function ChatMessages({
 function ChatSpecimen() {
   const charName: CharName = "stack";
   const agentName = "spring-campaign";
-  const [filesOpen, setFilesOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(true);
 
   return (
     <AppFrame height={760}>
@@ -465,33 +472,92 @@ function ChatSpecimen() {
             title="Files"
             open={filesOpen}
             onToggle={() => setFilesOpen((o) => !o)}
+            headerClassName="border-t border-border"
+            headerRight={
+              <Button variant="outline" size="xs" className="text-sm">
+                <Add size={12} /> Add
+              </Button>
+            }
           >
-            {filesOpen && (
-              <p className="px-3 py-4 text-sm text-muted-foreground">
-                No files
-              </p>
-            )}
+            <div className="overflow-y-auto py-1">
+              <div
+                className="flex h-8 cursor-pointer items-center gap-1.5 text-sm font-medium text-muted-foreground hover:bg-muted"
+                style={{ paddingLeft: 12, paddingRight: 12 }}
+              >
+                <span className="flex w-4 shrink-0 items-center justify-center">
+                  <ChevronDown size={16} />
+                </span>
+                <Folder size={16} />
+                <span className="min-w-0 flex-1 truncate">hero-spring</span>
+              </div>
+              <div
+                className="flex h-8 cursor-pointer items-center gap-1.5 text-sm text-muted-foreground hover:bg-muted"
+                style={{ paddingLeft: 26, paddingRight: 12 }}
+              >
+                <span className="w-4 shrink-0" />
+                <Image size={16} />
+                <span className="min-w-0 flex-1 truncate">bold.png</span>
+              </div>
+              <div
+                className="flex h-8 cursor-pointer items-center gap-1.5 text-sm text-muted-foreground hover:bg-muted"
+                style={{ paddingLeft: 26, paddingRight: 12 }}
+              >
+                <span className="w-4 shrink-0" />
+                <Image size={16} />
+                <span className="min-w-0 flex-1 truncate">editorial.png</span>
+              </div>
+              <div
+                className="flex h-8 cursor-pointer items-center gap-1.5 text-sm text-muted-foreground hover:bg-muted"
+                style={{ paddingLeft: 26, paddingRight: 12 }}
+              >
+                <span className="w-4 shrink-0" />
+                <Image size={16} />
+                <span className="min-w-0 flex-1 truncate">soft.png</span>
+              </div>
+              <div
+                className="flex h-8 cursor-pointer items-center gap-1.5 text-sm text-muted-foreground hover:bg-muted"
+                style={{ paddingLeft: 12, paddingRight: 12 }}
+              >
+                <span className="w-4 shrink-0" />
+                <Document size={16} />
+                <span className="min-w-0 flex-1 truncate">
+                  brand-guidelines.pdf
+                </span>
+              </div>
+            </div>
           </SidebarSection>
-          <SidebarSection title="Artifacts" open onToggle={() => {}}>
-            <div className="flex flex-col gap-2 px-3 py-3">
-              <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-2">
-                <span className="size-2 rounded-full bg-primary" />
-                <span className="truncate text-sm text-foreground">
-                  bold.png
-                </span>
-              </div>
-              <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-2">
-                <span className="size-2 rounded-full bg-primary" />
-                <span className="truncate text-sm text-foreground">
-                  soft.png
-                </span>
-              </div>
-              <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-2">
-                <span className="size-2 rounded-full bg-primary" />
-                <span className="truncate text-sm text-foreground">
-                  editorial.png
-                </span>
-              </div>
+          <SidebarSection
+            title="Artifacts"
+            open
+            onToggle={() => {}}
+            headerClassName="border-t border-border"
+          >
+            <div className="flex h-8 w-full items-center gap-1.5 px-3 text-sm text-foreground">
+              <ChevronDown size={14} className="text-muted-foreground" />
+              <Folder size={14} className="shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">hero-spring</span>
+              <span className="shrink-0 text-xs text-muted-foreground">3</span>
+            </div>
+            <div className="group flex h-8 w-full items-center gap-1.5 py-1 pl-3.5 pr-3 text-sm text-muted-foreground hover:bg-muted">
+              <ArrowsVertical
+                size={12}
+                className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100"
+              />
+              <span className="min-w-0 flex-1 truncate">bold.png</span>
+            </div>
+            <div className="group flex h-8 w-full items-center gap-1.5 py-1 pl-3.5 pr-3 text-sm text-muted-foreground hover:bg-muted">
+              <ArrowsVertical
+                size={12}
+                className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100"
+              />
+              <span className="min-w-0 flex-1 truncate">soft.png</span>
+            </div>
+            <div className="group flex h-8 w-full items-center gap-1.5 py-1 pl-3.5 pr-3 text-sm text-muted-foreground hover:bg-muted">
+              <ArrowsVertical
+                size={12}
+                className="shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100"
+              />
+              <span className="min-w-0 flex-1 truncate">editorial.png</span>
             </div>
           </SidebarSection>
         </div>
@@ -571,6 +637,10 @@ function SheetToggle({
 }
 
 export function AvatarSheetView() {
+  useEffect(() => {
+    unlockAllCharacters();
+  }, []);
+
   return (
     <div className="mx-auto w-full max-w-[1200px] px-4 py-6 pb-20 md:px-[5%] md:py-10 md:pb-10">
       <SheetToggle active="avatar-sheet" />
@@ -680,10 +750,10 @@ export function AvatarSheetView() {
       <section className="mb-12">
         <SectionLabel>Chat UI — Full Shell</SectionLabel>
         <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
-          Full chat layout with the sidebar, a Files + Artifacts left panel,
-          and the conversation center. The agent&apos;s character avatar
-          appears in the left-panel header, the chat header, and next to each
-          assistant message.
+          Full chat layout with the sidebar, a Files + Artifacts left panel, and
+          the conversation center. The agent&apos;s character avatar appears in
+          the left-panel header, the chat header, and next to each assistant
+          message.
         </p>
         <ChatSpecimen />
       </section>

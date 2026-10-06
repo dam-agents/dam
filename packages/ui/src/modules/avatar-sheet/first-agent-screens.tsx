@@ -166,13 +166,21 @@ function ChatSessionMockup() {
           title="Files"
           open={filesOpen}
           onToggle={() => setFilesOpen((o) => !o)}
+          headerClassName="border-t border-border"
         >
           {filesOpen && (
-            <p className="px-3 py-4 text-sm text-muted-foreground">No files</p>
+            <p className="px-4 py-5 text-xs text-muted-foreground">
+              No files yet
+            </p>
           )}
         </SidebarSection>
-        <SidebarSection title="Artifacts" open onToggle={() => {}}>
-          <p className="px-3 py-4 text-sm text-muted-foreground">
+        <SidebarSection
+          title="Artifacts"
+          open
+          onToggle={() => {}}
+          headerClassName="border-t border-border"
+        >
+          <p className="px-4 py-5 text-xs text-muted-foreground">
             No artifacts yet
           </p>
         </SidebarSection>
