@@ -8,6 +8,9 @@
 #USAGE flag "--warm" help="Install every image's tools for CI's cache; builds nothing"
 #USAGE arg "[agent]..." var=#true
 set -euo pipefail
+# What the build creates is the image's, not the build user's: a umask of 002
+# would make root's paths writable to group 0, the agent's group.
+umask 022
 
 resolve=.mise/tasks/image/resolve
 pack=.mise/tasks/image/pack
@@ -173,19 +176,17 @@ for k, v in env.items():
 PY
 }
 
-# Packs <tree> onto <base layout> as <agent>'s layout, then hands the agent
-# its paths; the rest are pack's flags.
+agent_owned=(--own=65532:0=home/agent --own=65532:0=etc/mise --own=65532:0=usr/local/share/mise --own-dir=65532:0=app)
+# Packs <tree> onto <base layout> as <agent>'s layout; the rest are pack's
+# flags. The image is root's but for the paths the agent must write: its home,
+# mise's data dir and system config, and the runtime's directory itself, which
+# an image over the default one ships again (the trust store is the apt
+# base's, a workload's Python its own layer's).
 pack_image() {
-  local agent=$1 base=$2 tree=$3 out="$oci_out/$1"
+  local agent=$1 base=$2 tree=$3
   shift 3
-  "$root/$pack" "$base" "$tree" "$work/$agent.tar" "platform-$agent:latest" "$@"
-  rm -rf "$out" && mkdir -p "$out"
-  tar -C "$out" -xf "$work/$agent.tar" && rm "$work/$agent.tar"
-  # The re-owned layer cache grows with every distinct layer; remove
-  # $state/owned to reclaim it.
-  mise -E "$envs" exec -- python3 "$root/$agents/base/own-layout.py" "$out" "$state/owned"
-  "$root/.mise/tasks/image/name-layout" "$out" "platform-$agent:latest"
-  echo "OCI layout: $out"
+  "$root/$pack" "$base" "$tree" "$oci_out/$agent" "platform-$agent:latest" --layout --mode=go-w "${agent_owned[@]}" "$@"
+  echo "OCI layout: $oci_out/$agent"
 }
 
 # Subshell: it leaves the repo's mise context and directory.
@@ -194,9 +195,9 @@ build_default() (
   stage_project ${envs//,/ }
   b="$stage/build" etc="$stage/build/etc/mise"
   tools_root="$(sed -n 's/^PLATFORM_TOOLS_VOLUME = "\(.*\)"$/\1/p' "$agents/default/image.toml")"
-  install -d "$b"/{app,home/agent,etc/logrotate.d,etc/ssl/certs,opt/ms-playwright,usr/local/bin} \
+  install -d "$b"/{app,home/agent,etc/logrotate.d,opt/ms-playwright,usr/local/bin} \
     "$b"/usr/local/lib/platform-python "$b"/usr/local/lib/docker/cli-plugins \
-    "$b"/usr/local/share/ca-certificates "$b"/usr/local/share/mise "$etc/conf.d"
+    "$b"/usr/local/share/mise "$etc/conf.d"
   for a in $bare_harnesses; do
     h="$(sed -n 's/^PLATFORM_HARNESS = "\(.*\)"$/\1/p' "$agents/$a/image.toml")"
     r="$stage/$a/rootfs"
@@ -301,7 +302,7 @@ build_thin() (
     [ -n "$cfg" ] || { echo "$tool has no venv" >&2; exit 1; }
     full_copy_venv "${cfg%/pyvenv.cfg}" "build-venv/opt/$name" "/opt/$name"
     install -d build/opt && ln -s "$name" build/opt/venv
-    layers+=("--layer=0:0=/opt/$name=build-venv/opt/$name")
+    layers+=("--layer=65532:0=/opt/$name=build-venv/opt/$name")
   fi
   awk '/^\[tools\./ { t = $0; sub(/^\[tools\."?/, "", t); sub(/"?\]$/, "", t) }
     /^oci_link = / { l = $3; gsub(/"/, "", l); print t, l }' "$f" | while read -r tool link; do
@@ -339,7 +340,9 @@ build_apt_base() {
   crane export --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" "$from" - |
     ${sudo[@]+"${sudo[@]}"} tar -xf - -C "$r"
   packages="$(sed -n 's/^"apt:\([^"]*\)".*/\1/p' "$agents/base/apt.toml" | paste -sd' ' -)"
-  # policy-rc.d keeps a package's postinst from starting its service here.
+  # policy-rc.d keeps a package's postinst from starting its service here. The
+  # trust store is the agent's, which the entrypoint fills; the host keys
+  # openssh-server's postinst generated would be every image's.
   ${sudo[@]+"${sudo[@]}"} unshare --mount --propagation private sh -euc '
     r=$1 packages=$2
     mount --rbind /dev "$r/dev"
@@ -349,7 +352,8 @@ build_apt_base() {
     printf "#!/bin/sh\nexit 101\n" > "$r/usr/sbin/policy-rc.d"
     chmod 755 "$r/usr/sbin/policy-rc.d"
     chroot "$r" sh -euc "apt-get update -q && apt-get install -qy --no-install-recommends $packages && apt-get clean" </dev/null
-    rm -rf "$r"/var/lib/apt/lists/* "$r/usr/sbin/policy-rc.d"
+    rm -rf "$r"/var/lib/apt/lists/* "$r/usr/sbin/policy-rc.d" "$r"/etc/ssh/ssh_host_*
+    chown -R 65532:0 "$r/etc/ssl/certs" "$r/usr/local/share/ca-certificates"
     : > "$r/etc/resolv.conf"
   ' _ "$r" "$packages"
   layer="$work/apt-layer.tar"

@@ -68,9 +68,8 @@ mise run cluster:shell -- sh -c 'du -sh ~/.cache/platform-agent-oci ~/.cache/pla
 ```
 
 **Reclaim.** `mise run cluster:prune` removes dangling k3s images and leftover import
-tars. Inside the VM, the agent build's re-owned layer cache (`~/.cache/platform-agent-oci/owned`)
-and the VM runner's cargo target (`~/.cache/platform-vm-runner/target`) only grow; removing
-either costs the next build its warm start. Growing the VM's disk is the other lever.
+tars. Inside the VM, the VM runner's cargo target (`~/.cache/platform-vm-runner/target`) only
+grows; removing it costs the next build its warm start. Growing the VM's disk is the other lever.
 On the host, `~/.cache/platform-image-pack` keeps every base `image:pack` has used, one
 per pin, and a bumped pin leaves the old one there until you remove it.
 

@@ -4,7 +4,7 @@
 #MISE dir="{{cwd}}"
 #USAGE arg "<base>" help="Base image reference, pinned by digest, or a local OCI layout directory"
 #USAGE arg "<root>" help="Directory whose tree becomes the layer, at / or --at"
-#USAGE arg "<tar>" help="Image tar to write"
+#USAGE arg "<tar>" help="Image tar to write, or with --layout the OCI layout directory"
 #USAGE arg "<tag>" help="Tag the tar carries"
 #USAGE flag "--entrypoint <entrypoint>" help="The image's ENTRYPOINT, its words separated by commas; it clears the base's CMD"
 #USAGE flag "--cmd <cmd>" help="The image's CMD, its words separated by commas"
@@ -12,6 +12,10 @@
 #USAGE flag "--user <user>"
 #USAGE flag "--env <env>" var=#true help="KEY=VALUE in the image's env, replacing the base's KEY; a later one replaces an earlier"
 #USAGE flag "--owner <uid:gid>" default="0:0" help="Owner of every entry in the layer"
+#USAGE flag "--own <spec>" var=#true help="<uid:gid>=<path>: the owner of <root>'s <path> and everything under it, in place of --owner; a <path> <root> lacks is skipped"
+#USAGE flag "--own-dir <spec>" var=#true help="<uid:gid>=<path>: the owner of <root>'s directory <path> itself, its entries keeping --owner"
+#USAGE flag "--mode <mode>" help="A chmod mode every entry of every layer this adds gets, e.g. go-w so the build host's umask never makes a root path writable to group 0"
+#USAGE flag "--layout" help="Write the image as an OCI layout directory at <tar>, not a tar of one"
 #USAGE flag "--at <dir>" help="The image directory <root>'s tree lands in. The layer has no entries for it or its parents, so the base's keep their owner and mode"
 #USAGE flag "--root-layer <dir>" var=#true help="A directory whose tree becomes a root-owned layer under <root>'s, e.g. whiteouts of the base's files"
 #USAGE flag "--layer <spec>" var=#true help="A further layer over <root>'s, as <uid:gid>=<image dir>=<dir>: <dir>'s tree at <image dir>, every entry owned by <uid:gid>, with no entries for <image dir> or its parents"
@@ -41,12 +45,26 @@ cp -l "$base"/blobs/sha256/* "$out/blobs/sha256/" 2>/dev/null || cp "$base"/blob
 
 blob() { echo "$out/blobs/${1/://}"; }
 # One owner, mtime 0, sorted: the layer's digest follows its content alone.
-# Its top-level entries, not ".", so the layer never resets / itself.
+# Its top-level entries, not ".", so the layer never resets / itself. A path
+# <root> gives another owner (--own, --own-dir) is appended after the rest
+# under that owner; a directory alone is appended again, which a later entry's
+# metadata wins.
 layers='[]'
+eval "owns=(${usage_own:-})" "own_dirs=(${usage_own_dir:-})"
+mode=(${usage_mode:+--mode="$usage_mode"})
 layer() {
-  local t="$work/layer.tar" h
-  tar --sort=name --owner="${2%:*}" --group="${2#*:}" --numeric-owner --mtime=@0 --format=gnu \
-    ${3:+--transform "s|^|$3/|S"} -C "$1" -cf "$t" $(ls -A "$1")
+  local t="$work/layer.tar" h spec excl=()
+  [ "${4:-}" != own ] || for spec in ${owns[@]+"${owns[@]}"}; do excl+=("--exclude=${spec#*=}"); done
+  tar --sort=name --owner="${2%:*}" --group="${2#*:}" --numeric-owner --mtime=@0 --format=gnu ${mode[@]+"${mode[@]}"} \
+    --anchored ${excl[@]+"${excl[@]}"} ${3:+--transform "s|^|$3/|S"} -C "$1" -cf "$t" $(ls -A "$1")
+  if [ "${4:-}" = own ]; then
+    for spec in ${owns[@]+"${owns[@]}"} ${own_dirs[@]+"${own_dirs[@]}"}; do
+      [ -e "$1/${spec#*=}" ] || continue
+      local recurse=(); case " ${own_dirs[*]:-} " in *" $spec "*) recurse=(--no-recursion) ;; esac
+      tar --sort=name --owner="${spec%%:*}" --group="$(spec="${spec#*:}"; echo "${spec%%=*}")" --numeric-owner \
+        --mtime=@0 --format=gnu ${mode[@]+"${mode[@]}"} ${recurse[@]+"${recurse[@]}"} ${3:+--transform "s|^|$3/|S"} -C "$1" -rf "$t" "${spec#*=}"
+    done
+  fi
   h="$(sha256sum "$t" | cut -c1-64)"
   mv "$t" "$out/blobs/sha256/$h"
   layers="$(jq -c --arg d "sha256:$h" --argjson s "$(wc -c < "$out/blobs/sha256/$h")" \
@@ -55,7 +73,7 @@ layer() {
 eval "root_layers=(${usage_root_layer:-})"
 for d in ${root_layers[@]+"${root_layers[@]}"}; do layer "$d" 0:0; done
 at="${usage_at:-}"; at="${at#/}"; at="${at%/}"
-layer "$usage_root" "$usage_owner" "$at"
+layer "$usage_root" "$usage_owner" "$at" own
 eval "extra_layers=(${usage_layer:-})"
 for spec in ${extra_layers[@]+"${extra_layers[@]}"}; do
   owner="${spec%%=*}" rest="${spec#*=}"
@@ -99,4 +117,8 @@ jq -r '.manifests[0].digest' "$out/index.json" | sed 's/^sha256://' >> "$work/ke
 (cd "$out/blobs/sha256" && ls | sort | comm -23 - <(sort "$work/keep") | xargs -r rm -f)
 "$(dirname "$0")/name-layout" "$out" "$usage_tag"
 mkdir -p "$(dirname "$usage_tar")"
-tar --sort=name --mtime=@0 -C "$out" -cf "$usage_tar" $(ls -A "$out")
+if [ "${usage_layout:-}" = true ]; then
+  rm -rf "$usage_tar" && mv "$out" "$usage_tar"
+else
+  tar --sort=name --mtime=@0 -C "$out" -cf "$usage_tar" $(ls -A "$out")
+fi
