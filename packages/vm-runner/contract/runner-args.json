@@ -10,6 +10,7 @@
   "--image-budget-bytes=53687091200",
   "--memory-mib=$(RUNNER_MEMORY_MIB)",
   "--reserve-mib=512",
+  "--headroom-mib=256",
   "--tls-cert=/etc/vm-runner/tls.crt",
   "--tls-key=/etc/vm-runner/tls.key"
 ]

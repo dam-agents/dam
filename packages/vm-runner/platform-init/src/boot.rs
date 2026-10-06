@@ -106,7 +106,35 @@ pub fn run(command: Vec<OsString>) -> ! {
             command[0]
         ),
     };
+    std::thread::spawn(reclaim_cold_cache);
     supervise(&binary, &command, trust.as_deref())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a guest keeps the files it read in its page cache until something needs the memory, and the host counts that cache as memory the machine holds, so an agent that once read a large tree holds it long after. Every RECLAIM_INTERVAL the cache on the kernel's inactive list — what nothing has touched lately — is handed to the root cgroup's proactive reclaim, and the pages it frees go back to the host through free-page reporting within seconds. The guest has no swap, so reclaim drops only file pages: what the agent's processes hold stays. A guest kernel without cgroup v2 reclaim gives nothing to read or write, and the loop does nothing.
+const RECLAIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+const RECLAIM_FLOOR: u64 = 64 << 20;
+
+fn reclaim_cold_cache() {
+    loop {
+        std::thread::sleep(RECLAIM_INTERVAL);
+        let Some(cold) = fs::read_to_string("/sys/fs/cgroup/memory.stat")
+            .ok()
+            .and_then(|stat| inactive_file(&stat))
+        else {
+            continue;
+        };
+        if cold >= RECLAIM_FLOOR {
+            let _ = fs::write("/sys/fs/cgroup/memory.reclaim", cold.to_string());
+        }
+    }
+}
+
+fn inactive_file(stat: &str) -> Option<u64> {
+    stat.lines()
+        .find_map(|line| line.strip_prefix("inactive_file "))?
+        .trim()
+        .parse()
+        .ok()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the kernel refuses to move a mount out of a shared parent, and refuses pivot_root when either root's parent is shared. So the tree is made a slave before the disk is moved: mounts made elsewhere in the guest still arrive, and nothing this boot does leaves it. A private tree is left as it is.
@@ -2487,5 +2515,13 @@ mod tests {
         assert!(!on_signal(libc::SIGCHLD, &mut stopping));
         assert!(on_signal(libc::SIGTERM, &mut stopping));
         assert!(stopping);
+    }
+
+    // TEST_SCENARIO: the cold cache is read from the root cgroup's memory.stat, where `inactive_file` sits beside `file`, `active_file` and `inactive_anon`, all byte counts. Picking a neighbour would reclaim the wrong amount every minute — anonymous memory the guest cannot drop, or the active cache the agent is using.
+    #[test]
+    fn the_cold_cache_is_the_inactive_file_count() {
+        let stat = "anon 4096\nfile 1289818112\ninactive_anon 0\nactive_anon 4096\ninactive_file 1283219456\nactive_file 2838528\n";
+        assert_eq!(inactive_file(stat), Some(1283219456));
+        assert_eq!(inactive_file("file 1\nactive_file 1\n"), None);
     }
 }
