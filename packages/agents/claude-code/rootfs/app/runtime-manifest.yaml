@@ -21,7 +21,7 @@ drivers:
       mode: "permissions.defaultMode"
       configOptions:
         effort: "effortLevel"
-        cacheTtl: "promptCacheTtl"
+        cacheTtl: ["promptCacheTtl", "subagentPromptCacheTtl"]
     catalog:
       options:
         - id: model
@@ -82,11 +82,12 @@ drivers:
             - value: xhigh
               name: "Extra High"
               description: "May use excessive tokens. Use sparingly for the hardest tasks."
-        # promptCacheTtl needs Claude Code 2.1.242+. Without it Claude Code picks
-        # 1h only on a subscription; an API key or a cloud provider gets 5m.
+        # promptCacheTtl and subagentPromptCacheTtl need Claude Code 2.1.242+.
+        # Unset, Claude Code picks 1h only for a subscription's main conversation;
+        # subagents, an API key and a cloud provider get 5m.
         - id: cacheTtl
           name: Prompt cache
-          description: How long the conversation's prompt cache survives between turns
+          description: How long the prompt cache of the conversation and its subagents survives between turns
           category: cache
           choices:
             - value: 5m

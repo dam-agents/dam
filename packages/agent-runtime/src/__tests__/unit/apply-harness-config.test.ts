@@ -107,6 +107,24 @@ describe("harness-config event handler", () => {
     });
   });
 
+  it("writes an option mapped to several keys into each, and unsets them together", async () => {
+    const binding: HarnessConfigBinding = {
+      ...BINDING,
+      keys: {
+        configOptions: {
+          cacheTtl: ["promptCacheTtl", "subagentPromptCacheTtl"],
+        },
+      },
+    };
+    await applyWith(binding, { configOptions: { cacheTtl: "1h" } });
+    expect(readSettings()).toEqual({
+      promptCacheTtl: "1h",
+      subagentPromptCacheTtl: "1h",
+    });
+    await applyWith(binding, { unset: ["cacheTtl"] });
+    expect(readSettings()).toEqual({});
+  });
+
   it("skips a config option with no key mapping", async () => {
     await apply({ configOptions: { unmapped: "x" } });
     expect(existsSync(settingsPath)).toBe(false);
