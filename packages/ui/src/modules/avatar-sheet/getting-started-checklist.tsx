@@ -1,18 +1,11 @@
 import {
-  ArrowRight,
   CheckmarkFilled,
   ChevronDown,
   ChevronUp,
-  Information,
 } from "@carbon/icons-react";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
@@ -179,28 +172,6 @@ export function QuestRow({
         >
           {title}
         </span>
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              aria-label={`How to ${title.toLowerCase()}`}
-              className="flex shrink-0 rounded-full text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Information size={16} />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent side="left" className="w-[220px] p-3">
-            <p className="text-sm text-muted-foreground">{help}</p>
-            <button
-              type="button"
-              onClick={handleAction}
-              className="mt-2 flex items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:text-primary/80"
-            >
-              {action.label}
-              <ArrowRight size={16} />
-            </button>
-          </PopoverContent>
-        </Popover>
       </span>
       {showReward && (
         <span className="flex size-6 shrink-0 items-center justify-center">
