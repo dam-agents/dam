@@ -14,22 +14,23 @@ Whatever an agent serves is untrusted: the agent runs arbitrary code and can be 
 
 It also removes the framing problems: nothing is framed, so an app that forbids framing (the platform's own UI) renders, and an app's sign-in redirects stay inside the sandbox, where its own identity provider is reachable on loopback.
 
-The cost is fidelity: frames are compressed images, and each input takes one round trip before its effect shows. The panel measures that round trip on the user's clock — input to the next frame — and shows it with the frame rate and the stream's bandwidth.
+The cost is fidelity: screen updates are compressed images, and each input takes one round trip before its effect shows.
 
 ## The stream
 
-The shared browser runs headed, in kiosk mode and with no bar of its own, on a virtual display in the sandbox — TigerVNC's Xvnc, with a minimal window manager — the image's full Chromium, launched by `platform-browser` for the panel and the agent alike. The browser fills the screen and the screen is sized to the panel, so the page lays out at the panel's size with no emulated viewport; `platform-browser` refuses the agent's `set viewport` for that reason. The panel gets **video** by default: agent-runtime captures that display with ffmpeg at a steady 60 frames a second and encodes it as H.264 for low latency, so a still page costs almost nothing, motion a fraction of an image-per-frame stream, and a page never sits stale behind the encoder. The panel decodes it with WebCodecs; a browser without H.264 decoding is told so rather than shown a blank panel, and so is an agent whose image lacks the display or ffmpeg. One encoder serves every open panel; a resize, or a newcomer, restarts it with a fresh keyframe, and a viewer that falls behind skips frames until one. agent-browser's own screencast stays off; its socket carries only input and address changes.
+The shared browser runs headed, in kiosk mode and with no bar of its own, on a headless Wayland display in the sandbox — sway, run headless — the image's full Chromium as a native Wayland client, launched by `platform-browser` for the panel and the agent alike. The browser fills the screen and the screen is sized to the panel, so the page lays out at the panel's size with no emulated viewport; `platform-browser` refuses the agent's `set viewport` for that reason.
 
-- **VNC, experimental.** From its menu the panel can show the display over VNC instead: noVNC in the panel speaks the VNC protocol to Xvnc through a second relay socket (`vnc=1`) that agent-runtime pipes to Xvnc's localhost port. The viewer asks for each update, so a slow link gets fewer updates rather than a growing queue, and text arrives lossless; noVNC sizes the screen itself, and the panel's control socket tells the runtime to stop the encoder and leave the size alone.
-- **Sharpness and coordinates.** The screen follows the size of the panel in the focused tab, at a pixel ratio of 1: four times the pixels is more than a small sandbox captures and encodes at 60 frames a second. Sizes are even, since H.264 needs even sides, and the panel draws the video one to one, never stretched — a stretch of a single pixel resamples, and blurs, every line of text. The agent's screenshots are scaled back to CSS pixels by `platform-browser`, so a screenshot pixel is the CSS pixel its mouse commands take, whatever the user's screen. A still page sends next to nothing; motion is where the bandwidth goes.
-- **What the panel shows.** When video starts, the runtime tells the panel the codec and capture size. The panel shows them, with the round trip, frame rate and bandwidth, only when the user turns stream stats on in its menu. Step timings, skipped frames, encoder restarts and a frame rate below 20 go to a log file in the agent's home, so a slow stream can be read after the fact.
+The panel shows that display over **VNC**: wayvnc serves it on the sandbox's loopback, noVNC in the panel speaks the VNC protocol to it through a second relay socket (`vnc=1`), and agent-runtime only pipes the bytes. The viewer asks for each update, so a slow link gets fewer updates rather than a growing queue; text arrives lossless; input reaches Chromium as ordinary pointer and keyboard events from the compositor, and noVNC sizes the screen to the panel itself. Every piece is permissively licensed. Debian's wayvnc and neatvnc link Debian's ffmpeg, whose codecs are GPL, so the image builds both from pinned releases with H.264 off (`packages/agents/base/vnc`), with one fix: wayvnc applied a client's resize at a refresh rate of 0, which stopped the headless output's frames.
+
+- **Coordinates.** The screen follows the size of the panel in the focused tab, at a pixel ratio of 1. The agent's screenshots are in CSS pixels, so a screenshot pixel is the CSS pixel its mouse commands take, whatever the user's screen.
+- **What the runtime records.** Step timings, launches and restarts go to a log file in the agent's home, so a misbehaving panel can be read after the fact.
 
 ## One browser, kept running
 
 Every panel of an agent, and the agent itself, use the same browser, so its lifecycle has one owner on each side.
 
 - **`platform-browser` launches it.** Whoever calls first — a panel or the agent — the launch runs under a lock held with `flock`, which the kernel releases when its holder dies, so two callers never start two Chromes on the one profile. Before launching, it stops any Chromium left on the profile and deletes the profile's lock files: a lock from the previous boot names a process id the new boot may reuse, and Chrome then exits without starting. It sets agent-browser's whole configuration itself rather than inheriting the caller's environment, since agent-browser refuses a daemon started with a different one; a daemon that still has one is replaced.
-- **agent-runtime supervises it for the panels.** One supervisor serves every panel: it runs its browser commands one at a time, sets the viewport to the newest size asked for — sizes that arrive while one is being set replace each other — and keeps one encoder. When the browser fails to start, dies, or answers nothing for a minute, the supervisor launches it again, retrying with a growing delay; the panels stay connected and show the browser starting, or the failure with a Restart button, instead of reconnecting. A size that fails to apply is logged and set again by the next health check. Navigation runs inside the page rather than with `open`, which holds agent-browser's command queue until the page has loaded.
+- **agent-runtime supervises it for the panels.** One supervisor serves every panel: it runs its browser commands one at a time, and keeps the browser running for them. When the browser fails to start, dies, or answers nothing for a minute, the supervisor launches it again, retrying with a growing delay; the panels stay connected and show the browser starting, or the failure with a Restart button, instead of reconnecting. A size that fails to apply is logged and set again by the next health check. Navigation runs inside the page rather than with `open`, which holds agent-browser's command queue until the page has loaded.
 
 ## The path
 
@@ -44,7 +45,8 @@ sequenceDiagram
   API->>RT: WebSocket /api/browser (address, frame rate)
   RT->>AB: launch the session (persistent profile), read its stream port
   RT->>AB: WebSocket to the stream server
-  AB-->>UI: frames, address updates
+  AB-->>UI: address updates
+  UI->>RT: WebSocket vnc=1 (through the relay), piped to wayvnc
   UI->>AB: mouse, keyboard, wheel input
   UI->>RT: navigate / reload / clear browser data
 ```

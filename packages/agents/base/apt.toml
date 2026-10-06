@@ -3,10 +3,9 @@
 # every build otherwise. They go onto the root config's base_image_debian.
 
 # libatomic1 for node 26, libnss-extrausers for the agent account,
-# libnss3-tools for Chromium's trust store, tigervnc-standalone-server (the
-# virtual display, also its VNC server), x11-xserver-utils (xrandr),
-# matchbox-window-manager and ffmpeg for the browser panel's headed Chromium and
-# its stream, and from
+# libnss3-tools for Chromium's trust store, sway and xwayland (the browser
+# panel's headless display, all permissively licensed) and the libraries of
+# the panel's VNC server, built in base/vnc, and from
 # libasound2t64 on, what Playwright lists for its Chromium on trixie.
 [bootstrap.packages]
 "apt:ca-certificates" = "latest"
@@ -25,10 +24,11 @@
 "apt:procps" = "latest"
 "apt:unzip" = "latest"
 "apt:xz-utils" = "latest"
-"apt:tigervnc-standalone-server" = "latest"
-"apt:x11-xserver-utils" = "latest"
-"apt:matchbox-window-manager" = "latest"
-"apt:ffmpeg" = "latest"
+"apt:sway" = "latest"
+"apt:xwayland" = "latest"
+"apt:libaml0t64" = "latest"
+"apt:libjansson4" = "latest"
+"apt:libturbojpeg0" = "latest"
 "apt:zip" = "latest"
 "apt:libasound2t64" = "latest"
 "apt:libatk-bridge2.0-0t64" = "latest"

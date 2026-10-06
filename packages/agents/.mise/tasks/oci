@@ -320,10 +320,12 @@ build_mise() (
   [ $# -eq 1 ] || { echo "want one Playwright headless shell, found: $*" >&2; exit 1; }
   ln -s "${1#build/opt/ms-playwright/}" build/opt/ms-playwright/headless-shell
   # The browser panel's shared browser runs Playwright's full Chromium headed,
-  # on a virtual display, so its screen can be captured as video.
+  # on a headless display the panel views over VNC.
   set -- build/opt/ms-playwright/chromium-*/chrome-linux*/chrome
   [ $# -eq 1 ] || { echo "want one Playwright Chromium, found: $*" >&2; exit 1; }
   ln -s "${1#build/opt/ms-playwright/}" build/opt/ms-playwright/chromium
+  # The browser panel's VNC server, built here without ffmpeg's GPL codecs.
+  "$root/$agents/base/vnc/build.sh" build
   # docker finds a CLI plugin in its plugin directory, not on PATH.
   install -d build/usr/local/lib/docker/cli-plugins
   for p in buildx compose; do

@@ -155,7 +155,7 @@ export function fileLog(
 }
 
 export const VIDEO_UNAVAILABLE =
-  "This agent's image cannot stream its browser: it has no virtual display or no ffmpeg.";
+  "This agent's image cannot show its browser: it has no virtual display or no VNC server.";
 
 export function isScreencastFrame(raw: Buffer): boolean {
   return raw.subarray(0, 32).toString().includes('"type":"frame"');

@@ -2,14 +2,16 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 
 const SESSION = "preview";
@@ -18,14 +20,29 @@ const SOCKET_DIR = join(homedir(), ".agent-browser");
 const LOCK = join(SOCKET_DIR, `${SESSION}.launch.lock`);
 const LINK_PREFIX = "platform://browser?url=";
 
-const DISPLAY = ":99";
-const X_SOCKET = "/tmp/.X11-unix/X99";
-const SCREEN = "1280x800";
+const SWAY = "/usr/bin/sway";
+const WAYVNC = "/opt/platform-vnc/bin/wayvnc";
 const VNC_PORT = "5999";
-const XVNC = "/usr/bin/Xvnc";
+const OUTPUT = "HEADLESS-1";
+const SCREEN = "1280x800";
+const RUNTIME_DIR = `/tmp/platform-display-${userInfo().uid}`;
+const SWAY_CONFIG = join(RUNTIME_DIR, "sway.conf");
+const X_DISPLAY_FILE = join(RUNTIME_DIR, "x-display");
+const DISPLAY_MODE_FILE = join(
+  homedir(),
+  ".local/share/platform/browser-display",
+);
 const CHROMIUM = "/opt/ms-playwright/chromium";
 const HEADLESS_SHELL = "/opt/ms-playwright/headless-shell";
-const HEADED = existsSync(XVNC) && existsSync(CHROMIUM);
+const HEADED =
+  existsSync(SWAY) && existsSync(WAYVNC) && existsSync(CHROMIUM);
+const X11 = (() => {
+  try {
+    return readFileSync(DISPLAY_MODE_FILE, "utf8").trim() === "x11";
+  } catch {
+    return false;
+  }
+})();
 
 const BASE_ARGS = ["--no-sandbox", "--disable-dev-shm-usage"];
 const HEADED_ARGS = [
@@ -34,12 +51,32 @@ const HEADED_ARGS = [
   "--no-first-run",
   "--test-type",
   "--disable-infobars",
+  `--ozone-platform=${X11 ? "x11" : "wayland"}`,
 ];
 
 const fail = (message, code = 1) => {
   process.stderr.write(`platform-browser: ${message}\n`);
   process.exit(code);
 };
+
+function waylandDisplay() {
+  try {
+    return (
+      readdirSync(RUNTIME_DIR).find((n) => /^wayland-\d+$/.test(n)) ??
+      "wayland-0"
+    );
+  } catch {
+    return "wayland-0";
+  }
+}
+
+function xDisplay() {
+  try {
+    return readFileSync(X_DISPLAY_FILE, "utf8").trim() || ":0";
+  } catch {
+    return ":0";
+  }
+}
 
 const browserEnv = () => {
   const env = Object.fromEntries(
@@ -48,16 +85,25 @@ const browserEnv = () => {
     ),
   );
   delete env.DISPLAY;
+  delete env.WAYLAND_DISPLAY;
   return {
     ...env,
+    AGENT_BROWSER_SOCKET_DIR: SOCKET_DIR,
     AGENT_BROWSER_EXECUTABLE_PATH: HEADED ? CHROMIUM : HEADLESS_SHELL,
     AGENT_BROWSER_ARGS: [...BASE_ARGS, ...(HEADED ? HEADED_ARGS : [])].join(
       ",",
     ),
-    ...(HEADED ? { DISPLAY, AGENT_BROWSER_NO_XVFB: "1" } : {}),
+    ...(HEADED
+      ? {
+          XDG_RUNTIME_DIR: RUNTIME_DIR,
+          AGENT_BROWSER_NO_XVFB: "1",
+          ...(X11
+            ? { DISPLAY: xDisplay() }
+            : { WAYLAND_DISPLAY: waylandDisplay() }),
+        }
+      : {}),
   };
 };
-const ENV = browserEnv();
 const BROWSER = [
   "--session",
   SESSION,
@@ -68,7 +114,7 @@ const BROWSER = [
 
 const agentBrowser = (args, options = {}) =>
   spawnSync("agent-browser", [...BROWSER, ...args], {
-    env: ENV,
+    env: browserEnv(),
     encoding: "utf8",
     ...options,
   });
@@ -135,46 +181,57 @@ const clearStaleProfileLocks = () => {
     rmSync(join(PROFILE, name), { force: true });
 };
 
-const displayRunning = () =>
-  existsSync(X_SOCKET) &&
-  processes().some((p) => p.cmdline.split("\0")[0]?.endsWith("Xvnc"));
+const running = (binary) =>
+  processes().some((p) => p.cmdline.split("\0")[0] === binary);
 
-const windowManagerRunning = () =>
-  processes().some((p) =>
-    p.cmdline.split("\0")[0]?.endsWith("matchbox-window-manager"),
-  );
+const compositorEnv = () => ({
+  ...process.env,
+  XDG_RUNTIME_DIR: RUNTIME_DIR,
+  WLR_BACKENDS: "headless",
+  WLR_RENDERER: "pixman",
+  WLR_LIBINPUT_NO_DEVICES: "1",
+});
+
+const displayRunning = () =>
+  running(SWAY) && existsSync(join(RUNTIME_DIR, waylandDisplay()));
 
 const detached = (command, args, env = process.env) =>
   spawn(command, args, { env, detached: true, stdio: "ignore" }).unref();
 
+const swayConfig = () =>
+  [
+    "default_border none",
+    "default_floating_border none",
+    "focus_follows_mouse no",
+    `output ${OUTPUT} resolution ${SCREEN} bg #ffffff solid_color`,
+    X11 ? "xwayland force" : "xwayland disable",
+    ...(X11
+      ? [
+          'for_window [class=".*"] fullscreen enable',
+          `exec echo $DISPLAY > ${X_DISPLAY_FILE}`,
+        ]
+      : []),
+    "",
+  ].join("\n");
+
 const startDisplay = () => {
   if (!displayRunning()) {
-    rmSync(X_SOCKET, { force: true });
-    rmSync("/tmp/.X99-lock", { force: true });
-    detached(XVNC, [
-      DISPLAY,
-      "-geometry",
-      SCREEN,
-      "-depth",
-      "24",
-      "-localhost",
-      "-rfbport",
-      VNC_PORT,
-      "-SecurityTypes",
-      "None",
-      "-AlwaysShared",
-      "-AcceptSetDesktopSize",
-      "-nolisten",
-      "tcp",
-    ]);
+    mkdirSync(RUNTIME_DIR, { recursive: true });
+    chmodSync(RUNTIME_DIR, 0o700);
+    for (const name of readdirSync(RUNTIME_DIR))
+      rmSync(join(RUNTIME_DIR, name), { force: true, recursive: true });
+    writeFileSync(SWAY_CONFIG, swayConfig());
+    detached(SWAY, ["-c", SWAY_CONFIG], compositorEnv());
     if (!waitFor(displayRunning, 10_000))
       fail("the virtual display did not start");
+    if (X11 && !waitFor(() => existsSync(X_DISPLAY_FILE), 10_000))
+      fail("the X11 display did not start");
   }
-  if (!windowManagerRunning())
+  if (!running(WAYVNC))
     detached(
-      "matchbox-window-manager",
-      ["-use_titlebar", "no", "-use_cursor", "no"],
-      { ...process.env, DISPLAY },
+      WAYVNC,
+      ["--max-fps=60", "127.0.0.1", VNC_PORT],
+      { ...compositorEnv(), WAYLAND_DISPLAY: waylandDisplay() },
     );
 };
 
@@ -256,12 +313,23 @@ if (command === "screen") {
   if (!HEADED || !(width >= 200 && height >= 200 && width <= 8192 && height <= 8192))
     usage();
   if (!displayRunning()) fail("the virtual display is not running");
-  const resized = spawnSync(
-    "xrandr",
-    ["--fb", `${width - (width % 2)}x${height - (height % 2)}`],
-    { env: { ...process.env, DISPLAY }, encoding: "utf8" },
+  const swaySocket = readdirSync(RUNTIME_DIR).find((n) =>
+    n.startsWith("sway-ipc."),
   );
-  if (resized.status !== 0) fail(`xrandr: ${(resized.stderr ?? "").trim()}`);
+  const resized = spawnSync(
+    "swaymsg",
+    [
+      "-s",
+      join(RUNTIME_DIR, swaySocket ?? ""),
+      "output",
+      OUTPUT,
+      "resolution",
+      `${width - (width % 2)}x${height - (height % 2)}`,
+    ],
+    { encoding: "utf8" },
+  );
+  if (resized.status !== 0)
+    fail(`swaymsg: ${(resized.stderr || resized.stdout || "").trim()}`);
   process.exit(0);
 }
 

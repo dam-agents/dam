@@ -41,7 +41,6 @@ import { VncView } from "./vnc-view.js";
 
 const SIGN_IN_NOTICE_KEY = "platform.browserPanel.signInNoticeSeen";
 const SHOW_STATS_KEY = "platform.browserPanel.showStats";
-const VNC_KEY = "platform.browserPanel.vnc";
 
 interface Props {
   agentId: string;
@@ -74,11 +73,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     canvas.addEventListener("wheel", keepWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", keepWheel);
   }, []);
-  const [vnc, setVnc] = useState(() => readPersistedFlag(VNC_KEY, false));
-  const toggleVnc = () => {
-    writePersistedFlag(VNC_KEY, !vnc);
-    setVnc(!vnc);
-  };
+  const vnc = true;
   const stream = useBrowserStream(agentId, canvasRef, !vnc);
   const [address, setAddress] = useState("");
   const [editing, setEditing] = useState(false);
@@ -242,9 +237,6 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={toggleVnc}>
-              {vnc ? "Stream as video" : "Stream with VNC (experimental)"}
-            </DropdownMenuItem>
             <DropdownMenuItem onSelect={toggleStats}>
               {showStats ? "Hide stream stats" : "Show stream stats"}
             </DropdownMenuItem>

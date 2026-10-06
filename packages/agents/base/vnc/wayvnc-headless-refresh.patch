@@ -1,0 +1,13 @@
+diff --git a/src/output-management.c b/src/output-management.c
+index 79cb705..9086a7e 100644
+--- a/src/output-management.c
++++ b/src/output-management.c
+@@ -244,7 +244,7 @@ bool wlr_output_manager_resize_output(struct output* output,
+ 	}
+ 
+ 	// TODO: This could be synced to --max-fps
+-	int refresh_rate = 0;
++	int refresh_rate = 60000;
+ 
+ 	struct zwlr_output_configuration_v1* config;
+ 	struct zwlr_output_configuration_head_v1* config_head;

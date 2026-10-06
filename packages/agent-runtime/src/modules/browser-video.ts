@@ -9,8 +9,8 @@ const IDR_NAL = 5;
 const FLUSH_AFTER_MS = 4;
 
 export const VIDEO_TOOLS = [
-  "/usr/bin/Xvnc",
-  "/usr/bin/ffmpeg",
+  "/usr/bin/sway",
+  "/opt/platform-vnc/bin/wayvnc",
   "/opt/ms-playwright/chromium",
 ] as const;
 

@@ -75,11 +75,13 @@ describe("captureRegion", () => {
 });
 
 describe("videoAvailable", () => {
-  // TEST_SCENARIO: on a fresh boot the virtual display is not running yet — platform-browser starts it when it first launches the browser. Whether an agent can stream is what its image has — Xvnc, ffmpeg and the full Chromium — not whether the display already runs, or the panel would be refused before anything could launch it.
+  // TEST_SCENARIO: on a fresh boot the virtual display is not running yet — platform-browser starts it when it first launches the browser. Whether an agent can stream is what its image has — sway, the VNC server and the full Chromium — not whether the display already runs, or the panel would be refused before anything could launch it.
   it("depends on the image's tools, not on a running display", () => {
     expect(videoAvailable(() => true)).toBe(true);
     expect(videoAvailable((p) => p !== "/tmp/.X11-unix/X99")).toBe(true);
-    expect(videoAvailable((p) => p !== "/usr/bin/ffmpeg")).toBe(false);
-    expect(videoAvailable((p) => p !== "/usr/bin/Xvnc")).toBe(false);
+    expect(videoAvailable((p) => p !== "/opt/platform-vnc/bin/wayvnc")).toBe(
+      false,
+    );
+    expect(videoAvailable((p) => p !== "/usr/bin/sway")).toBe(false);
   });
 });
