@@ -124,7 +124,8 @@ else
   # The mise images share the oci task's stage and apt-base layout, one build
   # per host at a time, so they take one lane, one after another, beside the
   # rest. A failure is named in a file, since the lane is one process.
-  pids=() lane=() : > /tmp/ci-build/mise-failed
+  pids=() lane=()
+  : > /tmp/ci-build/mise-failed
   for i in "${!names[@]}"; do
     if [ "$(package_of "${names[$i]}" 2>/dev/null)" = mise ]; then
       lane+=("$i")
