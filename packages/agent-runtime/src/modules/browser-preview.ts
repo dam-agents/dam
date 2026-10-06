@@ -15,6 +15,14 @@ export const PREVIEW_STREAM_QUALITY = "90";
 
 const STREAM_QUERY_KEYS = ["maxFps", "pacing"] as const;
 const VIDEO_BACKLOG_BYTES = 1024 * 1024;
+const VIEWPORT_CHECK_MS = 3_000;
+
+export function parseViewport(
+  out: string,
+): { width: number; height: number } | null {
+  const match = /(\d+)x(\d+)/.exec(out);
+  return match ? { width: Number(match[1]), height: Number(match[2]) } : null;
+}
 const VIEWPORT_MIN = 200;
 const VIEWPORT_MAX = 4096;
 
@@ -153,6 +161,7 @@ export function createBrowserPreview(deps: {
   streamUrl?: (port: number) => string;
   idleCloseMs?: number;
   video?: BrowserVideo;
+  viewportCheckMs?: number;
   log: (msg: string) => void;
 }): BrowserPreview {
   const idleCloseMs = deps.idleCloseMs ?? PREVIEW_IDLE_CLOSE_MS;
@@ -244,6 +253,24 @@ export function createBrowserPreview(deps: {
       client.send(frame, { binary: true });
     };
 
+    async function applyViewport(wanted: { width: number; height: number }) {
+      const actual = parseViewport(
+        await deps
+          .run(["eval", "innerWidth + 'x' + innerHeight"])
+          .catch(() => ""),
+      );
+      if (actual?.width === wanted.width && actual.height === wanted.height)
+        return false;
+      await deps.run([
+        "set",
+        "viewport",
+        String(wanted.width),
+        String(wanted.height),
+        "1",
+      ]);
+      return true;
+    }
+
     async function restartVideo() {
       restarting = true;
       videoStream?.stop();
@@ -253,6 +280,7 @@ export function createBrowserPreview(deps: {
         restarting = false;
         return;
       }
+      await applyViewport(wanted).catch(() => false);
       const top = await video.calibrate(wanted.width, wanted.height);
       restarting = false;
       if (viewport !== wanted || client.readyState !== WebSocket.OPEN) return;
@@ -263,6 +291,17 @@ export function createBrowserPreview(deps: {
         log: (msg) => deps.log(`video: ${msg}`),
       });
     }
+
+    const viewportCheck = setInterval(() => {
+      const wanted = viewport;
+      if (!wantsVideo || !wanted || restarting) return;
+      applyViewport(wanted)
+        .then((changed) => {
+          if (changed && viewport === wanted) return restartVideo();
+        })
+        .catch(() => {});
+    }, deps.viewportCheckMs ?? VIEWPORT_CHECK_MS);
+    viewportCheck.unref?.();
 
     client.on("message", (data: Buffer, isBinary: boolean) => {
       const msg = isBinary ? null : parseControl(data.toString());
@@ -283,6 +322,7 @@ export function createBrowserPreview(deps: {
     });
     client.on("close", () => {
       clients.delete(client);
+      clearInterval(viewportCheck);
       videoStream?.stop();
       videoStream = null;
       upstream?.close();

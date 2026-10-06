@@ -4,6 +4,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import {
   binaryFrame,
   browserCommandLine,
+  parseViewport,
   type BrowserVideo,
   createBrowserPreview,
   parseControl,
@@ -42,13 +43,17 @@ async function fakeStream() {
 
 function fakeRun(port: number) {
   const calls: string[][] = [];
+  const browser = { viewport: "1280x720" };
   const run = async (args: string[]) => {
     calls.push(args);
     if (args[0] === "stream")
       return JSON.stringify({ success: true, data: { port } });
+    if (args[0] === "set" && args[1] === "viewport")
+      browser.viewport = `${args[2]}x${args[3]}`;
+    if (args[0] === "eval") return JSON.stringify(browser.viewport);
     return "";
   };
-  return { calls, run };
+  return { calls, run, browser };
 }
 
 async function host(preview: BrowserPreview) {
@@ -350,5 +355,45 @@ describe("browser preview video", () => {
 
     ws.close();
     await until(() => fake.stops.includes(2));
+  });
+});
+
+describe("viewport check", () => {
+  it("reads agent-browser's eval output", () => {
+    expect(parseViewport('"570x774"')).toEqual({ width: 570, height: 774 });
+    expect(parseViewport("")).toBeNull();
+  });
+
+  // TEST_SCENARIO: the agent launched the browser after the panel had sent its size, so the new browser came up at agent-browser's default 1280x720 and the encoder captured only part of the page. The runtime reads the browser's real viewport while video runs, puts the panel's size back, and restarts the encoder at it.
+  it("restores the panel's size when the browser comes back at another one", async () => {
+    const stream = await fakeStream();
+    const { calls, run, browser } = fakeRun(stream.port);
+    const starts: number[] = [];
+    const video: BrowserVideo = {
+      available: () => true,
+      calibrate: async () => 56,
+      start: (opts) => {
+        starts.push(opts.width);
+        return { stop: () => {} };
+      },
+    };
+    const connect = await host(
+      createBrowserPreview({
+        run,
+        profileDir: "/tmp/x",
+        video,
+        viewportCheckMs: 50,
+        log: () => {},
+      }),
+    );
+    const { ws } = await connect("codec=h264");
+    ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
+    await until(() => starts.length === 1);
+
+    browser.viewport = "1280x720";
+    const before = calls.filter((c) => c[0] === "set").length;
+    await until(() => starts.length === 2);
+    expect(browser.viewport).toBe("900x700");
+    expect(calls.filter((c) => c[0] === "set").length).toBeGreaterThan(before);
   });
 });

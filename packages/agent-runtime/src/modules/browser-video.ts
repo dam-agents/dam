@@ -9,7 +9,7 @@ export const VIDEO_X_SOCKET = "/tmp/.X11-unix/X99";
 export const SCREEN_WIDTH = 3840;
 export const SCREEN_HEIGHT = 2400;
 export const DEFAULT_CONTENT_TOP = 56;
-export const VIDEO_FPS = 15;
+export const VIDEO_FPS = 30;
 
 const AUD = Buffer.from([0, 0, 0, 1, 9]);
 const IDR_NAL = 5;
