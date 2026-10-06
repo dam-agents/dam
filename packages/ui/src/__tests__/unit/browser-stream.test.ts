@@ -176,12 +176,38 @@ describe("parseBinaryFrame", () => {
     const frame = parseBinaryFrame(buf.buffer)!;
     expect(frame.seq).toBe(4);
     expect(frame.metadata).toEqual({ deviceWidth: 800, deviceHeight: 600 });
+    if (frame.codec !== "jpeg") throw new Error("expected a JPEG frame");
     expect([...new Uint8Array(await frame.jpeg.arrayBuffer())]).toEqual([
       0xff, 0xd8, 0xff,
     ]);
     expect(frame.jpeg.type).toBe("image/jpeg");
     expect(parseBinaryFrame(new ArrayBuffer(2))).toBeNull();
     expect(parseBinaryFrame(buf.buffer.slice(0, 6))).toBeNull();
+  });
+
+  // TEST_SCENARIO: a video frame arrives in the same envelope, its header naming the codec and whether it is a keyframe — the decoder can only start, or restart after a resize, at a keyframe.
+  test("reads an H.264 frame and its keyframe flag", () => {
+    const head = new TextEncoder().encode(
+      JSON.stringify({
+        codec: "h264",
+        seq: 9,
+        key: true,
+        metadata: { deviceWidth: 900, deviceHeight: 700 },
+      }),
+    );
+    const buf = new Uint8Array(4 + head.byteLength + 4);
+    new DataView(buf.buffer).setUint32(0, head.byteLength);
+    buf.set(head, 4);
+    buf.set([0, 0, 0, 1], 4 + head.byteLength);
+    const frame = parseBinaryFrame(buf.buffer)!;
+    expect(frame).toMatchObject({
+      codec: "h264",
+      seq: 9,
+      key: true,
+      metadata: { deviceWidth: 900, deviceHeight: 700 },
+    });
+    if (frame.codec !== "h264") throw new Error("expected an H.264 frame");
+    expect([...frame.data]).toEqual([0, 0, 0, 1]);
   });
 });
 

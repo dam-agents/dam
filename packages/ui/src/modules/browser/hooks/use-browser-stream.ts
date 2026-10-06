@@ -9,6 +9,12 @@ import {
   viewportDiffers,
   viewportFor,
 } from "../lib/stream.js";
+import {
+  createVideoPlayer,
+  markVideoBroken,
+  type VideoPlayer,
+  videoSupported,
+} from "../lib/video.js";
 
 const LIVE_FPS = 15;
 const HIDDEN_FPS = 1;
@@ -66,6 +72,8 @@ export function useBrowserStream(
   useEffect(() => {
     let cancelled = false;
     let ws: WebSocket | null = null;
+    let player: VideoPlayer | null = null;
+    let lastChunkBytes = 0;
 
     const draw = async (jpeg: Blob) => {
       const canvas = canvasRef.current;
@@ -116,11 +124,12 @@ export function useBrowserStream(
     void (async () => {
       setState("connecting");
       const token = await getAccessToken();
+      const video = await videoSupported();
       if (cancelled) return;
       const scheme = location.protocol === "https:" ? "wss:" : "ws:";
       const maxFps = document.hidden ? HIDDEN_FPS : LIVE_FPS;
       ws = new WebSocket(
-        `${scheme}//${location.host}/api/agents/${encodeURIComponent(agentId)}/browser?token=${encodeURIComponent(token)}&maxFps=${maxFps}&pacing=ack`,
+        `${scheme}//${location.host}/api/agents/${encodeURIComponent(agentId)}/browser?token=${encodeURIComponent(token)}&maxFps=${maxFps}&pacing=ack${video ? "&codec=h264" : ""}`,
       );
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;
@@ -138,9 +147,23 @@ export function useBrowserStream(
           const frame = parseBinaryFrame(e.data);
           if (!frame) return;
           failedAttemptsRef.current = 0;
-          meterRef.current.frame(performance.now(), frame.jpeg.size);
           deviceRef.current = frame.metadata;
           snapViewport(frame.metadata);
+          if (frame.codec === "h264") {
+            lastChunkBytes = frame.data.byteLength;
+            player ??= createVideoPlayer({
+              canvas: () => canvasRef.current,
+              onDrawn: () =>
+                meterRef.current.frame(performance.now(), lastChunkBytes),
+              onError: () => {
+                markVideoBroken();
+                ws?.close();
+              },
+            });
+            player.decode(frame);
+            return;
+          }
+          meterRef.current.frame(performance.now(), frame.jpeg.size);
           void draw(frame.jpeg).finally(() =>
             send({ type: "ack", seq: frame.seq }),
           );
@@ -186,6 +209,7 @@ export function useBrowserStream(
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", sendViewport);
       ws?.close();
+      player?.close();
       wsRef.current = null;
     };
   }, [agentId, canvasRef, connectKey, send]);
