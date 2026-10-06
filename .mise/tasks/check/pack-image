@@ -22,16 +22,17 @@ jq -n --argjson m "$manifest" '{schemaVersion: 2, manifests: [$m]}' > "$t/base/i
 echo '{"imageLayoutVersion":"1.0.0"}' > "$t/base/oci-layout"
 
 # A tree as a build user with umask 002 leaves it: group-writable throughout.
-mkdir -p "$t/root/app/dist" "$t/root/home/agent/.config" "$t/root/etc/mise"
+mkdir -p "$t/root/app/dist" "$t/root/app/.hidden" "$t/root/home/agent/.config" "$t/root/etc/mise"
 touch "$t/root/app/dist/server.js" "$t/root/home/agent/.config/x" "$t/root/etc/mise/config.toml" "$t/root/etc/hosts"
 (cd "$t" && XDG_CACHE_HOME="$t/cache" "$pack" "$t/base" "$t/root" "$t/out" check:latest --layout --mode=go-w \
   --own=65532:0=home/agent --own=65532:0=etc/mise --own=65532:0=absent --own-dir=65532:0=app >/dev/null)
 
 m="$(jq -r '.manifests[0].digest | sub(":"; "/")' "$t/out/index.json")"
 layer="$(jq -r '.layers[0].digest | sub(":"; "/")' "$t/out/blobs/$m")"
-# The last entry for a path is the one a runtime applies.
-tar -tvf "$t/out/blobs/$layer" --numeric-owner | awk '{print $6, $2, $1}' | sed 's|/ | |' | tac | awk '!seen[$1]++' > "$t/entries"
+tar -tvf "$t/out/blobs/$layer" --numeric-owner | awk '{print $6, $2, $1}' | sed 's|/ | |' > "$t/entries"
 fail=0
+dups="$(awk '{print $1}' "$t/entries" | sort | uniq -d)"
+[ -z "$dups" ] || { echo "FAIL: CRI-O refuses a layer that repeats a path: $dups" >&2; fail=1; }
 want() {
   local got; got="$(awk -v p="$1" '$1 == p {print $2, $3}' "$t/entries")"
   [ "$got" = "$2" ] || { echo "FAIL: $1 is [$got], want [$2]" >&2; fail=1; }
@@ -39,6 +40,7 @@ want() {
 want app "65532/0 drwxr-xr-x"
 want app/dist "0/0 drwxr-xr-x"
 want app/dist/server.js "0/0 -rw-r--r--"
+want app/.hidden "0/0 drwxr-xr-x"
 want home/agent "65532/0 drwxr-xr-x"
 want home/agent/.config/x "65532/0 -rw-r--r--"
 want etc/mise/config.toml "65532/0 -rw-r--r--"
