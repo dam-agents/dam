@@ -35,8 +35,9 @@ export function useNotifications(): Notifications {
   );
 
   const mockFn = (window as any).__mockListAgentSessions;
+  const queriedAgents = mockFn ? agents : runningAgents;
   const sessions = useQueries({
-    queries: runningAgents.map((agent) => ({
+    queries: queriedAgents.map((agent) => ({
       queryKey: notificationKeys.sessions(agent.id),
       queryFn: () =>
         mockFn ? mockFn(agent.id) : listAgentSessionsOverAcp(agent.id),
@@ -59,7 +60,7 @@ export function useNotifications(): Notifications {
 
   const items = buildNotificationItems({
     approvals: (approvals.data ?? []).filter((a) => a.status === "pending"),
-    byAgent: runningAgents.map((agent, index) => ({
+    byAgent: queriedAgents.map((agent, index) => ({
       agentId: agent.id,
       sessions: sessions.byAgent[index] ?? [],
     })),

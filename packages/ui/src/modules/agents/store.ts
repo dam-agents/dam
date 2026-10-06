@@ -97,6 +97,12 @@ export const createAgentsSlice: StateCreator<
   selectAgent: (id) => {
     history.pushState(null, "", routeToPath({ view: "chat", agent: id }));
     get().resetChatContext();
+
+    const mockCreate = (window as any).__mockCreateSession as
+      | ((agentId: string) => string)
+      | undefined;
+    if (mockCreate) mockCreate(id);
+
     set({
       selectedAgent: id,
       view: "chat",

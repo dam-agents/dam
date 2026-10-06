@@ -124,11 +124,11 @@ function MainApp() {
     }
   }, []);
 
-  if (view === "chat")
-    return (
-      <>
-        <div className="flex h-full bg-background overflow-hidden">
-          <IconRail hideMobileBar />
+  return (
+    <>
+      <div className="flex h-full bg-background overflow-hidden">
+        <IconRail hideMobileBar={view === "chat"} />
+        {view === "chat" ? (
           <div className="relative z-content flex-1 min-w-0">
             <div className="pointer-events-none absolute top-0 right-0 z-10 px-4 pt-3 md:px-6">
               <div className="pointer-events-auto">
@@ -137,70 +137,58 @@ function MainApp() {
             </div>
             <ChatView />
           </div>
-        </div>
-        <NotificationsPanel
-          open={notificationsOpen}
-          onClose={() => setNotificationsOpen(false)}
-        />
-        <DialogOverlay />
-        <ConnectionBanner />
-      </>
-    );
-
-  return (
-    <div className="flex flex-col h-full bg-background relative overflow-hidden">
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        <IconRail />
-        <main className="relative z-content flex-1 overflow-y-auto">
-          <div className="pointer-events-none sticky top-0 z-10 flex justify-end px-4 pt-3 md:px-6">
-            <div className="pointer-events-auto">
-              <NotificationBell />
+        ) : (
+          <main className="relative z-content flex-1 min-w-0 overflow-y-auto">
+            <div className="pointer-events-none sticky top-0 z-10 flex justify-end px-4 pt-3 md:px-6">
+              <div className="pointer-events-auto">
+                <NotificationBell />
+              </div>
             </div>
-          </div>
-          {view === "agent-landing" ? (
-            <div className="mx-auto w-full max-w-[960px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
-              <AgentLandingView />
-            </div>
-          ) : view === "sandbox-home" ? (
-            <SandboxHomeView />
-          ) : view === "home" ? (
-            <HomeView />
-          ) : view === "presets" ? (
-            <div className="mx-auto w-full max-w-[1200px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
-              <PresetsView />
-            </div>
-          ) : view === "schedules" ? (
-            <div className="mx-auto w-full max-w-[1200px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
-              <SchedulesView />
-            </div>
-          ) : view === "artifacts" ? (
-            <div className="mx-auto w-full max-w-[1200px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
-              <ArtifactsView />
-            </div>
-          ) : view === "setup-workbench" ? (
-            <div className="mx-auto w-full max-w-[1400px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
-              <SetupWorkbenchView />
-            </div>
-          ) : view === "sidebar-specs" ? (
-            <div className="w-full px-6 py-6 pb-20">
-              <SidebarSpecs />
-            </div>
-          ) : (
-            <div className="mx-auto w-full max-w-[960px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
-              {view === "agent-new" ? (
-                <AgentSetupView />
-              ) : view === "settings" ? (
-                <SettingsView />
-              ) : view === "card-gallery" ? (
-                <AgentCardGallery />
-              ) : view === "component-showcase" ? (
-                <ComponentShowcase />
-              ) : (
-                <HomeView />
-              )}
-            </div>
-          )}
-        </main>
+            {view === "agent-landing" ? (
+              <div className="mx-auto w-full max-w-[960px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
+                <AgentLandingView />
+              </div>
+            ) : view === "sandbox-home" ? (
+              <SandboxHomeView />
+            ) : view === "home" ? (
+              <HomeView />
+            ) : view === "presets" ? (
+              <div className="mx-auto w-full max-w-[1200px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
+                <PresetsView />
+              </div>
+            ) : view === "schedules" ? (
+              <div className="mx-auto w-full max-w-[1200px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
+                <SchedulesView />
+              </div>
+            ) : view === "artifacts" ? (
+              <div className="mx-auto w-full max-w-[1200px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
+                <ArtifactsView />
+              </div>
+            ) : view === "setup-workbench" ? (
+              <div className="mx-auto w-full max-w-[1400px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
+                <SetupWorkbenchView />
+              </div>
+            ) : view === "sidebar-specs" ? (
+              <div className="w-full px-6 py-6 pb-20">
+                <SidebarSpecs />
+              </div>
+            ) : (
+              <div className="mx-auto w-full max-w-[960px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
+                {view === "agent-new" ? (
+                  <AgentSetupView />
+                ) : view === "settings" ? (
+                  <SettingsView />
+                ) : view === "card-gallery" ? (
+                  <AgentCardGallery />
+                ) : view === "component-showcase" ? (
+                  <ComponentShowcase />
+                ) : (
+                  <HomeView />
+                )}
+              </div>
+            )}
+          </main>
+        )}
       </div>
       <NotificationsPanel
         open={notificationsOpen}
@@ -208,6 +196,6 @@ function MainApp() {
       />
       <DialogOverlay />
       <ConnectionBanner />
-    </div>
+    </>
   );
 }

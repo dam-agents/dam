@@ -8,8 +8,11 @@ const SESSION_LIMIT_INCREMENT = 50;
 export interface SidebarAgentsSlice {
   expandedSidebarAgents: Set<string>;
   sidebarSessionLimits: Map<string, number>;
+  sidebarActiveSessionId: string | null;
   toggleSidebarAgent: (id: string) => void;
+  expandSidebarAgent: (id: string) => void;
   showMoreSidebarSessions: (id: string) => void;
+  setSidebarActiveSession: (sessionId: string | null) => void;
 }
 
 export const createSidebarAgentsSlice: StateCreator<
@@ -20,6 +23,7 @@ export const createSidebarAgentsSlice: StateCreator<
 > = (set) => ({
   expandedSidebarAgents: new Set(),
   sidebarSessionLimits: new Map(),
+  sidebarActiveSessionId: null,
   toggleSidebarAgent: (id) =>
     set((s) => {
       const next = new Set(s.expandedSidebarAgents);
@@ -33,6 +37,13 @@ export const createSidebarAgentsSlice: StateCreator<
       }
       return { expandedSidebarAgents: next, sidebarSessionLimits: limits };
     }),
+  expandSidebarAgent: (id) =>
+    set((s) => {
+      if (s.expandedSidebarAgents.has(id)) return s;
+      const next = new Set(s.expandedSidebarAgents);
+      next.add(id);
+      return { expandedSidebarAgents: next };
+    }),
   showMoreSidebarSessions: (id) =>
     set((s) => {
       const limits = new Map(s.sidebarSessionLimits);
@@ -40,4 +51,6 @@ export const createSidebarAgentsSlice: StateCreator<
       limits.set(id, current + SESSION_LIMIT_INCREMENT);
       return { sidebarSessionLimits: limits };
     }),
+  setSidebarActiveSession: (sessionId) =>
+    set({ sidebarActiveSessionId: sessionId }),
 });

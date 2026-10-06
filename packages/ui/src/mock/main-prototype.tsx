@@ -192,6 +192,31 @@ for (const [agentId, sessions] of Object.entries(sessionsByAgent)) {
 }
 (window as any).__mockListAgentSessions = (agentId: string) =>
   Promise.resolve(sessionsByAgent[agentId] ?? []);
+
+(window as any).__mockCreateSession = (agentId: string) => {
+  const sessionId = `sess-new-${Date.now()}`;
+  const session = {
+    sessionId,
+    agentId,
+    type: "regular",
+    mode: "chat",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    title: "New chat",
+    running: true,
+    seenAt: null,
+  };
+  if (!sessionsByAgent[agentId]) sessionsByAgent[agentId] = [];
+  sessionsByAgent[agentId].unshift(session);
+  const fresh = sessionsByAgent[agentId];
+  queryClient.setQueriesData(
+    { queryKey: ["acp-sessions", agentId] },
+    () => fresh,
+  );
+  (window as any).__lastMockSessionId = sessionId;
+  return sessionId;
+};
+
 console.warn(
   "[MOCK] Registered __mockListAgentSessions for",
   Object.keys(sessionsByAgent),

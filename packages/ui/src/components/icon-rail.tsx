@@ -84,6 +84,7 @@ export function IconRail({
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const selectAgent = useStore((s) => s.selectAgent);
   const openAgentSession = useStore((s) => s.openAgentSession);
+  const selectedAgent = useStore((s) => s.selectedAgent);
 
   const sandboxes: Destination = {
     label: "Home",
@@ -144,9 +145,11 @@ export function IconRail({
     defaultActivityFilter,
   );
   const [showAllAgents, setShowAllAgents] = useState(false);
-  const [expandedAgentIds, setExpandedAgentIds] = useState<Set<string>>(
-    new Set(),
-  );
+  const expandedAgentIds = useStore((s) => s.expandedSidebarAgents);
+  const toggleSidebarAgent = useStore((s) => s.toggleSidebarAgent);
+  const expandSidebarAgent = useStore((s) => s.expandSidebarAgent);
+  const activeSessionId = useStore((s) => s.sidebarActiveSessionId);
+  const setSidebarActiveSession = useStore((s) => s.setSidebarActiveSession);
   const [scopedAgentId, setScopedAgentId] = useState<string | null>(null);
   const clickVariant = useAgentClickVariant((s) => s.variant);
   const scopedAgent = scopedAgentId
@@ -156,10 +159,20 @@ export function IconRail({
     setScopedAgentId(id);
     setActivityCount(SIDEBAR_ACTIVITY_PAGE);
   };
+  const [agentSessionCounts, setAgentSessionCounts] = useState<
+    Record<string, number>
+  >({});
   useEffect(() => {
     setScopedAgentId(null);
-    setExpandedAgentIds(new Set());
+    useStore.setState({ expandedSidebarAgents: new Set() });
   }, [clickVariant]);
+  useEffect(() => {
+    const newId = (window as any).__lastMockSessionId as string | undefined;
+    if (!newId || !selectedAgent || view !== "chat") return;
+    delete (window as any).__lastMockSessionId;
+    setSidebarActiveSession(newId);
+    expandSidebarAgent(selectedAgent);
+  }, [selectedAgent, view, setSidebarActiveSession, expandSidebarAgent]);
   const focusing = clickVariant === 3 && !!scopedAgent;
   useEffect(() => {
     if (!focusing) return;
@@ -174,14 +187,10 @@ export function IconRail({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [focusing]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [agentSessionCounts, setAgentSessionCounts] = useState<
-    Record<string, number>
-  >({});
 
   useEffect(() => {
-    if (view !== "chat") setActiveSessionId(null);
-  }, [view]);
+    if (view !== "chat") setSidebarActiveSession(null);
+  }, [view, setSidebarActiveSession]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const agentSentinelRef = useRef<HTMLDivElement>(null);
@@ -275,19 +284,20 @@ export function IconRail({
   const hasMoreActivity = activityCount < filteredFeed.length;
 
   const handleOpen = useCallback(
-    (item: NotificationItem) => {
+    (item: NotificationItem, { expandAgent = false } = {}) => {
       if (
         item.type === "running" ||
         item.type === "unread" ||
         item.type === "read"
       ) {
-        setActiveSessionId(item.session.sessionId);
-        if (clickVariant === 0)
-          setExpandedAgentIds((prev) => new Set(prev).add(item.agentId));
+        setSidebarActiveSession(item.session.sessionId);
+        if (expandAgent) {
+          expandSidebarAgent(item.agentId);
+        }
         openAgentSession(item.agentId, item.session.sessionId);
       }
     },
-    [openAgentSession, clickVariant],
+    [openAgentSession, setSidebarActiveSession, expandSidebarAgent],
   );
 
   return (
@@ -403,15 +413,14 @@ export function IconRail({
                     const isFocused = focusing && agent.id === scopedAgentId;
                     const folded = focusing && !isFocused;
                     const isSelected =
-                      isExpanded ||
-                      (!!activeSessionId &&
+                      !!activeSessionId &&
                         agentSessions.some(
                           (s) =>
                             (s.type === "running" ||
                               s.type === "unread" ||
                               s.type === "read") &&
                             s.session.sessionId === activeSessionId,
-                        ));
+                        );
 
                     return (
                       <div
@@ -451,12 +460,13 @@ export function IconRail({
                           tabIndex={0}
                           onClick={() => {
                             if (clickVariant === 0) {
-                              setExpandedAgentIds((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(agent.id)) next.delete(agent.id);
-                                else next.add(agent.id);
-                                return next;
-                              });
+                              if (expandedAgentIds.has(agent.id)) {
+                                setAgentSessionCounts((c) => {
+                                  const { [agent.id]: _, ...rest } = c;
+                                  return rest;
+                                });
+                              }
+                              toggleSidebarAgent(agent.id);
                             } else {
                               setScope(
                                 scopedAgentId === agent.id ? null : agent.id,
@@ -467,13 +477,13 @@ export function IconRail({
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
                               if (clickVariant === 0) {
-                                setExpandedAgentIds((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(agent.id))
-                                    next.delete(agent.id);
-                                  else next.add(agent.id);
-                                  return next;
-                                });
+                                if (expandedAgentIds.has(agent.id)) {
+                                  setAgentSessionCounts((c) => {
+                                    const { [agent.id]: _, ...rest } = c;
+                                    return rest;
+                                  });
+                                }
+                                toggleSidebarAgent(agent.id);
                               } else {
                                 setScope(
                                   scopedAgentId === agent.id ? null : agent.id,
@@ -549,7 +559,10 @@ export function IconRail({
                                   tabIndex={0}
                                   onClick={
                                     hasSession
-                                      ? () => handleOpen(item)
+                                      ? () =>
+                                          handleOpen(item, {
+                                            expandAgent: true,
+                                          })
                                       : undefined
                                   }
                                   onKeyDown={(e) => {
@@ -558,7 +571,7 @@ export function IconRail({
                                       (e.key === "Enter" || e.key === " ")
                                     ) {
                                       e.preventDefault();
-                                      handleOpen(item);
+                                      handleOpen(item, { expandAgent: true });
                                     }
                                   }}
                                   className={cn(
@@ -974,12 +987,15 @@ export function IconRail({
                             onClick={() => selectAgent(agent.id)}
                             className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
                           >
-                            <span
-                              className={cn(
-                                "size-2 shrink-0 rounded-full",
-                                stateDotClass[display.state],
-                              )}
-                            />
+                            <Tooltip content={stateLabel[display.state]} side="right">
+                              <span className="shrink-0">
+                                <AgentAvatar
+                                  agentId={agent.id}
+                                  state={display.state}
+                                  className="!size-6"
+                                />
+                              </span>
+                            </Tooltip>
                             <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
                               {agent.name}
                             </span>
@@ -1316,8 +1332,6 @@ function matchesActivityFilter(
   }
 }
 
-const FILTER_GROUP_LABEL = "px-3 pt-2 pb-1 text-sm font-medium text-muted-foreground";
-
 function ActivityFilterMenu({
   value,
   onChange,
@@ -1358,25 +1372,11 @@ function ActivityFilterMenu({
       </Tooltip>
       <DropdownMenuContent
         align="end"
-        className="max-h-[80vh] w-[400px] overflow-y-auto p-0"
+        className="max-h-[80vh] w-[220px] overflow-y-auto"
       >
-        <div className="flex items-center justify-between px-3 pt-2 pb-1">
-          <span className="text-sm font-medium text-muted-foreground">Filters</span>
-          <button
-            type="button"
-            disabled={!active}
-            onClick={() => {
-              onChange(defaultActivityFilter());
-              onAgentChange?.(null);
-            }}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-accent transition-colors hover:bg-muted disabled:pointer-events-none disabled:text-muted-foreground/50"
-          >
-            <Reset size={16} /> Reset
-          </button>
-        </div>
         {agentOptions && onAgentChange && (
-          <div className="border-b border-border p-1">
-            <p className={FILTER_GROUP_LABEL}>Agent</p>
+          <>
+            <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Agent</p>
             {[{ id: null, name: "All agents" }, ...agentOptions].map((a) => (
               <DropdownMenuItem
                 key={a.id ?? "all"}
@@ -1385,46 +1385,55 @@ function ActivityFilterMenu({
                   onAgentChange(a.id);
                 }}
               >
-                <span className="flex w-4 justify-center">
+                <span className="flex w-4 shrink-0 justify-center">
                   {(agentId ?? null) === a.id && <Checkmark size={16} />}
                 </span>
                 <span className="truncate">{a.name}</span>
               </DropdownMenuItem>
             ))}
-          </div>
+            <DropdownMenuSeparator />
+          </>
         )}
-        <div className="grid grid-cols-2">
-          <div className="p-1">
-            <p className={FILTER_GROUP_LABEL}>Type</p>
-            {CHANNEL_TYPES.map((type) => (
-              <DropdownMenuCheckboxItem
-                key={type}
-                checked={value.channelTypes.has(type)}
-                onCheckedChange={() => toggleType(type)}
-                onSelect={(event) => event.preventDefault()}
-              >
-                {CHANNEL_TYPE_LABELS[type]}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </div>
-          <div className="border-l border-border p-1">
-            <p className={FILTER_GROUP_LABEL}>Status</p>
-            {STATE_FILTERS.map((state) => (
-              <DropdownMenuItem
-                key={state}
-                onSelect={(event) => {
-                  event.preventDefault();
-                  onChange({ ...value, state });
-                }}
-              >
-                <span className="flex w-4 justify-center">
-                  {value.state === state && <Checkmark size={16} />}
-                </span>
-                {STATE_FILTER_LABELS[state]}
-              </DropdownMenuItem>
-            ))}
-          </div>
-        </div>
+        <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Status</p>
+        {STATE_FILTERS.map((state) => (
+          <DropdownMenuItem
+            key={state}
+            onSelect={(event) => {
+              event.preventDefault();
+              onChange({ ...value, state });
+            }}
+          >
+            <span className="flex w-4 shrink-0 justify-center">
+              {value.state === state && <Checkmark size={16} />}
+            </span>
+            {STATE_FILTER_LABELS[state]}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Type</p>
+        {CHANNEL_TYPES.map((type) => (
+          <DropdownMenuCheckboxItem
+            key={type}
+            checked={value.channelTypes.has(type)}
+            onCheckedChange={() => toggleType(type)}
+            onSelect={(event) => event.preventDefault()}
+          >
+            {CHANNEL_TYPE_LABELS[type]}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {active && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => {
+                onChange(defaultActivityFilter());
+                onAgentChange?.(null);
+              }}
+            >
+              <Reset size={16} /> Reset filters
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
