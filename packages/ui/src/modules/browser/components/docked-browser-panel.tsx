@@ -247,8 +247,10 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         </span>
         <span
           className="shrink-0 tabular-nums"
-          title="Time from your click or key to the next frame, frames per second, and stream bandwidth"
+          title="Stream codec and size, time from your click or key to the next frame, frames per second, and stream bandwidth"
         >
+          {stream.streamInfo &&
+            `${stream.streamInfo.codec} ${stream.streamInfo.width}×${stream.streamInfo.height} · `}
           {stream.stats.roundTripMs === null
             ? "–"
             : `${stream.stats.roundTripMs} ms`}
@@ -330,6 +332,16 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           <div className="absolute inset-0 flex items-center justify-center gap-3 bg-background/80 text-sm text-muted-foreground">
             <Spinner size={18} />
             Starting the agent's browser…
+          </div>
+        )}
+        {stream.state === "unsupported" && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80 px-6 text-center">
+            <ErrorFilled size={24} className="text-danger" />
+            <p className="text-sm text-muted-foreground">
+              This browser can't play the agent's browser stream: it needs
+              WebCodecs with H.264 decoding (any current Chrome, Edge, Safari or
+              Firefox).
+            </p>
           </div>
         )}
         {stream.state === "disconnected" && (

@@ -68,16 +68,14 @@ async function until(check: () => boolean, ms = 2_000) {
 }
 
 describe("browserUpstreamPath", () => {
-  // TEST_SCENARIO: The panel's address and stream settings reach the agent, but the user's access token, which rides in the same query, never does.
-  it("forwards url, maxFps, pacing and codec, and drops the token", () => {
+  // TEST_SCENARIO: The panel's address reaches the agent, but the user's access token, which rides in the same query, never does, nor does anything else the query carries.
+  it("forwards the address, and drops the token and anything else", () => {
     const path = browserUpstreamPath(
       new URL(
         "http://x/api/agents/a/browser?token=secret&url=http%3A%2F%2F127.0.0.1%3A4444%2F&maxFps=10&pacing=ack&codec=h264&passive=1",
       ),
     );
-    expect(path).toBe(
-      "/api/browser?url=http%3A%2F%2F127.0.0.1%3A4444%2F&maxFps=10&pacing=ack&codec=h264",
-    );
+    expect(path).toBe("/api/browser?url=http%3A%2F%2F127.0.0.1%3A4444%2F");
     expect(browserUpstreamPath(new URL("http://x/?token=t"))).toBe(
       "/api/browser",
     );

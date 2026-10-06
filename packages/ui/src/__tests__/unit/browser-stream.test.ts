@@ -160,54 +160,73 @@ describe("createLatencyMeter", () => {
 });
 
 describe("parseBinaryFrame", () => {
-  // TEST_SCENARIO: the runtime sends each frame as one binary message — a 4-byte header length, a JSON header with the sequence number and viewport size, then the raw JPEG. The panel needs the sequence number to acknowledge the frame and the viewport size to map clicks; a truncated or malformed message is dropped, not drawn.
-  test("splits header and JPEG, and rejects malformed messages", async () => {
-    const head = new TextEncoder().encode(
-      JSON.stringify({
-        seq: 4,
-        metadata: { deviceWidth: 800, deviceHeight: 600 },
-      }),
-    );
-    const buf = new Uint8Array(4 + head.byteLength + 3);
-    new DataView(buf.buffer).setUint32(0, head.byteLength);
-    buf.set(head, 4);
-    buf.set([0xff, 0xd8, 0xff], 4 + head.byteLength);
+  const envelope = (head: object, payload: number[]) => {
+    const h = new TextEncoder().encode(JSON.stringify(head));
+    const buf = new Uint8Array(4 + h.byteLength + payload.length);
+    new DataView(buf.buffer).setUint32(0, h.byteLength);
+    buf.set(h, 4);
+    buf.set(payload, 4 + h.byteLength);
+    return buf.buffer;
+  };
 
-    const frame = parseBinaryFrame(buf.buffer)!;
-    expect(frame.seq).toBe(4);
-    expect(frame.metadata).toEqual({ deviceWidth: 800, deviceHeight: 600 });
-    if (frame.codec !== "jpeg") throw new Error("expected a JPEG frame");
-    expect([...new Uint8Array(await frame.jpeg.arrayBuffer())]).toEqual([
-      0xff, 0xd8, 0xff,
-    ]);
-    expect(frame.jpeg.type).toBe("image/jpeg");
-    expect(parseBinaryFrame(new ArrayBuffer(2))).toBeNull();
-    expect(parseBinaryFrame(buf.buffer.slice(0, 6))).toBeNull();
-  });
-
-  // TEST_SCENARIO: a video frame arrives in the same envelope, its header naming the codec and whether it is a keyframe — the decoder can only start, or restart after a resize, at a keyframe.
+  // TEST_SCENARIO: the runtime sends each video frame as one binary message — a 4-byte header length, a JSON header naming the codec, the sequence number, whether it is a keyframe and the viewport size, then the H.264 access unit. The decoder can only start, or restart after a resize, at a keyframe, and the viewport size maps clicks.
   test("reads an H.264 frame and its keyframe flag", () => {
-    const head = new TextEncoder().encode(
-      JSON.stringify({
-        codec: "h264",
-        seq: 9,
-        key: true,
-        metadata: { deviceWidth: 900, deviceHeight: 700 },
-      }),
-    );
-    const buf = new Uint8Array(4 + head.byteLength + 4);
-    new DataView(buf.buffer).setUint32(0, head.byteLength);
-    buf.set(head, 4);
-    buf.set([0, 0, 0, 1], 4 + head.byteLength);
-    const frame = parseBinaryFrame(buf.buffer)!;
+    const frame = parseBinaryFrame(
+      envelope(
+        {
+          codec: "h264",
+          seq: 9,
+          key: true,
+          metadata: { deviceWidth: 900, deviceHeight: 700 },
+        },
+        [0, 0, 0, 1],
+      ),
+    )!;
     expect(frame).toMatchObject({
-      codec: "h264",
       seq: 9,
       key: true,
       metadata: { deviceWidth: 900, deviceHeight: 700 },
     });
-    if (frame.codec !== "h264") throw new Error("expected an H.264 frame");
     expect([...frame.data]).toEqual([0, 0, 0, 1]);
+  });
+
+  // TEST_SCENARIO: video is the only stream; anything else in the envelope — an old JPEG frame, a truncated or malformed message — is dropped, not drawn.
+  test("drops anything that is not a whole H.264 frame", () => {
+    expect(
+      parseBinaryFrame(
+        envelope(
+          { seq: 4, metadata: { deviceWidth: 800, deviceHeight: 600 } },
+          [0xff, 0xd8, 0xff],
+        ),
+      ),
+    ).toBeNull();
+    expect(parseBinaryFrame(new ArrayBuffer(2))).toBeNull();
+    expect(
+      parseBinaryFrame(
+        envelope({ codec: "h264", seq: 1 }, [0, 0, 0, 1]).slice(0, 6),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("stream info", () => {
+  // TEST_SCENARIO: when video starts, the runtime says what it streams, so the panel can show the codec and capture size next to the frame rate.
+  test("reads the codec and capture size", () => {
+    expect(
+      parseStreamMessage(
+        '{"type":"stream_info","codec":"h264","width":570,"height":800,"scale":1,"fps":30}',
+      ),
+    ).toEqual({
+      type: "stream_info",
+      codec: "h264",
+      width: 570,
+      height: 800,
+      scale: 1,
+      fps: 30,
+    });
+    expect(
+      parseStreamMessage('{"type":"stream_info","codec":"h264"}'),
+    ).toBeNull();
   });
 });
 

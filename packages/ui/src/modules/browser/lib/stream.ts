@@ -3,8 +3,19 @@ export interface FrameMetadata {
   deviceHeight: number;
 }
 
+export interface StreamInfo {
+  type: "stream_info";
+  codec: string;
+  width: number;
+  height: number;
+  scale: number;
+  fps: number;
+}
+
 export type StreamMessage =
-  { type: "url"; url: string } | { type: "preview_error"; message: string };
+  | { type: "url"; url: string }
+  | { type: "preview_error"; message: string }
+  | StreamInfo;
 
 export interface Box {
   left: number;
@@ -34,6 +45,22 @@ export function parseStreamMessage(raw: string): StreamMessage | null {
     return { type: "url", url: m.url };
   if (m.type === "preview_error" && typeof m.message === "string")
     return { type: "preview_error", message: m.message };
+  if (
+    m.type === "stream_info" &&
+    typeof m.codec === "string" &&
+    typeof m.width === "number" &&
+    typeof m.height === "number" &&
+    typeof m.scale === "number" &&
+    typeof m.fps === "number"
+  )
+    return {
+      type: "stream_info",
+      codec: m.codec,
+      width: m.width,
+      height: m.height,
+      scale: m.scale,
+      fps: m.fps,
+    };
   return null;
 }
 
@@ -196,15 +223,12 @@ export function viewportDiffers(
   );
 }
 
-export type BinaryFrame =
-  | { codec: "jpeg"; seq: number; metadata: FrameMetadata; jpeg: Blob }
-  | {
-      codec: "h264";
-      seq: number;
-      key: boolean;
-      metadata: FrameMetadata;
-      data: Uint8Array;
-    };
+export interface BinaryFrame {
+  seq: number;
+  key: boolean;
+  metadata: FrameMetadata;
+  data: Uint8Array;
+}
 
 export function parseBinaryFrame(buffer: ArrayBuffer): BinaryFrame | null {
   if (buffer.byteLength < 4) return null;
@@ -225,28 +249,19 @@ export function parseBinaryFrame(buffer: ArrayBuffer): BinaryFrame | null {
     metadata?: Partial<FrameMetadata>;
   };
   if (
+    codec !== "h264" ||
     typeof seq !== "number" ||
     typeof metadata?.deviceWidth !== "number" ||
     typeof metadata.deviceHeight !== "number"
   )
     return null;
-  const frameMetadata = {
-    deviceWidth: metadata.deviceWidth,
-    deviceHeight: metadata.deviceHeight,
-  };
-  const payload = buffer.slice(4 + headLength);
-  if (codec === "h264")
-    return {
-      codec,
-      seq,
-      key: key === true,
-      metadata: frameMetadata,
-      data: new Uint8Array(payload),
-    };
   return {
-    codec: "jpeg",
     seq,
-    metadata: frameMetadata,
-    jpeg: new Blob([payload], { type: "image/jpeg" }),
+    key: key === true,
+    metadata: {
+      deviceWidth: metadata.deviceWidth,
+      deviceHeight: metadata.deviceHeight,
+    },
+    data: new Uint8Array(buffer.slice(4 + headLength)),
   };
 }

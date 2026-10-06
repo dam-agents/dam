@@ -6,18 +6,16 @@ import {
   type FrameMetadata,
   parseBinaryFrame,
   parseStreamMessage,
+  type StreamInfo,
   viewportDiffers,
   viewportFor,
 } from "../lib/stream.js";
 import {
   createVideoPlayer,
-  markVideoBroken,
   type VideoPlayer,
   videoSupported,
 } from "../lib/video.js";
 
-const LIVE_FPS = 15;
-const HIDDEN_FPS = 1;
 const STATS_INTERVAL_MS = 500;
 const RESIZE_DEBOUNCE_MS = 250;
 const VIEWPORT_RESEND_MS = 1_000;
@@ -25,7 +23,8 @@ const CLEARED_CLOSE_CODE = 1012;
 const RECONNECT_DELAY_MS = 1_000;
 const RECONNECT_ATTEMPTS = 3;
 
-export type BrowserStreamState = "connecting" | "live" | "disconnected";
+export type BrowserStreamState =
+  "connecting" | "live" | "disconnected" | "unsupported";
 
 export interface BrowserStats {
   roundTripMs: number | null;
@@ -43,6 +42,7 @@ export function useBrowserStream(
   const [state, setState] = useState<BrowserStreamState>("connecting");
   const [pageUrl, setPageUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [streamInfo, setStreamInfo] = useState<StreamInfo | null>(null);
   const [stats, setStats] = useState<BrowserStats>({
     roundTripMs: null,
     fps: 0,
@@ -74,18 +74,6 @@ export function useBrowserStream(
     let ws: WebSocket | null = null;
     let player: VideoPlayer | null = null;
     let lastChunkBytes = 0;
-
-    const draw = async (jpeg: Blob) => {
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext("2d");
-      if (!canvas || !ctx) return;
-      const bitmap = await createImageBitmap(jpeg);
-      if (cancelled) return bitmap.close();
-      if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
-      if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
-      ctx.drawImage(bitmap, 0, 0);
-      bitmap.close();
-    };
 
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -119,21 +107,17 @@ export function useBrowserStream(
     });
     if (canvasRef.current) resizeObserver.observe(canvasRef.current);
 
-    const onVisibility = () =>
-      send({
-        type: "config",
-        maxFps: document.hidden ? HIDDEN_FPS : LIVE_FPS,
-      });
-
     void (async () => {
       setState("connecting");
+      if (!(await videoSupported())) {
+        if (!cancelled) setState("unsupported");
+        return;
+      }
       const token = await getAccessToken();
-      const video = await videoSupported();
       if (cancelled) return;
       const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-      const maxFps = document.hidden ? HIDDEN_FPS : LIVE_FPS;
       ws = new WebSocket(
-        `${scheme}//${location.host}/api/agents/${encodeURIComponent(agentId)}/browser?token=${encodeURIComponent(token)}&maxFps=${maxFps}&pacing=ack${video ? "&codec=h264" : ""}`,
+        `${scheme}//${location.host}/api/agents/${encodeURIComponent(agentId)}/browser?token=${encodeURIComponent(token)}`,
       );
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;
@@ -153,33 +137,25 @@ export function useBrowserStream(
           failedAttemptsRef.current = 0;
           deviceRef.current = frame.metadata;
           snapViewport(frame.metadata);
-          if (frame.codec === "h264") {
-            lastChunkBytes = frame.data.byteLength;
-            player ??= createVideoPlayer({
-              canvas: () => canvasRef.current,
-              onDrawn: () =>
-                meterRef.current.frame(performance.now(), lastChunkBytes),
-              onError: () => {
-                markVideoBroken();
-                ws?.close();
-              },
-            });
-            player.decode(frame);
-            return;
-          }
-          meterRef.current.frame(performance.now(), frame.jpeg.size);
-          void draw(frame.jpeg).finally(() =>
-            send({ type: "ack", seq: frame.seq }),
-          );
+          lastChunkBytes = frame.data.byteLength;
+          player ??= createVideoPlayer({
+            canvas: () => canvasRef.current,
+            onDrawn: () =>
+              meterRef.current.frame(performance.now(), lastChunkBytes),
+            onError: () => {
+              player?.close();
+              player = null;
+              ws?.close();
+            },
+          });
+          player.decode(frame);
           return;
         }
         const msg = parseStreamMessage(e.data);
         if (!msg) return;
-        if (msg.type === "url") {
-          setPageUrl(msg.url);
-        } else {
-          setError(msg.message);
-        }
+        if (msg.type === "url") setPageUrl(msg.url);
+        else if (msg.type === "stream_info") setStreamInfo(msg);
+        else setError(msg.message);
       };
       ws.onclose = (e) => {
         if (cancelled) return;
@@ -193,7 +169,6 @@ export function useBrowserStream(
           RECONNECT_DELAY_MS,
         );
       };
-      document.addEventListener("visibilitychange", onVisibility);
       window.addEventListener("focus", sendViewport);
     })().catch(() => {
       if (!cancelled) setState("disconnected");
@@ -210,7 +185,6 @@ export function useBrowserStream(
       if (resizeTimer) clearTimeout(resizeTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       resizeObserver.disconnect();
-      document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", sendViewport);
       ws?.close();
       player?.close();
@@ -223,6 +197,7 @@ export function useBrowserStream(
     pageUrl,
     error,
     stats,
+    streamInfo,
     device: () => deviceRef.current,
     send,
     navigate,

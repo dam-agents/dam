@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process";
+import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { WebSocket } from "ws";
 import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
 import {
+  VIDEO_FPS,
   calibrateTop,
   startVideo,
   videoAvailable,
@@ -13,9 +15,7 @@ import {
 
 export const PREVIEW_SESSION = "preview";
 export const PREVIEW_IDLE_CLOSE_MS = 10 * 60_000;
-export const PREVIEW_STREAM_QUALITY = "90";
 
-const STREAM_QUERY_KEYS = ["maxFps", "pacing"] as const;
 const VIDEO_BACKLOG_BYTES = 1024 * 1024;
 const VIEWPORT_CHECK_MS = 3_000;
 const FPS_REPORT_MS = 5_000;
@@ -115,20 +115,26 @@ export function parseControl(data: string): PreviewControl | null {
   return null;
 }
 
-export function binaryFrame(raw: string): Buffer | null {
-  let msg: unknown;
-  try {
-    msg = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof msg !== "object" || msg === null) return null;
-  const { type, data, ...header } = msg as Record<string, unknown>;
-  if (type !== "frame" || typeof data !== "string") return null;
-  const head = Buffer.from(JSON.stringify(header));
-  const length = Buffer.alloc(4);
-  length.writeUInt32BE(head.byteLength);
-  return Buffer.concat([length, head, Buffer.from(data, "base64")]);
+export function fileLog(
+  path: string,
+  maxBytes = 1_000_000,
+): (msg: string) => void {
+  return (msg) => {
+    try {
+      if (statSync(path).size > maxBytes) renameSync(path, `${path}.1`);
+    } catch {}
+    try {
+      mkdirSync(dirname(path), { recursive: true });
+      appendFileSync(path, `${new Date().toISOString()} ${msg}\n`);
+    } catch {}
+  };
+}
+
+export const VIDEO_UNAVAILABLE =
+  "This agent's image cannot stream its browser: it has no virtual display or no ffmpeg.";
+
+export function isScreencastFrame(raw: Buffer): boolean {
+  return raw.subarray(0, 32).toString().includes('"type":"frame"');
 }
 
 export function browserCommandLine(
@@ -157,7 +163,6 @@ export function agentBrowserCommand(
       const child = spawn(command, argv, {
         env: {
           ...mergedSpawnEnv(envReader),
-          AGENT_BROWSER_STREAM_QUALITY: PREVIEW_STREAM_QUALITY,
         },
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
@@ -358,6 +363,11 @@ export function createBrowserPreview(deps: {
   }
 
   function attach(client: WebSocket, query: URLSearchParams) {
+    if (!video.available()) {
+      sendError(client, VIDEO_UNAVAILABLE);
+      client.close(1011, "video unavailable");
+      return;
+    }
     clients.add(client);
     if (idleTimer) {
       clearTimeout(idleTimer);
@@ -366,7 +376,6 @@ export function createBrowserPreview(deps: {
 
     let upstream: WebSocket | null = null;
     const pending: [Buffer, boolean][] = [];
-    const wantsVideo = query.get("codec") === "h264" && video.available();
     let videoStream: VideoStream | null = null;
     let viewport: Viewport | null = null;
     let dropping = false;
@@ -453,12 +462,25 @@ export function createBrowserPreview(deps: {
         onFrame: sendVideoFrame,
         log: (msg) => deps.log(`video: ${msg}`),
       });
+      const info = {
+        type: "stream_info",
+        codec: "h264",
+        width: Math.round(wanted.width * wanted.scale),
+        height: Math.round(wanted.height * wanted.scale),
+        scale: wanted.scale,
+        fps: VIDEO_FPS,
+      };
+      deps.log(
+        `video: started ${info.width}x${info.height} at ${info.fps} fps, top ${top}`,
+      );
+      if (client.readyState === WebSocket.OPEN)
+        client.send(JSON.stringify(info));
     }
 
     let checking = false;
     const viewportCheck = setInterval(() => {
       const wanted = viewport;
-      if (!wantsVideo || !wanted || restarting || checking) return;
+      if (!wanted || restarting || checking) return;
       checking = true;
       applyViewport(wanted)
         .then((changed) => {
@@ -476,7 +498,7 @@ export function createBrowserPreview(deps: {
       if (msg) {
         timed(msg.type, () => control(client, msg))
           .then(() => {
-            if (wantsVideo && msg.type === "resize") {
+            if (msg.type === "resize") {
               viewport = {
                 width: msg.width,
                 height: msg.height,
@@ -513,22 +535,16 @@ export function createBrowserPreview(deps: {
       .then((port) => {
         if (client.readyState !== WebSocket.OPEN) return;
         const target = new URL(streamUrl(port));
-        for (const key of STREAM_QUERY_KEYS) {
-          const value = query.get(key);
-          if (value !== null) target.searchParams.set(key, value);
-        }
         const us = new WebSocket(target);
         upstream = us;
         us.on("open", () => {
-          if (wantsVideo) us.send(JSON.stringify({ type: "screencast_stop" }));
+          us.send(JSON.stringify({ type: "screencast_stop" }));
           for (const [d, b] of pending.splice(0)) us.send(d, { binary: b });
         });
         us.on("message", (d: Buffer, isBinary) => {
           if (client.readyState !== WebSocket.OPEN) return;
-          const frame = isBinary ? null : binaryFrame(d.toString());
-          if (frame && wantsVideo) return;
-          if (frame) client.send(frame, { binary: true });
-          else client.send(d, { binary: isBinary });
+          if (!isBinary && isScreencastFrame(d)) return;
+          client.send(d, { binary: isBinary });
         });
         us.on("close", () => {
           if (client.readyState === WebSocket.OPEN)

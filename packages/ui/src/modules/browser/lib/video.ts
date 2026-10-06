@@ -1,11 +1,9 @@
 export const H264_CODEC = "avc1.42E033";
 
 let supported: Promise<boolean> | null = null;
-let broken = false;
 
 export function videoSupported(): Promise<boolean> {
-  if (broken || typeof VideoDecoder === "undefined")
-    return Promise.resolve(false);
+  if (typeof VideoDecoder === "undefined") return Promise.resolve(false);
   supported ??= VideoDecoder.isConfigSupported({
     codec: H264_CODEC,
     optimizeForLatency: true,
@@ -13,10 +11,6 @@ export function videoSupported(): Promise<boolean> {
     .then((r) => r.supported === true)
     .catch(() => false);
   return supported;
-}
-
-export function markVideoBroken() {
-  broken = true;
 }
 
 export interface VideoPlayer {

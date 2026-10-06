@@ -2,8 +2,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import {
-  binaryFrame,
   browserCommandLine,
+  VIDEO_UNAVAILABLE,
   commandTimeoutMs,
   isPreviewProcess,
   killablePreviewPids,
@@ -58,6 +58,12 @@ function fakeRun(port: number) {
   };
   return { calls, run, browser };
 }
+
+const stubVideo: BrowserVideo = {
+  available: () => true,
+  calibrate: async () => 56,
+  start: () => ({ stop: () => {} }),
+};
 
 async function host(preview: BrowserPreview) {
   const wss = new WebSocketServer({ noServer: true });
@@ -154,51 +160,62 @@ describe("parseControl", () => {
   });
 });
 
-describe("binaryFrame", () => {
-  // TEST_SCENARIO: agent-browser sends each frame as JSON with the JPEG in base64, a third larger than the image. The runtime re-sends it as one binary message — a 4-byte header length, the JSON header without the image, then the raw JPEG — so the user's browser neither downloads the base64 nor decodes it. Anything that is not a frame is left alone.
-  it("packs a frame as length, header and raw JPEG", () => {
-    const packed = binaryFrame(
-      JSON.stringify({
-        type: "frame",
-        seq: 7,
-        data: Buffer.from([0xff, 0xd8, 0xff]).toString("base64"),
-        metadata: { deviceWidth: 10, deviceHeight: 5 },
-      }),
-    )!;
-    const headLength = packed.readUInt32BE(0);
-    expect(JSON.parse(packed.subarray(4, 4 + headLength).toString())).toEqual({
-      seq: 7,
-      metadata: { deviceWidth: 10, deviceHeight: 5 },
-    });
-    expect([...packed.subarray(4 + headLength)]).toEqual([0xff, 0xd8, 0xff]);
-    expect(binaryFrame('{"type":"url","url":"http://a/"}')).toBeNull();
-    expect(binaryFrame("{")).toBeNull();
-  });
-});
-
 describe("browser preview", () => {
   // TEST_SCENARIO: A panel opens on an address. The session is opened there, the panel's frame-rate setting reaches the stream server, frames flow to the panel as binary messages and the panel's input flows to the browser.
-  it("opens the address and pipes frames and input", async () => {
+  it("opens the address, drops screencast frames and pipes input", async () => {
     const stream = await fakeStream();
     const { calls, run } = fakeRun(stream.port);
     const connect = await host(
-      createBrowserPreview({ run, profileDir: "/tmp/x", log: () => {} }),
+      createBrowserPreview({
+        run,
+        profileDir: "/tmp/x",
+        video: stubVideo,
+        log: () => {},
+      }),
     );
 
     const { ws, messages } = await connect(
-      "url=http%3A%2F%2F127.0.0.1%3A5173%2F&maxFps=10&token=secret",
+      "url=http%3A%2F%2F127.0.0.1%3A5173%2F&token=secret",
     );
-    await until(() => messages.length > 0);
+    await until(() => stream.received.length > 0);
 
     expect(calls[0]).toEqual(["open", "http://127.0.0.1:5173/"]);
-    expect(Buffer.isBuffer(messages[0])).toBe(true);
-    expect(stream.urls[0]).toBe("/?maxFps=10");
+    expect(stream.urls[0]).toBe("/");
+    expect(JSON.parse(stream.received[0]!)).toEqual({
+      type: "screencast_stop",
+    });
 
     ws.send(JSON.stringify({ type: "input_mouse", eventType: "mousePressed" }));
-    await until(() => stream.received.length > 0);
-    expect(JSON.parse(stream.received[0]!)).toMatchObject({
+    await until(() => stream.received.length > 1);
+    expect(JSON.parse(stream.received[1]!)).toMatchObject({
       type: "input_mouse",
     });
+    expect(
+      messages.some((m) => typeof m === "string" && m.includes('"frame"')),
+    ).toBe(false);
+    expect(messages.some((m) => Buffer.isBuffer(m))).toBe(false);
+  });
+
+  // TEST_SCENARIO: an agent whose image lacks the virtual display or ffmpeg cannot stream; the panel is told so in words and the connection closes, rather than showing a blank panel.
+  it("refuses a panel when the image cannot stream video", async () => {
+    const stream = await fakeStream();
+    const { calls, run } = fakeRun(stream.port);
+    const connect = await host(
+      createBrowserPreview({
+        run,
+        profileDir: "/tmp/x",
+        video: { ...stubVideo, available: () => false },
+        log: () => {},
+      }),
+    );
+    const { ws, messages } = await connect("");
+    const done = closed(ws);
+    expect((await done).code).toBe(1011);
+    expect(JSON.parse(messages[0] as string)).toEqual({
+      type: "preview_error",
+      message: VIDEO_UNAVAILABLE,
+    });
+    expect(calls).toEqual([]);
   });
 
   // TEST_SCENARIO: A panel that reconnects without an address must not reload the page the user was on: the session is only asked for its stream, never navigated.
@@ -206,11 +223,16 @@ describe("browser preview", () => {
     const stream = await fakeStream();
     const { calls, run } = fakeRun(stream.port);
     const connect = await host(
-      createBrowserPreview({ run, profileDir: "/tmp/x", log: () => {} }),
+      createBrowserPreview({
+        run,
+        profileDir: "/tmp/x",
+        video: stubVideo,
+        log: () => {},
+      }),
     );
 
-    const { messages } = await connect("");
-    await until(() => messages.length > 0);
+    await connect("");
+    await until(() => stream.received.length > 0);
     expect(calls).toEqual([["stream", "status", "--json"]]);
   });
 
@@ -219,10 +241,15 @@ describe("browser preview", () => {
     const stream = await fakeStream();
     const { calls, run } = fakeRun(stream.port);
     const connect = await host(
-      createBrowserPreview({ run, profileDir: "/tmp/x", log: () => {} }),
+      createBrowserPreview({
+        run,
+        profileDir: "/tmp/x",
+        video: stubVideo,
+        log: () => {},
+      }),
     );
     const { ws, messages } = await connect("");
-    await until(() => messages.length > 0);
+    await until(() => stream.received.length > 0);
 
     ws.send(JSON.stringify({ type: "navigate", url: "https://example.com" }));
     ws.send(JSON.stringify({ type: "reload" }));
@@ -232,7 +259,13 @@ describe("browser preview", () => {
       JSON.stringify({ type: "resize", width: 900, height: 640, scale: 2 }),
     );
     ws.send(JSON.stringify({ type: "navigate", url: "file:///etc/passwd" }));
-    await until(() => messages.length > 1 && calls.length >= 6);
+    await until(
+      () =>
+        calls.length >= 6 &&
+        messages.some(
+          (m) => typeof m === "string" && m.includes("preview_error"),
+        ),
+    );
 
     expect(calls).toContainEqual(["open", "https://example.com/"]);
     expect(calls).toContainEqual(["reload"]);
@@ -240,10 +273,15 @@ describe("browser preview", () => {
     expect(calls).toContainEqual(["forward"]);
     expect(calls).toContainEqual(["set", "viewport", "900", "640", "2"]);
     expect(calls.flat()).not.toContain("file:///etc/passwd");
-    expect(JSON.parse(messages.at(-1) as string)).toMatchObject({
-      type: "preview_error",
-    });
-    expect(stream.received).toEqual([]);
+    expect(
+      messages
+        .filter((m): m is string => typeof m === "string")
+        .map((m) => JSON.parse(m) as { type: string })
+        .some((m) => m.type === "preview_error"),
+    ).toBe(true);
+    expect(stream.received).toEqual([
+      JSON.stringify({ type: "screencast_stop" }),
+    ]);
   });
 
   // TEST_SCENARIO: An address given on connect that is not http or https is refused before any browser command runs.
@@ -251,7 +289,12 @@ describe("browser preview", () => {
     const stream = await fakeStream();
     const { calls, run } = fakeRun(stream.port);
     const connect = await host(
-      createBrowserPreview({ run, profileDir: "/tmp/x", log: () => {} }),
+      createBrowserPreview({
+        run,
+        profileDir: "/tmp/x",
+        video: stubVideo,
+        log: () => {},
+      }),
     );
     const { ws } = await connect("url=file%3A%2F%2F%2Fetc%2Fpasswd");
     expect((await closed(ws)).code).toBe(1008);
@@ -265,13 +308,14 @@ describe("browser preview", () => {
     const preview = createBrowserPreview({
       run,
       profileDir: "/tmp/x",
+      video: stubVideo,
       idleCloseMs: 80,
       log: () => {},
     });
     const connect = await host(preview);
 
     const first = await connect("");
-    await until(() => first.messages.length > 0);
+    await until(() => stream.received.length > 0);
     first.ws.close();
     await until(() => preview.viewers() === 0);
     const second = await connect("");
@@ -336,7 +380,7 @@ describe("browser preview video", () => {
         log: () => {},
       }),
     );
-    const { ws, messages } = await connect("codec=h264");
+    const { ws, messages } = await connect("");
     await until(() => stream.received.length > 0);
     expect(JSON.parse(stream.received[0]!)).toEqual({
       type: "screencast_stop",
@@ -397,7 +441,7 @@ describe("viewport check", () => {
         log: () => {},
       }),
     );
-    const { ws } = await connect("codec=h264");
+    const { ws } = await connect("");
     ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
     await until(() => starts.length === 1);
 
@@ -459,14 +503,15 @@ describe("stopping a stuck browser", () => {
       createBrowserPreview({
         run,
         profileDir: "/tmp/x",
+        video: stubVideo,
         stopBrowser: async () => {
           stops++;
         },
         log: () => {},
       }),
     );
-    const { ws, messages } = await connect("");
-    await until(() => messages.length > 0);
+    const { ws } = await connect("");
+    await until(() => stream.received.length > 0);
     const done = closed(ws);
     ws.send(JSON.stringify({ type: "restart_browser" }));
     expect((await done).code).toBe(1012);
@@ -499,7 +544,7 @@ describe("stopping a stuck browser", () => {
         log: () => {},
       }),
     );
-    const { ws } = await connect("codec=h264");
+    const { ws } = await connect("");
     ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
     await new Promise((r) => setTimeout(r, 300));
     expect(evals).toBe(1);

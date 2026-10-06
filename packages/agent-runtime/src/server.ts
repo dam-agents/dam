@@ -42,6 +42,7 @@ import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
 import {
   agentBrowserCommand,
   createBrowserPreview,
+  fileLog,
 } from "./modules/browser-preview.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
@@ -687,10 +688,16 @@ const browserPreviewProfile = join(
   homeDir,
   ".local/share/platform/browser-preview",
 );
+const browserLogFile = fileLog(
+  join(homeDir, ".local/share/platform/browser-preview.log"),
+);
 const browserPreview = createBrowserPreview({
   run: agentBrowserCommand(envStore, browserPreviewProfile),
   profileDir: browserPreviewProfile,
-  log: (msg) => process.stderr.write(`[browser-preview] ${msg}\n`),
+  log: (msg) => {
+    process.stderr.write(`[browser-preview] ${msg}\n`);
+    browserLogFile(msg);
+  },
 });
 
 applyWSSHandler({
