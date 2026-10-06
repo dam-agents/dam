@@ -20,14 +20,18 @@ const extensionImpl = z.object({
 });
 export type ExtensionImpl = z.infer<typeof extensionImpl>;
 
-export const modelDiscoverySpec = z.object({
-  urlEnv: z.array(z.string().min(1)).nonempty(),
-  redirectEnv: z.array(z.string().min(1)).optional(),
-  pinEnv: z.array(z.string().min(1)).optional(),
+const modelListing = z.object({
   path: z.string().startsWith("/").optional(),
   shape: z
     .enum(["openai-models", "litellm-model-info", "bedrock-inference-profiles"])
     .optional(),
+});
+
+export const modelDiscoverySpec = modelListing.extend({
+  urlEnv: z.array(z.string().min(1)).nonempty(),
+  redirectEnv: z.array(z.string().min(1)).optional(),
+  pinEnv: z.array(z.string().min(1)).optional(),
+  fallback: modelListing.optional(),
 });
 export type ModelDiscoverySpec = z.infer<typeof modelDiscoverySpec>;
 
