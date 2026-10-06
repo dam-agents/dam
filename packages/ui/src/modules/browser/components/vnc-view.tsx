@@ -70,7 +70,7 @@ export function VncView({ agentId, agentName }: Props) {
       <div
         ref={targetRef}
         aria-label={`Screen of ${agentName}'s sandbox`}
-        className="h-full w-full overflow-hidden"
+        className="h-full w-full overflow-hidden [&_canvas]:cursor-default!"
       />
       {!connected && (
         <div className="absolute inset-0 flex items-center justify-center gap-3 bg-background/80 text-sm text-muted-foreground">

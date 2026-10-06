@@ -24,7 +24,7 @@ if [ ! -x "$out/opt/platform-vnc/bin/wayvnc" ]; then
   git -C "$src/neatvnc" apply "$here/neatvnc-without-h264.patch"
   git -C "$src/wayvnc" apply "$here/wayvnc-headless-refresh.patch"
   (cd "$src/neatvnc" &&
-    meson setup build --prefix=/opt/platform-vnc --libdir=lib \
+    meson setup build --buildtype=release --prefix=/opt/platform-vnc --libdir=lib \
       -Dh264=disabled -Dtls=disabled -Djpeg=enabled -Dtests=false -Dexamples=false >/dev/null &&
     meson compile -C build >/dev/null && DESTDIR="$out" meson install -C build >/dev/null) ||
     { echo "platform-vnc: neatvnc build failed" >&2; exit 1; }
@@ -32,7 +32,7 @@ if [ ! -x "$out/opt/platform-vnc/bin/wayvnc" ]; then
   sed "s|^prefix=.*|prefix=$out/opt/platform-vnc|" "$out/opt/platform-vnc/lib/pkgconfig/neatvnc.pc" >"$src/pc/neatvnc.pc"
   (cd "$src/wayvnc" &&
     PKG_CONFIG_PATH="$src/pc" \
-      meson setup build --prefix=/opt/platform-vnc -Dpam=disabled -Dtests=false -Dman-pages=disabled \
+      meson setup build --buildtype=release --prefix=/opt/platform-vnc -Dpam=disabled -Dtests=false -Dman-pages=disabled \
       -Dc_link_args=-Wl,-rpath,/opt/platform-vnc/lib >/dev/null &&
     meson compile -C build >/dev/null && DESTDIR="$out" meson install -C build >/dev/null) ||
     { echo "platform-vnc: wayvnc build failed" >&2; exit 1; }
