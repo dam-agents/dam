@@ -82,6 +82,12 @@ const listReaders: Record<
   },
 };
 
+function publishedName(spec: ModelDiscoverySpec, id: string): string {
+  const name = spec.lowercaseNames ? id.toLowerCase() : id;
+  const prefix = spec.namePrefix ?? "";
+  return name.startsWith(prefix) ? name : prefix + name;
+}
+
 function chatModelIdOf(entry: unknown, shape: ModelListShape): string | null {
   if (entry === null || typeof entry !== "object") return null;
   const record = entry as Record<string, unknown>;
@@ -99,7 +105,7 @@ export function createModelDiscovery(deps: {
       return { status: "not-configured" };
     }
     const selected = selectDiscoverySource(sources, env);
-    if (!selected) return { status: "unavailable" };
+    if (!selected) return { status: "not-configured" };
     const { spec, via, base } = selected;
 
     const shape = spec.shape ?? "openai-models";
@@ -123,7 +129,7 @@ export function createModelDiscovery(deps: {
           ...new Set(
             data.flatMap((m): string[] => {
               const id = chatModelIdOf(m, shape);
-              return id ? [id] : [];
+              return id ? [publishedName(spec, id)] : [];
             }),
           ),
         ].sort();
