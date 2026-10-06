@@ -51,7 +51,12 @@ export const harnessConfigBinding = z.object({
     .object({
       model: z.string().min(1).optional(),
       mode: z.string().min(1).optional(),
-      configOptions: z.record(z.string().min(1), z.string().min(1)).optional(),
+      configOptions: z
+        .record(
+          z.string().min(1),
+          z.union([z.string().min(1), z.array(z.string().min(1)).nonempty()]),
+        )
+        .optional(),
     })
     .refine(
       (k) =>
