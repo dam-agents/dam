@@ -1,5 +1,5 @@
 import { Idea, OverflowMenuVertical, Power } from "@carbon/icons-react";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
