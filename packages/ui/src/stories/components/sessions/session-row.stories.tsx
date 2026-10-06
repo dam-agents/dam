@@ -46,7 +46,11 @@ export const HasDraft: Story = { args: { draft: true } };
 export const BackgroundWork: Story = {
   args: {
     backgroundWork: [
-      { id: "bash_1", description: "Watch the test suite", command: "pnpm vitest --watch" },
+      {
+        id: "bash_1",
+        description: "Watch the test suite",
+        command: "pnpm vitest --watch",
+      },
     ],
   },
 };

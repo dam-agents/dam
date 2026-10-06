@@ -18,7 +18,9 @@ type Story = StoryObj<typeof meta>;
 
 export const NoUpdateYet: Story = {
   loaders: [
-    seedAgents([codingAgent({ unsupportedContributionKinds: ["skill", "mcp-server"] })]),
+    seedAgents([
+      codingAgent({ unsupportedContributionKinds: ["skill", "mcp-server"] }),
+    ]),
   ],
 };
 

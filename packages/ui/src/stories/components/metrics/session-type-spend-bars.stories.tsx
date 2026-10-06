@@ -33,4 +33,3 @@ type Story = StoryObj<typeof meta>;
 /** Empty until the fixture backend reports `bySessionType` (it returns [] while
  *  the `session-costs` flag is off). */
 export const ThisMonthsSpend: Story = { render: () => <ThisMonth /> };
-

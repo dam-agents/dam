@@ -34,12 +34,22 @@ export const AllowedOnce: Story = {};
 
 export const AlwaysAllowed: Story = {
   args: {
-    verdict: { kind: "verdict", label: "Always allowed", subject: EXECUTE_CHIP.title, allowed: true },
+    verdict: {
+      kind: "verdict",
+      label: "Always allowed",
+      subject: EXECUTE_CHIP.title,
+      allowed: true,
+    },
   },
 };
 
 export const Denied: Story = {
   args: {
-    verdict: { kind: "verdict", label: "Denied", subject: EXECUTE_CHIP.title, allowed: false },
+    verdict: {
+      kind: "verdict",
+      label: "Denied",
+      subject: EXECUTE_CHIP.title,
+      allowed: false,
+    },
   },
 };

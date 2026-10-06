@@ -9,7 +9,10 @@ import { codingFile, openWorkspace } from "./file-fixtures";
 const meta = {
   title: "Components/Files/FileViewer",
   component: FileViewer,
-  loaders: [seedAgents(), openWorkspace({ openFile: "src/pricing/discount.ts" })],
+  loaders: [
+    seedAgents(),
+    openWorkspace({ openFile: "src/pricing/discount.ts" }),
+  ],
   decorators: [
     (Story) => (
       <div className="flex h-screen w-[720px] flex-col border-l border-border">

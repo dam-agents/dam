@@ -22,5 +22,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const NewFile: Story = { args: { placeholder: "new-file.ts" } };
-export const NewFolder: Story = { args: { kind: "dir", placeholder: "new-folder" } };
+export const NewFolder: Story = {
+  args: { kind: "dir", placeholder: "new-folder" },
+};
 export const Rename: Story = { args: { initial: "cart-total.ts", depth: 2 } };

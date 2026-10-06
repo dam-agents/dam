@@ -29,7 +29,10 @@ export const SeveralFailures: Story = {
     failures: agentFailures(
       codingAgent({
         contributionFailures: [
-          { kind: "skill", message: "code-review: SKILL.md missing frontmatter" },
+          {
+            kind: "skill",
+            message: "code-review: SKILL.md missing frontmatter",
+          },
           { kind: "mcp-server", message: "github: npx exited with code 1" },
         ],
         workspaceFailures: [

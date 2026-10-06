@@ -70,7 +70,10 @@ export const EXECUTE_CHIP = first(
   "shell tool call",
 );
 
-const userText = first(USER_MESSAGE.parts.find(isKind("text")), "user text").text;
+const userText = first(
+  USER_MESSAGE.parts.find(isKind("text")),
+  "user text",
+).text;
 
 /** The first prompt, recorded by the runtime as never delivered, as the real
  *  projection turns such a record into a bubble. */

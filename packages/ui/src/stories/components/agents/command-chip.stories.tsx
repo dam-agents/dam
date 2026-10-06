@@ -16,7 +16,9 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const SlashCommand: Story = {
-  render: () => <CommandChip>/{getBrand().short} unbind triage-bot</CommandChip>,
+  render: () => (
+    <CommandChip>/{getBrand().short} unbind triage-bot</CommandChip>
+  ),
 };
 
 export const Mention: Story = {

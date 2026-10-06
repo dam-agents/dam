@@ -21,4 +21,6 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const WithHint: Story = {};
-export const LabelOnly: Story = { args: { label: "Claude Sonnet 4.5", hint: undefined } };
+export const LabelOnly: Story = {
+  args: { label: "Claude Sonnet 4.5", hint: undefined },
+};

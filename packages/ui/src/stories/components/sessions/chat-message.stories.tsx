@@ -84,7 +84,13 @@ export const Streaming: Story = {
 /** Sent while an earlier prompt is still running. */
 export const Queued: Story = {
   args: {
-    message: { id: "queued", role: "assistant", parts: [], streaming: true, queued: true },
+    message: {
+      id: "queued",
+      role: "assistant",
+      parts: [],
+      streaming: true,
+      queued: true,
+    },
     isLast: true,
   },
 };

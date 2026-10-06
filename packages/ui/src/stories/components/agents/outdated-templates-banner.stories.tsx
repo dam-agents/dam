@@ -8,7 +8,10 @@ import { seedAgents } from "./story-helpers";
 
 const outdated = (a: AgentView): AgentView => ({
   ...a,
-  templateUpdate: { fromImage: a.image, toImage: a.image.replace(":latest", ":next") },
+  templateUpdate: {
+    fromImage: a.image,
+    toImage: a.image.replace(":latest", ":next"),
+  },
 });
 
 /** Shows once two or more agents have a newer image; with fewer it renders

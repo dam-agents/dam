@@ -18,8 +18,16 @@ const ONBOARDING_AGENT: AgentView[] = AGENTS.map((a) =>
         starterKit: `${IDS.kitCatalog}/${IDS.kit}@c0de9a4d`,
         starterKitOnboarded: null,
         onboardingSteps: [
-          { id: "state-repo", label: "Pick the state-backup repository", done: true },
-          { id: "review-repo", label: "Pick the repository to review", done: false },
+          {
+            id: "state-repo",
+            label: "Pick the state-backup repository",
+            done: true,
+          },
+          {
+            id: "review-repo",
+            label: "Pick the repository to review",
+            done: false,
+          },
         ],
       }
     : a,
@@ -27,7 +35,9 @@ const ONBOARDING_AGENT: AgentView[] = AGENTS.map((a) =>
 
 const Seeded: Decorator = (Story) => {
   useState(() => {
-    localStorage.removeItem(`platform-onboarding-bar-dismissed:${IDS.codingAgent}`);
+    localStorage.removeItem(
+      `platform-onboarding-bar-dismissed:${IDS.codingAgent}`,
+    );
     queryClient.setQueryData(agentsKeys.listWithChannels(), {
       list: ONBOARDING_AGENT,
       availableChannels: { slack: true },

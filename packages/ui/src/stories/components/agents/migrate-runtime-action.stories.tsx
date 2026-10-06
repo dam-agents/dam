@@ -50,7 +50,11 @@ export const Booting: Story = {
   args: {
     agent: codingAgent({
       state: "migrating",
-      runtimeMigration: { phase: "verified", abortable: false, retryable: false },
+      runtimeMigration: {
+        phase: "verified",
+        abortable: false,
+        retryable: false,
+      },
     }),
   },
 };

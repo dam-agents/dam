@@ -9,10 +9,12 @@ import { seedAgents } from "../agents/story-helpers";
 
 /** The chat's session list for the selected agent, read from the agent's
  *  fixture sessions. */
-const openAgent = (agentId: string, sessionId: string | null = null) => () => {
-  useStore.setState({ selectedAgent: agentId, sessionId });
-  return {};
-};
+const openAgent =
+  (agentId: string, sessionId: string | null = null) =>
+  () => {
+    useStore.setState({ selectedAgent: agentId, sessionId });
+    return {};
+  };
 
 const meta = {
   title: "Components/Sessions/SessionsSidebar",

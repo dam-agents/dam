@@ -10,7 +10,10 @@ import { openWorkspace } from "./file-fixtures";
 const meta = {
   title: "Components/Files/DockedFilePanel",
   component: DockedFilePanel,
-  loaders: [seedAgents(), openWorkspace({ openFile: "src/pricing/cart-total.ts" })],
+  loaders: [
+    seedAgents(),
+    openWorkspace({ openFile: "src/pricing/cart-total.ts" }),
+  ],
   decorators: [
     (Story) => (
       <div className="flex h-screen w-[720px] flex-col border-l border-border">

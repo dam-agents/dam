@@ -75,9 +75,6 @@ type Story = StoryObj<typeof NotificationRow>;
 /** Unread session with touched artifacts; hover to reveal Dismiss. */
 export const Unread: Story = { render: () => <FeedRow kind="unread" /> };
 
-
 export const FromSlack: Story = {
   render: () => <FeedRow kind="unread" channel="slack" />,
 };
-
-

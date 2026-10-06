@@ -33,7 +33,9 @@ export const Welcome: Story = { args: { surface: "welcome" } };
 export const BrowsingKits: Story = {
   play: async ({ canvasElement }) => {
     await userEvent.click(
-      within(canvasElement).getByRole("button", { name: "Browse starter kits" }),
+      within(canvasElement).getByRole("button", {
+        name: "Browse starter kits",
+      }),
     );
   },
 };

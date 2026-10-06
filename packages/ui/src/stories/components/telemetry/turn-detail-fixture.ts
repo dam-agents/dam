@@ -116,7 +116,10 @@ function buildTurn(): TurnDetail {
     });
   };
 
-  const started = new Map<string, { at: number; title: string; kind: string }>();
+  const started = new Map<
+    string,
+    { at: number; title: string; kind: string }
+  >();
   for (const { update, at } of frames) {
     const t = Date.parse(at!);
     if (update.sessionUpdate === "tool_call") {
@@ -140,10 +143,17 @@ function buildTurn(): TurnDetail {
         { tool_name: tool, "tool.title": s.title },
         failed,
       );
-      span("claude_code.tool.execution", id, s.at + 40, t - 20, {
-        tool_name: tool,
-        success: String(!failed),
-      }, failed);
+      span(
+        "claude_code.tool.execution",
+        id,
+        s.at + 40,
+        t - 20,
+        {
+          tool_name: tool,
+          success: String(!failed),
+        },
+        failed,
+      );
       log("claude_code.tool_result", t, id, "span-id", {
         tool_name: tool,
         success: String(!failed),

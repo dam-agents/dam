@@ -9,7 +9,9 @@ const meta = {
   component: UnsupportedContributionsBadge,
   parameters: { layout: "centered" },
   args: {
-    agent: codingAgent({ unsupportedContributionKinds: ["skill", "mcp-server"] }),
+    agent: codingAgent({
+      unsupportedContributionKinds: ["skill", "mcp-server"],
+    }),
   },
 } satisfies Meta<typeof UnsupportedContributionsBadge>;
 

@@ -26,7 +26,11 @@ export const OneTask: Story = {};
 export const SeveralTasks: Story = {
   args: {
     items: [
-      { id: "bash_1", description: "Watch the test suite", command: "pnpm vitest --watch" },
+      {
+        id: "bash_1",
+        description: "Watch the test suite",
+        command: "pnpm vitest --watch",
+      },
       { id: "bash_2", command: "pnpm dev" },
     ],
   },

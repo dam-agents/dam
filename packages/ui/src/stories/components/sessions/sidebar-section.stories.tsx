@@ -19,7 +19,11 @@ const meta = {
     const [open, setOpen] = useState(args.open);
     return (
       <div className="flex h-[400px] w-[280px] flex-col border-r border-border">
-        <SidebarSection {...args} open={open} onToggle={() => setOpen((o) => !o)} />
+        <SidebarSection
+          {...args}
+          open={open}
+          onToggle={() => setOpen((o) => !o)}
+        />
       </div>
     );
   },

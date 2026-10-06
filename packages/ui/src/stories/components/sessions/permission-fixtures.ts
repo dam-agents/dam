@@ -26,7 +26,8 @@ export function seedPendingPermissions(count = 1, title = EXECUTE_CHIP.title) {
           toolCallId: `toolu_pending_${i}`,
           kind: "execute",
           title: i === 0 ? title : `Edit src/pricing/tax.ts (${i})`,
-          locations: i === 0 ? [] : [{ path: "/home/agent/work/src/pricing/tax.ts" }],
+          locations:
+            i === 0 ? [] : [{ path: "/home/agent/work/src/pricing/tax.ts" }],
         },
         options: PERMISSION_OPTIONS,
         resolve: () => {},

@@ -2,11 +2,7 @@ import type React from "react";
 
 import { cn } from "@/lib/utils";
 
-import {
-  type BeeColors,
-  hashIndex,
-  injectBeeStyles,
-} from "./bee-avatar.js";
+import { type BeeColors, hashIndex, injectBeeStyles } from "./bee-avatar.js";
 
 export type { BeeColors };
 
@@ -526,4 +522,3 @@ export function CharAvatar({
     </div>
   );
 }
-

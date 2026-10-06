@@ -60,6 +60,11 @@ export const Binary: Story = {
 
 export const TooLarge: Story = {
   args: {
-    file: { path: "pnpm-lock.yaml", content: "", mimeType: "text/yaml", tooLarge: true },
+    file: {
+      path: "pnpm-lock.yaml",
+      content: "",
+      mimeType: "text/yaml",
+      tooLarge: true,
+    },
   },
 };

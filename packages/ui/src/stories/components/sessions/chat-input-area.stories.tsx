@@ -24,7 +24,10 @@ function ChatInputAreaStory(args: {
 
 const openSession = () => {
   resetState();
-  useStore.setState({ selectedAgent: IDS.codingAgent, sessionId: IDS.session1 });
+  useStore.setState({
+    selectedAgent: IDS.codingAgent,
+    sessionId: IDS.session1,
+  });
   return {};
 };
 
