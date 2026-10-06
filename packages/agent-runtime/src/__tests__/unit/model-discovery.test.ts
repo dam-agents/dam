@@ -32,13 +32,40 @@ describe("createModelDiscovery", () => {
     expect(urls).toEqual([]);
   });
 
-  it("reports unavailable when no candidate env var is set (no fetch)", async () => {
+  // TEST_SCENARIO: no granted connection names the endpoint, so there is no list to keep; reporting not-configured clears the one a previous provider left behind.
+  it("reports not-configured when no candidate env var is set (no fetch)", async () => {
     const { fetchImpl, urls } = stubFetch({ body: { data: [{ id: "m" }] } });
     const discover = createModelDiscovery({ log: noop, fetchImpl });
     expect(
       await discover({ urlEnv: ["OPENAI_PROXY_URL", "RITS_URL"] }, {}),
-    ).toEqual({ status: "unavailable" });
+    ).toEqual({ status: "not-configured" });
     expect(urls).toEqual([]);
+  });
+
+  // TEST_SCENARIO: Claude Code's in-pod model gateway publishes lowercased, claude/-prefixed names; discovered choices must carry the same names so a pick in the panel and one in the TUI agree.
+  it("publishes names with the declared prefix and case", async () => {
+    const { fetchImpl } = stubFetch({
+      body: {
+        data: [{ id: "rits/nvidia/NVIDIA-Nemotron" }, { id: "claude/glm" }],
+      },
+    });
+    const discover = createModelDiscovery({ log: noop, fetchImpl });
+    expect(
+      await discover(
+        { urlEnv: ["U"], namePrefix: "claude/", lowercaseNames: true },
+        { U: "https://proxy" },
+      ),
+    ).toEqual({
+      status: "observed",
+      via: "U",
+      models: [
+        { value: "claude/glm", name: "claude/glm" },
+        {
+          value: "claude/rits/nvidia/nvidia-nemotron",
+          name: "claude/rits/nvidia/nvidia-nemotron",
+        },
+      ],
+    });
   });
 
   it("uses the first set candidate and normalizes the base to /v1/models", async () => {

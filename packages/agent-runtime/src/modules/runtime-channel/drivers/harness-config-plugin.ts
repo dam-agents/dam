@@ -112,12 +112,31 @@ export function createHarnessConfigPlugin(deps: {
       : { model: null, mode: null, configOptions: {} };
     if (opts?.discover === false) return values;
 
-    const outcome: ModelDiscoveryOutcome = binding
-      ? await discoverModels(binding.modelDiscovery, envReader.current())
-      : { status: "not-configured" };
+    const env = envReader.current();
+    const outcome: ModelDiscoveryOutcome = !binding
+      ? { status: "not-configured" }
+      : binding.modelDiscovery && !envReader.ready()
+        ? { status: "unavailable" }
+        : await discoverModels(binding.modelDiscovery, env);
     switch (outcome.status) {
-      case "observed":
-        return { ...values, availableModels: outcome.models };
+      case "observed": {
+        const extendsCatalog = selectDiscoverySource(
+          binding?.modelDiscovery,
+          env,
+        )?.spec.extendsCatalog;
+        const catalogModels = extendsCatalog
+          ? (binding?.catalog?.options.find((o) => o.id === "model")?.choices ??
+            [])
+          : [];
+        const listed = new Set(catalogModels.map((c) => c.value));
+        return {
+          ...values,
+          availableModels: [
+            ...catalogModels,
+            ...outcome.models.filter((m) => !listed.has(m.value)),
+          ],
+        };
+      }
       case "not-configured":
         return { ...values, availableModels: null };
       case "unavailable":

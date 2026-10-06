@@ -86,6 +86,53 @@ describe("createReadHarnessConfig", () => {
     });
   });
 
+  // TEST_SCENARIO: Claude Code's catalog is its model tiers; a provider's listing adds to them rather than replacing them, so both stay pickable.
+  it("lists the catalog's models ahead of discovered ones when the source extends the catalog", async () => {
+    const out = await createHarnessConfigPlugin({
+      binding: {
+        ...BINDING,
+        catalog: {
+          options: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              choices: [{ value: "opus", name: "Opus" }],
+            },
+          ],
+        },
+        modelDiscovery: { urlEnv: ["U"], extendsCatalog: true },
+      },
+      agentHome: home,
+      envReader: { current: () => ({ U: "https://proxy" }), ready: () => true },
+      discoverModels: async () => ({
+        status: "observed",
+        models: [
+          { value: "opus", name: "opus" },
+          { value: "claude/glm", name: "claude/glm" },
+        ],
+        via: "U",
+      }),
+      log: noop,
+    }).readCurrent();
+    expect(out.availableModels).toEqual([
+      { value: "opus", name: "Opus" },
+      { value: "claude/glm", name: "claude/glm" },
+    ]);
+  });
+
+  // TEST_SCENARIO: before the env rail has materialized once, a missing URL says nothing about the grant, so the read must not clear an established list.
+  it("omits the model list until the runtime env has materialized", async () => {
+    const out = await createHarnessConfigPlugin({
+      binding: { ...BINDING, modelDiscovery: { urlEnv: ["U"] } },
+      agentHome: home,
+      envReader: { current: () => ({}), ready: () => false },
+      discoverModels: noDiscovery,
+      log: noop,
+    }).readCurrent();
+    expect(out).not.toHaveProperty("availableModels");
+  });
+
   it("returns all-null when the harness declares no binding", async () => {
     const out = await createHarnessConfigPlugin({
       binding: undefined,
