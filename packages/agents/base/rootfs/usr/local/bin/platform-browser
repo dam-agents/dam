@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -8,7 +9,63 @@ const SESSION = "preview";
 const PROFILE = join(homedir(), ".local/share/platform/browser-preview");
 const LINK_PREFIX = "platform://browser?url=";
 
-const BROWSER = ["--session", SESSION, "--profile", PROFILE];
+const DISPLAY = ":99";
+const X_SOCKET = "/tmp/.X11-unix/X99";
+const SCREEN = "3840x2400x24";
+const CHROMIUM = "/opt/ms-playwright/chromium";
+
+const running = (command) =>
+  spawnSync("pgrep", ["-f", `^${command}( |$)`], { stdio: "ignore" })
+    .status === 0;
+
+const detached = (command, args, env = process.env) =>
+  spawn(command, args, { env, detached: true, stdio: "ignore" }).unref();
+
+const waitFor = (check, ms) => {
+  const until = Date.now() + ms;
+  while (!check() && Date.now() < until)
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+  return check();
+};
+
+const startDisplay = () => {
+  if (!existsSync("/usr/bin/Xvfb") || !existsSync(CHROMIUM)) return false;
+  if (!existsSync(X_SOCKET))
+    detached("Xvfb", [DISPLAY, "-screen", "0", SCREEN, "-nolisten", "tcp"]);
+  if (!waitFor(() => existsSync(X_SOCKET), 5_000)) return false;
+  if (!running("matchbox-window-manager"))
+    detached(
+      "matchbox-window-manager",
+      ["-use_titlebar", "no", "-use_cursor", "no"],
+      { ...process.env, DISPLAY },
+    );
+  return true;
+};
+
+const headed = startDisplay();
+const ENV = headed
+  ? {
+      ...process.env,
+      DISPLAY,
+      AGENT_BROWSER_EXECUTABLE_PATH: CHROMIUM,
+      AGENT_BROWSER_ARGS: [
+        process.env.AGENT_BROWSER_ARGS,
+        "--kiosk",
+        "--hide-scrollbars",
+        "--no-first-run",
+        "--test-type",
+      ]
+        .filter(Boolean)
+        .join(","),
+    }
+  : process.env;
+const BROWSER = [
+  "--session",
+  SESSION,
+  "--profile",
+  PROFILE,
+  ...(headed ? ["--headed"] : []),
+];
 
 const usage = () => {
   process.stderr.write(
@@ -36,6 +93,7 @@ if (command === "close") {
 if (command !== "open") {
   const passed = spawnSync("agent-browser", [...BROWSER, ...args], {
     stdio: "inherit",
+    env: ENV,
   });
   if (passed.error) {
     process.stderr.write(`platform-browser: ${passed.error.message}\n`);
@@ -64,10 +122,12 @@ if (url.protocol !== "http:" && url.protocol !== "https:") {
 const opened = spawnSync("agent-browser", [...BROWSER, "open", url.href], {
   stdio: ["ignore", "ignore", "pipe"],
   encoding: "utf8",
+  env: ENV,
 });
 const currentHost = () => {
   const got = spawnSync("agent-browser", [...BROWSER, "get", "url"], {
     encoding: "utf8",
+    env: ENV,
   });
   try {
     return new URL(got.stdout.trim()).host;
