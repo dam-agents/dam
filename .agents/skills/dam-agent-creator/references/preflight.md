@@ -81,6 +81,7 @@ One JSON key per action kind, arrays of self-contained entries:
 {
   "mode": "work",
   "nothing_to_do": false,
+  "read_set": ["docs/work.md"],
   "items_due": [
     {"id": 17, "rev": "abc123", "kind": "first", "title": "…", "takeover": false}
   ],
@@ -96,6 +97,12 @@ One JSON key per action kind, arrays of self-contained entries:
   row is alive).
 - **One array per action kind** (process / cleanup / self-heal / retry / notify…): each
   maps to a different `docs/` procedure and different safety re-checks.
+- **`read_set`**: the docs this run reads, computed from the non-empty arrays: the core
+  file of each due action kind, plus a rare-case file only when an entry needs it (a
+  takeover, a re-check of earlier work, a closed item). The run reads exactly this list
+  and reads a file needed later on its trigger. Every resident definition token is paid
+  again on each call of the run, so a doc the run doesn't need is cost with no work behind
+  it. A run without a worklist (fallback, audit, direct session) reads the docs map.
 - **`logs`**: one-liners explaining every decision, skips included; the agent echoes them
   to the chat UI, and they are the audit trail of the script's reasoning.
 - `error` + `nothing_to_do: true` for "could not even list" failures; the agent just logs
@@ -128,8 +135,8 @@ kit-less deployments. Pattern:
 
 > <Run name>. Run `bash "$HOME/scripts/preflight.sh" <mode>` first. If its JSON says
 > nothing_to_do, report its logs in one line and end the run. Otherwise follow CLAUDE.md →
-> "<Run section>": read docs/<file>.md, …, and back up work/ at the end with
-> `bash "$HOME/scripts/work-backup.sh" persist` when <state-repo env var> is set.
+> "<Run section>": read exactly the worklist's read_set, …, and back up work/ at the end
+> with `bash "$HOME/scripts/work-backup.sh" persist` when <state-repo env var> is set.
 
 Changing an entry command later is a **major** bump (deployed schedules must be
 re-registered; the changelog's upgrade block says so).

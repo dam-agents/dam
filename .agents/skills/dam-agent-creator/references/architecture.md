@@ -124,10 +124,26 @@ a format ships tolerant parsing or an in-place migration, never manual state sur
 `work/MEMORY.md` with scope routing: global preferences vs. per-item overrides (an
 override suppresses only within its item — global state would leak it everywhere).
 Non-operator sources may only ever produce tagged memory entries (`[from <source>]`),
-never behavior/config changes. Passive "observed insights" get bounds (entry cap, per-item
-cap) and a weekly consolidation in the audit run (merge duplicates, promote the repeatedly
-confirmed, drop the stale; operator-tagged entries are never dropped). Bounded memory is
-what lets the agent improve forever without the file growing forever.
+never behavior/config changes. Passive "observed insights" get a weekly consolidation in
+the audit run (merge duplicates, promote the repeatedly confirmed, drop the stale;
+operator-tagged entries are never dropped). Bounded memory is what lets the agent improve
+forever without the file growing forever.
+
+Memory has **two layers**:
+
+- **Distilled** (`MEMORY.md`, `LESSONS.md`, every `work/memory/<topic>.md`): one line per
+  rule or lesson, read whole by the runs that load it. Bound each file in **lines and line
+  length** (e.g. `LESSONS.md` ≤ 100 lines, a topic file ≤ 40, no line past 200 chars). An
+  entry or section cap alone is not a bound: each entry grows, and a file inside its
+  section cap can still pass the read tool's size limit.
+- **Archive** (`work/memory/archive/<topic>.md`): wording, examples, evidence, without a
+  bound. No run reads it as routine: `grep`, then `offset`/`limit`, only for an explicit
+  lookup.
+
+A work item's own history (rounds, per-item notes) lives in its per-item state file, never
+in memory. The audit measures the distilled layer against its bounds (fail at 1.5×) and
+never the archive; consolidation moves an over-bound file's body to the archive and keeps
+only its rules.
 
 For every agent, learning or not: **`work/LESSONS.md`**: verified environment facts and
 recurring failure modes ("this API paginates at 100"), written **only when a root cause
@@ -168,6 +184,47 @@ Two layers, both under `work/`:
   partially-registered instance must warn).
 - Big logs are never loaded into context — `tail`/`grep` them.
 - No secrets in any log, ever. All user-visible errors also land in the chat UI.
+
+## Context per run
+
+A run pays for every resident token again on each of its calls, so context is the main
+cost of a working run once the idle runs cost nothing.
+
+- **Measure before cutting.** Read a sample of real session transcripts and count where
+  tokens and round-trips go: resident docs, inputs read more than once, runs of single
+  read-only calls, loops. Reconcile the estimated cost with the platform's real spend
+  (`references/audit.md` → Cost reconciliation). Guesses aim at the wrong place.
+- **Load by trigger.** One core doc per run type plus rare-case docs, each with its
+  trigger; the pre-flight's `read_set` names the files a run needs
+  (`references/preflight.md` → Designing the worklist).
+- **Read each big input once.** A script slices a large input (a diff, a log, a document
+  set) per item and drops the noise (lockfiles, generated files); the agent reads each
+  slice once.
+- **Brief subagents by path.** A subagent prompt names its brief file and the subagent
+  reads it; a brief pasted into the prompt is paid again at output-token price.
+- **Mechanics in one call.** A step the agent would do as several read-only calls or hand
+  edits of state is one script subcommand with a JSON `outcome`; the agent judges the
+  `outcome`, never the exit status. Reads that don't depend on each other go in one call.
+
+## Autonomous effects (opt-in)
+
+Read when an effect a person normally takes may become automatic (merge, deploy, close,
+push a fix).
+
+- **Off by default, granted twice**: a config key the admin enables at onboarding, plus a
+  human-managed trigger per item (a label, an approval). The agent never sets the trigger
+  itself.
+- **Independent gates from fresh reads**: the agent's own verdict on the current revision,
+  the external status (checks green, mergeable), a size cap, no path the config marks as
+  human-only (CI config always counts), no pending human objection (read every page of
+  the list). A verdict the same run changed earlier is read again, never taken from the
+  worklist.
+- **Server-side guard on the write**: pass the revision the gates read (SHA, lease,
+  ETag), so a change in between rejects the write.
+- **A refusal marks the revision and is never retried**; a transport fault or rate limit
+  is retried next run.
+- **One agent round per revision.** An agent-made change never qualifies its item for
+  another autonomous effect, and the next human-triggered step stays human.
 
 ## Definition file inventory
 

@@ -101,6 +101,9 @@ if the agent talks to people or listens on channels. Present one proposal:
   action-time re-checks, locks if runs can overlap (TTL + liveness gate + heartbeat), and
   **per effect, the record ordering**: write-before-send where a duplicate is worse,
   send-then-record where a silent drop is worse.
+- **Autonomy gates** (only when an effect a person normally takes may become automatic):
+  the opt-in key, the human trigger, the gates and the server-side guard
+  (`references/architecture.md` → Autonomous effects).
 - **Trust boundary exceptions**: the whitelist of channel requests that may trigger work
   (often empty).
 - **Hard invariants**, domain-specific ones included.
