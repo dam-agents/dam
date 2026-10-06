@@ -1372,22 +1372,22 @@ function ActivityFilterMenu({
       </Tooltip>
       <DropdownMenuContent
         align="end"
-        className="max-h-[80vh] w-auto min-w-[320px] overflow-y-auto"
+        className="max-h-[80vh] w-auto min-w-[360px] overflow-y-auto"
       >
-        {active && (
-          <>
-            <DropdownMenuItem
-              onSelect={() => {
-                onChange(defaultActivityFilter());
-                onAgentChange?.(null);
-              }}
-              className="text-muted-foreground"
-            >
-              <Reset size={16} /> Reset to default
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
-        )}
+        <div className="flex items-center justify-between px-2 py-1.5">
+          <span className="text-sm font-medium text-foreground">Filters</span>
+          <button
+            type="button"
+            onClick={() => {
+              onChange(defaultActivityFilter());
+              onAgentChange?.(null);
+            }}
+            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Reset to default
+          </button>
+        </div>
+        <DropdownMenuSeparator />
         {agentOptions && onAgentChange && (
           <>
             <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Agent</p>
@@ -1409,7 +1409,7 @@ function ActivityFilterMenu({
           </>
         )}
         <div className="flex gap-4 px-2 py-1">
-          <div className="flex-1 min-w-0">
+          <div className="min-w-[160px] shrink-0">
             <p className="px-0 py-1.5 text-xs font-medium text-muted-foreground">Status</p>
             {STATE_FILTERS.map((state) => {
               const selected = value.state === state;
