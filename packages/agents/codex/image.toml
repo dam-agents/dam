@@ -1,8 +1,6 @@
 [tools]
 "npm:@openai/codex" = "0.158.0"
-# The platform package ships its binary 0644 and aube, unlike npm, does not
-# chmod a dependency's bin, so codex-acp's spawn of it fails with EACCES.
-"npm:@zed-industries/codex-acp" = { version = "0.16.0", postinstall = "find \"$MISE_TOOL_INSTALL_PATH\" -path '*/codex-acp-linux-*/bin/codex-acp' -exec chmod +x {} +" }
+"npm:@agentclientprotocol/codex-acp" = "2.0.0"
 
 [oci.env]
 PLATFORM_HARNESS = "codex"

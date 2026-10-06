@@ -214,6 +214,12 @@ aube = { path = ".mise/locks/npm-agentclientprotocol-claude-agent-acp/0.84.0", d
 backend = "npm:@agentclientprotocol/claude-agent-acp"
 specifiers = ["0.84.0"]
 
+[[tools."npm:@agentclientprotocol/codex-acp"]]
+version = "2.0.0"
+aube = { path = ".mise/locks/npm-agentclientprotocol-codex-acp/2.0.0", digest = "sha256:8e7e34f181763eee45a534b5b1273cb3d7567f3d5f7f0e2fbbd4af75a7245dd3" }
+backend = "npm:@agentclientprotocol/codex-acp"
+specifiers = ["2.0.0"]
+
 [[tools."npm:@agentclientprotocol/sdk"]]
 version = "1.5.1"
 aube = { path = ".mise/locks/npm-agentclientprotocol-sdk/1.5.1", digest = "sha256:98d164e820fb1cd510d6d63299d5fa344d7b3742017d7a0a903f7e0a26e12b3b" }
@@ -231,12 +237,6 @@ version = "0.158.0"
 aube = { path = ".mise/locks/npm-openai-codex/0.158.0", digest = "sha256:9c545b811721913dfc1b5a1fffbf351ca040e6f3dece78e89609b71cfba04d71" }
 backend = "npm:@openai/codex"
 specifiers = ["0.158.0"]
-
-[[tools."npm:@zed-industries/codex-acp"]]
-version = "0.16.0"
-aube = { path = ".mise/locks/npm-zed-industries-codex-acp/0.16.0", digest = "sha256:c7f37cd0e6525a9748d3c7d3825889653c18848ec6dc8498ca72c57b4feb12ba" }
-backend = "npm:@zed-industries/codex-acp"
-specifiers = ["0.16.0"]
 
 [[tools."npm:agent-browser"]]
 version = "0.38.1"
