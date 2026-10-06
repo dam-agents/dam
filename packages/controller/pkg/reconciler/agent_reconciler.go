@@ -52,6 +52,8 @@ type AgentReconciler struct {
 	podResize       atomic.Int32
 	agentCache      cache.GenericLister
 	vmRunning       sync.Map
+	vmUsedMiB       sync.Map
+	ownerDemandMiB  sync.Map
 	resizeNotices   sync.Map
 	notReadyPolls   sync.Map
 	claimCapNotices sync.Map
@@ -271,6 +273,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		if err != nil {
 			return r.setMachineError(ctx, agent, err)
 		}
+		r.noteMachineUse(name, machine)
 		timer.mark("vmMachine")
 		if migration.active() {
 			migration.held = runtimeMigrationBootHeld(migration, hardStop, overBudget)
@@ -281,6 +284,9 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		if machine.Reason == vmrunner.ReasonOutOfCapacity {
 			running, parked, overBudget = false, true, machine.Message
 			r.recordParkedRetry(name)
+			if err := r.reclaimForRefusedStart(ctx, agent, owner); err != nil {
+				return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
+			}
 		}
 	} else {
 		podSpec, refusal, err := r.renderedSpec(ctx, agent)

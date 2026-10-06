@@ -38,9 +38,8 @@ func (r *AgentReconciler) machineMemoryMiB(spec *apiv1.AgentSpec) int {
 	return max(int(mem.Value()>>20), 1)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the controller knows an agent should run before its machine does, so demand is read from the Agents rather than from the runner — a request raised from the runner's own count would always arrive one machine late, after the runner had admitted it. The agent being reconciled is counted by the decision just made for it; its peers by their gateway, which is scaled up exactly when their machine should run. An agent whose disk size cannot be read is left out, because its own reconcile already refuses it.
+// UNIT_BOUNDARY_DESCRIPTION: the controller knows an agent should run before its machine does, so demand is read from the Agents rather than from the runner — a request raised from the runner's own count would always arrive one machine late, after the runner had admitted it. The agent being reconciled is counted by the decision just made for it; its peers by their gateway, which is scaled up exactly when their machine should run. Only the reconcile that made that decision records it for the peers' later reads: a caller that merely sizes, like the memory pass, passes its own read and leaves the record alone, so it cannot put back a decision a reconcile has since changed. An agent whose disk size cannot be read is left out, because its own reconcile already refuses it.
 func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, self *apiv1.Agent, selfRunning bool) (runnerDemand, error) {
-	r.vmRunning.Store(self.Name, selfRunning)
 	items, err := r.ownerAgents(ctx, owner)
 	if err != nil {
 		return runnerDemand{}, err
@@ -64,12 +63,14 @@ func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, s
 		d.diskGiB += disk
 		d.machines++
 		d.seedBytes += r.runtimeMigrationSeedBytes(ctx, a)
-		running, err := r.peerShouldRun(ctx, a.Name)
-		if err != nil {
-			return runnerDemand{}, err
+		running := selfRunning
+		if a.Name != self.Name {
+			if running, err = r.peerShouldRun(ctx, a.Name); err != nil {
+				return runnerDemand{}, err
+			}
 		}
 		if running {
-			d.memoryMiB += r.machineMemoryMiB(&a.Spec)
+			d.memoryMiB += r.accountedMemoryMiB(a.Name, &a.Spec)
 		}
 	}
 	return d, nil
@@ -161,7 +162,7 @@ func (r *AgentReconciler) runnerClassExpands(ctx context.Context) bool {
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills the runner with every machine of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.
 func runnerMemoryRequest(demandMiB, reserveMiB int, floor, limit resource.Quantity) resource.Quantity {
-	want := *resource.NewQuantity(int64(demandMiB+reserveMiB)<<20, resource.BinarySI)
+	want := *resource.NewQuantity(int64(roundedMiB(demandMiB+reserveMiB))<<20, resource.BinarySI)
 	if want.Cmp(floor) < 0 {
 		want = floor
 	}
