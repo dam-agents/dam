@@ -79,3 +79,16 @@ func TestTheRequestMovesInWholeSteps(t *testing.T) {
 	assert.Equal(t, 512, roundedMiB(512))
 	assert.Equal(t, 1024, roundedMiB(513))
 }
+
+// TEST_SCENARIO: the memory pass sizes an owner's runner from its own read of which agents run, taken before it asks the runner about each machine. If an agent's own reconcile stops it in between, the pass must not write its stale "running" back into the record peers are counted by, or the request stays high and pressure hibernates other agents for room that is already free.
+func TestSizingLeavesTheRunningRecordToTheReconcileThatDecidedIt(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.vmRunning.Store(agent.Name, false)
+
+	_, err := r.ownerRunnerDemand(context.Background(), testOwner, agent, true)
+	require.NoError(t, err)
+
+	running, _ := r.vmRunning.Load(agent.Name)
+	assert.Equal(t, false, running)
+}
