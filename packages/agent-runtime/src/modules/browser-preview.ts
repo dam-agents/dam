@@ -487,7 +487,7 @@ export function createBrowserPreview(deps: {
         while (resizeTo && client.readyState === WebSocket.OPEN) {
           const wanted = resizeTo;
           resizeTo = null;
-          await timed("resize", () =>
+          const set = await timed("resize", () =>
             deps.run([
               "set",
               "viewport",
@@ -495,10 +495,16 @@ export function createBrowserPreview(deps: {
               String(wanted.height),
               String(wanted.scale),
             ]),
-          ).catch((err: Error) => sendError(client, err.message));
+          ).then(
+            () => true,
+            (err: Error) => {
+              deps.log(`resize: ${err.message}; the viewport check retries`);
+              return false;
+            },
+          );
           if (resizeTo) continue;
           viewport = wanted;
-          await restartVideo(true);
+          if (set) await restartVideo(true);
         }
       } finally {
         resizing = false;

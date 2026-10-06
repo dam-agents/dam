@@ -22,6 +22,7 @@ const VIEWPORT_RESEND_MS = 1_000;
 const CLEARED_CLOSE_CODE = 1012;
 const RECONNECT_DELAY_MS = 1_000;
 const RECONNECT_ATTEMPTS = 3;
+const ERROR_SHOWN_MS = 6_000;
 
 export type BrowserStreamState =
   "connecting" | "live" | "disconnected" | "unsupported";
@@ -51,6 +52,12 @@ export function useBrowserStream(
   const [connectKey, setConnectKey] = useState(0);
   const failedAttemptsRef = useRef(0);
   const pendingUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(null), ERROR_SHOWN_MS);
+    return () => clearTimeout(timer);
+  }, [error]);
 
   const send = useCallback((msg: object, isInput = false) => {
     const ws = wsRef.current;

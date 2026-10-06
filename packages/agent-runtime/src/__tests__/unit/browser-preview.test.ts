@@ -451,6 +451,44 @@ describe("resizing", () => {
     ]);
     expect(fake.starts).toEqual([{ width: 600, height: 500, top: 56 }]);
   });
+
+  // TEST_SCENARIO: a size that fails to apply — the browser busy past the command's deadline — is not the user's error to read: the panel stayed on "set timed out" long after. It is logged, and the viewport check puts the size right once the browser answers.
+  it("logs a size that failed instead of telling the panel", async () => {
+    const stream = await fakeStream();
+    const { calls, run, browser } = fakeRun(stream.port);
+    let failing = true;
+    const flakyRun = async (args: string[]) => {
+      if (failing && args[0] === "set") {
+        calls.push(args);
+        throw new Error("set timed out");
+      }
+      return run(args);
+    };
+    const fake = fakeVideo();
+    const logs: string[] = [];
+    const connect = await host(
+      createBrowserPreview({
+        run: flakyRun,
+        profileDir: "/tmp/x",
+        video: fake.video,
+        viewportCheckMs: 50,
+        log: (m) => logs.push(m),
+      }),
+    );
+    const { ws, messages } = await connect("");
+    await until(() => stream.received.length > 0);
+
+    ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
+    await until(() => logs.some((l) => l.includes("set timed out")));
+    failing = false;
+    await until(() => fake.starts.length === 1);
+    expect(browser.viewport).toBe("900x700@1");
+    expect(
+      messages.some(
+        (m) => typeof m === "string" && m.includes("preview_error"),
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("viewport check", () => {
