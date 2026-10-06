@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-05
+Last verified: 2026-10-06
 
 ## Overview
 
@@ -175,7 +175,7 @@ Beyond ACP frames, agent-runtime also serves a tRPC surface on the harness port 
 
 ### Hibernate
 
-Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)). On the `vm` Backend the gateway scales the same way and the agent side is the machine on the VM runner, which stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest. As for a pod, only the idle checker hibernates it, never a lapsed timeout alone. An unreachable runner does not hold the gateway up. Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
+Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)). On the `vm` Backend the gateway scales the same way and the agent side is the machine on the VM runner, which stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest. Only the idle checker or [reclaim](vm-memory.md) hibernates it, not a lapsed timeout. An unreachable runner does not hold the gateway up. Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
 
 **The decision.** The controller's idle checker scans Agents on a timer whose interval scales with the *shortest effective timeout it saw last sweep* — an Agent that chooses a window far below the cluster-wide default is swept inside its own window rather than at the default's pace, subject to a floor that keeps the sweep off the API server's back. It runs even when the default is never-hibernate, for the Agents that opt in, and once at start-up, since a restart forgets the shortest window it saw. It skips any Agent already at rest — pair observed at zero *and* hibernation published. For the rest it hibernates only when *both* checks below agree it is quiet:
 
