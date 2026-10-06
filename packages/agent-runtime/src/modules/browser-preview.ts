@@ -195,24 +195,44 @@ export function isPreviewProcess(cmdline: string, profileDir: string): boolean {
   );
 }
 
+export function killablePreviewPids(
+  processes: { pid: number; cmdline: string }[],
+  profileDir: string,
+  daemonPid: number | null,
+  self: { pid: number; ppid: number },
+): number[] {
+  const protectedPids = new Set([1, self.pid, self.ppid]);
+  return processes
+    .filter(({ pid }) => pid > 1 && !protectedPids.has(pid))
+    .filter(
+      ({ pid, cmdline }) =>
+        isPreviewProcess(cmdline, profileDir) ||
+        (pid === daemonPid && cmdline.includes("agent-browser")),
+    )
+    .map(({ pid }) => pid);
+}
+
 export async function killPreviewProcesses(profileDir: string): Promise<void> {
-  const pids = new Set<number>();
-  const daemon = Number(
-    await readFile(
-      join(homedir(), ".agent-browser", `${PREVIEW_SESSION}.pid`),
-      "utf8",
-    ).catch(() => ""),
-  );
-  if (daemon > 0) pids.add(daemon);
+  const daemon =
+    Number(
+      await readFile(
+        join(homedir(), ".agent-browser", `${PREVIEW_SESSION}.pid`),
+        "utf8",
+      ).catch(() => ""),
+    ) || null;
+  const processes: { pid: number; cmdline: string }[] = [];
   for (const entry of await readdir("/proc").catch(() => [])) {
     const pid = Number(entry);
-    if (!pid || pid === process.pid) continue;
+    if (!pid) continue;
     const cmdline = await readFile(`/proc/${pid}/cmdline`, "utf8").catch(
       () => "",
     );
-    if (isPreviewProcess(cmdline, profileDir)) pids.add(pid);
+    if (cmdline) processes.push({ pid, cmdline });
   }
-  for (const pid of pids) {
+  for (const pid of killablePreviewPids(processes, profileDir, daemon, {
+    pid: process.pid,
+    ppid: process.ppid,
+  })) {
     try {
       process.kill(pid, "SIGKILL");
     } catch {}

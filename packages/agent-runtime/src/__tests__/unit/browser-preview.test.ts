@@ -6,6 +6,7 @@ import {
   browserCommandLine,
   commandTimeoutMs,
   isPreviewProcess,
+  killablePreviewPids,
   parseViewport,
   type BrowserVideo,
   createBrowserPreview,
@@ -502,5 +503,36 @@ describe("stopping a stuck browser", () => {
     ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
     await new Promise((r) => setTimeout(r, 300));
     expect(evals).toBe(1);
+  });
+});
+
+describe("killablePreviewPids", () => {
+  const profile = "/home/agent/.local/share/platform/browser-preview";
+  const proc = (pid: number, ...args: string[]) => ({
+    pid,
+    cmdline: args.join("\0"),
+  });
+
+  // TEST_SCENARIO: agent-browser's pid file lives in the agent's home, which outlives a restart, so after one it can name any process of the new boot — the container's init, the entrypoint, the runtime itself. Killing it took the whole agent down. Only a pid whose command line really is agent-browser is killed, never pid 1, the runtime or its parent, and otherwise only processes that are the panel's own browser.
+  it("never kills a stale pid file's stranger, init or the runtime", () => {
+    const processes = [
+      proc(1, "/usr/bin/catatonit", "--", "agent-entrypoint"),
+      proc(40, "node", "dist/server.js"),
+      proc(41, "bash", "-c", "harness"),
+      proc(77, "/opt/ms-playwright/chromium", `--user-data-dir=${profile}`),
+      proc(78, "/x/agent-browser", "--session", "preview", "set"),
+      proc(90, "/x/agent-browser-linux-x64"),
+      proc(
+        91,
+        "/opt/ms-playwright/headless-shell",
+        "--user-data-dir=/tmp/mine",
+      ),
+    ];
+    const self = { pid: 40, ppid: 1 };
+    expect(killablePreviewPids(processes, profile, 41, self)).toEqual([77, 78]);
+    expect(killablePreviewPids(processes, profile, 1, self)).toEqual([77, 78]);
+    expect(killablePreviewPids(processes, profile, 90, self)).toEqual([
+      77, 78, 90,
+    ]);
   });
 });
