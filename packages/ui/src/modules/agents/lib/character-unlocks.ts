@@ -94,6 +94,7 @@ interface UnlockState {
   celebrating: { name: CharName; questId: string } | null;
   collected: CharName | null;
   pickerRequest: number;
+  checklistRequest: number;
 }
 
 const initialState = (): UnlockState => ({
@@ -105,6 +106,7 @@ const initialState = (): UnlockState => ({
   celebrating: null,
   collected: null,
   pickerRequest: 0,
+  checklistRequest: 0,
 });
 
 let state: UnlockState = initialState();
@@ -167,6 +169,10 @@ export function requestCharacterPicker() {
   setState({ pickerRequest: state.pickerRequest + 1 });
 }
 
+export function requestChecklist() {
+  setState({ checklistRequest: state.checklistRequest + 1 });
+}
+
 export function markCharacterSeen(name: CharName) {
   if (!state.fresh.has(name)) return;
   const fresh = new Set(state.fresh);
@@ -191,6 +197,7 @@ export function unlockAllCharacters() {
     celebrating: null,
     collected: null,
     pickerRequest: 0,
+    checklistRequest: 0,
   });
 }
 

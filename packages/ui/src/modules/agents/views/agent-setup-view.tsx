@@ -71,6 +71,7 @@ import {
   completeQuest,
   FIRST_AGENT_QUEST_ID,
   getCharacterUnlocks,
+  requestChecklist,
   useCharacterUnlocks,
 } from "../lib/character-unlocks.js";
 import {
@@ -482,6 +483,7 @@ export function AgentSetupView({
               caughtOverride={avatarPool}
               wobble={catchingFirst}
               pop={avatarPop}
+              onOpenChecklist={requestChecklist}
             />
           )
         }

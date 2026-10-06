@@ -16,6 +16,7 @@ import {
 } from "../agents/components/char-avatar.js";
 import { CHARACTER_QUESTS } from "../agents/lib/character-unlocks.js";
 import { AgentSetupView } from "../agents/views/agent-setup-view.js";
+import { SidebarSection } from "../sessions/components/sidebar-section.js";
 import {
   CatchBubble,
   CatchCelebration,
@@ -148,33 +149,89 @@ function HomeEmptyScreen() {
   );
 }
 
-function AgentLanding() {
+function ChatSessionMockup() {
+  const [filesOpen, setFilesOpen] = useState(false);
+
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex h-[70px] shrink-0 items-center gap-3 border-b border-border px-6">
-        <span className="group flex">
-          <CharAvatar name={FIRST_AVATAR} state="running" className="size-8" />
-        </span>
-        <h1 className="text-sm font-bold text-foreground">
-          {FIRST_AGENT.name}
-        </h1>
-        <span className="size-2 rounded-full bg-green-700" />
-        <Button variant="ghost" size="icon-sm" aria-label="Agent actions">
-          <OverflowMenuVertical size={16} />
-        </Button>
-      </header>
-      <div className="flex flex-1 flex-col items-center justify-center text-center">
-        <p className="mb-2 text-base font-bold text-foreground">
-          Start a new session
-        </p>
-        <p className="text-sm text-muted-foreground">
-          Send a message to begin.
-        </p>
+    <div className="flex h-full">
+      <div className="flex w-[220px] shrink-0 flex-col border-r border-border">
+        <div className="flex h-11 items-center gap-2.5 border-b border-border px-3">
+          <CharAvatar name={FIRST_AVATAR} state="running" className="size-7" />
+          <span className="truncate text-sm font-semibold text-foreground">
+            {FIRST_AGENT.name}
+          </span>
+          <span className="size-2 shrink-0 rounded-full bg-success" />
+        </div>
+        <SidebarSection
+          title="Files"
+          open={filesOpen}
+          onToggle={() => setFilesOpen((o) => !o)}
+        >
+          {filesOpen && (
+            <p className="px-3 py-4 text-sm text-muted-foreground">No files</p>
+          )}
+        </SidebarSection>
+        <SidebarSection title="Artifacts" open onToggle={() => {}}>
+          <p className="px-3 py-4 text-sm text-muted-foreground">
+            No artifacts yet
+          </p>
+        </SidebarSection>
       </div>
-      <div className="px-8 pb-6">
-        <div className="mx-auto flex h-12 max-w-3xl items-center justify-between rounded-xl border border-border bg-card px-4 text-sm text-muted-foreground">
-          Ask {FIRST_AGENT.name} to do something
-          <Send size={16} />
+
+      <div className="flex flex-1 flex-col">
+        <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
+          <span className="flex">
+            <CharAvatar
+              name={FIRST_AVATAR}
+              state="running"
+              className="size-7"
+            />
+          </span>
+          <h1 className="text-sm font-bold text-foreground">
+            {FIRST_AGENT.name}
+          </h1>
+          <span className="size-2 shrink-0 rounded-full bg-success" />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Agent actions"
+            className="ml-auto"
+          >
+            <OverflowMenuVertical size={16} />
+          </Button>
+        </header>
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-6">
+          <div className="flex flex-col items-end gap-1">
+            <span className="mb-0.5 text-[11px] font-medium text-muted-foreground">
+              You
+            </span>
+            <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground">
+              Help me set up a PR review workflow
+            </div>
+          </div>
+          <div className="flex flex-col items-start gap-1">
+            <span className="mb-0.5 flex items-center gap-2">
+              <CharAvatar
+                name={FIRST_AVATAR}
+                state="running"
+                className="size-6"
+              />
+              <span className="text-sm font-semibold text-foreground">
+                {FIRST_AGENT.name}
+              </span>
+            </span>
+            <div className="max-w-full whitespace-pre-line pl-8 text-sm text-foreground">
+              {
+                "I'll set up an automated PR review workflow for you. Let me start by looking at your repository configuration…"
+              }
+            </div>
+          </div>
+        </div>
+        <div className="px-8 pb-6">
+          <div className="mx-auto flex h-12 max-w-3xl items-center justify-between rounded-xl border border-border bg-card px-4 text-sm text-muted-foreground">
+            Ask {FIRST_AGENT.name} to do something
+            <Send size={16} />
+          </div>
         </div>
       </div>
     </div>
@@ -267,16 +324,25 @@ export function FirstAgentScreens() {
 
       <Step
         n={3}
-        title="Agent created — the first avatar is unlocked"
-        note="Creating the agent opens it, and an egg cracks open above the checklist to unlock a random avatar. That avatar is applied to the agent right away, in the sidebar and the header."
+        title="Agent created — avatar unlocks and checklist updates"
+        note="Creating the agent opens it and triggers the egg-crack unlock. The avatar is applied to the agent in the sidebar and header. The checklist then reveals a crew row — the unlocked avatar plus eggs for the rest — making it clear each remaining task unlocks another surprise."
         action={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCatchReplay((k) => k + 1)}
-          >
-            Replay unlock
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCatchReplay((k) => k + 1)}
+            >
+              Replay unlock
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRevealReplay((k) => k + 1)}
+            >
+              Replay reveal
+            </Button>
+          </div>
         }
       >
         <AppFrame
@@ -286,50 +352,19 @@ export function FirstAgentScreens() {
             <>
               <CatchMomentOverlay replayKey={catchReplay} />
               <ChecklistPanel
+                key={revealReplay}
                 done={1}
                 total={TOTAL}
-                crew={crew([])}
+                crew={crew([FIRST_AVATAR]).map((slot, i) =>
+                  i === 0 ? { ...slot, justCaught: revealReplay > 0 } : slot,
+                )}
                 rows={rows(true, FIRST_AVATAR)}
-                showAvatars={false}
+                revealAvatars={revealReplay > 0}
               />
             </>
           }
         >
-          <AgentLanding />
-        </AppFrame>
-      </Step>
-
-      <Step
-        n={4}
-        title="The checklist reveals there's more to unlock"
-        note="Once the first avatar lands, the checklist grows a crew row: the unlocked avatar plus eggs for the rest. Every remaining task now shows an egg, so it's clear each one unlocks another surprise."
-        action={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setRevealReplay((k) => k + 1)}
-          >
-            Replay reveal
-          </Button>
-        }
-      >
-        <AppFrame
-          agents={[FIRST_AGENT]}
-          showActivity={false}
-          overlay={
-            <ChecklistPanel
-              key={revealReplay}
-              done={1}
-              total={TOTAL}
-              crew={crew([FIRST_AVATAR]).map((slot, i) =>
-                i === 0 ? { ...slot, justCaught: revealReplay > 0 } : slot,
-              )}
-              rows={rows(true, FIRST_AVATAR)}
-              revealAvatars={revealReplay > 0}
-            />
-          }
-        >
-          <AgentLanding />
+          <ChatSessionMockup />
         </AppFrame>
       </Step>
     </div>

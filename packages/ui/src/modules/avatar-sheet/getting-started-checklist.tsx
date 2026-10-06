@@ -1,8 +1,4 @@
-import {
-  CheckmarkFilled,
-  ChevronDown,
-  ChevronUp,
-} from "@carbon/icons-react";
+import { CheckmarkFilled, ChevronDown, ChevronUp } from "@carbon/icons-react";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -196,6 +192,7 @@ export function ChecklistPanel({
   showAvatars = true,
   revealAvatars,
   onCollapse,
+  onDismiss,
 }: {
   done: number;
   total: number;
@@ -204,6 +201,7 @@ export function ChecklistPanel({
   showAvatars?: boolean;
   revealAvatars?: boolean;
   onCollapse?: () => void;
+  onDismiss?: () => void;
 }) {
   return (
     <div className="w-[340px] overflow-hidden rounded-lg border border-border bg-card shadow-xl">
@@ -250,6 +248,17 @@ export function ChecklistPanel({
           <QuestRow key={row.id} {...row} showReward={showAvatars} />
         ))}
       </ul>
+      {onDismiss && (
+        <div className="border-t border-border px-4 py-2">
+          <button
+            type="button"
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+            onClick={onDismiss}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -259,29 +268,47 @@ export function ChecklistPill({
   total,
   pulse,
   onExpand,
+  onDismiss,
 }: {
   done: number;
   total: number;
   pulse?: boolean;
   onExpand?: () => void;
+  onDismiss?: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onExpand}
-      aria-label={`Get started, ${done} of ${total} done. Expand checklist`}
+    <div
       className={cn(
-        "flex h-11 items-center gap-2.5 rounded-lg border border-border bg-card pl-2 pr-4 shadow-lg transition-colors hover:bg-muted/40",
+        "flex h-11 items-center gap-2.5 rounded-lg border border-border bg-card pl-2 pr-1 shadow-lg",
         pulse && "animate-[dock-pulse_0.7s_ease-out]",
       )}
     >
-      <ProgressRing done={done} total={total} />
-      <span className="text-sm font-semibold text-foreground">Get started</span>
-      <span className="text-sm text-muted-foreground">
-        {done}/{total}
-      </span>
-      <ChevronUp size={16} className="text-muted-foreground" />
-    </button>
+      <button
+        type="button"
+        onClick={onExpand}
+        aria-label={`Get started, ${done} of ${total} done. Expand checklist`}
+        className="flex flex-1 items-center gap-2.5 pr-2 transition-colors hover:opacity-80"
+      >
+        <ProgressRing done={done} total={total} />
+        <span className="text-sm font-semibold text-foreground">
+          Get started
+        </span>
+        <span className="text-sm text-muted-foreground">
+          {done}/{total}
+        </span>
+        <ChevronUp size={16} className="text-muted-foreground" />
+      </button>
+      {onDismiss && (
+        <button
+          type="button"
+          aria-label="Dismiss checklist"
+          onClick={onDismiss}
+          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+        >
+          <span className="text-base leading-none">&times;</span>
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -537,9 +564,19 @@ export function CatchCelebration({
 }
 
 export function GettingStartedDock() {
-  const { caught, rewards, working, celebrating, collected } =
+  const { caught, rewards, working, celebrating, collected, checklistRequest } =
     useCharacterUnlocks();
   const [expanded, setExpanded] = useState(true);
+  const [dismissed, setDismissed] = useState(false);
+  const lastRequest = useRef(checklistRequest);
+
+  useEffect(() => {
+    if (checklistRequest > lastRequest.current) {
+      lastRequest.current = checklistRequest;
+      setDismissed(false);
+      setExpanded(true);
+    }
+  }, [checklistRequest]);
 
   const inFlight = celebrating?.name ?? null;
   const settledQuest = (id: string) =>
@@ -554,6 +591,9 @@ export function GettingStartedDock() {
         : "new";
 
   if (done === total && !celebrating) return null;
+  if (dismissed && !celebrating) return null;
+
+  const handleDismiss = () => setDismissed(true);
 
   const rows: QuestRowData[] = CHARACTER_QUESTS.map((q) => ({
     ...q,
@@ -588,6 +628,7 @@ export function GettingStartedDock() {
           showAvatars={done > 0}
           revealAvatars={done === 1 && collected !== null}
           onCollapse={() => setExpanded(false)}
+          onDismiss={handleDismiss}
         />
       ) : (
         <ChecklistPill
@@ -596,6 +637,7 @@ export function GettingStartedDock() {
           total={total}
           pulse={collected !== null}
           onExpand={() => setExpanded(true)}
+          onDismiss={handleDismiss}
         />
       )}
     </div>

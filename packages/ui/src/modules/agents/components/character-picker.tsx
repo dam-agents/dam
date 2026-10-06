@@ -138,11 +138,13 @@ export function AvatarGrid({
   caught,
   fresh,
   onPick,
+  onOpenChecklist,
 }: {
   value: CharName | null;
   caught: readonly CharName[];
   fresh: ReadonlySet<CharName>;
   onPick?: (name: CharName) => void;
+  onOpenChecklist?: () => void;
 }) {
   const slots: (CharName | null)[] = [
     ...caught,
@@ -166,7 +168,7 @@ export function AvatarGrid({
           return name === null ? (
             <Tooltip
               key={`locked-${i}`}
-              content="Finish getting-started tasks to unlock more avatars"
+              content="Complete tasks to unlock more avatars"
               side="top"
               className="text-sm"
             >
@@ -180,9 +182,20 @@ export function AvatarGrid({
         })}
       </div>
       <p className="mt-3 max-w-[280px] text-sm text-muted-foreground">
-        {caught.length === 0
-          ? "Create this agent to unlock your first avatar. It's a surprise!"
-          : `${caught.length} of ${CHAR_NAMES.length} unlocked · finish getting-started tasks to unlock more`}
+        {caught.length === 0 ? (
+          "Create this agent to unlock your first avatar. It’s a surprise!"
+        ) : (
+          <>
+            {caught.length}/{CHAR_NAMES.length} avatars unlocked &ndash;{" "}
+            <button
+              type="button"
+              className="text-primary hover:underline"
+              onClick={onOpenChecklist}
+            >
+              See how to unlock the rest
+            </button>
+          </>
+        )}
       </p>
     </>
   );
@@ -194,12 +207,14 @@ export function CharacterPicker({
   wobble,
   pop,
   caughtOverride,
+  onOpenChecklist,
 }: {
   value: CharName | null;
   onChange: (name: CharName) => void;
   wobble?: boolean;
   pop?: boolean;
   caughtOverride?: readonly CharName[];
+  onOpenChecklist?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const unlocks = useCharacterUnlocks();
@@ -230,6 +245,7 @@ export function CharacterPicker({
           value={value}
           caught={caught}
           fresh={fresh}
+          onOpenChecklist={onOpenChecklist}
           onPick={(name) => {
             onChange(name);
             markCharacterSeen(name);
