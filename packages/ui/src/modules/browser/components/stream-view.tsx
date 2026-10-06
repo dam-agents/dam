@@ -37,7 +37,7 @@ export function StreamView({ agentId, agentName }: Props) {
       src={src}
       title={`Screen of ${agentName}'s sandbox`}
       className="h-full w-full border-0"
-      allow="clipboard-read; clipboard-write; fullscreen"
+      allow="autoplay; clipboard-read; clipboard-write; fullscreen"
     />
   );
 }

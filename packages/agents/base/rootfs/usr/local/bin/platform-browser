@@ -29,6 +29,8 @@ const SELKIES = "/opt/selkies/bin/selkies";
 const STREAM_PORT = "5999";
 const RUNTIME_DIR = `/tmp/platform-display-${userInfo().uid}`;
 const I3_CONFIG = join(RUNTIME_DIR, "i3.conf");
+const PULSE_SOCKET = join(RUNTIME_DIR, "pulse/native");
+const SOUND = ["/usr/bin/pipewire", "/usr/bin/wireplumber", "/usr/bin/pipewire-pulse"];
 const CHROMIUM = "/opt/ms-playwright/chromium";
 const HEADLESS_SHELL = "/opt/ms-playwright/headless-shell";
 const HEADED =
@@ -41,6 +43,7 @@ const HEADED_ARGS = [
   "--no-first-run",
   "--test-type",
   "--disable-infobars",
+  "--autoplay-policy=no-user-gesture-required",
   "--ozone-platform=x11",
 ];
 
@@ -64,7 +67,9 @@ const browserEnv = () => {
     AGENT_BROWSER_ARGS: [...BASE_ARGS, ...(HEADED ? HEADED_ARGS : [])].join(
       ",",
     ),
-    ...(HEADED ? { DISPLAY, AGENT_BROWSER_NO_XVFB: "1" } : {}),
+    ...(HEADED
+      ? { DISPLAY, AGENT_BROWSER_NO_XVFB: "1", PULSE_SERVER: `unix:${PULSE_SOCKET}` }
+      : {}),
   };
 };
 const BROWSER = [
@@ -169,7 +174,15 @@ const displayEnv = () => ({
   ...process.env,
   DISPLAY,
   XDG_RUNTIME_DIR: RUNTIME_DIR,
+  PULSE_SERVER: `unix:${PULSE_SOCKET}`,
 });
+
+const startSound = () => {
+  if (!SOUND.every((binary) => existsSync(binary))) return;
+  for (const binary of SOUND)
+    if (!running(binary)) detached(binary, [], displayEnv());
+  waitFor(() => existsSync(PULSE_SOCKET), 5_000);
+};
 
 const I3_KIOSK = [
   "font pango:monospace 8",
@@ -194,13 +207,13 @@ const startDisplay = () => {
     writeFileSync(I3_CONFIG, I3_KIOSK);
     detached(I3, ["-c", I3_CONFIG], displayEnv());
   }
+  startSound();
   if (!cmdlineHas("selkies.__main__", `--port=${STREAM_PORT}`))
     detached(
       SELKIES,
       [
         `--port=${STREAM_PORT}`,
         "--enable-basic-auth=false",
-        "--audio-enabled=false",
         "--gamepad-enabled=false",
         "--use-css-scaling=true",
         "--backpressure-queue-size=4",
