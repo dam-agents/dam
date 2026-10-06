@@ -14,6 +14,8 @@ Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidel
 
 1. **Understand the request.** Identify the problem, who it affects, and the outcome wanted. Restate it in one or two sentences, and ask follow-ups for anything that would change the issue's shape (scope, who it affects, dependencies) before drafting. **Context leads every template** (why this matters, what led here): if the ask doesn't convey it, ask for it. A ticket without real context is what this step prevents.
 
+   **Came from user feedback in Slack?** Get the permalink to the thread where it was raised (ask if you don't have it) — it goes in the **Follow up** section at the end of the body (see **Follow up** in the guidelines).
+
    Then let the user decide the type: epic, feature, task, bug, or research task (see the guidelines). Say which you read the ask as and why; the user confirms or overrides, and the type picks the template and how the issue is filed. Skip the question only when the type is unmistakable.
 
 2. **Research the codebase.** Trace how the feature works today and its user-visible behavior end-to-end, so the issue describes the status quo accurately. **Keep the research out of the issue**: no file paths, function names, line numbers, data structures or architectural detail. A sentence that only makes sense to someone who has read the code gets rewritten.
