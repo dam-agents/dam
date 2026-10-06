@@ -2,12 +2,19 @@ import { execFile } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { WebSocket } from "ws";
 import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
+import {
+  calibrateTop,
+  startVideo,
+  videoAvailable,
+  type VideoStream,
+} from "./browser-video.js";
 
 export const PREVIEW_SESSION = "preview";
 export const PREVIEW_IDLE_CLOSE_MS = 10 * 60_000;
 export const PREVIEW_STREAM_QUALITY = "90";
 
 const STREAM_QUERY_KEYS = ["maxFps", "pacing"] as const;
+const VIDEO_BACKLOG_BYTES = 1024 * 1024;
 const VIEWPORT_MIN = 200;
 const VIEWPORT_MAX = 4096;
 
@@ -25,6 +32,18 @@ export type PreviewControl =
   | { type: "resize"; width: number; height: number };
 
 export type BrowserCommand = (args: string[]) => Promise<string>;
+
+export interface BrowserVideo {
+  available(): boolean;
+  calibrate(width: number, height: number): Promise<number>;
+  start(opts: {
+    width: number;
+    height: number;
+    top: number;
+    onFrame: (frame: Buffer, key: boolean) => void;
+    log: (msg: string) => void;
+  }): VideoStream;
+}
 
 export interface BrowserPreview {
   attach(client: WebSocket, query: URLSearchParams): void;
@@ -82,15 +101,28 @@ export function binaryFrame(raw: string): Buffer | null {
   return Buffer.concat([length, head, Buffer.from(data, "base64")]);
 }
 
+export function browserCommandLine(
+  args: string[],
+  profileDir: string,
+): [string, string[]] {
+  return args[0] === "close"
+    ? [
+        "agent-browser",
+        ["--session", PREVIEW_SESSION, "--profile", profileDir, ...args],
+      ]
+    : ["platform-browser", args];
+}
+
 export function agentBrowserCommand(
   envReader: RuntimeEnvReader,
   profileDir: string,
 ): BrowserCommand {
   return (args) =>
     new Promise((resolve, reject) => {
+      const [command, argv] = browserCommandLine(args, profileDir);
       execFile(
-        "agent-browser",
-        ["--session", PREVIEW_SESSION, "--profile", profileDir, ...args],
+        command,
+        argv,
         {
           env: {
             ...mergedSpawnEnv(envReader),
@@ -106,14 +138,25 @@ export function agentBrowserCommand(
     });
 }
 
+export function screenVideo(run: BrowserCommand): BrowserVideo {
+  return {
+    available: videoAvailable,
+    calibrate: (width, height) =>
+      calibrateTop((path) => run(["screenshot", path]), width, height),
+    start: startVideo,
+  };
+}
+
 export function createBrowserPreview(deps: {
   run: BrowserCommand;
   profileDir: string;
   streamUrl?: (port: number) => string;
   idleCloseMs?: number;
+  video?: BrowserVideo;
   log: (msg: string) => void;
 }): BrowserPreview {
   const idleCloseMs = deps.idleCloseMs ?? PREVIEW_IDLE_CLOSE_MS;
+  const video = deps.video ?? screenVideo(deps.run);
   const streamUrl =
     deps.streamUrl ?? ((port: number) => `ws://127.0.0.1:${port}/`);
   const clients = new Set<WebSocket>();
@@ -181,12 +224,57 @@ export function createBrowserPreview(deps: {
 
     let upstream: WebSocket | null = null;
     const pending: [Buffer, boolean][] = [];
+    const wantsVideo = query.get("codec") === "h264" && video.available();
+    let videoStream: VideoStream | null = null;
+    let viewport: { width: number; height: number } | null = null;
+    let dropping = false;
+    let restarting = false;
+
+    const sendVideoFrame = (frame: Buffer, key: boolean) => {
+      if (client.readyState !== WebSocket.OPEN) return;
+      if (client.bufferedAmount > VIDEO_BACKLOG_BYTES) {
+        dropping = true;
+        return;
+      }
+      if (dropping && !key) {
+        if (!restarting) void restartVideo();
+        return;
+      }
+      dropping = false;
+      client.send(frame, { binary: true });
+    };
+
+    async function restartVideo() {
+      restarting = true;
+      videoStream?.stop();
+      videoStream = null;
+      const wanted = viewport;
+      if (!wanted || client.readyState !== WebSocket.OPEN) {
+        restarting = false;
+        return;
+      }
+      const top = await video.calibrate(wanted.width, wanted.height);
+      restarting = false;
+      if (viewport !== wanted || client.readyState !== WebSocket.OPEN) return;
+      videoStream = video.start({
+        ...wanted,
+        top,
+        onFrame: sendVideoFrame,
+        log: (msg) => deps.log(`video: ${msg}`),
+      });
+    }
+
     client.on("message", (data: Buffer, isBinary: boolean) => {
       const msg = isBinary ? null : parseControl(data.toString());
       if (msg) {
-        control(client, msg).catch((err: Error) =>
-          sendError(client, err.message),
-        );
+        control(client, msg)
+          .then(() => {
+            if (wantsVideo && msg.type === "resize") {
+              viewport = { width: msg.width, height: msg.height };
+              return restartVideo();
+            }
+          })
+          .catch((err: Error) => sendError(client, err.message));
         return;
       }
       if (upstream?.readyState === WebSocket.OPEN)
@@ -195,6 +283,8 @@ export function createBrowserPreview(deps: {
     });
     client.on("close", () => {
       clients.delete(client);
+      videoStream?.stop();
+      videoStream = null;
       upstream?.close();
       if (clients.size === 0) scheduleIdleClose();
     });
@@ -217,11 +307,13 @@ export function createBrowserPreview(deps: {
         const us = new WebSocket(target);
         upstream = us;
         us.on("open", () => {
+          if (wantsVideo) us.send(JSON.stringify({ type: "screencast_stop" }));
           for (const [d, b] of pending.splice(0)) us.send(d, { binary: b });
         });
         us.on("message", (d: Buffer, isBinary) => {
           if (client.readyState !== WebSocket.OPEN) return;
           const frame = isBinary ? null : binaryFrame(d.toString());
+          if (frame && wantsVideo) return;
           if (frame) client.send(frame, { binary: true });
           else client.send(d, { binary: isBinary });
         });

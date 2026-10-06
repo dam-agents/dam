@@ -3,6 +3,8 @@ import { createServer, type Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import {
   binaryFrame,
+  browserCommandLine,
+  type BrowserVideo,
   createBrowserPreview,
   parseControl,
   previewUrl,
@@ -266,5 +268,87 @@ describe("browser preview", () => {
 
     second.ws.close();
     await until(() => calls.some((c) => c[0] === "close"));
+  });
+});
+
+describe("browserCommandLine", () => {
+  // TEST_SCENARIO: the panel and the agent must launch the same browser — headed on the virtual display when the image can — so every command the runtime runs goes through platform-browser, the one launcher. Only close goes to agent-browser directly, since platform-browser refuses it on the agent's behalf.
+  it("runs commands through platform-browser and close through agent-browser", () => {
+    expect(browserCommandLine(["open", "http://a/"], "/p")).toEqual([
+      "platform-browser",
+      ["open", "http://a/"],
+    ]);
+    expect(browserCommandLine(["close"], "/p")).toEqual([
+      "agent-browser",
+      ["--session", "preview", "--profile", "/p", "close"],
+    ]);
+  });
+});
+
+describe("browser preview video", () => {
+  function fakeVideo() {
+    const starts: { width: number; height: number; top: number }[] = [];
+    const stops: number[] = [];
+    let emit: ((frame: Buffer, key: boolean) => void) | null = null;
+    const video: BrowserVideo = {
+      available: () => true,
+      calibrate: async () => 56,
+      start: (opts) => {
+        const n = starts.push({
+          width: opts.width,
+          height: opts.height,
+          top: opts.top,
+        });
+        emit = opts.onFrame;
+        return { stop: () => stops.push(n) };
+      },
+    };
+    return {
+      video,
+      starts,
+      stops,
+      emit: (f: Buffer, k: boolean) => emit?.(f, k),
+    };
+  }
+
+  // TEST_SCENARIO: a panel that asks for h264 gets video instead of the JPEG screencast. The runtime stops agent-browser's screencast (whose socket still carries input and address updates), drops any JPEG frame that still arrives, starts the encoder at the panel's size below the measured top offset, and restarts it — with a fresh keyframe — whenever the panel resizes.
+  it("streams video sized to the panel and restarts it on resize", async () => {
+    const stream = await fakeStream();
+    const { calls, run } = fakeRun(stream.port);
+    const fake = fakeVideo();
+    const connect = await host(
+      createBrowserPreview({
+        run,
+        profileDir: "/tmp/x",
+        video: fake.video,
+        log: () => {},
+      }),
+    );
+    const { ws, messages } = await connect("codec=h264");
+    await until(() => stream.received.length > 0);
+    expect(JSON.parse(stream.received[0]!)).toEqual({
+      type: "screencast_stop",
+    });
+
+    ws.send(JSON.stringify({ type: "resize", width: 900, height: 700 }));
+    await until(() => fake.starts.length === 1);
+    expect(fake.starts[0]).toEqual({ width: 900, height: 700, top: 56 });
+    expect(calls).toContainEqual(["set", "viewport", "900", "700", "1"]);
+
+    fake.emit(Buffer.from("video-1"), true);
+    await until(() =>
+      messages.some((m) => Buffer.isBuffer(m) && m.toString() === "video-1"),
+    );
+    expect(
+      messages.some((m) => Buffer.isBuffer(m) && m.toString() !== "video-1"),
+    ).toBe(false);
+
+    ws.send(JSON.stringify({ type: "resize", width: 600, height: 500 }));
+    await until(() => fake.starts.length === 2);
+    expect(fake.stops).toContain(1);
+    expect(fake.starts[1]).toEqual({ width: 600, height: 500, top: 56 });
+
+    ws.close();
+    await until(() => fake.stops.includes(2));
   });
 });
