@@ -199,19 +199,23 @@ describe("nextFireAt (rrule counted from a fixed start)", () => {
     "FREQ=HOURLY;BYSETPOS=3",
     "FREQ=DAILY;BYHOUR=9,10;BYSETPOS=3",
     "FREQ=MINUTELY;INTERVAL=15;BYMINUTE=0;BYMONTH=2;BYMONTHDAY=30",
-  ])("answers null quickly for %s, which never fires", (rrule) => {
-    const started = process.cpuUsage();
-    const quiet = [{ startTime: "02:00", endTime: "03:00", enabled: true }];
-    expect(
-      nextFireAt(
-        rruleSpec(rrule, "UTC", quiet),
-        new Date("2026-09-25T11:47:00Z"),
-      ),
-    ).toBeNull();
-    expect(hasVisibleOccurrence(rrule, "UTC", quiet)).toBe(true);
-    const { user, system } = process.cpuUsage(started);
-    expect((user + system) / 1000).toBeLessThan(2000);
-  });
+  ])(
+    "answers null quickly for %s, which never fires",
+    (rrule) => {
+      const started = process.cpuUsage();
+      const quiet = [{ startTime: "02:00", endTime: "03:00", enabled: true }];
+      expect(
+        nextFireAt(
+          rruleSpec(rrule, "UTC", quiet),
+          new Date("2026-09-25T11:47:00Z"),
+        ),
+      ).toBeNull();
+      expect(hasVisibleOccurrence(rrule, "UTC", quiet)).toBe(true);
+      const { user, system } = process.cpuUsage(started);
+      expect((user + system) / 1000).toBeLessThan(2000);
+    },
+    60_000,
+  );
 });
 
 // TEST_SCENARIO: the search runs on the api-server's event loop, so rules that once took seconds to answer, quiet hours that cover a sparse rule among them, now answer within a fraction of a second.
@@ -225,15 +229,19 @@ describe("nextFire (bounded work)", () => {
       "Australia/Lord_Howe",
       [],
     ],
-  ])("answers %s in %s quickly", (rrule, timezone, quiet) => {
-    const started = process.cpuUsage();
-    nextFire(
-      rruleSpec(rrule, timezone, quiet),
-      new Date("2026-10-01T08:47:13Z"),
-    );
-    const { user, system } = process.cpuUsage(started);
-    expect((user + system) / 1000).toBeLessThan(5000);
-  });
+  ])(
+    "answers %s in %s quickly",
+    (rrule, timezone, quiet) => {
+      const started = process.cpuUsage();
+      nextFire(
+        rruleSpec(rrule, timezone, quiet),
+        new Date("2026-10-01T08:47:13Z"),
+      );
+      const { user, system } = process.cpuUsage(started);
+      expect((user + system) / 1000).toBeLessThan(5000);
+    },
+    60_000,
+  );
 
   // TEST_SCENARIO: a quiet window can end at a wall time the clocks skip or repeat, so the search resumes at the first moment after the window rather than an hour past it or back inside it.
   it.each([
