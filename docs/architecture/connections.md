@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-05
+Last verified: 2026-10-06
 
 ## Overview
 
@@ -224,6 +224,9 @@ per-agent override supplies one, and when neither does, nobody has to
 step in: because this Connection redirects Bob, the platform seeds one
 before the harness starts, taking the first of the names the endpoint
 lists once they are ordered ([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
+A key the endpoint refuses the model-information route still gets one:
+the platform then takes the names from the OpenAI model list, which such
+a key may call.
 The seed yields to a pin rather than overriding it — it fills an empty
 slot only, so a chosen model is never swapped for one nobody picked.
 

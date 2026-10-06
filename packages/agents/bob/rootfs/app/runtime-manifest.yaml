@@ -81,6 +81,9 @@ drivers:
     # for one name — the env rail resolves a duplicate by secret order.
     # Only the redirect gets a seeded model: pointed at another provider, Bob's
     # own default need not exist there. On its own gateway Bob keeps it.
+    # A LiteLLM key can be refused /model/info yet allowed the OpenAI
+    # listing, which is the fallback; it carries no mode, so only the
+    # embedding filter by name keeps non-chat models out.
     modelDiscovery:
       urlEnv:
         - BOB_GATEWAY_URL
@@ -91,3 +94,5 @@ drivers:
         - BOB_SHELL_MODEL
       path: /inference/v1/model/info
       shape: litellm-model-info
+      fallback:
+        path: /inference/v1/models

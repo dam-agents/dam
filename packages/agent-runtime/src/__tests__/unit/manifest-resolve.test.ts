@@ -186,6 +186,7 @@ describe("shipped agent manifests resolve", () => {
         urlEnv: ["BOB_GATEWAY_URL", "BOB_DEFAULT_GATEWAY_URL"],
         path: "/inference/v1/model/info",
         shape: "litellm-model-info",
+        fallback: { path: "/inference/v1/models" },
       },
     });
   });

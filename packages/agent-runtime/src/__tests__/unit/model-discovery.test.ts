@@ -202,6 +202,46 @@ describe("createModelDiscovery", () => {
     });
   });
 
+  // TEST_SCENARIO: a LiteLLM key can be refused the model-information route while still allowed the OpenAI listing, so a refused primary listing must fall back to the declared one on the same endpoint.
+  it("asks the fallback listing when the primary one is refused", async () => {
+    const urls: string[] = [];
+    const fetchImpl = (async (url: string | URL | Request) => {
+      urls.push(String(url));
+      return String(url).endsWith("/model/info")
+        ? ({ ok: false, status: 403, json: async () => ({}) } as Response)
+        : ({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [{ id: "gcp/gemini" }, { id: "aws/claude" }],
+            }),
+          } as Response);
+    }) as unknown as typeof globalThis.fetch;
+    const discover = createModelDiscovery({ log: noop, fetchImpl });
+    expect(
+      await discover(
+        {
+          urlEnv: ["BOB_GATEWAY_URL"],
+          path: "/inference/v1/model/info",
+          shape: "litellm-model-info",
+          fallback: { path: "/inference/v1/models" },
+        },
+        { BOB_GATEWAY_URL: "https://gateway.example.com" },
+      ),
+    ).toEqual({
+      status: "observed",
+      via: "BOB_GATEWAY_URL",
+      models: [
+        { value: "aws/claude", name: "aws/claude" },
+        { value: "gcp/gemini", name: "gcp/gemini" },
+      ],
+    });
+    expect(urls).toEqual([
+      "https://gateway.example.com/inference/v1/model/info",
+      "https://gateway.example.com/inference/v1/models",
+    ]);
+  });
+
   it("reports unavailable (never throws) when fetch fails", async () => {
     const { fetchImpl } = stubFetch({ throws: true });
     const discover = createModelDiscovery({ log: noop, fetchImpl });
