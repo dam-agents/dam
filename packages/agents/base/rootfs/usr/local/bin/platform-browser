@@ -192,6 +192,10 @@ const startDisplay = () => {
         "--enable-basic-auth=false",
         "--audio-enabled=false",
         "--gamepad-enabled=false",
+        "--use-css-scaling=true",
+        "--backpressure-queue-size=4",
+        "--video-streaming-mode=false",
+        "--framerate=30,8-60",
       ],
       displayEnv(),
     );

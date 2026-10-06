@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { securityHeaders } from "../../apps/api-server/app.js";
+import type { ApiVariables } from "../../apps/api-server/deps.js";
 import { mountBrowserStreamPage } from "../../apps/api-server/routes/browser-stream.js";
 
 // TEST_OVERVIEW: The browser panel frames the stream client the api-server serves at /api/public/browser-stream/<agent>/. The page is generic code from the api-server image, so it is public, and it must be framable by the platform's own UI and by nothing else.
@@ -14,7 +15,7 @@ describe("browser stream page", () => {
     join(root, "index.html"),
     "<!doctype html><title>stream</title>",
   );
-  const app = new Hono();
+  const app = new Hono<{ Variables: ApiVariables }>();
   app.use("*", securityHeaders);
   mountBrowserStreamPage(app, root);
 
