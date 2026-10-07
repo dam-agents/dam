@@ -216,7 +216,7 @@ const startDisplay = () => {
         "--enable-basic-auth=false",
         "--gamepad-enabled=false",
         "--use-css-scaling=true",
-        "--backpressure-queue-size=4",
+        "--backpressure-queue-size=25",
         "--video-streaming-mode=false",
         "--framerate=30,8-60",
       ],
