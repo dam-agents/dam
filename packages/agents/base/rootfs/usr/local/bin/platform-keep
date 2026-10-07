@@ -16,8 +16,9 @@ exits. The first form starts <command> in its own session and returns at once.
 Its stdout and stderr are appended to FILE; without --log, to this command's
 own stdout when that is a file outside the temp directory (where harnesses
 keep tool output), else to ~/.platform/keep-logs/<id>.log. The
-second form keeps a process that already runs. Everything kept work starts is
-kept too.
+second form keeps a process that already runs in the background (started with
+nohup, setsid or &); a foreground command ends with your turn and can't be
+kept. Everything kept work starts is kept too.
 
 The user sees kept work in the agent's Processes panel and can stop it, or let
 it stop at hibernation. Their choice wins: a later platform-keep on that
