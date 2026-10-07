@@ -17,6 +17,7 @@ import { createAgentTrpcProxy } from "./agent-proxies/trpc-proxy.js";
 import { createImportProxy } from "./agent-proxies/import-proxy.js";
 import { createSshRelay } from "./agent-proxies/ssh-relay.js";
 import {
+  browserRelayRoutes,
   createBrowserRelay,
   requiresConnectionAddress,
 } from "./agent-proxies/browser-relay.js";
@@ -172,17 +173,8 @@ export function startApiServerApp(deps: ApiServerDeps) {
         "terminal",
       ),
       "/api/agents/:id/ssh": relayRoute(relayAdmission, sshRelay, "ssh"),
-      "/api/public/browser-stream/:id/api/websockets": relayRoute(
-        relayAdmission,
-        browserRelay,
-        "browser",
-        (agentId) => requiresConnectionAddress(deps.agentsRepo, agentId),
-      ),
-      "/api/agents/:id/browser": relayRoute(
-        relayAdmission,
-        browserRelay,
-        "browser",
-        (agentId) => requiresConnectionAddress(deps.agentsRepo, agentId),
+      ...browserRelayRoutes(relayAdmission, browserRelay, (agentId) =>
+        requiresConnectionAddress(deps.agentsRepo, agentId),
       ),
       "/api/agents/:id/trpc-ws": relayRoute(
         relayAdmission,

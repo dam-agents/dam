@@ -1,4 +1,9 @@
-import { addUpgradeSecurityHeaders } from "./upgrade.js";
+import {
+  addUpgradeSecurityHeaders,
+  relayRoute,
+  type RelayAdmission,
+  type UpgradeRouteHandler,
+} from "./upgrade.js";
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
@@ -32,6 +37,34 @@ export async function requiresConnectionAddress(
 
 const STREAM_SOCKET_PATH =
   /^\/api\/public\/browser-stream\/[^/]+\/api\/websockets$/;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the browser panel's two socket routes — the
+ * panel's control socket and its stream page's socket. Each takes the agent
+ * from its own path, and that one id is what admission checks the caller owns
+ * and the relay dials, so a caller reaches only the browser of an agent they
+ * own; an agent without addressed injection is refused even to its owner.
+ */
+export function browserRelayRoutes(
+  admission: RelayAdmission,
+  relay: BrowserRelay,
+  agentAllows: (agentId: string) => Promise<boolean>,
+): Record<string, UpgradeRouteHandler> {
+  return {
+    "/api/public/browser-stream/:id/api/websockets": relayRoute(
+      admission,
+      relay,
+      "browser",
+      agentAllows,
+    ),
+    "/api/agents/:id/browser": relayRoute(
+      admission,
+      relay,
+      "browser",
+      agentAllows,
+    ),
+  };
+}
 
 export function browserUpstreamPath(requestUrl: URL): string {
   return STREAM_SOCKET_PATH.test(requestUrl.pathname)

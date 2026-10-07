@@ -2,11 +2,14 @@ import { describe, it, expect, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import {
+  browserRelayRoutes,
   browserUpstreamPath,
   createBrowserRelay,
   requiresConnectionAddress,
 } from "../../apps/api-server/agent-proxies/browser-relay.js";
 import {
+  createRelayAdmission,
+  createUpgradeHandler,
   relayRoute,
   type RelayAdmission,
 } from "../../apps/api-server/agent-proxies/upgrade.js";
@@ -106,6 +109,99 @@ describe("requiresConnectionAddress", () => {
     ).toBe(true);
     expect(await requiresConnectionAddress(repo({}), "a")).toBe(false);
     expect(await requiresConnectionAddress(repo(null), "a")).toBe(false);
+  });
+});
+
+describe("who reaches an agent's browser", () => {
+  const owned = "agent-mine";
+  const users: Record<string, { sub: string; agentIds: string[] | "*" }> = {
+    alice: { sub: "alice", agentIds: "*" },
+    "alice-key-for-other": { sub: "alice", agentIds: ["agent-other"] },
+  };
+
+  async function harness() {
+    const relayed: string[] = [];
+    const admission = createRelayAdmission({
+      authenticate: async (token) => {
+        const u = token ? users[token] : undefined;
+        if (!u) return { ok: false, kind: "unauthorized" };
+        return {
+          ok: true,
+          principal: {
+            user: {
+              sub: u.sub,
+              preferredUsername: u.sub,
+              scopes: ["agents:operate"],
+              agentIds: u.agentIds,
+            },
+            azp: "platform-ui",
+            roles: [],
+          },
+        } as never;
+      },
+      verifyOwner: async (agentId, sub) => sub === "alice" && agentId === owned,
+      isTermsAccepted: async () => true,
+      surfaceAttribution: { uiClientId: "platform-ui", cliClientId: "cli" },
+    });
+    const handler = createUpgradeHandler(
+      browserRelayRoutes(
+        admission,
+        {
+          handleUpgrade: (_req, socket, _head, agentId) => {
+            relayed.push(agentId);
+            socket.end("HTTP/1.1 418 Relayed\r\n\r\n");
+          },
+          close: () => {},
+        },
+        async () => true,
+      ),
+    );
+    const server = createServer();
+    server.on(
+      "upgrade",
+      (req, socket, head) => void handler(req, socket, head),
+    );
+    const port = await listen(server);
+    const status = (path: string) =>
+      new Promise<number | undefined>((resolve) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`);
+        ws.on("error", () => resolve(undefined));
+        ws.once("unexpected-response", (_req, res) => resolve(res.statusCode));
+      });
+    return { relayed, status };
+  }
+
+  const paths = (agent: string, token: string) => [
+    `/api/agents/${agent}/browser?token=${token}`,
+    `/api/public/browser-stream/${agent}/api/websockets?token=${token}`,
+  ];
+
+  // TEST_SCENARIO: a signed-in user who owns one agent tries to open another agent's browser — its control socket or its stream page's socket — by putting that agent's id in the path. Admission checks ownership of exactly the agent the path names, and the relay dials only that agent, so the request is refused (404, which does not reveal whether the agent exists) before anything is relayed. A path that smuggles another id behind an encoded separator is refused the same way, and the user's own agent still opens.
+  it("relays only to an agent the caller owns", async () => {
+    const { relayed, status } = await harness();
+    for (const path of [
+      ...paths("agent-other", "alice"),
+      ...paths(encodeURIComponent("agent-mine/../agent-other"), "alice"),
+    ])
+      expect(await status(path)).toBe(404);
+    expect(relayed).toEqual([]);
+
+    for (const path of paths(owned, "alice"))
+      expect(await status(path)).toBe(418);
+    expect(relayed).toEqual([owned, owned]);
+  });
+
+  // TEST_SCENARIO: no token, a token the platform does not accept, or an API key bound to a different agent than the one the path names: none reaches the relay.
+  it("refuses a missing or foreign token and a key bound to another agent", async () => {
+    const { relayed, status } = await harness();
+    for (const path of paths(owned, "nobody"))
+      expect(await status(path)).toBe(401);
+    expect(
+      await status(`/api/public/browser-stream/${owned}/api/websockets`),
+    ).toBe(401);
+    for (const path of paths(owned, "alice-key-for-other"))
+      expect(await status(path)).toBe(403);
+    expect(relayed).toEqual([]);
   });
 });
 
