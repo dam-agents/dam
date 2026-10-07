@@ -13,6 +13,11 @@ sessionHistory:
   module: "/usr/local/lib/harness-history-lib.mjs"
   exportName: "loadHistory"
 
+# claude-agent-acp is an adapter: each session's conversation runs in a
+# `claude` process under it, usually the pod's largest. The memory reaper must
+# never take one of those for a tool the agent started.
+agentProcesses: ["claude"]
+
 drivers:
   harness-config:
     file: "$HOME/.claude/settings.json"
