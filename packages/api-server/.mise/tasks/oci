@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Build the api-server image to dist/oci/api-server.tar"
-#MISE sources=["src/**", "proto/**", "tsup.config.ts", "tsconfig.json", "package.json", ".mise/tasks/oci", "{{config_root}}/../agent-runtime-api/src/**", "{{config_root}}/../agent-runtime-api/package.json", "{{config_root}}/../api-server-api/src/**", "{{config_root}}/../api-server-api/package.json", "{{config_root}}/../db/src/**", "{{config_root}}/../db/package.json", "{{config_root}}/../db/drizzle/**", "{{config_root}}/../e2e/agents/mock-api/src/**", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../.mise/config.toml", "{{config_root}}/../../mise.lock"]
+#MISE sources=["src/**", "scripts/fetch-browser-stream-web.sh", "{{config_root}}/../agents/base/selkies/requirements.txt", "proto/**", "tsup.config.ts", "tsconfig.json", "package.json", ".mise/tasks/oci", "{{config_root}}/../agent-runtime-api/src/**", "{{config_root}}/../agent-runtime-api/package.json", "{{config_root}}/../api-server-api/src/**", "{{config_root}}/../api-server-api/package.json", "{{config_root}}/../db/src/**", "{{config_root}}/../db/package.json", "{{config_root}}/../db/drizzle/**", "{{config_root}}/../e2e/agents/mock-api/src/**", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../.mise/config.toml", "{{config_root}}/../../mise.lock"]
 #MISE outputs=["dist/oci/api-server.tar"]
 set -euo pipefail
 base="$(mise config get -f "$MISE_CONFIG_ROOT/../../.mise/config.toml" vars.base_image_api_server)"
@@ -19,6 +19,7 @@ rm -f "$root"/app/pnpm-{workspace,lock}.yaml "$root"/app/node_modules/.{modules.
 find "$root/app/node_modules" -name '*_pacquet-stage_*' -delete
 jq -S '.dependencies |= map_values(if test("@file:|^file:") then "workspace:*" else . end)' "$root/app/package.json" > "$npm/package.json"
 mv "$npm/package.json" "$root/app/package.json"
+scripts/fetch-browser-stream-web.sh "$root/app/selkies-web"
 mkdir -p "$root/app/packages/db"
 cp -R ../db/drizzle "$root/app/packages/db/"
 # The server runs on node alone. The base's bundled npm is the one scanners

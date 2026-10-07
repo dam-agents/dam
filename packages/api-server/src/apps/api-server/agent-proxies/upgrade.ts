@@ -191,6 +191,7 @@ export function relayRoute(
   admission: RelayAdmission,
   relay: RelayTarget,
   relayKind: string,
+  agentAllows?: (agentId: string) => Promise<boolean>,
 ): UpgradeRouteHandler {
   return async (req, socket, head, url, params) => {
     if (params.id === undefined) {
@@ -198,14 +199,14 @@ export function relayRoute(
     }
     const agentId = decodeURIComponent(params.id);
 
-    const admitted = await admission(req, url, agentId, relayKind);
-    if (!admitted.ok) {
-      socket.write(
-        `HTTP/1.1 ${upgradeDenial[admitted.kind]}\r\n${HSTS}\r\n\r\n`,
-      );
+    const deny = (kind: RelayAdmissionDenialKind) => {
+      socket.write(`HTTP/1.1 ${upgradeDenial[kind]}\r\n${HSTS}\r\n\r\n`);
       socket.destroy();
-      return;
-    }
+    };
+    const admitted = await admission(req, url, agentId, relayKind);
+    if (!admitted.ok) return deny(admitted.kind);
+    if (agentAllows && !(await agentAllows(agentId)))
+      return deny("not-permitted");
     relay.handleUpgrade(req, socket, head, agentId, {
       sub: admitted.user.sub,
       surface: admitted.surface,

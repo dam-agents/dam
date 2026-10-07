@@ -4,8 +4,12 @@
 
 # libatomic1 for node 26, libnss-extrausers for the agent account,
 # libnss3-tools for Chromium's trust store, sqlite3 for shinkaevolve's run
-# progress, and from libasound2t64 on, what Playwright lists for its Chromium
-# on trixie.
+# progress, xvfb, i3-wm and x11-xserver-utils (the browser panel's display, its
+# kiosk window manager and the xrandr Selkies resizes it with), pipewire,
+# pipewire-pulse and wireplumber (its sound, which Selkies captures through the
+# PulseAudio protocol), and the VA-API and pixman libraries pixelflux's wheel
+# takes from the system (base/selkies), and from libasound2t64 on, what
+# Playwright lists for its Chromium on trixie.
 ca-certificates
 catatonit
 curl
@@ -23,6 +27,16 @@ procps
 sqlite3
 unzip
 xz-utils
+xvfb
+i3-wm
+pipewire
+pipewire-pulse
+wireplumber
+x11-xserver-utils
+libva2
+libva-drm2
+libva-x11-2
+libpixman-1-0
 zip
 libasound2t64
 libatk-bridge2.0-0t64

@@ -10,6 +10,7 @@ import { createTelegramOAuthRoutes } from "../../../modules/channels/infrastruct
 import type { ApiServerDeps, ApiVariables } from "../deps.js";
 import { createOAuthRoutes } from "../../../modules/connections/index.js";
 import { createBrandRoutes } from "./brand.js";
+import { mountBrowserStreamPage } from "./browser-stream.js";
 import { createPublicAgentRoutes } from "../../../modules/agents/index.js";
 
 type App = Hono<{ Variables: ApiVariables }>;
@@ -18,6 +19,7 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
   const { config, terms, jwksWarmup } = boot;
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
+  mountBrowserStreamPage(app);
   app.get("/api/ready", (c) =>
     jwksWarmup.ready()
       ? c.json({ status: "ok" })

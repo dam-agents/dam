@@ -1,0 +1,69 @@
+#!/bin/bash
+# The browser panel's display stack, in the foreground: the virtual display
+# agent-browser's headed Chromium runs on (DISPLAY), a kiosk window manager that
+# keeps every window fullscreen, PipeWire for its sound (PULSE_SERVER), and
+# Selkies, which streams display and sound to the panel on 127.0.0.1:5999 and
+# resizes the display to the panel. The agent runtime runs it and starts it
+# again when it exits, which it does as soon as any part of it dies.
+set -euo pipefail
+
+: "${DISPLAY:?}" "${XDG_RUNTIME_DIR:?}" "${PULSE_SERVER:?}"
+pulse_socket="${PULSE_SERVER#unix:}"
+x_socket="/tmp/.X11-unix/X${DISPLAY#:}"
+
+trap 'trap - EXIT; kill 0 2>/dev/null || true' EXIT INT TERM
+
+wait_for() {
+  for _ in $(seq 100); do [ -e "$1" ] && return 0; sleep 0.1; done
+  echo "platform-display: $2 did not start" >&2
+  exit 1
+}
+
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+# One stack at a time: a runtime that restarted leaves its last one running.
+pidfile="$XDG_RUNTIME_DIR/platform-display.pid"
+# Its group is killed whole, as what it started can outlive it.
+if old=$(cat "$pidfile" 2>/dev/null) && [ "$old" != $$ ] && kill -KILL -- "-$old" 2>/dev/null; then
+  sleep 0.5
+fi
+echo $$ >"$pidfile"
+rm -f "$x_socket" "/tmp/.X${DISPLAY#:}-lock" "$pulse_socket"
+
+Xvfb "$DISPLAY" -screen 0 3840x2400x24 -nolisten tcp &
+wait_for "$x_socket" "the virtual display"
+
+cat >"$XDG_RUNTIME_DIR/i3.conf" <<'I3'
+font pango:monospace 8
+default_border none
+default_floating_border none
+focus_follows_mouse no
+for_window [class=".*"] fullscreen enable
+I3
+i3 -c "$XDG_RUNTIME_DIR/i3.conf" &
+
+pipewire &
+wireplumber &
+pipewire-pulse &
+wait_for "$pulse_socket" "PipeWire's PulseAudio server"
+
+# The video is VP8 alone, locked: royalty-free, and the lightest to encode on
+# a small CPU share. The panel is the client's whole frame, so its sidebar and
+# buttons are hidden; sound starts on its own. Audio is queued 250 ms deep (backpressure-queue-size counts 10 ms chunks of
+# it) so a stall does not drop sound; the page's jitter buffer drops past
+# 80 ms itself, so the depth adds no steady lag.
+/opt/selkies/bin/selkies \
+  --port=5999 \
+  --enable-basic-auth=false \
+  --gamepad-enabled=false \
+  --use-css-scaling=true \
+  --backpressure-queue-size=25 \
+  --video-streaming-mode=false \
+  --framerate=30,8-60 \
+  --encoder=vp8enc \
+  --ui-show-sidebar=false \
+  --ui-show-core-buttons=false &
+
+wait -n
+echo "platform-display: a part of the display stack exited" >&2
+exit 1

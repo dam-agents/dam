@@ -1,6 +1,9 @@
 {
   "manifestVersion": 1,
   "skills": {
+    "agent-browser": [
+      "6f6ff4c22d420c2a86a176de5e98f7b779f166cb19eb3b2faeedcfbcc888b902"
+    ],
     "agent-case-study": [
       "89de1762a9c515e2aee30af59edee909f0cea1cfa65e6198612b03c727661f5d",
       "f14537a93590a5875f0bb5352cd85179758d163d3082ba6e0411da79913eacde",
