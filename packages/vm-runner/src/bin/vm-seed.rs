@@ -209,20 +209,18 @@ impl Progress {
 
     fn stalled(&self, now: Instant) -> Option<String> {
         if let Some(ended) = self.ended {
-            return (now.duration_since(ended) > ANSWER_WAIT).then(|| {
-                format!(
-                    "the runner sent no answer {}s after the whole seed was sent",
-                    ANSWER_WAIT.as_secs()
-                )
-            });
+            if now.duration_since(ended) <= ANSWER_WAIT {
+                return None;
+            }
+            let waited = ANSWER_WAIT.as_secs();
+            return Some(format!("the runner sent no answer {waited}s after the seed was sent"));
         }
         let waiting = self.waiting?;
-        (now.duration_since(waiting) > STALL).then(|| {
-            format!(
-                "the runner took nothing of the seed for {}s",
-                STALL.as_secs()
-            )
-        })
+        if now.duration_since(waiting) <= STALL {
+            return None;
+        }
+        let stalled = STALL.as_secs();
+        Some(format!("the runner took nothing of the seed for {stalled}s"))
     }
 }
 
@@ -322,9 +320,10 @@ fn upload() -> anyhow::Result<()> {
                 }
             };
             let status = response.status();
+            let waited = ANSWER_WAIT.as_secs();
             let answer = tokio::time::timeout(ANSWER_WAIT, response.text())
                 .await
-                .with_context(|| format!("the runner's answer from {url} did not arrive in {}s", ANSWER_WAIT.as_secs()))?
+                .with_context(|| format!("the runner's answer did not arrive in {waited}s"))?
                 .unwrap_or_default();
             if status == reqwest::StatusCode::PAYLOAD_TOO_LARGE {
                 return Err(Permanent(format!("the runner refused the seed: {status}: {}", answer.trim())).into());
@@ -397,7 +396,9 @@ mod tests {
         let mut progress = Progress::new(start);
         progress.polled(&std::task::Poll::Ready(Some(())), start);
         assert!(progress.stalled(start + STALL / 2).is_none());
-        let stalled = progress.stalled(start + STALL + Duration::from_secs(1)).unwrap();
+        let stalled = progress
+            .stalled(start + STALL + Duration::from_secs(1))
+            .unwrap();
         assert!(stalled.contains("took nothing"), "{stalled}");
     }
 
@@ -410,7 +411,9 @@ mod tests {
         assert!(progress.stalled(start + STALL * 10).is_none());
         progress.polled(&std::task::Poll::<Option<()>>::Ready(None), start);
         assert!(progress.stalled(start + ANSWER_WAIT / 2).is_none());
-        let stalled = progress.stalled(start + ANSWER_WAIT + Duration::from_secs(1)).unwrap();
+        let stalled = progress
+            .stalled(start + ANSWER_WAIT + Duration::from_secs(1))
+            .unwrap();
         assert!(stalled.contains("no answer"), "{stalled}");
     }
 
