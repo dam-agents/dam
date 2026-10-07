@@ -71,7 +71,7 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		ReleaseNamespace:  "default",
 		ReleaseName:       "platform",
 		HarnessServerPort: 4001,
-		EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1",
+		EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.2",
 		EnvoyPort:         10000,
 		IstioTrustDomain:  "cluster.local",
 		IstioWaypointName: "apiserver-waypoint",
