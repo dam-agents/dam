@@ -57,7 +57,7 @@ interface ComposeApprovalsSystemDeps {
   attendance: EgressAttendance;
   wrapperFrameSender: WrapperFrameSender;
   holdSeconds: number;
-  platformAllowedHosts: readonly string[];
+  platformAllowedAuthorities: readonly string[];
 }
 
 export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
@@ -76,7 +76,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     ruleMatcher: deps.ruleMatcher,
     attendance: deps.attendance,
     holdSeconds: deps.holdSeconds,
-    platformAllowedHosts: deps.platformAllowedHosts,
+    platformAllowedAuthorities: deps.platformAllowedAuthorities,
   });
   const sweeper = createDeliverySweeper({
     repo,

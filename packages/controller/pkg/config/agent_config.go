@@ -116,6 +116,12 @@ type VMRunnerClusterDNS struct {
 	Ports     []int32           `json:"ports,omitempty"`
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: where a gateway may go inside the network, beyond the public internet and the platform's own pods. ExtraCIDRs are private ranges an install opens for its own enterprise services; the cloud metadata endpoints stay closed inside them. ClusterDNS selects the cluster DNS pods the gateway resolves upstream names through.
+type GatewayEgress struct {
+	ExtraCIDRs []string           `json:"extraCidrs,omitempty"`
+	ClusterDNS VMRunnerClusterDNS `json:"clusterDns,omitempty"`
+}
+
 type VMRunnerRollout struct {
 	MaxConcurrent int      `json:"maxConcurrent,omitempty"`
 	SettleTimeout Duration `json:"settleTimeout,omitempty"`

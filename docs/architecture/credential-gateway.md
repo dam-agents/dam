@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-10-05
+Last verified: 2026-10-07
 
 ## Overview
 
@@ -49,6 +49,11 @@ On the wire:
    credential to misroute.
 4. The default chain (SNI miss) does TCP passthrough — the request reaches
    the upstream unchanged.
+
+Whatever chain forwards it, the gateway pod's own egress NetworkPolicy
+bounds where the dial may land — public addresses plus the platform pods
+and private ranges it names — so no approved name can resolve into the
+cluster or the metadata endpoint ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)).
 
 **L7 promotion.** An egress rule that narrows a host by path, method, or
 port is invisible to the L4 catch-all (it sees only SNI), so the rule's

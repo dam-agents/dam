@@ -35,8 +35,15 @@ export function composeEgressRulesModule(
 export function createEgressRuleMatchAdapter(db: Db) {
   const repo = createEgressRulesRepository(db);
   return {
-    async match(agentId: string, host: string, method: string, path: string) {
-      const row = await repo.findMatch(agentId, host, method, path);
+    async match(
+      agentId: string,
+      host: string,
+      port: number,
+      tls: boolean,
+      method: string,
+      path: string,
+    ) {
+      const row = await repo.findMatch(agentId, host, port, tls, method, path);
       return row ? { verdict: row.verdict } : null;
     },
   };

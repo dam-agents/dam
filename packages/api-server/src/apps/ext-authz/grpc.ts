@@ -55,7 +55,18 @@ export async function startExtAuthzGrpcApp(
         const sni = call.request.attributes?.tlsSession?.sni ?? null;
         const rawHost = httpReq?.host || sni;
         const host = rawHost ? stripPort(rawHost) : null;
-        if (!host) {
+        const method = httpReq?.method?.toUpperCase() || "*";
+        const tls =
+          !httpReq || method === "CONNECT" || httpReq.scheme === "https";
+        const portText = rawHost?.slice(host?.length ?? 0).replace(/^:/, "");
+        const port = !portText
+          ? tls
+            ? 443
+            : 80
+          : /^\d{1,5}$/.test(portText)
+            ? Number(portText)
+            : 0;
+        if (!host || port < 1 || port > 65535) {
           securityLog("warn", "egress.decision", {
             category: "egress",
             actor: null,
@@ -65,14 +76,16 @@ export async function startExtAuthzGrpcApp(
             decision: "deny",
             reason: "missing-host",
           });
-          callback(null, denied("missing host/sni"));
+          callback(null, denied("missing or malformed host/sni"));
           return;
         }
 
         const verdict = await deps.gate.gateRequest({
           agentId,
           host,
-          method: httpReq?.method?.toUpperCase() || "*",
+          port,
+          tls,
+          method,
           path: httpReq?.path ? stripConnectionEgressPrefix(httpReq.path) : "*",
         });
         callback(

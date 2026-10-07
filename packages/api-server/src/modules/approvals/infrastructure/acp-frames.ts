@@ -7,6 +7,7 @@ export function syntheticSessionId(approvalId: string): string {
 export interface SynthFrameInput {
   approvalId: string;
   host: string;
+  port: number | undefined;
   method: string;
   path: string;
 }
@@ -35,10 +36,11 @@ export function buildExtAuthzSynthFrame(input: SynthFrameInput): string {
         toolCallId: syntheticSessionId(input.approvalId),
         kind: "other",
         status: "pending",
-        title: `${input.method} ${input.host}${input.path}`,
+        title: `${input.method} ${input.host}${input.port ? `:${input.port}` : ""}${input.path}`,
         rawInput: {
           approvalId: input.approvalId,
           host: input.host,
+          port: input.port,
           method: input.method,
           path: input.path,
         },

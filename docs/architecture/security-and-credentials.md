@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-05
+Last verified: 2026-10-07
 
 ## Overview
 
@@ -456,6 +456,32 @@ its SNI chain and SAN do.
 
 The HTTP filter on TLS-terminated chains sees method/path; the network
 filter on the catch-all chain sees SNI only.
+
+**Ports.** The gateway dials whatever port a request names, so the Check
+carries the requested port and whether the request is TLS (a CONNECT or
+SNI) or plain HTTP. The port comes from the Host or CONNECT authority, or
+is the scheme's default when absent; the SNI-only catch-all always dials
+443. A rule with a port speaks only for that port; a rule without one
+speaks only for the default port — 443 over TLS, 80 over plain HTTP — so
+a host-wide allow never opens the host's other services. A hold on a
+non-default port records it, and the rule a verdict writes carries it.
+The platform's object store passes on its own authority, port included.
+
+**Gateway egress NetworkPolicy.** ext_authz decides on the name; Envoy
+then resolves it and dials the answer, so an approved name resolving to
+a private address (an owner's DNS record, or rebinding after approval)
+would otherwise reach the cluster, the node or the cloud metadata
+endpoint. A controller-rendered per-pair egress policy closes that at
+the kernel, whatever a name resolves to: the gateway reaches the public
+internet minus the private, loopback, link-local, CGNAT and this-network
+ranges; inside the network only the cluster DNS pods and the platform
+pods its own clusters dial (api-server ext-authz and harness, the harness
+waypoint, object store, telemetry collector), each on its port and on
+HBONE. An install may open further private ranges for enterprise
+services (`controller.gatewayEgress` in [`helm/values.yaml`](../../helm/values.yaml));
+the metadata endpoints stay excepted inside them. A
+connection to a private upstream (an in-house API, a cluster's API
+server) needs its range listed there.
 
 **Unattended requests are refused, not held.** Holding is only worth
 doing where a verdict can be made. A turn driven from a messenger

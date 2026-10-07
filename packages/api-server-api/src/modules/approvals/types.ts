@@ -14,6 +14,7 @@ export type ApprovalVerdict = "allow_once" | "allow" | "deny_once" | "deny";
 interface ExtAuthzPayload {
   kind: "ext_authz";
   host: string;
+  port?: number;
   method: string;
   path: string;
   viaAgentId?: string;

@@ -7,11 +7,14 @@ import type {
 } from "api-server-api";
 import type { EgressRuleRow } from "../domain/types.js";
 import { hostMatchCandidates } from "../domain/host-match.js";
+import { rulePortCovers } from "../domain/port-match.js";
 
 export interface EgressRulesRepository {
   findMatch(
     agentId: string,
     host: string,
+    port: number,
+    tls: boolean,
     method: string,
     path: string,
   ): Promise<EgressRuleRow | null>;
@@ -128,7 +131,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       return rows.length ? toRow(rows[0] as RawRule) : null;
     },
 
-    async findMatch(agentId, host, method, path) {
+    async findMatch(agentId, host, port, tls, method, path) {
       const candidates = sql.join(
         hostMatchCandidates(host).map((h) => sql`${h}`),
         sql`, `,
@@ -147,10 +150,11 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           CASE WHEN method = '*' THEN 1 ELSE 0 END,
           CASE WHEN path_pattern = '*' THEN 1 ELSE 0 END,
           length(path_pattern) DESC
-        LIMIT 1
       `);
-      const list = rows as unknown as RawRule[];
-      return list.length ? toRow(list[0]!) : null;
+      const match = (rows as unknown as RawRule[])
+        .map(toRow)
+        .find((r) => rulePortCovers(r.port, port, tls));
+      return match ?? null;
     },
 
     async hasUserOwnedRuleForHost(agentId, host) {

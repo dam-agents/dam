@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -65,6 +66,7 @@ type Config struct {
 
 	GatewayUpstreamTrustBundle string
 	ExtraTrustedCAs            string
+	GatewayEgress              GatewayEgress
 }
 
 const otelEnvPrefix = "OTEL_"
@@ -212,6 +214,14 @@ func LoadFromEnv() (*Config, error) {
 	}
 	if err := decodeJSONEnv("AGENT_VM", &cfg.VM); err != nil {
 		return nil, err
+	}
+	if err := decodeJSONEnv("GATEWAY_EGRESS", &cfg.GatewayEgress); err != nil {
+		return nil, err
+	}
+	for _, c := range cfg.GatewayEgress.ExtraCIDRs {
+		if _, err := netip.ParsePrefix(c); err != nil {
+			return nil, fmt.Errorf("GATEWAY_EGRESS: extraCidrs entry %q is not a CIDR: %w", c, err)
+		}
 	}
 	if cfg.VM.Enabled && (cfg.VM.Runner.Image == "" || cfg.VM.Runner.Storage == "") {
 		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.image and runner.storage")
