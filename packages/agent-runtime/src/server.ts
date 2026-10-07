@@ -53,6 +53,7 @@ import {
 import { startDisplaySupervisor } from "./modules/browser-display.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
+import { composeProcesses } from "./modules/processes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
 import { sessionDirectoryEntries } from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
@@ -254,6 +255,24 @@ const {
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
+const { service: processesService } = composeProcesses({
+  stateBackend,
+  runtimePid: process.pid,
+  harnessPid: () => acpRuntime.harnessPid(),
+  activeTurnSince: () => acpRuntime.activeTurnSince(),
+  reportedTasks: () =>
+    backgroundWork.held().flatMap(({ sessionId, items }) =>
+      items.map((item) => ({
+        sessionId,
+        taskId: item.id,
+        command: item.command,
+        description: item.description,
+      })),
+    ),
+  onTasksChanged: (cb) => backgroundWork.onChange(cb),
+  log: (msg) => process.stderr.write(`[processes] ${msg}\n`),
+});
+
 let recoveryScheduled = false;
 function scheduleRecovery(): void {
   if (recoveryScheduled) return;
@@ -355,6 +374,7 @@ const createTrpcContext = (): AgentRuntimeContext => ({
   ssh: sshService,
   runtime: runtimeChannel.service,
   harnessConfig: runtimeChannel.harnessConfig,
+  processes: processesService,
 });
 
 const trpcHandler = createHTTPHandler({

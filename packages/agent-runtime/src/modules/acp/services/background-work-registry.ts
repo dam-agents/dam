@@ -12,6 +12,7 @@ export interface BackgroundWorkRegistry {
   forget(sessionId: string): void;
   clear(): void;
   onRelease(cb: () => void): void;
+  onChange(cb: () => void): void;
 }
 
 export interface BackgroundWorkRegistryDeps {
@@ -27,8 +28,20 @@ export function createBackgroundWorkRegistry(
   const holds = new Map<string, BackgroundWorkItem[]>();
 
   const releaseListeners: (() => void)[] = [];
+  const changeListeners: (() => void)[] = [];
+  function notifyChange(): void {
+    for (const cb of changeListeners) cb();
+  }
   function notifyRelease(): void {
+    notifyChange();
     for (const cb of releaseListeners) cb();
+  }
+
+  function sameItems(
+    a: BackgroundWorkItem[],
+    b: BackgroundWorkItem[],
+  ): boolean {
+    return JSON.stringify(a) === JSON.stringify(b);
   }
 
   function describe(items: BackgroundWorkItem[]): string {
@@ -50,12 +63,14 @@ export function createBackgroundWorkRegistry(
         return;
       }
       if (!enabled) return;
+      const previous = holds.get(sessionId);
       holds.set(sessionId, items);
       if (!held) {
         deps.log?.(
           `holding session ${sessionId} for background work: ${describe(items)}`,
         );
       }
+      if (previous === undefined || !sameItems(previous, items)) notifyChange();
     },
 
     hasWork(sessionId) {
@@ -81,6 +96,10 @@ export function createBackgroundWorkRegistry(
 
     onRelease(cb) {
       releaseListeners.push(cb);
+    },
+
+    onChange(cb) {
+      changeListeners.push(cb);
     },
   };
 }

@@ -52,7 +52,7 @@ Apply `/react-ui-engineering` throughout.
      indicator is mounted, not only while the section is open.
 6. **Docs.** In [features](../../architecture/features.md), describe what the flag shows, in
    one sentence next to 04's entry. In
-   [agent-lifecycle](../../architecture/agent-lifecycle.md), state that the user's choice
+   [agent-processes](../../architecture/agent-processes.md), state that the user's choice
    wins over the agent's, and how a user sees why an agent stays awake (the panel), where
    the page today says "What is held is published on the runtime's status surface". Move
    Turn Process, Harness Task, Detached Process and Keep Mark from *proposed* to settled in

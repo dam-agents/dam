@@ -57,6 +57,7 @@ export function createChildAgentProcess(
   });
 
   return {
+    pid: child.pid,
     send(frame) {
       if (child.stdin!.writable)
         child.stdin!.write(JSON.stringify(frame) + "\n");

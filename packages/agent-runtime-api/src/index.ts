@@ -93,6 +93,26 @@ export type {
 } from "./modules/skills/git-url.js";
 export type { SshService } from "./modules/ssh/types.js";
 export type { HarnessConfigService } from "./modules/harness-config/types.js";
+export type {
+  FinishedRow,
+  KeepSource,
+  PendingRestart,
+  ProcessesDomainError,
+  ProcessesService,
+  ProcessKind,
+  ProcessList,
+  ProcessNotice,
+  ProcessOutput,
+  ProcessRow,
+} from "./modules/processes/types.js";
+export {
+  finishedRowSchema,
+  PROCESS_OUTPUT_MAX_BYTES,
+  processListSchema,
+  processNoticeSchema,
+  processOutputSchema,
+  processRowSchema,
+} from "./modules/processes/schemas.js";
 
 export {
   backgroundWorkReportSchema,

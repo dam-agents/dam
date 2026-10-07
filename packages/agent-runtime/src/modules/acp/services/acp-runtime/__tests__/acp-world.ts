@@ -56,6 +56,7 @@ export function createHarness(): { harness: Harness; process: AgentProcess } {
   });
 
   const process: AgentProcess = {
+    pid: undefined,
     send(frame) {
       sent.push(frame as Frame);
     },

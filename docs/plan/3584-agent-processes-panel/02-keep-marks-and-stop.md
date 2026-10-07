@@ -21,7 +21,9 @@ Apply `/typescript-engineering` to the runtime code.
    `marks: { id, pid, startTime, createdAt }[]` (id is the `PLATFORM_KEEP` value for a launch,
    or `pid:${pid}:${startTime}` for `--pid`) and
    `overrides: { key, keepsAwake, decidedAt }[]` (key = the row key from the README). Both are
-   dropped on a new boot id, like 01 already does for the whole boot-scoped state.
+   dropped on a new boot id, like 01 already does for the whole boot-scoped state
+   (`startNewBoot` in `processes/domain/inventory.ts` builds the fresh document; add the two
+   fields there).
 2. **Keep resolution** (domain, pure, next to `classify.ts`): for each row,
    user override > agent mark > default. Defaults: Harness Task `true`, Detached `false`,
    Turn always `false` (no override allowed). A Detached row has an agent mark when any
@@ -73,7 +75,9 @@ Apply `/typescript-engineering` to the runtime code.
      `keepsAwake`). `runtimeBusy()` is also true when it's above 0. `describeBusy()` adds
      `N kept process(es)`.
    - The service scans every 15 s while any mark or `keepsAwake` Detached row is live, even
-     with no watcher, so busy drops soon after kept work exits. When the count drops to 0,
+     with no watcher, so busy drops soon after kept work exits. (01 already scans every 30 s
+     with no watcher, and every 3 s while watched: lower the unwatched period while a keep
+     is live.) When the count drops to 0,
      call the same release path the registry uses (`lease.maybeRecycle()`), so a waiting
      recycle can run.
 7. **Registry split** in `background-work-registry.ts`:
@@ -97,9 +101,10 @@ Apply `/typescript-engineering` to the runtime code.
      (`grep -rn -i -E "nohup|keep-awake" packages/agents`). Only the long campaign or
      experiment runs get `platform-keep`. Helpers like `nous-channel-bridge` stay plain
      `nohup`.
-10. **Docs.** In [agent-lifecycle](../../architecture/agent-lifecycle.md): extend the
-   reported-background-work paragraph with Keep Marks, the user override and who wins, the
-   registry split (session hold vs busy), and Stop. Rewrite "The blind spot — unreported
+10. **Docs.** In [agent-processes](../../architecture/agent-processes.md): extend "Reported
+   background work" and "Process inventory" with Keep Marks, the user override and who wins,
+   the registry split (session hold vs busy), and Stop. In
+   [agent-lifecycle](../../architecture/agent-lifecycle.md), rewrite "The blind spot — unreported
    work" under *Hibernate*: a kept Detached Process now holds the agent, and unkept work is
    still killed by hibernation. Add `platform-keep` to [agent-images](../../architecture/agent-images.md)
    if that page lists base-image helpers. Bump `Last verified:`.

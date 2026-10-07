@@ -53,8 +53,8 @@ Apply `/typescript-engineering`.
    [harness-config](../../architecture/harness-config.md) ("on the same deferral the env rail
    uses"), the env rail in [runtime-delivery](../../architecture/runtime-delivery.md) or
    [connections](../../architecture/connections.md) (wherever the 60 s force is stated), and the
-   reported-background-work paragraph in
-   [agent-lifecycle](../../architecture/agent-lifecycle.md): kept Harness Tasks block a forced
+   "Reported background work" in
+   [agent-processes](../../architecture/agent-processes.md): kept Harness Tasks block a forced
    recycle until they end, the user stops or unkeeps them, or the user applies the change.
    Bump `Last verified:`.
 

@@ -32,8 +32,10 @@ finishes, exit codes, and any change to when agents hibernate.
 ## Approach
 
 Read [agent-lifecycle](../../architecture/agent-lifecycle.md) first, especially "Session
-inside the pod" (reported background work, the pod service, catatonit as PID 1) and
-"Hibernate" (the `idle` flag, the blind spot of unreported work). Also read
+inside the pod" (the pod service, catatonit wrapping agent-runtime) and "Hibernate" (the
+`idle` flag, the blind spot of unreported work), then
+[agent-processes](../../architecture/agent-processes.md) (reported background work and the
+process inventory; split out of agent-lifecycle by 01, which had hit its size cap). Also read
 [persistence](../../architecture/persistence.md) (runtime documents on the agent disk),
 [runtime-delivery](../../architecture/runtime-delivery.md) and
 [harness-config](../../architecture/harness-config.md) (env and config recycles), and
@@ -65,7 +67,9 @@ Marks and overrides are keyed by pid plus process start time, so a reused pid ne
 a decision. The document carries the boot id (`/proc/sys/kernel/random/boot_id`). On a boot
 with a new id, marks and overrides are dropped, and the Harness Tasks and Detached Processes
 the last scan saw running move to finished with `endedBy: "hibernation"`. Finished entries
-keep the newest 20, and none older than 7 days.
+keep the newest 20, and none older than 7 days. (01 built it as
+`{ bootId, lastScanAt, lastRunning, finished }`; `lastScanAt` is the `finishedAt` of rows
+ended by hibernation.)
 
 **Harness Tasks already exist.** Claude Code reports them through a `Stop`/`SubagentStop`
 hook (`packages/agents/claude-code/rootfs/usr/local/lib/report-background-work.mjs`) to
@@ -126,7 +130,7 @@ processes.applyPendingRestart: mutation () => void                       // 03
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | [Process inventory](./01-process-inventory.md) | Runtime `/proc` scan, classification, finished history document, `processes.list` / `watch` / `output` | — |
+| 01 | ✅ [Process inventory](./01-process-inventory.md) | Runtime `/proc` scan, classification, finished history document, `processes.list` / `watch` / `output` | — |
 | 02 | [Keep marks, user override, Stop](./02-keep-marks-and-stop.md) | `platform-keep` CLI, loopback mark endpoint, `setKeep` / `stop`, busy integration, registry split, agent instructions | 01 |
 | 03 | [Settings wait for kept Harness Tasks](./03-restart-deferral.md) | Harness lease never forces a recycle while a kept task runs, `pendingRestart`, `applyPendingRestart` | 02 |
 | 04 | [Processes panel (read-only)](./04-processes-panel.md) | `processes` feature flag, sidebar section, running and finished lists, output view, live updates, Always-on wording | 01 |
@@ -160,9 +164,12 @@ flowchart LR
   nothing keeps the agent awake. The registry then records no Harness Tasks, so none are
   listed. Marks and overrides on Detached Processes are still recorded and shown, but
   `keepsAwake` is `false` for every row.
-- Each slice updates the architecture pages it changes (agent-lifecycle, persistence,
-  features, harness-config) and bumps their `Last verified:` date, following
+- Each slice updates the architecture pages it changes (agent-processes, agent-lifecycle,
+  persistence, features, harness-config) and bumps their `Last verified:` date, following
   [`docs/guidelines/documentation-guidelines.md`](../../guidelines/documentation-guidelines.md).
+  `mise run check` caps every architecture page at 40 000 characters (`docs/architecture.md`
+  at 8 000), and agent-lifecycle and persistence sit close to it: put process-related detail
+  on agent-processes, which owns it, and only link from the others.
   Move the four glossary terms from *proposed* to settled in the last slice that touches them.
 - Use `mise run` for everything (`mise tasks --all`).
 

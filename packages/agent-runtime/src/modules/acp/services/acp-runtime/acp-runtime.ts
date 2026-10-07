@@ -105,6 +105,8 @@ export interface AcpRuntime {
   holdsSessions(): boolean;
   refreshEnv(opts: { force: boolean }): void;
   recycleForConfig(): void;
+  harnessPid(): number | null;
+  activeTurnSince(): number | null;
   shutdown(): void;
 }
 
@@ -1296,6 +1298,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     recycleForConfig() {
       lease.recycleForConfig();
+    },
+
+    harnessPid() {
+      return lease.pid();
+    },
+
+    activeTurnSince() {
+      return promptScheduler.activeTurnSince();
     },
 
     shutdown() {

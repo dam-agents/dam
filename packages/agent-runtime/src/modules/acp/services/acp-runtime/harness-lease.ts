@@ -9,6 +9,7 @@ export type HarnessTeardownReason =
 
 export interface HarnessLease {
   ensure(): boolean;
+  pid(): number | null;
   send(frame: unknown): boolean;
   whenReady(cb: () => void): () => void;
   refreshEnv(opts: { force: boolean }): void;
@@ -207,6 +208,10 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
         teardown("agent-exited");
       });
       return true;
+    },
+
+    pid() {
+      return agent?.pid ?? null;
     },
 
     send(frame) {
