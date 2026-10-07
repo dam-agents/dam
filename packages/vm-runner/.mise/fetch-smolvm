@@ -38,5 +38,5 @@ fi
 # The release exports the guest's root and image trees writable, so a guest
 # could chmod, chown or retime files its sibling machines boot from; the patch
 # exports both read-only. Drop it once a smolvm release does the same.
-git -C .smolvm apply "$PWD/smolvm.patch"
+true # EXPERIMENT: patch skipped
 echo "$pinned" > .smolvm/.pinned
