@@ -305,6 +305,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		if err := r.applyStatefulSet(ctx, agentSS, running && !migration.containerDown()); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
 		}
+		if err := r.forceRollStuckPod(ctx, agentSS.Namespace, agentSS.Name); err != nil {
+			slog.Warn("force-rolling stuck agent pod failed; rollout may be deadlocked",
+				"namespace", agentSS.Namespace, "statefulset", agentSS.Name, "error", err)
+		}
 		if migration.containerDown() {
 			if err := r.stopContainerForRuntimeMigration(ctx, name); err != nil {
 				return r.setError(ctx, name, fmt.Sprintf("stopping the container for its runtime migration: %v", err))
