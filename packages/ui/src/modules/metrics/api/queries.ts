@@ -56,10 +56,10 @@ export function useAgentMonthSpend(agentId: string | null) {
   });
 }
 
-export function useSessionCosts(agentId: string | null, enabled: boolean) {
+export function useSessionCosts(agentId: string | null) {
   return useQuery({
     ...trpc.metrics.overview.queryOptions(
-      agentId && enabled ? { agentId, limit: 1 } : skipToken,
+      agentId ? { agentId, limit: 1 } : skipToken,
     ),
     staleTime: 60_000,
     refetchInterval: 60_000,

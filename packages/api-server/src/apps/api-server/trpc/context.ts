@@ -326,8 +326,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
               metricsReader.spendBySession(agentIds, window),
             categorizeSessions: (agentIds, sessionIds) =>
               sessionDirectory.categorize(agentIds, sessionIds),
-            isEnabled: async () =>
-              (await features.flags())["session-costs"] ?? false,
           }),
         })
       : createDisabledMetricsService();

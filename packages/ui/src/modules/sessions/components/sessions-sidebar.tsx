@@ -85,10 +85,7 @@ export function SessionsSidebar({
   );
 
   const { data: features } = useFeatures();
-  const { data: sessionCosts } = useSessionCosts(
-    selectedAgent,
-    features?.["session-costs"] ?? false,
-  );
+  const { data: sessionCosts } = useSessionCosts(selectedAgent);
   const telemetryEnabled = features?.["agent-telemetry"] ?? false;
 
   const { data: approvals = EMPTY } = useApprovalsForAgent(selectedAgent);
