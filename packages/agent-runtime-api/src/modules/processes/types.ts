@@ -25,6 +25,10 @@ export type KeepMarkRequest = z.infer<typeof keepMarkRequestSchema>;
 export type ProcessesDomainError =
   { kind: "NotFound"; key: string } | { kind: "NotAllowed"; message: string };
 
+export interface NothingPending {
+  kind: "NothingPending";
+}
+
 export interface ProcessesService {
   list(): Promise<ProcessList>;
   watch(signal?: AbortSignal): AsyncIterable<ProcessNotice>;
@@ -34,4 +38,5 @@ export interface ProcessesService {
     keepsAwake: boolean,
   ): Promise<Result<void, ProcessesDomainError>>;
   stop(key: string): Promise<Result<void, ProcessesDomainError>>;
+  applyPendingRestart(): Promise<Result<void, NothingPending>>;
 }

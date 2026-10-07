@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { z } from "zod";
-import type { PodSession } from "agent-runtime-api";
+import type { PendingRestart, PodSession } from "agent-runtime-api";
 import {
   buildPlatformRunStartedNotification,
   buildPlatformTurnEndedNotification,
@@ -107,6 +107,9 @@ export interface AcpRuntime {
   recycleForConfig(): void;
   harnessPid(): number | null;
   activeTurnSince(): number | null;
+  pendingRestart(): PendingRestart | null;
+  applyPendingRestart(): boolean;
+  onPendingRestartChange(cb: () => void): void;
   shutdown(): void;
 }
 
@@ -554,6 +557,34 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     );
   }
 
+  function keptTaskCount(): number {
+    let count = 0;
+    for (const held of deps.backgroundWork?.held() ?? [])
+      count += held.items.length;
+    return count;
+  }
+
+  const pendingRestartListeners: (() => void)[] = [];
+  let lastPendingRestart = "null";
+
+  function pendingRestart(): PendingRestart | null {
+    const pending = lease.pending();
+    const blockingTasks = keptTaskCount();
+    if (!pending || blockingTasks === 0) return null;
+    return {
+      reason: pending.reason,
+      since: new Date(pending.since).toISOString(),
+      blockingTasks,
+    };
+  }
+
+  function checkPendingRestart(): void {
+    const next = JSON.stringify(pendingRestart());
+    if (next === lastPendingRestart) return;
+    lastPendingRestart = next;
+    for (const cb of pendingRestartListeners) cb();
+  }
+
   const lease = createHarnessLease({
     spawnAgent: deps.spawnAgent,
     onFrame(line) {
@@ -575,6 +606,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     envReadyAtBoot: deps.envReadyAtBoot ?? true,
     warmStartTimeoutMs,
     envForceRecycleMs,
+    keptTasks: keptTaskCount,
+    onPendingChange: () => checkPendingRestart(),
     ...(deps.beforeSpawn ? { beforeSpawn: deps.beforeSpawn } : {}),
     log(msg) {
       deps.log?.(msg);
@@ -665,7 +698,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return (deps.keptProcesses?.count() ?? 0) > 0;
   }
 
-  deps.backgroundWork?.onRelease(() => lease.maybeRecycle());
+  deps.backgroundWork?.onChange(() => {
+    checkPendingRestart();
+    lease.maybeRecycle();
+  });
   deps.keptProcesses?.onRelease(() => lease.maybeRecycle());
 
   function detach(channel: ClientChannel): void {
@@ -1315,6 +1351,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     activeTurnSince() {
       return promptScheduler.activeTurnSince();
+    },
+
+    pendingRestart,
+
+    applyPendingRestart() {
+      if (pendingRestart() === null) return false;
+      return lease.recycleNow();
+    },
+
+    onPendingRestartChange(cb) {
+      pendingRestartListeners.push(cb);
     },
 
     shutdown() {

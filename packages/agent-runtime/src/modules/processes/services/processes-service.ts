@@ -4,6 +4,7 @@ import {
   PROCESS_OUTPUT_MAX_BYTES,
   type FinishedRow,
   type KeepMarkRequest,
+  type PendingRestart,
   type ProcessesService,
   type ProcessNotice,
   type ProcessRow,
@@ -81,6 +82,9 @@ export interface ProcessesServiceDeps {
   onTasksChanged: (cb: () => void) => void;
   onTaskKeepChanged: () => void;
   dropTask: (sessionId: string, taskId: string) => void;
+  pendingRestart: () => PendingRestart | null;
+  applyPendingRestart: () => boolean;
+  onPendingRestartChange: (cb: () => void) => void;
   log: (msg: string) => void;
 }
 
@@ -140,8 +144,10 @@ function withDescendants(
  * decision and is never overruled by a later mark. Stop ends a row's whole
  * tree: SIGTERM first, SIGKILL after a grace period to what is left. Each scan
  * publishes how many Detached Processes keep the agent awake, which makes the
- * runtime busy. Watchers get a data-less notice when a row appears, goes, or
- * changes whether it keeps the agent awake; CPU and memory changes are polled.
+ * runtime busy. It also reports a harness restart that waits for kept
+ * Harness Tasks, and applies it on request. Watchers get a data-less notice
+ * when a row appears, goes, or changes whether it keeps the agent awake, and
+ * when a waiting restart appears or goes; CPU and memory changes are polled.
  */
 export function createProcessesService(
   deps: ProcessesServiceDeps,
@@ -359,6 +365,7 @@ export function createProcessesService(
   }, KEPT_SCAN_MS);
   backgroundTimer.unref?.();
   deps.onTasksChanged(() => void refresh());
+  deps.onPendingRestartChange(notify);
   void refresh();
 
   return {
@@ -367,7 +374,7 @@ export function createProcessesService(
       return {
         running,
         finished: deps.document.read().finished,
-        pendingRestart: null,
+        pendingRestart: deps.pendingRestart(),
       };
     },
 
@@ -475,6 +482,13 @@ export function createProcessesService(
         });
       }, STOP_GRACE_MS);
       killTimer.unref?.();
+      await scanFromNow();
+      return ok(undefined);
+    },
+
+    async applyPendingRestart() {
+      if (!deps.applyPendingRestart()) return err({ kind: "NothingPending" });
+      deps.log("the user applied the waiting harness restart");
       await scanFromNow();
       return ok(undefined);
     },

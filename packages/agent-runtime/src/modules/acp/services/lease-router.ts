@@ -96,6 +96,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   const leases = new Map<string, Lease>();
   const attachments = new Map<ClientChannel, Attachment>();
   const movedSessions = new Set<string>();
+  const pendingRestartListeners: (() => void)[] = [];
   let nextProcess = 1;
   let nextSwallowed = 1;
 
@@ -167,13 +168,19 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     };
     self = lease;
     leases.set(key, lease);
+    runtime.onPendingRestartChange(notifyPendingRestart);
     deps.log(`opened lease ${key}`);
     return lease;
+  }
+
+  function notifyPendingRestart(): void {
+    for (const cb of pendingRestartListeners) cb();
   }
 
   function drop(lease: Lease): void {
     if (leases.get(lease.key) !== lease) return;
     leases.delete(lease.key);
+    if (lease.runtime.pendingRestart() !== null) notifyPendingRestart();
     for (const v of lease.channels.values()) v.quiet = true;
     for (const v of lease.channels.values()) v.fireClose();
     lease.channels.clear();
@@ -580,6 +587,29 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     leases() {
       return [...leases.values()].map((l) => l.pair);
+    },
+
+    pendingRestart() {
+      const pending = [...leases.values()]
+        .map((l) => l.runtime.pendingRestart())
+        .filter((p) => p !== null);
+      if (pending.length === 0) return null;
+      const oldest = pending.reduce((a, b) => (b.since < a.since ? b : a));
+      return {
+        ...oldest,
+        blockingTasks: pending.reduce((n, p) => n + p.blockingTasks, 0),
+      };
+    },
+
+    applyPendingRestart() {
+      let applied = false;
+      for (const lease of [...leases.values()])
+        if (lease.runtime.applyPendingRestart()) applied = true;
+      return applied;
+    },
+
+    onPendingRestartChange(cb) {
+      pendingRestartListeners.push(cb);
     },
 
     shutdown() {

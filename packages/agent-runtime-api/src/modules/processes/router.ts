@@ -46,4 +46,13 @@ export const processesRouter = t.router({
       const result = await ctx.processes.stop(input.key);
       if (!result.ok) throw toTrpcError(result.error, notRunning);
     }),
+
+  applyPendingRestart: t.procedure.mutation(async ({ ctx }) => {
+    const result = await ctx.processes.applyPendingRestart();
+    if (!result.ok)
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "No change is waiting for a restart.",
+      });
+  }),
 });

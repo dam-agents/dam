@@ -136,7 +136,7 @@ holds when the row's key changes from `task:…` to `pid:start` once its process
 |----|-------|-------|------------|
 | 01 | ✅ [Process inventory](./01-process-inventory.md) | Runtime `/proc` scan, classification, finished history document, `processes.list` / `watch` / `output` | — |
 | 02 | ✅ [Keep marks, user override, Stop](./02-keep-marks-and-stop.md) | `platform-keep` CLI, loopback mark endpoint, `setKeep` / `stop`, busy integration, registry split, agent instructions | 01 |
-| 03 | [Settings wait for kept Harness Tasks](./03-restart-deferral.md) | Harness lease never forces a recycle while a kept task runs, `pendingRestart`, `applyPendingRestart` | 02 |
+| 03 | ✅ [Settings wait for kept Harness Tasks](./03-restart-deferral.md) | Harness lease never forces a recycle while a kept task runs, `pendingRestart`, `applyPendingRestart` | 02 |
 | 04 | [Processes panel (read-only)](./04-processes-panel.md) | `processes` feature flag, sidebar section, running and finished lists, output view, live updates, Always-on wording | 01 |
 | 05 | [Panel controls and header indicator](./05-panel-controls.md) | Stop, keep switch with who decided, Apply-now banner, header indicator | 02, 03, 04 |
 

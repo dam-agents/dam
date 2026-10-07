@@ -97,6 +97,7 @@ export type {
   FinishedRow,
   KeepMarkRequest,
   KeepSource,
+  NothingPending,
   PendingRestart,
   ProcessesDomainError,
   ProcessesService,

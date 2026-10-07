@@ -1,4 +1,4 @@
-import type { ProcessesService } from "agent-runtime-api";
+import type { PendingRestart, ProcessesService } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import type { ReportedTask } from "./domain/classify.js";
 import { createOutputReader } from "./infrastructure/output-file.js";
@@ -20,6 +20,9 @@ export interface StartProcessesOptions {
   onTasksChanged: (cb: () => void) => void;
   onTaskKeepChanged: () => void;
   dropTask: (sessionId: string, taskId: string) => void;
+  pendingRestart: () => PendingRestart | null;
+  applyPendingRestart: () => boolean;
+  onPendingRestartChange: (cb: () => void) => void;
   log: (msg: string) => void;
 }
 

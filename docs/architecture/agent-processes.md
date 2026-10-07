@@ -33,6 +33,18 @@ task that is [kept](#keeping-work) makes the runtime busy — every task by defa
 the user turns that off for it. An unkept task runs on with its session open and dies at
 hibernation, and the status surface lists only the kept ones.
 
+**Restarts wait for kept tasks.** A new connection or a config change reaches the harness
+only when it respawns, and the recycle closes every session, killing every Harness Task
+with it. Such a recycle waits for an idle runtime, and is forced after a grace period only
+while no kept Harness Task runs: while one does, the change waits as long as the task
+does. The processes list reports a change waiting this way, with how many kept tasks it
+waits for. The user unblocks it by applying it now, which stops those tasks, by stopping
+or unkeeping them, or by a hard stop or pause. Once the last kept task is gone, the
+recycle runs at once on an idle runtime, or after the grace period while a turn still
+runs. Unkept tasks and Detached Processes never hold a recycle back: the recycle kills
+the first anyway and leaves the second alone. A harness that stopped answering is
+recycled regardless, since a wedged harness serves no task.
+
 Only work a harness *supervises* reaches its report, which bounds what the contract
 promises. A job the agent detached from the harness is invisible to it, and what is
 reported can be adjacent to the real work — a detached loop whose progress a supervised

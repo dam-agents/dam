@@ -277,6 +277,9 @@ const { service: processesService, keepMarks } = processes.start({
   onTasksChanged: (cb) => backgroundWork.onChange(cb),
   onTaskKeepChanged: () => backgroundWork.keepChanged(),
   dropTask: (sessionId, taskId) => backgroundWork.drop(sessionId, taskId),
+  pendingRestart: () => acpRuntime.pendingRestart(),
+  applyPendingRestart: () => acpRuntime.applyPendingRestart(),
+  onPendingRestartChange: (cb) => acpRuntime.onPendingRestartChange(cb),
   log: (msg) => process.stderr.write(`[processes] ${msg}\n`),
 });
 
