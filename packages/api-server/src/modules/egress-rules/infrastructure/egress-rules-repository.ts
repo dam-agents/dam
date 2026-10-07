@@ -26,6 +26,7 @@ export interface EgressRulesRepository {
   getActiveByTuple(
     agentId: string,
     host: string,
+    port: number | null,
     method: string,
     pathPattern: string,
   ): Promise<EgressRuleRow | null>;
@@ -115,7 +116,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       return rows.length ? toRow(rows[0] as RawRule) : null;
     },
 
-    async getActiveByTuple(agentId, host, method, pathPattern) {
+    async getActiveByTuple(agentId, host, port, method, pathPattern) {
       const rows = await db
         .select()
         .from(egressRules)
@@ -123,6 +124,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           and(
             eq(egressRules.agentId, agentId),
             eq(egressRules.host, host),
+            sql`${egressRules.port} IS NOT DISTINCT FROM ${port}`,
             eq(egressRules.method, method),
             eq(egressRules.pathPattern, pathPattern),
             eq(egressRules.status, "active"),
@@ -228,6 +230,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       const existing = await this.getActiveByTuple(
         row.agentId,
         row.host,
+        row.port ?? null,
         row.method,
         row.pathPattern,
       );
@@ -260,6 +263,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
         SET source = ${row.source}, decided_by = ${row.decidedBy}
         WHERE agent_id = ${row.agentId}
           AND host = ${row.host}
+          AND port IS NOT DISTINCT FROM ${row.port ?? null}
           AND method = ${row.method}
           AND path_pattern = ${row.pathPattern}
           AND status = 'active'
@@ -272,6 +276,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       const existing = await this.getActiveByTuple(
         row.agentId,
         row.host,
+        row.port ?? null,
         row.method,
         row.pathPattern,
       );

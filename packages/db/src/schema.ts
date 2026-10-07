@@ -118,7 +118,13 @@ export const egressRules = pgTable(
   },
   (table) => [
     uniqueIndex("egress_rules_lookup_idx")
-      .on(table.agentId, table.host, table.method, table.pathPattern)
+      .on(
+        table.agentId,
+        table.host,
+        sql`coalesce(${table.port}, 0)`,
+        table.method,
+        table.pathPattern,
+      )
       .where(sql`${table.status} = 'active'`),
     index("egress_rules_source_idx")
       .on(table.source)

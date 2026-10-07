@@ -1,0 +1,2 @@
+DROP INDEX "egress_rules_lookup_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "egress_rules_lookup_idx" ON "egress_rules" USING btree ("agent_id","host",coalesce("port", 0),"method","path_pattern") WHERE "egress_rules"."status" = 'active';

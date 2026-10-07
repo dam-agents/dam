@@ -45,6 +45,7 @@ export interface EgressRuleWriter {
     id: string;
     agentId: string;
     host: string;
+    port?: number;
     method: string;
     pathPattern: string;
     verdict: "allow" | "deny";

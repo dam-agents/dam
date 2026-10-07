@@ -431,7 +431,7 @@ egress rule, and either allows the request, denies it, or holds it open
 while the user makes a verdict on Home.
 
 A held request is one pending approval, and identical requests — same
-host, method and path, as a retrying client sends — join it rather than
+host, port, method and path, as a retrying client sends — join it rather than
 filing their own. Each one that joins raises the approval's in-session
 prompt again, to every session attached at that moment, and records its
 own hold in the security log: the session that saw the first prompt may be long gone,
