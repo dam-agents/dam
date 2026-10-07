@@ -1628,6 +1628,14 @@ controller:
       # it shares. Set `MEM_REAPER=off` to disable.
       env: []
       skillSources: []
+      # true = every vm agent asks for nested virtualization, as if its Agent
+      # set `spec.backend.vm.nestedVirtualization: true`; one that sets it
+      # itself asks either way, and none can opt out while this is on.
+      # `virtualization.runner.nestedVirtualization` still decides whether
+      # runners may nest at all: with it off, these agents report
+      # `NotAllowedByInstall`. Applied at reconcile, so turning it on or off
+      # restarts the machine of every vm agent that does not set the field.
+      nestedVirtualization: false
 
     # -- Size the controller materializes into any Agent spec that lacks a
     # limits dimension (#1900): fill-if-absent on reconcile, never touching

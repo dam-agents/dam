@@ -13,7 +13,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// TEST_OVERVIEW: nesting is asked for per Agent, through spec.backend.vm.nestedVirtualization, and granted per machine. The controller forwards the ask to the owner's runner only on an install that lets runners nest, leaves every other machine of that runner without it, and tells the owner on the NestedVirtualization condition whether the machine got it.
+// TEST_OVERVIEW: nesting is asked for per Agent, through spec.backend.vm.nestedVirtualization or for every vm Agent through the install's template default, and granted per machine. The controller forwards the ask to the owner's runner only on an install that lets runners nest, leaves every other machine of that runner without it, and tells the owner on the NestedVirtualization condition whether the machine got it.
 
 func nestingAgent() *apiv1.Agent {
 	agent := vmAgentCR()
@@ -78,6 +78,33 @@ func TestAnAgentThatDoesNotAskNeitherNestsNorCarriesTheCondition(t *testing.T) {
 	require.NotNil(t, readNestingCondition(t, r, "my-agent"))
 
 	agent.Spec.Backend.VM = nil
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.False(t, node.spec("my-agent").NestedVirtualization)
+	assert.Nil(t, readNestingCondition(t, r, "my-agent"))
+}
+
+// TEST_SCENARIO: an install whose template defaults turn nesting on asks for it for every vm Agent that does not set the field itself, so no Agent resource needs editing. The ask still reaches the machine only where the install lets runners nest, and the owner hears why when it does not.
+func TestTheTemplateDefaultAsksForNestingForAnAgentThatDoesNotSetIt(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.AgentTemplateDefaults.NestedVirtualization = true
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.False(t, node.spec("my-agent").NestedVirtualization)
+	cond := readNestingCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Equal(t, "NotAllowedByInstall", cond["reason"])
+
+	r.config.VM.Runner.NestedVirtualization = true
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.True(t, node.spec("my-agent").NestedVirtualization)
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true, Nested: true})
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	cond = readNestingCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Equal(t, "True", cond["status"])
+
+	r.config.AgentTemplateDefaults.NestedVirtualization = false
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 	assert.False(t, node.spec("my-agent").NestedVirtualization)
 	assert.Nil(t, readNestingCondition(t, r, "my-agent"))

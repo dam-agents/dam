@@ -150,7 +150,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		PullAuths:       pullAuths,
 		ExpectSeed:      runtimeMigrationExpectSeed(agent),
 
-		NestedVirtualization: wantsNesting(agent) && r.config.VM.Runner.NestedVirtualization,
+		NestedVirtualization: wantsNesting(agent, defaults.NestedVirtualization) && r.config.VM.Runner.NestedVirtualization,
 	}
 	if runtimeMigrationOf(agent.Annotations, agent.Status).seedable() {
 		machine.Migration = &vmrunner.MachineMigration{}
@@ -529,16 +529,21 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		restartReason = "GuestStoppedAnswering"
 	}
 	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason,
-		func(s *apiv1.AgentStatus) { nestingCondition(s, agent, st, r.config.VM.Runner.NestedVirtualization) })
+		func(s *apiv1.AgentStatus) {
+			nestingCondition(s, agent, st, r.config.AgentTemplateDefaults.NestedVirtualization, r.config.VM.Runner.NestedVirtualization)
+		})
 }
 
-func wantsNesting(agent *apiv1.Agent) bool {
-	return agent.Spec.IsVM() && agent.Spec.Backend.VM != nil && agent.Spec.Backend.VM.NestedVirtualization
+func wantsNesting(agent *apiv1.Agent, byDefault bool) bool {
+	if !agent.Spec.IsVM() {
+		return false
+	}
+	return byDefault || (agent.Spec.Backend.VM != nil && agent.Spec.Backend.VM.NestedVirtualization)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: tells an owner who asked for nesting whether the agent's machine got it, since the runner boots it without nesting rather than refusing it: the install may not let its runners nest, and a node whose KVM does not allow it grants nothing. An Agent that does not ask carries no condition, and one that stops asking loses it.
-func nestingCondition(s *apiv1.AgentStatus, agent *apiv1.Agent, st vmrunner.MachineStatus, installAllows bool) {
-	if !wantsNesting(agent) {
+// UNIT_BOUNDARY_DESCRIPTION: tells an owner who asked for nesting, or whose install asks for it on every vm Agent through its template defaults, whether the agent's machine got it, since the runner boots it without nesting rather than refusing it: the install may not let its runners nest, and a node whose KVM does not allow it grants nothing. An Agent that does not ask carries no condition, and one that stops asking loses it.
+func nestingCondition(s *apiv1.AgentStatus, agent *apiv1.Agent, st vmrunner.MachineStatus, byDefault, installAllows bool) {
+	if !wantsNesting(agent, byDefault) {
 		apimeta.RemoveStatusCondition(&s.Conditions, apiv1.ConditionNestedVirtualization)
 		return
 	}

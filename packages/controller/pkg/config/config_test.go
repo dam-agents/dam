@@ -178,12 +178,14 @@ func TestLoadFromEnv_AgentTemplateDefaults_Parsed(t *testing.T) {
 			"storageSize": "10Gi",
 			"resources": {"limits": {"cpu": "1", "memory": "1Gi"}},
 			"mounts": [{"path": "$HOME", "persist": true}, {"path": "/tmp"}],
-			"env": [{"name": "PORT", "value": "8080"}]
+			"env": [{"name": "PORT", "value": "8080"}],
+			"nestedVirtualization": true
 		}`,
 	})
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
 	d := cfg.AgentTemplateDefaults
+	assert.True(t, d.NestedVirtualization)
 	assert.Equal(t, "/home/agent", d.AgentHome)
 	assert.Equal(t, "IfNotPresent", d.ImagePullPolicy)
 	assert.Equal(t, "10Gi", d.StorageSize)
