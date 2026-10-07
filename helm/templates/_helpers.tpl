@@ -457,6 +457,12 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
 {{- printf "%s-vm-runner" (include "platform.fullname" .) }}
 {{- end }}
 
+{{/* The VM runner image: by digest when one is pinned, else by tag. */}}
+{{- define "platform.vmRunner.image" -}}
+{{- $i := .Values.virtualization.runner.image }}
+{{- if $i.digest }}{{ printf "%s@%s" $i.repository $i.digest }}{{ else }}{{ printf "%s:%s" $i.repository ($i.tag | default .Chart.AppVersion) }}{{ end }}
+{{- end }}
+
 {{/* Platform-owned OTel collector for the ClickStack telemetry backend. */}}
 {{- define "platform.clickstack.collector.fullname" -}}
 {{- printf "%s-clickstack-collector" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}

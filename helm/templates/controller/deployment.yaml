@@ -76,7 +76,7 @@ spec:
             {{- $cache := .Values.virtualization.imageCache | default dict }}
             {{- $devices := $r.devices | default (ternary (dict (printf "%s/kvm" $dp.domain) "1" (printf "%s/tun" $dp.domain) "1") (dict "devices.kubevirt.io/kvm" "1" "devices.kubevirt.io/tun" "1") $dp.enabled) }}
             {{- $runner := dict
-                  "image" (printf "%s:%s" $r.image.repository ($r.image.tag | default .Chart.AppVersion))
+                  "image" (include "platform.vmRunner.image" .)
                   "imagePullPolicy" ($r.image.pullPolicy | default "IfNotPresent")
                   "imagePullSecrets" (.Values.imagePullSecrets | default list)
                   "serviceAccountName" (include "platform.vmRunner.serviceAccountName" .)

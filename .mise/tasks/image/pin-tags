@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-#MISE description="Rewrite the chart's @ci-pin markers to content tags before packaging (CI publish jobs)"
-# Rewrite the chart's `@ci-pin` markers to content tags before packaging.
+#MISE description="Rewrite the chart's @ci-pin markers to content tags and digests before packaging (CI publish jobs)"
+# Rewrite the chart's `@ci-pin` markers to content tags and digests before
+# packaging.
 #
 # A marker line looks like:
 #   tag: "" # @ci-pin keycloak-image-tag
 # and becomes:
 #   tag: "<source sha of the component>"
+#
+# A digest marker, `digest: "" # @ci-pin <component>-image-digest`, becomes the
+# digest the image at that source sha has. The vm-runner is pinned this way:
+# its source sha also moves on commits that leave its content as it was, and
+# image:ci-merge keeps the digest of a rebuild that changed nothing.
 #
 # Content tags pin an image to the commit that last touched its inputs, so
 # upgrading to a chart that didn't change the image doesn't roll the pod (or
@@ -35,6 +41,13 @@ for comp in $("$here/resolve" list-pinned-tags); do
   sed "s|^\([[:space:]]*\)tag: \"\" # @ci-pin ${comp}-image-tag\$|\1tag: \"$tag\"|" \
     "$VALUES" > "$tmp"
   mv "$tmp" "$VALUES"
+  if grep -q "# @ci-pin ${comp}-image-digest\$" "$VALUES"; then
+    digest="$(crane digest "${IMAGE_PREFIX:-quay.io/dam-agents}/$comp:$tag")"
+    tmp="$(mktemp)"
+    sed "s|^\([[:space:]]*\)digest: \"\" # @ci-pin ${comp}-image-digest\$|\1digest: \"$digest\"|" \
+      "$VALUES" > "$tmp"
+    mv "$tmp" "$VALUES"
+  fi
   # Built-in starter kits pin their image the same way: a tagless ref with the
   # marker becomes `<ref>:<source sha>`.
   for kit in $KIT_FILES; do
@@ -47,4 +60,4 @@ done
 
 # Every marker must have been consumed — a leftover means the component list
 # and the values.yaml markers drifted apart.
-! grep -n '@ci-pin .*-image-tag' "$VALUES" $KIT_FILES
+! grep -nE '@ci-pin .*-image-(tag|digest)' "$VALUES" $KIT_FILES
