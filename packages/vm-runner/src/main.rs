@@ -221,10 +221,8 @@ fn check_ports(min: u16, max: u16) -> anyhow::Result<()> {
 // UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, and so does a node cache, whose service is its only writer; a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
 fn prepare_host(args: &Args) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    for device in ["/dev/kvm"] {
-        if let Err(e) = std::fs::set_permissions(device, std::fs::Permissions::from_mode(0o666)) {
-            tracing::warn!(path = device, error = %e, "device not writable for machine uids");
-        }
+    if let Err(e) = std::fs::set_permissions("/dev/kvm", std::fs::Permissions::from_mode(0o666)) {
+        tracing::warn!(path = "/dev/kvm", error = %e, "device not writable for machine uids");
     }
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
