@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import { SlackChannelExplainer } from "@/components/channel-connection-explainer";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -41,10 +41,12 @@ export function SetupChannelsSection({
   value,
   onChange,
   onGoToConnections,
+  slackCheckboxRef,
 }: {
   value: SetupChannelSelection;
   onChange: (next: SetupChannelSelection) => void;
   onGoToConnections?: () => void;
+  slackCheckboxRef?: Ref<HTMLButtonElement>;
 }) {
   const available = useAgents().data?.availableChannels;
   const offered = ROWS.filter((row) => available?.[row.key]);
@@ -68,6 +70,7 @@ export function SetupChannelsSection({
               onCheckedChange={(checked) =>
                 onChange({ ...value, [row.key]: checked })
               }
+              checkboxRef={row.key === "slack" ? slackCheckboxRef : undefined}
               explainer={
                 row.key === "slack" ? (
                   <SlackChannelExplainer
@@ -87,11 +90,13 @@ function MessengerCheckboxRow({
   row,
   checked,
   onCheckedChange,
+  checkboxRef,
   explainer,
 }: {
   row: MessengerRow;
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
+  checkboxRef?: Ref<HTMLButtonElement>;
   explainer?: ReactNode;
 }) {
   const inputId = `setup-channel-${row.key}`;
@@ -119,6 +124,7 @@ function MessengerCheckboxRow({
         </span>
       </span>
       <Checkbox
+        ref={checkboxRef}
         id={inputId}
         checked={checked}
         onCheckedChange={(state) => onCheckedChange(state === true)}

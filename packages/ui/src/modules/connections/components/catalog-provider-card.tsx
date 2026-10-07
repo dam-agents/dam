@@ -69,7 +69,10 @@ export function CatalogProviderCard({
       }
       titleAccessory={
         provider.id === "slack" ? (
-          <SlackAccountExplainer onGoToChannels={onGoToChannels} />
+          <SlackAccountExplainer
+            forAgent={sandbox !== undefined}
+            onGoToChannels={onGoToChannels}
+          />
         ) : undefined
       }
       headerRight={connections.length > 0 && newButton}
