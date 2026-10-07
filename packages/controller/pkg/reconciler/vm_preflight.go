@@ -121,7 +121,7 @@ func preflightMetadataReach(spec config.VMRunnerSpec) []string {
 	var out []string
 	for _, c := range spec.EgressCIDRs {
 		given := containedIn(c, spec.EgressExceptCIDRs)
-		except, inside := exceptMetadata(c, given)
+		except, inside := exceptMetadata(c, given, metadataCIDRs)
 		if inside {
 			out = append(out, fmt.Sprintf("virtualization.runner.egressCidrs entry %s lies inside a cloud metadata range, which the runner may never reach, so it is not rendered", c))
 			continue

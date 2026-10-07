@@ -438,7 +438,7 @@ func runnerEgress(agentNS, owner string, envoyPort int, cidrs, except []string, 
 		Ports: append([]networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &proxy}}, machineGatewayPolicyPorts()...),
 	})
 	for _, cidr := range cidrs {
-		blockExcept, metadata := exceptMetadata(cidr, containedIn(cidr, except))
+		blockExcept, metadata := exceptMetadata(cidr, containedIn(cidr, except), metadataCIDRs)
 		if metadata {
 			continue
 		}
@@ -458,14 +458,14 @@ var metadataCIDRs = []netip.Prefix{
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: every egress block that contains a metadata range has that range subtracted, whatever the install listed, so a wide block such as 0.0.0.0/0 never opens the node's credentials by omission. A block lying wholly inside one names the endpoint itself, and is reported so the caller drops it rather than render the one destination this exists to close. An exception the install already wrote over the range is left to cover it.
-func exceptMetadata(cidr string, except []string) ([]string, bool) {
+func exceptMetadata(cidr string, except []string, metadata []netip.Prefix) ([]string, bool) {
 	block, err := netip.ParsePrefix(cidr)
 	if err != nil {
 		return except, false
 	}
 	block = block.Masked()
 	out := except
-	for _, m := range metadataCIDRs {
+	for _, m := range metadata {
 		if block.Addr().Is4() != m.Addr().Is4() {
 			continue
 		}

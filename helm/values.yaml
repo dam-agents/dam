@@ -1820,6 +1820,32 @@ controller:
   # leaves each gateway on its image's own roots. Set with --set-file, e.g.
   # `--set-file controller.gatewayUpstreamExtraCAs=proxy-ca.crt`.
   gatewayUpstreamExtraCAs: ""
+  # -- Where each agent gateway may send traffic. The controller renders a
+  # per-agent egress NetworkPolicy so an approved hostname that resolves to a
+  # private address (an owner's DNS record, or DNS rebinding after approval)
+  # cannot carry the agent into the cluster, the node, or the cloud metadata
+  # endpoint. A gateway reaches the public internet minus 10/8, 172.16/12,
+  # 192.168/16, 100.64/10, 127/8, 169.254/16, 0/8 (and ::1, fc00::/7,
+  # fe80::/10), plus the platform's own pods it dials (api-server, harness
+  # waypoint, object store, telemetry collector) and the cluster DNS pods.
+  gatewayEgress:
+    # Private ranges a gateway may also reach — enterprise services agents
+    # call through their gateway: an internal Git host, an in-house API, a
+    # Kubernetes API server a connection targets, a node-local DNS cache
+    # (169.254.20.10/32). The metadata endpoints (169.254.169.254,
+    # 100.100.100.200, fd00:ec2::254) stay closed even inside a range listed
+    # here.
+    extraCidrs: []
+    # The cluster DNS pods each gateway resolves upstream names through, on
+    # their own ports — policy applies after the DNS Service address is
+    # translated to a pod, so the pods are named, not the Service.
+    # OpenShift: namespace `openshift-dns`, podLabels
+    # `dns.operator.openshift.io/daemonset-dns: default`, ports [5353].
+    clusterDns:
+      namespace: kube-system
+      podLabels:
+        k8s-app: kube-dns
+      ports: [53]
   # -- Image for a vm Agent's machine resolver, beside Envoy in its gateway
   # pod: it answers every name with the gateway's address and resolves nothing
   # upstream. CoreDNS publishes to Docker Hub; pulled via mirror.gcr.io like

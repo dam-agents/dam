@@ -22,6 +22,26 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.termsRequired" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
 {{- include "platform.validate.unenforcedMeshOnlyOnALocalCluster" . -}}
+{{- include "platform.validate.gatewayEgressCidrs" . -}}
+{{- end -}}
+
+{{/*
+controller.gatewayEgress.extraCidrs opens private ranges to every agent
+gateway. The controller renders them into each gateway's NetworkPolicy, which
+Kubernetes rejects outright when an entry is not a CIDR — and a rejected policy
+fails every agent's reconcile. A /0 entry would reopen every private range the
+policy exists to close.
+*/}}
+{{- define "platform.validate.gatewayEgressCidrs" -}}
+{{- $cidr := `^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$` -}}
+{{- range ((.Values.controller.gatewayEgress | default dict).extraCidrs | default list) -}}
+{{- if not (regexMatch $cidr (toString .)) -}}
+{{- fail (printf "controller.gatewayEgress.extraCidrs entry %q is not a CIDR (address/prefix, e.g. 10.20.0.0/16)." (toString .)) -}}
+{{- end -}}
+{{- if hasSuffix "/0" (toString .) -}}
+{{- fail (printf "controller.gatewayEgress.extraCidrs entry %q opens every private range to agent gateways, which is what their egress policy closes. Name the enterprise service's own range instead." (toString .)) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

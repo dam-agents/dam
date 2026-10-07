@@ -18,6 +18,7 @@ export interface ApprovalsRepository {
   findActivePendingExtAuthz(input: {
     agentId: string;
     host: string;
+    port: number | undefined;
     method: string;
     path: string;
   }): Promise<PendingApprovalRow | null>;
@@ -153,7 +154,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
       return rows.length ? toPendingRow(rows[0] as RawPending) : null;
     },
 
-    async findActivePendingExtAuthz({ agentId, host, method, path }) {
+    async findActivePendingExtAuthz({ agentId, host, port, method, path }) {
       const rows = await db.execute(sql`
         SELECT id, type, agent_id AS "agentId",
                owner_sub AS "ownerSub", session_id AS "sessionId", payload,
@@ -165,6 +166,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           AND status = 'pending'
           AND type = 'ext_authz'
           AND payload->>'host' = ${host}
+          AND payload->>'port' IS NOT DISTINCT FROM ${port === undefined ? null : String(port)}
           AND payload->>'method' = ${method}
           AND payload->>'path' = ${path}
         ORDER BY created_at DESC

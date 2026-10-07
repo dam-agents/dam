@@ -87,6 +87,12 @@ for kv in ${sets[@]+"${sets[@]}"}; do HELM_EXTRA_ARGS+=("--set=$kv"); done
 OUTER_GATEWAY_CA=/etc/platform/ca/ca.crt
 if [ -n "${IS_SANDBOX:-}" ] && [ -f "$OUTER_GATEWAY_CA" ]; then
   HELM_EXTRA_ARGS+=("--set-file=controller.gatewayUpstreamExtraCAs=$OUTER_GATEWAY_CA")
+  # The guest resolves every public name to that gateway's private address, which
+  # this cluster's gateways may reach only once their egress policy names it.
+  OUTER_GATEWAY_IP=$(getent ahostsv4 github.com | awk 'NR==1 {print $1}')
+  if [ -n "$OUTER_GATEWAY_IP" ]; then
+    HELM_EXTRA_ARGS+=("--set=controller.gatewayEgress.extraCidrs[0]=$OUTER_GATEWAY_IP/32")
+  fi
 fi
 NO_RESTART="${usage_no_restart:-false}"
 DEV_VALUES="helm/values-dev.yaml"

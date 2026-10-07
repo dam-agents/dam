@@ -1069,6 +1069,9 @@ export async function bootstrap() {
       `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
   });
 
+  const objectStoreAgentUrl = config.objectStorageAgentEndpoint
+    ? new URL(config.objectStorageAgentEndpoint)
+    : null;
   const {
     relay: approvalsRelay,
     gate: extAuthzGate,
@@ -1089,8 +1092,10 @@ export async function bootstrap() {
     attendance: turnAttendance,
     wrapperFrameSender,
     holdSeconds: config.approvalHoldSeconds,
-    platformAllowedHosts: config.objectStorageAgentEndpoint
-      ? [new URL(config.objectStorageAgentEndpoint).hostname]
+    platformAllowedAuthorities: objectStoreAgentUrl
+      ? [
+          `${objectStoreAgentUrl.hostname}:${objectStoreAgentUrl.port || (objectStoreAgentUrl.protocol === "https:" ? 443 : 80)}`,
+        ]
       : [],
   });
   if (config.slackAppToken) {

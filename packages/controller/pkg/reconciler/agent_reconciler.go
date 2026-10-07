@@ -160,6 +160,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		return r.setError(ctx, name, err.Error())
 	}
 	timer.mark("gatewayIngressNetworkPolicy")
+	if err := applyNetworkPolicy(ctx, r.client, BuildGatewayEgressNetworkPolicy(name, r.config, ownerRef)); err != nil {
+		return r.setError(ctx, name, err.Error())
+	}
+	timer.mark("gatewayEgressNetworkPolicy")
 
 	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, r.config.AgentBase.IdleTimeout.AsDuration())
 	running := shouldRunMigrating(agent.Annotations, migration, idleTimeout, time.Now().UTC())

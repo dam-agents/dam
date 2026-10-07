@@ -10,6 +10,7 @@ describe("buildExtAuthzSynthFrame", () => {
       buildExtAuthzSynthFrame({
         approvalId: "abc-123",
         host: "example.com",
+        port: undefined,
         method: "GET",
         path: "/v1/foo",
       }),
@@ -24,6 +25,7 @@ describe("buildExtAuthzSynthFrame", () => {
       buildExtAuthzSynthFrame({
         approvalId: "abc-123",
         host: "example.com",
+        port: undefined,
         method: "POST",
         path: "/x",
       }),
