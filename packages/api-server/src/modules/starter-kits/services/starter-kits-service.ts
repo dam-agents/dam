@@ -5,7 +5,7 @@ import { securityLog } from "../../../core/security-log.js";
 import type {
   ResolvedStarterKit,
   StarterKit,
-  HarnessFamily,
+  TemplateHarness,
   Agent,
   AgentCreateInput,
   AgentsService,
@@ -14,7 +14,7 @@ import type {
   SkillsService,
   StarterKitApplyInput,
   StarterKitApplyResult,
-  StarterKitResources,
+  StarterKitEgressRule,
   StarterKitScheduleOverride,
   StarterKitsService,
   StarterKitView,
@@ -29,11 +29,9 @@ import {
   kitRef,
   unmetRequiredConnections,
 } from "../domain/requirements.js";
-import type {
-  LoadedKit,
-  StarterKitsRepository,
-} from "../infrastructure/kits-repository.js";
+import type { ResolvedKitRow } from "../infrastructure/resolved-catalog-repository.js";
 import { emit, EventType } from "../../../events.js";
+import { createInputFromSetup } from "../../agents/index.js";
 import {
   initializationEvent,
   type RuntimeMutator,
@@ -41,11 +39,24 @@ import {
 } from "../../runtime-delivery/index.js";
 import type { ReadTemplateSpec } from "../../templates/index.js";
 import { createOnboardingMarker } from "./onboarding-marker.js";
+import { createKitUpdates, type KitUpdateMarks } from "./kit-updates.js";
+import { seedStampAtApply } from "../domain/seed-stamp.js";
+import type { KitUpstream } from "../infrastructure/kit-upstream.js";
+
+export type LoadedKit = Omit<ResolvedKitRow, "kitId">;
+
+export interface StarterKitsRepository {
+  list(): Promise<LoadedKit[]>;
+  get(catalog: string, id: string): Promise<LoadedKit | null>;
+}
 
 export interface StarterKitsServiceDeps {
   owner: string;
   repo: StarterKitsRepository;
-  agents: Pick<AgentsService, "create" | "delete" | "get" | "connectSlack">;
+  agents: Pick<
+    AgentsService,
+    "create" | "delete" | "get" | "list" | "connectSlack"
+  >;
   schedules: Pick<
     SchedulesService,
     "createCron" | "createRRule" | "toggle" | "list"
@@ -60,58 +71,40 @@ export interface StarterKitsServiceDeps {
   wakeAgent: (agentId: string) => Promise<void>;
   markAgentOnboarded: (agentId: string, at: string) => Promise<void>;
   runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
+  egressRules: {
+    seed(
+      agentId: string,
+      rules: readonly StarterKitEgressRule[],
+      decidedBy: string,
+    ): Promise<void>;
+  };
   virtualizationEnabled?: boolean;
-  now?: () => Date;
+  pinnedKit?: string;
+  kitUpstream: KitUpstream;
+  kitUpdateMarks: KitUpdateMarks;
 }
 
-const COMMIT_SHA = /^[0-9a-f]{40}$/i;
-
-function withoutSeed(kit: ResolvedStarterKit): ResolvedStarterKit {
-  const { seed: _seed, ...rest } = kit;
-  return rest;
+function withSeedStamp(
+  seed: ResolvedStarterKit["seed"],
+): Pick<AgentCreateInput, "starterKitSeed"> {
+  const stamp = seed ? seedStampAtApply(seed) : undefined;
+  return stamp ? { starterKitSeed: stamp } : {};
 }
 
-function seedGitRepo(
-  seed: NonNullable<ResolvedStarterKit["seed"]>,
-): NonNullable<AgentCreateInput["gitRepo"]> {
-  const declaredCommit =
-    seed.ref && COMMIT_SHA.test(seed.ref) ? seed.ref : undefined;
-  const commit = seed.commit ?? declaredCommit;
-  return {
-    url: seed.url,
-    into: seed.into,
-    ...(commit ? { commit } : {}),
-    ...(seed.ref && !declaredCommit ? { branch: seed.ref } : {}),
-  };
-}
-
-function agentShape(
-  resources: StarterKitResources | undefined,
-): Pick<AgentCreateInput, "size" | "storage"> {
-  if (!resources) return {};
-  const { cpu, memory, storage } = resources;
-  return {
-    ...(cpu !== undefined || memory !== undefined
-      ? { size: { cpu, memory } }
-      : {}),
-    ...(storage !== undefined ? { storage } : {}),
-  };
-}
-
-function toView(loaded: LoadedKit): StarterKitView {
+function toView(loaded: LoadedKit, pinnedKit: string): StarterKitView {
   return {
     ...loaded.kit,
     catalog: loaded.catalog,
     version: loaded.version,
     source: loaded.source,
     skillsInKit: loaded.skillsInKit,
+    pinned: `${loaded.catalog}/${loaded.kit.id}` === pinnedKit,
   };
 }
 
 export function createStarterKitsService(
   deps: StarterKitsServiceDeps,
 ): StarterKitsService {
-  const now = deps.now ?? (() => new Date());
   async function requireKit(
     catalog: string,
     kitId: string,
@@ -211,7 +204,7 @@ export function createStarterKitsService(
     created: Agent,
     loaded: LoadedKit,
     version: string,
-    harness: HarnessFamily | undefined,
+    harness: TemplateHarness | undefined,
   ): Promise<void> {
     if (loaded.kit.onboarding === false) return;
     const agentId = created.id;
@@ -239,7 +232,7 @@ export function createStarterKitsService(
       harness,
     );
     if (task === null) return;
-    const at = now();
+    const at = new Date();
     await deps.runtimeMutator.bump(agentId, [
       initializationEvent(agentId, task, at),
     ]);
@@ -249,27 +242,43 @@ export function createStarterKitsService(
   const runnableHere = (loaded: LoadedKit): boolean =>
     loaded.kit.backend !== "vm" || deps.virtualizationEnabled === true;
 
+  const kitUpdates = createKitUpdates({
+    owner: deps.owner,
+    repo: deps.repo,
+    upstream: deps.kitUpstream,
+    marks: deps.kitUpdateMarks,
+    agents: deps.agents,
+    schedules: deps.schedules,
+    grantedTemplates: async (agentId) =>
+      grantedTemplates(
+        (await deps.connections.getAgentConnections(agentId)).connections.map(
+          (c) => c.connectionId,
+        ),
+        "skip",
+      ),
+    familyTitles,
+    wakeAgent: deps.wakeAgent,
+    runtimeMutator: deps.runtimeMutator,
+  });
+
   return {
+    ...kitUpdates,
+
     async list() {
-      return (await deps.repo.list()).filter(runnableHere).map(toView);
+      return (await deps.repo.list())
+        .filter(runnableHere)
+        .map((loaded) => toView(loaded, deps.pinnedKit ?? ""));
     },
 
     async get(catalog, id) {
       const loaded = await deps.repo.get(catalog, id);
-      return loaded && runnableHere(loaded) ? toView(loaded) : null;
+      return loaded && runnableHere(loaded)
+        ? toView(loaded, deps.pinnedKit ?? "")
+        : null;
     },
 
     async apply(input: StarterKitApplyInput): Promise<StarterKitApplyResult> {
-      const requested = await requireKit(input.catalog, input.kitId);
-      if (input.skipSeed && requested.kit.install)
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            "this kit's install runs from its repository, so the repository cannot be removed",
-        });
-      const loaded: LoadedKit = input.skipSeed
-        ? { ...requested, kit: withoutSeed(requested.kit) }
-        : requested;
+      const loaded = await requireKit(input.catalog, input.kitId);
       const { kit, version } = loaded;
 
       if (!kit.image && !input.templateId)
@@ -305,26 +314,29 @@ export function createStarterKitsService(
         ...(kit.knowledgeBase
           ? { kbShareRoots: kit.knowledgeBase.shareRoots }
           : {}),
-        ...(kit.seed ? { gitRepo: seedGitRepo(kit.seed) } : {}),
-        ...(kit.backend === "vm" ? { vm: true } : {}),
-        ...agentShape(kit.resources),
+        ...createInputFromSetup(kit),
+        ...(kit.egressPreset ? { egressPreset: kit.egressPreset } : {}),
+        ...withSeedStamp(kit.seed),
         connectionIds: input.connectionIds,
-        ...(kit.env.length > 0 ? { env: kit.env } : {}),
         ...(kit.hibernationTimeoutMin !== undefined
           ? { hibernationTimeoutMin: kit.hibernationTimeoutMin }
+          : {}),
+        ...(kit.requireConnectionAddress
+          ? { requireConnectionAddress: true }
           : {}),
         starterKit: kitRef(loaded.catalog, kit.id, version),
       };
       const agent = await deps.agents.create(createInput);
 
       try {
+        await deps.egressRules.seed(agent.id, kit.egressRules, deps.owner);
         if (kit.install) {
           await deps.runtimeMutator.bump(agent.id, [
             workspaceCommandEvent(
               "kit-install",
               agent.id,
               kit.install.command,
-              now(),
+              new Date(),
             ),
           ]);
           await deps.runtimeMutator.enqueueAfterCommit(agent.id);
@@ -341,7 +353,7 @@ export function createStarterKitsService(
           kit.onboarding !== false &&
           !(kit.onboarding && "command" in kit.onboarding);
         if (!briefs)
-          await deps.markAgentOnboarded(agent.id, now().toISOString());
+          await deps.markAgentOnboarded(agent.id, new Date().toISOString());
         await enqueueOnboardingTurn(agent, loaded, version, harness);
       } catch (err) {
         await deps.agents.delete(agent.id).catch((cleanupErr: unknown) => {

@@ -1,44 +1,27 @@
-import { Branch, Close, Launch, Undo } from "@carbon/icons-react";
+import { Branch, Launch } from "@carbon/icons-react";
 import type { StarterKitView } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
-import { cn } from "@/lib/utils";
 
-import { kitSeedRemovable, shortKitVersion } from "../lib/setup.js";
+import { shortKitVersion } from "../lib/setup.js";
 
 export function KitRepositoryCard({
   kit,
-  skipped,
-  onToggleSkipped,
 }: {
-  kit: Pick<StarterKitView, "seed" | "install">;
-  skipped: boolean;
-  onToggleSkipped: () => void;
+  kit: Pick<StarterKitView, "seed">;
 }) {
   const seed = kit.seed;
   if (!seed) return null;
   const name = seed.url.replace("https://github.com/", "");
-  const removable = kitSeedRemovable(kit);
   const where =
     seed.into === "home" ? "the agent's home directory" : "the work directory";
   return (
     <li
       data-testid="starter-kit-repository"
-      className={cn(
-        "flex items-center gap-4 rounded-lg border px-4 py-3",
-        skipped
-          ? "border-border bg-muted/30 opacity-70"
-          : "border-kit-line bg-kit-surface",
-      )}
+      className="flex items-center gap-4 rounded-lg border border-kit-line bg-kit-surface px-4 py-3"
     >
-      <span
-        className={cn(
-          "flex size-10 shrink-0 items-center justify-center rounded-lg",
-          skipped ? "bg-muted text-muted-foreground" : "bg-kit-tint text-kit",
-        )}
-      >
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-kit-tint text-kit">
         <Branch size={16} />
       </span>
       <div className="min-w-0 flex-1">
@@ -46,12 +29,7 @@ export function KitRepositoryCard({
           <a
             href={seed.url}
             {...externalLinkProps}
-            className={cn(
-              "inline-flex items-center gap-1 text-sm font-semibold hover:underline",
-              skipped
-                ? "text-muted-foreground line-through"
-                : "text-foreground",
-            )}
+            className="inline-flex items-center gap-1 text-sm font-semibold text-foreground hover:underline"
           >
             {name}
             <Launch size={12} aria-hidden />
@@ -61,24 +39,11 @@ export function KitRepositoryCard({
           </Badge>
         </div>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          {skipped
-            ? "Removed — the agent starts without the kit's repository."
-            : `${seed.ref ? `On ${seed.ref}` : "Default branch"}${
-                seed.commit ? ` at ${shortKitVersion(seed.commit)}` : ""
-              }, seeded into ${where} before the first session.`}
+          {`${seed.ref ? `On ${seed.ref}` : "Default branch"}${
+            seed.commit ? ` at ${shortKitVersion(seed.commit)}` : ""
+          }, seeded into ${where} before the first session.`}
         </p>
       </div>
-      {removable && (
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label={skipped ? `Add back ${name}` : `Remove ${name}`}
-          title={skipped ? "Add back" : "Remove the kit's repository"}
-          onClick={onToggleSkipped}
-        >
-          {skipped ? <Undo size={16} /> : <Close size={16} />}
-        </Button>
-      )}
     </li>
   );
 }

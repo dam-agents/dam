@@ -22,7 +22,7 @@ import type {
   SkillSetEntry,
   SkillSetSkipReason,
 } from "api-server-api";
-import { canonicalSourceLocation } from "agent-runtime-api";
+import { canonicalSourceLocation, parseGithubRepo } from "agent-runtime-api";
 import type { SourceLocation } from "agent-runtime-api";
 import { MAX_SKILL_BATCH_ENTRIES, skillKey } from "api-server-api";
 import type {
@@ -53,7 +53,6 @@ import {
 } from "../infrastructure/agent-runtime-client.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { UnitOfWork } from "../../../core/unit-of-work.js";
-import { detectHost } from "../domain/git-host.js";
 import {
   PublicArchiveNotFoundError,
   SkillSourcePathError,
@@ -71,7 +70,7 @@ import { sourcePathFailure } from "../domain/scan-failure.js";
 import type { GithubCredentialPort } from "../infrastructure/github-credential-port.js";
 import { getLogger } from "../../../core/logger.js";
 
-export function templateSourceId(templateId: string, gitUrl: string): string {
+function templateSourceId(templateId: string, gitUrl: string): string {
   const hash = crypto
     .createHash("sha256")
     .update(gitUrl)
@@ -80,7 +79,7 @@ export function templateSourceId(templateId: string, gitUrl: string): string {
   return `template:${templateId}:${hash}`;
 }
 
-export const TEMPLATE_SOURCE_ID_PREFIX = "template:";
+const TEMPLATE_SOURCE_ID_PREFIX = "template:";
 
 export interface SkillsServiceDeps {
   repo: SkillsRepository;
@@ -112,10 +111,8 @@ export interface SkillsServiceDeps {
   brandName: string;
 }
 
-function enrichSources(sources: SkillSource[]): SkillSource[] {
-  return sources.map((s) =>
-    detectHost(s.gitUrl) ? { ...s, canPublish: true } : s,
-  );
+function enrichSource(s: SkillSource): SkillSource {
+  return parseGithubRepo(s.gitUrl) ? { ...s, canPublish: true } : s;
 }
 
 function templateSourceLocation(seed: {
@@ -134,9 +131,7 @@ async function loadTemplateSources(
   deps: SkillsServiceDeps,
   agentId: string,
 ): Promise<SkillSource[]> {
-  const instance = await deps.agentsRepo.get(agentId, deps.owner);
-  if (!instance) return [];
-  const agent = await deps.agentsRepo.get(instance.id, deps.owner);
+  const agent = await deps.agentsRepo.get(agentId, deps.owner);
   if (!agent?.templateId) return [];
   const template = await deps.templatesRepo.get(agent.templateId);
   if (!template?.spec.skillSources?.length) return [];
@@ -222,14 +217,6 @@ async function sourcePathsByGitUrl(
   const seeds = deps.seedSources.map(seedToSkillSource);
   const merged = dedupeByGitUrl([...owned, ...seeds, ...template]);
   return new Map(merged.map((s) => [s.gitUrl, s.path]));
-}
-
-async function resolveSourcePathByGitUrl(
-  deps: SkillsServiceDeps,
-  agentId: string,
-  gitUrl: string,
-): Promise<string | undefined> {
-  return (await sourcePathsByGitUrl(deps, agentId)).get(gitUrl);
 }
 
 function asPodVerdict(err: unknown): unknown {
@@ -340,6 +327,11 @@ async function unreachableSandboxCopy(
         title: "This sandbox isn't running",
         detail: "Start the sandbox, then re-scan to list this source's skills.",
       };
+    case "migrating":
+      return {
+        title: "This sandbox is moving to the new runtime",
+        detail: "Re-scan once the move finishes to list this source's skills.",
+      };
     case "error":
     case "over_budget":
       return {
@@ -374,7 +366,7 @@ async function runScanForSource(
   agentId?: string,
 ): Promise<SourceScan> {
   let archiveAsked = false;
-  if (detectHost(src.gitUrl)) {
+  if (parseGithubRepo(src.gitUrl)) {
     archiveAsked = true;
     try {
       const { skills, scannedAt } = await deps.scanSource(
@@ -422,22 +414,6 @@ async function runScanForSource(
     if (!verdict) throw err;
     throw verdict;
   }
-}
-
-function upsertSkillRef(current: SkillRef[], next: SkillRef): SkillRef[] {
-  const filtered = current.filter(
-    (s) => !(s.source === next.source && s.name === next.name),
-  );
-  return [...filtered, next];
-}
-
-function removeSkillRef(
-  current: SkillRef[],
-  key: { source: string; name: string },
-): SkillRef[] {
-  return current.filter(
-    (s) => !(s.source === key.source && s.name === key.name),
-  );
 }
 
 export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
@@ -632,19 +608,24 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       ]);
       const seeds = deps.seedSources.map(seedToSkillSource);
       const merged = dedupeByGitUrl([...owned, ...seeds, ...template]);
-      return sortSources(enrichSources(merged));
+      return sortSources(merged.map(enrichSource));
     },
     async getSource(id) {
       const s = await resolveSource(deps, id);
-      if (!s) return null;
-      const [enriched] = enrichSources([s]);
-      return enriched;
+      return s ? enrichSource(s) : null;
     },
     async createSource(input: SkillCreateSourceInput) {
       try {
         const created = await deps.repo.create(input, deps.owner);
-        const [enriched] = enrichSources([created]);
-        return enriched;
+        emit({
+          type: EventType.SkillSourceChanged,
+          action: "added",
+          actorSub: deps.owner,
+          surface: deps.surface,
+          source: created.gitUrl,
+          hasPath: created.path !== undefined,
+        });
+        return enrichSource(created);
       } catch (err) {
         if (isUniqueViolation(err, "skill_sources_owner_git_url_idx")) {
           throw new TRPCError({
@@ -673,6 +654,14 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         throw err;
       }
       if (src) {
+        emit({
+          type: EventType.SkillSourceChanged,
+          action: "removed",
+          actorSub: deps.owner,
+          surface: deps.surface,
+          source: src.gitUrl,
+          hasPath: src.path !== undefined,
+        });
         const instances = await deps.agentsRepo.list(deps.owner);
         await deps.agentSkillsRepo.removeBySource(
           instances.map((i) => i.id),
@@ -710,7 +699,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           message: `skill source ${JSON.stringify(sourceId)} not found`,
         });
       }
-      if (!detectHost(src.gitUrl)) {
+      if (!parseGithubRepo(src.gitUrl)) {
         throw new TRPCError({
           code: "NOT_IMPLEMENTED",
           message:
@@ -787,9 +776,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
     async install(input: SkillInstallInput) {
       await ensureAgentReachable(deps.agentsRepo, input.agentId, deps.owner);
 
-      const path = await resolveSourcePathByGitUrl(
-        deps,
-        input.agentId,
+      const path = (await sourcePathsByGitUrl(deps, input.agentId)).get(
         input.source,
       );
       const ref: SkillRef = {
@@ -826,12 +813,12 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         source: input.source,
       });
       const current = await deps.agentSkillsRepo.listSkills(input.agentId);
-      return upsertSkillRef(
-        current.filter(
+      return [
+        ...current.filter(
           (s) => !(s.source === ref.source && s.name === ref.name),
         ),
         ref,
-      );
+      ];
     },
 
     async uninstall(input: SkillUninstallInput) {
@@ -866,10 +853,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
         source: input.source,
       });
       const current = await deps.agentSkillsRepo.listSkills(input.agentId);
-      return removeSkillRef(current, {
-        source: input.source,
-        name: input.name,
-      });
+      return current.filter(
+        (s) => !(s.source === input.source && s.name === input.name),
+      );
     },
 
     applyBatch(input) {

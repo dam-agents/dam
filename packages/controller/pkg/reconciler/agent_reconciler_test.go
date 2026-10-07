@@ -36,6 +36,17 @@ func newFakeDynamic(objects ...runtime.Object) *dynfake.FakeDynamicClient {
 	return dynfake.NewSimpleDynamicClientWithCustomListKinds(scheme, gvrToListKind, objects...)
 }
 
+func agentToUnstructured(agent *apiv1.Agent) (*unstructured.Unstructured, error) {
+	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(agent)
+	if err != nil {
+		return nil, fmt.Errorf("converting Agent to unstructured: %w", err)
+	}
+	u := &unstructured.Unstructured{Object: raw}
+	u.SetAPIVersion(apiv1.GroupVersion.String())
+	u.SetKind("Agent")
+	return u, nil
+}
+
 func agentCR() *apiv1.Agent {
 	return &apiv1.Agent{
 		ObjectMeta: metav1.ObjectMeta{
@@ -60,7 +71,7 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		ReleaseNamespace:  "default",
 		ReleaseName:       "platform",
 		HarnessServerPort: 4001,
-		EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2",
+		EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1",
 		EnvoyPort:         10000,
 		IstioTrustDomain:  "cluster.local",
 		IstioWaypointName: "apiserver-waypoint",
@@ -89,7 +100,7 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		require.NoError(t, err)
 		dynObjs = append(dynObjs, u)
 	}
-	r := NewAgentReconciler(client, cfg).WithDynamicClient(newFakeDynamic(dynObjs...))
+	r := NewAgentReconciler(client, newFakeDynamic(dynObjs...), cfg)
 	return r, client
 }
 
@@ -145,7 +156,7 @@ func TestReconcile_PendingWhenGatewayNotReady(t *testing.T) {
 func rolloutSS(name string, generation, observedGen int64, updateRev string) *appsv1.StatefulSet {
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents", Generation: generation},
-		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(1)},
+		Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
 		Status:     appsv1.StatefulSetStatus{ObservedGeneration: observedGen, UpdateRevision: updateRev},
 	}
 }
@@ -307,11 +318,11 @@ func TestReconcile_PreservesHibernation(t *testing.T) {
 	}
 	existingAgent := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
-		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(0)},
+		Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(0))},
 	}
 	existingGW := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-gateway", Namespace: "test-agents"},
-		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(0)},
+		Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(0))},
 	}
 	r, client := setupReconciler(t, agent, existingAgent, existingGW)
 
@@ -328,7 +339,7 @@ func TestReconcile_UpdateReplicas(t *testing.T) {
 	agent := agentCR()
 	existingSS := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
-		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(0)},
+		Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(0))},
 	}
 	r, client := setupReconciler(t, agent, existingSS)
 
@@ -337,6 +348,35 @@ func TestReconcile_UpdateReplicas(t *testing.T) {
 
 	ss, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
 	assert.Equal(t, int32(1), *ss.Spec.Replicas)
+}
+
+func TestReconcile_ReplacesAgentPodStuckOnSupersededRevision(t *testing.T) {
+	ctx := context.Background()
+	agent := agentCR()
+	r, client := setupReconciler(t, agent, readyPod("my-agent-gateway-0"))
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	ss, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	ss.Status.CurrentRevision, ss.Status.UpdateRevision = "rev-1", "rev-2"
+	_, err = client.AppsV1().StatefulSets("test-agents").UpdateStatus(ctx, ss, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	labels := map[string]string{"controller-revision-hash": "rev-1"}
+	for k, v := range ss.Spec.Selector.MatchLabels {
+		labels[k] = v
+	}
+	_, err = client.CoreV1().Pods("test-agents").Create(ctx, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-0", Namespace: "test-agents", Labels: labels},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}},
+		},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
+
+	_, err = client.CoreV1().Pods("test-agents").Get(ctx, "my-agent-0", metav1.GetOptions{})
+	assert.True(t, errors.IsNotFound(err), "an agent pod that cannot pull its old image must be replaced; got err=%v", err)
 }
 
 func TestForceRollStuckPod_DeletesNotReadyPodAtOldRev(t *testing.T) {
@@ -564,7 +604,7 @@ func TestReconcile_PatchesGatewayUpdateStrategyOnExistingStatefulSet(t *testing.
 	agent := agentCR()
 	existingGateway := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-gateway", Namespace: "test-agents"},
-		Spec:       appsv1.StatefulSetSpec{Replicas: int32Ptr(1)},
+		Spec:       appsv1.StatefulSetSpec{Replicas: new(int32(1))},
 	}
 	r, client := setupReconciler(t, agent, existingGateway)
 
@@ -606,7 +646,7 @@ func TestDelete_CleansPVCs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, pvcs.Items, 1)
 
-	r.Delete(ctx, "my-agent", nil)
+	r.Delete(ctx, "my-agent", "")
 
 	pvcs, err = client.CoreV1().PersistentVolumeClaims("test-agents").List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent + "=my-agent",
@@ -640,8 +680,6 @@ func TestReconcileOrphanPVCs(t *testing.T) {
 	_, err = client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), live.Name, metav1.GetOptions{})
 	assert.NoError(t, err, "live agent PVC must be retained")
 }
-
-func int32Ptr(i int32) *int32 { return &i }
 
 func TestEnsureLeafSecretOwnerReference_AddsOwnerRef(t *testing.T) {
 	agent := agentCR()

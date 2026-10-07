@@ -6,7 +6,7 @@ import {
 } from "../../lib/persisted-prefs.js";
 import type { PlatformStore } from "../../store.js";
 
-export const FILES_SECTION_OPEN_STORAGE_KEY = "platform-files-open";
+const FILES_SECTION_OPEN_STORAGE_KEY = "platform-files-open";
 
 export interface FilesSlice {
   openFilePath: string | null;
@@ -66,7 +66,11 @@ export const createFilesSlice: StateCreator<
       openFileDirty: false,
       openFileEdit: opts?.edit ?? false,
       ...(path !== null
-        ? { openArtifactId: null, openArtifactDirty: false }
+        ? {
+            openArtifactId: null,
+            openArtifactDirty: false,
+            openDelegation: null,
+          }
         : {}),
     }),
   setOpenFileEdit: (edit) => set({ openFileEdit: edit }),

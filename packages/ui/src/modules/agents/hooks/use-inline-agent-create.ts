@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentView } from "../../../types.js";
 import { useAgents, useAgentsList } from "../api/queries.js";
 
-export interface InlineAgentCreate {
+interface InlineAgentCreate {
   isLoading: boolean;
   displayedAgents: readonly AgentView[];
   justCreatedId: string | null;

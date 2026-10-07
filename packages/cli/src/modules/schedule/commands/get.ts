@@ -4,7 +4,6 @@ import { localTimeIn } from "../domain/once-flags.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_RUNTIME_FAILURE,
   EXIT_SCHEDULE_NOT_FOUND,
   EXIT_SUCCESS,
@@ -47,6 +46,8 @@ function renderSchedule(view: ScheduleView): string {
   lines.push(`Created by:  ${view.createdBy}`);
   if (view.status?.lastRun) lines.push(`Last run:    ${view.status.lastRun}`);
   if (view.status?.nextRun) lines.push(`Next run:    ${view.status.nextRun}`);
+  if (view.status?.stopReason)
+    lines.push(`Stopped:     ${view.status.stopReason}`);
   if (view.status?.lastResult) {
     lines.push(`Last result: ${view.status.lastResult}`);
   }
@@ -88,13 +89,7 @@ export function buildGetCommand(deps: {
       "\nExamples:\n  dam schedule get sched-abc123\n  dam schedule get sched-abc123 --json\n",
     )
     .action(async (id: string, opts: { server?: string; json?: boolean }) => {
-      const host = await resolveActiveHost(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
 
       const result = await deps.createScheduleService(host).get(id);
       if (!result.ok) {

@@ -138,3 +138,10 @@ export function useDeleteFolder() {
     },
   });
 }
+
+export function useCallAgentApi() {
+  return useMutation({
+    ...trpc.artifactLibrary.callAgentApi.mutationOptions(),
+    meta: { suppressErrorToast: true },
+  });
+}

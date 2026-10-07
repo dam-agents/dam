@@ -6,7 +6,15 @@
   "env": { "A": "b" },
   "caCert": "-----BEGIN CERTIFICATE-----",
   "allowCidrs": ["10.0.0.1/32"],
+  "gatewayHostPort": 30100,
+  "guestResolver": "10.0.0.1",
   "revision": "r1",
   "running": true,
-  "pullAuths": ["{\"auths\":{}}"]
+  "pullAuths": ["{\"auths\":{}}"],
+  "migration": {},
+  "expectSeed": {
+    "bytes": 1234,
+    "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+  },
+  "nestedVirtualization": true
 }

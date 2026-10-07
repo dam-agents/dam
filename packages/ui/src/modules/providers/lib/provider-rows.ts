@@ -1,6 +1,6 @@
 import type { ProviderPresetType } from "../../../types.js";
 
-export interface ProviderRowDef {
+interface ProviderRowDef {
   type: ProviderPresetType;
   description: string;
 }
@@ -8,10 +8,17 @@ export interface ProviderRowDef {
 export const IBM_LITELLM_DESCRIPTION =
   "IBM's external LiteLLM proxy — Claude on watsonx-routed AWS.";
 
+export const CURVE_BENDER_DESCRIPTION =
+  "LiteLLM proxy fronting open models hosted on RITS — GLM and Nemotron.";
+
 export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   {
     type: "ibm-litellm",
     description: IBM_LITELLM_DESCRIPTION,
+  },
+  {
+    type: "curve-bender",
+    description: CURVE_BENDER_DESCRIPTION,
   },
   {
     type: "bob",
@@ -26,6 +33,11 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   {
     type: "openai",
     description: "GPT-family models for Codex and OpenAI-compatible agents.",
+  },
+  {
+    type: "bedrock",
+    description:
+      "Models your organization hosts in AWS Bedrock, for Claude Code and Pi agents.",
   },
 ];
 

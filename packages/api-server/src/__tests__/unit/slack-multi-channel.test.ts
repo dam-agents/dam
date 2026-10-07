@@ -17,6 +17,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 
 function harness(opts?: {
   sessions?: Array<{ sessionId: string; platform: { threadTs: string } }>;
+  holdTurn?: boolean;
 }) {
   const gw = createFakeSlackGateway();
   gw.setChannels([
@@ -25,12 +26,15 @@ function harness(opts?: {
   ]);
   const freshKeys: string[] = [];
   const resumed: string[] = [];
+  const held: Array<() => void> = [];
   const acp: AcpClient = {
     steer: async () => "unsupported" as const,
     listSessions: async () => opts?.sessions ?? [],
     sendPrompt: async (_prompt: unknown, sendOpts: SendPromptOpts) => {
       if ("resumeSessionId" in sendOpts) resumed.push(sendOpts.resumeSessionId);
       else freshKeys.push(sendOpts.platformMeta?.threadTs ?? "unknown");
+      if (opts?.holdTurn)
+        await new Promise<void>((release) => held.push(release));
       return "answer";
     },
     triggerSession: () => Promise.reject(new Error("unused")),
@@ -38,15 +42,15 @@ function harness(opts?: {
   };
   const agents = { ensureReady: async () => {} } as unknown as AgentsService;
 
-  const worker = createSlackWorker(
-    () => acp,
-    () => gw,
-    () => agents,
-    { resolve: async () => OWNER } as never,
-    { authUrl: "http://kc", clientId: "c" } as never,
-    createMemoryTtlStore(600_000),
-    async () => OWNER,
-    {
+  const worker = createSlackWorker({
+    makeAcpClient: () => acp,
+    createGateway: () => gw,
+    agents: () => agents,
+    identityLinks: { resolve: async () => OWNER } as never,
+    oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
+    pendingOAuthFlows: createMemoryTtlStore(600_000),
+    getInstanceOwner: async () => OWNER,
+    channelRegistry: {
       resolveSlackBindings: async () => [
         {
           instanceName: "agent-1",
@@ -61,17 +65,17 @@ function harness(opts?: {
         { id: C_TWO, teamId: "" },
       ],
     },
-    async () => {},
-    async () => {},
-    async () => true,
-    { name: "DAM", short: "dam" },
-    async () => true,
-    "http://ui",
-    stubTurnAttendance(),
-    stubWorkspaceFiles(),
-    (teamId) => teamId,
-    () => {},
-  );
+    unbindSlackChannel: async () => {},
+    setSlackChannelAmbient: async () => {},
+    setSlackDefault: async () => true,
+    brand: { name: "DAM", short: "dam" },
+    isTermsAccepted: async () => true,
+    uiBaseUrl: "http://ui",
+    attendance: stubTurnAttendance(),
+    workspaceFiles: stubWorkspaceFiles(),
+    listWorkspaces: async () => [],
+    emit: () => {},
+  });
 
   return {
     gw,
@@ -80,16 +84,24 @@ function harness(opts?: {
     resumed,
     async mention(channel: string, ts: string) {
       await worker.connect();
-      await gw.fireMention({
+      const handled = gw.fireMention({
         user: "U1",
         channel,
         ts,
         text: "hi agent",
         teamId: "T-e2e",
       });
-      await tick();
+      if (!opts?.holdTurn) {
+        await handled;
+        await tick();
+        return;
+      }
+      for (let i = 0; i < 200 && held.length === 0; i++) await tick();
     },
     messages: () => gw.readOutbound().filter((r) => r.kind === "message"),
+    finishTurns() {
+      for (const release of held.splice(0)) release();
+    },
   };
 }
 
@@ -161,7 +173,7 @@ describe("slack multi-channel bindings (#3086) — session isolation", () => {
   });
 
   it("an id-less reply lands in the channel its turn came from", async () => {
-    const h = harness();
+    const h = harness({ holdTurn: true });
     await h.mention(C_TWO, "4.4");
     h.gw.resetOutbound();
 
@@ -171,5 +183,6 @@ describe("slack multi-channel bindings (#3086) — session isolation", () => {
     expect(h.messages()).toMatchObject([
       { channel: C_TWO, threadTs: "4.4", text: "answering" },
     ]);
+    h.finishTurns();
   });
 });

@@ -1,13 +1,9 @@
 import { App, LogLevel } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
-import {
-  FileTooLargeError,
-  ORIGINAL_WORKSPACE,
-  THREAD_TAIL_MAX_PAGES,
-} from "./slack-gateway.js";
-import { foldThreadPages } from "../domain/thread-catch-up.js";
+import { FileTooLargeError } from "./slack-gateway.js";
 import type {
   SlackChannelInfo,
+  SlackConversationLookup,
   SlackGateway,
   SlackGatewayHandlers,
   SlackImageFile,
@@ -22,14 +18,23 @@ type BoltApp = InstanceType<typeof App>;
 type ChatPostMessageArgs = Parameters<
   BoltApp["client"]["chat"]["postMessage"]
 >[0];
+type ChatPostEphemeralArgs = Parameters<
+  BoltApp["client"]["chat"]["postEphemeral"]
+>[0];
+type FilesCompleteUploadExternalArgs = Parameters<
+  BoltApp["client"]["files"]["completeUploadExternal"]
+>[0];
+type ViewsOpenArgs = Parameters<BoltApp["client"]["views"]["open"]>[0];
 type ChatStopStreamArgs = Parameters<
   BoltApp["client"]["chat"]["stopStream"]
 >[0];
 
 export interface BoltSlackGatewayDeps {
   resolveBotToken: SlackTokenResolver;
-  setOriginalWorkspace: (teamId: SlackWorkspace) => void;
-  envBotToken: string;
+  importHelmToken: (teamId: string, token: string) => Promise<void>;
+  renewTokens: () => Promise<void>;
+  forgetBotToken: (teamId: string) => void;
+  helmBotToken: string | null;
   appToken: string;
   commandName: string;
   onCredentialRejected: (teamId: string) => Promise<void>;
@@ -43,6 +48,7 @@ interface WorkspaceAuth {
 }
 
 const CHANNEL_HISTORY_PAGE_SIZE = 200;
+const NO_WORKSPACE: SlackWorkspace = "";
 const INSTALL_TOKEN_MISSING = "slack workspace is not installed";
 const DEAD_CREDENTIAL = new Set([
   "invalid_auth",
@@ -57,6 +63,13 @@ function slackRefusal(err: unknown): string | null {
   return typeof data?.error === "string" ? data.error : null;
 }
 
+function directMessageUserOf(
+  channel: object & { is_im?: boolean },
+): string | null {
+  if (!channel.is_im || !("user" in channel)) return null;
+  return typeof channel.user === "string" ? channel.user : null;
+}
+
 function toSlackMessage(m: {
   ts?: string;
   user?: string;
@@ -67,7 +80,14 @@ function toSlackMessage(m: {
   reply_count?: number;
   latest_reply?: string;
   subtype?: string;
+  metadata?: { event_type?: string; event_payload?: Record<string, unknown> };
 }): SlackMessage {
+  const metadata = m.metadata?.event_type
+    ? {
+        eventType: m.metadata.event_type,
+        payload: m.metadata.event_payload ?? {},
+      }
+    : null;
   return {
     ts: m.ts,
     user: m.user,
@@ -78,7 +98,48 @@ function toSlackMessage(m: {
     ...(m.reply_count ? { replyCount: m.reply_count } : {}),
     ...(m.latest_reply ? { latestReplyTs: m.latest_reply } : {}),
     ...(m.subtype ? { subtype: m.subtype } : {}),
+    ...(metadata ? { metadata } : {}),
   };
+}
+
+const FILE_UPLOAD_ATTEMPTS = 3;
+
+const FILE_UPLOAD_TIMEOUT_MS = 120_000;
+
+async function postFileBytes(
+  uploadUrl: string,
+  token: string,
+  file: Buffer,
+  filename: string,
+): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    const form = new FormData();
+    form.append("body", new Blob([new Uint8Array(file)]), filename);
+    let status: number;
+    let retryAfterS = attempt;
+    try {
+      const res = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+        redirect: "error",
+        signal: AbortSignal.timeout(FILE_UPLOAD_TIMEOUT_MS),
+      });
+      await res.body?.cancel().catch(() => {});
+      status = res.status;
+      const header = Number(res.headers.get("retry-after"));
+      if (Number.isFinite(header) && header > 0) retryAfterS = header;
+    } catch (err) {
+      if (attempt >= FILE_UPLOAD_ATTEMPTS) throw err;
+      await new Promise((r) => setTimeout(r, retryAfterS * 1000));
+      continue;
+    }
+    if (status === 200) return;
+    const retryable = status === 429 || status >= 500;
+    if (!retryable || attempt >= FILE_UPLOAD_ATTEMPTS)
+      throw new Error(`file upload failed with HTTP ${status}`);
+    await new Promise((r) => setTimeout(r, retryAfterS * 1000));
+  }
 }
 
 export function createBoltSlackGateway(
@@ -128,45 +189,36 @@ export function createBoltSlackGateway(
   }
 
   /**
-   * UNIT_BOUNDARY_DESCRIPTION: Which workspace the operator's credential
-   * belongs to. Slack names that workspace on every event it sends, while the
-   * bindings made before this platform could connect a second workspace name it
-   * by the empty string, and both have to reach one credential. A workspace
-   * connected over OAuth needs none of this — Slack returns its id beside its
-   * token — so this is asked once, for the one credential that arrives without
-   * its workspace. It is asked before the socket opens, so no message is ever
-   * served while the answer is unknown.
+   * UNIT_BOUNDARY_DESCRIPTION: Importing a bot token still set in Helm values.
+   * It is the one credential that arrives without naming its workspace, so
+   * Slack is asked which one it is before the socket opens, and the install
+   * service turns it into that workspace's row and moves the bindings made
+   * before multi-workspace support onto it. Doing it before the socket opens
+   * means no message is ever routed while those bindings still name no
+   * workspace.
    *
-   * The credential is read from the operator's own configuration rather than
-   * through the resolver, because the resolver's answer is what this question
-   * decides: letting it answer before the question is settled would mean
-   * handing out the operator's token under a name whose workspace is unknown.
-   *
-   * Not getting an answer is two different states. When Slack answers that the
-   * credential is no good, that credential could not have served its workspace
-   * anyway, so the socket opens and every workspace holding an install row of
-   * its own is served as usual. What goes dark is the empty-string name alone —
-   * a workspace that has since re-authorized keeps being served under the real
-   * team id Slack puts on its events. When Slack does not answer at all,
-   * nothing has been learned about the credential, so this stays a failure to
-   * start and the worker retries it.
+   * When Slack answers that the token is no good, it could not have served its
+   * workspace anyway: nothing is imported, the socket opens, and every
+   * workspace with a row is served as usual. When Slack does not answer at all,
+   * nothing has been learned, so this stays a failure to start and the worker
+   * retries it.
    */
-  async function learnOriginalWorkspace(bolt: BoltApp): Promise<void> {
+  async function importHelmToken(bolt: BoltApp, token: string): Promise<void> {
     let identity;
     try {
-      identity = await bolt.client.auth.test({ token: deps.envBotToken });
+      identity = await bolt.client.auth.test({ token });
     } catch (err) {
       const refusal = slackRefusal(err);
       if (refusal === null || !DEAD_CREDENTIAL.has(refusal)) throw err;
       process.stderr.write(
-        `[slack] Slack refuses the operator's bot token (${refusal}); bindings that name the original workspace by the empty string are served by nothing until it is replaced\n`,
+        `[slack] Slack refuses the Helm bot token (${refusal}); it was not imported, and bindings that name no workspace stay unserved\n`,
       );
       return;
     }
     if (typeof identity.team_id !== "string") {
-      throw new Error("Slack did not name the original workspace");
+      throw new Error("Slack did not name the Helm bot token's workspace");
     }
-    deps.setOriginalWorkspace(identity.team_id);
+    await deps.importHelmToken(identity.team_id, token);
   }
 
   return {
@@ -178,7 +230,7 @@ export function createBoltSlackGateway(
         socketMode: true,
         logLevel: LogLevel.DEBUG,
         authorize: async ({ teamId }) => {
-          const auth = await testedAuthFor(teamId ?? ORIGINAL_WORKSPACE);
+          const auth = await testedAuthFor(teamId ?? NO_WORKSPACE);
           if (!auth) throw new Error(`${INSTALL_TOKEN_MISSING}: ${teamId}`);
           return {
             botToken: auth.token,
@@ -195,7 +247,7 @@ export function createBoltSlackGateway(
           threadTs: event.thread_ts,
           text: event.text ?? "",
           files: (event as { files?: SlackImageFile[] }).files,
-          teamId: event.team ?? context.teamId ?? ORIGINAL_WORKSPACE,
+          teamId: event.team ?? context.teamId ?? NO_WORKSPACE,
           channelType: (event as { channel_type?: string }).channel_type,
         });
       });
@@ -215,7 +267,7 @@ export function createBoltSlackGateway(
         };
         if (msg.subtype !== undefined && msg.subtype !== "file_share") return;
         if (msg.bot_id || !msg.user) return;
-        const workspace = msg.team ?? context.teamId ?? ORIGINAL_WORKSPACE;
+        const workspace = msg.team ?? context.teamId ?? NO_WORKSPACE;
         const payload = {
           user: msg.user,
           channel: msg.channel,
@@ -246,7 +298,7 @@ export function createBoltSlackGateway(
           inviter?: string;
           team?: string;
         };
-        const workspace = joined.team ?? context.teamId ?? ORIGINAL_WORKSPACE;
+        const workspace = joined.team ?? context.teamId ?? NO_WORKSPACE;
         const selfId =
           context.botUserId ?? (await testedAuthFor(workspace))?.botUserId;
         if (!selfId || joined.user !== selfId) return;
@@ -263,11 +315,30 @@ export function createBoltSlackGateway(
             text: command.text,
             userId: command.user_id,
             channelId: command.channel_id,
-            teamId: command.team_id ?? ORIGINAL_WORKSPACE,
+            channelName: command.channel_name,
+            teamId: command.team_id ?? NO_WORKSPACE,
+            triggerId: command.trigger_id,
           },
           (response) =>
-            ack({ response_type: "ephemeral", text: response.text }),
+            response
+              ? ack({ response_type: "ephemeral", text: response.text })
+              : ack(),
         );
+      });
+
+      bolt.view(/.+/, async ({ ack, body, view, context }) => {
+        await ack();
+        const inputs: Record<string, string> = {};
+        for (const block of Object.values(view.state.values))
+          for (const [actionId, input] of Object.entries(block))
+            if (typeof input.value === "string") inputs[actionId] = input.value;
+        await handlers.onViewSubmission({
+          callbackId: view.callback_id,
+          privateMetadata: view.private_metadata,
+          userId: body.user.id,
+          teamId: context.teamId ?? body.team?.id ?? NO_WORKSPACE,
+          inputs,
+        });
       });
 
       const forgetWorkspace = async (teamId: string | undefined) => {
@@ -280,8 +351,21 @@ export function createBoltSlackGateway(
       });
       bolt.event("tokens_revoked", async ({ event, context }) => {
         const revoked = (event as { tokens?: { bot?: string[] } }).tokens;
-        if (!revoked?.bot?.length) return;
-        await forgetWorkspace(context.teamId);
+        const teamId = context.teamId;
+        if (!revoked?.bot?.length || !teamId) return;
+        workspaces.delete(teamId);
+        deps.forgetBotToken(teamId);
+        const token = await deps.resolveBotToken(teamId);
+        if (token) {
+          try {
+            await bolt.client.auth.test({ token });
+            return;
+          } catch (err) {
+            const refusal = slackRefusal(err);
+            if (refusal === null || !DEAD_CREDENTIAL.has(refusal)) return;
+          }
+        }
+        await forgetWorkspace(teamId);
       });
 
       bolt.error(async (error) => {
@@ -290,7 +374,7 @@ export function createBoltSlackGateway(
 
       app = bolt;
       try {
-        await learnOriginalWorkspace(bolt);
+        if (deps.helmBotToken) await importHelmToken(bolt, deps.helmBotToken);
         await bolt.start();
       } catch (err) {
         app = null;
@@ -299,6 +383,7 @@ export function createBoltSlackGateway(
         );
         return false;
       }
+      void deps.renewTokens();
 
       return true;
     },
@@ -312,10 +397,10 @@ export function createBoltSlackGateway(
     },
 
     async postMessage(args) {
-      if (!app) return;
+      if (!app) return null;
       const token = await tokenFor(args.teamId);
-      if (!token) return;
-      await app.client.chat.postMessage({
+      if (!token) return null;
+      const res = await app.client.chat.postMessage({
         token,
         channel: args.channel,
         text: args.text,
@@ -330,7 +415,51 @@ export function createBoltSlackGateway(
           : {}),
         ...(args.username !== undefined ? { username: args.username } : {}),
         ...(args.iconUrl !== undefined ? { icon_url: args.iconUrl } : {}),
+        ...(args.metadata
+          ? {
+              metadata: {
+                event_type: args.metadata.eventType,
+                event_payload: args.metadata.payload,
+              },
+            }
+          : {}),
       } as ChatPostMessageArgs);
+      return res.ts ? { ts: res.ts } : null;
+    },
+
+    async deleteMessage(channel, ts, teamId) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      try {
+        await app.client.chat.delete({ token, channel, ts });
+        return true;
+      } catch (err) {
+        if (!formatError(err).includes("message_not_found")) throw err;
+        return false;
+      }
+    },
+
+    async deleteFile(fileId, teamId) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      try {
+        await app.client.files.delete({ token, file: fileId });
+      } catch (err) {
+        if (!/file_not_found|file_deleted/.test(formatError(err))) throw err;
+      }
+    },
+
+    async openModal(args) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      await app.client.views.open({
+        token,
+        trigger_id: args.triggerId,
+        view: args.view,
+      } as unknown as ViewsOpenArgs);
     },
 
     async postEphemeral(args) {
@@ -343,7 +472,10 @@ export function createBoltSlackGateway(
         user: args.user,
         thread_ts: args.threadTs,
         text: args.text,
-      });
+        ...(args.blocks ? { blocks: args.blocks } : {}),
+        ...(args.username ? { username: args.username } : {}),
+        ...(args.iconUrl ? { icon_url: args.iconUrl } : {}),
+      } as ChatPostEphemeralArgs);
     },
 
     async startStream(args): Promise<{ ts: string }> {
@@ -425,6 +557,8 @@ export function createBoltSlackGateway(
         ts: args.threadTs,
         limit: args.limit,
         ...(args.oldest ? { oldest: args.oldest } : {}),
+        ...(args.latest ? { latest: args.latest } : {}),
+        ...(args.inclusive ? { inclusive: true } : {}),
       });
       return {
         messages: (replies.messages ?? []).map(toSlackMessage),
@@ -434,38 +568,30 @@ export function createBoltSlackGateway(
       };
     },
 
-    async getThreadTail(args) {
-      const nothing = {
-        messages: [],
-        opener: null,
-        hasEarlier: false,
-        hasMore: false,
-      };
-      if (!app) return nothing;
-      const client = app.client;
+    async getMessage(args) {
+      if (!app) return null;
       const token = await tokenFor(args.teamId);
-      if (!token) return nothing;
-      return foldThreadPages<SlackMessage, string>(
-        {
-          limit: args.limit,
-          maxPages: args.maxPages ?? THREAD_TAIL_MAX_PAGES,
-          opener: args.threadTs,
-          ...(args.before !== undefined ? { before: args.before } : {}),
-        },
-        async (from) => {
-          const replies = await client.conversations.replies({
+      if (!token) return null;
+      const page = args.threadTs
+        ? await app.client.conversations.replies({
             token,
             channel: args.channel,
             ts: args.threadTs,
-            limit: args.limit,
-            ...(from ? { cursor: from } : {}),
+            latest: args.ts,
+            inclusive: true,
+            limit: 1,
+            include_all_metadata: true,
+          })
+        : await app.client.conversations.history({
+            token,
+            channel: args.channel,
+            latest: args.ts,
+            inclusive: true,
+            limit: 1,
+            include_all_metadata: true,
           });
-          return {
-            messages: (replies.messages ?? []).map(toSlackMessage),
-            next: replies.response_metadata?.next_cursor || undefined,
-          };
-        },
-      );
+      const found = (page.messages ?? []).find((m) => m.ts === args.ts);
+      return found ? { ...toSlackMessage(found), ts: args.ts } : null;
     },
 
     async getChannelHistory(args) {
@@ -511,6 +637,45 @@ export function createBoltSlackGateway(
       await app.client.files.uploadV2(
         args.threadTs ? { ...upload, thread_ts: args.threadTs } : upload,
       );
+    },
+
+    async reserveFile(args) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      const reserved = await app.client.files.getUploadURLExternal({
+        token,
+        filename: args.filename,
+        length: args.length,
+      });
+      if (!reserved.upload_url || !reserved.file_id)
+        throw new Error("files.getUploadURLExternal returned no upload URL");
+      return { fileId: reserved.file_id, uploadUrl: reserved.upload_url };
+    },
+
+    async sendFileBytes(args) {
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      await postFileBytes(
+        args.reserved.uploadUrl,
+        token,
+        args.file,
+        args.filename,
+      );
+    },
+
+    async shareFile(args) {
+      if (!app) throw new Error("slack app not started");
+      const token = await tokenFor(args.teamId);
+      if (!token) throw new Error(INSTALL_TOKEN_MISSING);
+      await app.client.files.completeUploadExternal({
+        token,
+        files: [{ id: args.fileId, title: args.title ?? args.filename }],
+        channel_id: args.channelId,
+        ...(args.threadTs ? { thread_ts: args.threadTs } : {}),
+        ...(args.username !== undefined ? { username: args.username } : {}),
+        ...(args.iconUrl !== undefined ? { icon_url: args.iconUrl } : {}),
+      } as FilesCompleteUploadExternalArgs);
     },
 
     async downloadFile(
@@ -584,24 +749,62 @@ export function createBoltSlackGateway(
       return channels;
     },
 
-    async getConversationInfo(channelId: string, teamId: SlackWorkspace) {
-      if (!app) return null;
+    async getConversationInfo(
+      channelId: string,
+      teamId: SlackWorkspace,
+    ): Promise<SlackConversationLookup> {
+      if (!app) return { kind: "no-credential" };
       const token = await tokenFor(teamId);
-      if (!token) return null;
+      if (!token) return { kind: "no-credential" };
       try {
         const info = await app.client.conversations.info({
           token,
           channel: channelId,
         });
-        if (!info.channel) return null;
+        if (!info.channel) return { kind: "not-found" };
+        const isDirectMessage = !!info.channel.is_im || !!info.channel.is_mpim;
         return {
-          isMember: !!info.channel.is_member,
+          kind: "found",
+          isMember: isDirectMessage || !!info.channel.is_member,
+          isDirectMessage,
+          isGroupDirectMessage: !!info.channel.is_mpim,
           name: info.channel.name ?? null,
+          directMessageUser: directMessageUserOf(info.channel),
         };
       } catch (err) {
-        if (formatError(err).includes("channel_not_found")) return null;
+        if (formatError(err).includes("channel_not_found"))
+          return { kind: "not-found" };
         throw err;
       }
+    },
+
+    async listSharedChannels(userId: string, teamId: SlackWorkspace) {
+      if (!app) return [];
+      const token = await tokenFor(teamId);
+      if (!token) return [];
+      const ids: string[] = [];
+      let cursor: string | undefined;
+      do {
+        let page;
+        try {
+          page = await app.client.users.conversations({
+            token,
+            user: userId,
+            types: "public_channel,private_channel",
+            exclude_archived: true,
+            limit: 200,
+            cursor,
+          });
+        } catch (err) {
+          if (formatError(err).includes("user_not_found")) return [];
+          throw err;
+        }
+        for (const c of page.channels ?? []) {
+          if (c.id) ids.push(c.id);
+        }
+        cursor = page.response_metadata?.next_cursor || undefined;
+      } while (cursor);
+      return ids;
     },
 
     async getUserInfo(

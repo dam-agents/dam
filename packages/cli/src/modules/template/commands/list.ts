@@ -2,14 +2,10 @@ import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
-import { printServiceError } from "../../shared/trpc/print.js";
-import { renderTable } from "../../shared/render-table.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
+import { renderTable, truncate } from "../../shared/render-table.js";
 import type { TemplateService } from "../services/template-service.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 
 const DESCRIPTION_MAX = 60;
 
@@ -30,19 +26,10 @@ export function buildListCommand(deps: {
       "\nExamples:\n  dam template list\n  dam template list --json | jq '.[].id'\n",
     )
     .action(async (opts: { server?: string; json?: boolean }) => {
-      const host = await resolveActiveHost(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
 
       const result = await deps.createTemplateService(host).list();
-      if (!result.ok) {
-        printServiceError(result.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(result, host);
 
       if (opts.json) {
         return writeStdoutAndExit(
@@ -73,8 +60,4 @@ export function buildListCommand(deps: {
         EXIT_SUCCESS,
       );
     });
-}
-
-function truncate(s: string, n: number): string {
-  return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
 }

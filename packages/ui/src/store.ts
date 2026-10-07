@@ -6,10 +6,14 @@ import {
   createArtifactsSlice,
 } from "./modules/artifacts/store.js";
 import {
-  createExperimentsSlice,
-  type ExperimentsSlice,
-} from "./modules/experiments/store.js";
+  createFeaturesSlice,
+  type FeaturesSlice,
+} from "./modules/features/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
+import {
+  createInvocationsSlice,
+  type InvocationsSlice,
+} from "./modules/invocations/store.js";
 import {
   createDialogSlice,
   type DialogSlice,
@@ -41,23 +45,16 @@ import {
   type SessionsSlice,
 } from "./modules/sessions/store/sessions.js";
 
-export type { DialogState } from "./modules/platform/store/dialog.js";
-export type {
-  PendingPermission,
-  PermissionOption,
-  PermissionOutcome,
-} from "./modules/sessions/store/permissions.js";
-export type { SessionError } from "./modules/sessions/store/sessions.js";
-
 export type PlatformStore = DialogSlice &
   ThemeSlice &
   NavigationSlice &
   SidebarSlice &
   AgentsSlice &
   SessionsSlice &
-  ExperimentsSlice &
   FilesSlice &
   ArtifactsSlice &
+  InvocationsSlice &
+  FeaturesSlice &
   PermissionsSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
@@ -67,9 +64,10 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createSidebarSlice(...a),
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
-  ...createExperimentsSlice(...a),
   ...createFilesSlice(...a),
   ...createArtifactsSlice(...a),
+  ...createInvocationsSlice(...a),
+  ...createFeaturesSlice(...a),
   ...createPermissionsSlice(...a),
 }));
 

@@ -1,6 +1,9 @@
 package reconciler
 
 import (
+	"cmp"
+	"context"
+	stderrors "errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -12,14 +15,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
-	"github.com/dam-agents/dam/packages/controller/pkg/types"
 )
 
 const AgentContainerName = "agent"
 
 // UNIT_BOUNDARY_DESCRIPTION: the agent home, which is the same path on both backends. On the vm backend platform-init, which is Rust and runs inside the guest, bind-mounts the disk here, so the path is stated in the vm runner's contract fixtures and a test here holds this constant to them, because nothing else would notice the two drifting.
 const agentHomeDir = "/home/agent"
+
+// UNIT_BOUNDARY_DESCRIPTION: where a container agent sees the node's harness tools, which a DaemonSet installs into a host directory. The default image bakes no tools and names this path as its mise system data dir. No baked image uses the path, so the controller mounts it read-only into every agent pod once the install sets the host directory.
+const agentHarnessToolsDir = "/usr/share/mise"
 
 func portInt32(p int) int32 {
 	if p < 0 || p > 65535 {
@@ -43,12 +49,48 @@ const (
 
 const annRollRev = "agent-platform.ai/roll-rev"
 
-func hostPortOf(proxyURL string) (string, string) {
-	hostPort := strings.TrimPrefix(proxyURL, "http://")
-	if h, p, err := net.SplitHostPort(hostPort); err == nil {
-		return h, p
+func sanitizeMountName(path string) string {
+	return strings.ReplaceAll(strings.TrimPrefix(path, "/"), "/", "-")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an Agent's secretRef names a Secret by name alone, in the namespace that also holds every other owner's credentials, the runners' tokens and the gateways' keys, and every key of it lands in the agent's environment on both backends. So only a Secret carrying the Agent's own owner label is honoured, and never one the platform manages — the credentials a gateway injects and the pull Secrets the api-server writes carry the managed-by label, and a runner's token and certificate its component — because those are meant for everything except the agent. The refusal names the label to add rather than the Secret's contents, so an operator's Secret that predates the rule is one label away from working.
+func (r *AgentReconciler) ownedSecretRef(ctx context.Context, agent *apiv1.Agent) (*corev1.Secret, error) {
+	name := agent.Spec.SecretRef
+	if name == "" {
+		return nil, nil
 	}
-	return hostPort, "80"
+	sec, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("reading secretRef %s: %w", name, err)
+	}
+	owner := agent.Labels[envoyOwnerLabel]
+	if owner == "" || sec.Labels[envoyOwnerLabel] != owner {
+		return nil, secretRefRefused(fmt.Sprintf("secretRef %s does not carry this agent's owner label (%s), so its keys are not given to the agent; label the Secret with its owner to use it", name, envoyOwnerLabel))
+	}
+	if sec.Labels[envoyManagedByLabel] != "" || sec.Labels["app.kubernetes.io/component"] == vmRunnerComponent {
+		return nil, secretRefRefused(fmt.Sprintf("secretRef %s is a Secret the platform manages, which is never given to an agent", name))
+	}
+	return sec, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a secretRef the agent may not have, as against one that could not be read. A refusal is final for the Secret as it stands, so the agent is rendered without it — which also takes it off an agent that already had it — and the reconcile reports it; a read that failed is retried instead.
+type secretRefRefused string
+
+func (e secretRefRefused) Error() string { return string(e) }
+
+// UNIT_BOUNDARY_DESCRIPTION: the agent's spec as its workload is rendered: the stored spec, less a secretRef the check refused, and the refusal to report once the rest of the reconcile is done.
+func (r *AgentReconciler) renderedSpec(ctx context.Context, agent *apiv1.Agent) (*apiv1.AgentSpec, string, error) {
+	_, err := r.ownedSecretRef(ctx, agent)
+	var refused secretRefRefused
+	switch {
+	case stderrors.As(err, &refused):
+		spec := agent.Spec
+		spec.SecretRef = ""
+		return &spec, refused.Error(), nil
+	case err != nil:
+		return nil, "", err
+	}
+	return &agent.Spec, "", nil
 }
 
 func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
@@ -56,7 +98,10 @@ func agentProxyAddr(cfg *config.Config, gatewayClusterIP string) string {
 }
 
 func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr string) []corev1.EnvVar {
-	proxyHost, proxyPort := hostPortOf(proxyAddr)
+	proxyHost, proxyPort := strings.TrimPrefix(proxyAddr, "http://"), "80"
+	if h, p, err := net.SplitHostPort(proxyHost); err == nil {
+		proxyHost, proxyPort = h, p
+	}
 	javaToolOptions := fmt.Sprintf(
 		"-Duser.home=%s -Dhttp.proxyHost=%s -Dhttp.proxyPort=%s -Dhttps.proxyHost=%s -Dhttps.proxyPort=%s",
 		agentHome, proxyHost, proxyPort, proxyHost, proxyPort,
@@ -68,19 +113,20 @@ func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr stri
 		{Name: "https_proxy", Value: proxyAddr},
 		{Name: "http_proxy", Value: proxyAddr},
 		{Name: "NODE_EXTRA_CA_CERTS", Value: "/etc/platform/ca/ca.crt"},
+		{Name: "NODE_USE_SYSTEM_CA", Value: "1"},
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
 		{Name: "NO_PROXY", Value: "localhost,127.0.0.1,::1"},
 		{Name: "no_proxy", Value: "localhost,127.0.0.1,::1"},
 		{Name: "PLATFORM_AGENT_ID", Value: name},
-		{Name: "API_SERVER_URL", Value: cfg.APIServerURL()},
+		{Name: "API_SERVER_URL", Value: fmt.Sprintf("http://%s:%d", cfg.HarnessHost(), cfg.HarnessServerPort)},
 		{Name: "HOME", Value: agentHome},
 		{Name: "PLATFORM_MCP_URL", Value: fmt.Sprintf("%s/api/agents/%s/mcp", cfg.HarnessServerURL, name)},
 		{Name: "PLATFORM_POD_FILES_EVENTS_URL", Value: fmt.Sprintf("%s/api/agents/%s/pod-files/events", cfg.HarnessServerURL, name)},
 	}
 }
 
-func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP string) *appsv1.StatefulSet {
+func BuildAgentStatefulSet(name string, agentSpec *apiv1.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP string) *appsv1.StatefulSet {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
 
@@ -90,7 +136,6 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	}
 	agentHome := agentHomeDir
 	specMounts := resolveSpecMounts(agentSpec, defaults)
-	specEnv := configEnvToTypes(defaults.Env)
 
 	replicas := int32(1)
 
@@ -109,8 +154,11 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 
 	env := agentPlatformEnv(name, cfg, agentHome, proxyAddr)
 
-	for _, e := range specEnv {
+	for _, e := range defaults.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
+	}
+	if agentSpec.Harness != "" {
+		env = append(env, corev1.EnvVar{Name: "PLATFORM_HARNESS", Value: agentSpec.Harness})
 	}
 
 	var envFrom []corev1.EnvFromSource
@@ -127,7 +175,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	var pvcs []corev1.PersistentVolumeClaim
 
 	for _, m := range specMounts {
-		volName := types.SanitizeMountName(m.Path)
+		volName := sanitizeMountName(m.Path)
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name: volName, MountPath: m.Path,
 		})
@@ -139,7 +187,7 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 					Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(storageSize)},
 				},
 			}
-			if sc := effectiveStorageClass(agentSpec, base); sc != "" {
+			if sc := cmp.Or(agentSpec.StorageClass, base.StorageClass); sc != "" {
 				pvcSpec.StorageClassName = &sc
 			}
 			pvcs = append(pvcs, corev1.PersistentVolumeClaim{
@@ -157,21 +205,17 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 		}
 	}
 
-	volumes = append(volumes, corev1.Volume{
-		Name: "ca-cert",
-		VolumeSource: corev1.VolumeSource{
-			Secret: &corev1.SecretVolumeSource{
-				SecretName: EnvoyLeafSecretName(name),
-				Items: []corev1.KeyToPath{{
-					Key:  "ca.crt",
-					Path: "ca.crt",
-				}},
-			},
-		},
-	})
+	volumes = append(volumes, agentCAVolume(name, cfg))
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
 		Name: "ca-cert", MountPath: "/etc/platform/ca", ReadOnly: true,
 	})
+	if base.ToolsHostPath != "" {
+		dir := corev1.HostPathDirectoryOrCreate
+		volumes = append(volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
+			HostPath: &corev1.HostPathVolumeSource{Path: base.ToolsHostPath, Type: &dir},
+		}})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{Name: "harness-tools", MountPath: agentHarnessToolsDir, ReadOnly: true})
+	}
 
 	resourceReqs := corev1.ResourceRequirements{}
 	resourceReqs.Limits = toResourceList(agentSpec.Resources.Limits)
@@ -314,14 +358,18 @@ func BuildAgentStatefulSet(name string, agentSpec *types.AgentSpec, cfg *config.
 	}
 }
 
-func resolveSpecMounts(agentSpec *types.AgentSpec, defaults config.AgentTemplateDefaults) []types.Mount {
+func resolveSpecMounts(agentSpec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) []apiv1.Mount {
 	if len(agentSpec.Mounts) > 0 {
 		return agentSpec.Mounts
 	}
-	return configMountsToTypes(defaults.Mounts)
+	var out []apiv1.Mount
+	for _, m := range defaults.Mounts {
+		out = append(out, apiv1.Mount{Path: m.Path, Persist: m.Persist, Size: m.Size})
+	}
+	return out
 }
 
-func effectiveMountSize(m types.Mount, agentSpec *types.AgentSpec, defaults config.AgentTemplateDefaults) string {
+func effectiveMountSize(m apiv1.Mount, agentSpec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) string {
 	if m.Size != "" {
 		return m.Size
 	}
@@ -329,13 +377,6 @@ func effectiveMountSize(m types.Mount, agentSpec *types.AgentSpec, defaults conf
 		return agentSpec.StorageSize
 	}
 	return defaults.StorageSize
-}
-
-func effectiveStorageClass(agentSpec *types.AgentSpec, base config.AgentBase) string {
-	if agentSpec.StorageClass != "" {
-		return agentSpec.StorageClass
-	}
-	return base.StorageClass
 }
 
 func applyPoolClaims(ss *appsv1.StatefulSet, claims map[string]string) {
@@ -407,4 +448,39 @@ func deriveRequest(limit resource.Quantity, fraction float64, floor resource.Qua
 		derived = limit
 	}
 	return derived
+}
+
+const (
+	agentTrustedCAsConfigMap = "agent-trusted-cas"
+	agentTrustedCAsKey       = "extra-cas.crt"
+)
+
+// UNIT_BOUNDARY_DESCRIPTION: what an agent trusts under /etc/platform/ca: its gateway's MITM CA, and the extra CAs the install names, so a host its gateway passes through untouched still verifies when a TLS-inspecting proxy further out intercepts it. Without extra CAs the volume is the leaf Secret alone, exactly as before. The extras come from the one ConfigMap the chart renders from the same value for every agent; the projection is optional, so a pod still starts with its gateway's CA alone if that ConfigMap is missing.
+func agentCAVolume(name string, cfg *config.Config) corev1.Volume {
+	leaf := corev1.KeyToPath{Key: "ca.crt", Path: "ca.crt"}
+	if cfg.ExtraTrustedCAs == "" {
+		return corev1.Volume{
+			Name: "ca-cert",
+			VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{
+				SecretName: EnvoyLeafSecretName(name),
+				Items:      []corev1.KeyToPath{leaf},
+			}},
+		}
+	}
+	return corev1.Volume{
+		Name: "ca-cert",
+		VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
+			Sources: []corev1.VolumeProjection{
+				{Secret: &corev1.SecretProjection{
+					LocalObjectReference: corev1.LocalObjectReference{Name: EnvoyLeafSecretName(name)},
+					Items:                []corev1.KeyToPath{leaf},
+				}},
+				{ConfigMap: &corev1.ConfigMapProjection{
+					LocalObjectReference: corev1.LocalObjectReference{Name: agentTrustedCAsConfigMap},
+					Items:                []corev1.KeyToPath{{Key: agentTrustedCAsKey, Path: agentTrustedCAsKey}},
+					Optional:             new(true),
+				}},
+			},
+		}},
+	}
 }

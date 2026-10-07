@@ -1,0 +1,430 @@
+#!/usr/bin/env -S usage bash
+#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as dist/oci/<agent>.tar in each agent's directory, named platform-<agent>:latest: all of packages/agents, or the ones named (the e2e mock too). The default image is packed onto the shared apt base with image:pack, and every workload and the mock onto the default image; the apt base is the Debian base with its own apt-get run in it under chroot. Off Linux the build runs in the dev cluster's Lima VM ($AGENT_BUILD_VM, default platform-k3s, else $LIMA_INSTANCE), whichever cluster imports them."
+#MISE dir="{{vars.repo_root}}"
+#USAGE flag "--build" help="Never reuse an image from the registry"
+#USAGE flag "--no-tar" help="Linux only: keep an image as its OCI layout"
+#USAGE flag "--lock" help="Refresh packages/agents/base/image.lock and image-locks/; builds nothing"
+#USAGE flag "--bump" help="With --lock, re-resolve `latest` pins"
+#USAGE flag "--warm" help="Install every image's tools for CI's cache; builds nothing"
+#USAGE arg "[agent]..." var=#true
+set -euo pipefail
+# What the build creates is the image's, not the build user's: a umask of 002
+# would make root's paths writable to group 0, the agent's group.
+umask 022
+
+resolve=.mise/tasks/image/resolve
+pack=.mise/tasks/image/pack
+agents=packages/agents
+workloads=" $($resolve list-workloads) "
+root="$PWD"
+lock="${usage_lock:-false}" warm="${usage_warm:-false}"
+reuse=true; [ "${usage_build:-}" != true ] || reuse=false
+write_tar=true; [ "${usage_no_tar:-}" != true ] || write_tar=false
+bump=(); [ "${usage_bump:-}" != true ] || bump=(--bump)
+eval "named=(${usage_agent:-})"
+
+dir_of() { local d; for d in "$agents/$1" "packages/e2e/agents/$1"; do [ -d "$d" ] && { echo "$d"; return; }; done; return 1; }
+tar_of() { $resolve tar-path "$1"; }
+if [ ${#named[@]} -eq 0 ]; then
+  for d in "$agents"/*/; do
+    [ -f "$d/image.toml" ] && named+=("$(basename "$d")")
+  done
+fi
+for a in "${named[@]}"; do
+  d="$(dir_of "$a")" || { echo "no such agent: $a" >&2; exit 2; }
+  [ -f "$d/image.toml" ] || { echo "$a has no image.toml" >&2; exit 2; }
+done
+
+reused() {
+  [ "$reuse" = true ] || return 1
+  local d; d="$($resolve resolve "$1")"
+  [ "${d%% *}" = REUSE ] || return 1
+  echo "↺ reuse ${d#REUSE } -> $(tar_of "$1")"
+  .mise/tasks/image/pull "${d#REUSE }" "$(tar_of "$1")" "platform-$1:latest"
+}
+
+# A workload's own tools too big for CI's tools cache: k-search's venv is
+# gigabytes, so --warm leaves it out and its build installs it afresh.
+uncached=" k-search "
+
+state="${XDG_CACHE_HOME:-$HOME/.cache}/platform-agent-oci"
+work="$state/build"
+stage="$work/stage"
+runtime="$work/runtime"
+oci_out="${AGENT_OCI_OUT:-$state/out}"
+
+build_runtime() {
+  pnpm install --frozen-lockfile
+  pnpm --filter agent-runtime exec tsup
+  pnpm --filter driver-sdk exec tsup
+  rm -rf "$runtime"
+  npm_config_inject_workspace_packages=true \
+    pnpm --filter agent-runtime deploy --frozen-lockfile --prod --node-linker=hoisted "$runtime"
+  # What pnpm writes for itself, which nothing reads at run time, varies every
+  # build or names the build's directory: its records, pnpm 12's leftover
+  # staging files under random names, and the target each .bin shim notes in a
+  # comment (a shim finds its target by its own path).
+  rm -f "$runtime"/node_modules/.{modules.yaml,pnpm-workspace-state-v1.json,pnpm/lock.yaml}
+  find "$runtime/node_modules" -name '*_pacquet-stage_*' -delete
+  find "$runtime/node_modules/.bin" -type f -exec sed -i '/^# cmd-shim-target=/d' {} +
+  cp packages/agent-runtime/package.json "$runtime/package.json"
+  (cd "$runtime" && pnpm pkg delete devDependencies)
+}
+
+# Not mise.lock: mise's monorepo mode would fold it into the root lockfile.
+lockfile="$agents/base/image.lock" deplocks="$agents/base/image-locks"
+
+# Stages the mise project for the named agents, outside the repo, and points
+# mise at it alone. Call it in a subshell. Installs use the lockfile but do not
+# enforce it: mise cannot lock the workloads' pipx tools.
+# mise cannot verify the provenance docker publishes for buildx and compose,
+# the github: tools; the lockfile's checksums still pin them.
+isolate_mise() {
+  unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT "${!MISE_TASK_@}"
+  mkdir -p "$work"/{data,cache,config,state}
+  export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$work/state" \
+    MISE_CONFIG_DIR="$work/config" MISE_GLOBAL_CONFIG_FILE="$work/config/none.toml" \
+    MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" \
+    MISE_TRUSTED_CONFIG_PATHS="$stage" MISE_EXPERIMENTAL=1 MISE_LOCKFILE=1 \
+    MISE_NPM_PACKAGE_MANAGER=aube MISE_LOCKED=0 MISE_GITHUB_SLSA=false
+  : > "$MISE_GLOBAL_CONFIG_FILE"
+}
+
+stage_project() {
+  isolate_mise
+
+  # In the repo every agent dir is a mise config root, so the stage renames
+  # the fragments to names mise loads.
+  rm -rf "$stage"
+  mkdir -p "$stage/mise/conf.d"
+  cp "$agents/base/miserc.toml" "$stage/.miserc.toml"
+  cp "$agents/base/base.toml" "$stage/mise/conf.d/base.toml"
+  cp "$agents/base/rootfs/etc/mise/conf.d/settings.toml" "$stage/mise/conf.d/settings.toml"
+  [ ! -f "$lockfile" ] || cp "$lockfile" "$stage/mise/mise.lock"
+  # aube's lockfiles for the npm tools' dependencies, where mise.lock names them.
+  [ ! -d "$deplocks" ] || { mkdir -p "$stage/mise/.mise" && cp -R "$deplocks" "$stage/mise/.mise/locks"; }
+  for a in base "$@"; do
+    d="$(dir_of "$a")"
+    [ "$a" = base ] || cp "$d/image.toml" "$stage/mise/conf.d/harness.$a.toml"
+    mkdir -p "$stage/$a"
+    # pi's extension ships as source; node_modules holds its dev dependencies.
+    tar -C "$d" --exclude=node_modules --exclude=.mise --exclude=./dist -cf - . | tar -C "$stage/$a" -xf -
+  done
+}
+
+# One lockfile for every image: mise lock only resolves, so any host can run it.
+# A pipx tool with uvx_args stays out: mise cannot lock it, and its image.toml
+# pins it exactly.
+all_images() { local f d; for f in "$agents"/*/image.toml packages/e2e/agents/*/image.toml; do d="${f%/*}"; echo "${d##*/}"; done; }
+
+lock_mise() (
+  all=($(all_images))
+  stage_project "${all[@]}"
+  cd "$stage"
+  envs="${all[*]}"
+  envs="${envs// /,}"
+  unlockable="$(awk '/^\[tools\./ { t = $0; sub(/^\[tools\./, "", t); sub(/\]$/, "", t); gsub(/"/, "", t) } /^uvx_args/ { print t }' mise/conf.d/harness.*.toml)"
+  read -r -a tools <<< "$(mise -E "$envs" ls --current --json | jq -r --arg skip "$unlockable" '[keys[] | select(. as $k | $skip | split("\n") | index($k) | not)] | join(" ")')"
+  # Python dependency locks run the image's uv. Its own install stays out of
+  # the lockfile, which would otherwise gain this host's platform. It is the
+  # newest uv, not the locked one, so mise finds it only on PATH, ahead of the
+  # repo's own uv.
+  MISE_LOCKFILE=0 mise -E "$envs" install uv
+  PATH="$(MISE_LOCKFILE=0 mise -E "$envs" bin-paths uv):$PATH" mise -E "$envs" lock --platform linux-x64,linux-arm64 ${bump[@]+"${bump[@]}"} "${tools[@]}"
+  cp mise/mise.lock "$root/$lockfile"
+  rm -rf "${root:?}/$deplocks"
+  [ ! -d mise/.mise/locks ] || cp -R mise/.mise/locks "$root/$deplocks"
+)
+
+# Every image's tools and Chromium, which is what CI caches per arch; each
+# build then installs only what it lacks.
+warm_mise() (
+  all=($(for a in $(all_images); do case "$uncached" in *" $a "*) ;; *) echo "$a" ;; esac; done))
+  stage_project "${all[@]}"
+  cd "$stage"
+  envs="${all[*]}"
+  envs="${envs// /,}"
+  mise -E "$envs" install
+  # A cache restored from an older lockfile keeps the versions it replaced.
+  mise -E "$envs" prune --yes
+  PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "$envs" exec -- playwright install chromium
+)
+
+# The default image: base's files and every harness's, with none of their tools,
+# which each node installs into the directory the image names as mise's system
+# data dir, from the tool configs and lockfile it ships in /etc/mise. Each
+# harness's entry points and manifest move under its name, where the image's
+# dispatchers and the agent-runtime find the one PLATFORM_HARNESS names.
+bare_harnesses="claude-code codex pi-agent bob"
+
+# The tables of a mise config that hold tools.
+tools_tables() { awk '/^\[/ { tools = /^\[tools[].]/ } tools'; }
+
+# The image config the staged mise configs declare, merged in order, as pack's
+# flags, one per line: [oci]'s entrypoint, cmd, workdir and user, and [oci.env],
+# a later file's key over an earlier's.
+pack_flags() {
+  mise -E "$envs" exec -- python3 - "$@" <<'PY'
+import sys, tomllib
+cfg, env = {}, {}
+for path in sys.argv[1:]:
+    with open(path, "rb") as f:
+        oci = tomllib.load(f).get("oci", {})
+    env.update({k: str(v) for k, v in oci.get("env", {}).items()})
+    cfg.update({k: v for k, v in oci.items() if k in ("entrypoint", "cmd", "workdir", "user")})
+for k in ("entrypoint", "cmd"):
+    if k in cfg:
+        print(f"--{k}=" + ",".join(cfg[k]))
+for k in ("workdir", "user"):
+    if k in cfg:
+        print(f"--{k}={cfg[k]}")
+for k, v in env.items():
+    print(f"--env={k}={v}")
+PY
+}
+
+agent_owned=(--own=65532:0=home/agent --own=65532:0=etc/mise --own=65532:0=usr/local/share/mise --own-dir=65532:0=app)
+# Packs <tree> onto <base layout> as <agent>'s layout; the rest are pack's
+# flags. The image is root's but for the paths the agent must write: its home,
+# mise's data dir and system config, and the runtime's directory itself, which
+# an image over the default one ships again (the trust store is the apt
+# base's, a workload's Python its own layer's).
+pack_image() {
+  local agent=$1 base=$2 tree=$3
+  shift 3
+  "$root/$pack" "$base" "$tree" "$oci_out/$agent" "platform-$agent:latest" --layout --umask=022 "${agent_owned[@]}" "$@"
+  echo "OCI layout: $oci_out/$agent"
+}
+
+# Subshell: it leaves the repo's mise context and directory.
+build_default() (
+  envs="${bare_harnesses// /,},default"
+  stage_project ${envs//,/ }
+  b="$stage/build" etc="$stage/build/etc/mise"
+  tools_root="$(sed -n 's/^PLATFORM_TOOLS_VOLUME = "\(.*\)"$/\1/p' "$agents/default/image.toml")"
+  install -d "$b"/{app,home/agent,etc/logrotate.d,opt/ms-playwright,usr/local/bin} \
+    "$b"/usr/local/lib/platform-python "$b"/usr/local/lib/docker/cli-plugins \
+    "$b"/usr/local/share/mise "$etc/conf.d"
+  for a in $bare_harnesses; do
+    h="$(sed -n 's/^PLATFORM_HARNESS = "\(.*\)"$/\1/p' "$agents/$a/image.toml")"
+    r="$stage/$a/rootfs"
+    install -d "$r/usr/local/lib/harness/$h" "$r/app/runtime-manifests"
+    mv "$r/usr/local/bin/harness-chat" "$r/usr/local/bin/harness-terminal" "$r/usr/local/lib/harness/$h/"
+    mv "$r/app/runtime-manifest.yaml" "$r/app/runtime-manifests/$h.yaml"
+  done
+  # Later trees win where two ship a file: base first, the default image last.
+  for a in base $bare_harnesses default; do cp -a "$stage/$a/rootfs/." "$b/"; done
+  cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
+  cp -a packages/agent-runtime/dist/js "$b/app/dist"
+  install -m 644 packages/driver-sdk/dist/js/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
+  install -m 644 packages/driver-sdk-py/src/driver_sdk.py "$b/usr/local/lib/platform-python/driver_sdk.py"
+  install -m 755 "$(command -v mise)" "$b/usr/local/bin/mise"
+  for f in "$stage/mise/conf.d/base.toml" "$stage"/mise/conf.d/harness.*.toml; do
+    a="$(basename "$f" .toml)"
+    [ "$a" != harness.default ] || continue
+    tools_tables < "$f" > "$etc/conf.d/${a#harness.}.toml"
+  done
+  cp "$stage/mise/mise.lock" "$etc/mise.lock"
+  [ ! -d "$stage/mise/.mise/locks" ] || { mkdir -p "$etc/.mise" && cp -R "$stage/mise/.mise/locks" "$etc/.mise/locks"; }
+
+  # Not -C: mise reads .miserc.toml from the working directory only.
+  cd "$stage"
+  mise -E "$envs" install
+  # Playwright's browsers: the node installer puts them in the tools, beside
+  # other Playwrights' own, and the image names this one's. agent-browser runs
+  # the headless shell: full Chrome calls Google's services at startup, which
+  # the gateway would hold for approval.
+  PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "$envs" exec -- playwright install chromium
+  for d in "$work"/ms-playwright/*/; do
+    d="${d%/}"
+    ln -s "$(realpath -m --relative-to=/opt/ms-playwright "$tools_root/ms-playwright/${d##*/}")" "build/opt/ms-playwright/${d##*/}"
+  done
+  set -- "$work"/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell
+  [ $# -eq 1 ] || { echo "want one Playwright headless shell, found: $*" >&2; exit 1; }
+  ln -s "${1#"$work"/ms-playwright/}" build/opt/ms-playwright/headless-shell
+  # docker finds a CLI plugin in its plugin directory, not on PATH.
+  for p in buildx compose; do
+    ln -s "$(realpath -m --relative-to=/usr/local/lib/docker/cli-plugins "$tools_root/$(realpath --relative-to="$MISE_DATA_DIR" "$(mise -E "$envs" where "github:docker/$p")")")/docker-$p" \
+      "build/usr/local/lib/docker/cli-plugins/docker-$p"
+  done
+
+  mapfile -t flags < <(pack_flags mise/conf.d/base.toml $(for a in $bare_harnesses default; do echo "mise/conf.d/harness.$a.toml"; done))
+  # Each tool's bin directory where the node installs it, ahead of base's PATH.
+  path="$(mise -E "$envs" bin-paths | sed "s|^$MISE_DATA_DIR/|$tools_root/|" | paste -sd: -)"
+  base_path="$(printf '%s\n' "${flags[@]}" | sed -n 's/^--env=PATH=//p')"
+  pack_image default "$apt_base" build "${flags[@]}" "--env=PATH=$path:$base_path" \
+    --env=MISE_DATA_DIR=/usr/local/share/mise --env=MISE_CONFIG_DIR=/etc/mise
+)
+
+# The env the default image was packed with, PATH's value.
+default_path() {
+  local m
+  m="$(jq -r '.manifests[0].digest | sub(":"; "/")' "$oci_out/default/index.json")"
+  jq -r '.config.digest | sub(":"; "/")' "$oci_out/default/blobs/$m" |
+    xargs -I{} jq -r '.config.Env[] | select(startswith("PATH=")) | sub("^PATH="; "")' "$oci_out/default/blobs/{}"
+}
+
+# A pipx tool's venv as a whole Python of its own, at <dest> for <image path>:
+# the interpreter the venv was made with, copied in with its standard library,
+# and the venv's packages and scripts, the scripts pointed at the copy's image
+# path. It runs whatever Python the sandbox's tools hold, or none.
+full_copy_venv() {
+  local venv=$1 dest=$2 at=$3 home sp f
+  home="$(sed -n 's/^home = //p' "$venv/pyvenv.cfg")"
+  mkdir -p "$dest"
+  cp -a "${home%/bin}/." "$dest/"
+  sp="$(ls -d "$venv"/lib/python3.*/site-packages)"
+  cp -a "$sp/." "$dest/lib/$(basename "$(dirname "$sp")")/site-packages/"
+  for f in "$venv"/bin/*; do
+    [ -f "$f" ] && [ ! -L "$f" ] && [ ! -e "$dest/bin/${f##*/}" ] || continue
+    case "${f##*/}" in activate* | deactivate*) continue ;; esac
+    # Its launcher, a #! line or uv's sh trampoline for a long path, names the
+    # interpreter it was installed with; an earlier build may have moved that.
+    sed "1,3s|/[^ '\"]*/bin/python[0-9.]*|$at/bin/python3|g" "$f" > "$dest/bin/${f##*/}"
+    chmod 755 "$dest/bin/${f##*/}"
+  done
+}
+
+# A workload, or the mock: the default image under its own files and env, its
+# own Python packages as whole Pythons of their own, and the tools it names an
+# image path for (oci_link) copied there. Subshell, like build_default.
+build_thin() (
+  agent=$1 envs=$1
+  stage_project "$agent"
+  if [ "$agent" = mock ]; then
+    pnpm --filter mock-agent exec tsup
+    install -D -m 644 packages/e2e/agents/mock/dist/js/main.js "$stage/mock/rootfs/app/mock-agent.js"
+  fi
+  b="$stage/build"
+  mkdir -p "$b"
+  cp -a "$stage/$agent/rootfs/." "$b/"
+  cd "$stage"
+  mise -E "$envs" install
+  f="mise/conf.d/harness.$agent.toml" layers=()
+  # The venv at the /opt path its *_VENV names, and as /opt/venv.
+  name="$(sed -n 's|^[A-Z_]*_VENV = "/opt/\(.*\)"$|\1|p' "$f")"
+  if [ -n "$name" ]; then
+    tool="$(sed -n 's|^\[tools\."\(pipx:[^"]*\)"\]$|\1|p' "$f")"
+    cfg="$(find "$(mise -E "$envs" where "$tool")" -maxdepth 3 -name pyvenv.cfg | head -1)"
+    [ -n "$cfg" ] || { echo "$tool has no venv" >&2; exit 1; }
+    full_copy_venv "${cfg%/pyvenv.cfg}" "build-venv/opt/$name" "/opt/$name"
+    install -d build/opt && ln -s "$name" build/opt/venv
+    layers+=("--layer=65532:0=/opt/$name=build-venv/opt/$name")
+  fi
+  awk '/^\[tools\./ { t = $0; sub(/^\[tools\."?/, "", t); sub(/"?\]$/, "", t) }
+    /^oci_link = / { l = $3; gsub(/"/, "", l); print t, l }' "$f" | while read -r tool link; do
+    mkdir -p "build-links$link"
+    cp -a "$(mise -E "$envs" where "$tool")/." "build-links$link/"
+  done
+  [ ! -d build-links ] || layers+=("--layer=0:0=/=build-links")
+  mapfile -t flags < <(pack_flags "$f")
+  # The mock runs without the node's tools: its agent-runtime runs the node it
+  # carries.
+  if [ "$agent" = mock ]; then
+    install -d build/opt && cp -a "$(mise -E "$envs" where node)" build/opt/node
+    flags+=("--env=PATH=/opt/node/bin:$(default_path)")
+  fi
+  pack_image "$agent" "$oci_out/default" build ${layers[@]+"${layers[@]}"} ${flags[@]+"${flags[@]}"}
+)
+
+sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
+
+# base/apt.toml's packages on the root config's Debian base, as a one-layer
+# image layout every agent image is packed onto: rebuilt when either changes
+# and once a day for updates. The base's root is exported, and its own apt-get
+# runs in it under chroot, in a mount namespace of its own, as a Dockerfile's
+# RUN would; the root is then one layer, with the owners its packages gave it.
+# Root, and the host's architecture.
+build_apt_base() {
+  local key from r packages layer d config manifest
+  apt_base="$state/apt-base"
+  from="$(mise config get -f .mise/config.toml vars.base_image_debian)"
+  key="$({ cat "$agents/base/apt.toml"; echo "$from"; } | sha256sum | cut -c1-16)-$(date -u +%F)"
+  [ "$(cat "$apt_base.key" 2>/dev/null)" != "$key" ] || return 0
+  r="$work/apt-root"
+  ${sudo[@]+"${sudo[@]}"} rm -rf "$r" "$apt_base"
+  mkdir -p "$r" "$apt_base/blobs/sha256"
+  crane export --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" "$from" - |
+    ${sudo[@]+"${sudo[@]}"} tar -xf - -C "$r"
+  packages="$(sed -n 's/^"apt:\([^"]*\)".*/\1/p' "$agents/base/apt.toml" | paste -sd' ' -)"
+  # policy-rc.d keeps a package's postinst from starting its service here. The
+  # trust store is the agent's, which the entrypoint fills; the host keys
+  # openssh-server's postinst generated would be every image's.
+  ${sudo[@]+"${sudo[@]}"} unshare --mount --propagation private sh -euc '
+    r=$1 packages=$2
+    mount --rbind /dev "$r/dev"
+    mount -t proc proc "$r/proc"
+    mount -t sysfs sys "$r/sys"
+    cp -L /etc/resolv.conf "$r/etc/resolv.conf"
+    printf "#!/bin/sh\nexit 101\n" > "$r/usr/sbin/policy-rc.d"
+    chmod 755 "$r/usr/sbin/policy-rc.d"
+    chroot "$r" sh -euc "apt-get update -q && apt-get install -qy --no-install-recommends $packages && apt-get clean" </dev/null
+    rm -rf "$r"/var/lib/apt/lists/* "$r/usr/sbin/policy-rc.d" "$r"/etc/ssh/ssh_host_*
+    chown -R 65532:0 "$r/etc/ssl/certs" "$r/usr/local/share/ca-certificates"
+    : > "$r/etc/resolv.conf"
+  ' _ "$r" "$packages"
+  layer="$work/apt-layer.tar"
+  ${sudo[@]+"${sudo[@]}"} tar --sort=name --numeric-owner --format=gnu -C "$r" -cf "$layer" $(ls -A "$r")
+  ${sudo[@]+"${sudo[@]}"} rm -rf "$r"
+  [ ${#sudo[@]} -eq 0 ] || sudo chown "$(id -u):$(id -g)" "$layer"
+  put() {
+    local h
+    h="$(sha256sum "$1" | cut -c1-64)"
+    mv "$1" "$apt_base/blobs/sha256/$h"
+    jq -cn --arg d "sha256:$h" --argjson s "$(wc -c < "$apt_base/blobs/sha256/$h")" --arg m "$2" '{mediaType: $m, digest: $d, size: $s}'
+  }
+  layer="$(put "$layer" application/vnd.oci.image.layer.v1.tar)"
+  d="$(jq -r .digest <<< "$layer")"
+  jq -cn --arg a "$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" --arg d "$d" \
+    '{architecture: $a, os: "linux", config: {}, rootfs: {type: "layers", diff_ids: [$d]}}' > "$work/apt-config.json"
+  config="$(put "$work/apt-config.json" application/vnd.oci.image.config.v1+json)"
+  jq -cn --argjson c "$config" --argjson l "$layer" \
+    '{schemaVersion: 2, mediaType: "application/vnd.oci.image.manifest.v1+json", config: $c, layers: [$l]}' > "$work/apt-manifest.json"
+  manifest="$(put "$work/apt-manifest.json" application/vnd.oci.image.manifest.v1+json)"
+  jq -n --argjson m "$manifest" '{schemaVersion: 2, manifests: [$m]}' > "$apt_base/index.json"
+  echo '{"imageLayoutVersion":"1.0.0"}' > "$apt_base/oci-layout"
+  echo "$key" > "$apt_base.key"
+}
+
+# The apt base is built and the tools installed for a Linux host of the image's
+# arch; elsewhere the Lima VM builds, and the tars are read out of its OCI
+# layouts.
+. .mise/lib/lima-build.sh
+build_in_vm() {
+  # mise runs the arm64 node it installs, which links libatomic.
+  lima_build libatomic1 "node pnpm usage crane uv" \
+    sh -c 'AGENT_OCI_OUT="$HOME/platform-agent-oci" exec packages/agents/.mise/tasks/oci --build --no-tar "$@"' _ "$@"
+}
+layout() {
+  if [ "$(uname -s)" = Linux ]; then tar -C "$oci_out/$1" -c $(ls -A "$oci_out/$1")
+  else limactl shell --workdir / "$LIMA_BUILD_VM" sh -c 'cd ~/platform-agent-oci/"$1" && tar -c $(ls -A)' _ "$1"; fi
+}
+
+if [ "$lock" = true ]; then lock_mise; exit; fi
+if [ "$warm" = true ]; then
+  [ "$(uname -s)" = Linux ] || { echo "--warm installs Linux tools: run it on Linux" >&2; exit 2; }
+  warm_mise; exit
+fi
+
+todo=()
+for a in ${named[@]+"${named[@]}"}; do reused "$a" || todo+=("$a"); done
+if [ ${#todo[@]} -gt 0 ]; then
+  echo "⚒ build ${todo[*]}"
+  if [ "$(uname -s)" = Linux ]; then
+    build_runtime
+    build_apt_base
+    # The default image first, once: every other image is packed onto it. One
+    # build at a time: they share the stage.
+    build_default
+    for a in "${todo[@]}"; do [ "$a" = default ] || build_thin "$a"; done
+  else
+    [ "$write_tar" = true ] || { echo "--no-tar builds on Linux only" >&2; exit 2; }
+    build_in_vm "${todo[@]}"
+  fi
+  if [ "$write_tar" = true ]; then
+    for a in "${todo[@]}"; do
+      mkdir -p "$(dirname "$(tar_of "$a")")"
+      layout "$a" > "$(tar_of "$a")"
+    done
+  fi
+fi

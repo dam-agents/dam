@@ -16,7 +16,6 @@ const (
 	OutcomeSuccess         = "success"
 	OutcomeError           = "error"
 	OutcomeNotFound        = "not_found"
-	OutcomeDecodeError     = "decode_error"
 	OutcomeBackoffExceeded = "backoff_exceeded"
 )
 
@@ -67,6 +66,36 @@ func StartReconcile(ctx context.Context, kind, name string) (context.Context, fu
 		if ins.total != nil {
 			ins.total.Add(ctx, 1, kindOutcome)
 		}
+	}
+}
+
+var runnerRollStalled = sync.OnceValue(func() metric.Int64Counter {
+	counter, err := otel.Meter(ScopeName).Int64Counter("platform.vm_runner.roll_stalled",
+		metric.WithDescription("VM runner rolls whose new pod was not ready by the settle timeout, and which keep their place in the roll"))
+	if err != nil {
+		otel.Handle(err)
+	}
+	return counter
+})
+
+func RunnerRollStalled(ctx context.Context) {
+	if c := runnerRollStalled(); c != nil {
+		c.Add(ctx, 1)
+	}
+}
+
+var runtimeMigrationEvents = sync.OnceValue(func() metric.Int64Counter {
+	counter, err := otel.Meter(ScopeName).Int64Counter("platform.runtime_migration.events",
+		metric.WithDescription("Runtime migration steps the controller reported on an Agent, by the reason of the Kubernetes Event it wrote"))
+	if err != nil {
+		otel.Handle(err)
+	}
+	return counter
+})
+
+func RuntimeMigrationEvent(ctx context.Context, reason string) {
+	if c := runtimeMigrationEvents(); c != nil {
+		c.Add(ctx, 1, metric.WithAttributes(attribute.String("platform.runtime_migration.reason", reason)))
 	}
 }
 

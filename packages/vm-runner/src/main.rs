@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use clap::Parser;
 use vm_runner::embedded::Smolvm;
+use vm_runner::forward::LOOPBACK_OFFSET;
 use vm_runner::runtime::MAX_IMAGE_BYTES;
 use vm_runner::server::{Config, Server};
 use vm_runner::{http, templates};
@@ -30,6 +31,9 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy; 0 evicts nothing, and the controller refuses to start a runner without a positive budget.
     #[arg(long = "image-budget-bytes", default_value_t = 0)]
     image_budget_bytes: i64,
+    // UNIT_BOUNDARY_DESCRIPTION: the node's harness tools — mise's system data dir that a per-node installer fills — mounted read-only; every machine whose image asks for them gets them read-only at the path it names. Empty shares none.
+    #[arg(long = "tools-dir", default_value = "")]
+    tools_dir: String,
     // UNIT_BOUNDARY_DESCRIPTION: the smolvm release's launcher. The runner drives smolvm as a library and forks no CLI, but the release is still where the libraries the VMM loads, the guest agent's root filesystem and the disk templates live — all beside this path, as the release's own launcher script finds them.
     #[arg(long, default_value = "/opt/smolvm/smolvm")]
     smolvm: PathBuf,
@@ -42,16 +46,30 @@ struct Args {
         default_value = "/usr/local/libexec/platform-init"
     )]
     platform_init: PathBuf,
+    // UNIT_BOUNDARY_DESCRIPTION: platform-runc is copied into every machine's share beside platform-init. The image points docker and k3s at it, and it gives every container they start the platform CA. The second binary of the platform-init package, linked statically for the same reason.
+    #[arg(
+        long = "platform-runc",
+        default_value = "/usr/local/libexec/platform-runc"
+    )]
+    platform_runc: PathBuf,
     // UNIT_BOUNDARY_DESCRIPTION: the pod ports machines are published on. The controller opens exactly this range in the runner's NetworkPolicy and passes it here from the same constants, so a machine is never published on a port the policy drops.
     #[arg(long = "port-min", default_value_t = 31000)]
     port_min: u16,
     #[arg(long = "port-max", default_value_t = 31099)]
     port_max: u16,
+    // UNIT_BOUNDARY_DESCRIPTION: the address machines are published on; empty is every interface, which a pod's own network namespace keeps inside the cluster. A runner on a laptop is on the laptop's own network, so it publishes on loopback, where the cluster's VM reaches it and the LAN does not.
+    #[arg(long = "publish-address", default_value = "")]
+    publish_address: String,
     // UNIT_BOUNDARY_DESCRIPTION: memory the runner may commit to machines. Required: without it the runner admits machines against no limit at all.
     #[arg(long = "memory-mib", default_value_t = 0)]
     memory_mib: i64,
     #[arg(long = "reserve-mib", default_value_t = 512)]
     reserve_mib: i64,
+    #[arg(long = "headroom-mib", default_value_t = 256)]
+    headroom_mib: i64,
+    // UNIT_BOUNDARY_DESCRIPTION: whether the install lets machines run KVM themselves. The runner nests a guest only when this is set and the node's KVM allows it. Nesting is the kernel's default on Intel and AMD, and turning it off on a node takes a module reload, so the node alone is no choice at all: the install makes it, and only one that sets `virtualization.runner.nestedVirtualization` passes this flag.
+    #[arg(long = "nested-virtualization")]
+    nested_virtualization: bool,
     #[arg(long = "token-file", default_value = "/etc/vm-runner/token")]
     token_file: PathBuf,
     // UNIT_BOUNDARY_DESCRIPTION: the serving certificate and key cert-manager issues for the runner's Service host. The machine API carries the runner's token, so it is served over TLS only.
@@ -68,6 +86,20 @@ fn boot_config(mut args: impl Iterator<Item = std::ffi::OsString>) -> Option<Opt
         return None;
     }
     Some(args.next().map(PathBuf::from))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the gateway port the runner recorded for this VMM's machine. smolvm's host service is one port per process, and every VMM is its own process, so each maps only its own machine's gateway. A file that is there and unreadable fails the boot rather than booting a guest with no way out.
+fn gateway_host_port(boot_config: &Path) -> anyhow::Result<Option<u16>> {
+    let file = boot_config.with_file_name(vm_runner::runtime::GATEWAY_HOST_PORT_FILE);
+    match std::fs::read_to_string(&file) {
+        Ok(port) => Ok(Some(
+            port.trim()
+                .parse()
+                .map_err(|e| anyhow::anyhow!("{}: {e}", file.display()))?,
+        )),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(anyhow::anyhow!("{}: {e}", file.display())),
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the `--max-image-size` flag.
@@ -110,7 +142,19 @@ fn bind(listen: &str) -> anyhow::Result<std::net::TcpListener> {
     Ok(listener)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long the machine API has to finish the requests it already has. The runner stops taking work first, which answers every waiting status read at once, so the drain covers only short calls; it runs beside the runner's own close, whose CLOSE_GRACE the controller's termination grace on the runner pod covers.
+fn publisher(address: &str) -> anyhow::Result<Option<Arc<vm_runner::forward::Listen>>> {
+    if address.is_empty() {
+        return Ok(None);
+    }
+    let ip: std::net::IpAddr = address
+        .parse()
+        .map_err(|e| anyhow::anyhow!("--publish-address {address}: {e}"))?;
+    Ok(Some(Arc::new(move |port| {
+        std::net::TcpListener::bind((ip, port))
+    })))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long the machine API has to finish the requests it already has. The runner stops taking work first, which answers every waiting status read at once, so the drain covers only short calls; it runs beside the runner's own close, whose CLOSE_GRACE and STOP_ON_CLOSE the controller's termination grace on the runner pod covers.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 // UNIT_BOUNDARY_DESCRIPTION: how often the VMMs that have exited are reaped.
@@ -136,6 +180,10 @@ fn main() -> anyhow::Result<()> {
     if let Some(config) = boot_config(std::env::args_os()) {
         let config =
             config.ok_or_else(|| anyhow::anyhow!("_boot-vm requires a boot-config path"))?;
+        if let Some(port) = gateway_host_port(&config)? {
+            smolvm::network::launch::configure_guest_host_service(port, port)
+                .map_err(|e| anyhow::anyhow!("mapping the gateway host port: {e}"))?;
+        }
         smolvm::internal_boot::run(config)?;
         return Ok(());
     }
@@ -145,20 +193,29 @@ fn main() -> anyhow::Result<()> {
         args.memory_mib > 0,
         "--memory-mib is required: without it the runner admits machines against no limit at all"
     );
-    anyhow::ensure!(
-        args.port_min <= args.port_max,
-        "--port-min is above --port-max"
-    );
-    let token = std::fs::read_to_string(&args.token_file)
-        .map_err(|e| anyhow::anyhow!("reading {}: {e}", args.token_file.display()))?;
-    let token = token.trim().to_string();
-    anyhow::ensure!(!token.is_empty(), "the token file is empty");
+    check_ports(args.port_min, args.port_max)?;
+    let token = http::Token::from_file(args.token_file.clone())?;
     configure_smolvm(&args.smolvm);
     prepare_host(&args)?;
-    tokio::runtime::Builder::new_multi_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .build()?
-        .block_on(serve(args, token))
+        .build()?;
+    let served = runtime.block_on(serve(args, token));
+    runtime.shutdown_timeout(RUNTIME_EXIT_WAIT);
+    served
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long the process waits, once it has closed, for blocking work still running. Closing already waited its own bounded time for the machines; a runtime call past that is stuck, and a dropped tokio runtime would wait for it without end, past the pod's grace, into the SIGKILL.
+const RUNTIME_EXIT_WAIT: Duration = Duration::from_secs(1);
+
+// UNIT_BOUNDARY_DESCRIPTION: the port range as the runner can publish it. Each machine's guest port sits on loopback at its published port plus LOOPBACK_OFFSET, so a range whose top plus the offset passes 65535 would publish a machine on a port that does not exist, and the arithmetic would overflow at the first such machine instead of failing here at start.
+fn check_ports(min: u16, max: u16) -> anyhow::Result<()> {
+    anyhow::ensure!(min <= max, "--port-min is above --port-max");
+    anyhow::ensure!(
+        max.checked_add(LOOPBACK_OFFSET).is_some(),
+        "--port-max {max} plus the loopback offset {LOOPBACK_OFFSET} is above 65535"
+    );
+    Ok(())
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm and /dev/net/tun, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, and so does a node cache, whose service is its only writer; a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
@@ -189,8 +246,12 @@ fn prepare_host(args: &Args) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn serve(args: Args, token: String) -> anyhow::Result<()> {
-    let runtime = Arc::new(tokio::task::spawn_blocking(Smolvm::open).await??);
+async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
+    let nested = args.nested_virtualization;
+    let tools = (!args.tools_dir.is_empty()).then(|| PathBuf::from(&args.tools_dir));
+    let runtime = Arc::new(
+        tokio::task::spawn_blocking(move || Smolvm::open(nested, tools.as_deref())).await??,
+    );
     let server = Server::start(
         Config {
             state_dir: args.state_dir.clone(),
@@ -200,12 +261,14 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
             image_budget: args.image_budget_bytes,
             crane: args.crane.clone(),
             init: Some(args.platform_init.clone()),
+            runc: Some(args.platform_runc.clone()),
             ports: args.port_min..=args.port_max,
             memory_mib: i32::try_from(args.memory_mib)?,
             reserve_mib: i32::try_from(args.reserve_mib)?,
-            listen: None,
+            headroom_mib: i32::try_from(args.headroom_mib)?,
+            listen: publisher(&args.publish_address)?,
         },
-        runtime.clone(),
+        runtime,
     )?;
 
     let install = args
@@ -218,24 +281,25 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
         .unwrap_or_default();
     let kept = (!home.as_os_str().is_empty()).then(|| home.join(templates::KEPT_DIR));
     server.background(move |cancel| templates::warm(&install, kept.as_deref(), &home, &cancel));
-    let reaper = runtime.clone();
+    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped.
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(REAP_EVERY);
         loop {
             tick.tick().await;
-            reaper.reap();
+            smolvm::process::reap_vm_children();
         }
     });
 
     let listener = bind(&args.listen)?;
-    let app = http::router(server.clone(), &token).into_make_service();
+    token.clone().keep_fresh();
+    let app = http::router(server.clone(), token).into_make_service();
     let handle = axum_server::Handle::new();
     let scrape = if args.metrics_listen.is_empty() {
         None
     } else {
         let listener = bind(&args.metrics_listen)?;
         let handle = axum_server::Handle::new();
-        let serving = axum_server::from_tcp(listener)
+        let serving = axum_server::from_tcp(listener)?
             .handle(handle.clone())
             .serve(http::metrics_router(server.clone()).into_make_service());
         Some((handle, tokio::spawn(serving)))
@@ -244,7 +308,9 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
         listen = %args.listen,
         state_dir = %args.state_dir.display(),
         image_dir = %args.image_dir.display(),
+        tools_dir = %args.tools_dir,
         platform_init = %args.platform_init.display(),
+        platform_runc = %args.platform_runc.display(),
         metrics = %args.metrics_listen,
         "VM runner serving"
     );
@@ -256,7 +322,7 @@ async fn serve(args: Args, token: String) -> anyhow::Result<()> {
                 axum_server::tls_rustls::RustlsConfig::from_pem_file(&args.tls_cert, &args.tls_key)
                     .await?;
             reload_tls(tls.clone(), args.tls_cert.clone(), args.tls_key.clone());
-            axum_server::from_tcp_rustls(listener, tls)
+            axum_server::from_tcp_rustls(listener, tls)?
                 .handle(handle)
                 .serve(app)
                 .await
@@ -317,6 +383,19 @@ mod tests {
         assert_eq!(boot_config(args(&["vm-runner"]).into_iter()), None);
     }
 
+    // TEST_SCENARIO: a machine's guest port is its published port plus the loopback offset. A range whose top would put that past 65535 is refused at start, not at the first machine published there, and the range the controller renders fits.
+    #[test]
+    fn a_port_range_whose_guest_ports_do_not_fit_is_refused() {
+        assert!(check_ports(31000, 31099).is_ok());
+        assert!(check_ports(31099, 31000).is_err());
+        let top = u16::MAX - LOOPBACK_OFFSET;
+        assert!(check_ports(top, top).is_ok());
+        let refused = check_ports(top, top + 1).unwrap_err().to_string();
+        assert!(refused.contains("above 65535"), "{refused}");
+        let args = Args::try_parse_from(pod_argv()).unwrap();
+        assert!(check_ports(args.port_min, args.port_max).is_ok());
+    }
+
     // TEST_SCENARIO: `:4600` is the flag's spelling of every interface on a port. It must bind, and a port that is not a number must be refused rather than read as some default.
     #[test]
     fn a_bare_port_binds_every_interface() {
@@ -355,18 +434,18 @@ mod tests {
         let _ = std::fs::remove_dir_all(&install);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the arguments the image's ENTRYPOINT passes ahead of the controller's, read from the Dockerfile this binary's image is built from, which sits beside this crate.
+    // UNIT_BOUNDARY_DESCRIPTION: the arguments the image's entrypoint passes ahead of the controller's, read from the image.toml this binary's image is built from, which sits beside this crate.
     fn entrypoint_args() -> Vec<String> {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/Dockerfile");
-        let dockerfile = std::fs::read_to_string(path)
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/image.toml");
+        let config = std::fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("the runner image is built from {path}: {e}"));
-        let line = dockerfile
+        let line = config
             .lines()
-            .find(|line| line.starts_with("ENTRYPOINT "))
-            .expect("the runner image has an ENTRYPOINT");
+            .find(|line| line.starts_with("entrypoint = "))
+            .expect("the runner image has an entrypoint");
         let words: Vec<String> =
-            serde_json::from_str(line.trim_start_matches("ENTRYPOINT ").trim())
-                .expect("the ENTRYPOINT is in exec form");
+            serde_json::from_str(line.trim_start_matches("entrypoint = ").trim())
+                .expect("the entrypoint is one line of strings");
         let runner = words
             .iter()
             .position(|word| word == "vm-runner")
@@ -376,7 +455,21 @@ mod tests {
 
     // UNIT_BOUNDARY_DESCRIPTION: the args the controller renders into the runner's Deployment, as the controller's own test records them. Kubernetes expands `$(NAME)` from the container's environment before the runner sees an arg. The controller uses one such reference, the pod's memory limit, and it is given a value here; any other reference fails, so a new one gets a stated value rather than reaching the parser unexpanded.
     fn controller_args() -> Vec<String> {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/runner-args.json");
+        contract_args(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/contract/runner-args.json"
+        ))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the args the controller adds on an install that lets machines nest, as the controller's own test records them. They are left off every other install, so turning nesting on rolls the runners and turning it on nowhere rolls none.
+    fn nested_args() -> Vec<String> {
+        contract_args(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/contract/runner-args-nested.json"
+        ))
+    }
+
+    fn contract_args(path: &str) -> Vec<String> {
         let args: Vec<String> = serde_json::from_str(
             &std::fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {path}: {e}")),
         )
@@ -393,10 +486,16 @@ mod tests {
             .collect()
     }
 
-    fn pod_argv() -> Vec<String> {
+    fn base_argv() -> Vec<String> {
         let mut argv = vec!["vm-runner".to_string()];
         argv.extend(entrypoint_args());
         argv.extend(controller_args());
+        argv
+    }
+
+    fn pod_argv() -> Vec<String> {
+        let mut argv = base_argv();
+        argv.extend(nested_args());
         argv
     }
 
@@ -407,6 +506,34 @@ mod tests {
         let args = Args::try_parse_from(&argv)
             .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
         assert!(args.memory_mib > 0 && args.port_min <= args.port_max);
+        assert!(args.nested_virtualization);
+    }
+
+    // TEST_SCENARIO: an install that does not set `virtualization.runner.nestedVirtualization` renders the runner without the nesting args. The runner must still start from that argv, and must then not nest, whatever the node allows: nesting is the kernel's default, so a runner that nested on its own would expose every guest on a stock node to the host's nested-virtualization code.
+    #[test]
+    fn a_runner_the_install_does_not_let_nest_does_not() {
+        let argv = base_argv();
+        let args = Args::try_parse_from(&argv)
+            .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
+        assert!(!args.nested_virtualization);
+    }
+
+    // TEST_SCENARIO: an install that sets no harness tools directory renders `--tools-dir=` with nothing after it, as it renders an empty `--image-cache-socket=`. The runner must start from that argv and share no tools, or every runner of such an install exits on start.
+    #[test]
+    fn a_runner_without_harness_tools_starts_and_shares_none() {
+        let argv: Vec<String> = base_argv()
+            .into_iter()
+            .map(|arg| {
+                if arg.starts_with("--tools-dir=") {
+                    "--tools-dir=".to_string()
+                } else {
+                    arg
+                }
+            })
+            .collect();
+        let args = Args::try_parse_from(&argv)
+            .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
+        assert!(args.tools_dir.is_empty());
     }
 
     // TEST_SCENARIO: a flag nobody passes runs on its default, and a default is a second copy of a value its owner already holds — the port range the controller opens in the runner's NetworkPolicy, the path the image installs platform-init at. So every flag is set by the image or by the controller, and a new flag fails here until one of them sets it.

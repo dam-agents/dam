@@ -10,7 +10,6 @@ export interface AttentionRecordRow {
   type: string;
   title: string | null;
   scheduleId: string | null;
-  experimentId: string | null;
   createdAt: Date;
   activityAt: Date | null;
   seenAt: Date | null;
@@ -21,10 +20,6 @@ export interface DismissalRow {
   kind: AttentionItemKind;
   itemId: string;
   dismissedAt: Date;
-}
-
-export function sessionItemId(agentId: string, sessionId: string): string {
-  return `${agentId}:${sessionId}`;
 }
 
 function sameTime(a: Date | null, b: Date | null): boolean {
@@ -49,7 +44,6 @@ export function sameRecord(
     stored.type === next.type &&
     stored.title === next.title &&
     stored.scheduleId === next.scheduleId &&
-    stored.experimentId === next.experimentId &&
     stored.working === next.working &&
     sameTime(stored.createdAt, next.createdAt) &&
     sameTime(stored.activityAt, next.activityAt) &&

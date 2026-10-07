@@ -39,13 +39,11 @@ import {
   writePersistedNumber,
 } from "../../../lib/persisted-prefs.js";
 import { queryClient } from "../../../query-client.js";
-import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
-  useAgentLacksLiveUpdates,
   useAgents,
   useIsAgentInaccessible,
   useIsAgentOperable,
@@ -73,33 +71,30 @@ import {
   useRestartAgent,
   useSyncRestartingAgents,
 } from "../../agents/hooks/use-restart-agent.js";
-import {
-  isExperimentSandbox,
-  sharesKnowledgeBase,
-} from "../../agents/utils/agent-kind.js";
+import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
+import { sharesKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
-import { useOpenArtifact } from "../../artifacts/hooks/use-open-artifact.js";
-import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
-import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
-import { ExperimentPromptChips } from "../../experiments/components/experiment-prompt-chips.js";
-import { useDockedExperiment } from "../../experiments/hooks/use-docked-experiment.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
+import {
+  DelegationOwnersProvider,
+  useDelegationOwners,
+} from "../../invocations/components/delegation-owners.js";
+import { DockedDelegationPanel } from "../../invocations/components/docked-delegation-panel.js";
+import { LiveDelegationBlock } from "../../invocations/components/live-delegation-block.js";
+import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { matchTurnsToReplies } from "../../telemetry/lib/align-turns.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
-import {
-  acpSessionsKeys,
-  optimisticInsertSession,
-  setSessionRunning,
-} from "../api/queries.js";
+import { acpSessionsKeys } from "../api/keys.js";
+import { optimisticInsertSession, setSessionRunning } from "../api/queries.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
@@ -109,7 +104,6 @@ import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
-import { ThreadDivider } from "../components/thread-divider.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
@@ -126,13 +120,21 @@ import {
   useSidebarPanels,
 } from "../hooks/use-sidebar-panels.js";
 import { draftKey } from "../lib/draft-key.js";
+import { modelDisplayName } from "../lib/session-model.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
 import { dividerLabel, threadItems, timeProps } from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
+import type { SessionError } from "../store/sessions.js";
 
 const LEFT_WIDTH_KEY = "platform-left-w";
+const LEFT_MIN_W = 240;
+const LEFT_MAX_W = 400;
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const TELEMETRY_SETTLE_MS = 5 * 60_000;
+
+function clampLeftWidth(width: number): number {
+  return Math.max(LEFT_MIN_W, Math.min(LEFT_MAX_W, width));
+}
 
 function PanelDivider({
   stack,
@@ -151,7 +153,6 @@ export function ChatView() {
   const agents = agentsData?.list ?? [];
   const agentOperable = useIsAgentOperable(selectedAgent);
   const agentInaccessible = useIsAgentInaccessible(selectedAgent);
-  const runtimeOutdated = useAgentLacksLiveUpdates(selectedAgent);
   const leavingForPublicPage = usePublicAgentFallback(
     selectedAgent,
     agentInaccessible,
@@ -160,6 +161,7 @@ export function ChatView() {
   useSessionUrlSync(selectedAgent);
 
   useSyncRestartingAgents();
+  const slowStartIds = useSlowStartIds();
   useAgentReachability(selectedAgent);
   useSessionWatch(selectedAgent);
   useAutoWakeOnOpen(selectedAgent);
@@ -169,8 +171,9 @@ export function ChatView() {
     [restartingAgents],
   );
   const agentView = agents.find((a) => a.id === selectedAgent) ?? null;
+  const runtimeOutdated = agentView?.features.liveUpdates === false;
   const agentDisplay = agentView
-    ? resolveAgentDisplay(agentView, restartingIds)
+    ? resolveAgentDisplay(agentView, restartingIds, undefined, slowStartIds)
     : null;
   const selectedAgentName = agentView?.name ?? selectedAgent;
   const sessionId = useStore((s) => s.sessionId);
@@ -190,24 +193,11 @@ export function ChatView() {
   const deleteSession = useStore((s) => s.deleteSession);
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
-  const openArtifact = useOpenArtifact();
-  const pendingLaunch = useStore((s) => s.pendingLaunch);
-  const unfocusPendingLaunch = useStore((s) => s.unfocusPendingLaunch);
-  const {
-    experiment: dockedExperiment,
-    options: experimentOptions,
-    select: selectExperiment,
-  } = useDockedExperiment(selectedAgent);
-  const agentExperiments = useAgentExperimentsLive(selectedAgent);
-  const dashboardExperiment = openArtifactId
-    ? (agentExperiments.find(
-        (e) =>
-          e.dashboardArtifactId === openArtifactId &&
-          (e.status === "draft" || e.status === "running"),
-      ) ??
-      agentExperiments.find((e) => e.dashboardArtifactId === openArtifactId) ??
-      null)
-    : null;
+  const openDelegation = useStore((s) =>
+    s.openDelegation?.driverAgentId === s.selectedAgent
+      ? s.openDelegation
+      : null,
+  );
   const artifactsSectionOpen = useStore((s) => s.artifactsSectionOpen);
   const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
   const goBack = useStore((s) => s.goBack);
@@ -224,7 +214,7 @@ export function ChatView() {
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
   const [leftW, setLeftW] = useState(() =>
-    readPersistedNumber(LEFT_WIDTH_KEY, 220),
+    clampLeftWidth(readPersistedNumber(LEFT_WIDTH_KEY, LEFT_MIN_W)),
   );
   const leftWRef = useRef(leftW);
   const [rightW, setRightW] = useState<number | null>(() =>
@@ -247,6 +237,7 @@ export function ChatView() {
     loadOlderMessages,
     sendPrompt,
     stopAgent,
+    chooseSessionModel,
     busy,
     loadingSession,
     connectionState,
@@ -265,20 +256,23 @@ export function ChatView() {
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
+  const storedSessionModel = useStore((s) => s.sessionModel);
+  const sessionModel =
+    sessionId && storedSessionModel?.sessionId === sessionId
+      ? storedSessionModel
+      : null;
+  const indicatorModel = sessionModel
+    ? (sessionModel.choices.find((c) => c.value === sessionModel.current)
+        ?.name ?? modelDisplayName(sessionModel.current))
+    : harnessCurrent?.model;
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
 
-  const launchPaneActive = Boolean(
-    pendingLaunch?.focused && pendingLaunch.agentId === selectedAgent,
-  );
-  useEffect(() => {
-    if (launchPaneActive && sessionId) resetSession();
-  }, [launchPaneActive, sessionId, resetSession]);
-
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const telemetryEnabled = useFeatures().data?.["agent-telemetry"] ?? false;
+  const delegationOwners = useDelegationOwners(messages);
   const avatarsEnabled = useAgentAvatars();
   const telemetryLive = useMemo(() => {
     if (messages.some((m) => m.role === "assistant" && m.streaming))
@@ -441,7 +435,6 @@ export function ChatView() {
 
   const mobileResumeSession = useCallback(
     (sid: string, mode?: SessionMode) => {
-      unfocusPendingLaunch();
       pushSessionUrl(sid, mode ?? SessionMode.Chat);
       setMobileScreen("chat");
       setSessionMode(mode ?? SessionMode.Chat);
@@ -463,22 +456,24 @@ export function ChatView() {
       setSessionId,
       resumeSession,
       scrollToBottom,
-      unfocusPendingLaunch,
       pushSessionUrl,
     ],
   );
 
   const handleNewSession = useCallback(() => {
-    unfocusPendingLaunch();
+    const focusComposer = () =>
+      requestAnimationFrame(() => textareaRef.current?.focus());
     if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
     if (!sessionId && messages.length === 0) {
       setMobileScreen("chat");
+      focusComposer();
       return;
     }
     pushSessionUrl(null, null);
     setSessionMode(SessionMode.Chat);
     resetSession();
     setMobileScreen("chat");
+    focusComposer();
   }, [
     selectedAgent,
     sessionId,
@@ -486,7 +481,6 @@ export function ChatView() {
     resetSession,
     setMobileScreen,
     setSessionMode,
-    unfocusPendingLaunch,
     pushSessionUrl,
   ]);
 
@@ -516,16 +510,16 @@ export function ChatView() {
     navigateToSandboxHome(selectedAgent);
   }, [selectedAgent, navigateToSandboxHome]);
 
-  const handleShareKnowledgeBase = useCallback(() => {
+  const handleShareKnowledgeBase = () => {
     if (!selectedAgent) return;
     navigateToSandboxHome(selectedAgent, "setup", "knowledge");
-  }, [selectedAgent, navigateToSandboxHome]);
+  };
 
-  const handleRestartSandbox = useCallback(() => {
+  const handleRestartSandbox = () => {
     if (selectedAgent) restart(selectedAgent);
-  }, [selectedAgent, restart]);
+  };
 
-  const handleDeleteSandbox = useCallback(async () => {
+  const handleDeleteSandbox = async () => {
     if (!selectedAgent) return;
     const ok = await showConfirm(
       "Delete this agent? This also deletes all persistent data and cannot be undone.",
@@ -535,7 +529,7 @@ export function ChatView() {
     if (!ok) return;
     deleteAgent.mutate({ id: selectedAgent });
     setView("home");
-  }, [selectedAgent, selectedAgentName, showConfirm, deleteAgent, setView]);
+  };
 
   const handleBack = useCallback(() => {
     if (isMobile() && mobileScreen === "chat") {
@@ -545,6 +539,8 @@ export function ChatView() {
     resetSession();
     goBack();
   }, [mobileScreen, setMobileScreen, resetSession, goBack]);
+
+  const leftPanelWidth = { width: leftW };
 
   const dotColor = agentDisplay
     ? stateDotClass[agentDisplay.state]
@@ -558,67 +554,90 @@ export function ChatView() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {}
       <header
-        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content`}
+        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
       >
-        <Button
-          variant="ghost"
-          size="inline"
-          aria-label="Back"
-          onClick={handleBack}
-          className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
+        <div
+          style={leftPanelWidth}
+          className="@container flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-6 md:px-4 max-md:!w-auto max-md:flex-1 md:border-r md:border-b md:border-border"
         >
-          <ArrowLeft size={14} />
-        </Button>
-        <div className="flex items-center gap-3 min-w-0">
-          {avatarsEnabled && agentView ? (
-            <AgentAvatar
-              name={agentView.name}
-              size={40}
-              sleeping={isAsleep(agentDisplay?.state)}
-              stopped={agentView.stopRequested}
-            />
-          ) : (
-            <span
-              aria-hidden
-              className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-            />
-          )}
-          <h1 className="text-sm font-bold text-foreground truncate">
-            {selectedAgentName}
-          </h1>
-          {agentView && <VmRuntimeBadge agent={agentView} />}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={surfaceCopy.actionsAria}
-              >
-                <OverflowMenuVertical size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onSelect={handleConfigureSandbox}>
-                {surfaceCopy.configure}
-              </DropdownMenuItem>
-              {canShareKnowledge && (
-                <DropdownMenuItem onSelect={handleShareKnowledgeBase}>
-                  Share knowledge base
+          <Button
+            variant="ghost"
+            size="inline"
+            aria-label="Back"
+            onClick={handleBack}
+            className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
+          >
+            <ArrowLeft size={14} />
+          </Button>
+          <div className="flex items-center gap-3 min-w-0">
+            {avatarsEnabled && agentView ? (
+              <>
+                <AgentAvatar
+                  name={agentView.name}
+                  size={40}
+                  sleeping={isAsleep(agentDisplay?.state)}
+                  stopped={agentView.stopRequested}
+                  className="@max-[149px]:hidden"
+                />
+                <span
+                  aria-hidden
+                  className={cn(
+                    "hidden h-2 w-2 shrink-0 rounded-full @max-[149px]:block",
+                    dotColor,
+                  )}
+                />
+              </>
+            ) : (
+              <span
+                aria-hidden
+                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+              />
+            )}
+            <h1 className="text-sm font-bold text-foreground truncate">
+              {selectedAgentName}
+            </h1>
+            {agentView && (
+              <span className="flex shrink-0 @max-[119px]:hidden">
+                <VmRuntimeBadge
+                  agent={agentView}
+                  labelClassName="@max-[279px]:sr-only"
+                />
+              </span>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={surfaceCopy.actionsAria}
+                  className="shrink-0"
+                >
+                  <OverflowMenuVertical size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onSelect={handleConfigureSandbox}>
+                  {surfaceCopy.configure}
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onSelect={handleRestartSandbox}>
-                Restart
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={handleDeleteSandbox}
-              >
-                {surfaceCopy.delete}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                {canShareKnowledge && (
+                  <DropdownMenuItem onSelect={handleShareKnowledgeBase}>
+                    Share knowledge base
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onSelect={handleRestartSandbox}>
+                  Restart
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={handleDeleteSandbox}
+                >
+                  {surfaceCopy.delete}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 px-6">
           <ChatHeaderStatus
             selectedAgent={selectedAgent}
             agents={agents}
@@ -633,7 +652,7 @@ export function ChatView() {
       <div className="flex flex-1 min-h-0">
         {}
         <div
-          style={{ width: leftW }}
+          style={leftPanelWidth}
           className={`shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content ${
             mobileScreen === "chat" ? "hidden md:flex" : "flex"
           } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
@@ -666,7 +685,7 @@ export function ChatView() {
         <ResizeHandle
           side="left"
           onResize={(d) => {
-            const v = Math.max(140, Math.min(400, leftWRef.current + d));
+            const v = clampLeftWidth(leftWRef.current + d);
             leftWRef.current = v;
             writePersistedNumber(LEFT_WIDTH_KEY, v);
             setLeftW(v);
@@ -699,7 +718,7 @@ export function ChatView() {
                   true,
                 );
                 queryClient.invalidateQueries({
-                  queryKey: acpSessionsKeys.all,
+                  queryKey: acpSessionsKeys.agent(selectedAgent),
                 });
               }}
               onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}
@@ -729,20 +748,7 @@ export function ChatView() {
                     )}
                     {!loadingSession &&
                       !sessionError &&
-                      messages.length === 0 &&
-                      (launchPaneActive ? (
-                        <div className="py-24 text-center anim-in">
-                          <Spinner size={22} className="mb-3" />
-                          <p className="text-base font-bold text-foreground mb-2">
-                            Starting the run…
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Waking the agent and opening the launch session —
-                            this can take up to a minute. The conversation
-                            appears here as soon as it&apos;s up.
-                          </p>
-                        </div>
-                      ) : (
+                      messages.length === 0 && (
                         <div className="flex flex-1 flex-col items-center justify-center text-center">
                           <p className="text-base font-bold text-foreground mb-2">
                             Start a new session
@@ -758,42 +764,57 @@ export function ChatView() {
                             />
                           )}
                         </div>
-                      ))}
-                    {items.map((item) => {
-                      if (item.kind === "divider") {
+                      )}
+                    <DelegationOwnersProvider value={delegationOwners}>
+                      {items.map((item) => {
+                        if (item.kind === "divider") {
+                          return (
+                            <div
+                              key={item.key}
+                              className="flex items-center gap-3 py-2"
+                            >
+                              <span className="h-px flex-1 bg-border/60" />
+                              <span className="text-[11px] text-muted-foreground">
+                                {dividerLabel(item, now)}
+                              </span>
+                              <span className="h-px flex-1 bg-border/60" />
+                            </div>
+                          );
+                        }
+                        const turn = turnForMessage.get(item.message.id);
                         return (
-                          <ThreadDivider
-                            key={item.key}
-                            label={dividerLabel(item, now)}
-                          />
-                        );
-                      }
-                      const turn = turnForMessage.get(item.message.id);
-                      return (
-                        <Fragment key={item.message.id}>
-                          <ChatMessage
-                            message={item.message}
-                            avatarAgentName={
-                              avatarsEnabled ? agentView?.name : undefined
-                            }
-                            isLast={item.index === messages.length - 1}
-                            {...timeProps(item.message.at, now)}
-                            hasPendingPermission={hasPendingPermission}
-                            onRetry={sendPrompt}
-                            onFileClick={openFileHandler}
-                            onDelete={deleteMessage}
-                            onLoadOlder={loadOlderKeepingScroll}
-                          />
-                          {selectedAgent && sessionId && turn && (
-                            <TurnTelemetry
-                              agentId={selectedAgent}
-                              sessionId={sessionId}
-                              turn={turn}
+                          <Fragment key={item.message.id}>
+                            <ChatMessage
+                              message={item.message}
+                              avatarAgentName={
+                                avatarsEnabled ? agentView?.name : undefined
+                              }
+                              isLast={item.index === messages.length - 1}
+                              {...timeProps(item.message.at, now)}
+                              hasPendingPermission={hasPendingPermission}
+                              onRetry={sendPrompt}
+                              onFileClick={openFileHandler}
+                              onDelete={deleteMessage}
+                              onLoadOlder={loadOlderKeepingScroll}
                             />
-                          )}
-                        </Fragment>
-                      );
-                    })}
+                            {selectedAgent && sessionId && turn && (
+                              <TurnTelemetry
+                                agentId={selectedAgent}
+                                sessionId={sessionId}
+                                turn={turn}
+                              />
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </DelegationOwnersProvider>
+                    {selectedAgent && (
+                      <LiveDelegationBlock
+                        driverAgentId={selectedAgent}
+                        busy={busy}
+                        claimed={delegationOwners}
+                      />
+                    )}
                     {telemetryEnabled && sessionTurns.isError && (
                       <p className="py-1 text-[11px] text-muted-foreground/70">
                         Telemetry for this session could not be read.
@@ -826,17 +847,11 @@ export function ChatView() {
               </div>
 
               <div className="pb-4">
-                {agentView && isExperimentSandbox(agentView) && (
-                  <div className="px-4 md:px-8">
-                    <ChatColumn>
-                      <ExperimentPromptChips busy={busy} onSend={sendPrompt} />
-                    </ChatColumn>
-                  </div>
-                )}
                 <OnboardingBar
                   key={selectedAgent ?? "none"}
                   agentId={selectedAgent}
                 />
+                <KitUpdateBar agentId={selectedAgent} />
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}
@@ -844,11 +859,21 @@ export function ChatView() {
                   onSend={sendPrompt}
                   onStop={stopAgent}
                 />
-                {!hasPendingPermission && harnessCurrent?.model && (
+                {!hasPendingPermission && indicatorModel && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
                       <ModelIndicator
-                        model={harnessCurrent.model}
+                        model={indicatorModel}
+                        sessionChoices={
+                          sessionModel
+                            ? {
+                                current: sessionModel.current,
+                                choices: sessionModel.choices,
+                                onChoose: (value) =>
+                                  void chooseSessionModel(value),
+                              }
+                            : undefined
+                        }
                         subject={surfaceCopy.modelSubject}
                         settings={
                           surfaceCopy.modelSettings
@@ -868,7 +893,7 @@ export function ChatView() {
         </div>
 
         {}
-        {(openFilePath || openArtifactId || dockedExperiment) && (
+        {(openDelegation || openFilePath || openArtifactId) && (
           <>
             <div className="hidden md:flex">
               <ResizeHandle
@@ -899,24 +924,19 @@ export function ChatView() {
                 "md:border-l md:border-border",
               )}
             >
-              {openFilePath ? (
-                <DockedFilePanel onOpenFile={openFileHandler} />
-              ) : dashboardExperiment ? (
-                <ExperimentDockPanel
-                  experiment={dashboardExperiment}
-                  onClose={() => void openArtifact(null)}
+              {openDelegation ? (
+                <DockedDelegationPanel
+                  key={openDelegation.id}
+                  driverAgentId={openDelegation.driverAgentId}
+                  id={openDelegation.id}
                 />
+              ) : openFilePath ? (
+                <DockedFilePanel onOpenFile={openFileHandler} />
               ) : openArtifactId ? (
                 <DockedArtifactPanel
                   key={openArtifactId}
                   agentId={selectedAgent}
                   onSendPrompt={sendArtifactPrompt}
-                />
-              ) : dockedExperiment ? (
-                <ExperimentDockPanel
-                  experiment={dockedExperiment}
-                  options={experimentOptions}
-                  onSelect={selectExperiment}
                 />
               ) : null}
             </div>

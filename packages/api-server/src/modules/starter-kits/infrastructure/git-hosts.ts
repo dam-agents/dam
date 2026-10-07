@@ -15,6 +15,7 @@ export interface GitHostRepo {
   readonly gitUrl: string;
   file(ref: string, segments: readonly string[]): GitHostRequest;
   refAdvertisement(): GitHostRequest;
+  compare(base: string, head: string): GitHostRequest;
 }
 
 export interface GitHosts {
@@ -65,6 +66,12 @@ function publicRepo(owner: string, repo: string): GitHostRepo {
         headers: {},
       };
     },
+    compare(base, head) {
+      return {
+        url: `https://api.${PUBLIC_HOST}/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+        headers: { Accept: "application/vnd.github+json" },
+      };
+    },
   };
 }
 
@@ -97,6 +104,15 @@ function enterpriseRepo(
         },
       };
     },
+    compare(base, head) {
+      return {
+        url: `https://api.${host}/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${token}`,
+        },
+      };
+    },
   };
 }
 
@@ -108,7 +124,7 @@ function usableEnterprise(
   if (host === "" && token === "") return undefined;
   if (host === "")
     throw new Error(
-      "an enterprise GitHub token is configured with no host to send it to: set github.enterprise.host, or clear github.enterprise.tokenSecret",
+      "an enterprise GitHub token is configured with no host to send it to: set github.enterprise.host, or clear github.enterprise.token",
     );
   if (host === PUBLIC_HOST)
     throw new Error(

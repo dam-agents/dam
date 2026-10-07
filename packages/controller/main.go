@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
+	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -22,6 +23,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/util/workqueue"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/crdcheck"
 	"github.com/dam-agents/dam/packages/controller/pkg/reconciler"
@@ -137,14 +139,13 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	)
 	podInformer := podFactory.Core().V1().Pods()
 
-	agentGetter := reconciler.NewAgentLister(agentInformer.Lister(), cfg.Namespace)
-	agentReconciler := reconciler.NewAgentReconciler(client, cfg).WithDynamicClient(dynClient).WithAgentCache(agentInformer.Lister())
+	agentReconciler := reconciler.NewAgentReconciler(client, dynClient, cfg).WithAgentCache(agentInformer.Lister())
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
 	if cfg.VM.Enabled {
 		idleChecker.WithMachineHalt(agentReconciler.HaltMachine)
 		agentReconciler.CheckVMInstall(ctx)
-		go runVMPreflight(ctx, agentReconciler, 5*time.Minute)
+		go every(ctx, 5*time.Minute, func() { agentReconciler.CheckVMInstall(ctx) })
 	}
 	go idleChecker.RunLoop(ctx)
 
@@ -154,12 +155,31 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	storageMigration := reconciler.NewStorageMigrationManager(client, dynClient, cfg)
 	go storageMigration.RunLoop(ctx)
 
-	go runOrphanSweep(ctx, agentReconciler, 10*time.Minute)
+	orphanSweep := func() {
+		sctx, finish := telemetry.StartPass(ctx, "orphan sweep")
+		start := time.Now()
+		agentReconciler.ReconcileOrphanPVCs(sctx)
+		agentReconciler.ReconcileRetainedVolumes(sctx)
+		agentReconciler.ReconcileOrphanLeafSecrets(sctx)
+		agentReconciler.ReconcileOrphanMachines(sctx)
+		agentReconciler.ReconcileRunnerRollout(sctx)
+		slog.DebugContext(sctx, "orphan sweep complete", "duration", time.Since(start))
+		finish(nil)
+	}
+	go func() {
+		orphanSweep()
+		every(ctx, 10*time.Minute, orphanSweep)
+	}()
 
 	agentQueue := workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
 		workqueue.TypedRateLimitingQueueConfig[string]{Name: "agent"})
 	defer agentQueue.ShutDown()
 	agentReconciler.WithRequeue(ctx, agentQueue.AddAfter)
+
+	deleteQueue := workqueue.NewTypedRateLimitingQueueWithConfig(
+		workqueue.NewTypedItemExponentialFailureRateLimiter[deletedAgent](time.Second, 5*time.Minute),
+		workqueue.TypedRateLimitingQueueConfig[deletedAgent]{Name: "agent-delete"})
+	defer deleteQueue.ShutDown()
 
 	agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) { enqueueObjectName(obj, agentQueue) },
@@ -171,41 +191,102 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		},
 		DeleteFunc: func(obj interface{}) {
 			if u := unstructuredFrom(obj); u != nil {
-				agentReconciler.Delete(ctx, u.GetName(), u.GetLabels())
+				deleteQueue.Add(deletedAgent{name: u.GetName(), owner: reconciler.AgentOwner(u.GetLabels())})
 			}
 		},
 	})
+	go runDeleteWorker(ctx, agentReconciler, deleteQueue)
 
-	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			enqueuePodOwner(obj, agentQueue)
-		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			if !resourceVersionChanged(oldObj, newObj) {
+	var runnerInformer cache.SharedIndexInformer
+	if cfg.VM.Enabled {
+		runnerFactory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
+			informers.WithNamespace(cfg.Namespace),
+			informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+				opts.LabelSelector = "app.kubernetes.io/component=vm-runner"
+			}),
+		)
+		runnerInformer = runnerFactory.Apps().V1().Deployments().Informer()
+		requeueOwner := func(obj interface{}) {
+			if m, err := meta.Accessor(obj); err == nil {
+				for _, name := range agentReconciler.OwnerVMAgents(reconciler.AgentOwner(m.GetLabels())) {
+					agentQueue.Add(name)
+				}
+			}
+		}
+		if _, err := runnerInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: requeueOwner,
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				if resourceVersionChanged(oldObj, newObj) {
+					requeueOwner(newObj)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+					obj = tombstone.Obj
+				}
+				requeueOwner(obj)
+			},
+		}); err != nil {
+			slog.Error("watching VM runner deployments", "error", err)
+			return
+		}
+		runnerFactory.Start(ctx.Done())
+	}
+
+	podInformer.TypedInformer().AddTypedEventHandler(coreinformers.PodHandlerFuncs{
+		AddFunc: func(pod *corev1.Pod) { enqueuePodOwner(pod, agentQueue) },
+		UpdateFunc: func(oldPod, newPod *corev1.Pod) {
+			if oldPod.ResourceVersion == newPod.ResourceVersion {
 				return
 			}
-			enqueuePodOwner(newObj, agentQueue)
+			enqueuePodOwner(newPod, agentQueue)
 		},
-		DeleteFunc: func(obj interface{}) { enqueuePodOwner(obj, agentQueue) },
+		DeleteFunc: func(deleted coreinformers.DeletedPod) {
+			if deleted.OptionalObj != nil {
+				enqueuePodOwner(deleted.OptionalObj, agentQueue)
+			}
+		},
 	})
 
 	dynFactory.Start(ctx.Done())
 	podFactory.Start(ctx.Done())
-	if !cache.WaitForCacheSync(ctx.Done(), agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced) {
+	synced := []cache.InformerSynced{agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced}
+	if runnerInformer != nil {
+		synced = append(synced, runnerInformer.HasSynced)
+	}
+	if !cache.WaitForCacheSync(ctx.Done(), synced...) {
 		slog.Error("failed to sync informer caches")
 		return
 	}
 	slog.Info("informer caches synced")
 
-	go runDriftSweep(ctx, agentInformer.Informer().GetStore(), agentQueue, 5*time.Minute)
-	go runParkedRetry(ctx, agentReconciler, agentQueue, 30*time.Second)
+	const driftInterval = 5 * time.Minute
+	go every(ctx, driftInterval, func() {
+		n := spreadStoreObjects(agentInformer.Informer().GetStore(), agentQueue, driftInterval)
+		slog.DebugContext(ctx, "drift sweep enqueued agents", "count", n, "over", driftInterval)
+	})
+	go every(ctx, 30*time.Second, func() {
+		parked := agentReconciler.ParkedForRetry()
+		for _, name := range parked {
+			agentQueue.Add(name)
+		}
+		if len(parked) > 0 {
+			slog.DebugContext(ctx, "parked-retry re-enqueued agents", "count", len(parked))
+		}
+	})
 
-	runAgentWorker(ctx, agentReconciler, agentGetter, agentQueue)
+	go every(ctx, 30*time.Second, func() {
+		for _, name := range agentReconciler.MemoryPass(ctx) {
+			agentQueue.Add(name)
+		}
+	})
+
+	runAgentWorker(ctx, agentReconciler, agentInformer.Lister().ByNamespace(cfg.Namespace), agentQueue)
 }
 
 const maxReconcileRetries = 15
 
-func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter reconciler.AgentGetter, queue workqueue.TypedRateLimitingInterface[string]) {
+func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, agents cache.GenericNamespaceLister, queue workqueue.TypedRateLimitingInterface[string]) {
 	for {
 		name, shutdown := queue.Get()
 		if shutdown {
@@ -215,7 +296,11 @@ func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter r
 		func() {
 			defer queue.Done(name)
 			rctx, finish := telemetry.StartReconcile(ctx, "agent", name)
-			agent, err := getter.Get(name)
+			obj, err := agents.Get(name)
+			var agent *apiv1.Agent
+			if err == nil {
+				agent, err = reconciler.FromCacheObject[apiv1.Agent](obj)
+			}
 			if err != nil {
 				queue.Forget(name)
 				finish(telemetry.OutcomeNotFound, nil)
@@ -239,6 +324,38 @@ func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, getter r
 			}
 			queue.Forget(name)
 			finish(telemetry.OutcomeSuccess, nil)
+		}()
+	}
+}
+
+type deletedAgent struct {
+	name, owner string
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how many times a deleted Agent's cleanup is retried. The backoff doubles from a second to five minutes, so this is about three quarters of an hour; past it the orphan sweep, which finds machines no Agent claims, collects what is left.
+const maxDeleteRetries = 12
+
+// UNIT_BOUNDARY_DESCRIPTION: cleans up deleted Agents off the informer's goroutine. Removing a vm agent's machine is a call to its owner's runner, and a runner that is restarting would otherwise hold up every other event the informer delivers.
+func runDeleteWorker(ctx context.Context, r *reconciler.AgentReconciler, queue workqueue.TypedRateLimitingInterface[deletedAgent]) {
+	for {
+		item, shutdown := queue.Get()
+		if shutdown {
+			return
+		}
+		func() {
+			defer queue.Done(item)
+			err := r.Delete(ctx, item.name, item.owner)
+			if err == nil {
+				queue.Forget(item)
+				return
+			}
+			if queue.NumRequeues(item) >= maxDeleteRetries {
+				slog.ErrorContext(ctx, "deleted agent cleanup: giving up, the orphan sweep collects the rest", "agent", item.name, "owner", item.owner, "error", err)
+				queue.Forget(item)
+				return
+			}
+			slog.WarnContext(ctx, "deleted agent cleanup failed; retrying", "agent", item.name, "owner", item.owner, "error", err)
+			queue.AddRateLimited(item)
 		}()
 	}
 }
@@ -274,7 +391,7 @@ func spreadStoreObjects(store cache.Store, queue workqueue.TypedRateLimitingInte
 	return len(items)
 }
 
-func runParkedRetry(ctx context.Context, r *reconciler.AgentReconciler, queue workqueue.TypedRateLimitingInterface[string], interval time.Duration) {
+func every(ctx context.Context, interval time.Duration, fn func()) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -282,42 +399,12 @@ func runParkedRetry(ctx context.Context, r *reconciler.AgentReconciler, queue wo
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			parked := r.ParkedForRetry()
-			for _, name := range parked {
-				queue.Add(name)
-			}
-			if len(parked) > 0 {
-				slog.DebugContext(ctx, "parked-retry re-enqueued agents", "count", len(parked))
-			}
+			fn()
 		}
 	}
 }
 
-func runDriftSweep(ctx context.Context, store cache.Store, queue workqueue.TypedRateLimitingInterface[string], interval time.Duration) {
-	t := time.NewTicker(interval)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			n := spreadStoreObjects(store, queue, interval)
-			slog.DebugContext(ctx, "drift sweep enqueued agents", "count", n, "over", interval)
-		}
-	}
-}
-
-func enqueuePodOwner(obj interface{}, queue workqueue.TypedRateLimitingInterface[string]) {
-	pod, ok := obj.(*corev1.Pod)
-	if !ok {
-		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
-		if !ok {
-			return
-		}
-		if pod, ok = tombstone.Obj.(*corev1.Pod); !ok {
-			return
-		}
-	}
+func enqueuePodOwner(pod *corev1.Pod, queue workqueue.TypedRateLimitingInterface[string]) {
 	if name := pod.Labels[reconciler.LabelAgent]; name != "" {
 		queue.Add(name)
 	}
@@ -333,41 +420,4 @@ func unstructuredFrom(obj interface{}) *unstructured.Unstructured {
 		}
 	}
 	return nil
-}
-
-func runVMPreflight(ctx context.Context, r *reconciler.AgentReconciler, interval time.Duration) {
-	t := time.NewTicker(interval)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			r.CheckVMInstall(ctx)
-		}
-	}
-}
-
-func runOrphanSweep(ctx context.Context, r *reconciler.AgentReconciler, interval time.Duration) {
-	sweep := func() {
-		sctx, finish := telemetry.StartPass(ctx, "orphan sweep")
-		start := time.Now()
-		r.ReconcileOrphanPVCs(sctx)
-		r.ReconcileOrphanLeafSecrets(sctx)
-		r.ReconcileOrphanMachines(sctx)
-		r.ReconcileRunnerRollout(sctx)
-		slog.DebugContext(sctx, "orphan sweep complete", "duration", time.Since(start))
-		finish(nil)
-	}
-	sweep()
-	t := time.NewTicker(interval)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			sweep()
-		}
-	}
 }

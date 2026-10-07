@@ -11,8 +11,8 @@ import {
 } from "../../../events.js";
 import type { SlackWorker } from "../infrastructure/slack.js";
 import type {
-  SlackConversationName,
   SlackConversationRef,
+  SlackLabelledConversation,
 } from "../infrastructure/slack-gateway.js";
 import type { SlackConversationStanding } from "./slack-workspace-probe.js";
 import type { TelegramWorker } from "../infrastructure/telegram.js";
@@ -48,6 +48,12 @@ export interface ChannelReaction {
   messageTs?: string;
   conversationId?: string;
 }
+
+const sendResultSchema = z.union([
+  z.object({ ok: z.literal(true), attachmentError: z.string().optional() }),
+  z.object({ error: z.string() }),
+]);
+export type ChannelSendResult = z.infer<typeof sendResultSchema>;
 
 export interface ChannelUser {
   id: string;
@@ -117,32 +123,34 @@ interface Worker {
     instanceName: string,
     text: string,
     options?: PostMessageOptions,
-  ): Promise<{ ok: true } | { error: string }>;
-  reply?(
-    instanceName: string,
-    reply: ChannelReply,
-  ): Promise<{ ok: true } | { error: string }>;
+  ): Promise<ChannelSendResult>;
+  reply?(instanceName: string, reply: ChannelReply): Promise<ChannelSendResult>;
   react?(
     instanceName: string,
     reaction: ChannelReaction,
   ): Promise<{ ok: true } | { error: string }>;
-  declineTurn?(instanceName: string): Promise<{ ok: true } | { error: string }>;
+  declineTurn?(
+    instanceName: string,
+    threadTs?: string,
+  ): Promise<{ ok: true } | { error: string }>;
   handOffTurn?(
     instanceName: string,
+    threadTs: string,
     targetName: string,
     note?: string,
   ): Promise<{ ok: true; agent: string } | { error: string }>;
   describeUsers?(
     instanceName: string,
     userIds: string[],
+    conversationId?: string,
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
   describeMessageReactions?(
     instanceName: string,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
-  resolveConversationNames?(
+  resolveConversationLabels?(
     refs: SlackConversationRef[],
-  ): Promise<SlackConversationName[]>;
+  ): Promise<SlackLabelledConversation[]>;
   readThread?(
     instanceName: string,
     query: ThreadQuery,
@@ -164,12 +172,12 @@ export interface ChannelManager {
     channelType: ChannelType,
     text: string,
     options?: PostMessageOptions,
-  ): Promise<{ ok: true } | { error: string }>;
+  ): Promise<ChannelSendResult>;
   reply(
     instanceName: string,
     channelType: ChannelType,
     reply: ChannelReply,
-  ): Promise<{ ok: true } | { error: string }>;
+  ): Promise<ChannelSendResult>;
   react(
     instanceName: string,
     channelType: ChannelType,
@@ -178,10 +186,12 @@ export interface ChannelManager {
   declineTurn(
     instanceName: string,
     channelType: ChannelType,
+    threadTs?: string,
   ): Promise<{ ok: true } | { error: string }>;
   handOffTurn(
     instanceName: string,
     channelType: ChannelType,
+    threadTs: string,
     targetName: string,
     note?: string,
   ): Promise<{ ok: true; agent: string } | { error: string }>;
@@ -189,15 +199,16 @@ export interface ChannelManager {
     instanceName: string,
     channelType: ChannelType,
     userIds: string[],
+    conversationId?: string,
   ): Promise<{ users: ChannelUser[] } | { error: string }>;
   describeMessageReactions(
     instanceName: string,
     channelType: ChannelType,
     query: ReactionsQuery,
   ): Promise<MessageReactionsResult | { error: string }>;
-  resolveSlackConversationNames(
+  resolveSlackConversationLabels(
     refs: SlackConversationRef[],
-  ): Promise<SlackConversationName[]>;
+  ): Promise<SlackLabelledConversation[]>;
   slackConversationStanding(
     slackChannelId: string,
     teamId: string,
@@ -219,7 +230,7 @@ export const channelRpcRequestSchema = z.object({
     "handOffTurn",
     "describeUsers",
     "describeMessageReactions",
-    "resolveConversationNames",
+    "resolveConversationLabels",
     "slackConversationStanding",
     "readThread",
   ]),
@@ -232,16 +243,25 @@ const slackConversationRefSchema = z.object({
   channelId: z.string(),
   teamId: z.string(),
 });
+const slackConversationLabelSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("channel"), name: z.string() }),
+  z.object({ kind: z.literal("direct-message"), with: z.string().nullable() }),
+  z.object({
+    kind: z.literal("group-direct-message"),
+    members: z.array(z.string()),
+  }),
+  z.object({ kind: z.literal("gone") }),
+]);
 const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   listConversations: forInstance,
   postMessage: forInstance.rest(z.unknown()),
   reply: forInstance.rest(z.unknown()),
   react: forInstance.rest(z.unknown()),
-  declineTurn: forInstance,
+  declineTurn: forInstance.rest(z.unknown()),
   handOffTurn: forInstance.rest(z.unknown()),
   describeUsers: forInstance.rest(z.unknown()),
   describeMessageReactions: forInstance.rest(z.unknown()),
-  resolveConversationNames: z.tuple([z.array(slackConversationRefSchema)]),
+  resolveConversationLabels: z.tuple([z.array(slackConversationRefSchema)]),
   slackConversationStanding: z.tuple([z.string(), z.string()]),
   readThread: forInstance.rest(z.unknown()),
 };
@@ -270,8 +290,8 @@ const channelUserSchema = z.object({
 });
 const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   listConversations: z.array(z.object({ id: z.string(), title: z.string() })),
-  postMessage: okOrErrorSchema,
-  reply: okOrErrorSchema,
+  postMessage: sendResultSchema,
+  reply: sendResultSchema,
   react: okOrErrorSchema,
   declineTurn: okOrErrorSchema,
   handOffTurn: z.union([
@@ -296,8 +316,10 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     }),
     z.object({ error: z.string() }),
   ]),
-  resolveConversationNames: z.array(
-    slackConversationRefSchema.extend({ name: z.string().nullable() }),
+  resolveConversationLabels: z.array(
+    slackConversationRefSchema.extend({
+      label: slackConversationLabelSchema.nullable(),
+    }),
   ),
   slackConversationStanding: z.enum(["member", "known", "unknown"]),
   readThread: z.union([
@@ -345,8 +367,7 @@ export function createChannelManager(deps: {
     attachment: ChannelAttachment | undefined,
   ): Promise<ChannelAttachment | undefined | { error: string }> {
     const wire = attachment as
-      | (ChannelAttachment & Partial<WireAttachment>)
-      | undefined;
+      (ChannelAttachment & Partial<WireAttachment>) | undefined;
     if (!wire?.dataKey) return attachment;
     const data = await blobs?.take(wire.dataKey);
     if (!data)
@@ -483,17 +504,19 @@ export function createChannelManager(deps: {
         });
       return worker.react(instanceName, reaction);
     },
-    declineTurn: (instanceName: string, channelType: ChannelType) => {
+    declineTurn: (
+      instanceName: string,
+      channelType: ChannelType,
+      threadTs?: string,
+    ) => {
       const worker = workers.find((w) => w.type === channelType);
-      if (!worker?.declineTurn)
-        return Promise.resolve({
-          error: `declining a turn is not supported on ${channelType}`,
-        });
-      return worker.declineTurn(instanceName);
+      if (!worker?.declineTurn) return Promise.resolve({ ok: true as const });
+      return worker.declineTurn(instanceName, threadTs);
     },
     handOffTurn: (
       instanceName: string,
       channelType: ChannelType,
+      threadTs: string,
       targetName: string,
       note?: string,
     ) => {
@@ -502,19 +525,20 @@ export function createChannelManager(deps: {
         return Promise.resolve({
           error: `handing a turn to another agent is not supported on ${channelType}`,
         });
-      return worker.handOffTurn(instanceName, targetName, note);
+      return worker.handOffTurn(instanceName, threadTs, targetName, note);
     },
     describeUsers: (
       instanceName: string,
       channelType: ChannelType,
       userIds: string[],
+      conversationId?: string,
     ) => {
       const worker = workers.find((w) => w.type === channelType);
       if (!worker?.describeUsers)
         return Promise.resolve({
           error: `user lookup not supported on ${channelType}`,
         });
-      return worker.describeUsers(instanceName, userIds);
+      return worker.describeUsers(instanceName, userIds, conversationId);
     },
     describeMessageReactions: (
       instanceName: string,
@@ -528,8 +552,8 @@ export function createChannelManager(deps: {
         });
       return worker.describeMessageReactions(instanceName, query);
     },
-    resolveConversationNames: (refs: SlackConversationRef[]) =>
-      slackWorker?.resolveConversationNames?.(refs) ?? Promise.resolve([]),
+    resolveConversationLabels: (refs: SlackConversationRef[]) =>
+      slackWorker?.resolveConversationLabels?.(refs) ?? Promise.resolve([]),
     slackConversationStanding: (
       slackChannelId: string,
       teamId: string,
@@ -556,10 +580,7 @@ export function createChannelManager(deps: {
       .pipe(ofType<SlackConnected>(EventType.SlackConnected))
       .subscribe((event) => {
         if (slackWorker && isLeader()) {
-          slackWorker.start(event.agentId, {
-            type: ChannelType.Slack,
-            slackChannelId: event.slackChannelId,
-          });
+          slackWorker.start(event.agentId);
         }
       }),
   );
@@ -595,8 +616,7 @@ export function createChannelManager(deps: {
         stopServing?.();
         stopServing = rpc.serve(async (req) => {
           const handler = localHandlers[req.method] as
-            | ((...a: unknown[]) => Promise<unknown>)
-            | undefined;
+            ((...a: unknown[]) => Promise<unknown>) | undefined;
           if (!handler)
             throw new Error(`unknown channel rpc method ${req.method}`);
           return handler(
@@ -611,7 +631,7 @@ export function createChannelManager(deps: {
         for (const channel of channels) {
           if (generationAtStart !== generation) return;
           if (channel.type === ChannelType.Slack && slackWorker) {
-            await slackWorker.start(agentId, channel);
+            await slackWorker.start(agentId);
           }
         }
       }
@@ -667,37 +687,46 @@ export function createChannelManager(deps: {
       );
     },
 
-    declineTurn(instanceName, channelType) {
-      return dispatchResult("declineTurn", [instanceName, channelType], () =>
-        localHandlers.declineTurn(instanceName, channelType),
+    declineTurn(instanceName, channelType, threadTs) {
+      return dispatchResult(
+        "declineTurn",
+        [instanceName, channelType, threadTs],
+        () => localHandlers.declineTurn(instanceName, channelType, threadTs),
       );
     },
 
-    handOffTurn(instanceName, channelType, targetName, note) {
+    handOffTurn(instanceName, channelType, threadTs, targetName, note) {
       return dispatchResult(
         "handOffTurn",
-        [instanceName, channelType, targetName, note],
+        [instanceName, channelType, threadTs, targetName, note],
         () =>
           localHandlers.handOffTurn(
             instanceName,
             channelType,
+            threadTs,
             targetName,
             note,
           ),
       );
     },
 
-    describeUsers(instanceName, channelType, userIds) {
+    describeUsers(instanceName, channelType, userIds, conversationId) {
       return dispatchResult(
         "describeUsers",
-        [instanceName, channelType, userIds],
-        () => localHandlers.describeUsers(instanceName, channelType, userIds),
+        [instanceName, channelType, userIds, conversationId],
+        () =>
+          localHandlers.describeUsers(
+            instanceName,
+            channelType,
+            userIds,
+            conversationId,
+          ),
       );
     },
 
-    resolveSlackConversationNames(refs) {
-      return dispatch("resolveConversationNames", [refs], () =>
-        localHandlers.resolveConversationNames(refs),
+    resolveSlackConversationLabels(refs) {
+      return dispatch("resolveConversationLabels", [refs], () =>
+        localHandlers.resolveConversationLabels(refs),
       ).catch(() => []);
     },
 

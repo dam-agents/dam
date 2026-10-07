@@ -7,7 +7,7 @@ import {
   reconcileHarnessSelection,
 } from "../lib/image-catalogue.js";
 
-export interface HarnessCatalogue {
+interface HarnessCatalogue {
   harnesses: TemplateView[];
   isLoading: boolean;
   isError: boolean;

@@ -1,20 +1,43 @@
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use crate::api::MachineSpec;
+use sha2::{Digest, Sha256};
+
+use crate::api::{MachineSpec, SeedResult};
 use crate::files;
+use crate::guest::{is_sha256, SeedDigest};
 use crate::state::machine_dir;
 
-// UNIT_BOUNDARY_DESCRIPTION: the one thing a machine gets from its runner other than its disks. It holds platform-init, which is the machine's entrypoint, and the CA the guest must trust. It is a live host directory, and the command line naming it is fixed when the machine is created, so rewriting the share is how a CA the controller has rotated becomes the CA the next boot trusts — there is no other way to reach inside a machine that already exists. platform-init is copied rather than linked because the guest reads this directory through the VMM, which has no host filesystem to follow a link into.
+// UNIT_BOUNDARY_DESCRIPTION: the one thing a machine gets from its runner other than its disks. It holds platform-init, which is the machine's entrypoint, the CA the guest must trust, and platform-runc, the runtime wrapper that gives the containers the guest starts that same CA. It is a live host directory, and the command line naming it is fixed when the machine is created, so rewriting the share is how a CA the controller has rotated becomes the CA the next boot trusts — there is no other way to reach inside a machine that already exists. platform-init is copied rather than linked because the guest reads this directory through the VMM, which has no host filesystem to follow a link into.
 
 // UNIT_BOUNDARY_DESCRIPTION: the share's name inside a machine's state directory. The guest sees it mounted at guest::SHARE_PATH, so this name is private to the host side, while everything below it is the contract platform-init reads.
 pub const SHARE_DIR: &str = "share";
 
 pub const CA_DIR: &str = "ca";
+
 pub const CA_FILE: &str = "ca.crt";
 pub const INIT_FILE: &str = "init";
+pub const RUNC_FILE: &str = "runc";
+
+// UNIT_BOUNDARY_DESCRIPTION: the seed a migrated agent's home is restored from, read by the guest at guest::SHARE_SEED_FILE. write_share never touches it, because the share is rewritten on every ensure and a seed uploaded before the first boot must still be there when that boot reads it.
+pub const SEED_FILE: &str = "seed.tar";
+
+// UNIT_BOUNDARY_DESCRIPTION: the seed is read by platform-init as root in the guest, through the VMM, which serves the share with the runner's own credentials; world-readable is what the rest of the share is, and nothing in the guest writes to it.
+pub const SEED_MODE: u32 = 0o644;
+
+// UNIT_BOUNDARY_DESCRIPTION: the share's record that this machine's disk has held the agent's home, which platform-init reads at guest::SEEDED_PATH. The runner writes it the first time the machine's guest answers, which it does only after platform-init has put the home on the disk, and nothing removes it but the machine's delete: its whole point is to outlive a home that smolvm formatted away.
+pub const SEEDED_FILE: &str = "seeded";
+
+// UNIT_BOUNDARY_DESCRIPTION: the share's record of the seed the controller expects this machine's home to come from, which platform-init reads at guest::SEED_EXPECTED_PATH. write_share writes it from the spec and removes it when the spec expects none, so it is always the expectation of the boot about to run.
+pub const SEED_EXPECTED_FILE: &str = "seed-expected";
+
+// UNIT_BOUNDARY_DESCRIPTION: the share's record of the image the boot about to run boots, which platform-init reads at guest::IMAGE_PATH to decide whether the machine keeps its root. A start writes it, not write_share, because every boot passes a start and the image a start boots is the one in smolvm's record at that moment.
+pub const IMAGE_FILE: &str = "image";
+
+// UNIT_BOUNDARY_DESCRIPTION: the machine directory's record of the seed now in the share, as its upload was answered: the runner's own bookkeeping, outside the share the guest reads. It is what a start compares with the seed the spec expects, so the seed is checked without reading many GiB again on every start. It is removed before a new seed is renamed into the share and written after, so it never names a seed that is not there.
+pub const SEED_DIGEST_FILE: &str = "seed-digest";
 
 // UNIT_BOUNDARY_DESCRIPTION: the modes the share's CA is written with, stated rather than left to the umask: an install with a tighter umask would otherwise give the guest a CA directory it cannot traverse, and two installs would write one machine's share differently.
 pub const CA_DIR_MODE: u32 = 0o755;
@@ -31,14 +54,74 @@ pub fn write_share(
     id: &str,
     spec: &MachineSpec,
     init: Option<&Path>,
+    runc: Option<&Path>,
 ) -> anyhow::Result<()> {
     let base =
         machine_dir(state_dir, id).ok_or_else(|| anyhow::anyhow!("invalid machine id {id:?}"))?;
     let share = base.join(SHARE_DIR);
     let ca = share.join(CA_DIR);
     files::create_dir(&ca, CA_DIR_MODE)?;
+    remove_staged_seed(&share)?;
     files::write(&ca.join(CA_FILE), spec.ca_cert.as_bytes(), CA_MODE)?;
-    copy_init(init, &share.join(INIT_FILE))
+    let expected = share.join(SEED_EXPECTED_FILE);
+    match &spec.expect_seed {
+        Some(seed) => files::write(&expected, digest_of(seed).line().as_bytes(), CA_MODE)?,
+        None => remove_if_present(&expected)?,
+    }
+    copy_init(init, &share.join(INIT_FILE))?;
+    match runc {
+        Some(runc) => copy_executable(runc, &share.join(RUNC_FILE), "platform-runc"),
+        None => Ok(()),
+    }
+}
+
+fn digest_of(seed: &SeedResult) -> SeedDigest {
+    SeedDigest {
+        sha256: seed.sha256.clone(),
+        bytes: seed.bytes,
+    }
+}
+
+pub fn seeded(share: &Path) -> bool {
+    share.join(SEEDED_FILE).exists()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the seed the seeded record says this machine's home was restored from, or empty for a home from the image, a record from before seeds were named, or no record at all.
+pub fn seeded_from(share: &Path) -> String {
+    fs::read_to_string(share.join(SEEDED_FILE))
+        .ok()
+        .map(|text| text.trim().to_string())
+        .filter(|sha| is_sha256(sha))
+        .unwrap_or_default()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: writes the seeded record, naming the seed the boot expected when it has one. platform-init lets a guest start only once the home came from that seed, so a guest that answers names it truthfully.
+pub fn record_seeded(share: &Path, from: Option<&str>) -> anyhow::Result<()> {
+    files::write(
+        &share.join(SEEDED_FILE),
+        from.unwrap_or_default().as_bytes(),
+        CA_MODE,
+    )?;
+    tracing::info!(share = %share.display(), seed = from.unwrap_or("none"), "the storage disk holds a home; a boot that finds it gone is refused from now on");
+    Ok(())
+}
+
+pub fn seed_digest(machine: &Path) -> Option<SeedResult> {
+    let body = fs::read(machine.join(SEED_DIGEST_FILE)).ok()?;
+    serde_json::from_slice(&body).ok()
+}
+
+pub fn record_seed_digest(machine: &Path, seed: &SeedResult) -> anyhow::Result<()> {
+    files::write(
+        &machine.join(SEED_DIGEST_FILE),
+        &serde_json::to_vec(seed)?,
+        CA_MODE,
+    )?;
+    Ok(())
+}
+
+pub fn forget_seed_digest(machine: &Path) -> io::Result<()> {
+    remove_if_present(&machine.join(SEED_DIGEST_FILE))
 }
 
 pub fn copy_init(init: Option<&Path>, to: &Path) -> anyhow::Result<()> {
@@ -47,8 +130,11 @@ pub fn copy_init(init: Option<&Path>, to: &Path) -> anyhow::Result<()> {
             "no platform-init binary configured, so a machine would boot with its disk unmounted"
         )
     })?;
-    let mut source =
-        fs::File::open(init).map_err(|e| anyhow::anyhow!("reading platform-init: {e}"))?;
+    copy_executable(init, to, "platform-init")
+}
+
+fn copy_executable(from: &Path, to: &Path, what: &str) -> anyhow::Result<()> {
+    let mut source = fs::File::open(from).map_err(|e| anyhow::anyhow!("reading {what}: {e}"))?;
     let staged = staged_path(to);
     let mut destination = fs::OpenOptions::new()
         .write(true)
@@ -67,6 +153,89 @@ pub fn copy_init(init: Option<&Path>, to: &Path) -> anyhow::Result<()> {
     }
     fs::rename(&staged, to)?;
     Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a seed being uploaded. It is written beside SEED_FILE and renamed over it only once every byte is on the disk, so a guest never reads half a seed and an upload that fails leaves the seed that was there, or none. The SHA-256 and byte count are taken as the bytes are written, because the seed can be many GiB and reading it back would cost a second pass over all of them. Dropped without `commit`, it removes its staged file.
+pub struct SeedFile {
+    file: fs::File,
+    staged: PathBuf,
+    to: PathBuf,
+    hasher: Sha256,
+    bytes: u64,
+    committed: bool,
+}
+
+impl SeedFile {
+    pub fn create(share: &Path) -> io::Result<Self> {
+        let to = share.join(SEED_FILE);
+        let staged = staged_path(&to);
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(SEED_MODE)
+            .open(&staged)?;
+        let seed = Self {
+            file,
+            staged,
+            to,
+            hasher: Sha256::new(),
+            bytes: 0,
+            committed: false,
+        };
+        seed.file
+            .set_permissions(fs::Permissions::from_mode(SEED_MODE))?;
+        Ok(seed)
+    }
+
+    pub fn bytes(&self) -> u64 {
+        self.bytes
+    }
+
+    pub fn write(&mut self, chunk: &[u8]) -> io::Result<()> {
+        self.file.write_all(chunk)?;
+        self.hasher.update(chunk);
+        self.bytes += chunk.len() as u64;
+        Ok(())
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the seed's bytes are flushed before the rename and the share's directory after it, because a rename is only durable once the directory that holds it is. Without the second flush, a node that loses power after the runner answered could come back with the old seed or none, while the Job has already reported the copy done.
+    pub fn commit(mut self) -> io::Result<SeedResult> {
+        self.file.sync_all()?;
+        fs::rename(&self.staged, &self.to)?;
+        self.committed = true;
+        if let Some(share) = self.to.parent() {
+            fs::File::open(share)?.sync_all()?;
+        }
+        Ok(SeedResult {
+            bytes: self.bytes,
+            sha256: hex::encode(self.hasher.clone().finalize()),
+        })
+    }
+}
+
+impl Drop for SeedFile {
+    fn drop(&mut self) {
+        if !self.committed {
+            let _ = fs::remove_file(&self.staged);
+        }
+    }
+}
+
+pub fn remove_seed(share: &Path) -> io::Result<()> {
+    remove_if_present(&share.join(SEED_FILE))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a runner killed mid-upload leaves its staged seed behind, since no drop ran to remove it, and that file can be as large as the machine's disk. It is removed only where no upload can be in flight: whenever the share is written, which only a machine's own worker does, and no worker runs while a seed is claimed; and by the server when a seed is removed with no claim held. A new claim truncates it in place.
+pub fn remove_staged_seed(share: &Path) -> io::Result<()> {
+    remove_if_present(&staged_path(&share.join(SEED_FILE)))
+}
+
+fn remove_if_present(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
 }
 
 fn staged_path(to: &Path) -> PathBuf {
@@ -94,6 +263,101 @@ mod tests {
             format!("{}/{CA_DIR}", guest::SHARE_PATH),
             "the guest binds a CA directory this module does not write"
         );
+        assert_eq!(
+            guest::RUNC_PATH,
+            format!("{}/{RUNC_FILE}", guest::SHARE_PATH),
+            "the image points its container runtimes at a wrapper this module does not write"
+        );
+        assert_eq!(
+            guest::SEEDED_PATH,
+            format!("{}/{SEEDED_FILE}", guest::SHARE_PATH),
+            "the guest looks for the seeded record where this module does not write it"
+        );
+        assert_eq!(
+            guest::SEED_EXPECTED_PATH,
+            format!("{}/{SEED_EXPECTED_FILE}", guest::SHARE_PATH),
+            "the guest looks for the expected seed where this module does not write it"
+        );
+        assert_eq!(
+            guest::IMAGE_PATH,
+            format!("{}/{IMAGE_FILE}", guest::SHARE_PATH),
+            "the guest looks for the image record where a start does not write it"
+        );
+    }
+
+    // TEST_SCENARIO: the expected seed in the share is the expectation of the boot about to run. A spec that expects a seed writes it in the form platform-init parses, and a spec that no longer expects one removes it — otherwise a machine whose migration has ended, and whose seed the controller has deleted, would be refused by platform-init on every later boot.
+    #[test]
+    fn the_expected_seed_follows_the_spec() {
+        let dir = TempDir::new("expected");
+        let init = dir.path().join("platform-init");
+        fs::write(&init, b"init").unwrap();
+        let seed = SeedResult {
+            bytes: 4,
+            sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+        };
+        let expecting = MachineSpec {
+            expect_seed: Some(seed.clone()),
+            ..Default::default()
+        };
+        write_share(dir.path(), "agent-a", &expecting, Some(&init), None).unwrap();
+        let expected = dir
+            .path()
+            .join("agent-a")
+            .join(SHARE_DIR)
+            .join(SEED_EXPECTED_FILE);
+        assert_eq!(
+            SeedDigest::parse(&fs::read_to_string(&expected).unwrap()),
+            Some(digest_of(&seed))
+        );
+        assert_eq!(mode_of(&expected), CA_MODE, "the guest reads it");
+
+        write_share(
+            dir.path(),
+            "agent-a",
+            &MachineSpec::default(),
+            Some(&init),
+            None,
+        )
+        .unwrap();
+        assert!(!expected.exists());
+    }
+
+    // TEST_SCENARIO: the seeded record names the seed the home came from, which the runner reports to the controller. A record that names no seed — a home from the image, or one written before seeds were named — reports none rather than whatever the file holds.
+    #[test]
+    fn the_seeded_record_names_the_seed_or_nothing() {
+        let dir = TempDir::new("seeded-from");
+        let sha = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+        assert_eq!(seeded_from(dir.path()), "");
+        record_seeded(dir.path(), None).unwrap();
+        assert_eq!(seeded_from(dir.path()), "");
+        record_seeded(dir.path(), Some(sha)).unwrap();
+        assert_eq!(seeded_from(dir.path()), sha);
+        fs::write(dir.path().join(SEEDED_FILE), b"not a digest").unwrap();
+        assert_eq!(seeded_from(dir.path()), "");
+    }
+
+    // TEST_SCENARIO: the seeded record is what lets platform-init refuse a disk smolvm has reformatted, so it must survive everything the share goes through while the machine exists: every ensure rewrites the share, and a rewrite that dropped the record would let the next boot seed a fresh home over the lost one without a word.
+    #[test]
+    fn the_seeded_record_outlives_every_rewrite_of_the_share() {
+        let dir = TempDir::new("seeded");
+        let init = dir.path().join("platform-init");
+        fs::write(&init, b"init").unwrap();
+        let spec = MachineSpec {
+            ca_cert: "ca".into(),
+            ..Default::default()
+        };
+        write_share(dir.path(), "agent-a", &spec, Some(&init), None).unwrap();
+        let share = dir.path().join("agent-a").join(SHARE_DIR);
+        assert!(!seeded(&share));
+
+        record_seeded(&share, None).unwrap();
+        write_share(dir.path(), "agent-a", &spec, Some(&init), None).unwrap();
+        assert!(seeded(&share));
+        assert_eq!(
+            mode_of(&share.join(SEEDED_FILE)),
+            CA_MODE,
+            "the guest reads it"
+        );
     }
 
     // TEST_SCENARIO: the share's CA file is not named only between this module and platform-init. The controller puts the guest's CA file in the agent's own environment as NODE_EXTRA_CA_CERTS, and platform-init binds the share's ca directory to exactly that guest path. So the file name is an end-to-end contract: rename it on this side and the agent's runtime is pointed at a file that is not there, which fails as every outbound TLS call refusing the platform's own certificate. The controller's tests hold its environment to the same fixture.
@@ -111,6 +375,22 @@ mod tests {
         );
     }
 
+    // TEST_SCENARIO: a runner outside the cluster has the guest reach its gateway at the guest's own gateway address, which smolvm relays to the host's loopback. The controller writes that address into the agent's proxy settings and cannot read smolvm's default, so both are held to the fixture: a proxy on any other address is one the guest can never reach.
+    #[test]
+    fn the_gateway_address_is_the_one_smolvm_gives_its_guests() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/guest.json");
+        let fixture: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {path}: {e}")),
+        )
+        .expect("the guest fixture is JSON");
+        assert_eq!(
+            fixture["gatewayAddress"],
+            smolvm_network::GuestNetworkConfig::default()
+                .gateway_ip
+                .to_string()
+        );
+    }
+
     // TEST_SCENARIO: the modes the share is written with, stated rather than taken from whatever umask the runner happens to run under. A tighter umask would otherwise give the guest a CA directory it cannot traverse.
     #[test]
     fn the_share_is_written_with_stated_modes_rather_than_the_umask() {
@@ -125,6 +405,7 @@ mod tests {
                 ..Default::default()
             },
             Some(&init),
+            None,
         )
         .unwrap();
 
@@ -148,6 +429,7 @@ mod tests {
                 ..Default::default()
             },
             Some(&init),
+            None,
         )
         .unwrap();
 
@@ -184,6 +466,7 @@ mod tests {
                     ..Default::default()
                 },
                 Some(&init),
+                None,
             )
             .unwrap();
         };
@@ -251,11 +534,150 @@ mod tests {
         fs::write(&init, b"init").unwrap();
 
         assert!(
-            write_share(dir.path(), "..", &MachineSpec::default(), Some(&init)).is_err(),
+            write_share(dir.path(), "..", &MachineSpec::default(), Some(&init), None).is_err(),
             "a share was written outside the machine directory"
         );
-        assert!(write_share(dir.path(), "Agent", &MachineSpec::default(), Some(&init)).is_err());
+        assert!(write_share(
+            dir.path(),
+            "Agent",
+            &MachineSpec::default(),
+            Some(&init),
+            None
+        )
+        .is_err());
         assert!(!dir.path().join(SHARE_DIR).exists());
+    }
+
+    // TEST_SCENARIO: the runner stores the seed under one name and platform-init reads it under another path, in another binary. Only the file name is shared, so it is held here to the guest's path: a seed stored under any other name is a migrated agent that boots with the image's home, and nothing fails to say so.
+    #[test]
+    fn the_seed_is_stored_where_the_guest_reads_it() {
+        assert_eq!(
+            guest::SHARE_SEED_FILE,
+            format!("{}/{SEED_FILE}", guest::SHARE_PATH),
+            "platform-init reads a seed this module does not write"
+        );
+    }
+
+    // TEST_SCENARIO: the share is rewritten on every ensure, so a seed uploaded to a stopped machine meets at least one more rewrite before the machine boots — the ensure that starts it. A rewrite that removed the seed would boot every migrated agent with the image's home instead of its own.
+    #[test]
+    fn rewriting_a_share_keeps_the_seed() {
+        let dir = TempDir::new("keeps-seed");
+        let init = dir.path().join("platform-init");
+        fs::write(&init, b"init").unwrap();
+        let spec = MachineSpec {
+            ca_cert: "ca".into(),
+            ..Default::default()
+        };
+        write_share(dir.path(), "agent-a", &spec, Some(&init), None).unwrap();
+        let share = dir.path().join("agent-a").join(SHARE_DIR);
+        let mut seed = SeedFile::create(&share).unwrap();
+        seed.write(b"a tar").unwrap();
+        seed.commit().unwrap();
+
+        write_share(dir.path(), "agent-a", &spec, Some(&init), None).unwrap();
+
+        assert_eq!(fs::read(share.join(SEED_FILE)).unwrap(), b"a tar");
+    }
+
+    // TEST_SCENARIO: what an upload stores and what it answers. The digest and the byte count are of exactly the bytes written, the seed gets its stated mode, and no staged file is left in the share the guest reads.
+    #[test]
+    fn a_committed_seed_is_whole_and_counted() {
+        let dir = TempDir::new("seed-commit");
+        let mut seed = SeedFile::create(dir.path()).unwrap();
+        seed.write(b"te").unwrap();
+        seed.write(b"st").unwrap();
+        assert_eq!(seed.bytes(), 4);
+        let result = seed.commit().unwrap();
+
+        assert_eq!(
+            result,
+            SeedResult {
+                bytes: 4,
+                sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+            }
+        );
+        assert_eq!(fs::read(dir.path().join(SEED_FILE)).unwrap(), b"test");
+        assert_eq!(mode_of(&dir.path().join(SEED_FILE)), SEED_MODE);
+        assert!(!dir
+            .path()
+            .join(format!("{SEED_FILE}{STAGED_SUFFIX}"))
+            .exists());
+    }
+
+    // TEST_SCENARIO: an upload that fails part-way is dropped without a commit. It must leave the seed that was there before and no staged file: a half seed in the share is a home restored from half a volume.
+    #[test]
+    fn an_abandoned_upload_leaves_the_old_seed_and_no_scratch() {
+        let dir = TempDir::new("seed-abandon");
+        fs::write(dir.path().join(SEED_FILE), b"old").unwrap();
+        let mut seed = SeedFile::create(dir.path()).unwrap();
+        seed.write(b"half of a new").unwrap();
+        drop(seed);
+
+        assert_eq!(fs::read(dir.path().join(SEED_FILE)).unwrap(), b"old");
+        assert!(!dir
+            .path()
+            .join(format!("{SEED_FILE}{STAGED_SUFFIX}"))
+            .exists());
+        remove_seed(dir.path()).unwrap();
+        remove_seed(dir.path()).unwrap();
+        assert!(!dir.path().join(SEED_FILE).exists());
+    }
+
+    // TEST_SCENARIO: a runner killed mid-upload runs no drop, so its staged seed stays in the share, as large as the upload got. The next write of the share, which comes with the machine's next action, removes it and keeps the committed seed beside it; removing it again finds nothing and succeeds.
+    #[test]
+    fn a_seed_staged_by_a_runner_that_died_is_removed_with_the_next_share() {
+        let dir = TempDir::new("stale-seed");
+        let init = dir.path().join("platform-init");
+        fs::write(&init, b"init").unwrap();
+        let share = dir.path().join("agent-a").join(SHARE_DIR);
+        fs::create_dir_all(&share).unwrap();
+        fs::write(share.join(SEED_FILE), b"committed").unwrap();
+        let staged = share.join(format!("{SEED_FILE}{STAGED_SUFFIX}"));
+        fs::write(&staged, b"half an upload").unwrap();
+
+        write_share(
+            dir.path(),
+            "agent-a",
+            &MachineSpec {
+                ca_cert: "ca".into(),
+                ..Default::default()
+            },
+            Some(&init),
+            None,
+        )
+        .unwrap();
+
+        assert!(!staged.exists(), "the staged seed outlived the share write");
+        assert_eq!(fs::read(share.join(SEED_FILE)).unwrap(), b"committed");
+        fs::write(&staged, b"again").unwrap();
+        remove_staged_seed(&share).unwrap();
+        remove_staged_seed(&share).unwrap();
+        assert!(!staged.exists());
+    }
+
+    // TEST_SCENARIO: platform-runc is what every container runtime in the guest execs to start a container, so it arrives executable and is replaced with the runner that ships it, like init. A share without it still boots the machine: its containers only miss the CA.
+    #[test]
+    fn a_share_carries_a_runc_that_can_run_when_one_is_configured() {
+        let dir = TempDir::new("runc");
+        let init = dir.path().join("platform-init");
+        fs::write(&init, b"init").unwrap();
+        let runc = dir.path().join("platform-runc");
+        fs::write(&runc, b"first runc").unwrap();
+        let spec = MachineSpec::default();
+
+        write_share(dir.path(), "agent-a", &spec, Some(&init), None).unwrap();
+        let share = dir.path().join("agent-a").join(SHARE_DIR);
+        assert!(!share.join(RUNC_FILE).exists());
+
+        write_share(dir.path(), "agent-a", &spec, Some(&init), Some(&runc)).unwrap();
+        fs::write(&runc, b"second runc").unwrap();
+        write_share(dir.path(), "agent-a", &spec, Some(&init), Some(&runc)).unwrap();
+        assert_eq!(fs::read(share.join(RUNC_FILE)).unwrap(), b"second runc");
+        assert_eq!(
+            mode_of(&share.join(RUNC_FILE)),
+            INIT_MODE,
+            "the guest execs this file"
+        );
     }
 
     fn mode_of(path: &Path) -> u32 {

@@ -1,7 +1,7 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect, beforeEach } from "vitest";
 import { slackThreadKey, type AgentsService } from "api-server-api";
-import type { ContentBlock } from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+import type { ContentBlock } from "@agentclientprotocol/sdk";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
@@ -80,36 +80,43 @@ function harness(opts: {
     ensureReady: opts.ensureReady ?? (async () => {}),
   } as unknown as AgentsService;
 
-  const worker = createSlackWorker(
-    () => acp,
-    () => gw,
-    () => agents,
-    { resolve: async () => opts.linkedSub ?? null } as never,
-    { authUrl: "http://kc", clientId: "c" } as never,
-    createMemoryTtlStore(600_000),
-    async () => OWNER,
-    {
+  const worker = createSlackWorker({
+    makeAcpClient: () => acp,
+    createGateway: () => gw,
+    agents: () => agents,
+    identityLinks: { resolve: async () => opts.linkedSub ?? null } as never,
+    oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
+    pendingOAuthFlows: createMemoryTtlStore(600_000),
+    getInstanceOwner: async () => OWNER,
+    channelRegistry: {
       resolveSlackBindings: async () =>
         toRoster(
           opts.resolveBinding ? await opts.resolveBinding() : opts.binding,
         ),
       resolveSlackChannelsByInstance: async () => [{ id: "C1", teamId: "" }],
     } as never,
-    async () => {},
-    async (agentId: string, channelId: string, ambient: boolean) => {
+    unbindSlackChannel: async () => {},
+    setSlackChannelAmbient: async (
+      agentId: string,
+      channelId: string,
+      ambient: boolean,
+    ) => {
       ambientCalls.push({ agentId, channelId, ambient });
     },
-    async () => true,
-    { name: "DAM", short: "dam" },
-    async (sub) => opts.termsAccepted?.(sub) ?? true,
-    "http://ui",
-    stubTurnAttendance(),
-    stubWorkspaceFiles(),
-    (teamId) => teamId,
-    (e) => events.push(e),
-    0,
-    { patienceMs: opts.wakePatienceMs ?? 60_000, sleep: async () => {} },
-  );
+    setSlackDefault: async () => true,
+    brand: { name: "DAM", short: "dam" },
+    isTermsAccepted: async (sub) => opts.termsAccepted?.(sub) ?? true,
+    uiBaseUrl: "http://ui",
+    attendance: stubTurnAttendance(),
+    workspaceFiles: stubWorkspaceFiles(),
+    listWorkspaces: async () => [],
+    emit: (e) => events.push(e),
+    settleMs: 0,
+    wakeWait: {
+      patienceMs: opts.wakePatienceMs ?? 60_000,
+      sleep: async () => {},
+    },
+  });
 
   const start = () => worker.connect();
 
@@ -249,7 +256,7 @@ describe("slack ambient inbound", () => {
     await h.settled(() => h.turnEvents().length === 1);
   });
 
-  it("ambient on: a silent read-along turn does not repoint the proactive reply fallback", async () => {
+  it("ambient on: a settled silent read-along turn leaves no thread for an id-less reply", async () => {
     const h = harness({ binding: ambient });
     await h.message(STRANGER, "random chatter nobody asked about", {
       ts: "7.7",
@@ -482,10 +489,6 @@ describe("slack ambient inbound", () => {
 
     pending[1]!("on it");
     await h.settled(() => h.turnEvents().length === 2);
-
-    const reacted = await h.worker.react("agent-1", { emoji: "eyes" });
-    expect(reacted).toEqual({ ok: true });
-    expect(h.reactions()[0]).toMatchObject({ ts: "3.3" });
   });
 
   it("serializes a mention behind an in-flight ambient turn on the same thread session", async () => {
@@ -513,7 +516,7 @@ describe("slack ambient inbound", () => {
     await h.settled(() => h.turnEvents().length === 2);
   });
 
-  it("an engaged ambient turn becomes the proactive reply fallback", async () => {
+  it("a settled engaged ambient turn leaves no thread for an id-less reply", async () => {
     const pending: Array<(v: string) => void> = [];
     const h = harness({
       binding: ambient,
@@ -527,9 +530,11 @@ describe("slack ambient inbound", () => {
     await h.settled(() => h.turnEvents().length === 1);
     h.gw.resetOutbound();
 
-    const ok = await h.worker.reply("agent-1", { text: "build is green" });
-    expect(ok).toEqual({ ok: true });
-    expect(h.messages()[0]).toMatchObject({ threadTs: "9.9" });
+    const refused = await h.worker.reply("agent-1", { text: "build is green" });
+    expect(refused).toMatchObject({
+      error: expect.stringContaining("no active thread"),
+    });
+    expect(h.messages()).toHaveLength(0);
   });
 
   it("keeps a relay-failed thread turn resolvable — an id-less reply is never cross-routed into another thread", async () => {

@@ -22,18 +22,11 @@ export default function Info(
   } = kcContext;
   const { advancedMsgStr, msg } = i18n;
 
-  const bodyHtml = (() => {
-    let html = message.summary?.trim() ?? "";
-    if (requiredActions) {
-      html +=
-        " <b>" +
-        requiredActions
-          .map((a) => advancedMsgStr(`requiredAction.${a}`))
-          .join(", ") +
-        "</b>";
-    }
-    return html;
-  })();
+  const bodyHtml =
+    (message.summary?.trim() ?? "") +
+    (requiredActions
+      ? ` <b>${requiredActions.map((a) => advancedMsgStr(`requiredAction.${a}`)).join(", ")}</b>`
+      : "");
 
   const action = (() => {
     if (skipLink) return null;

@@ -1,16 +1,18 @@
+import { DEFAULT_ENV_PLACEHOLDER } from "api-server-api";
 import type { Contribution } from "api-server-api";
-import { encodeAccessToken } from "./host-injection.js";
 
-const PLACEHOLDER_TOKEN = "dummy-placeholder";
+export const CONNECTION_TOKEN_PLACEHOLDER = DEFAULT_ENV_PLACEHOLDER;
 
 export const UPSTREAM_CA_SECRET_FIELD = "upstream-ca.crt";
+
+export const AWS_CREDENTIALS_SECRET_FIELD = "aws-credentials";
 
 export function sdsFileKeyForHost(host: string): string {
   const slug = Buffer.from(host, "utf8").toString("base64url");
   return `host-${slug}.sds.yaml`;
 }
 
-export function sdsFileKeyForInjection(c: {
+function sdsFileKeyForInjection(c: {
   host: string;
   headerName: string;
   queryParamName?: string;
@@ -22,7 +24,7 @@ export function sdsFileKeyForInjection(c: {
   return `host-${slug}.sds.yaml`;
 }
 
-export function sdsYamlContent(inlineString: string): string {
+function sdsYamlContent(inlineString: string): string {
   return [
     "resources:",
     '- "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret',
@@ -41,12 +43,15 @@ export function buildConnectionSdsFields(
   const out: Record<string, string> = {};
   for (const c of contributions) {
     if (c.kind !== "egress-inject") continue;
+    const encoded =
+      c.encoding === "basic-x-access-token"
+        ? Buffer.from(`x-access-token:${accessToken}`, "utf8").toString(
+            "base64",
+          )
+        : accessToken;
     const inlineString = c.queryParamName
       ? accessToken
-      : c.valueFormat.replaceAll(
-          "{value}",
-          encodeAccessToken(accessToken, c.encoding),
-        );
+      : c.valueFormat.replaceAll("{value}", encoded);
     out[sdsFileKeyForInjection(c)] = sdsYamlContent(inlineString);
   }
   return out;
@@ -55,12 +60,6 @@ export function buildConnectionSdsFields(
 export function connectionSecretAnnotations(
   contributions: Contribution[],
 ): Record<string, string> {
-  const envMappings = contributions
-    .filter(
-      (c): c is Extract<Contribution, { kind: "env" }> => c.kind === "env",
-    )
-    .map((c) => ({ envName: c.name, placeholder: c.placeholder }));
-
   const injectionHosts = contributions
     .filter(
       (c): c is Extract<Contribution, { kind: "egress-inject" }> =>
@@ -81,14 +80,26 @@ export function connectionSecretAnnotations(
       sdsKey: sdsFileKeyForInjection(c),
     }));
 
+  const signingHosts = contributions
+    .filter(
+      (c): c is Extract<Contribution, { kind: "egress-sign" }> =>
+        c.kind === "egress-sign",
+    )
+    .map((c) => ({
+      host: c.host,
+      ...(c.port ? { port: c.port } : {}),
+      ...(c.pathPattern ? { pathPattern: c.pathPattern } : {}),
+      signing: {
+        region: c.region,
+        service: c.service,
+        credentialsKey: AWS_CREDENTIALS_SECRET_FIELD,
+      },
+    }));
+
+  const entries = [...injectionHosts, ...signingHosts];
   const out: Record<string, string> = {};
-  if (envMappings.length > 0) {
-    out["agent-platform.ai/env-mappings"] = JSON.stringify(envMappings);
-  }
-  if (injectionHosts.length > 0) {
-    out["agent-platform.ai/injection-hosts"] = JSON.stringify(injectionHosts);
+  if (entries.length > 0) {
+    out["agent-platform.ai/injection-hosts"] = JSON.stringify(entries);
   }
   return out;
 }
-
-export const CONNECTION_TOKEN_PLACEHOLDER = PLACEHOLDER_TOKEN;

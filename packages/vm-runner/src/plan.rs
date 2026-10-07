@@ -86,7 +86,7 @@ pub fn reads_ready(state: State) -> bool {
     matches!(state, State::Running | State::Creating | State::Starting)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the next action for a machine, or none when it already is what was asked. `state` is what the runtime reports; an action already in flight is never planned over.
+// UNIT_BOUNDARY_DESCRIPTION: the next action for a machine, or none when it already is what was asked. `state` is what the runtime reports; an action already in flight is never planned over. A stopped spec that carries a whole shape creates an absent machine without booting it, so its home can be seeded before the first boot reads it; a bare stop, which names no shape, still creates nothing.
 pub fn step(
     applied: Option<&MachineSpec>,
     desired: &MachineSpec,
@@ -95,7 +95,11 @@ pub fn step(
     dead_for_long: bool,
 ) -> Option<Action> {
     if !desired.running {
-        return (state == State::Running).then_some(Action::Stop);
+        return match state {
+            State::Running => Some(Action::Stop),
+            State::Absent if shaped(desired) => Some(Action::Create),
+            _ => None,
+        };
     }
     match state {
         State::Absent => Some(Action::Create),
@@ -108,7 +112,7 @@ pub fn step(
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the machine must be stopped and started to become what is asked. Storage is compared as an inequality: a disk grows and cannot shrink, so a smaller request is already met. The allowlist is the paired gateway's ClusterIP, and Kubernetes reuses those, so a machine holding an old one may reach another owner's gateway and must restart onto the new one.
+// UNIT_BOUNDARY_DESCRIPTION: whether the machine must be stopped and started to become what is asked. Storage is compared as an inequality: a disk grows and cannot shrink, so a smaller request is already met. The allowlist is the paired gateway's ClusterIP, and Kubernetes reuses those, so a machine holding an old one may reach another owner's gateway and must restart onto the new one. The guest resolver is that same gateway's, so it moves with it. A guest reads its CPU's features only at boot, so nesting changes only with a restart.
 pub fn changed(applied: &MachineSpec, desired: &MachineSpec) -> bool {
     applied.revision != desired.revision
         || applied.ca_cert != desired.ca_cert
@@ -118,6 +122,9 @@ pub fn changed(applied: &MachineSpec, desired: &MachineSpec) -> bool {
         || applied.env != desired.env
         || applied.image != desired.image
         || applied.allow_cidrs != desired.allow_cidrs
+        || applied.gateway_host_port != desired.gateway_host_port
+        || applied.guest_resolver != desired.guest_resolver
+        || applied.nested_virtualization != desired.nested_virtualization
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the fields without which a machine cannot be created, refused at the door. Only a machine meant to run needs them: a stop carries no shape, so a controller that forgot a machine can still stop it.
@@ -125,16 +132,59 @@ pub const REQUIRED: &str = "image, cpus, memoryMiB and storageGiB are required";
 
 pub const BAD_IMAGE: &str = "invalid image reference";
 
+fn shaped(spec: &MachineSpec) -> bool {
+    !spec.image.is_empty() && spec.cpus >= 1 && spec.memory_mib >= 1 && spec.storage_gib >= 1
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: smolvm reads an empty allowlist as no filter at all, and a /0 range admits every address, so a machine meant to run is refused unless its allowlist names somewhere narrower — the paired gateway's address alone — or it has a gateway host port instead, which smolvm records as a list that denies everything.
+pub const OPEN_EGRESS: &str = "a running machine needs allowCidrs, none of them /0";
+
+// UNIT_BOUNDARY_DESCRIPTION: a gateway on the host's loopback is the machine's whole egress, so an allowlist beside it would widen what the guest reaches rather than narrow it.
+pub const MIXED_EGRESS: &str = "gatewayHostPort replaces allowCidrs; send one of them";
+
 pub fn admissible(spec: &MachineSpec) -> Result<(), &'static str> {
-    if spec.running
-        && (spec.image.is_empty() || spec.cpus < 1 || spec.memory_mib < 1 || spec.storage_gib < 1)
-    {
+    if spec.running && !shaped(spec) {
         return Err(REQUIRED);
+    }
+    if spec.gateway_host_port != 0 && !spec.allow_cidrs.is_empty() {
+        return Err(MIXED_EGRESS);
+    }
+    if spec.running
+        && spec.gateway_host_port == 0
+        && (spec.allow_cidrs.is_empty() || spec.allow_cidrs.iter().any(|c| opens_everything(c)))
+    {
+        return Err(OPEN_EGRESS);
     }
     if !spec.image.is_empty() && (!is_image_ref(&spec.image) || spec.image.contains("..")) {
         return Err(BAD_IMAGE);
     }
     Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the guest reaches its gateway host port on the runner's own loopback, where the runner also publishes every machine and each guest agent sits at its published port plus LOOPBACK_OFFSET. A gateway port in either range would hand the guest another machine instead of its gateway.
+pub const GATEWAY_ON_A_MACHINE: &str =
+    "gatewayHostPort lies in the range this runner publishes machines on";
+
+pub fn gateway_port_admissible(
+    spec: &MachineSpec,
+    published: &std::ops::RangeInclusive<u16>,
+) -> Result<(), &'static str> {
+    let port = spec.gateway_host_port;
+    let guests = published
+        .start()
+        .saturating_add(crate::forward::LOOPBACK_OFFSET)
+        ..=published
+            .end()
+            .saturating_add(crate::forward::LOOPBACK_OFFSET);
+    if port != 0 && (published.contains(&port) || guests.contains(&port)) {
+        return Err(GATEWAY_ON_A_MACHINE);
+    }
+    Ok(())
+}
+
+fn opens_everything(cidr: &str) -> bool {
+    cidr.split_once('/')
+        .is_some_and(|(_, bits)| bits.trim().parse::<u8>() == Ok(0))
 }
 
 #[cfg(test)]
@@ -143,7 +193,7 @@ mod tests {
 
     const RESTART: Option<Action> = Some(Action::Restart { unhealthy: false });
 
-    // TEST_SCENARIO: these two strings are the body of a 400 that the controller shows in the Agent's status, so an operator searches for their wording.
+    // TEST_SCENARIO: these strings are the body of a 400 that the controller shows in the Agent's status, so an operator searches for their wording.
     #[test]
     fn the_refusals_keep_their_wording() {
         assert_eq!(
@@ -151,6 +201,10 @@ mod tests {
             "image, cpus, memoryMiB and storageGiB are required"
         );
         assert_eq!(BAD_IMAGE, "invalid image reference");
+        assert_eq!(
+            OPEN_EGRESS,
+            "a running machine needs allowCidrs, none of them /0"
+        );
     }
 
     // TEST_SCENARIO: the reconcile sends the same spec about once a minute, so the usual answer must be nothing. Acting on a machine that is already right restarts every agent once a minute.
@@ -203,14 +257,30 @@ mod tests {
         );
         for down in [State::Absent, State::Stopped] {
             assert_eq!(
-                step(Some(&stop), &stop, down, false, false),
+                step(Some(&stop), &stop, down, false, false).filter(|a| *a == Action::Stop),
                 None,
                 "{down} was stopped again"
             );
         }
     }
 
-    // TEST_SCENARIO: every field that cannot change under a running guest restarts it, image and egress allowlist included: both are written to the stopped machine's record before it boots again, so the disk and port stay. A stopped machine with any of these changes is simply started, because a start applies them too.
+    // TEST_SCENARIO: a machine whose home is seeded from an agent's old volume must exist before its first boot, because the seed is uploaded into its share and platform-init reads it only on the boot that finds no home on the disk. So a stopped spec with a whole shape creates an absent machine, and never boots it. A bare stop names no shape — the controller sends one for a machine it no longer knows — and it must still create nothing, or a stop would fail on an empty image.
+    #[test]
+    fn a_shaped_stop_creates_an_absent_machine_and_a_bare_stop_does_not() {
+        let stop = MachineSpec {
+            running: false,
+            ..running_spec()
+        };
+        assert_eq!(
+            step(None, &stop, State::Absent, false, false),
+            Some(Action::Create)
+        );
+        assert_eq!(step(Some(&stop), &stop, State::Stopped, false, false), None);
+        let bare = MachineSpec::default();
+        assert_eq!(step(None, &bare, State::Absent, false, false), None);
+    }
+
+    // TEST_SCENARIO: every field that cannot change under a running guest restarts it, image, egress allowlist and nesting included: both are written to the stopped machine's record before it boots again, so the disk and port stay. A stopped machine with any of these changes is simply started, because a start applies them too.
     #[test]
     fn a_changed_shape_restarts_a_running_machine_and_starts_a_stopped_one() {
         let applied = running_spec();
@@ -226,6 +296,13 @@ mod tests {
                 "caCert",
                 MachineSpec {
                     ca_cert: "rotated".into(),
+                    ..running_spec()
+                },
+            ),
+            (
+                "nestedVirtualization",
+                MachineSpec {
+                    nested_virtualization: true,
                     ..running_spec()
                 },
             ),
@@ -434,7 +511,7 @@ mod tests {
         assert_eq!(Action::Stop.label(), "stopping");
     }
 
-    // TEST_SCENARIO: what is refused at the door. A machine meant to run needs a whole shape, and an image reference is checked here because a request is where a `..` can be chosen by somebody. A stop needs no shape.
+    // TEST_SCENARIO: what is refused at the door. A machine meant to run needs a whole shape, and an allowlist narrower than everything, because smolvm reads an empty one as no filter at all. An image reference is checked here because a request is where a `..` can be chosen by somebody. A stop needs no shape.
     #[test]
     fn a_request_that_could_not_produce_a_machine_is_refused_at_the_door() {
         assert_eq!(admissible(&running_spec()), Ok(()));
@@ -477,6 +554,50 @@ mod tests {
             };
             assert_eq!(admissible(&spec), Err(BAD_IMAGE), "{escape} was admitted");
         }
+        for (what, allow) in [
+            ("no allowlist", vec![]),
+            (
+                "an open v4 range",
+                vec!["10.0.0.7/32".into(), "0.0.0.0/0".into()],
+            ),
+            ("an open v6 range", vec!["::/0".into()]),
+        ] {
+            let spec = MachineSpec {
+                allow_cidrs: allow,
+                ..running_spec()
+            };
+            assert_eq!(admissible(&spec), Err(OPEN_EGRESS), "{what} was admitted");
+        }
+        let loopback_gateway = MachineSpec {
+            allow_cidrs: vec![],
+            gateway_host_port: 30100,
+            ..running_spec()
+        };
+        assert_eq!(admissible(&loopback_gateway), Ok(()));
+        for (port, admitted) in [
+            (30100, true),
+            (31000, false),
+            (31099, false),
+            (32050, false),
+            (32100, true),
+        ] {
+            let spec = MachineSpec {
+                gateway_host_port: port,
+                ..loopback_gateway.clone()
+            };
+            assert_eq!(
+                gateway_port_admissible(&spec, &(31000..=31099)).is_ok(),
+                admitted,
+                "gateway host port {port}"
+            );
+        }
+        assert_eq!(
+            admissible(&MachineSpec {
+                gateway_host_port: 30100,
+                ..running_spec()
+            }),
+            Err(MIXED_EGRESS)
+        );
         let stop = MachineSpec {
             running: false,
             ..Default::default()
@@ -502,6 +623,31 @@ mod tests {
         assert!(!changed(&running_spec(), &desired));
     }
 
+    // TEST_SCENARIO: the controller marks a machine as migrating while it copies the home and drops the mark once the copy is done. The mark says what a seed capability may do, not what the machine is, so neither change reshapes it.
+    #[test]
+    fn a_migration_mark_is_never_a_reason_to_restart() {
+        let desired = MachineSpec {
+            migration: Some(crate::api::Migration {}),
+            ..running_spec()
+        };
+        assert!(!changed(&running_spec(), &desired));
+        assert!(!changed(&desired, &running_spec()));
+    }
+
+    // TEST_SCENARIO: the controller expects a seed while a migration boots the machine and stops expecting one once the migration ends. That says nothing about the machine's shape, so neither edge restarts a guest that is up; a restart there would reboot every freshly migrated agent the moment its migration finished.
+    #[test]
+    fn an_expected_seed_is_never_a_reason_to_restart() {
+        let expecting = MachineSpec {
+            expect_seed: Some(crate::api::SeedResult {
+                bytes: 4,
+                sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+            }),
+            ..running_spec()
+        };
+        assert!(!changed(&expecting, &running_spec()));
+        assert!(!changed(&running_spec(), &expecting));
+    }
+
     fn running_spec() -> MachineSpec {
         MachineSpec {
             image: "quay.io/x/vm:1".into(),
@@ -511,9 +657,26 @@ mod tests {
             env: [("A".to_string(), "1".to_string())].into_iter().collect(),
             ca_cert: "ca".into(),
             allow_cidrs: vec!["10.0.0.7/32".into()],
+            gateway_host_port: 0,
+            guest_resolver: String::new(),
             revision: "1".into(),
             running: true,
             pull_auths: Vec::new(),
+            migration: None,
+            expect_seed: None,
+            nested_virtualization: false,
         }
+    }
+
+    // TEST_SCENARIO: the guest resolver is read out of smolvm's record at each boot, so a machine that should relay guest DNS somewhere new must restart to take it — including every machine an earlier controller sent no resolver for.
+    #[test]
+    fn a_new_guest_resolver_restarts_the_machine() {
+        let before = running_spec();
+        let after = MachineSpec {
+            guest_resolver: "10.96.0.7".into(),
+            ..running_spec()
+        };
+        assert!(changed(&before, &after));
+        assert!(!changed(&after, &after.clone()));
     }
 }

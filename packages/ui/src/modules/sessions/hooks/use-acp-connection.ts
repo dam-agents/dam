@@ -1,4 +1,7 @@
-import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import type {
+  ClientConnection,
+  LoadSessionResponse,
+} from "@agentclientprotocol/sdk";
 import {
   platformClippedReplayMetaSchema,
   platformReplayTurnMetaSchema,
@@ -30,12 +33,13 @@ import {
   type PromptDelivery,
   withDeliveryTracking,
 } from "../lib/prompt-delivery.js";
+import { sessionModelFrom } from "../lib/session-model.js";
 import { clearUndelivered, readUndelivered } from "../lib/undelivered-store.js";
 
 const REPLAY_IDLE_WINDOW_MS = 3000;
 
 export interface LiveConnection {
-  connection: ClientSideConnection;
+  connection: ClientConnection;
   ws: WebSocket;
 }
 
@@ -54,7 +58,7 @@ interface UseAcpConnectionOptions {
   liveBlocked: boolean;
   agentOperable: boolean;
   makeUpdateHandler: () => UpdateHandler;
-  engage: (conn: ClientSideConnection) => Promise<string | null>;
+  engage: (conn: ClientConnection) => Promise<string | null>;
   bindEngagement: (sessionId: string) => void;
   clearEngagement: () => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
@@ -62,20 +66,20 @@ interface UseAcpConnectionOptions {
 }
 
 export interface LiveSession {
-  connection: ClientSideConnection;
+  connection: ClientConnection;
   sessionId: string;
   isOpen: () => boolean;
 }
 
 export interface StartedSession {
-  connection: ClientSideConnection;
+  connection: ClientConnection;
   sessionId: string;
   isOpen: () => boolean;
   settle: (keep: boolean) => boolean;
   finish: () => void;
 }
 
-export interface UseAcpConnectionResult {
+interface UseAcpConnectionResult {
   state: ConnectionState;
   ensureLive: () => Promise<LiveSession | null>;
   beginSession: () => Promise<StartedSession>;
@@ -164,7 +168,7 @@ export function useAcpConnection(
 
   const keepAsLive = useCallback(
     (
-      connection: ClientSideConnection,
+      connection: ClientConnection,
       ws: WebSocket,
       agentId: string,
       startedSessionId: string,
@@ -206,7 +210,7 @@ export function useAcpConnection(
 
       let startedSessionId: string;
       try {
-        const session = await connection.newSession({
+        const session = await connection.agent.request("session/new", {
           cwd: ".",
           mcpServers: [],
           _meta: {
@@ -214,6 +218,14 @@ export function useAcpConnection(
           },
         });
         startedSessionId = session.sessionId;
+        const viewing = useStore.getState().sessionId;
+        if (viewing === null || viewing === startedSessionId) {
+          useStore
+            .getState()
+            .setSessionModel(
+              sessionModelFrom(startedSessionId, session.configOptions),
+            );
+        }
       } catch (err) {
         try {
           ws.close();
@@ -317,7 +329,7 @@ export function useAcpConnection(
       collectorRef.current = collector;
       let result: unknown;
       try {
-        result = await live.connection.loadSession({
+        result = await live.connection.agent.request("session/load", {
           sessionId: sid,
           cwd: ".",
           mcpServers: [],
@@ -411,6 +423,14 @@ export function useAcpConnection(
           : undefined,
       );
       if (replayBefore === undefined && generation === generationRef.current) {
+        useStore
+          .getState()
+          .setSessionModel(
+            sessionModelFrom(
+              sid,
+              (result as LoadSessionResponse | null)?.configOptions,
+            ),
+          );
         useStore
           .getState()
           .setRunStarts([

@@ -39,3 +39,9 @@ export function validateAgentName(
   if (AGENT_ID_RE.test(name)) return err("id-shape");
   return ok(undefined);
 }
+
+export function errorReason(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  return "unknown failure";
+}

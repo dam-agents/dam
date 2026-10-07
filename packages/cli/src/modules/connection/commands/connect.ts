@@ -6,11 +6,10 @@ import {
   type ConnectionTemplateView,
   connectionNameSchema,
 } from "api-server-api";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { BrowserOpener } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -48,6 +47,11 @@ interface ConnectOpts {
   envName?: string;
   value?: string;
   caData?: string;
+  endpoint?: string;
+  region?: string;
+  bucket?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
   config?: string[];
   server?: string;
   json?: boolean;
@@ -125,6 +129,26 @@ export function buildConnectCommand(deps: {
       "input: upstream CA certificate — PEM or base64 (a kubeconfig's certificate-authority-data)",
     )
     .option(
+      "--endpoint <url>",
+      "input: S3-compatible endpoint URL, https:// and host only (Object Storage)",
+    )
+    .option(
+      "--region <region>",
+      "input: signing region (Object Storage; IBM COS accepts any value)",
+    )
+    .option(
+      "--bucket <name>",
+      "input: limit the agent to this bucket (Object Storage)",
+    )
+    .option(
+      "--access-key-id <id>",
+      "input: HMAC access key ID (Object Storage)",
+    )
+    .option(
+      "--secret-access-key <key>",
+      "input: HMAC secret access key (Object Storage)",
+    )
+    .option(
       "-c, --config <key=value>",
       "set an optional template config input (e.g. -c model=premium-shell), repeatable",
       (val: string, prev: string[]) => [...prev, val],
@@ -158,6 +182,8 @@ export function buildConnectCommand(deps: {
         "  dam connection connect github-enterprise-app --host ghe.acme.com \\\n" +
         '      --app-id 123456 --installation-id 987654 --private-key "$(cat app.pem)"\n' +
         "  dam connection connect bob --value sk-… --config model=premium-shell --config chatMode=agent\n" +
+        "  dam connection connect s3-compatible --endpoint https://s3.us-south.cloud-object-storage.appdomain.cloud \\\n" +
+        "      --bucket my-bucket --access-key-id … --secret-access-key …\n" +
         "  dam connection connect https://mcp.example.com\n" +
         "  dam connection connect https://mcp.example.com --auth none\n",
     )
@@ -172,20 +198,11 @@ export function buildConnectCommand(deps: {
 
       const authOverride = parseAuthMode(opts.auth);
 
-      const host = await resolveActiveHost(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
       const svc = deps.createConnectionService(host);
 
       const templatesRes = await svc.listTemplates();
-      if (!templatesRes.ok) {
-        printServiceError(templatesRes.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(templatesRes, host);
       const templates = templatesRes.value;
 
       const mcpUrl = parseHttpUrl(providerOrUrl);
@@ -235,15 +252,15 @@ export function buildConnectCommand(deps: {
       }
 
       const createRes = await svc.createConnection(payload);
-      if (!createRes.ok) {
-        printServiceError(createRes.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(createRes, host);
       const { id } = createRes.value;
 
       const presetNames = presetsApplied.map((i) => i.name);
       if (!json && presetNames.length > 0) {
-        process.stderr.write(formatPresetNote(presetsApplied));
+        const fields = presetsApplied.map((i) => labelFor(i.name)).join(", ");
+        process.stderr.write(
+          `Using preset values (${fields}). Pass ${flagListFor(presetsApplied)} to use your own.\n`,
+        );
       }
 
       if (template.authKind !== "oauth") {
@@ -259,10 +276,7 @@ export function buildConnectCommand(deps: {
       }
 
       const oauthRes = await svc.startOAuth(id);
-      if (!oauthRes.ok) {
-        printServiceError(oauthRes.error, host);
-        process.exit(EXIT_RUNTIME_FAILURE);
-      }
+      exitOnServiceError(oauthRes, host);
       const { authUrl } = oauthRes.value;
 
       const noBrowser = opts.browser === false;
@@ -365,10 +379,7 @@ async function resolveMcpTemplate(args: {
   let auth = authOverride;
   if (!auth) {
     const res = await svc.discoverMcp(url);
-    if (!res.ok) {
-      printServiceError(res.error, host);
-      process.exit(EXIT_RUNTIME_FAILURE);
-    }
+    exitOnServiceError(res, host);
     auth = res.value.auth;
   }
 
@@ -547,6 +558,30 @@ function buildPayload(
         value,
       };
     }
+    case "sigv4": {
+      const endpoint = v("endpoint");
+      const accessKeyId = v("accessKeyId");
+      const secretAccessKey = v("secretAccessKey");
+      if (!endpoint)
+        return { error: "the endpoint URL is required (--endpoint)" };
+      if (!accessKeyId) {
+        return { error: "the access key ID is required (--access-key-id)" };
+      }
+      if (!secretAccessKey) {
+        return {
+          error: "the secret access key is required (--secret-access-key)",
+        };
+      }
+      return {
+        ...common,
+        authKind: "sigv4",
+        endpoint,
+        ...(v("region") ? { region: v("region")! } : {}),
+        ...(v("bucket") ? { bucket: v("bucket")! } : {}),
+        accessKeyId,
+        secretAccessKey,
+      };
+    }
     case "none":
       return {
         ...common,
@@ -685,6 +720,11 @@ const FIELD_LABELS: Record<string, string> = {
   privateKey: "GitHub App private key (PEM)",
   envName: "Env var name",
   caData: "Cluster CA certificate",
+  endpoint: "Endpoint URL",
+  region: "Signing region",
+  bucket: "Bucket",
+  accessKeyId: "Access key ID",
+  secretAccessKey: "Secret access key",
 };
 
 function labelFor(key: string): string {
@@ -704,9 +744,4 @@ function formatConfigFlagError(e: ConfigFlagError): string {
     case "invalid-value":
       return e.message;
   }
-}
-
-function formatPresetNote(inputs: ConnectionTemplateInput[]): string {
-  const fields = inputs.map((i) => labelFor(i.name)).join(", ");
-  return `Using preset values (${fields}). Pass ${flagListFor(inputs)} to use your own.\n`;
 }

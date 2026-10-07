@@ -14,7 +14,7 @@ export const CATALOG_TAB_LABEL: Record<CatalogTab, string> = {
   "custom-headers": "Custom Headers",
 };
 
-export interface CatalogProvider {
+interface CatalogProvider {
   id: string;
   title: string;
   iconSlug: string | undefined;
@@ -208,7 +208,9 @@ export function connectionKindSubtitle(
   const host = connection.host ?? connection.hosts[0];
   if (
     host &&
-    (connection.category === "mcp" || connection.authKind === "header")
+    (connection.category === "mcp" ||
+      connection.authKind === "header" ||
+      connection.authKind === "sigv4")
   )
     return host;
   return template?.name ?? connection.templateId;

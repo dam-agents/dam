@@ -6,18 +6,14 @@ export interface PermissionOption {
   optionId: string;
   name: string;
   kind?:
-    | "allow_once"
-    | "allow_always"
-    | "reject_once"
-    | "reject_always"
-    | string;
+    "allow_once" | "allow_always" | "reject_once" | "reject_always" | string;
 }
 
 export interface PermissionOutcome {
   outcome: { outcome: "selected"; optionId: string } | { outcome: "cancelled" };
 }
 
-export interface PendingPermission {
+interface PendingPermission {
   toolCallId: string;
   sessionId: string;
   toolCall: unknown;
@@ -33,7 +29,6 @@ export interface PermissionsSlice {
     outcome: PermissionOutcome,
   ) => void;
   dismissPendingPermission: (toolCallId: string) => void;
-  clearPendingPermissions: () => void;
 }
 
 export const createPermissionsSlice: StateCreator<
@@ -70,5 +65,4 @@ export const createPermissionsSlice: StateCreator<
       ),
     }));
   },
-  clearPendingPermissions: () => set({ pendingPermissions: [] }),
 });

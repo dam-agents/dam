@@ -57,16 +57,21 @@ func matchesTheContract[T any](t *testing.T, name string, filled T) {
 
 func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 	matchesTheContract(t, "machine-spec", MachineSpec{
-		Image:      "quay.io/x/vm:1",
-		CPUs:       2,
-		MemoryMiB:  2048,
-		StorageGiB: 20,
-		Env:        map[string]string{"A": "b"},
-		CACert:     "-----BEGIN CERTIFICATE-----",
-		AllowCIDRs: []string{"10.0.0.1/32"},
-		Revision:   "r1",
-		Running:    true,
-		PullAuths:  []string{`{"auths":{}}`},
+		Image:                "quay.io/x/vm:1",
+		CPUs:                 2,
+		MemoryMiB:            2048,
+		StorageGiB:           20,
+		Env:                  map[string]string{"A": "b"},
+		CACert:               "-----BEGIN CERTIFICATE-----",
+		AllowCIDRs:           []string{"10.0.0.1/32"},
+		GatewayHostPort:      30100,
+		GuestResolver:        "10.0.0.1",
+		Revision:             "r1",
+		Running:              true,
+		PullAuths:            []string{`{"auths":{}}`},
+		Migration:            &MachineMigration{},
+		ExpectSeed:           &SeedResult{Bytes: 1234, SHA256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"},
+		NestedVirtualization: true,
 	})
 	matchesTheContract(t, "machine-status", MachineStatus{
 		State:     StateRunning,
@@ -76,16 +81,25 @@ func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 		Ready:     true,
 		CPUs:      2,
 		MemoryMiB: 2048,
+		UsedMiB:   640,
 		Message:   "up",
 		Version:   1,
+
+		HomeSeededFrom: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+		Nested:         true,
+	})
+	matchesTheContract(t, "seed-result", SeedResult{
+		Bytes:  1234,
+		SHA256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
 	})
 }
 
 // TEST_SCENARIO: the states and reasons are the vocabulary the controller matches on. A value that differs by a character is not a compile error on either side — it is a controller that never recognises the state its runner is reporting, so the Agent sits in a condition nothing clears.
 func TestTheStatesAndReasonsAreTheOnesTheRunnerReports(t *testing.T) {
 	vocabulary := decodeStrictly[struct {
-		States  []string `json:"states"`
-		Reasons []string `json:"reasons"`
+		States            []string `json:"states"`
+		Reasons           []string `json:"reasons"`
+		SeedExitPermanent int32    `json:"seedExitPermanent"`
 	}](t, "vocabulary.json", contractFixture(t, "vocabulary.json"))
 
 	assert.Equal(t, []string{
@@ -93,6 +107,7 @@ func TestTheStatesAndReasonsAreTheOnesTheRunnerReports(t *testing.T) {
 		StateRestarting, StateRunning, StateStopping, StateStopped,
 	}, vocabulary.States)
 	assert.Equal(t, []string{
-		ReasonNotReady, ReasonOutOfCapacity, ReasonImageUnavailable, ReasonBootFailed,
+		ReasonNotReady, ReasonOutOfCapacity, ReasonImageUnavailable, ReasonBootFailed, ReasonSeedMissing,
 	}, vocabulary.Reasons)
+	assert.Equal(t, int32(SeedExitPermanent), vocabulary.SeedExitPermanent)
 }

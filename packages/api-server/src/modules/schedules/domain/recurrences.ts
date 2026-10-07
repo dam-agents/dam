@@ -1,17 +1,19 @@
 import { CronExpressionParser } from "cron-parser";
-import rrulePkg from "rrule";
-import { hasVisibleOccurrence, isInQuietHours } from "api-server-api";
+import { nextVisibleOccurrence, rruleProblem } from "api-server-api";
 import type { QuietWindow, ScheduleSpec } from "api-server-api";
-
-const { RRule } = rrulePkg;
 
 export function validateCron(expr: string): void {
   CronExpressionParser.parse(expr);
 }
 
-export function validateRRule(expr: string): void {
-  const rule = RRule.fromString(expr);
-  if (!rule) throw new Error(`invalid rrule: ${expr}`);
+export function validateRRule(
+  expr: string,
+  timezone: string,
+  quietHours: QuietWindow[],
+): void {
+  const next = nextRRuleFire(expr, timezone, quietHours, new Date());
+  if (next.kind === "stopped")
+    throw new Error(`rrule is rejected, ${next.reason}: ${expr}`);
 }
 
 export function validateTimezone(tz: string): void {
@@ -22,50 +24,78 @@ export function validateTimezone(tz: string): void {
   }
 }
 
-export function validateHasVisibleOccurrence(
-  rruleExpr: string,
-  windows: QuietWindow[],
-): void {
-  if (!hasVisibleOccurrence(rruleExpr, windows)) {
-    throw new Error(
-      "quiet hours cover every scheduled occurrence — this schedule would never fire",
+export type NextFire =
+  { kind: "next"; at: Date } | { kind: "stopped"; reason: string };
+
+export function nextFire(spec: ScheduleSpec, from: Date): NextFire {
+  if (spec.type === "once") {
+    const at = new Date(spec.at);
+    return at > from
+      ? { kind: "next", at }
+      : { kind: "stopped", reason: "its moment has passed" };
+  }
+  if (spec.type === "rrule")
+    return nextRRuleFire(
+      spec.rrule,
+      spec.timezone,
+      spec.quietHours ?? [],
+      from,
     );
+  try {
+    const cron = CronExpressionParser.parse(spec.cron, {
+      currentDate: from,
+      tz: "UTC",
+    });
+    return { kind: "next", at: cron.next().toDate() };
+  } catch (e) {
+    return { kind: "stopped", reason: errorMessage(e) };
   }
 }
 
 export function nextFireAt(spec: ScheduleSpec, from: Date): Date | null {
-  if (spec.type === "once") {
-    const at = new Date(spec.at);
-    return at > from ? at : null;
-  }
-  if (spec.type === "cron") {
-    try {
-      const cron = CronExpressionParser.parse(spec.cron, {
-        currentDate: from,
-        tz: "UTC",
-      });
-      return cron.next().toDate();
-    } catch {
-      return null;
+  const next = nextFire(spec, from);
+  return next.kind === "next" ? next.at : null;
+}
+
+function nextRRuleFire(
+  rrule: string,
+  timezone: string,
+  quietHours: QuietWindow[],
+  from: Date,
+): NextFire {
+  try {
+    const problem = rruleProblem(rrule);
+    if (problem) return { kind: "stopped", reason: problem };
+    const next = nextVisibleOccurrence(
+      rrule,
+      timezone,
+      Temporal.Instant.fromEpochMilliseconds(from.getTime()),
+      quietHours,
+    );
+    switch (next.kind) {
+      case "next":
+        return { kind: "next", at: new Date(next.at.epochMilliseconds) };
+      case "exhausted":
+        return { kind: "stopped", reason: "it has no more occurrences" };
+      case "suppressed":
+        return {
+          kind: "stopped",
+          reason: "quiet hours cover every remaining occurrence",
+        };
     }
+  } catch (e) {
+    const message = errorMessage(e);
+    return {
+      kind: "stopped",
+      reason: /^Maximum (iterations|candidate evaluations)/.test(message)
+        ? "it never fires"
+        : message,
+    };
   }
-  const wallFrom = toWallClock(from, spec.timezone);
-  wallFrom.setUTCSeconds(0, 0);
-  const rule = new RRule({
-    dtstart: wallFrom,
-    ...RRule.parseString(spec.rrule),
-  });
-  const enabled = (spec.quietHours ?? []).filter((w) => w.enabled);
-  let cursor = wallFrom;
-  for (let i = 0; i < 1440; i++) {
-    const next = rule.after(cursor, false);
-    if (!next) return null;
-    if (enabled.length === 0 || !isInQuietHours(next, enabled)) {
-      return toInstant(next, spec.timezone);
-    }
-    cursor = next;
-  }
-  return null;
+}
+
+function errorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }
 
 export function triggerExpiry(
@@ -81,36 +111,11 @@ export function triggerExpiry(
 }
 
 export function localToInstant(local: string, tz: string): Date {
-  const wall = new Date(`${local}:00Z`);
-  if (Number.isNaN(wall.getTime())) throw new Error(`invalid time: ${local}`);
-  return toInstant(wall, tz);
-}
-
-function toWallClock(instant: Date, tz: string): Date {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(instant);
-  const f: Record<string, number> = {};
-  for (const p of parts) {
-    if (p.type !== "literal") f[p.type] = Number(p.value);
+  let wall: Temporal.PlainDateTime;
+  try {
+    wall = Temporal.PlainDateTime.from(local);
+  } catch {
+    throw new Error(`invalid time: ${local}`);
   }
-  return new Date(
-    Date.UTC(f.year, f.month - 1, f.day, f.hour % 24, f.minute, f.second),
-  );
-}
-
-function toInstant(wall: Date, tz: string): Date {
-  const guess = wall.getTime() - tzOffsetMs(wall, tz);
-  return new Date(wall.getTime() - tzOffsetMs(new Date(guess), tz));
-}
-
-function tzOffsetMs(instant: Date, tz: string): number {
-  return toWallClock(instant, tz).getTime() - instant.getTime();
+  return new Date(wall.toZonedDateTime(tz).epochMilliseconds);
 }

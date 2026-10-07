@@ -8,10 +8,14 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -32,50 +36,76 @@ const (
 	// UNIT_BOUNDARY_DESCRIPTION: runner instead; the health poll is the
 	// UNIT_BOUNDARY_DESCRIPTION: backstop, and the only thing that notices a
 	// UNIT_BOUNDARY_DESCRIPTION: ready guest going quiet.
-	vmReadinessPoll = 3 * time.Second
-	vmHealthPoll    = time.Minute
+	vmReadinessPoll   = 3 * time.Second
+	vmNotReadyPollMax = time.Minute
+	vmHealthPoll      = time.Minute
 
 	vmGuestLocalCIDRs = "100.64.0.0/10,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16"
+
+	// UNIT_BOUNDARY_DESCRIPTION: the address a guest reaches its host at: smolvm's own gateway address, which it relays to the host's loopback. A runner outside the cluster has the guest's proxy there, on the port its gateway is forwarded to. contract/guest.json holds both sides to it.
+	vmHostGatewayAddress = "100.96.0.1"
 )
 
 var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
 
-func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running bool) (vmrunner.MachineStatus, bool, error) {
+// UNIT_BOUNDARY_DESCRIPTION: ensures the Agent's machine on its owner's runner. `publish` points the agent Service at the machine; a machine a runtime migration builds beside a container that still serves leaves the Service to the container.
+func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running, publish bool) (vmrunner.MachineStatus, bool, error) {
 	name := agent.Name
 	owner := agent.Labels[envoyOwnerLabel]
 	if owner == "" {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("agent %s has no owner label, so it has no VM runner", name)
 	}
+	lock := r.ownerLock(owner)
+	lock.Lock()
+	defer lock.Unlock()
+	r.vmRunning.Store(name, running)
 	demand, err := r.ownerRunnerDemand(ctx, owner, agent, running)
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("sizing the owner's VM runner: %w", err)
 	}
 	runner, ready, err := r.ensureRunner(ctx, owner, demand)
+	if errors.Is(err, errRunnerTerminating) {
+		return vmrunner.MachineStatus{Message: "the owner's previous VM runner is still being removed; a new one is created once it is gone"}, false, nil
+	}
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("preparing the owner's VM runner: %w", err)
 	}
 	if !ready {
-		msg := r.runnerNotReadyMessage(ctx, owner)
+		reason, msg := r.runnerNotReady(ctx, owner)
 		if problems := r.vmPreflightProblems(); problems != "" {
 			msg += "; this install cannot run VM runners as configured: " + problems
 		}
-		return vmrunner.MachineStatus{Message: msg}, false, nil
+		return vmrunner.MachineStatus{Reason: reason, Message: msg}, false, nil
 	}
 	spec := &agent.Spec
 	defaults := r.config.AgentTemplateDefaults
 
+	proxy, allow, gatewayHostPort, resolver := agentProxyAddr(r.config, gatewayIP), []string{gatewayIP + "/32"}, 0, gatewayIP
+	if r.config.VM.Runner.HostAddress != "" {
+		if gatewayHostPort, err = r.exposeGatewayOnHost(ctx, name); err != nil {
+			return vmrunner.MachineStatus{}, false, fmt.Errorf("exposing the gateway to the host runner: %w", err)
+		}
+		proxy, allow, resolver = fmt.Sprintf("http://%s:%d", vmHostGatewayAddress, gatewayHostPort), nil, ""
+	}
 	env := map[string]string{}
-	for _, e := range agentPlatformEnv(name, r.config, agentHomeDir, agentProxyAddr(r.config, gatewayIP)) {
+	for _, e := range agentPlatformEnv(name, r.config, agentHomeDir, proxy) {
 		env[e.Name] = e.Value
 	}
 	for _, e := range defaults.Env {
 		env[e.Name] = e.Value
 	}
-	if spec.SecretRef != "" {
-		sec, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, spec.SecretRef, metav1.GetOptions{})
-		if err != nil {
-			return vmrunner.MachineStatus{}, false, fmt.Errorf("reading secretRef %s: %w", spec.SecretRef, err)
-		}
+	if spec.Harness != "" {
+		env["PLATFORM_HARNESS"] = spec.Harness
+	}
+	sec, err := r.ownedSecretRef(ctx, agent)
+	var refused secretRefRefused
+	if errors.As(err, &refused) {
+		sec, err = nil, nil
+	}
+	if err != nil {
+		return vmrunner.MachineStatus{}, false, err
+	}
+	if sec != nil {
 		for k, v := range sec.Data {
 			env[k] = string(v)
 		}
@@ -106,33 +136,57 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 
 	cpu, _ := r.limitsOf(spec)
 	machine := vmrunner.MachineSpec{
-		Image:      spec.Image,
-		CPUs:       max(int((cpu.MilliValue()+999)/1000), 1),
-		MemoryMiB:  r.machineMemoryMiB(spec),
-		StorageGiB: storageGiB,
-		Env:        env,
-		CACert:     string(leaf.Data["ca.crt"]),
-		AllowCIDRs: []string{gatewayIP + "/32"},
-		Revision:   agent.Annotations[annRollRev],
-		Running:    running,
-		PullAuths:  pullAuths,
+		Image:           spec.Image,
+		CPUs:            max(int((cpu.MilliValue()+999)/1000), 1),
+		MemoryMiB:       r.machineMemoryMiB(spec),
+		StorageGiB:      storageGiB,
+		Env:             env,
+		CACert:          machineTrustedCAs(string(leaf.Data["ca.crt"]), r.config),
+		AllowCIDRs:      allow,
+		GatewayHostPort: gatewayHostPort,
+		GuestResolver:   resolver,
+		Revision:        agent.Annotations[annRollRev],
+		Running:         running,
+		PullAuths:       pullAuths,
+		ExpectSeed:      runtimeMigrationExpectSeed(agent),
+
+		NestedVirtualization: wantsNesting(agent) && r.config.VM.Runner.NestedVirtualization,
+	}
+	if runtimeMigrationOf(agent.Annotations, agent.Status).seedable() {
+		machine.Migration = &vmrunner.MachineMigration{}
 	}
 	st, err := runner.Ensure(ctx, name, machine)
 	if err != nil {
 		return st, false, err
 	}
 
-	if st.Port > 0 {
+	if publish && st.Port > 0 {
 		if err := r.applyVMAgentService(ctx, name, owner, st.Port, ownerRef); err != nil {
 			return st, false, fmt.Errorf("applying agent service: %w", err)
 		}
 	}
-	if running && machineComingUp(st) {
+	if running && !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady) {
 		r.watchMachine(runner, name, st.Version)
 	} else {
 		r.unwatchMachine(name)
 	}
 	return st, true, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster reaches the machine's gateway through a NodePort, which the local cluster's VM forwards to that host's loopback. Kubernetes picks the port, so it is read back from the Service rather than chosen here, and a gateway that is already a NodePort keeps the port it has.
+func (r *AgentReconciler) exposeGatewayOnHost(ctx context.Context, agentName string) (int, error) {
+	cli := r.client.CoreV1().Services(r.config.Namespace)
+	svc, err := cli.Get(ctx, GatewayName(agentName), metav1.GetOptions{})
+	if err != nil {
+		return 0, err
+	}
+	if svc.Spec.Type != corev1.ServiceTypeNodePort {
+		svc.Spec.Type = corev1.ServiceTypeNodePort
+		if svc, err = cli.Update(ctx, svc, metav1.UpdateOptions{}); err != nil {
+			return 0, err
+		}
+	}
+	return int(svc.Spec.Ports[0].NodePort), nil
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a vm agent has no pod, so its Service selects the owner's runner and maps the agent port onto the one that machine publishes there — which needs a ClusterIP, since a headless Service hands back the pod address without remapping the port. Selecting works only because the runner shares this namespace; a selector never reaches across one. It is applied rather than created once, because the published port moves when a machine is recreated.
@@ -141,6 +195,12 @@ func (r *AgentReconciler) applyVMAgentService(ctx context.Context, name, owner s
 	desired.Spec.ClusterIP = ""
 	desired.Spec.Selector = vmRunnerSelector(owner)
 	desired.Spec.Ports[0].TargetPort = intstr.FromInt(port)
+	if r.config.VM.Runner.HostAddress != "" {
+		desired.Spec.Selector = nil
+		if err := r.applyHostRunnerEndpoints(ctx, desired, port); err != nil {
+			return err
+		}
+	}
 
 	cli := r.client.CoreV1().Services(r.config.Namespace)
 	existing, err := cli.Get(ctx, name, metav1.GetOptions{})
@@ -157,8 +217,50 @@ func (r *AgentReconciler) applyVMAgentService(ctx context.Context, name, owner s
 	return err
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster is no pod a selector can find, so the agent's Service has no selector and this slice names the runner's address and the machine's published port instead. The slice is the Service's own: it carries the Service's name label, which is how kube-proxy joins the two, and a managed-by value of its own, so the EndpointSlice controller leaves it alone.
+func (r *AgentReconciler) applyHostRunnerEndpoints(ctx context.Context, svc *corev1.Service, port int) error {
+	desired := &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            svc.Name,
+			Namespace:       svc.Namespace,
+			OwnerReferences: svc.OwnerReferences,
+			Labels: map[string]string{
+				discoveryv1.LabelServiceName: svc.Name,
+				discoveryv1.LabelManagedBy:   "platform-controller",
+			},
+		},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Endpoints:   []discoveryv1.Endpoint{{Addresses: []string{r.config.VM.Runner.HostAddress}}},
+		Ports: []discoveryv1.EndpointPort{{
+			Name:     &svc.Spec.Ports[0].Name,
+			Port:     new(int32(port)),
+			Protocol: new(corev1.ProtocolTCP),
+		}},
+	}
+	cli := r.client.DiscoveryV1().EndpointSlices(svc.Namespace)
+	existing, err := cli.Get(ctx, svc.Name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	existing.Endpoints, existing.Ports = desired.Endpoints, desired.Ports
+	_, err = cli.Update(ctx, existing, metav1.UpdateOptions{})
+	return err
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a runner that cannot be reached, and whose owner has no Agent of any kind, is kept before the sweep removes it anyway. Only an agent's reconcile creates a runner, so such a runner serves nobody; the grace covers a runner that is merely restarting while its owner's Agents are being recreated.
+const orphanRunnerGrace = 30 * time.Minute
+
 func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 	if !r.config.VM.Enabled {
+		return
+	}
+	if r.config.VM.Runner.HostAddress != "" {
+		r.dropPodRunners(ctx)
+		r.sweepHostRunner(ctx)
 		return
 	}
 	runners, err := r.knownRunners(ctx)
@@ -167,85 +269,212 @@ func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 		return
 	}
 	for _, runner := range runners {
-		ids, err := runner.client.List(ctx)
-		if err != nil {
-			slog.Warn("orphan machine GC: listing machines failed", "owner", runner.owner, "error", err)
-			continue
-		}
-		for _, id := range ids {
-			agent, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, id, metav1.GetOptions{})
-			if err == nil {
-				if agent.GetLabels()[envoyOwnerLabel] == runner.owner {
-					continue
-				}
-			} else if !k8serrors.IsNotFound(err) {
-				slog.Warn("orphan machine GC: API lookup failed", "agent", id, "error", err)
-				continue
-			}
-			if err := runner.client.Delete(ctx, id); err != nil {
-				slog.Warn("orphan machine GC: delete failed", "machine", id, "error", err)
-				continue
-			}
-			slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id)
-		}
-		agents, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: envoyOwnerLabel + "=" + runner.owner,
-		})
-		if err != nil {
-			slog.Warn("orphan machine GC: listing the owner's agents failed", "owner", runner.owner, "error", err)
-			continue
-		}
-		if anyVMAgent(agents.Items) {
-			continue
-		}
-		left, err := runner.client.List(ctx)
-		if err != nil || len(left) > 0 {
-			slog.Info("orphan machine GC: runner kept, it is not empty", "owner", runner.owner, "machines", len(left), "error", err)
-			continue
-		}
-		r.deleteRunner(ctx, runner.owner)
+		r.sweepRunner(ctx, runner)
 	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the whole pass over one runner holds the owner's lock, which an agent's reconcile also holds while it builds the runner and ensures its machine. What the sweep reads — the owner's Agents in a fresh List and in the informer cache, and the runner's own machine list — therefore cannot change under it through this controller, and a runner is removed only when all of them still say it serves nobody. A machine is collected when no Agent of this owner has its name: an Agent of the same name that belongs to someone else says nothing about this runner.
+func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
+	owner := runner.owner
+	lock := r.ownerLock(owner)
+	lock.Lock()
+	defer lock.Unlock()
+
+	agents, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: envoyOwnerLabel + "=" + owner,
+	})
+	if err != nil {
+		slog.Warn("orphan machine GC: listing the owner's agents failed", "owner", owner, "error", err)
+		return
+	}
+	var ids []string
+	if runner.client != nil {
+		ids, err = runner.client.List(ctx)
+	}
+	if runner.client == nil || err != nil {
+		r.collectUnreachableRunner(ctx, owner, len(agents.Items), err)
+		return
+	}
+	r.ownerless.Delete(owner)
+	claimed := map[string]bool{}
+	for i := range agents.Items {
+		claimed[agents.Items[i].GetName()] = true
+	}
+	for _, id := range ids {
+		if claimed[id] {
+			continue
+		}
+		if err := runner.client.Delete(ctx, id); err != nil {
+			slog.Warn("orphan machine GC: delete failed", "machine", id, "owner", owner, "error", err)
+			continue
+		}
+		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id, "owner", owner)
+	}
+	if anyVMAgent(agents.Items) || r.cachedOwnerAgents(ctx, owner, true) > 0 {
+		return
+	}
+	left, err := runner.client.List(ctx)
+	if err != nil || len(left) > 0 {
+		slog.Info("orphan machine GC: runner kept, it is not empty", "owner", owner, "machines", len(left), "error", err)
+		return
+	}
+	r.deleteRunner(ctx, owner)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an install switched from runner pods to the host runner keeps the per-owner runner Deployments it made before, and nothing else looks at them in host mode, so their pods stay Pending for want of a KVM device. Only the Deployment goes: its claim holds the disks of the machines it ran, the one copy of those homes, and switching back to runner pods remakes the Deployment on that same claim. A runner is recognized by its owner label and the per-owner name, never by the label alone, and is deleted only as it was listed.
+func (r *AgentReconciler) dropPodRunners(ctx context.Context) {
+	deps := r.client.AppsV1().Deployments(r.config.Namespace)
+	list, err := deps.List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + vmRunnerComponent})
+	if err != nil {
+		slog.Warn("vm runner: listing runner pods left from before the host runner failed", "error", err)
+		return
+	}
+	for i := range list.Items {
+		dep := &list.Items[i]
+		owner := dep.Labels[envoyOwnerLabel]
+		if owner == "" || dep.Name != fmt.Sprintf("%s-vm-runner-%s", r.config.ReleaseName, runnerSuffix(owner)) {
+			continue
+		}
+		uid, rv := dep.UID, dep.ResourceVersion
+		if err := deps.Delete(ctx, dep.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &rv}}); err != nil && !k8serrors.IsNotFound(err) {
+			slog.Warn("vm runner: removing a runner pod left from before the host runner failed", "owner", owner, "error", err)
+			continue
+		}
+		slog.Info("vm runner: removed a runner pod left from before the host runner; its claim, holding its machines' disks, is kept", "owner", owner, "claim", dep.Name)
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster serves every owner and is never removed, so the sweep only collects machines no Agent names. The machines are listed before the Agents: an Agent exists before its machine does, so every machine in the first list has its Agent in the second, and one created in between is simply not looked at yet.
+func (r *AgentReconciler) sweepHostRunner(ctx context.Context) {
+	runner, err := r.runnerFor(ctx, "")
+	if err != nil {
+		slog.Warn("orphan machine GC: the host VM runner cannot be reached", "error", err)
+		return
+	}
+	ids, err := runner.List(ctx)
+	if err != nil {
+		slog.Warn("orphan machine GC: listing the host VM runner's machines failed", "error", err)
+		return
+	}
+	agents, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		slog.Warn("orphan machine GC: listing agents failed", "error", err)
+		return
+	}
+	claimed := map[string]bool{}
+	for i := range agents.Items {
+		claimed[agents.Items[i].GetName()] = true
+	}
+	for _, id := range ids {
+		if claimed[id] {
+			continue
+		}
+		if err := runner.Delete(ctx, id); err != nil {
+			slog.Warn("orphan machine GC: delete failed", "machine", id, "error", err)
+			continue
+		}
+		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id)
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a runner the sweep cannot ask what it holds is kept while its owner has any Agent at all. One whose owner has none is kept for the grace, then removed with whatever its disk still holds — it is reported at error level, because that is the one path where the platform deletes a claim it could not see into.
+func (r *AgentReconciler) collectUnreachableRunner(ctx context.Context, owner string, listed int, cause error) {
+	if listed > 0 || r.cachedOwnerAgents(ctx, owner, false) > 0 {
+		r.ownerless.Delete(owner)
+		slog.Warn("orphan machine GC: the owner's VM runner cannot be reached, it is kept", "owner", owner, "error", cause)
+		return
+	}
+	first, _ := r.ownerless.LoadOrStore(owner, time.Now())
+	since := time.Since(first.(time.Time))
+	if since < orphanRunnerGrace {
+		slog.Warn("orphan machine GC: a VM runner that cannot be reached serves no agent; it is removed if that lasts", "owner", owner, "for", since.Round(time.Second), "grace", orphanRunnerGrace, "error", cause)
+		return
+	}
+	slog.Error("orphan machine GC: removing a VM runner that cannot be reached and whose owner has no agents; its claim is deleted unseen", "owner", owner, "for", since.Round(time.Second), "error", cause)
+	r.deleteRunner(ctx, owner)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the owner's Agents as the informer sees them, counted as a second opinion beside a fresh List: either one knowing of an Agent keeps the runner.
+func (r *AgentReconciler) cachedOwnerAgents(ctx context.Context, owner string, vmOnly bool) int {
+	items, err := r.ownerAgents(ctx, owner)
+	if err != nil {
+		return 1
+	}
+	n := 0
+	for _, obj := range items {
+		u, ok := obj.(*unstructured.Unstructured)
+		if !ok {
+			n++
+			continue
+		}
+		if !vmOnly || anyVMAgent([]unstructured.Unstructured{*u}) {
+			n++
+		}
+	}
+	return n
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an agent's machine lives on its owner's runner, so a delete that knows the owner goes to that runner alone, and an owner with no runner has no machine to delete. The runner's Deployment is read first, so an owner who never had a runner is not reported as an unreachable one. A delete with no owner, from an Agent whose labels the informer never saw, is offered to every runner, each of which ignores a machine it does not have. Anything a targeted delete misses, such as a machine left on a runner the Agent's owner label no longer names, is collected by the orphan sweep.
-func (r *AgentReconciler) deleteMachine(ctx context.Context, name, owner string) {
+func (r *AgentReconciler) deleteMachine(ctx context.Context, name, owner string) error {
 	r.unwatchMachine(name)
 	if !r.config.VM.Enabled {
-		return
+		return nil
 	}
-	if owner == "" {
-		r.deleteMachineEverywhere(ctx, name)
-		return
+	if owner == "" && r.config.VM.Runner.HostAddress == "" {
+		return r.deleteMachineEverywhere(ctx, name)
 	}
-	_, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
-		return
-	}
-	if err != nil {
-		slog.Warn("deleting machine: reading the owner's VM runner failed", "agent", name, "owner", owner, "error", err)
-		return
+	if r.config.VM.Runner.HostAddress == "" {
+		_, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("reading the owner's VM runner: %w", err)
+		}
 	}
 	client, err := r.runnerFor(ctx, owner)
 	if err != nil {
-		slog.Warn("deleting machine: reaching the owner's VM runner failed", "agent", name, "owner", owner, "error", err)
-		return
+		return fmt.Errorf("reaching the owner's VM runner: %w", err)
 	}
 	if err := client.Delete(ctx, name); err != nil {
-		slog.Warn("deleting machine", "agent", name, "owner", owner, "error", err)
+		return fmt.Errorf("deleting the machine: %w", err)
 	}
+	return nil
 }
 
-func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name string) {
+func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name string) error {
 	runners, err := r.knownRunners(ctx)
 	if err != nil {
-		slog.Warn("deleting machine: listing VM runners failed", "agent", name, "error", err)
-		return
+		return fmt.Errorf("listing VM runners: %w", err)
 	}
+	var errs []error
 	for _, runner := range runners {
+		if runner.client == nil {
+			continue
+		}
 		if err := runner.client.Delete(ctx, name); err != nil {
-			slog.Warn("deleting machine", "agent", name, "owner", runner.owner, "error", err)
+			errs = append(errs, fmt.Errorf("owner %s: %w", runner.owner, err))
 		}
 	}
+	return errors.Join(errs...)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the vm agents of one owner, from the informer cache, for requeueing them when their runner's Deployment changes — its pod becoming ready is what they are waiting for, and nothing about the Agents themselves changes then.
+func (r *AgentReconciler) OwnerVMAgents(owner string) []string {
+	if r.agentCache == nil || owner == "" {
+		return nil
+	}
+	items, err := r.agentCache.ByNamespace(r.config.Namespace).List(labels.SelectorFromSet(labels.Set{envoyOwnerLabel: owner}))
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, obj := range items {
+		if u, ok := obj.(*unstructured.Unstructured); ok && anyVMAgent([]unstructured.Unstructured{*u}) {
+			names = append(names, u.GetName())
+		}
+	}
+	return names
 }
 
 func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) error {
@@ -267,7 +496,11 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 	if err != nil {
 		return err
 	}
-	if _, err := client.Ensure(ctx, name, vmrunner.MachineSpec{Running: false}); err != nil {
+	halt := vmrunner.MachineSpec{Running: false}
+	if runtimeMigrationOfObject(agent).seedable() {
+		halt.Migration = &vmrunner.MachineMigration{}
+	}
+	if _, err := client.Ensure(ctx, name, halt); err != nil {
 		return fmt.Errorf("stopping machine for %s: %w", name, err)
 	}
 	return nil
@@ -280,8 +513,10 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	}
 	if r.requeue != nil {
 		poll := vmHealthPoll
-		if !runnerReached {
-			poll = vmReadinessPoll
+		if runnerReached {
+			r.notReadyPolls.Delete(agent.Name)
+		} else {
+			poll = r.nextNotReadyPoll(agent.Name)
 		}
 		r.requeue(agent.Name, poll)
 	}
@@ -293,13 +528,86 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	if st.Restarts > 0 {
 		restartReason = "GuestStoppedAnswering"
 	}
-	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason)
+	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason,
+		func(s *apiv1.AgentStatus) { nestingCondition(s, agent, st, r.config.VM.Runner.NestedVirtualization) })
+}
+
+func wantsNesting(agent *apiv1.Agent) bool {
+	return agent.Spec.IsVM() && agent.Spec.Backend.VM != nil && agent.Spec.Backend.VM.NestedVirtualization
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: tells an owner who asked for nesting whether the agent's machine got it, since the runner boots it without nesting rather than refusing it: the install may not let its runners nest, and a node whose KVM does not allow it grants nothing. An Agent that does not ask carries no condition, and one that stops asking loses it.
+func nestingCondition(s *apiv1.AgentStatus, agent *apiv1.Agent, st vmrunner.MachineStatus, installAllows bool) {
+	if !wantsNesting(agent) {
+		apimeta.RemoveStatusCondition(&s.Conditions, apiv1.ConditionNestedVirtualization)
+		return
+	}
+	reason, msg := "NodeCannotNest", "the machine boots without nesting: the node's KVM does not allow it (kvm_intel or kvm_amd nested=0)"
+	switch {
+	case !installAllows:
+		reason, msg = "NotAllowedByInstall", "this install does not let machines nest: virtualization.runner.nestedVirtualization is off"
+	case st.Nested:
+		msg = ""
+	case st.State == "" || st.State == vmrunner.StateAbsent:
+		reason, msg = "MachinePending", "the machine has not been created yet"
+	}
+	setStatusCondition(s, apiv1.ConditionNestedVirtualization, st.Nested, "Enabled", reason, msg, agent.Generation)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an agent whose runner is not ready yet is looked at again after 3s, then twice as long each time up to a minute. A runner that never comes up — unschedulable, a pull that fails — would otherwise cost a full reconcile of every one of its owner's agents every three seconds; the runner Deployment's own changes requeue them the moment it does become ready.
+func (r *AgentReconciler) nextNotReadyPoll(name string) time.Duration {
+	n := 0
+	if v, ok := r.notReadyPolls.Load(name); ok {
+		n = v.(int)
+	}
+	poll := vmReadinessPoll << n
+	if poll >= vmNotReadyPollMax {
+		return vmNotReadyPollMax
+	}
+	r.notReadyPolls.Store(name, n+1)
+	return poll
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent cannot start until cert-manager has issued its gateway's leaf and its owner's runner certificate, and a Certificate that is not issuing says why only on itself. The wait is put on the Agent's readiness, with cert-manager's account when it gives one, so the owner sees what the agent waits for instead of a status that never moves.
+func (r *AgentReconciler) publishCertificateWait(ctx context.Context, agent *apiv1.Agent, pending error) {
+	cert, what := EnvoyLeafSecretName(agent.Name), "the gateway's TLS certificate"
+	if errors.Is(pending, errRunnerTLSPending) {
+		cert, what = r.runnerTLSName(agent.Labels[envoyOwnerLabel]), "the owner's VM runner's TLS certificate"
+	}
+	msg := "waiting for cert-manager to issue " + what
+	if detail := r.certificateNotReady(ctx, cert); detail != "" {
+		msg += ": " + detail
+	}
+	gen := agent.Generation
+	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", vmrunner.ReasonNotReady, msg, gen)
+		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", "PodsNotReady", "", gen)
+	}); err != nil {
+		slog.Warn("writing the certificate wait onto the agent", "agent", agent.Name, "error", err)
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a machine that could not be ensured is not known to be ready, so the failed reconcile takes Ready and AgentPodReady down with it rather than leaving the last success standing. A runner that could not be reached is described without its address; the dial error goes to the log.
+func (r *AgentReconciler) setMachineError(ctx context.Context, agent *apiv1.Agent, cause error) error {
+	var unreachable *vmrunner.UnreachableError
+	if errors.As(cause, &unreachable) {
+		slog.Warn("vm machine: the owner's VM runner could not be reached", "agent", agent.Name, "owner", agent.Labels[envoyOwnerLabel], "error", unreachable.Unwrap())
+	}
+	msg := fmt.Sprintf("reconciling vm machine: %v", cause)
+	gen := agent.Generation
+	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", vmrunner.ReasonNotReady, msg, gen)
+		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", "PodsNotReady", "", gen)
+	}); err != nil {
+		slog.Warn("writing agent machine-error status", "agent", agent.Name, "error", err)
+	}
+	return r.setError(ctx, agent.Name, msg)
 }
 
 func anyVMAgent(items []unstructured.Unstructured) bool {
 	for i := range items {
 		backend, _, _ := unstructured.NestedString(items[i].Object, "spec", "backend", "type")
-		if backend == "vm" {
+		if backend == "vm" || items[i].GetAnnotations()[annRuntimeMigration] != "" {
 			return true
 		}
 	}
@@ -335,4 +643,12 @@ func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaul
 		}
 	}
 	return max(int((quantity.Value()+(1<<30)-1)>>30), 1), nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a machine trusts, as the one ca.crt its share carries: the gateway's MITM CA, then the extra CAs the install names. The entrypoint trusts every certificate in it, and the runtime wrapper hands all of them to the containers the machine runs.
+func machineTrustedCAs(gatewayCA string, cfg *config.Config) string {
+	if cfg.ExtraTrustedCAs == "" {
+		return gatewayCA
+	}
+	return strings.TrimRight(gatewayCA, "\n") + "\n" + cfg.ExtraTrustedCAs
 }

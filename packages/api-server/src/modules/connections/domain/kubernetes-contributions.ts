@@ -1,13 +1,11 @@
 import { X509Certificate } from "node:crypto";
-import type { Contribution } from "api-server-api";
+import { type Contribution, DEFAULT_ENV_PLACEHOLDER } from "api-server-api";
 
 export const KUBERNETES_TEMPLATE_ID = "kubernetes";
 
 const KUBECONFIG_DIR = "$HOME/.kube/connections";
 
 const PLATFORM_CA_PATH = "/etc/platform/ca/ca.crt";
-
-const KUBECONFIG_PLACEHOLDER_TOKEN = "injected-by-gateway";
 
 export interface KubernetesTarget {
   name: string;
@@ -78,7 +76,7 @@ export function buildKubernetesContributions(
             },
           },
         ],
-        users: [{ name: label, user: { token: KUBECONFIG_PLACEHOLDER_TOKEN } }],
+        users: [{ name: label, user: { token: DEFAULT_ENV_PLACEHOLDER } }],
         contexts: [
           {
             name: label,
@@ -110,6 +108,6 @@ export function decodeCaData(caData: string): string {
   return pem;
 }
 
-function isIpLiteral(host: string): boolean {
+export function isIpLiteral(host: string): boolean {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":");
 }

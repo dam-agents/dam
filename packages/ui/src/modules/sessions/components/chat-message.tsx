@@ -7,19 +7,21 @@ import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
 import { LazyRobotHead } from "../../agents/components/avatar/lazy-robot-head.js";
 import type { MessageTime } from "../lib/thread-items.js";
-import { BusyIndicator } from "./busy-indicator.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
 import { SendErrorCard } from "./send-error-card.js";
 import { type OnRetry, UndeliveredNotice } from "./undelivered-notice.js";
+import { WorkingDots } from "./working-dots.js";
 
-export type LoadOlderOutcome = "paged" | "reloaded" | "noop";
+type LoadOlderOutcome = "paged" | "reloaded" | "noop";
 
 type Props = BaseProps & MessageTime;
 
 interface BaseProps {
   message: Message;
   avatarAgentName?: string;
+  userLabel?: string;
+  readOnly?: boolean;
   isLast: boolean;
   hasPendingPermission: boolean;
   onRetry: OnRetry;
@@ -83,6 +85,8 @@ function LoadOlderMarker({
 export const ChatMessage = memo(function ChatMessage({
   message,
   avatarAgentName,
+  userLabel = "You",
+  readOnly = false,
   isLast,
   timeLabel,
   timeTitle,
@@ -134,7 +138,7 @@ export const ChatMessage = memo(function ChatMessage({
           <LazyRobotHead name={avatarAgentName} size={20} />
         )}
         <span className="text-[11px] font-medium text-muted-foreground">
-          {isAssistant ? (avatarAgentName ?? "Agent") : "You"}
+          {isAssistant ? (avatarAgentName ?? "Agent") : userLabel}
         </span>
         {timeLabel !== undefined && (
           <Tooltip side="top" content={timeTitle}>
@@ -160,7 +164,7 @@ export const ChatMessage = memo(function ChatMessage({
               role={role}
               streaming={streaming}
               isLast={i === parts.length - 1}
-              onFileClick={onFileClick}
+              onFileClick={readOnly ? undefined : onFileClick}
             />
           ))}
           {streaming && queued && parts.length === 0 && (
@@ -171,9 +175,12 @@ export const ChatMessage = memo(function ChatMessage({
               Waiting for previous prompt…
             </span>
           )}
-          {isAssistant && isLast && <PermissionStatusLine />}
+          {isAssistant && isLast && !readOnly && <PermissionStatusLine />}
           {isAssistant && streaming && !queued && !hasPendingPermission && (
-            <BusyIndicator className="py-1" />
+            <span role="status" className="inline-flex items-center py-1">
+              <WorkingDots size="md" className="text-accent" />
+              <span className="sr-only">Working</span>
+            </span>
           )}
           {undelivered && (
             <UndeliveredNotice
@@ -188,6 +195,7 @@ export const ChatMessage = memo(function ChatMessage({
         <SendErrorCard
           rawError={error.message}
           interrupted={hasAgentContent(message)}
+          quiet={!isLast}
         />
       )}
     </div>

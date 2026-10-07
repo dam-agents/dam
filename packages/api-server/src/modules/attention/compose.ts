@@ -5,10 +5,7 @@ import type { Db } from "db";
 import type { InfraAgent } from "../agents/infrastructure/agent-mappers.js";
 
 import { ATTENTION_RETENTION_DAYS } from "./domain/types.js";
-import {
-  createAttentionRepository,
-  type AttentionRepository,
-} from "./infrastructure/attention-repository.js";
+import { createAttentionRepository } from "./infrastructure/attention-repository.js";
 import { createPodSessionClient } from "./infrastructure/pod-session-watch.js";
 import { createAttentionService } from "./services/attention-service.js";
 import {
@@ -29,12 +26,10 @@ export function composeAttentionService(deps: {
 }
 
 export function composeAttentionRetention(db: Db): {
-  repo: AttentionRepository;
   retentionTick: () => Promise<void>;
 } {
   const repo = createAttentionRepository(db);
   return {
-    repo,
     retentionTick: async () => {
       const n = await repo.deleteOlderThan(ATTENTION_RETENTION_DAYS);
       if (n > 0) {

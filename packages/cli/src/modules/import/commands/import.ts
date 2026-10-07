@@ -2,11 +2,8 @@ import { openAsBlob } from "node:fs";
 import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { createAgentResolver, type AgentService } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import type { AgentService } from "../../agent/index.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { formatAuthRejection } from "../../shared/auth-message.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { confirm } from "../../shared/prompt.js";
@@ -17,7 +14,6 @@ import {
   resolveArgs,
 } from "../infrastructure/bundle-builder.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -30,7 +26,6 @@ export interface ImportCommandDeps {
   tokenProvider: TokenProvider;
   createAgentService: (host: string) => AgentService;
   bundleBuilder: BundleBuilder;
-  serverEnvVar: string;
 }
 
 interface ImportSuccess {
@@ -71,15 +66,7 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
       paths: string[],
       opts: { server?: string; yes?: boolean; json?: boolean },
     ) => {
-      const flag = opts.server ? { server: opts.server } : undefined;
-
-      const host = await resolveActiveHost(deps, {
-        flag,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
 
       const resolved = await resolveArgs(paths);
       if (!resolved.ok) {
@@ -89,13 +76,7 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
       const args = resolved.value;
 
       const svc = deps.createAgentService(host);
-      const resolver = createAgentResolver({ agentService: svc });
-      const target = await resolver.resolve(ref);
-      if (!target.ok) {
-        printResolveError(target.error, host);
-        process.exit(exitCodeForResolveError(target.error));
-      }
-      const agent = target.value;
+      const agent = await resolveAgentOrExit(svc, ref, host);
 
       if (!opts.yes) {
         if (!process.stdin.isTTY) {

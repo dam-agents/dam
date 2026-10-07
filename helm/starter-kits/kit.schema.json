@@ -75,6 +75,56 @@
       "type": "string",
       "const": "vm"
     },
+    "egressPreset": {
+      "type": "string",
+      "enum": [
+        "none",
+        "trusted",
+        "all"
+      ]
+    },
+    "egressRules": {
+      "default": [],
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "pattern": "^(?:\\*|(?:\\*\\.)?[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*)$"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "method": {
+            "default": "*",
+            "type": "string",
+            "minLength": 1
+          },
+          "pathPattern": {
+            "default": "*",
+            "type": "string",
+            "minLength": 1
+          },
+          "verdict": {
+            "default": "allow",
+            "type": "string",
+            "enum": [
+              "allow",
+              "deny"
+            ]
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
     "resources": {
       "type": "object",
       "properties": {
@@ -411,6 +461,9 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
+    },
+    "requireConnectionAddress": {
+      "type": "boolean"
     }
   },
   "required": [

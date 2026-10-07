@@ -1,16 +1,14 @@
 import { isCancel, text } from "@clack/prompts";
 import { Command } from "commander";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+  printServiceError,
+  exitOnServiceError,
+} from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
   EXIT_AGENT_NOT_REACHABLE,
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -76,31 +74,19 @@ export function buildPublishCommand(deps: {
         }
         const name = opts.name;
 
-        const host = await resolveActiveHost(deps, {
-          flag: opts.server ? { server: opts.server } : undefined,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveActiveHost(deps, opts.server);
 
-        const resolver = createAgentResolver({
-          agentService: deps.createAgentService(host),
-        });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
-        const agentId = resolved.value.id;
+        const agent = await resolveAgentOrExit(
+          deps.createAgentService(host),
+          ref,
+          host,
+        );
+        const agentId = agent.id;
 
         const svc = deps.createSkillsService(host);
 
         const sourcesRes = await svc.listSources(agentId);
-        if (!sourcesRes.ok) {
-          printServiceError(sourcesRes.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(sourcesRes, host);
         const source = resolveSourceRef(sourcesRes.value, opts.source);
         if (!source) {
           process.stderr.write(

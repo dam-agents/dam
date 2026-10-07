@@ -25,11 +25,12 @@ const (
 	resizeUnsupported
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: what an owner's vm agents ask of their runner, as the controller intends it rather than as the runner last saw it. Memory counts only the machines that should be running, because that is what the runner admits against its memory limit; disk counts every machine, because a stopped machine keeps its disk on the claim.
+// UNIT_BOUNDARY_DESCRIPTION: what an owner's vm agents ask of their runner, as the controller intends it rather than as the runner last saw it. Memory counts only the machines that should be running, because that is what the runner admits against its memory limit; disk counts every machine, because a stopped machine keeps its disk on the claim, and every runtime migration's seed until its guest has booted from it.
 type runnerDemand struct {
 	memoryMiB int
 	diskGiB   int
 	machines  int
+	seedBytes int64
 }
 
 func (r *AgentReconciler) machineMemoryMiB(spec *apiv1.AgentSpec) int {
@@ -37,9 +38,8 @@ func (r *AgentReconciler) machineMemoryMiB(spec *apiv1.AgentSpec) int {
 	return max(int(mem.Value()>>20), 1)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the controller knows an agent should run before its machine does, so demand is read from the Agents rather than from the runner — a request raised from the runner's own count would always arrive one machine late, after the runner had admitted it. The agent being reconciled is counted by the decision just made for it; its peers by their gateway, which is scaled up exactly when their machine should run. An agent whose disk size cannot be read is left out, because its own reconcile already refuses it.
+// UNIT_BOUNDARY_DESCRIPTION: the controller knows an agent should run before its machine does, so demand is read from the Agents rather than from the runner — a request raised from the runner's own count would always arrive one machine late, after the runner had admitted it. The agent being reconciled is counted by the decision just made for it; its peers by their gateway, which is scaled up exactly when their machine should run. Only the reconcile that made that decision records it for the peers' later reads: a caller that merely sizes, like the memory pass, passes its own read and leaves the record alone, so it cannot put back a decision a reconcile has since changed. An agent whose disk size cannot be read is left out, because its own reconcile already refuses it.
 func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, self *apiv1.Agent, selfRunning bool) (runnerDemand, error) {
-	r.vmRunning.Store(self.Name, selfRunning)
 	items, err := r.ownerAgents(ctx, owner)
 	if err != nil {
 		return runnerDemand{}, err
@@ -50,8 +50,8 @@ func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, s
 		if err != nil {
 			return runnerDemand{}, fmt.Errorf("decoding an agent of owner %s: %w", owner, err)
 		}
-		if a.Name != self.Name && a.Spec.IsVM() {
-			agents = append(agents, a)
+		if vm := vmSideOf(a); a.Name != self.Name && vm != nil {
+			agents = append(agents, vm)
 		}
 	}
 	var d runnerDemand
@@ -62,12 +62,15 @@ func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, s
 		}
 		d.diskGiB += disk
 		d.machines++
-		running, err := r.peerShouldRun(ctx, a.Name)
-		if err != nil {
-			return runnerDemand{}, err
+		d.seedBytes += r.runtimeMigrationSeedBytes(ctx, a)
+		running := selfRunning
+		if a.Name != self.Name {
+			if running, err = r.peerShouldRun(ctx, a.Name); err != nil {
+				return runnerDemand{}, err
+			}
 		}
 		if running {
-			d.memoryMiB += r.machineMemoryMiB(&a.Spec)
+			d.memoryMiB += r.accountedMemoryMiB(a.Name, &a.Spec)
 		}
 	}
 	return d, nil
@@ -102,13 +105,13 @@ func (r *AgentReconciler) peerShouldRun(ctx context.Context, name string) (bool,
 	return r.agentDesiredUp(ctx, name, true)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the claim holds every machine disk of the owner, the headroom each machine writes beside its disk, and the image cache when the install left the cache on the claim. `runner.storage` is the ceiling, not the size: a claim sized for a fleet the owner does not have reserves storage nobody uses, and a single 10Gi agent would otherwise cost a 100Gi volume.
-func (r *AgentReconciler) runnerClaimSize(demand runnerDemand) (resource.Quantity, resource.Quantity, error) {
+// UNIT_BOUNDARY_DESCRIPTION: the claim holds every machine disk of the owner, the headroom each machine writes beside its disk, the seed of each migration still in flight, and the image cache when the install left the cache on the claim. `runner.storage` is the ceiling, not the size: a claim sized for a fleet the owner does not have reserves storage nobody uses, and a single 10Gi agent would otherwise cost a 100Gi volume.
+func (r *AgentReconciler) runnerClaimSize(owner string, demand runnerDemand) (resource.Quantity, resource.Quantity, error) {
 	ceiling, err := resource.ParseQuantity(r.config.VM.Runner.Storage)
 	if err != nil {
 		return resource.Quantity{}, resource.Quantity{}, fmt.Errorf("vm runner storage %q is not a quantity: %w", r.config.VM.Runner.Storage, err)
 	}
-	need := int64(demand.diskGiB+demand.machines*runnerClaimHeadroomGiB) << 30
+	need := int64(demand.diskGiB+demand.machines*runnerClaimHeadroomGiB)<<30 + demand.seedBytes
 	if spec := r.config.VM.Runner; runnerOwnsImageCache(spec) {
 		budget, err := imageBudgetBytes(spec)
 		if err != nil {
@@ -119,9 +122,18 @@ func (r *AgentReconciler) runnerClaimSize(demand runnerDemand) (resource.Quantit
 	gib := max((need+(1<<30)-1)>>30, 1)
 	size := *resource.NewQuantity(gib<<30, resource.BinarySI)
 	if size.Cmp(ceiling) > 0 {
+		r.noteClaimCapped(owner, size, ceiling)
 		return ceiling, ceiling, nil
 	}
 	return size, ceiling, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose disks and cache outgrow `runner.storage` gets a claim at the ceiling, and the machines on it can fill it. That is the install's choice, not an error, so it is said once per owner and ceiling rather than on every reconcile of every one of their agents.
+func (r *AgentReconciler) noteClaimCapped(owner string, need, ceiling resource.Quantity) {
+	if _, seen := r.claimCapNotices.LoadOrStore(owner+"/"+ceiling.String(), struct{}{}); seen {
+		return
+	}
+	slog.Warn("vm runner: the owner's machines need more than runner.storage, so the claim is capped there and can fill up", "owner", owner, "need", need.String(), "ceiling", ceiling.String())
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a claim sized to today's demand is only safe where it can grow with tomorrow's, so a claim on a class that does not allow expansion is created at the ceiling, as every claim was before. A class the controller cannot read counts as one that does not expand — the cost of guessing wrong that way is unused storage, the cost the other way is an owner whose next agent does not fit.
@@ -150,7 +162,7 @@ func (r *AgentReconciler) runnerClassExpands(ctx context.Context) bool {
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills the runner with every machine of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.
 func runnerMemoryRequest(demandMiB, reserveMiB int, floor, limit resource.Quantity) resource.Quantity {
-	want := *resource.NewQuantity(int64(demandMiB+reserveMiB)<<20, resource.BinarySI)
+	want := *resource.NewQuantity(int64(roundedMiB(demandMiB+reserveMiB))<<20, resource.BinarySI)
 	if want.Cmp(floor) < 0 {
 		want = floor
 	}
@@ -162,7 +174,7 @@ func runnerMemoryRequest(demandMiB, reserveMiB int, floor, limit resource.Quanti
 
 // UNIT_BOUNDARY_DESCRIPTION: the request is changed on the running pod through its resize subresource and never on the Deployment, whose Recreate strategy would stop every machine to apply it. A replacement pod therefore starts at the install's request, and the next reconcile raises it again. A cluster without in-place resize, or one that refuses the controller the subresource, keeps the old behaviour — machines admitted against a limit the scheduler does not see — and says so once.
 func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, demandMiB int) {
-	if !r.podResizeAvailable() {
+	if !r.podResizeAvailable(ctx) {
 		return
 	}
 	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
@@ -235,7 +247,7 @@ func (r *AgentReconciler) reportResizePending(owner string, pod *corev1.Pod, wan
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: in-place resize arrived as the pods/resize subresource, so the API server's own discovery is the one answer to whether this cluster has it. The answer is kept for the process, because the API server does not gain or lose a subresource while the controller runs; a discovery call that fails is asked again next time rather than taken as a no.
-func (r *AgentReconciler) podResizeAvailable() bool {
+func (r *AgentReconciler) podResizeAvailable(ctx context.Context) bool {
 	switch r.podResize.Load() {
 	case resizeSupported:
 		return true
@@ -243,7 +255,7 @@ func (r *AgentReconciler) podResizeAvailable() bool {
 		return false
 	case resizeSupportUnknown:
 	}
-	list, err := r.client.Discovery().ServerResourcesForGroupVersion("v1")
+	list, err := r.client.Discovery().ServerResourcesForGroupVersionWithContext(ctx, "v1")
 	if err != nil {
 		slog.Warn("vm runner: cannot tell whether this cluster resizes pods in place", "error", err)
 		return false

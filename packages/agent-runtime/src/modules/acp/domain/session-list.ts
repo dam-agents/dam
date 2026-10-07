@@ -1,10 +1,14 @@
 import {
   podSessionModeSchema,
   podSessionTypeSchema,
+  sessionMatchesQuery,
   type PodSession,
   type PodSessionMode,
   type PodSessionType,
   type SessionDirectoryEntry,
+  type SessionListCursor,
+  type SessionListQuery,
+  type SessionPage,
 } from "agent-runtime-api";
 
 const EPOCH = new Date(0).toISOString();
@@ -20,7 +24,6 @@ export interface SessionMetaLike {
     mode?: string;
     type?: string;
     scheduleId?: string;
-    experimentId?: string;
     initialization?: boolean;
     threadTs?: string;
   };
@@ -37,12 +40,9 @@ export interface SessionListPredicates {
   isRunning: (sessionId: string) => boolean;
 }
 
-function asMode(
-  value: string | undefined,
-  fallback: PodSessionMode,
-): PodSessionMode {
+function asMode(value: string | undefined): PodSessionMode {
   const parsed = podSessionModeSchema.safeParse(value);
-  return parsed.success ? parsed.data : fallback;
+  return parsed.success ? parsed.data : "chat";
 }
 
 function asType(value: string | undefined): PodSessionType {
@@ -58,13 +58,12 @@ function fromEntry(
 ): PodSession {
   return {
     sessionId,
-    mode: asMode(entry.meta.mode, "chat"),
+    mode: asMode(entry.meta.mode),
     type: asType(entry.meta.type),
     createdAt: entry.createdAt,
     updatedAt: entry.lastActivityAt ?? listed?.updatedAt ?? null,
     title: listed?.title ?? null,
     scheduleId: entry.meta.scheduleId ?? null,
-    experimentId: entry.meta.experimentId ?? null,
     initialization: entry.meta.initialization === true,
     threadTs: entry.meta.threadTs ?? null,
     seenAt: entry.seenAt ?? null,
@@ -87,7 +86,6 @@ function fromHarnessOnly(
     updatedAt: listed.updatedAt ?? null,
     title: listed.title ?? null,
     scheduleId: null,
-    experimentId: null,
     initialization: false,
     threadTs: null,
     seenAt: null,
@@ -130,6 +128,46 @@ export function composeSessionList(
   return composed;
 }
 
+function activityAt(session: PodSession): string {
+  return session.updatedAt ?? session.createdAt;
+}
+
+function compareCodeUnits(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function compareToCursor(
+  session: PodSession,
+  cursor: SessionListCursor,
+): number {
+  return (
+    compareCodeUnits(cursor.activityAt, activityAt(session)) ||
+    compareCodeUnits(session.sessionId, cursor.sessionId)
+  );
+}
+
+function cursorOf(session: PodSession): SessionListCursor {
+  return { activityAt: activityAt(session), sessionId: session.sessionId };
+}
+
+export function pageSessions(
+  sessions: readonly PodSession[],
+  query: SessionListQuery = {},
+): SessionPage {
+  const { after, limit } = query;
+  const ordered = sessions
+    .filter(
+      (s) =>
+        sessionMatchesQuery(s, query) &&
+        (!after || compareToCursor(s, after) > 0),
+    )
+    .sort((a, b) => compareToCursor(a, cursorOf(b)));
+  if (limit === undefined || ordered.length <= limit)
+    return { sessions: ordered, nextCursor: null };
+  const page = ordered.slice(0, limit);
+  return { sessions: page, nextCursor: cursorOf(page[page.length - 1]!) };
+}
+
 export function sessionDirectoryEntries(
   entries: Readonly<Record<string, SessionMetaLike>>,
   isTombstoned: (sessionId: string) => boolean,
@@ -138,7 +176,7 @@ export function sessionDirectoryEntries(
     .filter(([sessionId]) => !isTombstoned(sessionId))
     .map(([sessionId, entry]) => ({
       sessionId,
-      mode: asMode(entry.meta.mode, "chat"),
+      mode: asMode(entry.meta.mode),
       type: asType(entry.meta.type),
       createdAt: entry.createdAt,
     }));

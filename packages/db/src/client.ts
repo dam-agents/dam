@@ -6,11 +6,14 @@ export interface DbTlsOptions {
   ca?: string | undefined;
 }
 
-export function buildDbSsl(tls?: DbTlsOptions): { ca: string } | undefined {
-  return tls?.ca ? { ca: tls.ca } : undefined;
+export function postgresOptions(
+  max: number,
+  tls?: DbTlsOptions,
+): { max: number; ssl?: { ca: string } } {
+  return tls?.ca ? { max, ssl: { ca: tls.ca } } : { max };
 }
 
-export interface DbOptions {
+interface DbOptions {
   tls?: DbTlsOptions | undefined;
   poolMax?: number | undefined;
 }
@@ -18,9 +21,10 @@ export interface DbOptions {
 export const DEFAULT_DB_POOL_MAX = 32;
 
 export function createDb(url: string, opts?: DbOptions) {
-  const ssl = buildDbSsl(opts?.tls);
-  const max = opts?.poolMax ?? DEFAULT_DB_POOL_MAX;
-  const sql = postgres(url, ssl ? { max, ssl } : { max });
+  const sql = postgres(
+    url,
+    postgresOptions(opts?.poolMax ?? DEFAULT_DB_POOL_MAX, opts?.tls),
+  );
   return { db: drizzle(sql, { schema }), sql };
 }
 

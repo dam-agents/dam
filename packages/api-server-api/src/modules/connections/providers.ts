@@ -1,4 +1,5 @@
-export type ProviderPresetType = "anthropic" | "ibm-litellm" | "openai" | "bob";
+export type ProviderPresetType =
+  "anthropic" | "ibm-litellm" | "curve-bender" | "openai" | "bob" | "bedrock";
 
 export interface EnvMapping {
   envName: string;
@@ -7,35 +8,54 @@ export interface EnvMapping {
 
 export const DEFAULT_ENV_PLACEHOLDER = "dummy-placeholder";
 
-export interface InjectionConfig {
-  headerName: string;
-  valueFormat?: string;
-  queryParamName?: string;
-  http2?: boolean;
-}
-
 export const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
-const IBM_LITELLM_BASE_URL = `https://${IBM_LITELLM_HOST}`;
+export const CURVE_BENDER_HOST = "litellm.cb.ete.res.ibm.com";
 
 export const BOB_INFERENCE_PREFIX_REWRITE = {
   prefix: "/inference/v1/",
   replacement: "/v1/",
 } as const;
 
-export function ibmLitellmEnvMappings(): EnvMapping[] {
+function liteLlmEnvMappings(
+  host: string,
+  openaiModel: string,
+  proxy: Record<string, string>,
+): EnvMapping[] {
+  const baseUrl = `https://${host}`;
   return [
-    { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy" },
-    { envName: "ANTHROPIC_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
+    { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy-placeholder" },
+    { envName: "ANTHROPIC_BASE_URL", placeholder: baseUrl },
     { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
-    { envName: "OPENAI_PROXY_URL", placeholder: IBM_LITELLM_BASE_URL },
-    { envName: "OPENAI_PROXY_MODEL", placeholder: "aws/claude-opus-4-8" },
-    { envName: "OPENAI_PROXY_CONTEXT_WINDOW", placeholder: "200000" },
-    { envName: "OPENAI_PROXY_MAX_TOKENS", placeholder: "8192" },
+    { envName: "OPENAI_PROXY_URL", placeholder: baseUrl },
+    ...Object.entries(proxy).map(([key, placeholder]) => ({
+      envName: `OPENAI_PROXY_${key}`,
+      placeholder,
+    })),
     { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
-    { envName: "OPENAI_BASE_URL", placeholder: IBM_LITELLM_BASE_URL },
-    { envName: "OPENAI_MODEL", placeholder: "gpt-5.5" },
-    { envName: "BOB_GATEWAY_URL", placeholder: IBM_LITELLM_BASE_URL },
+    { envName: "OPENAI_BASE_URL", placeholder: baseUrl },
+    { envName: "OPENAI_MODEL", placeholder: openaiModel },
+    { envName: "BOB_GATEWAY_URL", placeholder: baseUrl },
     { envName: "BOBSHELL_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
+  ];
+}
+
+export function ibmLitellmEnvMappings(): EnvMapping[] {
+  return liteLlmEnvMappings(IBM_LITELLM_HOST, "gpt-5.5", {
+    MODEL: "aws/claude-opus-4-8",
+    CONTEXT_WINDOW: "200000",
+    MAX_TOKENS: "8192",
+  });
+}
+
+export function curveBenderEnvMappings(): EnvMapping[] {
+  return [
+    ...liteLlmEnvMappings(CURVE_BENDER_HOST, "rits/zai-org/glm-5-3", {
+      MODEL: "rits/zai-org/glm-5-3",
+      CONTEXT_WINDOW: "262144",
+      MAX_TOKENS: "32768",
+      REASONING: "1",
+    }),
+    { envName: "CLAUDE_CODE_MAX_CONTEXT_TOKENS", placeholder: "262144" },
   ];
 }
 
@@ -44,6 +64,25 @@ export function openaiEnvMappings(): EnvMapping[] {
     { envName: "OPENAI_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
     { envName: "OPENAI_BASE_URL", placeholder: "https://api.openai.com/v1" },
   ];
+}
+
+export const BEDROCK_TEMPLATE_ID = "bedrock";
+
+export const BEDROCK_REGION_PATTERN = "[a-z]{2}(?:-gov)?-[a-z]+-\\d";
+
+export function bedrockEnvMappings(): EnvMapping[] {
+  return [
+    {
+      envName: "AWS_BEARER_TOKEN_BEDROCK",
+      placeholder: DEFAULT_ENV_PLACEHOLDER,
+    },
+    { envName: "AWS_BEDROCK_FORCE_HTTP1", placeholder: "1" },
+  ];
+}
+
+export interface BedrockPins {
+  region: string;
+  model?: string;
 }
 
 export interface BobModelPins {
@@ -56,11 +95,10 @@ export interface BobModelPins {
 
 export const BOB_HOST = "api.us-east.bob.ibm.com";
 const BOB_BASE_URL = `https://${BOB_HOST}`;
-const BOB_PLACEHOLDER = "dummy-placeholder";
 
 export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
   const out: EnvMapping[] = [
-    { envName: "BOBSHELL_API_KEY", placeholder: BOB_PLACEHOLDER },
+    { envName: "BOBSHELL_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
     { envName: "BOB_DEFAULT_GATEWAY_URL", placeholder: BOB_BASE_URL },
   ];
   const push = (envName: string, value?: string) => {
@@ -73,25 +111,6 @@ export function bobEnvMappings(pins: BobModelPins = {}): EnvMapping[] {
   push("BOB_MAX_COINS", pins.maxCost);
   push("BOB_CHAT_MODE", pins.chatMode);
   return out;
-}
-
-export function bobPinsFromEnvMappings(
-  envMappings: readonly EnvMapping[] | undefined,
-): BobModelPins {
-  const lookup = (name: string) =>
-    envMappings?.find((m) => m.envName === name)?.placeholder;
-  const pins: BobModelPins = {};
-  const model = lookup("BOB_SHELL_MODEL");
-  const agentId = lookup("BOB_INSTANCE_ID");
-  const teamId = lookup("BOB_TEAM_ID");
-  const maxCost = lookup("BOB_MAX_COINS");
-  const chatMode = lookup("BOB_CHAT_MODE");
-  if (model) pins.model = model;
-  if (agentId) pins.agentId = agentId;
-  if (teamId) pins.teamId = teamId;
-  if (maxCost) pins.maxCost = maxCost;
-  if (chatMode) pins.chatMode = normalizeBobChatMode(chatMode);
-  return pins;
 }
 
 export const BOB_CHAT_MODES = ["agent", "plan", "ask"] as const;
@@ -112,16 +131,11 @@ export interface ProviderPresetMode {
   templateId: string;
   tokenPrefix?: string;
   isDefault?: boolean;
-  defaultEnvMappings: EnvMapping[];
-  injection?: InjectionConfig;
-  extraInjections?: readonly InjectionConfig[];
 }
 
 export interface ProviderPreset {
   id: ProviderPresetType;
   displayName: string;
-  hostPattern: string;
-  pathPattern?: string;
   modes: readonly ProviderPresetMode[];
 }
 
@@ -129,19 +143,12 @@ export const PROVIDERS = {
   anthropic: {
     id: "anthropic",
     displayName: "Anthropic",
-    hostPattern: "api.anthropic.com",
     modes: [
       {
         key: "oauth",
         label: "OAuth Token",
         templateId: "anthropic-oauth",
         tokenPrefix: "sk-ant-oat",
-        defaultEnvMappings: [
-          {
-            envName: "CLAUDE_CODE_OAUTH_TOKEN",
-            placeholder: DEFAULT_ENV_PLACEHOLDER,
-          },
-        ],
       },
       {
         key: "api-key",
@@ -149,61 +156,34 @@ export const PROVIDERS = {
         templateId: "anthropic",
         tokenPrefix: "sk-ant-api",
         isDefault: true,
-        defaultEnvMappings: [
-          {
-            envName: "ANTHROPIC_API_KEY",
-            placeholder: DEFAULT_ENV_PLACEHOLDER,
-          },
-        ],
-        injection: { headerName: "x-api-key", valueFormat: "{value}" },
       },
     ],
   },
   "ibm-litellm": {
     id: "ibm-litellm",
     displayName: "IBM LiteLLM ETE Proxy",
-    hostPattern: IBM_LITELLM_HOST,
-    modes: [
-      {
-        key: "api-key",
-        label: "API Token",
-        templateId: "ibm-litellm",
-        defaultEnvMappings: ibmLitellmEnvMappings(),
-      },
-    ],
+    modes: [{ key: "api-key", label: "API Token", templateId: "ibm-litellm" }],
+  },
+  "curve-bender": {
+    id: "curve-bender",
+    displayName: "Curve Bender",
+    modes: [{ key: "api-key", label: "API Token", templateId: "curve-bender" }],
   },
   openai: {
     id: "openai",
     displayName: "OpenAI",
-    hostPattern: "api.openai.com",
-    pathPattern: "/v1/*",
-    modes: [
-      {
-        key: "api-key",
-        label: "API Key",
-        templateId: "openai",
-        defaultEnvMappings: openaiEnvMappings(),
-      },
-    ],
+    modes: [{ key: "api-key", label: "API Key", templateId: "openai" }],
   },
   bob: {
     id: "bob",
     displayName: "Bob Shell",
-    hostPattern: BOB_HOST,
+    modes: [{ key: "api-key", label: "API Key", templateId: "bob" }],
+  },
+  bedrock: {
+    id: "bedrock",
+    displayName: "AWS Bedrock",
     modes: [
-      {
-        key: "api-key",
-        label: "API Key",
-        templateId: "bob",
-        defaultEnvMappings: bobEnvMappings(),
-        injection: {
-          headerName: "Authorization",
-          valueFormat: "Apikey {value}",
-        },
-        extraInjections: [
-          { headerName: "X-Bobshell-Internal", queryParamName: "key" },
-        ],
-      },
+      { key: "api-key", label: "API Key", templateId: BEDROCK_TEMPLATE_ID },
     ],
   },
 } satisfies Record<ProviderPresetType, ProviderPreset>;
@@ -229,6 +209,8 @@ export const PROVIDER_TEMPLATE_IDS: ReadonlySet<string> = new Set(
 );
 
 export const SHARED_KB_TEMPLATE_ID = "shared-knowledge-base";
+
+export const S3_COMPATIBLE_TEMPLATE_ID = "s3-compatible";
 
 export function providerTypeForTemplateId(
   templateId: string,

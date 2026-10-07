@@ -9,7 +9,7 @@ import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const bobManifestPath = join(
   here,
-  "../../../../agents/bob/runtime-manifest.yaml",
+  "../../../../agents/bob/rootfs/app/runtime-manifest.yaml",
 );
 
 function bobEnvContributions(): Record<string, string> {

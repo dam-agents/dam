@@ -50,8 +50,11 @@ export function createContributionFanOut(deps: {
               c,
             ): c is Extract<
               Contribution,
-              { kind: "egress-allow" | "egress-inject" }
-            > => c.kind === "egress-allow" || c.kind === "egress-inject",
+              { kind: "egress-allow" | "egress-inject" | "egress-sign" }
+            > =>
+              c.kind === "egress-allow" ||
+              c.kind === "egress-inject" ||
+              c.kind === "egress-sign",
           )
           .map((c) => ({
             host: c.host,

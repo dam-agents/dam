@@ -42,7 +42,14 @@ function parseExtParams<T>(
   return parsed.data;
 }
 
-export interface RoutedExtUpdate {
+export const PLATFORM_NOTIFICATION_METHODS = [
+  "platform/turnEnded",
+  "platform/promptAccepted",
+  "platform/promptStarted",
+  "platform/runStarted",
+] as const;
+
+interface RoutedExtUpdate {
   update: AcpUpdate;
   sessionId: string;
   frame: FrameMeta;

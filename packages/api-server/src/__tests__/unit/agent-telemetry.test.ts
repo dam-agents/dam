@@ -96,7 +96,6 @@ function reader(
     spendByAgent: async () => [],
     spendByDay: async () => [],
     spendBySession: async () => [],
-    close: async () => {},
   };
   return { r, seen };
 }
@@ -295,7 +294,6 @@ describe("agent telemetry", () => {
         spendByAgent: async () => [],
         spendByDay: async () => [],
         spendBySession: async () => [],
-        close: async () => {},
       },
     });
     const q = { days: 7, limit: 2 };
@@ -326,7 +324,6 @@ describe("agent telemetry", () => {
         spendByAgent: async () => [],
         spendByDay: async () => [],
         spendBySession: async () => [],
-        close: async () => {},
       },
     });
     const q = { days: 7, limit: 2 };

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
+import { emitToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -25,6 +26,7 @@ import { useAgentDisplayName } from "../../agents/api/queries.js";
 import {
   useDeleteSchedule,
   useResetScheduleSession,
+  useRunScheduleNow,
   useToggleSchedule,
 } from "../api/mutations.js";
 import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
@@ -32,6 +34,8 @@ import { scheduleOnceState } from "../lib/once-schedule.js";
 import {
   lastRunStatus,
   precheckAlert,
+  runNowConfirmText,
+  runNowStartedText,
   scheduleCadenceText,
 } from "../lib/schedule-format.js";
 import { ScheduleDetails } from "./schedule-details.js";
@@ -57,12 +61,14 @@ export function ScheduleCard({
   const toggleSchedule = useToggleSchedule();
   const deleteSchedule = useDeleteSchedule();
   const resetScheduleSession = useResetScheduleSession();
+  const runScheduleNow = useRunScheduleNow();
 
   const guardEdit = useScheduleEditGuard();
   const cadence = scheduleCadenceText(schedule);
   const alert = precheckAlert(schedule);
   const nextRunHint =
     enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
+  const stopReason = enabled ? status?.stopReason : undefined;
   const onceState = scheduleOnceState(schedule);
   const onceOutcome =
     onceState && onceState !== "pending"
@@ -80,6 +86,24 @@ export function ScheduleCard({
       )
     )
       deleteSchedule.mutate({ id });
+  };
+
+  const handleRunNow = async () => {
+    if (
+      await showConfirm(runNowConfirmText(schedule), "Run now", {
+        confirmLabel: "Run now",
+      })
+    )
+      runScheduleNow.mutate(
+        { id },
+        {
+          onSuccess: () =>
+            emitToast({
+              kind: "success",
+              message: runNowStartedText(schedule),
+            }),
+        },
+      );
   };
 
   const handleReset = async () => {
@@ -145,6 +169,17 @@ export function ScheduleCard({
                 </span>
               </>
             )}
+            {stopReason && (
+              <>
+                <span aria-hidden>·</span>
+                <span
+                  className="inline-flex items-center gap-1 whitespace-nowrap text-destructive"
+                  title={stopReason}
+                >
+                  <WarningAlt size={12} /> Stopped
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -172,6 +207,11 @@ export function ScheduleCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
+            {onceState === null && (
+              <DropdownMenuItem onSelect={handleRunNow}>
+                Run now
+              </DropdownMenuItem>
+            )}
             {(onceState === null || onceState === "pending") && (
               <DropdownMenuItem onSelect={handleEdit}>
                 Edit schedule

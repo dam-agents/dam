@@ -1,11 +1,6 @@
-import { EXPERIMENT_SKILL_NAME } from "../experiments/schemas.js";
 import type { LocalSkill } from "./types.js";
 
-export type PlatformFeatureId =
-  | "schedules"
-  | "invocations"
-  | "experiments"
-  | "connections";
+export type PlatformFeatureId = "schedules" | "invocations" | "connections";
 
 export interface PlatformSkillFeature {
   id: PlatformFeatureId;
@@ -15,9 +10,10 @@ export interface PlatformSkillFeature {
 export const PLATFORM_SKILLS: ReadonlyMap<string, PlatformSkillFeature> =
   new Map([
     ["platform-schedules", { id: "schedules", label: "Schedules" }],
-    ["dam-invoke", { id: "invocations", label: "Invocations" }],
-    [EXPERIMENT_SKILL_NAME, { id: "experiments", label: "Experiments" }],
+    ["spawn-subagent", { id: "invocations", label: "Sub-agents" }],
     ["platform-models", { id: "connections", label: "Model providers" }],
+    ["platform-github", { id: "connections", label: "GitHub accounts" }],
+    ["platform-s3", { id: "connections", label: "Object Storage" }],
   ] satisfies [string, PlatformSkillFeature][]);
 
 export function platformSkillFeature(

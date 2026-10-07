@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const publicAgentViewSchema = z.object({
+const publicAgentViewSchema = z.object({
   agentId: z.string(),
   name: z.string(),
   ownerName: z.string().nullable(),

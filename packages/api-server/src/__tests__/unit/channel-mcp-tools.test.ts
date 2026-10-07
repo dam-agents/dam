@@ -6,6 +6,12 @@ import {
   createMcpSession,
   type McpSessionDeps,
 } from "../../apps/harness-api-server/mcp-endpoint.js";
+import {
+  events$,
+  ofType,
+  EventType,
+  type ChannelMessageSent,
+} from "../../events.js";
 import type {
   ChannelReply,
   MessageReactionsResult,
@@ -28,6 +34,7 @@ vi.mock("../../core/security-log.js", () => ({
 }));
 
 async function mcpHarness(opts?: {
+  postResult?: { ok: true } | { error: string };
   reactions?: MessageReactionsResult | { error: string };
   thread?: ThreadResult | { error: string };
 }) {
@@ -44,7 +51,7 @@ async function mcpHarness(opts?: {
         options: Record<string, unknown>,
       ) => {
         posts.push({ text, options });
-        return { ok: true as const };
+        return opts?.postResult ?? { ok: true as const };
       },
     ),
     reply: vi.fn(
@@ -81,6 +88,7 @@ async function mcpHarness(opts?: {
   };
 
   const session = createMcpSession("agent-1", {
+    owner: "owner-1",
     channelManager,
     k8s: { namespace: "platform" },
     maxArtifactBytes: 10 * 1024 * 1024,
@@ -110,8 +118,7 @@ describe("outbound MCP tools — Slack unfurls (#3499)", () => {
     for (const name of ["send_channel_message", "reply"]) {
       const tool = tools.find((candidate) => candidate.name === name);
       const properties = tool?.inputSchema.properties as
-        | Record<string, { type?: string }>
-        | undefined;
+        Record<string, { type?: string }> | undefined;
       expect(properties?.unfurlLinks).toMatchObject({ type: "boolean" });
       expect(properties?.unfurlMedia).toMatchObject({ type: "boolean" });
       expect(tool?.inputSchema.required ?? []).not.toContain("unfurlLinks");
@@ -168,8 +175,7 @@ describe("reply MCP tool — broadcast to channel (#2973)", () => {
     const reply = tools.find((t) => t.name === "reply");
 
     const properties = reply?.inputSchema.properties as
-      | Record<string, { type?: string }>
-      | undefined;
+      Record<string, { type?: string }> | undefined;
     expect(properties?.alsoSendToChannel).toMatchObject({ type: "boolean" });
     expect(reply?.inputSchema.required ?? []).not.toContain(
       "alsoSendToChannel",
@@ -412,5 +418,64 @@ describe("read_thread MCP tool", () => {
     expect(auditLines).toEqual([
       { event: "channel.thread_read", detail: { threadTs: "1.1" } },
     ]);
+  });
+});
+
+describe("outbound MCP tools — activity", () => {
+  it("records each post and reply against the agent's owner", async () => {
+    const { client } = await mcpHarness();
+    const sent: ChannelMessageSent[] = [];
+    const sub = events$()
+      .pipe(ofType<ChannelMessageSent>(EventType.ChannelMessageSent))
+      .subscribe((event) => sent.push(event));
+
+    await client.callTool({
+      name: "send_channel_message",
+      arguments: { channel: "slack", text: "unprompted update" },
+    });
+    await client.callTool({
+      name: "reply",
+      arguments: { text: "answer", threadTs: "1.1" },
+    });
+    sub.unsubscribe();
+
+    expect(sent).toEqual([
+      {
+        type: EventType.ChannelMessageSent,
+        channel: ChannelType.Slack,
+        agentId: "agent-1",
+        ownerSub: "owner-1",
+        action: "post",
+        outcome: "success",
+        hasAttachment: false,
+      },
+      {
+        type: EventType.ChannelMessageSent,
+        channel: ChannelType.Slack,
+        agentId: "agent-1",
+        ownerSub: "owner-1",
+        action: "reply",
+        outcome: "success",
+        hasAttachment: false,
+      },
+    ]);
+  });
+
+  it("records a post the channel refused as a failure", async () => {
+    const { client } = await mcpHarness({
+      postResult: { error: "channel_not_found" },
+    });
+    const sent: ChannelMessageSent[] = [];
+    const sub = events$()
+      .pipe(ofType<ChannelMessageSent>(EventType.ChannelMessageSent))
+      .subscribe((event) => sent.push(event));
+
+    await client.callTool({
+      name: "send_channel_message",
+      arguments: { channel: "slack", text: "lost", chatId: "C-GONE" },
+    });
+    sub.unsubscribe();
+
+    expect(sent).toMatchObject([{ action: "post", outcome: "failure" }]);
   });
 });

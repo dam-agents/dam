@@ -1,6 +1,6 @@
 # Agent Skills
 
-Last verified: 2026-09-14
+Last verified: 2026-09-30
 
 ## Overview
 
@@ -18,9 +18,9 @@ A Local Skill's name **on the wire is its frontmatter `name:` when it has one**,
 
 ### Skill Path
 
-An absolute on-pod directory the harness reads skills from — the `skill-ref` driver's `paths` in the agent's runtime manifest. The agent-runtime resolves it for both install and the read-side views (listLocal / publish); the api-server never passes paths over the wire. Every image inherits the default path declared in platform-base's [`runtime-manifest.yaml`](../../packages/platform-base/runtime-manifest.yaml).
+An absolute on-pod directory the harness reads skills from — the `skill-ref` driver's `paths` in the agent's runtime manifest. The agent-runtime resolves it for both install and the read-side views (listLocal / publish); the api-server never passes paths over the wire. Every image inherits the default path declared in the base [`runtime-manifest.yaml`](../../packages/agents/base/rootfs/app/runtime-manifest.yaml).
 
-Each per-agent Dockerfile ([`packages/agents/`](../../packages/agents/)) symlinks its harness-native skills dir onto that canonical store, so the harness reads from its own conventional path while the manifest stays harness-agnostic. An install therefore writes once on disk regardless of harness, and no per-agent manifest override is needed.
+Each harness image symlinks its harness-native skills dir onto that canonical store — the link ships in the harness's image tree ([`packages/agents/`](../../packages/agents/)) — so the harness reads from its own conventional path while the manifest stays harness-agnostic. An install therefore writes once on disk regardless of harness, and no per-agent manifest override is needed.
 
 Install writes the skill directory into **every** configured Skill Path; uninstall removes it from all of them. Scanning the disk for Local Skills walks every path in order and dedupes by directory name (first found wins).
 
@@ -43,7 +43,7 @@ Some image-shipped skills exist to make a platform feature usable. Naming those 
 
 Image-shipped skills are managed per skill, not per volume: a local copy whose content matches a version the platform ever shipped is the platform's — seeded once per volume, overwritten when the image ships a newer version, deleted when the image stops shipping the name — and the moment it diverges it is the user's, never touched again. Three pieces carry that rule:
 
-- The **Shipped-Skill Manifest** — the append-only content-hash history of every skill version any platform image ever shipped, baked into every image from one repo-wide file ([`packages/platform-base/`](../../packages/platform-base/)). Changing or adding an image skill requires appending its new hash (`mise run skills:manifest:generate`), enforced by a repo check; removal needs nothing, since the removed version's hashes are already history. In-image and immutable, it extends the pristine-root property: the volume is never trusted to say what the platform shipped.
+- The **Shipped-Skill Manifest** — the append-only content-hash history of every skill version any platform image ever shipped, baked into every image from one repo-wide file ([`dam-skill-manifest.json`](../../packages/agents/base/rootfs/usr/local/share/dam-skill-manifest.json)). Changing or adding an image skill requires appending its new hash (`mise run skills:manifest:generate`), enforced by a repo check; removal needs nothing, since the removed version's hashes are already history. In-image and immutable, it extends the pristine-root property: the volume is never trusted to say what the platform shipped.
 - The **Seed Ledger** — a per-volume record of which shipped skill names have been seeded, so each is copied into the Skill Paths exactly once and a skill the user then deletes is never resurrected. Retiring clears the entry — the platform's own removal must not count as the user's — so a skill re-shipped after retirement seeds again. It sits on the agent-writable volume, which is safe because it only ever suppresses copies of image content. Only pristine-workspace skills seed; staged skills never do. The whole-workspace first-boot seed ([persistence](persistence.md)) stays for everything that isn't a skill.
 - **Reconciliation** — runs when the pod applies a runtime-channel snapshot, and once at boot from the install driver's persisted set, because an image-only upgrade delivers no snapshot. A local skill whose hash appears in the manifest is updated or removed as above; anything else — including a copy that cannot be hashed — is left alone. A skill tracked as an Installed Skill Ref is exempt: its Source governs it. `PLATFORM_IMAGE_SKILL_RECONCILE=off` disables the whole pass on a pod, and the pass degrades to a logged no-op on its own when an input is missing: an image with no readable Shipped-Skill Manifest, or a pod whose runtime manifest yields no pristine workspace root distinct from the Skill Paths, leaves image skills unmanaged; a corrupt Seed Ledger heals in place — the next pass records every currently-shipped skill as already seeded without copying anything, so nothing the user deleted can resurrect, at the cost that a skill first shipped while the ledger was corrupt never auto-seeds on that volume.
 
@@ -60,7 +60,7 @@ Six responsibilities:
 - **Write Local** — validates and materializes user-uploaded Markdown as standalone Local Skills (one skill per file). Each file lands as `<slug>/SKILL.md` in every configured Skill Path, with frontmatter `name:` forced to the confirmed display name (synthesized when absent). Enforces the same size caps as the read side and rejects the whole batch (before writing anything) on any collision — a slug/directory clash or a display-name clash with an existing Local Skill — so an upload never clobbers an installed or in-place-edited skill.
 - **Delete Local** — removes a Local Skill's directory from **every** configured Skill Path. Imperative, unlike uninstall: install/uninstall flow declaratively off an `agent_skills` row that a standalone skill by definition **lacks**, so the driver would have nothing to reconcile. A name that resolves to no directory is a no-op, not an error.
 
-When env credentials arrive over the runtime channel, the agent-runtime reacts by running `gh auth setup-git`, so a private-repo `git clone` invoked from inside the pod also routes through `gh` (and therefore through the gateway pod's credential injector) instead of stalling on a username prompt. It deliberately does not run at boot, where credentials aren't available yet.
+When gh credentials arrive over the runtime channel — a `GH_TOKEN` env, or gh's own multi-account hosts file when the agent holds several GitHub accounts ([connections](connections.md#addressing-a-connection)) — the agent-runtime reacts by running `gh auth setup-git` once the whole snapshot that carries them is applied, and again only when they change, so a private-repo `git clone` invoked from inside the pod also routes through `gh` (and therefore through the gateway pod's credential injector) instead of stalling on a username prompt. It deliberately does not run at boot, where credentials aren't available yet.
 
 ## Credential injection on the wire
 
@@ -71,11 +71,11 @@ Agent-runtime never holds a real GitHub token. The paired gateway pod performs t
    - `api.github.com` — `Authorization: Bearer <token>` (REST/GraphQL API).
    - `github.com` — `Authorization: Basic base64("x-access-token:<token>")` (the HTTP Basic shape `git` over HTTPS expects, so private `git clone` / `git fetch` / `git push` work with no credential helper).
    - `raw.githubusercontent.com` — `Authorization: Bearer <token>` (private raw-file fetches).
-3. agent-runtime makes its API calls without authenticating — Envoy supplies the credential.
+3. agent-runtime sends the token placeholder the agent holds — `GH_TOKEN`, or the active account in gh's hosts file when several GitHub accounts are granted — and Envoy swaps in the credential of the Connection it names.
 
 If the user has not connected GitHub, no Secret exists and the request leaves authenticated only when the agent has supplied its own token. The agent runtime exposes `PLATFORM_GH_TOKEN_AVAILABLE=true|false` so wrapper scripts can short-circuit instead of making a 401-eliciting request first.
 
-Since credential env moved to the runtime channel, the flag is derived in-pod from the reconciled env rather than stamped on the pod by the controller. It therefore inherits the channel's best-effort first-spawn semantics: on a cold pod it reads `false` until the first env snapshot arrives, then flips to `true` on the harness respawn that follows. A wrapper that short-circuits on `false` may do so during that boot window — treat it as "not yet known," not "permanently absent."
+Since credential env moved to the runtime channel, the flag is derived in-pod from the reconciled env rather than stamped on the pod by the controller: `GH_TOKEN` present, or the platform's own statement of availability, which it delivers when several GitHub accounts replace the env with gh's hosts file. It therefore inherits the channel's best-effort first-spawn semantics: on a cold pod it reads `false` until the first env snapshot arrives, then flips to `true` on the harness respawn that follows. A wrapper that short-circuits on `false` may do so during that boot window — treat it as "not yet known," not "permanently absent."
 
 The same path lets `git clone` of a private repo work without any credential being mounted into the agent pod.
 

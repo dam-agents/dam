@@ -6,7 +6,6 @@ export const SessionType = {
   ChannelTelegram: "channel_telegram",
   ScheduleCron: "schedule_cron",
   ScheduleOnce: "schedule_once",
-  ExperimentExecute: "experiment_execute",
   CliRun: "cli_run",
 } as const;
 
@@ -53,7 +52,6 @@ export interface SessionView {
   mode: SessionMode;
   createdAt: string;
   scheduleId?: string | null;
-  experimentId?: string | null;
   initialization?: boolean | null;
   title?: string | null;
   updatedAt?: string | null;
@@ -65,33 +63,8 @@ export interface SessionView {
   runCount?: number | null;
 }
 
-export const SESSION_CATEGORIES = [
-  "chats",
-  "experiments",
-  "scheduled",
-  "channels",
-  "runs",
-  "terminal",
-] as const;
-
-export type SessionCategory = (typeof SESSION_CATEGORIES)[number];
-
-export function sessionCategoryOf(session: {
-  mode: SessionMode;
-  type: SessionType;
-}): SessionCategory {
-  if (session.mode === SessionMode.Terminal) return "terminal";
-  if (
-    session.type === SessionType.ChannelSlack ||
-    session.type === SessionType.ChannelTelegram
-  )
-    return "channels";
-  if (
-    session.type === SessionType.ScheduleCron ||
-    session.type === SessionType.ScheduleOnce
-  )
-    return "scheduled";
-  if (session.type === SessionType.ExperimentExecute) return "experiments";
-  if (session.type === SessionType.CliRun) return "runs";
-  return "chats";
-}
+export {
+  SESSION_CATEGORIES,
+  sessionCategoryOf,
+  type SessionCategory,
+} from "agent-runtime-api";

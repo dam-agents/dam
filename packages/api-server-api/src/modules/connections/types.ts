@@ -1,7 +1,10 @@
 import { z } from "zod";
-import { contribution, type Contribution } from "agent-runtime-api";
+import { contribution } from "agent-runtime-api";
 import { secretRef, type SecretRef } from "../secret-store/types.js";
-import type { ConnectionCreateInput } from "./schemas.js";
+import type {
+  ConnectionCreateInput,
+  ConnectionCredentialUpdate,
+} from "./schemas.js";
 
 export const connectionCategory = z.enum(["app", "mcp", "other"]);
 export type ConnectionCategory = z.infer<typeof connectionCategory>;
@@ -10,7 +13,14 @@ export const refreshBackoff = z.object({
   failures: z.number().int(),
   nextAttempt: z.number().int(),
 });
-export type RefreshBackoff = z.infer<typeof refreshBackoff>;
+
+export const githubUserTokenScope = z.object({
+  targetId: z.number().int(),
+  targetLogin: z.string().min(1).optional(),
+  repositoryIds: z.array(z.number().int()).nonempty().optional(),
+  permissions: z.record(z.string(), z.string()).optional(),
+});
+export type GitHubUserTokenScope = z.infer<typeof githubUserTokenScope>;
 
 export const oauthAuth = z.object({
   kind: z.literal("oauth"),
@@ -29,6 +39,7 @@ export const oauthAuth = z.object({
   extraAuthParams: z.record(z.string(), z.string()).optional(),
   host: z.string().min(1).optional(),
   appSlug: z.string().min(1).optional(),
+  githubUserTokenScope: githubUserTokenScope.optional(),
 });
 
 export const clientCredentialsAuth = z.object({
@@ -72,6 +83,15 @@ export const headerAuth = z.object({
   valueFormat: z.string().min(1),
 });
 
+export const sigv4Auth = z.object({
+  kind: z.literal("sigv4"),
+  accessKeyIdRef: secretRef,
+  secretAccessKeyRef: secretRef,
+  credentialsFileRef: secretRef,
+  region: z.string().min(1),
+  service: z.literal("s3"),
+});
+
 export const noneAuth = z.object({
   kind: z.literal("none"),
 });
@@ -81,6 +101,7 @@ export const authConfig = z.discriminatedUnion("kind", [
   clientCredentialsAuth,
   githubAppAuth,
   headerAuth,
+  sigv4Auth,
   noneAuth,
 ]);
 export type AuthConfig = z.infer<typeof authConfig>;
@@ -110,6 +131,7 @@ export const authKind = z.enum([
   "client-credentials",
   "github-app",
   "header",
+  "sigv4",
   "none",
 ]);
 export type AuthKind = z.infer<typeof authKind>;
@@ -126,6 +148,7 @@ export const connectionView = z.object({
   connectedAt: z.string().optional(),
   hosts: z.array(z.string()),
   host: z.string().min(1).optional(),
+  accountLabel: z.string().min(1).optional(),
   appSlug: z.string().min(1).optional(),
   hasClientSecret: z.boolean().optional(),
   githubAppScope: z
@@ -135,6 +158,9 @@ export const connectionView = z.object({
       permissions: z.record(z.string(), z.string()).optional(),
     })
     .optional(),
+  githubUserToken: z
+    .object({ scope: githubUserTokenScope.optional() })
+    .optional(),
 });
 export type ConnectionView = z.infer<typeof connectionView>;
 
@@ -143,7 +169,6 @@ export const templateInputState = z.enum([
   "overridable",
   "optional",
 ]);
-export type TemplateInputState = z.infer<typeof templateInputState>;
 
 export const templateInput = z.object({
   name: z.string(),
@@ -164,7 +189,6 @@ export const connectionFamilyView = z.object({
   id: z.string(),
   title: z.string(),
 });
-export type ConnectionFamilyView = z.infer<typeof connectionFamilyView>;
 
 export const connectionTemplateView = z.object({
   id: z.string(),
@@ -186,6 +210,7 @@ export const agentConnections = z.object({
     z.object({
       connectionId: z.string(),
       grantedAt: z.string(),
+      preferred: z.boolean(),
     }),
   ),
 });
@@ -204,6 +229,17 @@ export interface GitHubAppInstallationProbe {
   accountLogin?: string;
   repositoriesUnavailable?: string;
   repositoriesTruncated?: boolean;
+}
+
+export interface GitHubUserTokenInstallation extends GitHubAppInstallationProbe {
+  installationId: number;
+  targetId: number;
+  accountLogin: string;
+}
+
+export interface GitHubUserTokenProbe {
+  installations: GitHubUserTokenInstallation[];
+  installationsTruncated?: boolean;
 }
 
 export interface ConnectionsService {
@@ -246,20 +282,27 @@ export interface ConnectionsService {
     permissions?: string;
   }): Promise<void>;
 
+  probeGitHubUserTokenForConnection(input: {
+    connectionId: string;
+  }): Promise<GitHubUserTokenProbe>;
+
+  updateGitHubUserTokenScope(input: {
+    id: string;
+    targetId?: number;
+    repositoryIds?: string;
+    permissions?: string;
+  }): Promise<void>;
+
   startOAuth(
     connectionId: string,
     opts?: { returnTo?: string; popup?: boolean },
   ): Promise<{ authUrl: string }>;
 
-  update(id: string, value: string): Promise<void>;
+  update(id: string, credential: ConnectionCredentialUpdate): Promise<void>;
 
   deleteConnection(id: string): Promise<void>;
 
   getAgentConnections(agentId: string): Promise<AgentConnections>;
   setAgentConnections(agentId: string, connectionIds: string[]): Promise<void>;
+  setPreferredConnection(agentId: string, connectionId: string): Promise<void>;
 }
-
-export type AppConnectionStatus = ConnectionStatus;
-export type AppConnectionView = ConnectionView;
-export type AgentAppConnections = AgentConnections;
-export { connection as connectionSchema };

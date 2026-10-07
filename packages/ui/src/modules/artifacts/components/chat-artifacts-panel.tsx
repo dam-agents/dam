@@ -35,7 +35,6 @@ import { useOpenArtifact } from "../hooks/use-open-artifact.js";
 import { folderDisplayNames } from "../lib/folders.js";
 import { groupArtifactsByFolder } from "../lib/group-artifacts.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
-import { MarqueeTitle } from "./marquee-title.js";
 import { MoveArtifactDialog } from "./move-artifact-dialog.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { RetentionDialog } from "./retention-dialog.js";
@@ -67,10 +66,8 @@ export function ChatArtifactsPanel({
   const openArtifactId = useStore((s) => s.openArtifactId);
   const openArtifact = useOpenArtifact();
 
-  const openRow = useCallback(
-    (id: string) => openArtifact(id === openArtifactId ? null : id),
-    [openArtifact, openArtifactId],
-  );
+  const openRow = (id: string) =>
+    openArtifact(id === openArtifactId ? null : id);
   const folderCollapse = useStore((s) =>
     agentId ? s.artifactFolderCollapse[agentId] : undefined,
   );
@@ -200,7 +197,6 @@ function ArtifactListRow({
   onSetRetention: (artifact: LibraryArtifact) => void;
 }) {
   const [dragging, setDragging] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const startDrag = useCallback(
     (folderId: string | null) => {
       setDragging(true);
@@ -221,8 +217,6 @@ function ArtifactListRow({
     <div
       {...clickableProps(onClick)}
       {...(drag ? dragProps : {})}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       title={artifact.title}
       className={cn(
         "group flex h-8 w-full cursor-pointer items-center gap-1.5 py-1 pl-3.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
@@ -235,11 +229,7 @@ function ArtifactListRow({
         aria-hidden
         className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
       />
-      <MarqueeTitle
-        text={artifact.title}
-        animate={active || hovered}
-        className="min-w-0 flex-1"
-      />
+      <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
       {artifact.shareUrl !== null && (
         <Tooltip
           content={

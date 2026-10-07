@@ -11,15 +11,10 @@ const MANAGED_BY_VALUE = "api-server";
 
 const NAME_PREFIX = "platform-secret-";
 
-export interface KubernetesSecretStoreOpts {
+export function createKubernetesSecretStore(opts: {
   k8s: K8sClient;
-  storeId?: string;
-}
-
-export function createKubernetesSecretStore(
-  opts: KubernetesSecretStoreOpts,
-): SecretStore {
-  const storeId = opts.storeId ?? "k8s";
+}): SecretStore {
+  const storeId = "k8s";
   const k8sClient = opts.k8s;
 
   function ensureOwn(ref: Pick<SecretRef, "storeId">): void {
@@ -35,10 +30,6 @@ export function createKubernetesSecretStore(
     fields: Record<string, string>,
     meta: SecretMetadata,
   ): k8s.V1Secret {
-    const data: Record<string, string> = {};
-    for (const [k, v] of Object.entries(fields)) {
-      data[k] = Buffer.from(v, "utf8").toString("base64");
-    }
     return {
       apiVersion: "v1",
       kind: "Secret",
@@ -57,7 +48,7 @@ export function createKubernetesSecretStore(
         },
       },
       type: "Opaque",
-      data,
+      data: encodeFields(fields),
     };
   }
 
@@ -100,35 +91,10 @@ export function createKubernetesSecretStore(
       }
       const data: Record<string, string> = {
         ...((existing.data ?? {}) as Record<string, string>),
+        ...encodeFields(fields),
       };
-      for (const [k, v] of Object.entries(fields)) {
-        data[k] = Buffer.from(v, "utf8").toString("base64");
-      }
       const body: k8s.V1Secret = { ...existing, data };
       await k8sClient.replaceSecret(ref.path, body);
-    },
-
-    async putField(ref, value): Promise<void> {
-      ensureOwn(ref);
-      const existing = await k8sClient.getSecret(ref.path);
-      const data: Record<string, string> = {
-        ...((existing?.data ?? {}) as Record<string, string>),
-      };
-      data[ref.field] = Buffer.from(value, "utf8").toString("base64");
-      const body: k8s.V1Secret = {
-        ...(existing ?? { apiVersion: "v1", kind: "Secret", type: "Opaque" }),
-        metadata: existing?.metadata ?? {
-          name: ref.path,
-          namespace: k8sClient.namespace,
-          labels: { [LABEL_MANAGED_BY]: MANAGED_BY_VALUE },
-        },
-        data,
-      };
-      if (existing) {
-        await k8sClient.replaceSecret(ref.path, body);
-      } else {
-        await k8sClient.createSecret(body);
-      }
     },
 
     async get(ref): Promise<Record<string, string> | null> {
@@ -154,32 +120,16 @@ export function createKubernetesSecretStore(
       ensureOwn(ref);
       await k8sClient.deleteSecret(ref.path);
     },
-
-    async list(scope): Promise<{ ref: SecretRef; metadata: SecretMetadata }[]> {
-      const selectors = [
-        `${LABEL_MANAGED_BY}=${MANAGED_BY_VALUE}`,
-        `${LABEL_OWNER}=${scope.owner}`,
-      ];
-      if (scope.purpose) {
-        selectors.push(`${LABEL_PURPOSE}=${sanitizeLabel(scope.purpose)}`);
-      }
-      const secrets = await k8sClient.listSecrets(selectors.join(","));
-      const out: { ref: SecretRef; metadata: SecretMetadata }[] = [];
-      for (const s of secrets) {
-        const name = s.metadata?.name;
-        if (!name) continue;
-        const purpose =
-          s.metadata?.annotations?.[LABEL_PURPOSE] ??
-          s.metadata?.labels?.[LABEL_PURPOSE] ??
-          "";
-        out.push({
-          ref: { storeId, path: name, field: "" },
-          metadata: { owner: scope.owner, purpose },
-        });
-      }
-      return out;
-    },
   };
+}
+
+function encodeFields(fields: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(fields).map(([k, v]) => [
+      k,
+      Buffer.from(v, "utf8").toString("base64"),
+    ]),
+  );
 }
 
 function sanitizeLabel(value: string): string {

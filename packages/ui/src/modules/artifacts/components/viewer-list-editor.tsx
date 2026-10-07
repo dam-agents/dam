@@ -1,3 +1,4 @@
+import { Close } from "@carbon/icons-react";
 import { VIEWER_ALLOWLIST_MAX } from "api-server-api";
 import { useId, useState } from "react";
 
@@ -5,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import { normalizeViewerEmail } from "../lib/viewer-allowlist.js";
-import { ViewerRow } from "./viewer-row.js";
 
 interface Props {
   viewers: string[];
@@ -13,6 +13,31 @@ interface Props {
   disabled: boolean;
   draft: string;
   onDraftChange: (draft: string) => void;
+}
+
+interface ViewerRowProps {
+  email: string;
+  onRemove: (email: string) => void;
+  disabled: boolean;
+}
+
+function ViewerRow({ email, onRemove, disabled }: ViewerRowProps) {
+  return (
+    <li className="flex items-center justify-between gap-2 rounded-md py-1 pl-1 pr-0.5 hover:bg-muted/40">
+      <span className="truncate text-sm text-foreground">{email}</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        aria-label={`Remove ${email}`}
+        disabled={disabled}
+        onClick={() => onRemove(email)}
+        className="shrink-0 text-muted-foreground hover:text-foreground"
+      >
+        <Close size={14} />
+      </Button>
+    </li>
+  );
 }
 
 function sharedWithCaption(count: number, full: boolean) {

@@ -32,24 +32,26 @@ features:
     always_online: true
   slash_commands:
     - command: /dam
-      description: Connect or disconnect an agent for this conversation
-      usage_hint: "bind | unbind"
+      description: Connect an agent to this conversation, whisper to one privately, or delete one of its posts
+      usage_hint: "bind | unbind | whisper [agent] [\"message\"] | delete <message link>"
       should_escape: false
 
 oauth_config:
-  # Only needed to install into more than one workspace. Slack hands the bot
-  # token over by copy-paste for the app's own workspace alone; every other
-  # workspace has to complete the OAuth exchange, which needs this redirect URL
-  # and public distribution activated (Manage Distribution). Replace the host
-  # with the platform's own — the URL is fetched by the installing admin's
-  # browser, never by Slack, so an internal host behind a VPN is fine.
+  # Every workspace, the app's own included, connects through the platform's
+  # install flow, which needs this redirect URL; no bot token is copied from
+  # Slack. Workspaces other than the app's own also need public distribution
+  # activated (Manage Distribution). Replace the host with the platform's own —
+  # the URL is fetched by the installing admin's browser, never by Slack, so an
+  # internal host behind a VPN is fine. Token rotation (OAuth & Permissions)
+  # also needs a redirect URL registered before Slack lets it be turned on.
   redirect_urls:
     - https://platform.example.com/api/slack/install/callback
   scopes:
     bot:
       - commands
-      # Posting replies (chat.postMessage) and the one-person notices a turn
-      # can need (chat.postEphemeral).
+      # Posting replies (chat.postMessage), the one-person notices a turn
+      # can need (chat.postEphemeral), and deleting an agent's post when its
+      # owner runs the delete command (chat.delete).
       - chat:write
       # The working status on a turn (assistant.threads.setStatus). Listed here
       # as well as implied by the assistant_view feature above — Slack's own
@@ -67,6 +69,13 @@ oauth_config:
       # membership before posting, and open direct messages.
       - channels:read
       - groups:read
+      # Whether the bot is in a group DM (conversations.info). Slack never adds
+      # an app to an existing group DM, so a bind there is refused when the bot
+      # is not in it.
+      - mpim:read
+      # Who a 1:1 DM is with (conversations.info), so a DM binding is labelled
+      # with the person rather than its raw id.
+      - im:read
       - im:write
       # Resolving the user ids the agent sees in a conversation to the people
       # behind them (users.info). Both optional: a workspace without users:read
@@ -76,11 +85,15 @@ oauth_config:
       - users:read
       - users:read.email
       - app_mentions:read
-      # Attachments: url_private downloads inbound, files.uploadV2 outbound.
+      # Attachments: url_private downloads inbound; outbound uploads
+      # (files.getUploadURLExternal, then the bytes, then
+      # files.completeUploadExternal; or files.uploadV2), and deleting them
+      # with their post (files.delete).
       - files:read
       - files:write
-      # Channel history backs context injection on new sessions, and the
-      # message.* event subscriptions below (ambient mode) require it too.
+      # Channel history backs context injection on new sessions, the
+      # message.* event subscriptions below (ambient mode) require it too, and
+      # the delete command reads the linked post back to find its footer.
       - channels:history
       - groups:history
       # Direct messages and group DMs: read inbound messages (im:history backs

@@ -5,16 +5,15 @@ import { z } from "zod";
 import { emitToast } from "../../../lib/toast.js";
 import { usePrefilledSandboxName } from "../../agents/hooks/use-default-sandbox-name.js";
 
-export type SetupFlow = "coding-agent" | "experiment" | "starter-kit";
+export type SetupFlow = "coding-agent" | "starter-kit";
 
-export const setupFormSchema = z.object({
+const setupFormSchema = z.object({
   name: z.string(),
   providerRef: z.object({ id: z.string() }).nullable().default(null),
   connectionIds: z.array(z.string()).default([]),
   satelliteNames: z.array(z.string()).default([]),
   templateId: z.string().nullable().default(null),
   customImage: z.string().default(""),
-  skipSeed: z.boolean().default(false),
   hibernationTimeoutMin: z
     .number()
     .int()
@@ -29,12 +28,13 @@ export const setupFormSchema = z.object({
     })
     .default({ slack: false, telegram: false }),
   slackChannelId: z.string().default(""),
+  requireConnectionAddress: z.boolean().default(false),
   skippedSchedules: z.array(z.string()).default([]),
   scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
 });
-export type SetupForm = z.infer<typeof setupFormSchema>;
+type SetupForm = z.infer<typeof setupFormSchema>;
 
-export interface SetupFormState {
+interface SetupFormState {
   form: SetupForm;
   update: (patch: Partial<SetupForm>) => void;
   toggleConnection: (id: string, granted: boolean) => void;

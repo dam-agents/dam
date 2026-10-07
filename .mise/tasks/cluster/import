@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+#MISE description="Import image tars into the cluster's k3s. Honors LIMA_INSTANCE and IS_SANDBOX."
+#MISE hide=true
+#USAGE arg "<tar>..." var=#true
+set -euo pipefail
+eval "tars=($usage_tar)"
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+import_one() {
+  local t=$1 g
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    as_root k3s ctr images import "$t"
+  else
+    g="/tmp/${t##*/}"
+    limactl copy "$t" "$LIMA_INSTANCE:$g"
+    limactl shell "$LIMA_INSTANCE" sudo k3s ctr images import "$g"
+    limactl shell "$LIMA_INSTANCE" rm -f "$g"
+  fi
+}
+# Side by side: each import is mostly unpacking its own layers.
+pids=()
+for t in "${tars[@]}"; do
+  import_one "$t" &
+  pids+=($!)
+done
+failed=0
+for p in "${pids[@]}"; do wait "$p" || failed=1; done
+exit "$failed"

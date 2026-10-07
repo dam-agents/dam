@@ -12,12 +12,12 @@ import type {
 } from "api-server-api";
 import { starterKitSchema } from "api-server-api";
 import { composeOnboardingPrompt } from "../../modules/starter-kits/domain/onboarding-prompt.js";
+import { unmetRequiredConnections } from "../../modules/starter-kits/domain/requirements.js";
 import {
-  parseKitRef,
-  unmetRequiredConnections,
-} from "../../modules/starter-kits/domain/requirements.js";
-import type { LoadedKit } from "../../modules/starter-kits/infrastructure/kits-repository.js";
-import { createStarterKitsService } from "../../modules/starter-kits/services/starter-kits-service.js";
+  createStarterKitsService,
+  type LoadedKit,
+} from "../../modules/starter-kits/services/starter-kits-service.js";
+import type { KitUpstream } from "../../modules/starter-kits/infrastructure/kit-upstream.js";
 
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 import {
@@ -26,6 +26,18 @@ import {
   EventType,
   type StarterKitApplied,
 } from "../../events.js";
+
+const NO_UPSTREAM: KitUpstream = {
+  head: async () => ({ status: "unreachable" }),
+  changes: async () => {
+    throw new Error("not read in these tests");
+  },
+};
+const NO_MARKS = {
+  begin: async () => {},
+  end: async () => {},
+  skip: async () => {},
+};
 
 function kit(overrides: Partial<ResolvedStarterKit> = {}): ResolvedStarterKit {
   return starterKitSchema.parse({
@@ -95,8 +107,13 @@ function connection(id: string, templateId: string): ConnectionView {
 function makeHarness(
   loaded: LoadedKit | null,
   agent: Agent | null = null,
-  agentGrants: { connectionId: string; grantedAt: string }[] = [],
+  agentGrants: {
+    connectionId: string;
+    grantedAt: string;
+    preferred: boolean;
+  }[] = [],
   virtualizationEnabled = true,
+  pinnedKit = "",
 ) {
   const calls = {
     created: [] as AgentCreateInput[],
@@ -120,6 +137,7 @@ function makeHarness(
     toggled: [] as string[],
     slack: [] as { agentId: string; channel: string; ambient?: boolean }[],
     skillEntries: [] as { agentId: string; skills: unknown[] }[],
+    egressRules: [] as { agentId: string; hosts: string[] }[],
   };
   let nextScheduleId = 0;
   const seeded: { id: string; name: string; enabled: boolean }[] = [];
@@ -146,6 +164,9 @@ function makeHarness(
       },
       async get() {
         return agent;
+      },
+      async list() {
+        return agent ? [agent] : [];
       },
       async connectSlack(agentId, channel, ambient) {
         calls.slack.push({ agentId, channel, ambient });
@@ -211,7 +232,6 @@ function makeHarness(
               image: "quay.io/example/codex",
               harness: "codex",
             } as TemplateSpec,
-            isOwned: false,
           }
         : null,
     wakeAgent: async (id) => {
@@ -220,6 +240,13 @@ function makeHarness(
     markAgentOnboarded: async (id, at) => {
       calls.onboarded.push({ id, at });
     },
+    egressRules: {
+      async seed(agentId, rules) {
+        calls.egressRules.push({ agentId, hosts: rules.map((r) => r.host) });
+      },
+    },
+    kitUpstream: NO_UPSTREAM,
+    kitUpdateMarks: NO_MARKS,
     runtimeMutator: {
       async bump(agentId, events) {
         calls.bumped.push({ agentId, events });
@@ -230,6 +257,7 @@ function makeHarness(
       },
     },
     virtualizationEnabled,
+    pinnedKit,
   });
   return { service, calls };
 }
@@ -244,7 +272,6 @@ const APPLY = {
   connectionIds: ["c-gh"],
   skipSchedules: [] as string[],
   scheduleOverrides: [],
-  skipSeed: false,
 };
 
 function onboardingEvents(calls: { bumped: { events: BumpedEvent[] }[] }) {
@@ -426,27 +453,6 @@ describe("starter kits: apply", () => {
     expect(prompt).toContain("into your home directory ($HOME)");
   });
 
-  it("removes the kit's repository when asked: no seed, and a briefing that ships none", async () => {
-    const h = makeHarness(LOADED);
-    await h.service.apply({ ...APPLY, skipSeed: true });
-    expect(h.calls.created[0]).not.toHaveProperty("gitRepo");
-    const [event] = onboardingEvents(h.calls);
-    const prompt = (event?.payload as { task: string }).task;
-    expect(prompt).toContain("This kit ships no definition repository.");
-    expect(prompt).not.toContain("ONBOARDING.md");
-  });
-
-  it("refuses to remove the repository of a kit whose install runs from it", async () => {
-    const { service, calls } = makeHarness({
-      ...LOADED,
-      kit: kit({ install: { command: "bash bootstrap.sh" } }),
-    });
-    await expect(
-      service.apply({ ...APPLY, skipSeed: true }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(calls.created).toEqual([]);
-  });
-
   it("leaves out the schedules the user chose to skip", async () => {
     const { service, calls } = makeHarness(LOADED);
     await service.apply({
@@ -626,6 +632,7 @@ describe("starter kits: apply", () => {
           calls.deleted.push(id);
         },
         get: async () => null,
+        list: async () => [],
         connectSlack: async () => {
           throw new Error("nope");
         },
@@ -654,6 +661,9 @@ describe("starter kits: apply", () => {
       wakeAgent: async () => {},
       readTemplateSpec: async () => null,
       markAgentOnboarded: async () => {},
+      egressRules: { seed: async () => {} },
+      kitUpstream: NO_UPSTREAM,
+      kitUpdateMarks: NO_MARKS,
       runtimeMutator: {
         bump: async () => 1,
         enqueueAfterCommit: async () => {},
@@ -742,6 +752,7 @@ describe("starter kits: apply", () => {
           deleted.push(id);
         },
         get: async () => null,
+        list: async () => [],
         connectSlack: async () => ({}) as never,
       },
       schedules: {
@@ -768,6 +779,9 @@ describe("starter kits: apply", () => {
       wakeAgent: async () => {},
       readTemplateSpec: async () => null,
       markAgentOnboarded: async () => {},
+      egressRules: { seed: async () => {} },
+      kitUpstream: NO_UPSTREAM,
+      kitUpdateMarks: NO_MARKS,
       runtimeMutator: {
         bump: async () => 1,
         enqueueAfterCommit: async () => {},
@@ -842,6 +856,7 @@ describe("starter kits: onboarding turn", () => {
           calls.deleted.push(id);
         },
         get: async () => null,
+        list: async () => [],
         connectSlack: async () => {
           throw new Error("unreachable");
         },
@@ -865,6 +880,9 @@ describe("starter kits: onboarding turn", () => {
       wakeAgent: async () => {},
       readTemplateSpec: async () => null,
       markAgentOnboarded: async () => {},
+      egressRules: { seed: async () => {} },
+      kitUpstream: NO_UPSTREAM,
+      kitUpdateMarks: NO_MARKS,
       runtimeMutator: {
         bump: async () => {
           throw new Error("outbox down");
@@ -881,7 +899,13 @@ describe("starter kits: onboarding turn", () => {
       makeHarness(
         LOADED,
         fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
-        [{ connectionId: "c-gh", grantedAt: "2026-09-14T00:00:00Z" }],
+        [
+          {
+            connectionId: "c-gh",
+            grantedAt: "2026-09-14T00:00:00Z",
+            preferred: false,
+          },
+        ],
       ),
     );
     expect(prompt).toContain(
@@ -903,7 +927,13 @@ describe("starter kits: onboarding turn", () => {
       makeHarness(
         LOADED,
         fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
-        [{ connectionId: "c-gh", grantedAt: "2026-09-14T00:00:00Z" }],
+        [
+          {
+            connectionId: "c-gh",
+            grantedAt: "2026-09-14T00:00:00Z",
+            preferred: false,
+          },
+        ],
       ),
     );
     expect(prompt).toContain("Connection (suggested, NOT connected): slack");
@@ -914,7 +944,13 @@ describe("starter kits: onboarding turn", () => {
       makeHarness(
         LOADED,
         fakeAgent("agent-1", { starterKit: "platform/code-reviewer@abc123" }),
-        [{ connectionId: "c-gone", grantedAt: "2026-09-14T00:00:00Z" }],
+        [
+          {
+            connectionId: "c-gone",
+            grantedAt: "2026-09-14T00:00:00Z",
+            preferred: false,
+          },
+        ],
       ),
     );
     expect(prompt).toContain(
@@ -1066,16 +1102,79 @@ describe("starter kits: domain helpers", () => {
       unmetRequiredConnections(familyKit, [{ templateId: "slack" }]),
     ).toHaveLength(1);
   });
+});
 
-  it("parses kit refs", () => {
-    expect(parseKitRef("platform/code-reviewer@abc")).toEqual({
-      catalog: "platform",
-      kitId: "code-reviewer",
-      version: "abc",
+describe("starter kits: connection addressing", () => {
+  // TEST_SCENARIO: a kit can ask for an agent whose gateway injects only addressed requests, whatever the creating user's own feature flags say, and a kit that does not ask leaves the create untouched.
+  it("passes the kit's choice to the create only when it asks for it", async () => {
+    const strict = makeHarness({
+      ...LOADED,
+      kit: kit({ requireConnectionAddress: true }),
     });
-    expect(parseKitRef("code-reviewer@abc")).toBeNull();
-    expect(parseKitRef("broken")).toBeNull();
-    expect(parseKitRef("platform/@v1")).toBeNull();
+    await strict.service.apply(APPLY);
+    expect(strict.calls.created[0]).toMatchObject({
+      requireConnectionAddress: true,
+    });
+
+    const plain = makeHarness(LOADED);
+    await plain.service.apply(APPLY);
+    expect(plain.calls.created[0]).not.toHaveProperty(
+      "requireConnectionAddress",
+    );
+  });
+});
+
+describe("starter kits: egress preset", () => {
+  // TEST_SCENARIO: the kit's egress preset seeds the agent's network rules at create, and a kit that names none leaves the create's own default in place rather than overriding it.
+  it("passes the kit's egress preset to the create only when it declares one", async () => {
+    const strict = makeHarness({
+      ...LOADED,
+      kit: kit({ egressPreset: "none" }),
+    });
+    await strict.service.apply(APPLY);
+    expect(strict.calls.created[0]).toMatchObject({ egressPreset: "none" });
+
+    const plain = makeHarness(LOADED);
+    await plain.service.apply(APPLY);
+    expect(plain.calls.created[0]).not.toHaveProperty("egressPreset");
+  });
+
+  // TEST_SCENARIO: the kit's own egress rules land on the agent it just created, so the first session already runs under them.
+  it("seeds the kit's egress rules onto the new agent", async () => {
+    const { service, calls } = makeHarness({
+      ...LOADED,
+      kit: kit({
+        egressRules: [
+          {
+            host: "api.example.com",
+            method: "*",
+            pathPattern: "*",
+            verdict: "allow",
+          },
+        ],
+      }),
+    });
+    await service.apply(APPLY);
+    expect(calls.egressRules).toEqual([
+      { agentId: "agent-1", hosts: ["api.example.com"] },
+    ]);
+  });
+});
+
+describe("starter kits: pinned kit", () => {
+  // TEST_SCENARIO: the pin names a kit as <catalog>/<kit>, so the same id in another catalog is not pinned.
+  it("flags only the kit the install pins", async () => {
+    const pinned = makeHarness(
+      LOADED,
+      null,
+      [],
+      true,
+      "platform/code-reviewer",
+    );
+    expect((await pinned.service.list())[0]?.pinned).toBe(true);
+
+    const other = makeHarness(LOADED, null, [], true, "curated/code-reviewer");
+    expect((await other.service.list())[0]?.pinned).toBe(false);
   });
 });
 

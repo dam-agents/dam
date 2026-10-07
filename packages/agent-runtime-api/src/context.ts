@@ -1,3 +1,4 @@
+import type { ArtifactApiService } from "./modules/artifact-api/types.js";
 import type { FilesService } from "./modules/files/types.js";
 import type { KbPublishService } from "./modules/kb-publish/types.js";
 import type { SessionsService } from "./modules/sessions/types.js";
@@ -7,6 +8,7 @@ import type { RuntimeChannelService } from "./modules/runtime/service.js";
 import type { HarnessConfigService } from "./modules/harness-config/types.js";
 
 export interface AgentRuntimeContext {
+  artifactApi: ArtifactApiService;
   files: FilesService;
   kbPublish: KbPublishService;
   sessions: SessionsService;

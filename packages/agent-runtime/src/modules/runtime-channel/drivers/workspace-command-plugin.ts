@@ -1,14 +1,10 @@
 import { workspaceCommandEventPayload } from "agent-runtime-api";
-import { readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type {
-  DriverBinding,
-  EventHandler,
-  Plugin,
-  WorkspaceCommandEventPayload,
-} from "agent-runtime-api";
+import type { DriverBinding, EventHandler, Plugin } from "agent-runtime-api";
 
 import { describeFailure, runOnce } from "../../../core/run-once.js";
+import { sentinelExists } from "./sentinel.js";
 
 const IMPL_NAME = "workspace-command";
 
@@ -58,29 +54,29 @@ export function createWorkspaceCommandPlugin(deps: {
   };
 }
 
-async function sentinelExists(path: string): Promise<boolean> {
-  try {
-    await readFile(path);
-    return true;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw err;
-  }
-}
+const TAIL_LINES = 10;
+const TAIL_CHARS = 500;
 
-async function runCommand(
+export async function runCommand(
   command: string,
   cwd: string,
   log: (msg: string) => void,
 ): Promise<void> {
   const argv = ["bash", "-lc", command];
+  const tail: string[] = [];
   const result = await runOnce({
     command: argv,
     cwd,
     timeoutMs: COMMAND_TIMEOUT_MS,
-    onLine: (line) => log(`[workspace-command] ${line}`),
+    onLine: (line) => {
+      log(`[workspace-command] ${line}`);
+      tail.push(line);
+      if (tail.length > TAIL_LINES) tail.shift();
+    },
   });
   if (!result.ok) {
-    throw new Error(describeFailure("workspace command", result.error));
+    const output = tail.join("\n").trim().slice(-TAIL_CHARS);
+    const reason = describeFailure("workspace command", result.error);
+    throw new Error(output ? `${reason}: ${output}` : reason);
   }
 }

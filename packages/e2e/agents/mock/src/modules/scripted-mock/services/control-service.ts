@@ -4,10 +4,8 @@ import type {
   GetReceivedPromptsResult,
   PerformFetchInput,
   PerformFetchResult,
-  ReceivedPrompt,
   ScriptedMockService,
   SetScriptInput,
-  SpawnInvocationInput,
 } from "mock-agent-api";
 import type { MockState } from "../domain/state.js";
 import type { HarnessSpawn } from "./ports.js";
@@ -36,25 +34,10 @@ export function createScriptedMockService(
     getReceivedPrompts(): GetReceivedPromptsResult {
       return { prompts: [...state.receivedPrompts] };
     },
-    reset() {
-      state.scriptEntries = [];
-      state.scriptStopReason = "end_turn";
-      state.scriptFiles = [];
-      state.receivedPrompts = [];
-      return { ok: true as const };
-    },
     getEnv(input: GetEnvInput): GetEnvResult {
       return { value: process.env[input.name] };
     },
-    performFetch(input: PerformFetchInput): Promise<PerformFetchResult> {
-      return proxyFetch(input);
-    },
-    spawnInvocation(input: SpawnInvocationInput) {
-      return harnessSpawn(input);
-    },
+    performFetch: proxyFetch,
+    spawnInvocation: harnessSpawn,
   };
-}
-
-export function recordPrompt(state: MockState, prompt: ReceivedPrompt): void {
-  state.receivedPrompts.push(prompt);
 }

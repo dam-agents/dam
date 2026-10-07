@@ -3,23 +3,22 @@ import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
 import { getLogger } from "./core/logger.js";
-import { durationToMinutesStrict } from "./duration.js";
+import { durationToMinutesStrict, goDurationMs } from "./duration.js";
 
 const DEFAULT_DELIVERY_CONCURRENCY = 256;
-
-function isValidAppSlug(s: string): boolean {
-  return s.length >= 1 && s.length <= 39 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(s);
-}
 
 const adminAppSlugSchema = z
   .string()
   .nullable()
   .default(null)
   .transform((v) => (v == null || v === "" ? null : v))
-  .refine((v) => v == null || isValidAppSlug(v), {
-    message:
-      "Admin-default GitHub App slug must be 1–39 lowercase letters, digits, and single hyphens — no leading, trailing, or consecutive hyphens.",
-  });
+  .refine(
+    (v) => v == null || (v.length <= 39 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(v)),
+    {
+      message:
+        "Admin-default GitHub App slug must be 1–39 lowercase letters, digits, and single hyphens — no leading, trailing, or consecutive hyphens.",
+    },
+  );
 
 const positiveQuantitySchema = z
   .string()
@@ -30,6 +29,32 @@ const positiveQuantitySchema = z
   .refine((v) => parseFloat(v) > 0, {
     message: "must be a positive quantity",
   });
+
+const defaultMountsSchema = z
+  .string()
+  .default(
+    JSON.stringify([
+      { path: "/home/agent", persist: true },
+      { path: "/tmp", persist: false },
+    ]),
+  )
+  .transform((raw, ctx) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be a JSON array" });
+      return z.NEVER;
+    }
+  })
+  .pipe(
+    z.array(
+      z.object({
+        path: z.string().min(1),
+        persist: z.boolean().default(false),
+        size: z.string().optional(),
+      }),
+    ),
+  );
 
 const configSchema = z.object({
   serverVersion: z.string().min(1),
@@ -65,11 +90,16 @@ const configSchema = z.object({
   slackEnterpriseId: z.string().default(""),
   slackClientId: z.string().nullable().default(null),
   slackClientSecret: z.string().nullable().default(null),
+  slackTokenRotation: z.coerce.boolean().default(false),
   telegramBotToken: z.string().nullable().default(null),
   imgbbApiKey: z.string().nullable().default(null),
   telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
-  virtualizationEnabled: z.coerce.boolean().default(false),
+  virtualizationEnabled: z.stringbool().default(false),
+  runtimeMigrationRetentionMs: z
+    .string()
+    .default("168h")
+    .transform(goDurationMs),
   activityTrackingEnabled: z.coerce.boolean().default(false),
   activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
   apiKeyHmacKey: z.string().min(1, "API_KEY_HMAC_KEY must be set"),
@@ -91,6 +121,8 @@ const configSchema = z.object({
   agentIdleTimeoutMinutes: z.number().int().min(0),
   agentDefaultCpuLimit: positiveQuantitySchema.default("1"),
   agentDefaultMemoryLimit: positiveQuantitySchema.default("1Gi"),
+  agentDefaultStorageSize: positiveQuantitySchema.default("10Gi"),
+  agentDefaultMounts: defaultMountsSchema,
   defaultUserCpuBudget: positiveQuantitySchema.default("4"),
   defaultUserMemoryBudget: positiveQuantitySchema.default("8Gi"),
   skillSourcesSeed: z.string().default(""),
@@ -115,6 +147,7 @@ const configSchema = z.object({
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
   starterKitsCatalogs: z.string().default(""),
+  starterKitsPinned: z.string().default(""),
   githubEnterpriseHost: z.string().default(""),
   githubEnterpriseToken: z.string().default(""),
   gitReposPath: z.string().default(""),
@@ -153,7 +186,6 @@ const configSchema = z.object({
   kbShareMaxFiles: z.coerce.number().int().positive().default(5000),
   kbShareGrepDeadlineMs: z.coerce.number().int().positive().default(2000),
   kbShareMaxConnectionsPerOwner: z.coerce.number().int().positive().default(20),
-  experimentInactivitySeconds: z.coerce.number().int().positive().default(900),
   brand: brandSchema,
   links: linksSchema,
   terms: z.object({
@@ -196,6 +228,16 @@ const validatedConfigSchema = configSchema
     },
   );
 
+// UNIT_BOUNDARY_DESCRIPTION: the install facts every agents module needs, read from the config in one place. Each composition root passes this whole, and the module requires it, so no root can build an agents module that plans a migration without the install's default mounts, disk default or retention window.
+export function agentsInstallSettings(config: Config) {
+  return {
+    virtualizationEnabled: config.virtualizationEnabled,
+    agentDefaultStorageSize: config.agentDefaultStorageSize,
+    agentDefaultMounts: config.agentDefaultMounts,
+    runtimeMigrationRetentionMs: config.runtimeMigrationRetentionMs,
+  };
+}
+
 export function loadConfig(): Config {
   return validatedConfigSchema.parse({
     serverVersion: pkg.version,
@@ -223,11 +265,13 @@ export function loadConfig(): Config {
     slackEnterpriseId: process.env.SLACK_ENTERPRISE_ID,
     slackClientId: process.env.SLACK_CLIENT_ID,
     slackClientSecret: process.env.SLACK_CLIENT_SECRET,
+    slackTokenRotation: process.env.SLACK_TOKEN_ROTATION,
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
     imgbbApiKey: process.env.IMGBB_API_KEY,
     telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
     e2eEnabled: process.env.E2E_ENABLED,
     virtualizationEnabled: process.env.VIRTUALIZATION_ENABLED,
+    runtimeMigrationRetentionMs: process.env.RUNTIME_MIGRATION_RETENTION,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
     apiKeyHmacKey: process.env.API_KEY_HMAC_KEY,
@@ -251,6 +295,8 @@ export function loadConfig(): Config {
     ),
     agentDefaultCpuLimit: process.env.AGENT_DEFAULT_CPU_LIMIT,
     agentDefaultMemoryLimit: process.env.AGENT_DEFAULT_MEMORY_LIMIT,
+    agentDefaultStorageSize: process.env.AGENT_DEFAULT_STORAGE_SIZE,
+    agentDefaultMounts: process.env.AGENT_DEFAULT_MOUNTS,
     defaultUserCpuBudget: process.env.DEFAULT_USER_CPU_BUDGET,
     defaultUserMemoryBudget: process.env.DEFAULT_USER_MEMORY_BUDGET,
     skillSourcesSeed: process.env.SKILL_SOURCES_SEED,
@@ -278,6 +324,7 @@ export function loadConfig(): Config {
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
     starterKitsCatalogs: process.env.STARTER_KITS_CATALOGS,
+    starterKitsPinned: process.env.STARTER_KITS_PINNED,
     githubEnterpriseHost: process.env.GITHUB_ENTERPRISE_HOST,
     githubEnterpriseToken: process.env.GITHUB_ENTERPRISE_TOKEN,
     gitReposPath: process.env.GIT_REPOS_PATH,
@@ -303,7 +350,6 @@ export function loadConfig(): Config {
     kbShareGrepDeadlineMs: process.env.KB_SHARE_GREP_DEADLINE_MS,
     kbShareMaxConnectionsPerOwner:
       process.env.KB_SHARE_MAX_CONNECTIONS_PER_OWNER,
-    experimentInactivitySeconds: process.env.EXPERIMENT_INACTIVITY_SECONDS,
     brand: {
       name: process.env.BRAND_NAME ?? "Platform",
       short: process.env.BRAND_SHORT ?? "platform",
@@ -324,6 +370,7 @@ export function loadConfig(): Config {
     },
     links: {
       computeRequest: process.env.LINKS_COMPUTE_REQUEST || null,
+      slackInstallRequest: process.env.LINKS_SLACK_INSTALL_REQUEST || null,
     },
     terms: {
       version: process.env.TERMS_VERSION,

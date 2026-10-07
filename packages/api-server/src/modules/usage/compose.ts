@@ -5,6 +5,7 @@ import type { UsageService, UserIdentity } from "api-server-api";
 import { emit, EventType } from "../../events.js";
 import type { SubPseudonymizer } from "../../core/sub-pseudonymizer.js";
 import {
+  deleteActivityEventsOlderThan,
   insertActivityEvent,
   upsertActorRole,
 } from "./infrastructure/activity-events-repository.js";
@@ -13,11 +14,9 @@ import {
   listLiveAgentIds,
   markAgentDeleted,
 } from "./infrastructure/agents-postgres-repository.js";
-import { deleteActivityEventsOlderThan } from "./infrastructure/activity-retention.js";
 import { startPersistActivitySaga } from "./sagas/persist-activity.js";
 import { startPersistActorRolesSaga } from "./sagas/persist-actor-roles.js";
 import { startPersistAgentsSaga } from "./sagas/persist-agents.js";
-import { bootstrapAgents } from "./services/bootstrap-agents.js";
 import { ACTIVITY_RETENTION_DAYS } from "./domain/types.js";
 import { createReportService } from "./services/report-service.js";
 import { createUsageRoutes } from "./routes.js";
@@ -76,10 +75,11 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
     persistActorRolesSub = startPersistActorRolesSaga({
       upsertActorRole: upsertRole,
     });
-    bootstrapAgents({
-      listIdentities: deps.listK8sAgents,
-      upsertAgent: upsertAgentRow,
-    }).catch((err) => {
+    (async () => {
+      for (const a of await deps.listK8sAgents()) {
+        await upsertAgentRow({ id: a.id, ownerSub: a.owner });
+      }
+    })().catch((err) => {
       process.stderr.write(
         `[usage/bootstrap-agents] backfill failed: ${err}\n`,
       );

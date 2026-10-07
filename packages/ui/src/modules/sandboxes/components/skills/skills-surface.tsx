@@ -15,7 +15,7 @@ import { useWakeAgent } from "../../../agents/hooks/use-wake-agent.js";
 import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
-import { BuiltInSkillsGroup } from "./built-in-skills-group.js";
+import { LocalSkillsGroup } from "./local-skills-group.js";
 import { PlatformSkillsGroup } from "./platform-skills-group.js";
 import { SkillDriftBanner } from "./skill-drift-banner.js";
 import { SkillSetActions } from "./skill-set-actions.js";
@@ -271,7 +271,8 @@ export function SkillsSurface({
             )}
 
             {shownBuiltIn.length > 0 && (
-              <BuiltInSkillsGroup
+              <LocalSkillsGroup
+                label="Included with sandbox image"
                 skills={shownBuiltIn}
                 onOpenSkill={
                   agentId

@@ -6,8 +6,13 @@ import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { AwsProfilesCallout } from "../../connections/components/aws-profiles-callout.js";
 import { ConnectionGroupCard } from "../../connections/components/connection-group-card.js";
 import { ConnectionMaintenanceDialog } from "../../connections/components/connection-update-credential-dialog.js";
+import {
+  GitHubAccountsCallout,
+  type GrantDetails,
+} from "../../connections/components/github-accounts-callout.js";
 import { GrantRivalryCallout } from "../../connections/components/grant-rivalry-callout.js";
 import { useConnectionMaintenance } from "../../connections/hooks/use-connection-maintenance.js";
 import type { CatalogProviderGroup } from "../../connections/lib/catalog-providers.js";
@@ -18,7 +23,9 @@ interface Props {
   templateById: Map<string, ConnectionTemplateView>;
   onToggleGrant: (id: string, on: boolean) => void;
   onOpenCatalog: () => void;
-  inset?: boolean;
+  grants?: ReadonlyMap<string, GrantDetails>;
+  onPreferConnection?: (connectionId: string) => void;
+  preferPending?: boolean;
   title?: string;
   leading?: React.ReactNode;
 }
@@ -29,7 +36,9 @@ export function GrantedConnectionsPanel({
   templateById,
   onToggleGrant,
   onOpenCatalog,
-  inset = true,
+  grants,
+  onPreferConnection,
+  preferPending,
   title = "My connections",
   leading,
 }: Props) {
@@ -50,7 +59,27 @@ export function GrantedConnectionsPanel({
     </div>
   );
   const rivalryCallout = (
-    <GrantRivalryCallout granted={granted} inset={inset} className="mb-3" />
+    <>
+      <GrantRivalryCallout granted={granted} className="mb-3" />
+      {grants && onPreferConnection && (
+        <>
+          <GitHubAccountsCallout
+            granted={granted}
+            grants={grants}
+            onPrefer={onPreferConnection}
+            pending={preferPending}
+            className="mb-3"
+          />
+          <AwsProfilesCallout
+            granted={granted}
+            grants={grants}
+            onPrefer={onPreferConnection}
+            pending={preferPending}
+            className="mb-3"
+          />
+        </>
+      )}
+    </>
   );
 
   if (groups.length === 0)
@@ -58,7 +87,7 @@ export function GrantedConnectionsPanel({
       <>
         {header}
         {rivalryCallout}
-        {leading && <Wrap inset={inset}>{leading}</Wrap>}
+        {leading && <Inset className="flex flex-col gap-4">{leading}</Inset>}
         {!leading && (
           <EmptyStateCard
             message="You have not added any Connections to this Agent yet"
@@ -73,7 +102,7 @@ export function GrantedConnectionsPanel({
     <>
       {header}
       {rivalryCallout}
-      <Wrap inset={inset}>
+      <Inset className="flex flex-col gap-4">
         {leading}
         {groups.map((group) => (
           <ConnectionGroupCard
@@ -90,19 +119,8 @@ export function GrantedConnectionsPanel({
             maintenance={maintenance.rowActions}
           />
         ))}
-      </Wrap>
+      </Inset>
       <ConnectionMaintenanceDialog maintenance={maintenance} />
     </>
   );
-}
-
-function Wrap({
-  inset,
-  children,
-}: {
-  inset: boolean;
-  children: React.ReactNode;
-}) {
-  if (inset) return <Inset className="flex flex-col gap-4">{children}</Inset>;
-  return <div className="flex flex-col gap-4">{children}</div>;
 }

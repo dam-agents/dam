@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -18,11 +19,11 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/utils/ptr"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
@@ -34,6 +35,7 @@ const (
 	vmRunnerDisksPath    = vmRunnerStatePath + "/disks"
 	vmRunnerMachinesPath = vmRunnerStatePath + "/machines"
 	vmRunnerImagesPath   = vmRunnerStatePath + "/images"
+	vmRunnerToolsPath    = vmRunnerStatePath + "/tools"
 	vmRunnerPort         = 4600
 
 	// UNIT_BOUNDARY_DESCRIPTION: the runner's scrape port, apart from the machine API because it carries no token, and the component of the one pod its NetworkPolicy admits to it. The collector is the platform's own and scrapes the runners because they cannot push to it: a runner is off the mesh, and the collector admits only mesh identities.
@@ -44,8 +46,8 @@ const (
 	vmRunnerPortMin = 31000
 	vmRunnerPortMax = 31099
 
-	// UNIT_BOUNDARY_DESCRIPTION: how long kubelet waits between SIGTERM and SIGKILL on a runner pod. The runner answers its waiting status reads at once, then drains the machine API beside its own close, which waits up to thirty seconds for machine actions that cannot be cut short, such as a VMM call. The default thirty seconds would kill it at the end of that wait.
-	vmRunnerTerminationGraceSeconds = 45
+	// UNIT_BOUNDARY_DESCRIPTION: how long kubelet waits between SIGTERM and SIGKILL on a runner pod. The runner answers its waiting status reads at once, then drains the machine API beside its own close, which waits up to thirty seconds for machine actions that cannot be cut short, such as a VMM call, and then up to forty more while it stops every running machine, so each guest quiesces its disk before its VMM goes with the pod. The default thirty seconds would kill it in the middle of that.
+	vmRunnerTerminationGraceSeconds = 90
 )
 
 type runnerConn struct {
@@ -54,7 +56,10 @@ type runnerConn struct {
 	caPEM  string
 }
 
-var errRunnerTLSPending = errors.New("VM runner TLS Secret not yet issued")
+var (
+	errRunnerTLSPending  = errors.New("VM runner TLS Secret not yet issued")
+	errRunnerTerminating = errors.New("the owner's VM runner is being removed")
+)
 
 // UNIT_BOUNDARY_DESCRIPTION: this suffix is the whole of a runner's identity — it names the Secret, the disk and the Service — so two owners colliding here would silently share one runner's credentials and machines. 64 bits puts that out of reach while leaving a Service name, capped at 63 characters, 36 for the release's own.
 func runnerSuffix(owner string) string {
@@ -80,11 +85,18 @@ func (r *AgentReconciler) runnerOwnerRef(ctx context.Context) []metav1.OwnerRefe
 	}}
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster serves every owner, so every owner's name for it is the one the chart gives its token Secret and certificate.
 func (r *AgentReconciler) runnerName(owner string) string {
+	if r.config.VM.Runner.HostAddress != "" {
+		return r.config.ReleaseName + "-vm-runner-host"
+	}
 	return fmt.Sprintf("%s-vm-runner-%s", r.config.ReleaseName, runnerSuffix(owner))
 }
 
 func (r *AgentReconciler) runnerHost(owner string) string {
+	if r.config.VM.Runner.HostAddress != "" {
+		return r.config.VM.Runner.HostAddress
+	}
 	return fmt.Sprintf("%s.%s.svc", r.runnerName(owner), r.config.Namespace)
 }
 
@@ -103,36 +115,42 @@ func vmRunnerLabels(owner, release string) map[string]string {
 	return labels
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every vm agent of one owner shares one runner, so a guest escape reaches only that owner's machines. The controller owns those runners: it mints their tokens, asks cert-manager for their serving certificates, renders their objects, and hands the caller a client once the pod reports ready.
+// UNIT_BOUNDARY_DESCRIPTION: every vm agent of one owner shares one runner, so a guest escape reaches only that owner's machines. The controller owns those runners: it mints their tokens, asks cert-manager for their serving certificates, renders their objects, and hands the caller a client once the pod reports ready. The caller holds the owner's lock, which the sweep also takes before it removes a runner, so a runner is never rebuilt from objects the sweep is deleting. An object still terminating from such a removal stops the build with errRunnerTerminating rather than being adopted: a claim that is going away would take every new machine disk with it.
+// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster has no objects here to build: the chart renders its credentials and the install starts it, so it counts as ready once it can be dialled, and a runner that is down fails the machine's ensure as unreachable.
 func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand runnerDemand) (*vmrunner.Client, bool, error) {
+	if r.config.VM.Runner.HostAddress != "" {
+		client, err := r.runnerFor(ctx, owner)
+		return client, err == nil, err
+	}
 	name := r.runnerName(owner)
 	ns := r.config.Namespace
+	refs := r.runnerOwnerRef(ctx)
 
-	if err := r.ensureRunnerToken(ctx, owner); err != nil {
+	if err := r.ensureRunnerToken(ctx, owner, refs); err != nil {
 		return nil, false, err
 	}
-	if err := r.applyCertificate(ctx, r.buildRunnerCertificate(owner, r.runnerOwnerRef(ctx))); err != nil {
+	if err := r.applyCertificate(ctx, r.buildRunnerCertificate(owner, refs)); err != nil {
 		return nil, false, fmt.Errorf("applying the runner's certificate: %w", err)
 	}
-	if err := r.applyRunnerPVC(ctx, owner, demand); err != nil {
+	if err := r.applyRunnerPVC(ctx, owner, demand, refs); err != nil {
 		return nil, false, err
 	}
-	if err := r.applyRunnerService(ctx, owner); err != nil {
+	if err := r.applyService(ctx, r.buildRunnerService(owner, refs)); err != nil {
 		return nil, false, err
 	}
-	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.EnvoyPort, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs)
-	np.OwnerReferences = r.runnerOwnerRef(ctx)
+	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.EnvoyPort, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs, runnerDNSRule(r.config.VM.Runner))
+	np.OwnerReferences = refs
 	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
 		return nil, false, err
 	}
-	if err := r.applyRunnerDeployment(ctx, owner); err != nil {
+	if err := r.applyRunnerDeployment(ctx, owner, refs, true); err != nil {
 		return nil, false, err
 	}
 	client, err := r.runnerFor(ctx, owner)
 	if err != nil {
 		return nil, false, err
 	}
-	for _, ref := range r.runnerOwnerRef(ctx) {
+	for _, ref := range refs {
 		if err := r.ensureSecretOwnerReference(ctx, r.runnerTLSName(owner), ref); err != nil {
 			slog.Warn("vm runner: owning the issued TLS Secret; will retry on next reconcile", "owner", owner, "error", err)
 		}
@@ -207,6 +225,13 @@ func (r *AgentReconciler) runnerClient(owner, token, caPEM string) (*vmrunner.Cl
 	if err != nil {
 		return nil, err
 	}
+	client.WithTokenReload(func(ctx context.Context) (string, error) {
+		sec, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
+		if err != nil {
+			return "", err
+		}
+		return string(sec.Data["token"]), nil
+	})
 	if r.runners == nil {
 		r.runners = map[string]runnerConn{}
 	}
@@ -214,15 +239,25 @@ func (r *AgentReconciler) runnerClient(owner, token, caPEM string) (*vmrunner.Cl
 	return client, nil
 }
 
-func (r *AgentReconciler) ensureRunnerToken(ctx context.Context, owner string) error {
+// UNIT_BOUNDARY_DESCRIPTION: the bearer token is the machine API's only credential besides the network policy, so it comes from the operating system's CSPRNG and carries 256 bits; a math/rand token is seeded from the clock and can be guessed from the Secret's creation time. A token already minted is kept rather than rotated. One that changes anyway — a Secret deleted and minted again — is picked up by the runner, which re-reads its token file, and by the client, which re-reads the Secret when the runner refuses it.
+func newRunnerToken() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func (r *AgentReconciler) ensureRunnerToken(ctx context.Context, owner string, refs []metav1.OwnerReference) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
-	_, err := r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
+	existing, err := r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
+	if err == nil && existing.DeletionTimestamp != nil {
+		return errRunnerTerminating
+	}
 	if !k8serrors.IsNotFound(err) {
 		return err
 	}
 	sec := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: r.runnerOwnerRef(ctx)},
-		Data:       map[string][]byte{"token": []byte(utilrand.String(48))},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: refs},
+		Data:       map[string][]byte{"token": []byte(newRunnerToken())},
 	}
 	if _, err := r.client.CoreV1().Secrets(ns).Create(ctx, sec, metav1.CreateOptions{}); err != nil && !k8serrors.IsAlreadyExists(err) {
 		return err
@@ -260,10 +295,20 @@ func (r *AgentReconciler) growRunnerPVC(ctx context.Context, owner string, claim
 	slog.Info("vm runner: grew the claim", "owner", owner, "from", current.String(), "to", size.String())
 }
 
-func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, demand runnerDemand) error {
+func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, demand runnerDemand, refs []metav1.OwnerReference) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
-	size, ceiling, sizeErr := r.runnerClaimSize(demand)
+	size, ceiling, sizeErr := r.runnerClaimSize(owner, demand)
 	if existing, err := r.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
+		if existing.DeletionTimestamp != nil {
+			return errRunnerTerminating
+		}
+		if repairRunnerMeta(&existing.ObjectMeta, vmRunnerLabels(owner, r.config.ReleaseName), refs) {
+			updated, err := r.client.CoreV1().PersistentVolumeClaims(ns).Update(ctx, existing, metav1.UpdateOptions{})
+			if err != nil {
+				return fmt.Errorf("restoring the runner claim's labels and owner: %w", err)
+			}
+			existing = updated
+		}
 		if sizeErr != nil {
 			slog.Warn("vm runner: the claim's size cannot be worked out, it keeps the size it has", "owner", owner, "error", sizeErr)
 			return nil
@@ -280,7 +325,7 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, dema
 		size = ceiling
 	}
 	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: r.runnerOwnerRef(ctx)},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: refs},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources:   corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: size}},
@@ -296,26 +341,19 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, dema
 	return err
 }
 
-func (r *AgentReconciler) applyRunnerService(ctx context.Context, owner string) error {
-	name, ns := r.runnerName(owner), r.config.Namespace
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: r.runnerOwnerRef(ctx)},
+func (r *AgentReconciler) buildRunnerService(owner string, ownerRefs []metav1.OwnerReference) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: r.runnerName(owner), Namespace: r.config.Namespace, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: ownerRefs},
 		Spec: corev1.ServiceSpec{
 			ClusterIP: corev1.ClusterIPNone,
 			Selector:  vmRunnerSelector(owner),
 			Ports:     []corev1.ServicePort{{Name: "machine-api", Port: vmRunnerPort, TargetPort: intstr.FromInt(vmRunnerPort)}},
 		},
 	}
-	cli := r.client.CoreV1().Services(ns)
-	if _, err := cli.Get(ctx, name, metav1.GetOptions{}); !k8serrors.IsNotFound(err) {
-		return err
-	}
-	_, err := cli.Create(ctx, svc, metav1.CreateOptions{})
-	return err
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the peers are chart-rendered pods, which carry the Helm release name in app.kubernetes.io/instance — not the chart's fullname, which is what names the runner's own objects. The two are equal only when the release is called `platform`.
-func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS string, envoyPort int, egress, exceptCIDRs []string) *networkingv1.NetworkPolicy {
+func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS string, envoyPort int, egress, exceptCIDRs []string, dns *networkingv1.NetworkPolicyEgressRule) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	api := intstr.FromInt(vmRunnerPort)
 	scrape := intstr.FromInt(vmRunnerMetricsPort)
@@ -350,10 +388,16 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 					{Protocol: &tcp, Port: &first, EndPort: &last},
 				},
 			}, {
+				From: []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+					LabelRole:       RoleRuntimeMigration,
+					envoyOwnerLabel: owner,
+				}}}},
+				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &api}},
+			}, {
 				From:  []networkingv1.NetworkPolicyPeer{peer(vmRunnerMetricsScraper)},
 				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &scrape}},
 			}},
-			Egress: runnerEgress(ns, owner, envoyPort, egress, exceptCIDRs),
+			Egress: runnerEgress(ns, owner, envoyPort, egress, exceptCIDRs, dns),
 		},
 	}
 }
@@ -375,29 +419,111 @@ func containedIn(cidr string, except []string) []string {
 	return out
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner and on their proxy port alone, the same pinning each gateway's ingress policy makes from its side. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
-func runnerEgress(agentNS, owner string, envoyPort int, cidrs, except []string) []networkingv1.NetworkPolicyEgressRule {
+// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner and on their proxy port and machine resolver alone, the same pinning each gateway's ingress policy makes from its side. DNS is admitted only to the resolver the runner uses, and only when it resolves anything at all, because port 53 open to every address is a two-way channel to any host that listens there. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
+func runnerEgress(agentNS, owner string, envoyPort int, cidrs, except []string, dns *networkingv1.NetworkPolicyEgressRule) []networkingv1.NetworkPolicyEgressRule {
 	if len(cidrs) == 0 {
 		return nil
 	}
-	udp, tcp := corev1.ProtocolUDP, corev1.ProtocolTCP
-	dns := intstr.FromInt(53)
+	tcp := corev1.ProtocolTCP
 	proxy := intstr.FromInt(envoyPort)
-	rules := []networkingv1.NetworkPolicyEgressRule{{
-		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &udp, Port: &dns}, {Protocol: &tcp, Port: &dns}},
-	}, {
+	var rules []networkingv1.NetworkPolicyEgressRule
+	if dns != nil {
+		rules = append(rules, *dns)
+	}
+	rules = append(rules, networkingv1.NetworkPolicyEgressRule{
 		To: []networkingv1.NetworkPolicyPeer{{
 			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": agentNS}},
 			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{LabelRole: RoleGateway, envoyOwnerLabel: owner}},
 		}},
-		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &proxy}},
-	}}
+		Ports: append([]networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &proxy}}, machineGatewayPolicyPorts()...),
+	})
 	for _, cidr := range cidrs {
+		blockExcept, metadata := exceptMetadata(cidr, containedIn(cidr, except))
+		if metadata {
+			continue
+		}
 		rules = append(rules, networkingv1.NetworkPolicyEgressRule{
-			To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr, Except: containedIn(cidr, except)}}},
+			To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr, Except: blockExcept}}},
 		})
 	}
 	return rules
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the cloud metadata endpoints — link-local on every cloud, plus the fixed addresses a few clouds also serve it on. The endpoint hands the node's own credentials to anything that asks, which makes it the classic way out of a sandbox, and no runner has a reason to reach it.
+var metadataCIDRs = []netip.Prefix{
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("100.100.100.200/32"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("fd00:ec2::254/128"),
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every egress block that contains a metadata range has that range subtracted, whatever the install listed, so a wide block such as 0.0.0.0/0 never opens the node's credentials by omission. A block lying wholly inside one names the endpoint itself, and is reported so the caller drops it rather than render the one destination this exists to close. An exception the install already wrote over the range is left to cover it.
+func exceptMetadata(cidr string, except []string) ([]string, bool) {
+	block, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return except, false
+	}
+	block = block.Masked()
+	out := except
+	for _, m := range metadataCIDRs {
+		if block.Addr().Is4() != m.Addr().Is4() {
+			continue
+		}
+		if m.Bits() <= block.Bits() && m.Contains(block.Addr()) {
+			return nil, true
+		}
+		if !block.Contains(m.Addr()) || exceptionCovers(out, m) {
+			continue
+		}
+		out = append(out, m.String())
+	}
+	return out, false
+}
+
+func exceptionCovers(except []string, target netip.Prefix) bool {
+	for _, e := range except {
+		sub, err := netip.ParsePrefix(e)
+		if err == nil && sub.Bits() <= target.Bits() && sub.Contains(target.Addr()) {
+			return true
+		}
+	}
+	return false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where the runner may send DNS, or nowhere when it resolves no names. A runner on the node image cache or on staged images fetches nothing itself — it reaches its gateways by ClusterIP and is dialled rather than dialling out — so it gets no DNS at all. A runner that caches on its own claim resolves its registry: through the node's resolver at the addresses the install names, or, under ClusterFirst, through the cluster DNS pods the install selects. Pods are selected rather than the DNS Service address because network plugins apply policy after that address has been translated to a pod. With nothing named no rule is rendered, so a pull fails on the name, which the preflight reports, rather than port 53 opening to everyone.
+func runnerDNSRule(spec config.VMRunnerSpec) *networkingv1.NetworkPolicyEgressRule {
+	if !runnerOwnsImageCache(spec) {
+		return nil
+	}
+	var peers []networkingv1.NetworkPolicyPeer
+	ports := []int32{53}
+	if runnerDNSPolicy(spec.DNSPolicy) == corev1.DNSClusterFirst {
+		dns := spec.ClusterDNS
+		if dns.Namespace == "" || len(dns.PodLabels) == 0 {
+			return nil
+		}
+		peers = append(peers, networkingv1.NetworkPolicyPeer{
+			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": dns.Namespace}},
+			PodSelector:       &metav1.LabelSelector{MatchLabels: dns.PodLabels},
+		})
+		if len(dns.Ports) > 0 {
+			ports = dns.Ports
+		}
+	} else {
+		for _, cidr := range spec.DNSCIDRs {
+			peers = append(peers, networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: cidr}})
+		}
+	}
+	if len(peers) == 0 {
+		return nil
+	}
+	udp, tcp := corev1.ProtocolUDP, corev1.ProtocolTCP
+	rule := &networkingv1.NetworkPolicyEgressRule{To: peers}
+	for _, p := range ports {
+		port := intstr.FromInt32(p)
+		rule.Ports = append(rule.Ports, networkingv1.NetworkPolicyPort{Protocol: &udp, Port: &port}, networkingv1.NetworkPolicyPort{Protocol: &tcp, Port: &port})
+	}
+	return rule
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the cluster's DNS is a Service backed by pods, and a confined runner is kept away from Service and pod addresses — so resolving through it is the one thing its own egress policy forbids, and a registry pull dies on the name rather than the fetch. The node's resolver is what such a pod has left, and it costs nothing: the runner is reached by Service DNS rather than reaching one, and it addresses each gateway by the ClusterIP the controller hands it. An install whose registry lives inside the cluster, with its range left reachable, says ClusterFirst instead and resolves Service names.
@@ -408,14 +534,30 @@ func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 	return corev1.DNSDefault
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner's env also has smolvm check every VMM against the syscalls a running microVM needs (SMOLVM_SECCOMP=audit), applied after the VMM's device setup and before it enters the guest. Audit logs a call outside the allowlist and lets it through, until the runner's VMMs are shown to stay inside it; enforce kills the VMM instead. smolvm applies the filter under its own serve by default, and an embedder only when asked.
 // UNIT_BOUNDARY_DESCRIPTION: smolvm can give each machine's VMM its own unprivileged uid, and the runner's env turns that off (SMOLVM_VM_UID_DROP=off). A VMM with its own uid reaches the image tree through an idmapped mount that maps on-disk uid 0 to it, so every file the image gives another uid reaches the guest as nobody, and the workload exits as it starts.
-// UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. NET_ADMIN is for the per-machine NAT. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. CHOWN and FOWNER are only for a runner that unpacks images into its own claim: tar restores each file's owner, then sets a mode on a file it no longer owns. A runner on the node cache or on staged archives unpacks nothing, so it does not get them.
+// UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. NET_ADMIN is for the per-machine NAT. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. CHOWN, FOWNER and FSETID are only for a runner that unpacks images into its own claim: tar restores each file's owner, then sets a mode on a file it no longer owns, and a setgid bit on a file whose group root is not in survives that mode only with FSETID. A runner on the node cache or on staged archives unpacks nothing, so it does not get them.
 func runnerCapabilities(spec config.VMRunnerSpec) []corev1.Capability {
 	caps := []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE"}
 	if runnerOwnsImageCache(spec) {
-		caps = append(caps, "CHOWN", "FOWNER")
+		caps = append(caps, "CHOWN", "FOWNER", "FSETID")
 	}
 	return caps
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the runner holds exactly the capabilities above and none of the runtime's defaults, cannot gain more through exec, and runs under the runtime's default seccomp profile — the shape the chart's OpenShift SCC already forces on it. None of the dropped defaults is used: every VMM runs as the runner's own uid, so signalling one needs no KILL, and smolvm's own default runs each VMM on a uid with no capabilities at all, so virtiofs needs no SETUID. The default seccomp profile allows every ioctl, so KVM and the tun device work; what it refuses without CAP_SYS_ADMIN is new namespaces, mounts and keyrings, which smolvm only reaches for when it gives each VMM a uid of its own, and the runner turns that off. AppArmor alone stays unconfined: the container runtime's default profile denies mount and more, and under it no guest boots.
+func runnerSecurityContext(spec config.VMRunnerSpec) *corev1.SecurityContext {
+	root := int64(0)
+	return &corev1.SecurityContext{
+		RunAsUser:                &root,
+		AllowPrivilegeEscalation: new(false),
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+			Add:  runnerCapabilities(spec),
+		},
+		SeccompProfile:  &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+		AppArmorProfile: &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeUnconfined},
+	}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether the runner's image directory is a cache on its own claim, with the runner as its only writer. It is not when the node image cache service writes a node directory, or when the install stages read-only archives.
@@ -426,7 +568,8 @@ func runnerOwnsImageCache(spec config.VMRunnerSpec) bool {
 // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's socket, inside the node directory it shares with the runners. The chart's DaemonSet binds it at this same path in its own mount. A runner mounts the directory read-only, which still lets it connect to the socket but not replace it.
 const vmImageCacheSocket = vmRunnerImagesPath + "/.cache.sock"
 
-func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string) error {
+// UNIT_BOUNDARY_DESCRIPTION: renders the owner's runner Deployment and hands it to the roll. Only an agent's reconcile may create one (create); the rollout sweep only offers an existing runner its turn, so a runner the orphan sweep has just removed is never brought back by it.
+func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string, refs []metav1.OwnerReference, create bool) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	spec := r.config.VM.Runner
 	imageBudget, err := imageBudgetBytes(spec)
@@ -439,7 +582,6 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 		podLabels[k] = v
 	}
 	replicas := int32(1)
-	root := int64(0)
 	var resources corev1.ResourceRequirements
 	if spec.Resources != nil {
 		resources = *spec.Resources.DeepCopy()
@@ -462,7 +604,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	volumes := []corev1.Volume{
 		{Name: "state", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: name}}},
 		{Name: "credentials", VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
-			DefaultMode: ptr.To[int32](0o400),
+			DefaultMode: new(int32(0o400)),
 			Sources: []corev1.VolumeProjection{
 				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: name}, Items: []corev1.KeyToPath{{Key: "token", Path: "token"}}}},
 				{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: r.runnerTLSName(owner)}, Items: []corev1.KeyToPath{{Key: "tls.crt", Path: "tls.crt"}, {Key: "tls.key", Path: "tls.key"}}}},
@@ -487,8 +629,17 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	default:
 		mounts = append(mounts, corev1.VolumeMount{Name: "state", MountPath: vmRunnerImagesPath, SubPath: "images"})
 	}
+	toolsDir := ""
+	if r.config.AgentBase.ToolsHostPath != "" {
+		dir := corev1.HostPathDirectoryOrCreate
+		toolsDir = vmRunnerToolsPath
+		mounts = append(mounts, corev1.VolumeMount{Name: "harness-tools", MountPath: vmRunnerToolsPath, ReadOnly: true})
+		volumes = append(volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
+			HostPath: &corev1.HostPathVolumeSource{Path: r.config.AgentBase.ToolsHostPath, Type: &dir},
+		}})
+	}
 	dep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels, OwnerReferences: r.runnerOwnerRef(ctx)},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels, OwnerReferences: refs},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Strategy: appsv1.DeploymentStrategy{Type: appsv1.RecreateDeploymentStrategyType},
@@ -497,10 +648,10 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 				ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 				Spec: corev1.PodSpec{
 					DNSPolicy:                     runnerDNSPolicy(spec.DNSPolicy),
-					TerminationGracePeriodSeconds: ptr.To(int64(vmRunnerTerminationGraceSeconds)),
+					TerminationGracePeriodSeconds: new(int64(vmRunnerTerminationGraceSeconds)),
 					ServiceAccountName:            spec.ServiceAccountName,
-					AutomountServiceAccountToken:  ptrBool(false),
-					EnableServiceLinks:            ptrBool(false),
+					AutomountServiceAccountToken:  new(false),
+					EnableServiceLinks:            new(false),
 					NodeSelector:                  spec.NodeSelector,
 					Tolerations:                   spec.Tolerations,
 					ImagePullSecrets:              spec.ImagePullSecrets,
@@ -508,7 +659,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						Name:            vmRunnerComponent,
 						Image:           spec.Image,
 						ImagePullPolicy: corev1.PullPolicy(spec.ImagePullPolicy),
-						Args: []string{
+						Args: append([]string{
 							fmt.Sprintf("--listen=:%d", vmRunnerPort),
 							fmt.Sprintf("--port-min=%d", vmRunnerPortMin),
 							fmt.Sprintf("--port-max=%d", vmRunnerPortMax),
@@ -518,13 +669,17 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							"--image-dir=" + vmRunnerImagesPath,
 							"--image-cache-socket=" + imageCacheSocket,
 							fmt.Sprintf("--image-budget-bytes=%d", imageBudget),
+							"--tools-dir=" + toolsDir,
 							"--memory-mib=$(RUNNER_MEMORY_MIB)",
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
+							fmt.Sprintf("--headroom-mib=%d", spec.HeadroomMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",
 							"--tls-key=/etc/vm-runner/tls.key",
-						},
+						}, nestedRunnerArgs(spec)...),
 						Env: []corev1.EnvVar{{
 							Name: "SMOLVM_VM_UID_DROP", Value: "off",
+						}, {
+							Name: "SMOLVM_SECCOMP", Value: "audit",
 						}, {
 							Name: "RUST_LOG", Value: "info",
 						}, {
@@ -540,25 +695,23 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							{Name: "metrics", ContainerPort: vmRunnerMetricsPort},
 						},
 						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{
-								Command: []string{"curl", "-skf", "-m", "3", fmt.Sprintf("https://127.0.0.1:%d/healthz", vmRunnerPort)},
+							ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{
+								Path:   "/healthz",
+								Port:   intstr.FromString("machine-api"),
+								Scheme: corev1.URISchemeHTTPS,
 							}},
 							TimeoutSeconds: 5,
 						},
-						SecurityContext: &corev1.SecurityContext{
-							RunAsUser:       &root,
-							Capabilities:    &corev1.Capabilities{Add: runnerCapabilities(spec)},
-							AppArmorProfile: &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeUnconfined},
-						},
-						Resources:    resources,
-						VolumeMounts: mounts,
+						SecurityContext: runnerSecurityContext(spec),
+						Resources:       resources,
+						VolumeMounts:    mounts,
 					}},
 					Volumes: volumes,
 				},
 			},
 		},
 	}
-	return r.rollRunnerDeployment(ctx, owner, dep)
+	return r.rollRunnerDeployment(ctx, owner, dep, create)
 }
 
 type runnerRef struct {
@@ -566,7 +719,7 @@ type runnerRef struct {
 	client *vmrunner.Client
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the sweep needs a client for every runner, and each client needs that runner's token and TLS Secrets. Reading them one at a time is two Gets per runner on every sweep, so the runners' Secrets are listed once by their component label, which both carry. A runner whose Secrets are not both in that list, because the list failed or they were written after it, is resolved the ordinary way, which reads them by name.
+// UNIT_BOUNDARY_DESCRIPTION: the sweep needs a client for every runner, and each client needs that runner's token and TLS Secrets. Reading them one at a time is two Gets per runner on every sweep, so the runners' Secrets are listed once by their component label, which both carry. A runner whose Secrets are not both in that list, because the list failed or they were written after it, is resolved the ordinary way, which reads them by name. A runner that cannot be resolved at all is still returned, with no client, so the sweep can tell an unreachable runner from one that does not exist.
 func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error) {
 	selector := metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + vmRunnerComponent}
 	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, selector)
@@ -595,26 +748,33 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 			client, err = r.runnerFor(ctx, owner)
 		}
 		if err != nil {
-			continue
+			client = nil
 		}
 		out = append(out, runnerRef{owner: owner, client: client})
 	}
 	return out, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: everything a runner owns is named after it, so this removes the lot — reached only once the sweep has found the runner holding no machine at all, at which point its disk holds nothing either.
-func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) {
+// UNIT_BOUNDARY_DESCRIPTION: everything a runner owns is named after it, so this removes the lot. The caller holds the owner's lock and has just found the runner holding no machine. The Deployment goes first and only if it is still the one the caller checked — its UID and resourceVersion are preconditions — so a runner that a roll or a reconcile changed since is kept, with its claim, and looked at again on the next sweep.
+func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) bool {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	opts := metav1.DeleteOptions{}
-	if err := r.client.AppsV1().Deployments(ns).Delete(ctx, name, opts); err != nil && !k8serrors.IsNotFound(err) {
+	deps := r.client.AppsV1().Deployments(ns)
+	dep, err := deps.Get(ctx, name, metav1.GetOptions{})
+	switch {
+	case err == nil:
+		uid, rv := dep.UID, dep.ResourceVersion
+		guarded := metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &rv}}
+		if err := deps.Delete(ctx, name, guarded); err != nil && !k8serrors.IsNotFound(err) {
+			slog.Warn("removing a VM runner: the deployment changed since it was checked, the runner is kept", "owner", owner, "error", err)
+			return false
+		}
+	case !k8serrors.IsNotFound(err):
 		slog.Warn("removing a VM runner: deployment", "owner", owner, "error", err)
-		return
+		return false
 	}
 	for _, del := range []func() error{
 		func() error {
-			if r.dynamic == nil {
-				return nil
-			}
 			return r.dynamic.Resource(certificateGVR).Namespace(ns).Delete(ctx, r.runnerTLSName(owner), opts)
 		},
 		func() error { return r.client.CoreV1().Secrets(ns).Delete(ctx, name, opts) },
@@ -632,30 +792,58 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) {
 	r.runnerMu.Lock()
 	delete(r.runners, owner)
 	r.runnerMu.Unlock()
+	r.ownerless.Delete(owner)
 	slog.Info("removed the VM runner of an owner with no vm agents left", "owner", owner)
+	return true
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand.
-func (r *AgentReconciler) runnerNotReadyMessage(ctx context.Context, owner string) string {
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand. An unschedulable runner gets a reason of its own, which the api-server reads as a failed start rather than one still coming up.
+func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (string, string) {
 	const starting = "the owner's VM runner is still starting"
 	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: labels.Set(vmRunnerSelector(owner)).String(),
 	})
 	if err != nil || len(pods.Items) == 0 {
-		return starting
+		return vmrunner.ReasonNotReady, starting
 	}
 	for i := range pods.Items {
 		pod := &pods.Items[i]
 		for _, c := range pod.Status.Conditions {
 			if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Message != "" {
-				return "the owner's VM runner cannot be scheduled: " + c.Message
+				return apiv1.ReasonMachineRunnerUnschedulable, "the owner's VM runner cannot be scheduled: " + c.Message
 			}
 		}
 		for _, cs := range pod.Status.ContainerStatuses {
 			if w := cs.State.Waiting; w != nil && w.Reason != "" && w.Reason != "ContainerCreating" {
-				return "the owner's VM runner is not starting: " + strings.TrimSpace(w.Reason+": "+w.Message)
+				return vmrunner.ReasonNotReady, "the owner's VM runner is not starting: " + strings.TrimSpace(w.Reason+": "+w.Message)
 			}
 		}
 	}
-	return starting
+	return vmrunner.ReasonNotReady, starting
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what cert-manager says about a Certificate it has not issued yet — a missing issuer, a CA that is not ready, a rate limit — from its Ready condition. Empty when it says nothing, or the Certificate cannot be read.
+func (r *AgentReconciler) certificateNotReady(ctx context.Context, name string) string {
+	cert, err := r.dynamic.Resource(certificateGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return ""
+	}
+	conds, _, _ := unstructured.NestedSlice(cert.Object, "status", "conditions")
+	for _, c := range conds {
+		m, ok := c.(map[string]interface{})
+		if !ok || m["type"] != "Ready" || m["status"] != "False" {
+			continue
+		}
+		msg, _ := m["message"].(string)
+		return msg
+	}
+	return ""
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the args that let a runner give its machines the node's virtualization extensions. Nesting is the kernel's default on Intel and AMD and turning it off takes a module reload, so the install chooses it with virtualization.runner.nestedVirtualization. An install that does not gets no extra args, so its runner pods, and the machines they host, stay as they were.
+func nestedRunnerArgs(spec config.VMRunnerSpec) []string {
+	if !spec.NestedVirtualization {
+		return nil
+	}
+	return []string{"--nested-virtualization"}
 }

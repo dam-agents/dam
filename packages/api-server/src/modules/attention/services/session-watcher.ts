@@ -69,7 +69,6 @@ function toRow(
     type: session.type,
     title: session.title,
     scheduleId: session.scheduleId,
-    experimentId: session.experimentId,
     createdAt: toDate(session.createdAt) ?? new Date(),
     activityAt: toDate(session.updatedAt),
     seenAt: toDate(session.seenAt),

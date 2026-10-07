@@ -1,16 +1,16 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import yaml from "js-yaml";
+import { loadYamlDocument } from "../../../core/yaml-document.js";
 import type { Template, TemplateSpec } from "api-server-api";
 import { templateSpecSchema } from "api-server-api";
 
 export interface TemplatesRepository {
   list(): Promise<Template[]>;
   get(id: string): Promise<Template | null>;
-  readSpec(
-    id: string,
-  ): Promise<{ spec: TemplateSpec; isOwned: boolean } | null>;
+  readSpec(id: string): Promise<{ spec: TemplateSpec } | null>;
 }
+
+export type ReadTemplateSpec = TemplatesRepository["readSpec"];
 
 export function createTemplatesRepository(dir: string): TemplatesRepository {
   const byId = loadTemplates(dir);
@@ -23,7 +23,7 @@ export function createTemplatesRepository(dir: string): TemplatesRepository {
     },
     async readSpec(id) {
       const tmpl = byId.get(id);
-      return tmpl ? { spec: tmpl.spec, isOwned: false } : null;
+      return tmpl ? { spec: tmpl.spec } : null;
     },
   };
 }
@@ -47,7 +47,7 @@ function loadTemplates(dir: string): Map<string, Template> {
     const id = entry.slice(0, -".yaml".length);
     try {
       const spec = templateSpecSchema.parse(
-        yaml.load(readFileSync(join(dir, entry), "utf8")),
+        loadYamlDocument(readFileSync(join(dir, entry), "utf8")),
       );
       byId.set(id, { id, name: spec.name ?? id, spec });
     } catch (err) {

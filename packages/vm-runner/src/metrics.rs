@@ -3,7 +3,7 @@ use std::fmt::Write;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use crate::api::{STATE_CREATING, STATE_RESTARTING, STATE_STARTING, STATE_STOPPING};
+use crate::plan::Action;
 
 // UNIT_BOUNDARY_DESCRIPTION: what a runner measures about its own machines and its image cache, for the platform's collector to scrape, under the series names the platform's dashboards and alerts select. Every label value is a `&'static str` from a fixed set — an operation, an outcome, a failure reason, a cache result — and never a machine, an image or an owner: a machine id or an image reference would grow a series per agent, and the runner exists per owner, so either would be a person's identity in disguise. Written out by hand rather than through a metrics library, because the one already in the lock installs a process-wide recorder that would also export whatever smolvm records, under labels this file does not choose.
 pub const NAMESPACE: &str = "platform_vm_runner";
@@ -13,14 +13,13 @@ const BOOT_BUCKETS: &[f64] = &[
 ];
 const FETCH_BUCKETS: &[f64] = &[1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1200.0];
 
-// UNIT_BOUNDARY_DESCRIPTION: an operation is named by what it does to the machine rather than by the state the machine reports while it runs, so a dashboard reads create, wake, restart and stop. Anything else is other, never its own label.
-pub fn operation_label(op: &str) -> &'static str {
+// UNIT_BOUNDARY_DESCRIPTION: an operation is named by what it does to the machine rather than by the state the machine reports while it runs, so a dashboard reads create, wake, restart and stop.
+fn operation_label(op: Action) -> &'static str {
     match op {
-        STATE_CREATING => "create",
-        STATE_STARTING => "wake",
-        STATE_RESTARTING => "restart",
-        STATE_STOPPING => "stop",
-        _ => "other",
+        Action::Create => "create",
+        Action::Start => "wake",
+        Action::Restart { .. } => "restart",
+        Action::Stop => "stop",
     }
 }
 
@@ -108,19 +107,19 @@ impl Metrics {
         crate::locked(&self.0)
     }
 
-    pub fn operation(&self, op: &str, took: Duration, ok: bool) {
+    pub fn operation(&self, op: Action, took: Duration, ok: bool) {
         self.families()
             .operations
             .observe(vec![operation_label(op), outcome(ok)], took);
     }
 
-    pub fn start(&self, op: &str, took: Duration, ok: bool) {
+    pub fn start(&self, op: Action, took: Duration, ok: bool) {
         self.families()
             .starts
             .observe(vec![operation_label(op), outcome(ok)], took);
     }
 
-    pub fn became_ready(&self, op: &str, took: Duration) {
+    pub fn became_ready(&self, op: Action, took: Duration) {
         self.families()
             .ready
             .observe(vec![operation_label(op)], took);
@@ -130,7 +129,7 @@ impl Metrics {
         self.families().restarts += 1;
     }
 
-    pub fn failed(&self, op: &str, reason: &'static str) {
+    pub fn failed(&self, op: Action, reason: &'static str) {
         *self
             .families()
             .failures
@@ -342,10 +341,10 @@ mod tests {
     #[test]
     fn a_scrape_exposes_exactly_the_series_the_dashboards_select() {
         let metrics = Metrics::default();
-        metrics.operation(STATE_CREATING, Duration::from_secs(1), true);
-        metrics.start(STATE_CREATING, Duration::from_secs(1), true);
-        metrics.became_ready(STATE_CREATING, Duration::from_secs(1));
-        metrics.failed(STATE_CREATING, "MachineBootFailed");
+        metrics.operation(Action::Create, Duration::from_secs(1), true);
+        metrics.start(Action::Create, Duration::from_secs(1), true);
+        metrics.became_ready(Action::Create, Duration::from_secs(1));
+        metrics.failed(Action::Create, "MachineBootFailed");
         metrics.lookup(true);
         metrics.fetched(Duration::from_secs(1), false);
         let text = metrics.render(&Gauges {
@@ -396,9 +395,9 @@ mod tests {
     #[test]
     fn a_scrape_reads_what_the_runner_recorded() {
         let metrics = Metrics::default();
-        metrics.operation(STATE_CREATING, Duration::from_millis(1500), true);
-        metrics.operation(STATE_CREATING, Duration::from_secs(700), true);
-        metrics.failed(STATE_STARTING, "MachineBootFailed");
+        metrics.operation(Action::Create, Duration::from_millis(1500), true);
+        metrics.operation(Action::Create, Duration::from_secs(700), true);
+        metrics.failed(Action::Start, "MachineBootFailed");
         metrics.lookup(false);
         let text = metrics.render(&Gauges {
             budget_bytes: 10,

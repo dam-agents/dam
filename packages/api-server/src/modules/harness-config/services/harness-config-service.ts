@@ -11,6 +11,7 @@ import type {
 } from "api-server-api";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
+import { harnessConfigEvent } from "../domain/harness-config-event.js";
 import { getLogger } from "../../../core/logger.js";
 
 const EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -62,12 +63,7 @@ export function createHarnessConfigService(deps: {
       await requireOwned(agentId);
       const ts = now();
       await deps.runtimeMutator.bump(agentId, [
-        {
-          id: `harness-config:${agentId}:${ts}`,
-          kind: "harness-config",
-          payload: change,
-          expiresAt: new Date(ts + EVENT_TTL_MS),
-        },
+        harnessConfigEvent(agentId, change, ts, new Date(ts + EVENT_TTL_MS)),
       ]);
       await deps.runtimeMutator.enqueueAfterCommit(agentId);
       emit({
@@ -123,13 +119,28 @@ export function harnessConfigSupported(capabilities: unknown): boolean {
   return (capabilities as { harnessConfig?: unknown }).harnessConfig === true;
 }
 
+export function harnessConfigSupportOf(
+  capabilities: unknown,
+): { supported: boolean; optionIds: string[] | null } | null {
+  if (capabilities == null) return null;
+  const catalog = harnessConfigCatalogOf(capabilities);
+  return {
+    supported: harnessConfigSupported(capabilities),
+    optionIds: catalog ? catalog.options.map((o) => o.id) : null,
+  };
+}
+
 function sessionModelSupported(capabilities: unknown): boolean {
   if (capabilities == null) return false;
   return (capabilities as { sessionModel?: unknown }).sessionModel === true;
 }
 
-export function sessionModelChoices(capabilities: unknown): string[] | null {
+export function sessionModelChoices(
+  capabilities: unknown,
+  discovered: readonly { value: string }[] | null,
+): string[] | null {
   if (!sessionModelSupported(capabilities)) return null;
+  if (discovered?.length) return discovered.map((m) => m.value);
   const catalog = harnessConfigCatalogOf(capabilities);
   const models = catalog?.options.find((o) => o.category === "model");
   return models?.choices.map((c) => c.value) ?? [];

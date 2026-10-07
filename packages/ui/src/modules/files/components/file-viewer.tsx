@@ -6,8 +6,9 @@ import {
   Maximize,
   Save,
 } from "@carbon/icons-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+import { RenderToggle } from "@/components/render-toggle";
 import { Button } from "@/components/ui/button";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -24,7 +25,6 @@ import {
 import { base64ToBlob, downloadFileContent } from "../lib/download.js";
 import { FilePreviewBody } from "./file-preview-body.js";
 import { FullscreenPreviewDialog } from "./fullscreen-preview-dialog.js";
-import { RenderToggle } from "./render-toggle.js";
 
 interface Props {
   file: FileContent;
@@ -132,7 +132,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     showConfirm,
   ]);
 
-  const cancelEdit = useCallback(async () => {
+  const cancelEdit = async () => {
     if (dirty) {
       const ok = await showConfirm(
         "Discard unsaved changes?",
@@ -142,7 +142,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     }
     setDraft(content);
     setEditMode(false);
-  }, [dirty, content, showConfirm]);
+  };
 
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -154,10 +154,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     setPdfBlobUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [content, isPdf]);
-
-  const downloadFile = useCallback(() => downloadFileContent(file), [file]);
-
-  const pathLabel = useMemo(() => (dirty ? `● ${path}` : path), [dirty, path]);
 
   const isRenderedPreview =
     !editMode &&
@@ -189,7 +185,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           className="text-sm font-medium text-foreground flex-1"
           title={path}
         >
-          {pathLabel}
+          {dirty ? `● ${path}` : path}
         </TruncateStart>
         {editMode ? (
           <>
@@ -248,7 +244,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 variant="outline"
                 size="xs"
                 className="text-sm font-normal"
-                onClick={downloadFile}
+                onClick={() => downloadFileContent(file)}
               >
                 <Download size={14} /> Download
               </Button>
@@ -257,18 +253,21 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               <RenderToggle
                 rendered={renderSvg}
                 onToggle={() => setRenderSvg((p) => !p)}
+                className="text-sm"
               />
             )}
             {isMarkdown && (
               <RenderToggle
                 rendered={renderMd}
                 onToggle={() => setRenderMd((p) => !p)}
+                className="text-sm"
               />
             )}
             {isHtml && (
               <RenderToggle
                 rendered={renderHtml}
                 onToggle={() => setRenderHtml((p) => !p)}
+                className="text-sm"
               />
             )}
             {isRenderedPreview && (

@@ -11,7 +11,7 @@ import { connectionsRouter } from "./modules/connections/router.js";
 import { e2eRouter } from "./modules/e2e/router.js";
 import { egressRulesRouter } from "./modules/egress-rules/router.js";
 import { eventsRouter } from "./modules/events/router.js";
-import { experimentsRouter } from "./modules/experiments/router.js";
+import { invocationsRouter } from "./modules/invocations/router.js";
 import { kbSharesRouter } from "./modules/kb-shares/router.js";
 import { satellitesRouter } from "./modules/satellites/router.js";
 import { linksRouter } from "./modules/links/router.js";
@@ -39,7 +39,7 @@ export const appRouter = t.router({
   approvals: approvalsRouter,
   attention: attentionRouter,
   egressRules: egressRulesRouter,
-  experiments: experimentsRouter,
+  invocations: invocationsRouter,
   starterKits: starterKitsRouter,
   kbShares: kbSharesRouter,
   artifactLibrary: artifactLibraryRouter,

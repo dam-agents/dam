@@ -279,12 +279,8 @@ mod tests {
         let path = dir.join(name);
         fs::create_dir_all(&path).unwrap();
         fs::write(path.join("rootfs"), vec![0u8; bytes]).unwrap();
-        backdate(&path, age);
+        let when = filetime::FileTime::from_system_time(SystemTime::now() - age);
+        filetime::set_file_mtime(&path, when).unwrap();
         path
-    }
-
-    fn backdate(path: &Path, age: Duration) {
-        let when = SystemTime::now() - age;
-        filetime::set_file_mtime(path, filetime::FileTime::from_system_time(when)).unwrap();
     }
 }

@@ -87,12 +87,20 @@ rules:
   # removes those Deployments itself (see `virtualization` in values.yaml).
   # Gated, because on a split-namespace install this is a ClusterRole and
   # Deployment write includes the platform's own Deployments.
-  # Read-only, and only to explain why a VM runner is not ready: the
-  # Deployment reports zero ready replicas and nothing else, while the pod
-  # carries the scheduling or image failure the agent's status should name.
+  # Read-only, and only to explain a failure the agent's status should name:
+  # why a VM runner is not ready (its Deployment reports zero ready replicas
+  # and nothing else, while the pod carries the scheduling or image failure),
+  # and why a runtime migration's copy Job failed (its pod's termination
+  # message is the copy's own error).
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
+  # A runtime migration reports its steps as Events on the Agent, and reads
+  # the Events of its copy Job's pod to say why that pod is not starting
+  # (a volume that will not attach, a pod the scheduler cannot place).
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "create"]
   # The runner pod's memory request follows the machines it holds, changed
   # in place so the Deployment never recreates the pod (and every machine
   # with it). Only the resize subresource: it cannot touch anything but a
@@ -100,9 +108,10 @@ rules:
   - apiGroups: [""]
     resources: ["pods/resize"]
     verbs: ["update", "patch"]
+  # watch: a runner's pod becoming ready requeues that owner's vm agents.
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list", "create", "update", "delete"]
+    verbs: ["get", "list", "watch", "create", "update", "delete"]
 {{- end }}
   - apiGroups: ["batch"]
     resources: ["jobs"]
@@ -110,6 +119,12 @@ rules:
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # A vm agent on a runner outside the cluster (virtualization.runner.hostAddress)
+  # has no runner pod for its Service to select; the controller names the
+  # runner's address in the Service's own EndpointSlice instead.
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "create", "update"]
 
   # Agent workspace PVCs: list/delete for reclamation + orphan GC. The warm
   # pool (#692) additionally creates pre-provisioned spares and updates them to
@@ -138,7 +153,7 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-{{- if or .Values.virtualization.enabled (and .Values.controller .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled) }}
+{{- if or .Values.virtualization.enabled (and .Values.controller.envoyMitm .Values.controller.envoyMitm.enabled) }}
   - apiGroups: ["cert-manager.io"]
     resources: ["certificates"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

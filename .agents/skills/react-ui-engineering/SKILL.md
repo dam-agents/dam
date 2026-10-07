@@ -5,54 +5,53 @@ description: 'Use this skill whenever writing, editing, reviewing, or refactorin
 
 # React + TypeScript UI Engineering
 
-Opinionated standards for React+TS UI code. When a rule doesn't fit, say so and propose a deviation rather than silently ignoring it.
+When a rule doesn't fit, say so and propose a deviation instead of silently ignoring it.
 
 ## Core principles
 
-1. **Clean code & DRY** — every component, hook, and function does one thing. When the same pattern appears three times, extract it.
-2. **Separation by lineage** — state is classified by where its source of truth lives (server, UI, local, URL). Each has a designated home. Mixing lineages is the single biggest driver of drift.
-3. **Small surface, small files** — a component or hook that can't be held in working memory is a bug report waiting to happen. Split along responsibilities.
-4. **Meaningful names** — identifiers carry intent: `selectedAgentId` over `sel`, `hasUnsavedChanges` over `flag`, `useFilteredAgents` over `useData`. Naming is the cheapest documentation you can write.
-5. **No unnecessary comments** — names and structure say *what*; a comment says *why*, and only when the reason isn't visible in the code (a subtle invariant, an external constraint, a workaround for a specific bug). One line is usually enough. If a rename or a restructure removes the need for the comment, do that instead.
-6. **Types at boundaries, not assertions** — `any`, `as`, and untyped fetch responses are how large codebases rot. Prefer Zod inference and type guards.
+1. **One job each.** Every component, hook and function does one thing; extract a pattern on its third appearance.
+2. **Separation by lineage.** State is classified by where its source of truth lives (server, UI, local, URL), each with one home. Mixing lineages is the biggest driver of drift.
+3. **Small files.** A component or hook too big to hold in working memory is a future bug; split along responsibilities.
+4. **No prose comments**: follow `docs/guidelines/comment-guidelines.md`. Names, types and structure carry the *why*; only typed comments and tool directives survive `check:comment-types`.
+5. **Types at boundaries, not assertions.** `any`, `as` and untyped fetch responses rot codebases; prefer Zod inference and type guards.
 
 ## Severity tiers
 
-Rules in the reference files are tagged **CRITICAL** (a violation is a bug, call it out), **HIGH** (strong default, deviate only with a written reason), or **MODERATE** (recommended, local judgment OK). Attend in that order when reviewing.
+Reference rules are tagged **CRITICAL** (violation is a bug; call it out), **HIGH** (strong default; deviate only with a written reason) or **MODERATE** (recommended; local judgment OK). Review in that order.
 
-## The state lineage model (CRITICAL — read before writing any stateful code)
+## The state lineage model (CRITICAL: read before writing stateful code)
 
-Every piece of state has a source of truth. Classify first, then pick the home.
+Classify first, then pick the home.
 
 | Lineage | Examples | Home |
 |---|---|---|
-| **Server owns it** — fetched from backend or persisted there | lists of agents, secrets, sessions, user profile, connector config | **TanStack Query** cache (via `@trpc/react-query` for tRPC, or typed fetchers for non-tRPC) |
-| **UI owns it, shared across components** — app-wide UI state, preferences not yet persisted | theme, open dialog, selected agent id, toast queue, navigation collapsed | **Zustand** or **React Context** |
-| **UI owns it, local to one component** — ephemeral | input focus, hover state, accordion expanded, form field value before submit | `useState` / `useRef` |
-| **URL owns it** — bookmarkable, shareable, back-button should restore | current route, filters, selected tab, pagination, search query | URL params / path |
+| **Server owns it** (fetched or persisted there) | agents, secrets, sessions, user profile, connector config | **TanStack Query** cache (via `@trpc/tanstack-react-query` for tRPC, typed fetchers otherwise) |
+| **UI, shared** (app-wide, not yet persisted) | theme, open dialog, selected agent id, toast queue, nav collapsed | **Zustand** or **React Context** |
+| **UI, local** (ephemeral) | focus, hover, accordion expanded, unsubmitted field value | `useState` / `useRef` |
+| **URL** (bookmarkable, back button restores) | route, filters, selected tab, pagination, search query | URL params / path |
 
-**Do not duplicate across lineages.** If the server owns a list, you do not also keep it in Zustand. If the URL owns the selected agent, you do not also track it in `useState`. Duplication is the root cause of stale-state bugs.
+**Never duplicate across lineages**: a server-owned list isn't also in Zustand; a URL-owned selection isn't also in `useState`. Duplication is the root of stale-state bugs.
 
 ## When to consult what
 
-Read only what the task needs. Don't pre-load these.
+Read only what the task needs.
 
 | Situation | Read |
 |---|---|
-| Deciding where a new file goes | `references/project-structure.md` |
+| Where a new file goes | `references/project-structure.md` |
 | Writing or editing a large component | `references/components.md` |
-| Extracting logic into a hook, or a hook feels bloated | `references/hooks.md` |
-| Deciding where a piece of state lives | `references/state-management.md` |
-| Anything that talks to the server | `references/async-data.md` |
+| Extracting a hook, or a hook feels bloated | `references/hooks.md` |
+| Where a piece of state lives | `references/state-management.md` |
+| Anything talking to the server | `references/async-data.md` |
 | Building a form | `references/forms.md` |
-| Styling, inline styles, class composition, reusing an existing component | `references/styling.md` |
+| Styling, inline styles, class composition, reusing a component | `references/styling.md` |
 | API / fetch / tRPC setup and error handling | `references/api-layer.md` |
-| Typing a prop, a response, an error, or defining constants / union literals | `references/types.md` |
+| Typing props, responses, errors; constants and union literals | `references/types.md` |
 
-## Legacy code migration
+## Legacy code
 
-These rules are the target state, not a description of the existing codebase.
+These rules are the target state, not a description of the codebase.
 
 - **New code follows them, no exceptions.**
-- **Touch-it = migrate-it.** Editing a 600-line dialog is the moment to split it. Adding a field to a `useState` form that has outgrown the RHF threshold is the moment to convert it. Don't bolt new code onto drift.
-- **Batch migrations are a separate PR.** Moving a whole folder to `modules/{domain}/` or rewriting a god-hook doesn't ride along with feature work.
+- **Touch-it = migrate-it.** Editing a 600-line dialog is when to split it; adding a field to a `useState` form past the RHF threshold is when to convert it. Don't bolt new code onto drift.
+- **Batch migrations are a separate PR** (moving a folder to `modules/{domain}/`, rewriting a god-hook).

@@ -11,10 +11,7 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const agentsDir = join(here, "../../../../agents");
-const baseManifest = join(
-  here,
-  "../../../../platform-base/runtime-manifest.yaml",
-);
+const baseManifest = join(agentsDir, "base/rootfs/app/runtime-manifest.yaml");
 
 const mk = (drivers: Record<string, unknown>) =>
   runtimeManifestSchema.parse({ manifestVersion: 1, drivers });
@@ -24,13 +21,13 @@ describe("resolveDrivers", () => {
     const r = resolveDrivers(mk({}));
     expect(Object.keys(r).sort()).toEqual([
       "env",
-      "experiment-execute",
       "file",
       "initialization",
       "mcp-entry",
       "satellite-outcome",
       "schedule-reset",
       "skill-ref",
+      "sub-agent-outcome",
       "trigger",
       "workspace-command",
       "workspace-seed",
@@ -93,11 +90,11 @@ describe("resolveDrivers", () => {
       "skill-ref",
     ]);
     expect(Object.keys(eventDrivers(r)).sort()).toEqual([
-      "experiment-execute",
       "harness-config",
       "initialization",
       "satellite-outcome",
       "schedule-reset",
+      "sub-agent-outcome",
       "trigger",
       "workspace-command",
       "workspace-seed",
@@ -150,7 +147,9 @@ describe("sessionHistory declaration", () => {
 describe("shipped agent manifests resolve", () => {
   it("claude-code declares harness-config and inherits the built-ins", () => {
     const r = resolveDrivers(
-      loadManifest(join(agentsDir, "claude-code/runtime-manifest.yaml")),
+      loadManifest(
+        join(agentsDir, "claude-code/rootfs/app/runtime-manifest.yaml"),
+      ),
     );
     expect(r["harness-config"]).toMatchObject({
       impl: "harness-config",
@@ -161,7 +160,9 @@ describe("shipped agent manifests resolve", () => {
 
   it("pi-agent declares harness-config with modelDiscovery", () => {
     const r = resolveDrivers(
-      loadManifest(join(agentsDir, "pi-agent/runtime-manifest.yaml")),
+      loadManifest(
+        join(agentsDir, "pi-agent/rootfs/app/runtime-manifest.yaml"),
+      ),
     );
     expect(r["harness-config"]).toMatchObject({
       impl: "harness-config",
@@ -171,7 +172,7 @@ describe("shipped agent manifests resolve", () => {
 
   it("bob declares harness-config over keys Bob itself ignores", () => {
     const r = resolveDrivers(
-      loadManifest(join(agentsDir, "bob/runtime-manifest.yaml")),
+      loadManifest(join(agentsDir, "bob/rootfs/app/runtime-manifest.yaml")),
     );
     expect(r["harness-config"]).toMatchObject({
       impl: "harness-config",
@@ -185,13 +186,14 @@ describe("shipped agent manifests resolve", () => {
         urlEnv: ["BOB_GATEWAY_URL", "BOB_DEFAULT_GATEWAY_URL"],
         path: "/inference/v1/model/info",
         shape: "litellm-model-info",
+        fallback: { path: "/inference/v1/models" },
       },
     });
   });
 
   it("codex writes MCP servers and harness-config into its own config.toml", () => {
     const r = resolveDrivers(
-      loadManifest(join(agentsDir, "codex/runtime-manifest.yaml")),
+      loadManifest(join(agentsDir, "codex/rootfs/app/runtime-manifest.yaml")),
     );
     expect(r["mcp-entry"]).toEqual({
       impl: "mcp-entry",
@@ -220,7 +222,7 @@ describe("shipped agent manifests resolve", () => {
     expect("env" in r && "skill-ref" in r && "trigger" in r).toBe(true);
   });
 
-  it("platform-base is all defaults (no harness-config)", () => {
+  it("the base manifest is all defaults (no harness-config)", () => {
     const r = resolveDrivers(loadManifest(baseManifest));
     expect("harness-config" in r).toBe(false);
     expect("env" in r && "trigger" in r).toBe(true);

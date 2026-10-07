@@ -2,6 +2,9 @@ import { ArrowRight } from "@carbon/icons-react";
 
 import { ExplainerPopover } from "@/components/explainer-popover";
 
+import { useSlackInstallRequestUrl } from "../modules/links/api/queries.js";
+import { SlackInstallRequest } from "../modules/slack/components/slack-install-request.js";
+
 function CrossLink({
   label,
   onFollow,
@@ -27,8 +30,14 @@ export function SlackChannelExplainer({
 }: {
   onGoToConnections?: () => void;
 }) {
+  const installRequestUrl = useSlackInstallRequestUrl();
   return (
-    <ExplainerPopover label="How a Slack Channel differs from a Slack Account connection">
+    <ExplainerPopover
+      label="How a Slack Channel differs from a Slack Account connection"
+      footer={
+        installRequestUrl && <SlackInstallRequest href={installRequestUrl} />
+      }
+    >
       <p>
         With Channels, you can DM or bind your agent to a team channel. The
         agent answers as itself always.
@@ -47,10 +56,14 @@ export function SlackAccountExplainer({
 }: {
   onGoToChannels?: () => void;
 }) {
+  const installRequestUrl = useSlackInstallRequestUrl();
   return (
     <ExplainerPopover
       side="bottom"
       label="How a Slack Account connection differs from a Slack Channel"
+      footer={
+        installRequestUrl && <SlackInstallRequest href={installRequestUrl} />
+      }
     >
       <p>
         With a Slack Account connection, the agent works in your Slack as you.

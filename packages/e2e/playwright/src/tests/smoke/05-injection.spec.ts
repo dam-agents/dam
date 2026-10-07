@@ -1,13 +1,15 @@
 import { expect, test } from "@playwright/test";
+import { connectionEgressPlaceholder } from "api-server-api";
 
-import { waitForAgentRunning } from "../../lib/agents.js";
+import { expectAgentEnv, waitForAgentRunning } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
+import { getConnectionId } from "../../lib/connections.js";
 import {
   agentName,
+  connectionName,
   echoUrl,
   envName,
-  placeholder,
   sentinel,
 } from "../../lib/fixtures.js";
 
@@ -17,28 +19,18 @@ test("connection injects the credential (env placeholder + egress after Envoy)",
   const token = await getAccessToken();
   const api = createApiClient(token);
   const agentId = await waitForAgentRunning(api, agentName);
+  const placeholder = connectionEgressPlaceholder(
+    await getConnectionId(api, connectionName),
+  );
 
   await test.step("env rail: agent sees only the placeholder", async () => {
-    await expect
-      .poll(
-        async () => {
-          try {
-            const { value } = await api.e2e.getEnv.query({
-              agentId,
-              name: envName,
-            });
-            return value;
-          } catch {
-            return undefined;
-          }
-        },
-        {
-          timeout: 120_000,
-          intervals: [2_000],
-          message: `env ${envName} did not converge to the placeholder`,
-        },
-      )
-      .toBe(placeholder);
+    await expectAgentEnv(
+      api,
+      agentId,
+      envName,
+      placeholder,
+      `env ${envName} did not converge to the placeholder`,
+    );
   });
 
   await test.step("egress rail: real value injected after Envoy", async () => {

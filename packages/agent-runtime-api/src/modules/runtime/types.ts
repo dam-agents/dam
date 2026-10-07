@@ -4,6 +4,7 @@ export const contributionKind = z.enum([
   "env",
   "egress-allow",
   "egress-inject",
+  "egress-sign",
   "file",
   "mcp-entry",
   "skill-ref",
@@ -15,10 +16,10 @@ export const eventKind = z.enum([
   "schedule-reset",
   "workspace-seed",
   "workspace-command",
-  "experiment-execute",
   "initialization",
   "harness-config",
   "satellite-outcome",
+  "sub-agent-outcome",
 ]);
 export type EventKind = z.infer<typeof eventKind>;
 
@@ -93,6 +94,15 @@ export const egressInjectContribution = z.object({
   upstreamCa: z.boolean().optional(),
 });
 
+export const egressSignContribution = z.object({
+  kind: z.literal("egress-sign"),
+  host: z.string().min(1),
+  port: egressPort,
+  pathPattern: z.string().optional(),
+  region: z.string().min(1),
+  service: z.string().min(1),
+});
+
 export const fileContribution = z.object({
   kind: z.literal("file"),
   path: z.string().min(1),
@@ -120,6 +130,7 @@ export const contribution = z.discriminatedUnion("kind", [
   envContribution,
   egressAllowContribution,
   egressInjectContribution,
+  egressSignContribution,
   fileContribution,
   mcpEntryContribution,
   skillRefContribution,
@@ -208,9 +219,6 @@ export const workspaceSeedEvent = z.object({
 export const workspaceCommandEventPayload = z.object({
   command: z.string().min(1),
 });
-export type WorkspaceCommandEventPayload = z.infer<
-  typeof workspaceCommandEventPayload
->;
 
 export const workspaceCommandEvent = z.object({
   id: z.string().min(1),
@@ -220,28 +228,9 @@ export const workspaceCommandEvent = z.object({
   payload: workspaceCommandEventPayload,
 });
 
-export const experimentExecuteEventPayload = z.object({
-  experimentId: z.string().min(1),
-  task: z.string().min(1),
-});
-export type ExperimentExecuteEventPayload = z.infer<
-  typeof experimentExecuteEventPayload
->;
-
-export const experimentExecuteEvent = z.object({
-  id: z.string().min(1),
-  kind: z.literal("experiment-execute"),
-  version: z.number().int().nonnegative(),
-  expiresAt: z.string().datetime({ offset: true }),
-  payload: experimentExecuteEventPayload,
-});
-
 export const initializationEventPayload = z.object({
   task: z.string().min(1),
 });
-export type InitializationEventPayload = z.infer<
-  typeof initializationEventPayload
->;
 
 export const initializationEvent = z.object({
   id: z.string().min(1),
@@ -285,15 +274,31 @@ export const satelliteOutcomeEvent = z.object({
   payload: satelliteOutcomeEventPayload,
 });
 
+export const subAgentOutcomeEventPayload = z.object({
+  task: z.string().min(1),
+  ids: z.array(z.string().min(1)).min(1),
+});
+export type SubAgentOutcomeEventPayload = z.infer<
+  typeof subAgentOutcomeEventPayload
+>;
+
+export const subAgentOutcomeEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("sub-agent-outcome"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: subAgentOutcomeEventPayload,
+});
+
 export const event = z.discriminatedUnion("kind", [
   triggerEvent,
   scheduleResetEvent,
   workspaceSeedEvent,
   workspaceCommandEvent,
-  experimentExecuteEvent,
   initializationEvent,
   harnessConfigEvent,
   satelliteOutcomeEvent,
+  subAgentOutcomeEvent,
 ]);
 export type Event = z.infer<typeof event>;
 
@@ -311,7 +316,6 @@ export const harnessConfigOptionGroup = z.object({
   category: z.string().min(1),
   choices: z.array(harnessConfigChoice),
 });
-export type HarnessConfigOptionGroup = z.infer<typeof harnessConfigOptionGroup>;
 
 export const harnessConfigCatalog = z.object({
   options: z.array(harnessConfigOptionGroup),
@@ -329,9 +333,18 @@ export const harnessConfigCurrent = z.object({
 });
 export type HarnessConfigCurrent = z.infer<typeof harnessConfigCurrent>;
 
+function advertisedKinds<T extends string>(known: readonly T[]) {
+  const recognised = new Set<string>(known);
+  return z
+    .array(z.string())
+    .transform((kinds) =>
+      kinds.filter((kind): kind is T => recognised.has(kind)),
+    );
+}
+
 export const capabilities = z.object({
-  contributions: z.array(contributionKind),
-  events: z.array(eventKind),
+  contributions: advertisedKinds(contributionKind.options),
+  events: advertisedKinds(eventKind.options),
   harnessConfig: z.boolean().optional(),
   harnessConfigCatalog: harnessConfigCatalog.optional(),
   sessionModel: z.boolean().optional(),
@@ -341,7 +354,7 @@ export const capabilities = z.object({
 export type Capabilities = z.infer<typeof capabilities>;
 
 export interface RuntimeFeatures {
-  liveUpdates: boolean;
+  liveUpdates: boolean | null;
 }
 
 const runtimeFeatureFlags = z.looseObject({
@@ -349,6 +362,7 @@ const runtimeFeatureFlags = z.looseObject({
 });
 
 export function runtimeFeaturesOf(caps: unknown): RuntimeFeatures {
+  if (caps == null) return { liveUpdates: null };
   const parsed = runtimeFeatureFlags.safeParse(caps);
   return { liveUpdates: parsed.success && parsed.data.liveUpdates === true };
 }
@@ -357,7 +371,6 @@ export const stateSlice = z.object({
   contributions: z.array(contribution),
   hash: z.string().min(1),
 });
-export type StateSlice = z.infer<typeof stateSlice>;
 
 export const applyStateInput = z.object({
   version: z.number().int().positive(),

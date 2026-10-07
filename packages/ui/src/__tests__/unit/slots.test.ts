@@ -36,6 +36,7 @@ const agent = (
   starterKitOnboarded: null,
   image: "x:latest",
   hibernationTimeoutMin: 60,
+  requireConnectionAddress: false,
   grantedSecretIds: [],
   grantedConnectionIds: [],
   stopRequested: false,
@@ -49,6 +50,8 @@ const agent = (
   channels: [],
   spawnedBy: null,
   vm: false,
+  runtimeMigration: null,
+  runtimeMigratable: false,
 });
 
 describe("slots", () => {
@@ -115,6 +118,28 @@ describe("slots", () => {
     expect(view.groups.map((g) => [g.state, g.agents, g.slots])).toEqual([
       ["running", 1, 2],
       ["awake", 1, 1],
+    ]);
+  });
+
+  it("counts every scaled-up agent, a starting one included, as the server does", () => {
+    const view = computeView(
+      [
+        agent("up", { cpu: "1", memory: "2Gi" }),
+        agent("booting", { cpu: "2", memory: "4Gi" }, "starting"),
+        agent("asleep", { cpu: "1", memory: "2Gi" }, "hibernated"),
+        {
+          ...agent("parked", { cpu: "1", memory: "2Gi" }, "starting"),
+          overBudget: true,
+        },
+      ],
+      new Set(),
+      budget,
+    );
+    expect(view.usedSlots).toBe(3);
+    expect(view.segments.map((s) => s.agentName)).toEqual([
+      "up",
+      "booting",
+      null,
     ]);
   });
 });

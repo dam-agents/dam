@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -86,9 +87,26 @@ func TestGatewayIngressAdmitsOnlyThePairedAgent(t *testing.T) {
 func TestGatewayIngressAdmitsTheOwnersRunnerForAVMAgent(t *testing.T) {
 	np := BuildGatewayIngressNetworkPolicy("my-instance", testOwner, true, testConfig, configMapOwnerRef(testOwnerCM))
 
-	require.Len(t, np.Spec.Ingress, 1)
+	require.Len(t, np.Spec.Ingress, 2)
 	from := np.Spec.Ingress[0].From
 	require.Len(t, from, 2, "the paired agent and the owner's runner")
 	assert.Equal(t, vmRunnerSelector(testOwner), from[1].PodSelector.MatchLabels)
 	assert.Equal(t, testOwner, from[1].PodSelector.MatchLabels[envoyOwnerLabel])
+}
+
+// TEST_SCENARIO: a machine reaches its gateway without proxy settings on the proxy port, which the runner is already admitted on, and on the machine resolver, only through the owner's runner. The resolver port is admitted from that runner alone — the proxy rule's other peer, the agent pod a container agent would have, gets nothing new — and a container agent's gateway admits none of them.
+func TestGatewayIngressAdmitsTheMachinesTransparentPortsFromItsRunnerOnly(t *testing.T) {
+	np := BuildGatewayIngressNetworkPolicy("my-instance", testOwner, true, testConfig, configMapOwnerRef(testOwnerCM))
+
+	machine := np.Spec.Ingress[1]
+	require.Len(t, machine.From, 1)
+	assert.Equal(t, vmRunnerSelector(testOwner), machine.From[0].PodSelector.MatchLabels)
+	var got []string
+	for _, p := range machine.Ports {
+		got = append(got, fmt.Sprintf("%s/%d", *p.Protocol, p.Port.IntVal))
+	}
+	assert.ElementsMatch(t, []string{"UDP/10053", "TCP/10053"}, got)
+
+	container := BuildGatewayIngressNetworkPolicy("my-instance", testOwner, false, testConfig, configMapOwnerRef(testOwnerCM))
+	require.Len(t, container.Spec.Ingress, 1, "a container agent's gateway keeps the proxy port alone")
 }

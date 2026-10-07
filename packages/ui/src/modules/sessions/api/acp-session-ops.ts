@@ -1,5 +1,10 @@
-import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
-import type { PodSession } from "agent-runtime-api";
+import type { ClientConnection } from "@agentclientprotocol/sdk";
+import {
+  type PodSession,
+  type SessionListCursor,
+  type SessionListQuery,
+  sessionMatchesQuery,
+} from "agent-runtime-api";
 import {
   type PlatformUndeliveredPrompt,
   SessionMode,
@@ -15,7 +20,6 @@ interface PlatformMeta {
   mode?: string;
   type?: string;
   scheduleId?: string;
-  experimentId?: string;
   initialization?: boolean;
   threadTs?: string;
   createdAt?: string;
@@ -33,18 +37,25 @@ interface ListedSession {
   _meta?: { platform?: PlatformMeta };
 }
 
+const SESSION_TYPES: readonly string[] = Object.values(SessionType);
+
+function asSessionType(value: string | undefined): SessionType {
+  return value !== undefined && SESSION_TYPES.includes(value)
+    ? (value as SessionType)
+    : SessionType.Regular;
+}
+
 function toSessionView(agentId: string, s: ListedSession): SessionView {
   const p = s._meta?.platform;
   return {
     sessionId: s.sessionId,
     agentId,
-    type: (p?.type as SessionType) ?? SessionType.Regular,
+    type: asSessionType(p?.type),
     mode: p
       ? ((p.mode as SessionMode) ?? SessionMode.Chat)
       : SessionMode.Terminal,
     createdAt: p?.createdAt ?? s.updatedAt ?? new Date(0).toISOString(),
     scheduleId: p?.scheduleId ?? null,
-    experimentId: p?.experimentId ?? null,
     initialization: p?.initialization ?? null,
     threadTs: p?.threadTs ?? null,
     title: s.title ?? null,
@@ -59,7 +70,7 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
 
 async function withConnection<T>(
   agentId: string,
-  fn: (conn: ClientSideConnection) => Promise<T>,
+  fn: (conn: ClientConnection) => Promise<T>,
   opts?: { passive?: boolean },
 ): Promise<T> {
   const { connection, ws } = await openInitializedConnection(
@@ -79,18 +90,22 @@ async function withConnection<T>(
   }
 }
 
-function byRecencyThenId(a: SessionView, b: SessionView): number {
-  const byActivity = (b.updatedAt ?? b.createdAt).localeCompare(
-    a.updatedAt ?? a.createdAt,
-  );
-  return byActivity !== 0 ? byActivity : a.sessionId.localeCompare(b.sessionId);
+function compareCodeUnits(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
-export async function listSessionsOn(
+function byRecencyThenId(a: SessionView, b: SessionView): number {
+  return (
+    compareCodeUnits(b.updatedAt ?? b.createdAt, a.updatedAt ?? a.createdAt) ||
+    compareCodeUnits(a.sessionId, b.sessionId)
+  );
+}
+
+async function listSessionsOn(
   agentId: string,
-  conn: ClientSideConnection,
+  conn: ClientConnection,
 ): Promise<SessionView[]> {
-  const r = await conn.listSessions({ cwd: "." });
+  const r = await conn.agent.request("session/list", { cwd: "." });
   return (r.sessions ?? [])
     .map((s) => toSessionView(agentId, s as unknown as ListedSession))
     .sort(byRecencyThenId);
@@ -102,7 +117,6 @@ const POD_TYPE: Record<PodSession["type"], SessionType> = {
   channel_telegram: SessionType.ChannelTelegram,
   schedule_cron: SessionType.ScheduleCron,
   schedule_once: SessionType.ScheduleOnce,
-  experiment_execute: SessionType.ExperimentExecute,
   cli_run: SessionType.CliRun,
 };
 
@@ -119,7 +133,6 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     mode: POD_MODE[s.mode],
     createdAt: s.createdAt,
     scheduleId: s.scheduleId,
-    experimentId: s.experimentId,
     initialization: s.initialization ?? null,
     threadTs: s.threadTs,
     title: s.title,
@@ -132,24 +145,45 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
   };
 }
 
-export async function listAgentSessions(
-  agentId: string,
-): Promise<SessionView[]> {
-  if (agentLacksLiveUpdates(agentId)) {
-    return listAgentSessionsOverAcp(agentId);
-  }
-  const { sessions } = await agentTrpc(agentId).sessions.list.query();
-  return sessions
-    .map((s) => toSessionViewFromPod(agentId, s))
-    .sort(byRecencyThenId);
+export interface SessionViewPage {
+  sessions: SessionView[];
+  nextCursor: SessionListCursor | null;
 }
 
-export async function listAgentSessionsOverAcp(
+export async function listAgentSessionPage(
   agentId: string,
-): Promise<SessionView[]> {
-  return withConnection(agentId, (conn) => listSessionsOn(agentId, conn), {
-    passive: true,
+  query: SessionListQuery = {},
+): Promise<SessionViewPage> {
+  if (agentLacksLiveUpdates(agentId)) {
+    const sessions = await withConnection(
+      agentId,
+      (conn) => listSessionsOn(agentId, conn),
+      { passive: true },
+    );
+    return {
+      sessions: sessions.filter((s) => sessionMatchesQuery(s, query)),
+      nextCursor: null,
+    };
+  }
+  const page = await agentTrpc(agentId).sessions.list.query(query);
+  return {
+    sessions: page.sessions
+      .map((s) => toSessionViewFromPod(agentId, s))
+      .filter((s) => sessionMatchesQuery(s, query))
+      .sort(byRecencyThenId),
+    nextCursor: page.nextCursor ?? null,
+  };
+}
+
+export async function findAgentSession(
+  agentId: string,
+  sessionId: string,
+): Promise<SessionView | null> {
+  const { sessions } = await listAgentSessionPage(agentId, {
+    sessionId,
+    limit: 1,
   });
+  return sessions[0] ?? null;
 }
 
 export async function deleteAgentSession(
@@ -157,7 +191,7 @@ export async function deleteAgentSession(
   sessionId: string,
 ): Promise<void> {
   await withConnection(agentId, (conn) =>
-    conn.extMethod("platform/deleteSession", { sessionId }),
+    conn.agent.request("platform/deleteSession", { sessionId }),
   );
 }
 
@@ -167,7 +201,7 @@ export async function forgetUndeliveredPrompt(
   id: string,
 ): Promise<void> {
   await withConnection(agentId, (conn) =>
-    conn.extMethod("platform/forgetUndelivered", { sessionId, id }),
+    conn.agent.request("platform/forgetUndelivered", { sessionId, id }),
   );
 }
 
@@ -178,7 +212,7 @@ export async function handOverUndelivered(
 ): Promise<void> {
   if (prompts.length === 0) return;
   await withConnection(agentId, (conn) =>
-    conn.extMethod("platform/recordUndelivered", { sessionId, prompts }),
+    conn.agent.request("platform/recordUndelivered", { sessionId, prompts }),
   );
 }
 
@@ -188,7 +222,7 @@ export async function setSessionMode(
   mode: SessionMode,
 ): Promise<void> {
   await withConnection(agentId, (conn) =>
-    conn.unstable_resumeSession({
+    conn.agent.request("session/resume", {
       sessionId,
       cwd: ".",
       mcpServers: [],

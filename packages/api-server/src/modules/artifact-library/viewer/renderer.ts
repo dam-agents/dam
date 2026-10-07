@@ -2,7 +2,7 @@ import type { ArtifactKind } from "api-server-api";
 import { extensionOf } from "../domain/artifact-kind.js";
 import { ARTIFACT_BRIDGE_SHIM } from "./bridge-shim.js";
 
-export function escapeHtml(s: string): string {
+function escapeHtml(s: string): string {
   return s
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -56,20 +56,11 @@ export interface WrapperInput {
   contentUrl: string;
   slug: string;
   version: number;
-  versionCount: number;
   downloadName: string;
 }
 
 export function renderWrapper(input: WrapperInput): string {
-  const { slug, version, versionCount } = input;
-  const versionNav =
-    versionCount >= 2
-      ? `<nav class="versions" aria-label="Versions">
-          ${version > 1 ? `<a href="/a/${escapeHtml(slug)}?v=${version - 1}" aria-label="Older version">‹</a>` : `<span class="dim">‹</span>`}
-          <span>v${version} / ${versionCount}</span>
-          ${version < versionCount ? `<a href="/a/${escapeHtml(slug)}?v=${version + 1}" aria-label="Newer version">›</a>` : `<span class="dim">›</span>`}
-        </nav>`
-      : "";
+  const { slug, version } = input;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -87,9 +78,6 @@ export function renderWrapper(input: WrapperInput): string {
   .banner .spacer { flex: 1; }
   .banner a { color: inherit; text-decoration: none; border: 1px solid light-dark(#dde1e6, #393939); border-radius: 6px; padding: 3px 10px; }
   .banner a:hover { background: light-dark(#f2f4f8, #262626); }
-  .versions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-  .versions a { border: none; padding: 0 4px; font-size: 14px; }
-  .versions .dim { opacity: 0.35; padding: 0 4px; }
   iframe { flex: 1; width: 100%; border: 0; background: #fff; }
 </style>
 </head>
@@ -98,7 +86,6 @@ export function renderWrapper(input: WrapperInput): string {
   <span class="title">${escapeHtml(input.title)}</span>
   <span>user-generated content · shared via ${escapeHtml(input.brandName)}</span>
   <span class="spacer"></span>
-  ${versionNav}
   <a href="/a/${escapeHtml(slug)}/raw?v=${version}&download=1" download="${escapeHtml(input.downloadName)}">Source</a>
 </div>
 <iframe sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
@@ -138,7 +125,7 @@ const JSX_IMPORT_MAP = `{
   }
 }`;
 
-export function renderJsxInner(source: string, title: string): string {
+function renderJsxInner(source: string, title: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -204,7 +191,7 @@ try {
 </html>`;
 }
 
-export function renderMarkdownInner(source: string, title: string): string {
+function renderMarkdownInner(source: string, title: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -258,7 +245,7 @@ const HLJS_LANG_BY_EXT: Record<string, string> = {
   cs: "csharp",
 };
 
-export function renderCodeInner(
+function renderCodeInner(
   source: string,
   fileName: string,
   title: string,

@@ -1,8 +1,9 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { match } from "ts-pattern";
 import { artifactSharingInputSchema } from "api-server-api";
 import { TRPCError } from "@trpc/server";
 import type {
+  ArtifactCallAgentApiResult,
   ArtifactContent,
   ArtifactCreateInput,
   ArtifactFolder,
@@ -21,6 +22,10 @@ import type {
   LibraryArtifact,
 } from "api-server-api";
 
+import {
+  securityLog,
+  type SecuritySurface,
+} from "../../../core/security-log.js";
 import type { ArtifactService } from "../../artifacts/services/artifact-service.js";
 import {
   DEFAULT_CONTENT_TYPE,
@@ -29,7 +34,7 @@ import {
   downloadFileName,
   isTextKind,
 } from "../domain/artifact-kind.js";
-import { generateId, generateSlug } from "../domain/share-crypto.js";
+import { generateSlug } from "../domain/share-crypto.js";
 import {
   isOwnStagingKey,
   stagingKey,
@@ -41,6 +46,7 @@ import type {
   FolderRow,
   SharingPatch,
 } from "../infrastructure/artifact-library-repository.js";
+import type { AgentApiPodClient } from "../infrastructure/agent-api-pod-client.js";
 import { renderTextKindInner } from "../viewer/renderer.js";
 import { emit, EventType } from "../../../events.js";
 
@@ -57,25 +63,23 @@ export interface ArtifactAgentDownloadTicket {
   expiresSeconds: number;
 }
 
+interface ContentRef {
+  storageRef: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  version: number;
+}
+
 export interface ArtifactLibraryServiceImpl extends ArtifactLibraryService {
   create(
     input: ArtifactCreateInput,
     attribution?: {
       author: ArtifactVersionAuthor;
       agentId?: string;
-      internal?: boolean;
     },
   ): Promise<LibraryArtifact>;
-  resolveContentRef(
-    id: string,
-    version?: number,
-  ): Promise<{
-    storageRef: string;
-    fileName: string;
-    contentType: string;
-    sizeBytes: number;
-    version: number;
-  } | null>;
+  resolveContentRef(id: string, version?: number): Promise<ContentRef | null>;
   createAgentDownloadUrl(
     id: string,
     version?: number,
@@ -95,14 +99,47 @@ export interface ArtifactLibraryDeps {
   surface: ArtifactSurface;
   shareBaseUrl: string;
   agentExists?: (agentId: string) => Promise<boolean>;
+  ensureReady: (agentId: string) => Promise<void>;
+  agentApi: AgentApiPodClient;
 }
 
-export function shareUrlFor(shareBaseUrl: string, slug: string): string {
-  return `${shareBaseUrl.replace(/\/+$/, "")}/a/${slug}`;
+type AgentApiAccess =
+  | { allowed: true; agentId: string }
+  | {
+      allowed: false;
+      denial:
+        | "missing"
+        | "not-html"
+        | "not-interactive"
+        | "not-private"
+        | "not-agent-published"
+        | "agent-not-bound";
+    };
+
+function securitySurface(surface: ArtifactSurface): SecuritySurface {
+  return match(surface)
+    .with("ui", () => "ui" as const)
+    .with("cli", () => "cli" as const)
+    .with("mcp", () => "mcp" as const)
+    .with("system", () => "other" as const)
+    .with("other", () => "other" as const)
+    .exhaustive();
 }
 
-export function folderShareUrlFor(shareBaseUrl: string, slug: string): string {
-  return `${shareBaseUrl.replace(/\/+$/, "")}/f/${slug}`;
+function agentApiAccess(
+  row: ArtifactRow | null,
+  agentIds: readonly string[] | "*",
+): AgentApiAccess {
+  if (!row) return { allowed: false, denial: "missing" };
+  if (row.kind !== "html") return { allowed: false, denial: "not-html" };
+  if (!row.interactive) return { allowed: false, denial: "not-interactive" };
+  if (row.visibility !== "private")
+    return { allowed: false, denial: "not-private" };
+  if (row.agentId === null)
+    return { allowed: false, denial: "not-agent-published" };
+  if (agentIds !== "*" && !agentIds.includes(row.agentId))
+    return { allowed: false, denial: "agent-not-bound" };
+  return { allowed: true, agentId: row.agentId };
 }
 
 function hasShareLink(visibility: ArtifactVisibility): boolean {
@@ -135,7 +172,7 @@ export function toLibraryArtifact(
     expiresAt: row.expiresAt?.toISOString() ?? null,
     viewCount: row.viewCount,
     shareUrl: hasShareLink(row.visibility)
-      ? shareUrlFor(shareBaseUrl, row.slug)
+      ? `${shareBaseUrl.replace(/\/+$/, "")}/a/${row.slug}`
       : null,
     viewers,
     createdAt: row.createdAt.toISOString(),
@@ -218,13 +255,7 @@ export function createArtifactLibraryService(
   async function resolveRef(
     id: string,
     version?: number,
-  ): Promise<{
-    storageRef: string;
-    fileName: string;
-    contentType: string;
-    sizeBytes: number;
-    version: number;
-  } | null> {
+  ): Promise<ContentRef | null> {
     const row = await repo.getArtifact(id, owner);
     if (!row) return null;
     if (version === undefined || version === row.version) {
@@ -305,19 +336,19 @@ export function createArtifactLibraryService(
       if (!ref) return null;
       const row = await repo.getArtifact(id, owner);
       const kind = (row?.kind ?? "binary") as ArtifactKind;
+      const binary = !isTextKind(kind);
       if (ref.sizeBytes > PREVIEW_MAX_BYTES) {
         return {
           kind,
           contentType: ref.contentType,
           fileName: ref.fileName,
           content: "",
-          binary: !isTextKind(kind),
+          binary,
           tooLarge: true,
         } satisfies ArtifactContent;
       }
       const blob = await artifacts.get(ref.storageRef);
       if (!blob) return null;
-      const binary = !isTextKind(kind);
       return {
         kind,
         contentType: ref.contentType,
@@ -388,7 +419,7 @@ export function createArtifactLibraryService(
             "an interactive artifact can talk to your agent, so it cannot be shared",
         });
       }
-      const id = generateId();
+      const id = randomUUID();
       const key = versionKey(owner, id, 1, fileName);
       const stored = await ingestBytes({
         content: input.content,
@@ -425,17 +456,15 @@ export function createArtifactLibraryService(
         ownerSub: owner,
         ...(attribution?.agentId ? { agentId: attribution.agentId } : {}),
       });
-      if (!attribution?.internal) {
-        emit({
-          type: EventType.ArtifactPublished,
-          actorSub: owner,
-          artifactId: row.id,
-          agentId: attribution?.agentId ?? null,
-          kind: row.kind,
-          visibility: row.visibility,
-          surface,
-        });
-      }
+      emit({
+        type: EventType.ArtifactPublished,
+        actorSub: owner,
+        artifactId: row.id,
+        agentId: attribution?.agentId ?? null,
+        kind: row.kind,
+        visibility: row.visibility,
+        surface,
+      });
       return toLibraryArtifact(row, shareBaseUrl, []);
     },
 
@@ -512,11 +541,10 @@ export function createArtifactLibraryService(
           ...(row.agentId ? { agentId: row.agentId } : {}),
         });
         return withViewers(advanced);
-      } else {
-        if (input.fileName !== undefined) patch.fileName = input.fileName;
-        if (input.contentType !== undefined)
-          patch.contentType = input.contentType;
       }
+      if (input.fileName !== undefined) patch.fileName = input.fileName;
+      if (input.contentType !== undefined)
+        patch.contentType = input.contentType;
 
       const updated = await repo.updateArtifact(id, owner, patch);
       if (!updated) throw new TRPCError({ code: "NOT_FOUND" });
@@ -623,7 +651,7 @@ export function createArtifactLibraryService(
 
     async createFolder(name) {
       const row = await repo.insertFolder({
-        id: generateId(),
+        id: randomUUID(),
         owner,
         name,
         slug: generateSlug(),
@@ -664,7 +692,9 @@ export function createArtifactLibraryService(
     async folderShareUrl(id) {
       const folder = await requireOwnedFolder(id);
       const shared = await repo.countSharedInFolder(id);
-      return shared > 0 ? folderShareUrlFor(shareBaseUrl, folder.slug) : null;
+      return shared > 0
+        ? `${shareBaseUrl.replace(/\/+$/, "")}/f/${folder.slug}`
+        : null;
     },
 
     resolveContentRef: resolveRef,
@@ -696,6 +726,33 @@ export function createArtifactLibraryService(
         version: ref.version,
         expiresSeconds: link.expiresSeconds,
       };
+    },
+
+    async callAgentApi(
+      { artifactId, ...request },
+      { agentIds },
+    ): Promise<ArtifactCallAgentApiResult> {
+      const row = await repo.getArtifact(artifactId, owner);
+      const access = agentApiAccess(row, agentIds);
+      if (!access.allowed) {
+        securityLog("warn", "authz.artifact_api_denied", {
+          category: "authz",
+          actor: owner,
+          actorKind: "user",
+          surface: securitySurface(surface),
+          decision: "deny",
+          reason: access.denial,
+          target: artifactId,
+          ...(row?.agentId ? { agentId: row.agentId } : {}),
+        });
+        return { ok: false, reason: "not-allowed" };
+      }
+      try {
+        await deps.ensureReady(access.agentId);
+      } catch {
+        return { ok: false, reason: "agent-unreachable" };
+      }
+      return deps.agentApi.request(access.agentId, request);
     },
 
     async recordTouch({ agentId, sessionId, artifactId, version }) {

@@ -7,10 +7,12 @@ import {
   useState,
 } from "react";
 
+import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { Attachment } from "../../../types.js";
 import {
   classifyResumeError,
+  extractErrorMessage,
   resumeFailureKind,
   type SessionFailureKind,
   type SessionListing,
@@ -24,10 +26,11 @@ import {
   useAgentRunState,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
-import { listAgentSessions, listSessionsOn } from "../api/acp-session-ops.js";
+import { findAgentSession } from "../api/acp-session-ops.js";
 import { setSessionRunning } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
+import { sessionModelFrom } from "../lib/session-model.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
@@ -43,8 +46,7 @@ async function classifyResumeFailure(
   if (kind === "connection") return kind;
   let listing: SessionListing = "unknown";
   try {
-    const sessions = await listAgentSessions(agentId);
-    listing = sessions.some((s) => s.sessionId === sid) ? "listed" : "absent";
+    listing = (await findAgentSession(agentId, sid)) ? "listed" : "absent";
   } catch {}
   return resumeFailureKind(kind, listing);
 }
@@ -133,6 +135,7 @@ export function useAcpSession(
         : appendUndelivered([], readUndelivered(draftKey(selectedAgent, null))),
     );
     useStore.getState().setRunStarts([]);
+    useStore.getState().setSessionModel(null);
     useStore.getState().setSessionError(null);
   }, [resetConnection, setSessionId, setMessages, selectedAgent]);
 
@@ -144,6 +147,7 @@ export function useAcpSession(
       setLoadingSession(true);
       setMessages([]);
       useStore.getState().setRunStarts([]);
+      useStore.getState().setSessionModel(null);
       useStore.getState().setSessionError(null);
       setSessionId(sid);
 
@@ -153,11 +157,7 @@ export function useAcpSession(
         setMessages(fresh);
 
         try {
-          const conn = connectionRef.current?.connection;
-          const sessions = conn
-            ? await listSessionsOn(selectedAgent, conn)
-            : await listAgentSessions(selectedAgent);
-          const match = sessions.find((s) => s.sessionId === sid);
+          const match = await findAgentSession(selectedAgent, sid);
           if (match?.mode && match.mode !== useStore.getState().sessionMode) {
             useStore.getState().setSessionMode(match.mode);
           }
@@ -174,7 +174,6 @@ export function useAcpSession(
     [
       selectedAgent,
       loadSessionHistory,
-      connectionRef,
       resetConnection,
       setMessages,
       setSessionId,
@@ -218,6 +217,31 @@ export function useAcpSession(
     delivery,
   });
 
+  const chooseSessionModel = useCallback(
+    async (value: string) => {
+      const { sessionId: sid, sessionModel } = useStore.getState();
+      if (!sid || sessionModel?.sessionId !== sid) return;
+      try {
+        const live = connectionRef.current ?? (await ensureLive());
+        if (!live) throw new Error("the agent is not connected");
+        const result = await live.connection.agent.request(
+          "session/set_config_option",
+          { sessionId: sid, configId: sessionModel.configId, value },
+        );
+        if (useStore.getState().sessionId !== sid) return;
+        useStore
+          .getState()
+          .setSessionModel(sessionModelFrom(sid, result.configOptions));
+      } catch (err) {
+        emitToast({
+          kind: "error",
+          message: `Couldn't switch this session's model: ${extractErrorMessage(err)}`,
+        });
+      }
+    },
+    [connectionRef, ensureLive],
+  );
+
   const sendPrompt = useCallback(
     (
       text: string,
@@ -236,6 +260,7 @@ export function useAcpSession(
     loadOlderMessages,
     sendPrompt,
     stopAgent,
+    chooseSessionModel,
     busy,
     loadingSession,
     connectionState,

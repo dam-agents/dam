@@ -1,6 +1,6 @@
-import type { ClientSideConnection } from "@agentclientprotocol/sdk/dist/acp.js";
+import type { ClientConnection } from "@agentclientprotocol/sdk";
 
-export class ConnectionClosedError extends Error {
+class ConnectionClosedError extends Error {
   readonly name = "ConnectionClosedError";
   readonly closeReason: string | null;
   constructor(closeReason: string | null) {
@@ -22,13 +22,19 @@ export function isConnectionClosed(e: unknown): boolean {
 }
 
 export function withCloseRace(
-  conn: ClientSideConnection,
+  conn: ClientConnection,
   closeReason: () => string | null,
-): ClientSideConnection {
+): ClientConnection {
   const closedThrows = conn.closed.then(() => {
     throw new ConnectionClosedError(closeReason());
   });
-  return new Proxy(conn, {
+  const asCloseIfClosed = (e: unknown): never => {
+    if (conn.signal.aborted && !isConnectionClosed(e)) {
+      throw new ConnectionClosedError(closeReason());
+    }
+    throw e;
+  };
+  const agent = new Proxy(conn.agent, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
       if (typeof value !== "function") return value;
@@ -36,9 +42,14 @@ export function withCloseRace(
       return (...args: unknown[]) => {
         const result = fn.apply(target, args);
         return result instanceof Promise
-          ? Promise.race([result, closedThrows])
+          ? Promise.race([result, closedThrows]).catch(asCloseIfClosed)
           : result;
       };
+    },
+  });
+  return new Proxy(conn, {
+    get(target, prop, receiver) {
+      return prop === "agent" ? agent : Reflect.get(target, prop, receiver);
     },
   });
 }

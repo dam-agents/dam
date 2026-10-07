@@ -71,7 +71,6 @@ export function ArtifactsView() {
     () =>
       groupArtifactsByFolder(filtered, folders, {
         includeEmptyUngrouped: dragInProgress,
-        includeEmptyExperimentFolders: true,
       }),
     [filtered, folders, dragInProgress],
   );

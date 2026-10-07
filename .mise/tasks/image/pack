@@ -1,0 +1,177 @@
+#!/usr/bin/env -S uv run --script
+#MISE description="Write an image tar for the host's arch: a directory's tree as one layer on a base image"
+#MISE hide=true
+#MISE dir="{{cwd}}"
+# /// script
+# requires-python = ">=3.13"
+# ///
+# The tar holds an OCI layout, like every other image tar: the base's layers as
+# the registry serves them, then the new layers as plain tars, which a local
+# cluster imports as they are and image:ci-build gzips as it publishes them.
+# The base is kept as a layout per reference and arch, so a rebuild downloads
+# nothing; the reference carries its digest, so an entry never goes stale.
+import argparse
+import hashlib
+import json
+import os
+import platform
+import shutil
+import subprocess
+import tarfile
+import tempfile
+from pathlib import Path
+
+p = argparse.ArgumentParser()
+p.add_argument("base", help="Base image reference, pinned by digest, or a local OCI layout directory")
+p.add_argument("root", help="Directory whose tree becomes the layer, at / or --at")
+p.add_argument("tar", help="Image tar to write, or with --layout the OCI layout directory")
+p.add_argument("tag", help="Tag the tar carries")
+p.add_argument("--entrypoint", help="The image's ENTRYPOINT, its words separated by commas; it clears the base's CMD")
+p.add_argument("--cmd", help="The image's CMD, its words separated by commas")
+p.add_argument("--workdir")
+p.add_argument("--user")
+p.add_argument("--env", action="append", default=[], help="KEY=VALUE in the image's env, replacing the base's KEY; a later one replaces an earlier")
+p.add_argument("--owner", default="0:0", help="Owner of every entry in the layer")
+p.add_argument("--own", action="append", default=[], help="<uid:gid>=<path>: the owner of <root>'s <path> and everything under it, in place of --owner")
+p.add_argument("--own-dir", action="append", default=[], help="<uid:gid>=<path>: the owner of <root>'s directory <path> itself, its entries keeping --owner")
+p.add_argument("--umask", default="0", help="Octal mode bits cleared from every entry of every layer this adds, e.g. 022 so the build host's umask never makes a root path writable to group 0")
+p.add_argument("--layout", action="store_true", help="Write the image as an OCI layout directory at <tar>, not a tar of one")
+p.add_argument("--at", default="", help="The image directory <root>'s tree lands in. The layer has no entries for it or its parents, so the base's keep their owner and mode")
+p.add_argument("--root-layer", action="append", default=[], help="A directory whose tree becomes a root-owned layer under <root>'s, e.g. whiteouts of the base's files")
+p.add_argument("--layer", action="append", default=[], help="A further layer over <root>'s, as <uid:gid>=<image dir>=<dir>: <dir>'s tree at <image dir>, every entry owned by <uid:gid>, with no entries for <image dir> or its parents")
+args = p.parse_args()
+
+arch = {"aarch64": "arm64", "x86_64": "amd64"}.get(platform.machine(), platform.machine())
+cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "platform-image-pack"
+cache.mkdir(parents=True, exist_ok=True)
+base = Path(args.base)
+if not (base / "index.json").is_file():
+    base = cache / hashlib.sha256(f"{args.base} {arch}".encode()).hexdigest()[:32]
+    if not (base / "index.json").is_file():
+        tmp = Path(f"{base}.{os.getpid()}")
+        shutil.rmtree(tmp, ignore_errors=True)
+        subprocess.run(["crane", "pull", "--format=oci", "--platform", f"linux/{arch}", args.base, tmp], check=True)
+        try:
+            tmp.rename(base)
+        except OSError:
+            shutil.rmtree(tmp)
+
+
+def owner_of(spec):
+    uid, gid = spec.split(":")
+    return int(uid), int(gid)
+
+
+def owned(specs):
+    return [(owner_of(o), path) for o, path in (s.split("=", 1) for s in specs)]
+
+
+# <src>'s tree, not <src> itself, so a layer never resets / or <at>'s parents.
+# tarfile walks it sorted and keeps hard links as links. Each entry has mtime
+# 0, no owner names, and its owner by path, so the tar follows the tree's
+# content alone and holds each path once, which CRI-O needs.
+def tree_tar(src, dest, owner, at="", owns=(), own_dirs=(), clear=0):
+    def entry(info):
+        rel = info.name.removeprefix(f"{at}/") if at else info.name
+        info.uid, info.gid = owner
+        for o, path in owns:
+            if rel == path or rel.startswith(f"{path}/"):
+                info.uid, info.gid = o
+        for o, path in own_dirs:
+            if rel == path:
+                info.uid, info.gid = o
+        info.uname = info.gname = ""
+        info.mtime = 0
+        info.mode &= ~clear
+        return info
+
+    with tarfile.open(dest, "w", format=tarfile.GNU_FORMAT) as t:
+        for name in sorted(os.listdir(src)):
+            t.add(Path(src, name), arcname=f"{at}/{name}" if at else name, filter=entry)
+
+
+# In the cache, so the base's blobs are hard links rather than copies.
+work = Path(tempfile.mkdtemp(dir=cache, prefix="work."))
+try:
+    out = work / "oci"
+    blobs = out / "blobs" / "sha256"
+    blobs.mkdir(parents=True)
+    for b in (base / "blobs" / "sha256").iterdir():
+        try:
+            os.link(b, blobs / b.name)
+        except OSError:
+            shutil.copy(b, blobs / b.name)
+
+    def blob(digest):
+        return blobs / digest.removeprefix("sha256:")
+
+    def put(path, media_type):
+        with path.open("rb") as f:
+            digest = hashlib.file_digest(f, "sha256").hexdigest()
+        size = path.stat().st_size
+        path.rename(blobs / digest)
+        return {"mediaType": media_type, "digest": f"sha256:{digest}", "size": size}
+
+    def put_json(obj, media_type):
+        path = work / "blob.json"
+        path.write_text(json.dumps(obj, separators=(",", ":")))
+        return put(path, media_type)
+
+    layers = []
+
+    def add_layer(src, owner, at="", owns=(), own_dirs=()):
+        path = work / "layer.tar"
+        tree_tar(src, path, owner_of(owner), at.strip("/"), owned(owns), owned(own_dirs), int(args.umask, 8))
+        layers.append(put(path, "application/vnd.oci.image.layer.v1.tar"))
+
+    for d in args.root_layer:
+        add_layer(d, "0:0")
+    add_layer(args.root, args.owner, args.at, args.own, args.own_dir)
+    for spec in args.layer:
+        owner, at, d = spec.split("=", 2)
+        add_layer(d, owner, at)
+
+    manifest = json.loads(blob(json.loads((base / "index.json").read_text())["manifests"][0]["digest"]).read_text())
+    # OCI layers under a Docker manifest are what quay refuses.
+    if manifest.get("mediaType") != "application/vnd.oci.image.manifest.v1+json":
+        raise SystemExit(f"image:pack: {args.base} is not an OCI image manifest")
+    config = json.loads(blob(manifest["config"]["digest"]).read_text())
+    config["rootfs"]["diff_ids"] += [l["digest"] for l in layers]
+    config["history"] = config.get("history", []) + [{"created_by": "image:pack"} for _ in layers]
+    c = config.setdefault("config", {})
+    if args.entrypoint:
+        c["Entrypoint"] = args.entrypoint.split(",")
+        c.pop("Cmd", None)
+    if args.cmd:
+        c["Cmd"] = args.cmd.split(",")
+    if args.workdir:
+        c["WorkingDir"] = args.workdir
+    if args.user:
+        c["User"] = args.user
+    for e in args.env:
+        c["Env"] = [v for v in c.get("Env", []) if v.split("=")[0] != e.split("=")[0]] + [e]
+    manifest["config"] = put_json(config, "application/vnd.oci.image.config.v1+json")
+    manifest["layers"] += layers
+    manifest.pop("annotations", None)
+    desc = put_json(manifest, "application/vnd.oci.image.manifest.v1+json")
+    (out / "index.json").write_text(json.dumps({
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "manifests": [desc | {"platform": {"architecture": arch, "os": "linux"}}],
+    }))
+    (out / "oci-layout").write_text('{"imageLayoutVersion":"1.0.0"}')
+    # Only the blobs the image names: a base layout may hold more.
+    keep = {blob(d).name for d in [desc["digest"], manifest["config"]["digest"], *(l["digest"] for l in manifest["layers"])]}
+    for b in blobs.iterdir():
+        if b.name not in keep:
+            b.unlink()
+    subprocess.run([Path(__file__).parent / "name-layout", out, args.tag], check=True)
+    dest = Path(args.tar)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if args.layout:
+        shutil.rmtree(dest, ignore_errors=True)
+        out.rename(dest)
+    else:
+        tree_tar(out, dest, (0, 0))
+finally:
+    shutil.rmtree(work, ignore_errors=True)

@@ -1,6 +1,9 @@
 import type { Db } from "db";
 import type { HarnessConfigService } from "api-server-api";
-import { createHarnessConfigService } from "./services/harness-config-service.js";
+import {
+  createHarnessConfigService,
+  sessionModelChoices,
+} from "./services/harness-config-service.js";
 import { createHarnessConfigSnapshotRepo } from "./infrastructure/snapshot-repo.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
@@ -13,15 +16,23 @@ export function composeHarnessConfigModule(deps: {
   getCapabilities: (agentId: string) => Promise<unknown>;
   isSettled: (agentId: string) => Promise<boolean>;
 }): { service: HarnessConfigService } {
+  const { db, ...serviceDeps } = deps;
   return {
     service: createHarnessConfigService({
-      surface: deps.surface,
-      runtimeMutator: deps.runtimeMutator,
-      snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
-      ownerSub: deps.ownerSub,
-      isOwnedAgent: deps.isOwnedAgent,
-      getCapabilities: deps.getCapabilities,
-      isSettled: deps.isSettled,
+      ...serviceDeps,
+      snapshotRepo: createHarnessConfigSnapshotRepo(db),
     }),
   };
+}
+
+export function composeSessionModelChoices(deps: {
+  db: Db;
+  getCapabilities: (agentId: string) => Promise<unknown>;
+}): (agentId: string) => Promise<string[] | null> {
+  const snapshotRepo = createHarnessConfigSnapshotRepo(deps.db);
+  return async (agentId) =>
+    sessionModelChoices(
+      await deps.getCapabilities(agentId),
+      (await snapshotRepo.read(agentId))?.availableModels ?? null,
+    );
 }

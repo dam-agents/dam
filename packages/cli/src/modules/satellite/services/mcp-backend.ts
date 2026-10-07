@@ -8,6 +8,7 @@ import {
   type SatelliteTool,
 } from "api-server-api";
 import type { CallOutcome, SatelliteBackend } from "./backend.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A Satellite backed by an MCP server the user names
@@ -99,11 +100,6 @@ async function connectClient(spec: McpServerSpec): Promise<Client> {
   }
 }
 
-function describeArgs(tool: string, args: Record<string, unknown>): string {
-  const text = `${tool} ${JSON.stringify(args)}`;
-  return text.length > 200 ? `${text.slice(0, 199)}…` : text;
-}
-
 export async function createMcpBackend(
   spec: McpServerSpec,
 ): Promise<SatelliteBackend> {
@@ -134,7 +130,10 @@ export async function createMcpBackend(
   return {
     tools,
 
-    describeCall: describeArgs,
+    describeCall(tool, args) {
+      const text = `${tool} ${JSON.stringify(args)}`;
+      return text.length > 200 ? `${text.slice(0, 199)}…` : text;
+    },
 
     async call(input): Promise<CallOutcome> {
       const controller = new AbortController();
@@ -156,7 +155,7 @@ export async function createMcpBackend(
       } catch (err) {
         if (controller.signal.aborted)
           return { status: "cancelled", output: "", truncated: false };
-        const reason = err instanceof Error ? err.message : String(err);
+        const reason = errorMessage(err);
         return {
           status: "interrupted",
           reason: reason.slice(0, 280),

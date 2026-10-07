@@ -16,6 +16,7 @@ import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.
 import { LifecycleField } from "./lifecycle-field.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
 import { SandboxSizeSection } from "./sandbox-size-section.js";
+import { ConnectionAddressingSetupSection } from "./setup/setup-sections.js";
 
 type SandboxSettingsForm = ReturnType<typeof useSandboxSettingsForm>;
 
@@ -48,14 +49,6 @@ export function SandboxSetupSection({ f }: Props) {
           <Input disabled={f.saving} {...f.register("name")} />
         </FormField>
       </section>
-
-      <SandboxSizeSection
-        sizeCpuMilli={f.sizeCpuMilli}
-        sizeMemoryMi={f.sizeMemoryMi}
-        onChange={f.setSize}
-        disabled={f.saving}
-        currentSize={f.sizeRestartsAgent ? agent.size : undefined}
-      />
 
       <section className="mb-8">
         <FormField
@@ -92,23 +85,8 @@ export function SandboxSetupSection({ f }: Props) {
         </p>
       </section>
 
-      <SandboxModelSettings agentId={agent.id} draft={f.harnessDraft} />
-
-      <KnowledgeSection agent={agent} />
-
       <section className="mb-8">
-        <SectionLabel spaced>Network access</SectionLabel>
-        <Callout inset>
-          <AgentEgressEditor
-            agentId={agent.id}
-            currentPreset={f.currentPreset}
-            staged={f.egressStaged}
-          />
-        </Callout>
-      </section>
-
-      <section className="mb-8">
-        <SectionLabel spaced>Lifecycle</SectionLabel>
+        <SectionLabel spaced>Availability</SectionLabel>
         <Inset>
           <Controller
             control={f.control}
@@ -124,6 +102,37 @@ export function SandboxSetupSection({ f }: Props) {
             )}
           />
         </Inset>
+      </section>
+
+      <SandboxSizeSection
+        sizeCpuMilli={f.sizeCpuMilli}
+        sizeMemoryMi={f.sizeMemoryMi}
+        onChange={f.setSize}
+        disabled={f.saving}
+        currentSize={f.sizeRestartsAgent ? agent.size : undefined}
+      />
+
+      {f.addressingOffered && (
+        <ConnectionAddressingSetupSection
+          value={f.requireConnectionAddress}
+          onChange={f.setRequireConnectionAddress}
+          disabled={f.saving}
+        />
+      )}
+
+      <SandboxModelSettings agentId={agent.id} draft={f.harnessDraft} />
+
+      <KnowledgeSection agent={agent} />
+
+      <section className="mb-8">
+        <SectionLabel spaced>Network access</SectionLabel>
+        <Callout inset>
+          <AgentEgressEditor
+            agentId={agent.id}
+            currentPreset={f.currentPreset}
+            staged={f.egressStaged}
+          />
+        </Callout>
       </section>
 
       <section className="mb-8">

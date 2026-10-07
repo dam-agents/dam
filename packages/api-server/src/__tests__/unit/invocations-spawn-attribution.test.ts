@@ -28,13 +28,16 @@ function makeService(opts: {
     listRunningByDriver: async () => [],
     listRunningAgentIds: async () => [],
     listTargetsByOwner: async () => [],
-    listAgedTerminal: async () => [],
-    listByExperiment: async () => [],
-    countRunningByDriver: async () => new Map(),
-    failAllRunningByExperiment: async () => [],
+    listRootDriverIds: async () => [],
+    listTerminalUnreaped: async () => [],
+    markReaped: async () => {},
+    listByRoot: async () => [],
+    listUnreapedByRoot: async () => [],
     delete: async (id) => {
       rec.deleted.push(id);
     },
+    markTranscriptCaptured: async () => {},
+    deleteReapedByRoot: async () => 0,
   };
   const service = createInvocationsService({
     owner: "owner-1",
@@ -47,11 +50,13 @@ function makeService(opts: {
       delete: async () => {},
     } as never,
     driverResolution: { resolveRoot: opts.resolveRoot },
+    reaper: { reap: async () => {} },
     runtimeMutator: {
       bump: async () => 0,
       enqueueAfterCommit: async () => {},
     } as never,
     wakeAgent: async () => {},
+    readHarnessConfigSupport: async () => null,
   });
   return { rec, service };
 }
@@ -59,6 +64,9 @@ function makeService(opts: {
 const spawnInput = {
   driverAgentId: "driver-1",
   driverGrantIds: [],
+  driverProviders: [],
+  target: { templateId: "claude-code" },
+  setup: { env: [], skills: [] },
   connections: [],
   prompt: "do the thing",
   schema: { type: "object" },

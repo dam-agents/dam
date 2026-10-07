@@ -47,14 +47,14 @@ export function hasAnyBinding(db: Db) {
   };
 }
 
-async function upsertSlackChannel(
-  runner: Db | Tx,
+export async function upsertChannelTx(
+  tx: Tx,
   owner: string,
   agentId: string,
   channel: ChannelConfig,
 ): Promise<void> {
   const { type, ...config } = channel;
-  const updated = await runner
+  const updated = await tx
     .update(channels)
     .set({
       owner,
@@ -69,22 +69,7 @@ async function upsertSlackChannel(
     )
     .returning({ agentId: channels.agentId });
   if (updated.length > 0) return;
-  await runner.insert(channels).values({ agentId, owner, type, config });
-}
-
-export function upsertChannel(db: Db, owner: string) {
-  return async (agentId: string, channel: ChannelConfig): Promise<void> => {
-    await upsertSlackChannel(db, owner, agentId, channel);
-  };
-}
-
-export async function upsertChannelTx(
-  tx: Tx,
-  owner: string,
-  agentId: string,
-  channel: ChannelConfig,
-): Promise<void> {
-  await upsertSlackChannel(tx, owner, agentId, channel);
+  await tx.insert(channels).values({ agentId, owner, type, config });
 }
 
 export async function listChannelsByAgentTx(
@@ -185,6 +170,48 @@ export function findSlackBindingsByChannelId(db: Db) {
       isDefault: row.isDefault === "true",
     }));
   };
+}
+
+export function claimUnscopedSlackBindings(db: Db) {
+  return async (teamId: string): Promise<number> =>
+    db.transaction(async (tx) => {
+      await tx.execute(sql`
+        DELETE FROM channels c
+        WHERE c.type = ${ChannelType.Slack}
+          AND coalesce(c.config->>'teamId', '') = ''
+          AND EXISTS (
+            SELECT 1 FROM channels d
+            WHERE d.type = ${ChannelType.Slack}
+              AND d.agent_id = c.agent_id
+              AND d.config->>'teamId' = ${teamId}
+              AND d.config->>'slackChannelId' = c.config->>'slackChannelId'
+          )`);
+      await tx.execute(sql`
+        UPDATE channels c SET config = c.config - 'default'
+        WHERE c.type = ${ChannelType.Slack}
+          AND coalesce(c.config->>'teamId', '') = ''
+          AND c.config->>'default' = 'true'
+          AND EXISTS (
+            SELECT 1 FROM channels d
+            WHERE d.type = ${ChannelType.Slack}
+              AND d.config->>'teamId' = ${teamId}
+              AND d.config->>'slackChannelId' = c.config->>'slackChannelId'
+              AND d.config->>'default' = 'true'
+          )`);
+      const claimed = await tx
+        .update(channels)
+        .set({
+          config: sql`jsonb_set(${channels.config}, '{teamId}', to_jsonb(${teamId}::text))`,
+        })
+        .where(
+          and(
+            eq(channels.type, ChannelType.Slack),
+            sql`coalesce(${channels.config}->>'teamId', '') = ''`,
+          ),
+        )
+        .returning({ agentId: channels.agentId });
+      return claimed.length;
+    });
 }
 
 export function setSlackChannelAmbient(db: Db) {

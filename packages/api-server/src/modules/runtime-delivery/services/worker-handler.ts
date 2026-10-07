@@ -6,9 +6,11 @@ import type { AgentRuntimeClient } from "../infrastructure/agent-runtime-client.
 import type { StateBuilder } from "./state-builder.js";
 import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
 import type { DriverFailure } from "api-server-api";
-import type { HarnessConfigCurrent } from "agent-runtime-api";
+import {
+  isWorkspaceMutationEventKind,
+  type HarnessConfigCurrent,
+} from "agent-runtime-api";
 import { emit, EventType } from "../../../events.js";
-import { isWorkspaceMutationKind } from "../domain/workspace-mutation.js";
 import type { EventLifecycleNotifier } from "./event-lifecycle.js";
 
 export interface IsAgentRunning {
@@ -38,7 +40,7 @@ function attemptedEventIds(
 ): string[] {
   const settled = new Set(settledEventIds);
   const held = events.findIndex(
-    (e) => isWorkspaceMutationKind(e.kind) && !settled.has(e.id),
+    (e) => isWorkspaceMutationEventKind(e.kind) && !settled.has(e.id),
   );
   const attempted = held === -1 ? events : events.slice(0, held + 1);
   return attempted.map((e) => e.id);
@@ -110,7 +112,7 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
         `[runtime-worker] ${agentId}: dropped events for kinds ${payload.droppedEventKinds.join(",")} (capability gap)`,
       );
       const droppedMutationKinds = payload.droppedEventKinds.filter(
-        isWorkspaceMutationKind,
+        isWorkspaceMutationEventKind,
       );
       const undeliverable = await deps.outboxRepo.markEventsUndeliverable(
         agentId,
@@ -197,7 +199,7 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
 
     const settledIds = new Set(settle.settledEventIds);
     const workspaceMutationSettled = payload.events.some(
-      (e) => settledIds.has(e.id) && isWorkspaceMutationKind(e.kind),
+      (e) => settledIds.has(e.id) && isWorkspaceMutationEventKind(e.kind),
     );
     if (workspaceMutationSettled || eventsGaveUp.length > 0) {
       await emitWorkspaceMutationSettled(agentId);

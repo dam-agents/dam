@@ -15,7 +15,7 @@ func GatewayName(pairKey string) string {
 	return pairKey + "-gateway"
 }
 
-func BuildGatewayStatefulSet(agentName, owner string, hibernated bool, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret, l7Hosts []string) *appsv1.StatefulSet {
+func BuildGatewayStatefulSet(agentName, owner string, hibernated bool, machineGatewayIP string, cfg *config.Config, ownerRef metav1.OwnerReference, credentialSecrets []corev1.Secret, l7Hosts []string, requireAddress bool) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if hibernated {
 		replicas = 0
@@ -30,6 +30,9 @@ func BuildGatewayStatefulSet(agentName, owner string, hibernated bool, cfg *conf
 
 	volumes := envoyVolumes(agentName, cfg, credentialSecrets, l7Hosts)
 	containers := []corev1.Container{envoyContainer(agentName, cfg, credentialSecrets, l7Hosts)}
+	if machineGatewayIP != "" {
+		containers = append(containers, machineDNSContainer(cfg, machineGatewayIP))
+	}
 
 	falseVal := false
 	gracePeriod := gatewayTerminationGracePeriod
@@ -41,7 +44,7 @@ func BuildGatewayStatefulSet(agentName, owner string, hibernated bool, cfg *conf
 
 	annotations := map[string]string{
 		// + leaf cert. Per-agent grain: a sibling agent's rule never
-		"agent-platform.ai/envoy-secrets-rev": envoySecretsRev(credentialSecrets, l7Hosts),
+		"agent-platform.ai/envoy-secrets-rev": envoyGatewayRev(cfg, credentialSecrets, l7Hosts, requireAddress),
 	}
 
 	podSpec := corev1.PodSpec{
@@ -67,7 +70,7 @@ func BuildGatewayStatefulSet(agentName, owner string, hibernated bool, cfg *conf
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
 				Type: appsv1.RollingUpdateStatefulSetStrategyType,
 				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
-					MaxUnavailable: ptrIntOrString(intstr.FromInt(1)),
+					MaxUnavailable: new(intstr.FromInt(1)),
 				},
 			},
 			Template: corev1.PodTemplateSpec{
@@ -81,12 +84,18 @@ func BuildGatewayStatefulSet(agentName, owner string, hibernated bool, cfg *conf
 	}
 }
 
-func ptrIntOrString(v intstr.IntOrString) *intstr.IntOrString { return &v }
-
-func BuildGatewayService(agentName string, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.Service {
+func BuildGatewayService(agentName string, vm bool, cfg *config.Config, ownerRef metav1.OwnerReference) *corev1.Service {
 	gatewayName := GatewayName(agentName)
 	envoyPort := portInt32(cfg.EnvoyPort)
 	selector := map[string]string{LabelPair: agentName, LabelRole: RoleGateway}
+	ports := []corev1.ServicePort{{
+		Name:       "proxy",
+		Port:       envoyPort,
+		TargetPort: intstr.FromInt32(envoyPort),
+	}}
+	if vm {
+		ports = append(ports, machineGatewayServicePorts(cfg)...)
+	}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            gatewayName,
@@ -96,11 +105,7 @@ func BuildGatewayService(agentName string, cfg *config.Config, ownerRef metav1.O
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: selector,
-			Ports: []corev1.ServicePort{{
-				Name:       "proxy",
-				Port:       envoyPort,
-				TargetPort: intstr.FromInt32(envoyPort),
-			}},
+			Ports:    ports,
 		},
 	}
 }

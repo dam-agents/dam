@@ -4,6 +4,8 @@
     "MachineNotReady",
     "MachineOutOfCapacity",
     "MachineImageUnavailable",
-    "MachineBootFailed"
-  ]
+    "MachineBootFailed",
+    "MachineSeedMissing"
+  ],
+  "seedExitPermanent": 3
 }

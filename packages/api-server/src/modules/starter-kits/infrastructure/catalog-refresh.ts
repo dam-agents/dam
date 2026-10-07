@@ -1,4 +1,4 @@
-import yaml from "js-yaml";
+import { loadYamlDocument } from "../../../core/yaml-document.js";
 import * as path from "node:path";
 import type {
   ResolvedSkill,
@@ -37,6 +37,7 @@ export interface CatalogRefreshDeps {
     subPath: string,
   ) => Promise<ResolvedSkill[]>;
   sourceForEntry: (gitUrl: string, ref: string) => CatalogSource;
+  pinnedKit?: string;
 }
 
 export interface CatalogRefresh {
@@ -99,7 +100,7 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
       );
       return "rejected";
     }
-    const parsed = starterKitSchema.safeParse(yaml.load(text));
+    const parsed = starterKitSchema.safeParse(loadYamlDocument(text));
     if (!parsed.success) {
       getLogger().warn(
         {
@@ -208,7 +209,7 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
       );
       return;
     }
-    const parsed = starterKitCatalogSchema.safeParse(yaml.load(text));
+    const parsed = starterKitCatalogSchema.safeParse(loadYamlDocument(text));
     if (!parsed.success) {
       getLogger().warn(
         { catalog: named.name, issues: parsed.error.issues },
@@ -254,6 +255,15 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
     await deps.repo.replaceCatalog(named.name, rows);
   }
 
+  async function warnUnservedPin(pinnedKit: string): Promise<void> {
+    const [catalog = "", kitId = "", ...extra] = pinnedKit.split("/");
+    if (extra.length === 0 && (await deps.repo.get(catalog, kitId))) return;
+    getLogger().warn(
+      { pinnedKit },
+      "starter kits: the pinned kit is not in any catalog; every card shows at the same size",
+    );
+  }
+
   return {
     async run() {
       for (const named of deps.catalogs) {
@@ -264,6 +274,7 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
           );
         });
       }
+      if (deps.pinnedKit) await warnUnservedPin(deps.pinnedKit);
     },
   };
 }

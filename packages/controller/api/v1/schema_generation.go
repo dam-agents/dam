@@ -31,7 +31,23 @@ const (
 	// controller reads the Secret and folds its keys into the machine's env.
 	// Agent gen 11: the vm backend now rejects nodeSelector too — it places a
 	// pod, and a vm agent's machine is placed with its owner's VM runner.
-	AgentSchemaGeneration = 11
+	// Agent gen 12: movedFrom added to Mount — the path outside HOME a
+	// runtime migration moved a persisted mount from, which the vm backend
+	// puts back on every boot; an older CRD would prune it.
+	// Agent gen 13: runtimeMigrationAttempts added to AgentStatus — the copy
+	// attempts of a runtime migration, which fails once they run out.
+	// Agent gen 14: movedFrom removed from Mount — a runtime migration now
+	// carries only HOME, so no mount is ever moved.
+	// Agent gen 15: requireConnectionAddress added to AgentSpec — the agent's
+	// gateway injects a Connection's credential only into a request that names
+	// that Connection (#4246).
+	// Agent gen 16: nestedVirtualization added to the vm backend — the agent's
+	// machine alone gets the node's virtualization extensions, where the
+	// install and the node allow it; an older CRD would prune the ask.
+	// Agent gen 17: harness added to AgentSpec — which harness the one vm
+	// image runs, read in the guest as PLATFORM_HARNESS; an older CRD would
+	// prune it.
+	AgentSchemaGeneration = 17
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

@@ -4,18 +4,28 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
-# The entrypoint of every machine. It runs inside the agent's image, which
-# shares no libc with the runner's, so the image build links it statically, and
-# it depends on nothing a static link could make awkward: std, and the libc
-# bindings for mount(2), pivot_root(2), umount2(2), dup3(2) and execv(3). The runner links the library
+# The entrypoint of every machine, and platform-runc, the container runtime
+# wrapper shipped beside it. Both run inside the agent's image, which shares no
+# libc with the runner's, so the image build links them statically, and they
+# depend on nothing a static link could make awkward: std, serde_json, the libc
+# bindings for mount(2), pivot_root(2), umount2(2), pipe2(2), dup3(2),
+# sigtimedwait(2), waitpid(2) and kill(2), and the tar reader for a
+# migrated agent's seed. The runner links the library
 # half too, for the guest contract in guest.rs, so the two sides of the share
 # read their paths from one file.
 [dependencies]
 libc = "0.2"
-
-[dev-dependencies]
-# Reads the contract fixtures the controller's tests read too. Already in the
-# lock by way of the runner.
+# Reads the seed a migrated agent's home is restored from. Pure Rust, and
+# already in the lock by way of the runner; without its default xattr feature
+# it adds nothing beyond libc and filetime, and this binary restores no xattrs.
+tar = { version = "0.4", default-features = false }
+# Hashes the seed as it is unpacked, so the home is restored only from the seed
+# the runner was told to expect. Pure Rust, and already in the lock by way of
+# the runner, as is hex, which spells the digest.
+sha2 = "0.11"
+hex = "0.4"
+# platform-runc edits a container's OCI spec, which is JSON; the contract
+# fixture tests read it too. Already in the lock by way of the runner.
 serde_json = "1"
 
 [lints.clippy]

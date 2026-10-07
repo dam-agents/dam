@@ -3,7 +3,10 @@ import type {
   HarnessConfigSnapshot,
   HarnessConfigSnapshotPatch,
 } from "api-server-api";
-import { createHarnessConfigService } from "../../modules/harness-config/services/harness-config-service.js";
+import {
+  createHarnessConfigService,
+  sessionModelChoices,
+} from "../../modules/harness-config/services/harness-config-service.js";
 import { harnessConfigSupported } from "../../modules/harness-config/index.js";
 
 type BumpCall = { agentId: string; events: unknown[] };
@@ -137,5 +140,29 @@ describe("harnessConfigSupported", () => {
     expect(harnessConfigSupported({ contributions: [], events: [] })).toBe(
       false,
     );
+  });
+});
+
+describe("sessionModelChoices", () => {
+  const capabilities = {
+    sessionModel: true,
+    harnessConfigCatalog: {
+      options: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          choices: [{ value: "sonnet", name: "Sonnet" }],
+        },
+      ],
+    },
+  };
+
+  // TEST_SCENARIO: an agent on a gateway such as LiteLLM lists its real models only through discovery, so a one-time task must accept what the Config panel offers rather than the static tiers alone.
+  it("offers the discovered models when the provider listed any", () => {
+    expect(
+      sessionModelChoices(capabilities, [{ value: "claude/haiku-x" }]),
+    ).toEqual(["claude/haiku-x"]);
+    expect(sessionModelChoices(capabilities, null)).toEqual(["sonnet"]);
   });
 });

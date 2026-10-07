@@ -1,3 +1,4 @@
+import "./install-temporal.js";
 import { bootstrap } from "./bootstrap.js";
 import { startApiServerApp } from "./apps/api-server/app.js";
 import { startHarnessApiServerApp } from "./apps/harness-api-server/app.js";

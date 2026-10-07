@@ -1,11 +1,15 @@
-import type { AgentsService } from "api-server-api";
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
+import { REPORT_GRACE_MS, type TargetReaper } from "./target-reaper.js";
+import {
+  HARNESS_CONFIG_STEP,
+  type ReadHarnessConfigSupport,
+} from "../domain/harness-config-refusal.js";
+import { harnessConfigRefusalFor } from "./harness-config-check.js";
+import { createSetupFailure } from "./setup-failure.js";
 
 export interface InvocationLivenessSweep {
   tick(): Promise<void>;
 }
-
-const RESULT_RETENTION_MS = 10 * 60 * 1000;
 
 export interface TargetRestartState {
   podRestarts: number;
@@ -14,8 +18,10 @@ export interface TargetRestartState {
 
 export interface CreateInvocationLivenessSweepDeps {
   repo: InvocationsRepository;
-  agentsFor: (owner: string) => AgentsService;
+  reaper: TargetReaper;
   readTargetRestart: (agentId: string) => Promise<TargetRestartState | null>;
+  hasAgent: (agentId: string) => Promise<boolean>;
+  readHarnessConfigSupport: ReadHarnessConfigSupport;
   batchSize: number;
   now?: () => Date;
 }
@@ -24,6 +30,10 @@ export function createInvocationLivenessSweep(
   deps: CreateInvocationLivenessSweepDeps,
 ): InvocationLivenessSweep {
   const now = deps.now ?? (() => new Date());
+  const failSetup = createSetupFailure({
+    repo: deps.repo,
+    reaper: deps.reaper,
+  });
   let running = false;
 
   async function failAndReap(
@@ -31,13 +41,7 @@ export function createInvocationLivenessSweep(
     reason: string,
   ): Promise<void> {
     await deps.repo.fail(row.id, reason);
-    try {
-      await deps.agentsFor(row.owner).delete(row.id);
-    } catch (err) {
-      process.stderr.write(
-        `[invocation-liveness] reap ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
-      );
-    }
+    await deps.reaper.reap(row);
   }
 
   async function tick(): Promise<void> {
@@ -58,6 +62,14 @@ export function createInvocationLivenessSweep(
       const stillRunning = await deps.repo.listRunning(deps.batchSize);
       for (const row of stillRunning) {
         try {
+          const refusal = await harnessConfigRefusalFor(
+            row,
+            deps.readHarnessConfigSupport,
+          );
+          if (refusal) {
+            await failSetup(row.id, HARNESS_CONFIG_STEP, refusal);
+            continue;
+          }
           const restart = await deps.readTargetRestart(row.id);
           if (restart && restart.podRestarts > 0) {
             await failAndReap(
@@ -67,22 +79,25 @@ export function createInvocationLivenessSweep(
           }
         } catch (err) {
           process.stderr.write(
-            `[invocation-liveness] restart-check ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
+            `[invocation-liveness] check ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
           );
         }
       }
 
-      const rowDeadline = new Date(now().getTime() - RESULT_RETENTION_MS);
-      const aged = await deps.repo.listAgedTerminal(
-        rowDeadline,
+      const graceEnd = new Date(now().getTime() - REPORT_GRACE_MS);
+      const unreaped = await deps.repo.listTerminalUnreaped(
+        graceEnd,
         deps.batchSize,
       );
-      for (const row of aged) {
+      for (const row of unreaped) {
+        await deps.reaper.reap(row);
         try {
-          await deps.repo.delete(row.id);
+          if (!(await deps.hasAgent(row.rootDriverId))) {
+            await deps.repo.deleteReapedByRoot(row.rootDriverId);
+          }
         } catch (err) {
           process.stderr.write(
-            `[invocation-liveness] drop ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
+            `[invocation-liveness] orphan-check ${row.id} failed: ${err instanceof Error ? err.message : err}\n`,
           );
         }
       }

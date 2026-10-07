@@ -3,7 +3,7 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 import { trpc } from "../../../trpc.js";
 import { fetchSlackInstallAvailability } from "./install.js";
 
-export const slackInstallKeys = {
+const slackInstallKeys = {
   availability: () => ["slack", "install", "availability"] as const,
 };
 

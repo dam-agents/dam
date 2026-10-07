@@ -2,30 +2,15 @@ import { useEffect } from "react";
 
 import { useStore } from "../../../store.js";
 import { useRestartAgentMutation } from "../api/mutations.js";
-import { useAgents, useAgentsList } from "../api/queries.js";
+import { useAgents } from "../api/queries.js";
 import { transitionRestartingAgents } from "../store.js";
+import { useRestartingAction } from "./use-restarting-action.js";
 
 export function useRestartAgent() {
-  const agents = useAgentsList();
-  const setRestarting = useStore((s) => s.setRestartingAgent);
-  const clearRestarting = useStore((s) => s.clearRestartingAgent);
-  const restartMutation = useRestartAgentMutation();
+  const { mutate, isPending } = useRestartAgentMutation();
+  const restart = useRestartingAction(mutate);
 
-  const restart = (id: string) => {
-    setRestarting(id, {
-      seenNonRunning: false,
-      clickedAt: Date.now(),
-      parkedAtClick: agents.find((a) => a.id === id)?.overBudget ?? false,
-    });
-    restartMutation.mutate(
-      { id },
-      {
-        onError: () => clearRestarting(id),
-      },
-    );
-  };
-
-  return { restart, isPending: restartMutation.isPending };
+  return { restart, isPending };
 }
 
 export function useSyncRestartingAgents() {
@@ -40,13 +25,15 @@ export function useSyncRestartingAgents() {
     const next = transitionRestartingAgents(current, data.list);
     if (next === current) return;
     setRestartingAgents(next);
-    const freshlyParked = data.list.some(
+    const freshlyParked = data.list.find(
       (a) => a.overBudget && current.get(a.id)?.parkedAtClick === false,
     );
     if (freshlyParked) {
+      const reason =
+        freshlyParked.overBudgetMessage ?? "stop a running agent to free room";
       void showConfirm(
-        "It looks like you've reached your usage limit for active agents. To start this agent, please hibernate some of your running sandboxes. You can manage your sandboxes by clicking the button below.",
-        "You do not have enough usage slots to start this agent.",
+        `${reason[0].toUpperCase()}${reason.slice(1)}.`,
+        "This agent could not start",
         { confirmLabel: "Manage sandboxes" },
       ).then((ok) => ok && setView("home"));
     }

@@ -10,7 +10,7 @@ const DELETION_DATE_FORMAT: Intl.DateTimeFormatOptions = {
   day: "numeric",
 };
 
-export type DeletionState =
+type DeletionState =
   | { state: "never" }
   | { state: "active"; label: string; soon: boolean }
   | { state: "expired"; label: string; restoreLeft: string | null };

@@ -27,13 +27,12 @@ export function pickOptionId(
   return options[0]?.optionId ?? null;
 }
 
-export interface WrapperResponseFrame {
+interface WrapperResponseFrame {
   jsonrpc: "2.0";
   id: number | string;
   result: {
     outcome:
-      | { outcome: "selected"; optionId: string }
-      | { outcome: "cancelled" };
+      { outcome: "selected"; optionId: string } | { outcome: "cancelled" };
   };
 }
 

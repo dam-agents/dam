@@ -30,11 +30,6 @@ function counter(
   return write.kind === "increment" ? sql`${column} + 1` : write.value;
 }
 
-function clampLimit(limit: number | undefined): number {
-  if (limit === undefined) return DEFAULT_LIMIT;
-  return Math.min(Math.max(1, Math.trunc(limit)), MAX_LIMIT);
-}
-
 export interface SchedulesRepository {
   list(agentId: string, owner: string): Promise<Schedule[]>;
   listForOwner(
@@ -70,6 +65,7 @@ export interface SchedulesRepository {
     tx?: Db | DbTx,
   ): Promise<void>;
   transaction<T>(fn: (tx: DbTx) => Promise<T>): Promise<T>;
+  stampFire(id: string, result: string): Promise<void>;
   applyStatusPatch(id: string, patch: ScheduleStatusPatch): Promise<void>;
   clearPrecheckStatus(id: string): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
@@ -145,7 +141,11 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
             : eq(schedulesTable.owner, owner),
         )
         .orderBy(asc(schedulesTable.nextRun), asc(schedulesTable.createdAt))
-        .limit(clampLimit(opts?.limit))) as InternalRow[];
+        .limit(
+          opts?.limit === undefined
+            ? DEFAULT_LIMIT
+            : Math.min(Math.max(1, Math.trunc(opts.limit)), MAX_LIMIT),
+        )) as InternalRow[];
       return rows.map(rowToSchedule);
     },
 
@@ -291,6 +291,16 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
 
     transaction(fn) {
       return db.transaction(fn);
+    },
+    async stampFire(id, result): Promise<void> {
+      await db
+        .update(schedulesTable)
+        .set({
+          lastFiredAt: new Date(),
+          lastFiredResult: result,
+          updatedAt: new Date(),
+        })
+        .where(eq(schedulesTable.id, id));
     },
 
     async applyStatusPatch(id, patch): Promise<void> {

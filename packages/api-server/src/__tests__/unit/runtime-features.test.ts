@@ -5,8 +5,9 @@
  *  neighbouring member the platform's own schema does not know — a newer agent
  *  advertising something this replica predates — must not decide the answer,
  *  because that would put a newer runtime on the compatibility path and show
- *  it the outdated-runtime notice. Absence, a wrong type, and a missing
- *  capability set all mean the surface is not served. */
+ *  it the outdated-runtime notice. Absence and a wrong type mean the surface
+ *  is not served; a missing capability set means the agent has not said hello
+ *  yet, so whether it serves the surface is unknown. */
 import { describe, it, expect } from "vitest";
 import { runtimeFeaturesOf } from "agent-runtime-api";
 
@@ -43,10 +44,14 @@ describe("runtimeFeaturesOf", () => {
     ).toEqual({ liveUpdates: true });
   });
 
-  // TEST_SCENARIO: Detection fails closed. An agent that has never said hello has no stored capability set, and a claim of the wrong shape is not a claim — both leave the agent on the polled path, which serves every runtime, rather than on a transport its image may not have.
+  // TEST_SCENARIO: An agent that has never said hello — a brand-new one still booting — has no stored capability set. That is not yet known, not outdated: it must not read as a runtime that lacks the surface, or every first boot shows the outdated-runtime notice.
+  it("reports an agent that has not said hello as unknown", () => {
+    expect(runtimeFeaturesOf(null)).toEqual({ liveUpdates: null });
+    expect(runtimeFeaturesOf(undefined)).toEqual({ liveUpdates: null });
+  });
+
+  // TEST_SCENARIO: Detection fails closed. A claim that is absent or of the wrong shape is not a claim — it leaves the agent on the polled path, which serves every runtime, rather than on a transport its image may not have.
   it("fails closed when the claim is absent or not a boolean", () => {
-    expect(runtimeFeaturesOf(null)).toEqual({ liveUpdates: false });
-    expect(runtimeFeaturesOf(undefined)).toEqual({ liveUpdates: false });
     expect(runtimeFeaturesOf({ liveUpdates: false })).toEqual({
       liveUpdates: false,
     });

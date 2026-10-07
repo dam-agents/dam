@@ -53,26 +53,40 @@ const FOOTER_RE = new RegExp(
   `<[^>|]*(?:${PUBLIC_AGENT_PATH}|${CHAT_PATH}|${LEGACY_AGENT_PATH})(agent-[A-Za-z0-9]+)(?:[/?][^>|]*)?\\|[^>]*>`,
 );
 
+const FOOTER_SESSION_RE = new RegExp(
+  `${PUBLIC_AGENT_PATH}agent-[A-Za-z0-9]+\\?s=([^&|>]+)`,
+);
+
+function footerTexts(message: SlackMessage): string[] {
+  return (message.blocks ?? []).flatMap((block) => {
+    if ((block as { type?: unknown }).type !== "context") return [];
+    const elements = (block as { elements?: Array<{ text?: unknown }> })
+      .elements;
+    return (elements ?? []).flatMap((element) =>
+      typeof element?.text === "string" ? [element.text] : [],
+    );
+  });
+}
+
 export function parseAgentFooter(
   message: SlackMessage,
 ): { agentId: string } | null {
-  for (const block of message.blocks ?? []) {
-    if ((block as { type?: unknown }).type !== "context") continue;
-    const elements = (block as { elements?: Array<{ text?: unknown }> })
-      .elements;
-    for (const element of elements ?? []) {
-      const text = element?.text;
-      if (typeof text !== "string") continue;
-      const match = text.match(FOOTER_RE);
-      if (match) {
-        return { agentId: match[1] };
-      }
-    }
+  for (const text of footerTexts(message)) {
+    const match = text.match(FOOTER_RE);
+    if (match) return { agentId: match[1] };
   }
   return null;
 }
 
-export const THREAD_MARKER_NOTE =
+export function footerSessionId(message: SlackMessage): string | null {
+  for (const text of footerTexts(message)) {
+    const match = text.match(FOOTER_SESSION_RE);
+    if (match) return decodeURIComponent(match[1]!);
+  }
+  return null;
+}
+
+const THREAD_MARKER_NOTE =
   "A line ending in a [thread: ...] tag opened a thread: the tag gives how " +
   "many replies it has, when it last moved, and the ts that reads it. Those " +
   "replies are not shown here — read them with " +
@@ -81,15 +95,20 @@ export const THREAD_MARKER_NOTE =
 
 export type HistoryShape = "thread" | "direct-message" | "channel";
 
+const THREAD_WINDOW_NOTE =
+  "The thread is longer than shown: the lines in square brackets number its " +
+  "replies from the first one and say which replies are left out.";
+
 export function historyPreamble(
   shape: HistoryShape,
-  opts: { hasThreadMarker?: boolean } = {},
+  opts: { hasThreadMarker?: boolean; windowed?: boolean } = {},
 ): string {
   if (shape === "thread") {
     return (
       "The conversation history below is the thread this turn was posted " +
-      "into: one conversation, and the context for answering it. Answer " +
-      "what follows the history, not the history itself."
+      "into: one conversation, and the context for answering it. " +
+      (opts.windowed ? `${THREAD_WINDOW_NOTE} ` : "") +
+      "Answer what follows the history, not the history itself."
     );
   }
   if (shape === "direct-message") {
@@ -112,6 +131,33 @@ export function historyPreamble(
     "what follows the history, not the history itself, and leave an older " +
     "topic alone unless what follows asks about it."
   );
+}
+
+function replyRange(first: number, last: number): string {
+  return first === last ? `reply ${first}` : `replies ${first}-${last}`;
+}
+
+export function threadWindowMarker(window: {
+  threadTs: string;
+  hasEarlier: boolean;
+  cursor: string | null;
+  shown: { repliesBefore: number; first: number; last: number } | null;
+}): string | null {
+  const { shown } = window;
+  const reach =
+    window.cursor === null
+      ? ""
+      : `; read them with ${OUTBOUND_TOOL_PREFIX}read_thread, threadTs ` +
+        `"${window.threadTs}", cursor "${window.cursor}"`;
+  const parts = [
+    ...(window.hasEarlier
+      ? [
+          `Not shown: ${shown && shown.repliesBefore > 0 ? replyRange(1, shown.repliesBefore) : "earlier replies"}${reach}.`,
+        ]
+      : []),
+    ...(shown ? [`Below: ${replyRange(shown.first, shown.last)}.`] : []),
+  ];
+  return parts.length > 0 ? `[${parts.join(" ")}]` : null;
 }
 
 export function historyLegend(
@@ -149,7 +195,7 @@ export function catchUpLegend(
     "You were away. The messages below arrived while you were not reading " +
     "them, and each line carries the time it was sent. " +
     omitted +
-    "Read them all, then act only on what is still open and still worth " +
+    "Act only on what is still open and still worth " +
     "acting on. A question someone else has since answered, or a " +
     "conversation that has moved on, needs nothing from you — staying silent " +
     "on it is the right outcome, not a failure. Don't repeat or contradict " +

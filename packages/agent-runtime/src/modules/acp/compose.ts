@@ -47,10 +47,16 @@ import {
 } from "./services/session-changes.js";
 import { createInProcessCaller } from "./infrastructure/in-process-request.js";
 import { createSessionsService } from "./services/sessions-service.js";
+import { createDelegationFramesStore } from "./infrastructure/delegation-frames-store.js";
+import {
+  createSubAgentSessionStore,
+  type SubAgentSessionStore,
+} from "./infrastructure/sub-agent-session-store.js";
 
 export interface ComposeAcpOptions {
   command: string[];
   workingDir: string;
+  agentHome: string;
   stateBackend: DocumentStoreBackend;
   envReader: RuntimeEnvReader;
   sessionHistory?: {
@@ -58,18 +64,18 @@ export interface ComposeAcpOptions {
     exportName?: string;
     command?: string[];
   };
-  isTerminalSessionActive?: (sessionId: string) => boolean;
-  backgroundWorkHolds?: boolean;
+  isTerminalSessionActive: (sessionId: string) => boolean;
+  backgroundWorkHolds: boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
-  beforeFirstSpawn?: () => Promise<void>;
-  log?: (msg: string) => void;
+  beforeFirstSpawn: () => Promise<void>;
+  log: (msg: string) => void;
 }
 
 function historyProviderOf(
   opts: ComposeAcpOptions,
 ): HistoryProvider | undefined {
   const declared = opts.sessionHistory;
-  const log = (msg: string): void => opts.log?.(msg);
+  const { log } = opts;
   if (declared?.module !== undefined) {
     return createWorkerHistoryProvider({
       modulePath: declared.module,
@@ -95,6 +101,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   sessions: SessionsService;
   sessionChanges: SessionChanges;
   activeTurns: ActiveTurnStore;
+  subAgentSessions: SubAgentSessionStore;
   platformMcpEntry: PlatformMcpEntryStore;
 } {
   const sessionChanges = createSessionChanges();
@@ -113,6 +120,8 @@ export function composeAcp(opts: ComposeAcpOptions): {
     () => new Date().toISOString(),
   );
   const activeTurns = createActiveTurnStore(opts.stateBackend);
+  const subAgentSessions = createSubAgentSessionStore(opts.stateBackend);
+  const historyProvider = historyProviderOf(opts);
   const runtime = createAcpRuntime({
     undeliveredPrompts,
     activeTurns,
@@ -130,12 +139,12 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionMetadata,
     isTerminalSessionActive: opts.isTerminalSessionActive,
     onArtifactTouch: opts.onArtifactTouch,
-    historyProvider: historyProviderOf(opts),
+    onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
+      subAgentSessions.record(sessionId, subAgentIds),
+    ...(historyProvider ? { historyProvider } : {}),
     log: opts.log,
     envReadyAtBoot: opts.envReader.ready(),
-    ...(opts.beforeFirstSpawn
-      ? { beforeFirstSpawn: opts.beforeFirstSpawn }
-      : {}),
+    beforeFirstSpawn: opts.beforeFirstSpawn,
     idleReapDelayMs: 3_000,
     ...(config.QUEUE_PARK_MS !== undefined
       ? { queueParkMs: config.QUEUE_PARK_MS }
@@ -155,6 +164,10 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionMetadata,
     isRunning: (sessionId) => runtime.isSessionRunning(sessionId),
     changes: sessionChanges,
+    sessionFrames: (sessionId) => runtime.sessionFrames(sessionId),
+    delegations: createDelegationFramesStore(opts.agentHome),
+    ...(historyProvider ? { historyProvider } : {}),
+    log: opts.log,
   });
 
   return {
@@ -165,6 +178,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessions,
     sessionChanges,
     activeTurns,
+    subAgentSessions,
     platformMcpEntry,
   };
 }

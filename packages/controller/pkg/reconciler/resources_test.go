@@ -10,8 +10,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
-	"github.com/dam-agents/dam/packages/controller/pkg/types"
 )
 
 var testConfig = &config.Config{
@@ -20,7 +20,7 @@ var testConfig = &config.Config{
 	ReleaseName:       "platform",
 	HarnessServerPort: 4001,
 	ExtAuthzPort:      4002,
-	EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2",
+	EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1",
 	EnvoyPort:         10000,
 	IstioTrustDomain:  "cluster.local",
 	IstioWaypointName: "apiserver-waypoint",
@@ -40,15 +40,15 @@ var testConfig = &config.Config{
 	RequestsMinMemory:  resource.MustParse("128Mi"),
 }
 
-var testAgent = &types.AgentSpec{
+var testAgent = &apiv1.AgentSpec{
 	Image: "ghcr.io/myorg/agent:latest",
-	Mounts: []types.Mount{
+	Mounts: []apiv1.Mount{
 		{Path: "/home/agent", Persist: true},
 		{Path: "/tmp", Persist: false},
 	},
 	Init: "#!/bin/bash\necho hello",
-	Env:  []types.EnvVar{{Name: "ACP_PORT", Value: "8080"}},
-	Resources: types.ResourceSpec{
+	Env:  []apiv1.EnvVar{{Name: "ACP_PORT", Value: "8080"}},
+	Resources: apiv1.ResourceSpec{
 		Requests: map[string]string{"cpu": "250m", "memory": "512Mi"},
 		Limits:   map[string]string{"cpu": "1", "memory": "2Gi"},
 	},
@@ -68,9 +68,6 @@ func credSecret(name, host string) corev1.Secret {
 			`","headerName":"Authorization","valueFormat":"Bearer {value}","sdsKey":"` +
 			sdsFileKeyForHost(host) + `"}]`,
 	}
-	if host == "api.github.com" || host == "github.com" || host == "raw.githubusercontent.com" {
-		ann["agent-platform.ai/env-mappings"] = `[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"}]`
-	}
 	return corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
@@ -88,8 +85,8 @@ func credSecret(name, host string) corev1.Secret {
 
 func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	agent := *testAgent
-	agent.Env = append([]types.EnvVar{}, testAgent.Env...)
-	agent.Env = append(agent.Env, types.EnvVar{Name: "GITHUB_ORG", Value: "alpha"})
+	agent.Env = append([]apiv1.EnvVar{}, testAgent.Env...)
+	agent.Env = append(agent.Env, apiv1.EnvVar{Name: "GITHUB_ORG", Value: "alpha"})
 	agent.SecretRef = "my-secrets"
 	ss := BuildAgentStatefulSet("my-instance", &agent, testConfig, configMapOwnerRef(testOwnerCM), "10.96.42.42")
 
@@ -134,6 +131,7 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 		assert.NotEqual(t, "AGENT_RUNTIME_TOKEN", e.Name)
 	}
 	assert.Equal(t, "/etc/platform/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
+	assert.Equal(t, "1", envMap["NODE_USE_SYSTEM_CA"], "Node reads the system bundle, which the entrypoint fills with every platform CA")
 	_, hasSSLCertFile := envMap["SSL_CERT_FILE"]
 	assert.False(t, hasSSLCertFile, "SSL_CERT_FILE must be left to the base image")
 	_, hasGitCAInfo := envMap["GIT_SSL_CAINFO"]
@@ -164,7 +162,7 @@ func TestBuildAgentStatefulSet_DerivesRequestsFromLimits(t *testing.T) {
 		},
 	}
 	spec := *testAgent
-	spec.Resources = types.ResourceSpec{
+	spec.Resources = apiv1.ResourceSpec{
 		Limits: map[string]string{"cpu": "2", "memory": "2Gi"},
 	}
 	ss := BuildAgentStatefulSet("my-instance", &spec, &cfg, configMapOwnerRef(testOwnerCM), "10.96.42.42")
@@ -174,7 +172,7 @@ func TestBuildAgentStatefulSet_DerivesRequestsFromLimits(t *testing.T) {
 	assert.Equal(t, "1", c.Resources.Requests.Cpu().String())
 	assert.Equal(t, "1Gi", c.Resources.Requests.Memory().String())
 
-	spec.Resources = types.ResourceSpec{
+	spec.Resources = apiv1.ResourceSpec{
 		Limits: map[string]string{"cpu": "150m", "memory": "64Mi"},
 	}
 	ss = BuildAgentStatefulSet("my-instance", &spec, &cfg, configMapOwnerRef(testOwnerCM), "10.96.42.42")
@@ -182,7 +180,7 @@ func TestBuildAgentStatefulSet_DerivesRequestsFromLimits(t *testing.T) {
 	assert.Equal(t, "100m", c.Resources.Requests.Cpu().String())
 	assert.Equal(t, "64Mi", c.Resources.Requests.Memory().String())
 
-	spec.Resources = types.ResourceSpec{
+	spec.Resources = apiv1.ResourceSpec{
 		Limits:   map[string]string{"cpu": "500m"},
 		Requests: map[string]string{"cpu": "250m"},
 	}
@@ -245,9 +243,9 @@ func TestBuildAgentStatefulSet_Volumes(t *testing.T) {
 }
 
 func TestBuildAgentStatefulSet_PVCSize(t *testing.T) {
-	agent := types.AgentSpec{
+	agent := apiv1.AgentSpec{
 		Image: "platform-test:latest",
-		Mounts: []types.Mount{
+		Mounts: []apiv1.Mount{
 			{Path: "/home/agent", Persist: true, Size: "2Gi"},
 			{Path: "/cache", Persist: true},
 		},
@@ -372,7 +370,7 @@ func TestBuildAgentStatefulSet_ProxyURLUsesIPDirectly(t *testing.T) {
 
 func TestBuildEnvoyBootstrapConfigMap(t *testing.T) {
 	secrets := []corev1.Secret{credSecret("platform-cred-aaa", "api.example.com")}
-	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", "", testConfig, configMapOwnerRef(testOwnerCM), secrets, nil)
+	cm, err := BuildEnvoyBootstrapConfigMap("my-instance", "", false, testConfig, configMapOwnerRef(testOwnerCM), secrets, nil, false)
 	require.NoError(t, err)
 	assert.Equal(t, "my-instance-envoy-bootstrap", cm.Name)
 	assert.Equal(t, "test-agents", cm.Namespace)
@@ -450,7 +448,7 @@ func TestApplyPoolClaims_NilIsNoop(t *testing.T) {
 
 func TestApplyPoolClaims_PartialMultiMount(t *testing.T) {
 	agent := *testAgent
-	agent.Mounts = []types.Mount{
+	agent.Mounts = []apiv1.Mount{
 		{Path: "/home/agent", Persist: true, Size: "2Gi"},
 		{Path: "/cache", Persist: true},
 	}
@@ -465,4 +463,86 @@ func TestApplyPoolClaims_PartialMultiMount(t *testing.T) {
 	claim, ok := podClaimName(ss, "home-agent")
 	require.True(t, ok)
 	assert.Equal(t, "platform-pool-xyz", claim)
+}
+
+func TestSanitizeMountName(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected string
+	}{
+		{"/workspace", "workspace"},
+		{"/home/agent", "home-agent"},
+		{"/tmp", "tmp"},
+		{"/var/lib/data", "var-lib-data"},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.expected, sanitizeMountName(tt.path))
+	}
+}
+
+// TEST_SCENARIO: an install that names extra CAs hands them to every agent beside its gateway's CA, in the one directory the entrypoint trusts, so a host the gateway passes through still verifies when a proxy further out intercepts it; the extras come from the one ConfigMap the chart renders for all agents, optionally, so a missing one never blocks the pod.
+func TestBuildAgentStatefulSet_TrustsTheInstallsExtraCAs(t *testing.T) {
+	cfg := *testConfig
+	cfg.ExtraTrustedCAs = "-----BEGIN CERTIFICATE-----\nextra\n-----END CERTIFICATE-----\n"
+	ss := BuildAgentStatefulSet("my-instance", testAgent, &cfg, configMapOwnerRef(testOwnerCM), "")
+
+	var ca corev1.Volume
+	for _, v := range ss.Spec.Template.Spec.Volumes {
+		if v.Name == "ca-cert" {
+			ca = v
+		}
+	}
+	require.NotNil(t, ca.Projected, "the gateway CA and the extras share /etc/platform/ca")
+	require.Len(t, ca.Projected.Sources, 2)
+	leaf, extras := ca.Projected.Sources[0].Secret, ca.Projected.Sources[1].ConfigMap
+	require.NotNil(t, leaf)
+	assert.Equal(t, "my-instance-envoy-tls", leaf.Name)
+	assert.Equal(t, []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}, leaf.Items)
+	require.NotNil(t, extras)
+	assert.Equal(t, "agent-trusted-cas", extras.Name)
+	assert.Equal(t, []corev1.KeyToPath{{Key: "extra-cas.crt", Path: "extra-cas.crt"}}, extras.Items)
+	require.NotNil(t, extras.Optional)
+	assert.True(t, *extras.Optional)
+}
+
+// TEST_SCENARIO: the default image bakes no tools and reads them from the node directory a DaemonSet fills, at a path no baked image uses. Once the install sets that directory, every agent pod mounts it read-only into the agent container alone, since the DaemonSet is its only writer and the init containers need no tools. With no directory set the pod gets no host mount.
+func TestBuildAgentStatefulSet_MountsTheNodesHarnessToolsReadOnly(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentBase.ToolsHostPath = "/var/lib/platform-tools"
+	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "iptables:1"}
+	pod := BuildAgentStatefulSet("my-instance", testAgent, &cfg, configMapOwnerRef(testOwnerCM), "10.0.0.1").Spec.Template.Spec
+
+	dir := corev1.HostPathDirectoryOrCreate
+	assert.Contains(t, pod.Volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
+		HostPath: &corev1.HostPathVolumeSource{Path: "/var/lib/platform-tools", Type: &dir},
+	}})
+	assert.Contains(t, pod.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "harness-tools", MountPath: "/usr/share/mise", ReadOnly: true})
+	require.NotEmpty(t, pod.InitContainers)
+	for _, c := range pod.InitContainers {
+		for _, m := range c.VolumeMounts {
+			assert.NotEqual(t, "harness-tools", m.Name, c.Name)
+		}
+	}
+
+	pod = BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "").Spec.Template.Spec
+	for _, v := range pod.Volumes {
+		assert.NotEqual(t, "harness-tools", v.Name)
+	}
+	for _, m := range pod.Containers[0].VolumeMounts {
+		assert.NotEqual(t, "harness-tools", m.Name)
+	}
+}
+
+// TEST_SCENARIO: the default image carries every harness and picks one from PLATFORM_HARNESS, so a container agent's spec.harness reaches the agent container as that env, as it reaches a vm guest. The secretRef stays envFrom beside it, where Kubernetes lets the explicit env win. An Agent with no harness sets nothing, leaving the image's default.
+func TestBuildAgentStatefulSet_HarnessReachesTheAgentAsPlatformHarness(t *testing.T) {
+	agent := *testAgent
+	agent.Harness = "codex"
+	agent.SecretRef = "my-secrets"
+	c := BuildAgentStatefulSet("my-instance", &agent, testConfig, configMapOwnerRef(testOwnerCM), "").Spec.Template.Spec.Containers[0]
+	assert.Equal(t, "codex", envToMap(c.Env)["PLATFORM_HARNESS"])
+	require.Len(t, c.EnvFrom, 1)
+	assert.Equal(t, "my-secrets", c.EnvFrom[0].SecretRef.Name)
+
+	c = BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "").Spec.Template.Spec.Containers[0]
+	assert.NotContains(t, envToMap(c.Env), "PLATFORM_HARNESS")
 }

@@ -1,3 +1,5 @@
+import type { SlackConversationLabel } from "api-server-api";
+
 export interface SlackImageFile {
   id: string;
   name: string;
@@ -14,17 +16,12 @@ export class FileTooLargeError extends Error {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The Slack workspace a call acts for. The empty
- * string is the install's original workspace — the one whose bot token the
- * operator set in Helm values, and the one every binding made before this
- * platform could install itself anywhere else belongs to. Keeping it a value
- * rather than an absent field is what lets a caller never have "no workspace":
- * every outbound call names one, and the resolver answers for it without
- * asking Slack who the operator's token belongs to.
+ * UNIT_BOUNDARY_DESCRIPTION: The Slack workspace a call acts for, by its team
+ * id. Every outbound call names one, and a workspace with no install row —
+ * including the empty string, which Slack never sends — resolves to no
+ * credential.
  */
 export type SlackWorkspace = string;
-
-export const ORIGINAL_WORKSPACE: SlackWorkspace = "";
 
 export interface SlackMentionEvent {
   user?: string;
@@ -41,12 +38,14 @@ export interface SlackSlashCommand {
   text: string;
   userId: string;
   channelId: string;
+  channelName?: string;
   teamId: SlackWorkspace;
+  triggerId: string;
 }
 
 export type SlackChannelMessageEvent = SlackMentionEvent;
 
-export type SlackAck = (response: { text: string }) => Promise<void>;
+export type SlackAck = (response?: { text: string }) => Promise<void>;
 
 export type SlackTokenResolver = (
   teamId: SlackWorkspace,
@@ -64,14 +63,28 @@ export interface SlackGatewayHandlers {
   onMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onDirectMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onBotJoinedChannel: (event: SlackBotJoinedChannelEvent) => Promise<void>;
+  onViewSubmission: (event: SlackViewSubmission) => Promise<void>;
+}
+
+export interface SlackViewSubmission {
+  callbackId: string;
+  privateMetadata: string;
+  userId: string;
+  teamId: SlackWorkspace;
+  inputs: Record<string, string>;
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: A thread read together with whether the messenger
- * had more to give. Callers that record how far they have read must not infer
- * that from the row count: Slack returns the thread parent in every page, so a
- * count reads one high, and a full page is not proof of a full window either.
- * The adapter reports it from the messenger's own paging signal instead.
+ * UNIT_BOUNDARY_DESCRIPTION: One page of a thread read, together with whether
+ * the messenger had more to give. Slack serves the page from whichever end the
+ * read names: given `oldest`, the oldest replies after it; given `latest` or no
+ * bound at all, the newest replies before it, so the next page of a read with
+ * no bound is older, not newer. Slack's reference suggests every read starts
+ * at the oldest end, and it does not. Replies in a page are in the order they
+ * were sent. The thread parent comes back in every page, carries the thread's
+ * reply count, and does not count towards the limit. Callers that record how
+ * far they have read must not infer that from the row count; the adapter
+ * reports it from the messenger's own paging signal instead.
  */
 export interface SlackThreadRead {
   messages: SlackMessage[];
@@ -91,24 +104,10 @@ export interface SlackChannelRead {
   hasMore: boolean;
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: A window cut out of a thread, for a caller reading
- * the thread rather than recording how far it has read. `opener` is the message
- * that started the thread, carried whatever the window holds, because a window
- * taken from the middle of a long thread is unreadable without it. The two gaps
- * are reported apart on purpose: `hasEarlier` says replies sit before the
- * window and another read reaches them, `hasMore` that the walk gave up before
- * the thread's end and no further read recovers what it missed. Collapsing them
- * would send a reader back through a thread towards messages nothing fetched.
- */
-export interface SlackThreadWindow {
-  messages: SlackMessage[];
-  opener: SlackMessage | null;
-  hasEarlier: boolean;
-  hasMore: boolean;
+export interface SlackMessageMetadata {
+  eventType: string;
+  payload: Record<string, unknown>;
 }
-
-export const THREAD_TAIL_MAX_PAGES = 20;
 
 export interface SlackMessage {
   ts?: string;
@@ -120,9 +119,15 @@ export interface SlackMessage {
   replyCount?: number;
   latestReplyTs?: string;
   subtype?: string;
+  metadata?: SlackMessageMetadata;
 }
 
 export type SlackBlock = Record<string, unknown>;
+
+export interface SlackReservedFile {
+  fileId: string;
+  uploadUrl: string;
+}
 
 export interface SlackPostMessage {
   channel: string;
@@ -135,6 +140,7 @@ export interface SlackPostMessage {
   unfurlMedia?: boolean;
   username?: string;
   iconUrl?: string;
+  metadata?: SlackMessageMetadata;
 }
 
 export interface SlackPostEphemeral {
@@ -142,7 +148,10 @@ export interface SlackPostEphemeral {
   user: string;
   threadTs?: string;
   text: string;
+  blocks?: SlackBlock[];
   teamId: SlackWorkspace;
+  username?: string;
+  iconUrl?: string;
 }
 
 export interface SlackUpload {
@@ -191,13 +200,26 @@ export interface SlackChannelInfo {
   name: string;
 }
 
+export interface SlackConversationInfo {
+  isMember: boolean;
+  isDirectMessage: boolean;
+  isGroupDirectMessage: boolean;
+  name: string | null;
+  directMessageUser: string | null;
+}
+
+export type SlackConversationLookup =
+  | ({ kind: "found" } & SlackConversationInfo)
+  | { kind: "not-found" }
+  | { kind: "no-credential" };
+
 export interface SlackConversationRef {
   channelId: string;
   teamId: SlackWorkspace;
 }
 
-export interface SlackConversationName extends SlackConversationRef {
-  name: string | null;
+export interface SlackLabelledConversation extends SlackConversationRef {
+  label: SlackConversationLabel | null;
 }
 
 export interface SlackUserInfo {
@@ -225,7 +247,18 @@ export interface SlackMessageReaction {
 export interface SlackGateway {
   start(handlers: SlackGatewayHandlers): Promise<boolean>;
   stop(): Promise<void>;
-  postMessage(args: SlackPostMessage): Promise<void>;
+  postMessage(args: SlackPostMessage): Promise<{ ts: string } | null>;
+  deleteMessage(
+    channel: string,
+    ts: string,
+    teamId: SlackWorkspace,
+  ): Promise<boolean>;
+  deleteFile(fileId: string, teamId: SlackWorkspace): Promise<void>;
+  openModal(args: {
+    triggerId: string;
+    view: SlackBlock;
+    teamId: SlackWorkspace;
+  }): Promise<void>;
   postEphemeral(args: SlackPostEphemeral): Promise<void>;
   startStream(args: SlackStartStream): Promise<{ ts: string }>;
   appendStream(args: SlackAppendStream): Promise<void>;
@@ -242,23 +275,44 @@ export interface SlackGateway {
     threadTs: string;
     limit: number;
     oldest?: string;
+    latest?: string;
+    inclusive?: boolean;
     teamId: SlackWorkspace;
   }): Promise<SlackThreadRead>;
-  getThreadTail(args: {
-    channel: string;
-    threadTs: string;
-    limit: number;
-    before?: string;
-    maxPages?: number;
-    teamId: SlackWorkspace;
-  }): Promise<SlackThreadWindow>;
   getChannelHistory(args: {
     channel: string;
     limit: number;
     oldest?: string;
     teamId: SlackWorkspace;
   }): Promise<SlackChannelRead>;
+  getMessage(args: {
+    channel: string;
+    ts: string;
+    threadTs?: string;
+    teamId: SlackWorkspace;
+  }): Promise<(SlackMessage & { ts: string }) | null>;
   uploadFile(args: SlackUpload): Promise<void>;
+  reserveFile(args: {
+    filename: string;
+    length: number;
+    teamId: SlackWorkspace;
+  }): Promise<SlackReservedFile>;
+  sendFileBytes(args: {
+    reserved: SlackReservedFile;
+    file: Buffer;
+    filename: string;
+    teamId: SlackWorkspace;
+  }): Promise<void>;
+  shareFile(args: {
+    fileId: string;
+    filename: string;
+    title?: string;
+    username?: string;
+    iconUrl?: string;
+    channelId: string;
+    threadTs?: string;
+    teamId: SlackWorkspace;
+  }): Promise<void>;
   downloadFile(
     urlPrivate: string,
     maxBytes: number,
@@ -268,7 +322,8 @@ export interface SlackGateway {
   getConversationInfo(
     channelId: string,
     teamId: SlackWorkspace,
-  ): Promise<{ isMember: boolean; name: string | null } | null>;
+  ): Promise<SlackConversationLookup>;
+  listSharedChannels(userId: string, teamId: SlackWorkspace): Promise<string[]>;
   getUserInfo(
     userId: string,
     teamId: SlackWorkspace,

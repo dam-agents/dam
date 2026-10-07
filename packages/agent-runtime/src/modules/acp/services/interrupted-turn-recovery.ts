@@ -10,6 +10,8 @@ const INTERRUPTION_NOTICE = [
     "finished.",
   "Check the current state of the workspace before you continue, then carry " +
     "on with the task you were working on.",
+  "If this problem persists, stop and instruct the user to go to ⵗ → " +
+    "Configure agent → set Compute Resources dropdown to a higher tier.",
   "</turn-interrupted>",
 ].join("\n");
 
@@ -27,6 +29,9 @@ const INTERRUPTION_NOTICE = [
  * harness has *taken* the prompt, so resuming continues a turn the agent
  * already saw — it never re-sends a queued prompt the agent never received
  * (those live in the undelivered-prompts document and stay user-initiated).
+ * Each marker is looked up again just before its own resume, because resuming
+ * the ones before it takes time, and a Session a person starts using in that
+ * window belongs to their turn, not to recovery.
  */
 export async function recoverInterruptedTurns(deps: {
   store: ActiveTurnStore;
@@ -34,7 +39,14 @@ export async function recoverInterruptedTurns(deps: {
   triggerDriver: TriggerSessionDriver;
   log: (msg: string) => void;
 }): Promise<void> {
-  for (const marker of deps.store.leftovers()) {
+  for (const { sessionId } of deps.store.leftovers()) {
+    const marker = deps.store
+      .leftovers()
+      .find((m) => m.sessionId === sessionId);
+    if (marker === undefined) {
+      deps.log(`not resuming ${sessionId}: a live turn took it over`);
+      continue;
+    }
     if (marker.attempts > 0) {
       deps.log(
         `not resuming ${marker.sessionId}: already attempted ${String(marker.attempts)}x`,

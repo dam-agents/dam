@@ -15,7 +15,7 @@ func TestBuildNPGateInitContainer_DisabledReturnsNil(t *testing.T) {
 	cfg.AgentBase.NPGateInit = nil
 	assert.Nil(t, buildNPGateInitContainer(&cfg, "10.96.42.42"))
 
-	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: false, Image: "registry.access.redhat.com/hi/curl:8.20-builder"}
+	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: false, Image: "registry.access.redhat.com/hi/curl:8.22-builder"}
 	assert.Nil(t, buildNPGateInitContainer(&cfg, "10.96.42.42"))
 }
 
@@ -27,18 +27,18 @@ func TestBuildNPGateInitContainer_EmptyImageReturnsNil(t *testing.T) {
 
 func TestBuildNPGateInitContainer_NoGatewayIPReturnsNil(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true, Image: "registry.access.redhat.com/hi/curl:8.20-builder"}
+	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true, Image: "registry.access.redhat.com/hi/curl:8.22-builder"}
 	assert.Nil(t, buildNPGateInitContainer(&cfg, ""), "no gateway IP yet — re-attach on next reconcile")
 }
 
 func TestBuildNPGateInitContainer_NoCapsUnprivileged(t *testing.T) {
 	cfg := *testConfig
-	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true, Image: "registry.access.redhat.com/hi/curl:8.20-builder"}
+	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{Enabled: true, Image: "registry.access.redhat.com/hi/curl:8.22-builder"}
 
 	ic := buildNPGateInitContainer(&cfg, "10.96.42.42")
 	require.NotNil(t, ic)
 	assert.Equal(t, "np-gate", ic.Name)
-	assert.Equal(t, "registry.access.redhat.com/hi/curl:8.20-builder", ic.Image)
+	assert.Equal(t, "registry.access.redhat.com/hi/curl:8.22-builder", ic.Image)
 	require.NotNil(t, ic.SecurityContext)
 	require.NotNil(t, ic.SecurityContext.RunAsNonRoot)
 	assert.True(t, *ic.SecurityContext.RunAsNonRoot, "np-gate must run unprivileged")
@@ -55,7 +55,7 @@ func TestBuildNPGateInitContainer_ProbeShape(t *testing.T) {
 	cfg := *testConfig
 	cfg.AgentBase.NPGateInit = &config.AgentNPGateInit{
 		Enabled:        true,
-		Image:          "registry.access.redhat.com/hi/curl:8.20-builder",
+		Image:          "registry.access.redhat.com/hi/curl:8.22-builder",
 		TimeoutSeconds: 30,
 	}
 

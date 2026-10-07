@@ -1,13 +1,15 @@
 # Codex Agent
 
-Platform agent running [OpenAI Codex CLI](https://github.com/openai/codex) via the [codex-acp](https://github.com/zed-industries/codex-acp) ACP adapter.
+Platform agent running [OpenAI Codex CLI](https://github.com/openai/codex) via the [codex-acp](https://github.com/agentclientprotocol/codex-acp) ACP adapter.
+
+The harness ships in the default image every harness Template boots, built by `//packages/agents:oci` from the shared base in [`packages/agents/base`](../base/) (see [agent images](../../../docs/architecture/agent-images.md)): its tools, declared in [`image.toml`](image.toml), come from the node's harness tools, and its files live at their image paths under [`rootfs/`](rootfs/).
 
 ## Stack
 
 | Component | Package | Purpose |
 |---|---|---|
-| ACP bridge | `@zed-industries/codex-acp` | Translates ACP <> Codex protocol for chat sessions |
-| Terminal CLI | `@openai/codex` | Interactive TUI for terminal sessions |
+| ACP bridge | `@agentclientprotocol/codex-acp` | Translates ACP <> Codex app-server for chat sessions |
+| Terminal CLI | `@openai/codex` | Interactive TUI for terminal sessions; the copy codex-acp depends on, linked onto `PATH` as `codex` |
 
 ## Authentication
 
@@ -17,7 +19,7 @@ Create a **generic secret** on the platform with:
 - `hostPattern`: `api.openai.com`
 - env-mapping: `OPENAI_API_KEY`
 
-The Dockerfile sets `OPENAI_API_KEY=dummy-placeholder` so the CLI's startup check passes before a real credential is attached.
+The harness config sets `OPENAI_API_KEY=dummy-placeholder` (`[oci.env]` in `image.toml`) so the CLI's startup check passes before a real credential is attached.
 
 ### Custom OpenAI-compatible endpoints
 
@@ -30,7 +32,7 @@ To point Codex at an OpenAI-compatible proxy or self-hosted endpoint, add `OPENA
 ]
 ```
 
-The harness scripts translate `OPENAI_BASE_URL` into Codex's `-c openai_base_url=...` config override. Update the secret's `hostPattern` to match the proxy host so the Envoy sidecar injects the credential on the right outbound requests.
+The harness scripts point the `openai-platform` provider's `base_url` at `OPENAI_BASE_URL`: `harness-terminal` with a `-c` override, `harness-chat` through codex-acp's `CODEX_CONFIG`, which it merges into every chat session's config. Update the secret's `hostPattern` to match the proxy host so the Envoy sidecar injects the credential on the right outbound requests.
 
 ### Model selection
 
@@ -53,18 +55,18 @@ A file that does not parse is never replaced. The write fails and reports a deli
 
 | Script | Runs | Purpose |
 |---|---|---|
-| `harness-chat.sh` | `codex-acp` | ACP subprocess for chat-mode sessions (UI) |
-| `harness-terminal.sh` | `codex` / `codex resume <thread>` | Interactive TUI for terminal-mode sessions |
+| [`harness-chat`](rootfs/usr/local/bin/harness-chat) | `codex-acp` | ACP subprocess for chat-mode sessions (UI); runs its bundled `codex app-server` |
+| [`harness-terminal`](rootfs/usr/local/bin/harness-terminal) | `codex` / `codex resume <thread>` | Interactive TUI for terminal-mode sessions |
 
-Terminal sessions use `--dangerously-bypass-approvals-and-sandbox` since the pod itself is the sandbox (network isolation + Envoy credential injection).
+Both modes run without approvals or Codex's own sandbox, since the pod itself is the sandbox (network isolation + Envoy credential injection): terminal sessions pass `--dangerously-bypass-approvals-and-sandbox`, and chat sessions start in codex-acp's `agent-full-access` mode, which it sends with every turn and which therefore outranks `/etc/codex/config.toml`.
 
-Codex mints its own thread id on the first turn, so the platform session id cannot be passed in. A managed `SessionStart` hook (`requirements.toml`, shipped as `/etc/codex/requirements.toml` and therefore pre-trusted) records the thread id under `~/.codex/platform-sessions/$HARNESS_SESSION_ID`; `harness-terminal.sh` resumes that thread when the file exists and starts a fresh conversation otherwise. A terminal closed before its first turn leaves no pin and simply starts fresh next time.
+Codex mints its own thread id on the first turn, so the platform session id cannot be passed in. A managed `SessionStart` hook ([`requirements.toml`](rootfs/etc/codex/requirements.toml), shipped as `/etc/codex/requirements.toml` and therefore pre-trusted) records the thread id under `~/.codex/platform-sessions/$HARNESS_SESSION_ID`; `harness-terminal` resumes that thread when the file exists and starts a fresh conversation otherwise. A terminal closed before its first turn leaves no pin and simply starts fresh next time.
 
 ## Usage
 
 ```sh
 mise run cluster:install        # first time
-mise run cluster:build-agent    # rebuild after changes
+mise run cluster:build -- agents    # rebuild after changes
 ```
 
 Create an agent from the **codex** template in the Platform UI, attach an OpenAI credential, and open a session.

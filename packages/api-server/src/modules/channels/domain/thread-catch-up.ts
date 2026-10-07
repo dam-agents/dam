@@ -22,11 +22,7 @@ export function laterTs(a: string, b: string): string {
   return isAfterTs(a, b) ? a : b;
 }
 
-export function earlierTs(a: string, b: string): string {
-  return isAfterTs(a, b) ? b : a;
-}
-
-export function newestOf(tss: readonly (string | undefined)[]): string | null {
+function newestOf(tss: readonly (string | undefined)[]): string | null {
   let found: string | null = null;
   for (const ts of tss) {
     if (ts === undefined) continue;
@@ -70,82 +66,13 @@ export function nextBoundary(
   const capped =
     read.newestReadTs === null
       ? null
-      : earlierTs(read.newestReadTs, read.coveredUpTo);
+      : isAfterTs(read.newestReadTs, read.coveredUpTo)
+        ? read.coveredUpTo
+        : read.newestReadTs;
   const reached = read.hasMore ? capped : read.coveredUpTo;
   if (reached === null) return stored;
   if (stored === null) return reached;
   return laterTs(stored, reached);
-}
-
-export interface TailFold<T> {
-  window: T[];
-  seen: Set<string>;
-  opener: T | null;
-  trimmed: boolean;
-  reachedBefore: boolean;
-}
-
-export function emptyTailFold<T>(): TailFold<T> {
-  return {
-    window: [],
-    seen: new Set(),
-    opener: null,
-    trimmed: false,
-    reachedBefore: false,
-  };
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: Folds the pages of a thread read into one window
- * of at most `limit` messages, and is where a caller picks which window. With
- * no `before` the window is the thread's end; with one it is the messages
- * immediately older than that ts, which is how a reader walks a long thread
- * backwards a window at a time. The message that opened the thread is kept
- * aside under `opener` whatever the window holds, because it frames every
- * other line and is the first thing a tail drops. Two flags carry what the
- * window alone cannot say: `trimmed`, that messages fell off its front, which
- * is the only thing telling a capped window apart from a thread that happened
- * to be that long; and `reachedBefore`, that this page already ran past the
- * boundary, so the pages after it hold nothing a backward read wants and the
- * caller can stop asking the messenger for them.
- */
-export function foldTailPage<T extends { ts?: string }>(
-  state: TailFold<T>,
-  page: readonly T[],
-  args: { limit: number; opener?: string; before?: string },
-): TailFold<T> {
-  const seen = new Set(state.seen);
-  let opener = state.opener;
-  let reachedBefore = state.reachedBefore;
-  const fresh: T[] = [];
-  for (const entry of page) {
-    if (
-      opener === null &&
-      args.opener !== undefined &&
-      entry.ts === args.opener
-    )
-      opener = entry;
-    const wanted =
-      args.before === undefined ||
-      entry.ts === undefined ||
-      isAfterTs(args.before, entry.ts);
-    if (!wanted) reachedBefore = true;
-    if (entry.ts !== undefined) {
-      if (seen.has(entry.ts)) continue;
-      seen.add(entry.ts);
-    }
-    if (wanted) fresh.push(entry);
-  }
-  const next = [...state.window, ...fresh];
-  const over = next.length - args.limit;
-  const dropped = over > 0 ? next.slice(0, over) : [];
-  return {
-    window: over > 0 ? next.slice(over) : next,
-    seen,
-    opener,
-    trimmed: state.trimmed || dropped.some((entry) => entry.ts !== args.opener),
-    reachedBefore,
-  };
 }
 
 export interface ThreadCursor {
@@ -178,55 +105,6 @@ export function parseThreadCursor(raw: string): ThreadCursor | null {
     return null;
   if (!CURSOR_TS.test(threadTs) || !CURSOR_TS.test(before)) return null;
   return { threadTs, before };
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: Walks a thread's pages into one window, and owns
- * when to stop walking: the boundary was passed, the messenger ran out of
- * pages, or the page ceiling was reached, which is the one ending that leaves
- * the thread's newest messages unread and is reported as `hasMore` so a caller
- * never mistakes that window for the thread's end. The caller supplies only the
- * reading, so the real messenger and the fake one cannot disagree about where a
- * window ends or about which of those endings happened. They did disagree while
- * each kept its own copy of this loop, and a fake that ends a walk differently
- * from the messenger it stands in for makes every test written against it
- * worthless.
- */
-export async function foldThreadPages<T extends { ts?: string }, C>(
-  args: { limit: number; maxPages: number; opener?: string; before?: string },
-  readPage: (
-    from: C | undefined,
-  ) => Promise<{ messages: readonly T[]; next: C | undefined }>,
-): Promise<{
-  messages: T[];
-  opener: T | null;
-  hasEarlier: boolean;
-  hasMore: boolean;
-}> {
-  let fold = emptyTailFold<T>();
-  let from: C | undefined;
-  for (let page = 0; page < args.maxPages; page += 1) {
-    const read = await readPage(from);
-    fold = foldTailPage(fold, read.messages, {
-      limit: args.limit,
-      ...(args.opener !== undefined ? { opener: args.opener } : {}),
-      ...(args.before !== undefined ? { before: args.before } : {}),
-    });
-    if (fold.reachedBefore || read.next === undefined)
-      return {
-        messages: fold.window,
-        opener: fold.opener,
-        hasEarlier: fold.trimmed,
-        hasMore: false,
-      };
-    from = read.next;
-  }
-  return {
-    messages: fold.window,
-    opener: fold.opener,
-    hasEarlier: fold.trimmed,
-    hasMore: true,
-  };
 }
 
 export function selectUnseen<T>(

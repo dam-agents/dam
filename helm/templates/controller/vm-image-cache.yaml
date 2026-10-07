@@ -101,7 +101,7 @@ spec:
             - --socket=/var/lib/platform/images/.cache.sock
             - --image-budget={{ $cache.budget }}
             - --interval={{ $cache.preloadInterval }}
-            - --images={{ join "," $images }}
+            - --images={{ join "," (uniq $images) }}
             {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
             {{- /*
             The directory the kubelet creates for the hostPath carries the
@@ -120,17 +120,21 @@ spec:
             {{- end }}
           securityContext:
             {{- /*
-            What unpacking an image faithfully costs: a rootfs carries the
-            owners and modes its files were built with, so tar chowns each
-            entry (CHOWN), sets a mode on a file it has just given away
-            (FOWNER), and keeps writing into directories that are read-only or
-            no longer its own (DAC_OVERRIDE). A runner that caches on its own
-            claim holds the same three for the same unpack; the runners this
-            service serves only read, so they hold no CHOWN or FOWNER.
+            What unpacking an image faithfully costs, and nothing else: every
+            capability the runtime would grant is dropped first. A rootfs
+            carries the owners and modes its files were built with, so tar
+            chowns each entry (CHOWN), sets a mode on a file it has just given
+            away (FOWNER), keeps a setgid bit on a file whose group is not its
+            own (FSETID), and keeps writing into directories that are
+            read-only or no longer its own (DAC_OVERRIDE). There is no MKNOD:
+            the unpack skips the image's /dev, and fails on a device node
+            anywhere else. The runners this service serves only read, so they
+            hold no CHOWN or FOWNER.
             */}}
             runAsUser: 0
             capabilities:
-              add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
+              drop: ["ALL"]
+              add: ["CHOWN", "FOWNER", "FSETID", "DAC_OVERRIDE"]
             appArmorProfile:
               type: Unconfined
             {{- if .Values.openshift.scc.anyuidCapNet.enabled }}

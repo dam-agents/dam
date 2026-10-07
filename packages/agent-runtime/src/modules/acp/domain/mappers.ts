@@ -29,6 +29,10 @@ export function rewriteAuthError(line: string): string {
       msg.error.message = AUTH_HINT + msg.error.message;
       return JSON.stringify(msg);
     }
+    if (msg?.params?.error?.message?.includes?.("authentication_error")) {
+      msg.params.error.message = AUTH_HINT + msg.params.error.message;
+      return JSON.stringify(msg);
+    }
     const text = msg?.params?.update?.content?.text;
     if (typeof text === "string" && text.includes("authentication_error")) {
       msg.params.update.content.text = AUTH_HINT + text;

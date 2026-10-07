@@ -1,8 +1,7 @@
 import type { SlackOutboundRecord } from "api-server-api";
-import { FileTooLargeError, THREAD_TAIL_MAX_PAGES } from "./slack-gateway.js";
-import { ORIGINAL_WORKSPACE } from "./slack-gateway.js";
-import { foldThreadPages } from "../domain/thread-catch-up.js";
+import { FileTooLargeError } from "./slack-gateway.js";
 import type {
+  SlackViewSubmission,
   SlackBotJoinedChannelEvent,
   SlackChannelMessageEvent,
   SlackGateway,
@@ -12,19 +11,27 @@ import type {
   SlackMessageReaction,
   SlackSlashCommand,
   SlackUserInfo,
+  SlackWorkspace,
 } from "./slack-gateway.js";
+
+export const FAKE_WORKSPACE: SlackWorkspace = "";
 
 export interface FakeSlackChannel {
   id: string;
   name: string;
   botIsMember: boolean;
+  members?: string[];
 }
 
 export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId"> & {
   teamId?: string;
 };
-export type FiredSlackCommand = Omit<SlackSlashCommand, "teamId"> & {
+export type FiredSlackCommand = Omit<
+  SlackSlashCommand,
+  "teamId" | "triggerId"
+> & {
   teamId?: string;
+  triggerId?: string;
 };
 export type FiredSlackBotJoin = Omit<SlackBotJoinedChannelEvent, "teamId"> & {
   teamId?: string;
@@ -36,10 +43,12 @@ export interface FakeSlackGateway extends SlackGateway {
   fireDirectMessage(event: FiredSlackEvent): Promise<void>;
   fireCommand(command: FiredSlackCommand): Promise<string>;
   fireBotJoinedChannel(event: FiredSlackBotJoin): Promise<void>;
+  fireViewSubmission(event: SlackViewSubmission): Promise<void>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
   setChannels(channels: FakeSlackChannel[], teamId?: string): void;
   setHistory(messages: SlackMessage[]): void;
+  setMessage(channel: string, message: SlackMessage & { ts: string }): void;
   setThreadedHistory(messages: SlackMessage[]): void;
   setUsers(users: SlackUserInfo[]): void;
   readUserLookups(): string[];
@@ -61,48 +70,63 @@ export interface FakeSlackGateway extends SlackGateway {
  * on every page but the first, since a caller folding pages together has to
  * cope with it and would not see the need from a fake that tidied it away.
  */
-function pageOf(
-  window: SlackMessage[],
-  cursor: number,
-  limit: number,
-): { messages: SlackMessage[]; nextCursor: number | null } {
-  const parent = window[0];
-  const repeatParent = cursor > 0 && parent !== undefined;
-  const room = repeatParent ? limit - 1 : limit;
-  const slice = window.slice(cursor, cursor + room);
-  const consumed = cursor + slice.length;
-  return {
-    messages: repeatParent ? [parent, ...slice] : slice,
-    nextCursor: consumed < window.length ? consumed : null,
-  };
+function isAfter(ts: string | undefined, bound: string, inclusive: boolean) {
+  if (ts === undefined) return true;
+  const at = Number(ts);
+  const floor = Number(bound);
+  if (!Number.isFinite(at) || !Number.isFinite(floor)) return true;
+  return inclusive ? at >= floor : at > floor;
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Models Slack's thread read, including the parts a
- * caller can get wrong. The thread parent comes back in every page whatever the
- * anchor, because the real API includes it, and an anchored read is a filter
- * over the rest rather than a fresh window. Whether a fixture models threads at
- * all is its own explicit choice, never read off its contents: setHistory means
- * the history is the thread, setThreadedHistory means reads are exact.
+ * UNIT_BOUNDARY_DESCRIPTION: Models one page of Slack's thread read the way the
+ * real API serves it, which was checked against Slack itself. A read given
+ * `oldest` starts at the oldest end and returns the first replies after it; a
+ * read given `latest`, or no bound at all, starts at the newest end and returns
+ * the last replies before it. Either way the page is in the order replies were
+ * sent, and the parent comes back first, with the thread's reply count, outside
+ * the limit. A fake that started every read at the oldest end is what let a
+ * thread's oldest replies pass for its end in every test. Whether a fixture
+ * models threads at all is its own explicit choice, never read off its
+ * contents: setHistory means the history is the thread, setThreadedHistory
+ * means reads are exact.
  */
-function threadWindowOf(
+function threadPageOf(
   history: SlackMessage[],
-  threadTs: string,
-  oldest: string | undefined,
+  args: {
+    threadTs: string;
+    limit: number;
+    oldest?: string;
+    latest?: string;
+    inclusive?: boolean;
+  },
   modelsThreads: boolean,
-): SlackMessage[] {
+): { messages: SlackMessage[]; hasMore: boolean } {
   const thread = modelsThreads
-    ? history.filter((m) => m.ts === threadTs || m.threadTs === threadTs)
+    ? history.filter(
+        (m) => m.ts === args.threadTs || m.threadTs === args.threadTs,
+      )
     : [...history];
-  if (oldest === undefined) return [...thread];
-  return thread.filter((m, i) => {
-    if (i === 0) return true;
-    if (m.ts === undefined) return true;
-    const at = Number(m.ts);
-    const floor = Number(oldest);
-    if (!Number.isFinite(at) || !Number.isFinite(floor)) return true;
-    return at >= floor;
-  });
+  const parent = thread.find((m) => m.ts === args.threadTs);
+  const replies = thread.filter((m) => m !== parent);
+  const inclusive = args.inclusive ?? false;
+  const inRange = replies.filter(
+    (m) =>
+      (args.oldest === undefined || isAfter(m.ts, args.oldest, inclusive)) &&
+      (args.latest === undefined ||
+        m.ts === undefined ||
+        !isAfter(m.ts, args.latest, !inclusive)),
+  );
+  const page =
+    args.oldest !== undefined
+      ? inRange.slice(0, args.limit)
+      : inRange.slice(Math.max(inRange.length - args.limit, 0));
+  return {
+    messages: parent
+      ? [{ ...parent, replyCount: replies.length }, ...page]
+      : page,
+    hasMore: inRange.length > page.length,
+  };
 }
 
 function hiddenInThread(m: SlackMessage): boolean {
@@ -140,9 +164,13 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   let users: SlackUserInfo[] = [];
   const userLookups: string[] = [];
   let nextStreamTs = 1;
+  let nextPostTs = 100000;
+  const stagedFiles = new Map<string, string>();
+  let nextFileId = 1;
   let grantedScopes: Set<string> | null = null;
   let botUserId: string | null = "U-BOT";
   const messageReactions = new Map<string, SlackMessageReaction[]>();
+  const messagesByRef = new Map<string, SlackMessage & { ts: string }>();
   const fileBytes = new Map<string, Buffer>();
 
   function requireHandlers(): SlackGatewayHandlers {
@@ -183,7 +211,25 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         ...(args.username !== undefined ? { username: args.username } : {}),
         ...(args.iconUrl !== undefined ? { iconUrl: args.iconUrl } : {}),
       });
+      const ts = `${Math.floor(Date.now() / 1000)}.${nextPostTs++}`;
+      messagesByRef.set(`${args.channel}:${ts}`, {
+        ts,
+        text: args.text,
+        ...(botUserId ? { user: botUserId } : {}),
+        ...(args.threadTs !== undefined ? { threadTs: args.threadTs } : {}),
+        ...(args.blocks ? { blocks: args.blocks } : {}),
+        ...(args.metadata ? { metadata: args.metadata } : {}),
+      });
+      return { ts };
     },
+
+    async deleteMessage() {
+      return true;
+    },
+
+    async deleteFile() {},
+
+    async openModal() {},
 
     async postEphemeral(args) {
       outbound.push({
@@ -256,37 +302,11 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async getThreadReplies(args) {
-      const page = pageOf(
-        threadWindowOf(history, args.threadTs, args.oldest, modelsThreads),
-        0,
-        args.limit,
-      );
-      return { messages: page.messages, hasMore: page.nextCursor !== null };
+      return threadPageOf(history, args, modelsThreads);
     },
 
-    async getThreadTail(args) {
-      const all = threadWindowOf(
-        history,
-        args.threadTs,
-        undefined,
-        modelsThreads,
-      );
-      const walk = await foldThreadPages<SlackMessage, number>(
-        {
-          limit: args.limit,
-          maxPages: args.maxPages ?? THREAD_TAIL_MAX_PAGES,
-          opener: args.threadTs,
-          ...(args.before !== undefined ? { before: args.before } : {}),
-        },
-        async (from) => {
-          const page = pageOf(all, from ?? 0, args.limit);
-          return {
-            messages: page.messages,
-            next: page.nextCursor ?? undefined,
-          };
-        },
-      );
-      return walk;
+    async getMessage(args) {
+      return messagesByRef.get(`${args.channel}:${args.ts}`) ?? null;
     },
 
     async getChannelHistory(args) {
@@ -307,6 +327,24 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         teamId: args.teamId,
         channelId: args.channelId,
         filename: args.filename,
+        ...(args.threadTs ? { threadTs: args.threadTs } : {}),
+      });
+    },
+
+    async reserveFile(args) {
+      const fileId = `F${nextFileId++}-${args.filename}`;
+      stagedFiles.set(fileId, args.filename);
+      return { fileId, uploadUrl: `https://files.fake/${fileId}` };
+    },
+
+    async sendFileBytes() {},
+
+    async shareFile(args) {
+      outbound.push({
+        kind: "upload",
+        teamId: args.teamId,
+        channelId: args.channelId,
+        filename: stagedFiles.get(args.fileId) ?? args.fileId,
         ...(args.threadTs ? { threadTs: args.threadTs } : {}),
       });
     },
@@ -338,8 +376,21 @@ export function createFakeSlackGateway(): FakeSlackGateway {
         (c) => c.id === channelId,
       );
       return channel
-        ? { isMember: channel.botIsMember, name: channel.name }
-        : null;
+        ? {
+            kind: "found",
+            isMember: channel.botIsMember,
+            isDirectMessage: false,
+            isGroupDirectMessage: false,
+            name: channel.name,
+            directMessageUser: null,
+          }
+        : { kind: "not-found" };
+    },
+
+    async listSharedChannels(userId, teamId) {
+      return (channelsByWorkspace.get(teamId) ?? [])
+        .filter((c) => c.botIsMember && (c.members ?? []).includes(userId))
+        .map((c) => c.id);
     },
 
     async getUserInfo(userId) {
@@ -362,7 +413,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async fireMention(input) {
       const event: SlackMentionEvent = {
         ...input,
-        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+        teamId: input.teamId ?? FAKE_WORKSPACE,
       };
       await requireHandlers().onMention(event);
     },
@@ -370,22 +421,26 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async fireMessage(input) {
       const event: SlackMentionEvent = {
         ...input,
-        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+        teamId: input.teamId ?? FAKE_WORKSPACE,
       };
       await requireHandlers().onMessage(event);
+    },
+
+    async fireViewSubmission(event) {
+      await requireHandlers().onViewSubmission(event);
     },
 
     async fireBotJoinedChannel(input) {
       await requireHandlers().onBotJoinedChannel({
         ...input,
-        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+        teamId: input.teamId ?? FAKE_WORKSPACE,
       });
     },
 
     async fireDirectMessage(input) {
       const event: SlackMentionEvent = {
         ...input,
-        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+        teamId: input.teamId ?? FAKE_WORKSPACE,
       };
       await requireHandlers().onDirectMessage(event);
     },
@@ -393,11 +448,12 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async fireCommand(input) {
       const command: SlackSlashCommand = {
         ...input,
-        teamId: input.teamId ?? ORIGINAL_WORKSPACE,
+        teamId: input.teamId ?? FAKE_WORKSPACE,
+        triggerId: input.triggerId ?? "fake-trigger",
       };
       let ackText = "";
-      await requireHandlers().onCommand(command, async ({ text }) => {
-        ackText = text;
+      await requireHandlers().onCommand(command, async (response) => {
+        ackText = response?.text ?? "";
       });
       return ackText;
     },
@@ -417,6 +473,10 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     setHistory(next) {
       history = [...next];
       modelsThreads = false;
+    },
+
+    setMessage(channel, message) {
+      messagesByRef.set(`${channel}:${message.ts}`, message);
     },
 
     setThreadedHistory(next) {

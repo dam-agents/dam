@@ -69,30 +69,6 @@ func (h recordingHandler) Handle(_ context.Context, r slog.Record) error {
 func (h recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h recordingHandler) WithGroup(string) slog.Handler      { return h }
 
-func TestFanoutDeliversToAllEnabledChildren(t *testing.T) {
-	var a, b []slog.Record
-	h := fanoutHandler{handlers: []slog.Handler{
-		recordingHandler{records: &a, min: slog.LevelInfo},
-		recordingHandler{records: &b, min: slog.LevelWarn},
-	}}
-	logger := slog.New(h)
-
-	logger.Info("info goes to a only")
-	logger.Warn("warn goes to both")
-
-	assert.Len(t, a, 2)
-	assert.Len(t, b, 1)
-}
-
-func TestFanoutRespectsChildLevels(t *testing.T) {
-	var a []slog.Record
-	h := fanoutHandler{handlers: []slog.Handler{
-		recordingHandler{records: &a, min: slog.LevelWarn},
-	}}
-	assert.False(t, h.Enabled(context.Background(), slog.LevelInfo))
-	assert.True(t, h.Enabled(context.Background(), slog.LevelWarn))
-}
-
 func TestLeveledHandlerGates(t *testing.T) {
 	var recs []slog.Record
 	h := leveledHandler{min: slog.LevelInfo, inner: recordingHandler{records: &recs, min: slog.LevelDebug}}

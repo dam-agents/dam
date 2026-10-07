@@ -2,10 +2,11 @@ import type * as k8s from "@kubernetes/client-node";
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
 import { createXactLock } from "../../core/xact-lock.js";
-import type { AgentsService } from "api-server-api";
+import type { AgentsService, ConnectionsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
 import type { AgentStateCache } from "./infrastructure/agent-state-cache.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
+import { createAgentSecretRefPort } from "./infrastructure/agent-secret-ref-port.js";
 import { createPodStatusClient } from "./infrastructure/pod-status-client.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
 import {
@@ -27,7 +28,6 @@ import {
   hasAnyBinding,
   listChannelsByOwner,
   listChannelsByAgent,
-  upsertChannel,
   deleteChannelByType,
   deleteSlackChannelByAgent,
   deleteChannelsByAgentIds,
@@ -58,25 +58,23 @@ import type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-direc
 import type { ReadTemplateSpec } from "../templates/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
-export type {
-  AgentCleanupHook,
-  PresetSeeder,
-} from "./services/agents-service.js";
+type AgentsServiceDeps = Parameters<typeof createAgentsService>[0];
+
+export interface AgentsInstallSettings {
+  virtualizationEnabled: boolean;
+  agentDefaultStorageSize: string;
+  agentDefaultMounts: AgentsServiceDeps["agentDefaultMounts"];
+  runtimeMigrationRetentionMs: number | null;
+}
 
 export function composeAgentsModule(deps: {
   api: k8s.CoreV1Api;
-  resolveSlackWorkspace: (
-    slackChannelId: string,
-  ) => Promise<
-    | { kind: "resolved"; teamId: string }
-    | { kind: "unknown" }
-    | { kind: "unreachable" }
-  >;
+  resolveSlackWorkspace: AgentsServiceDeps["resolveSlackWorkspace"];
   agentStateCache: AgentStateCache;
   namespace: string;
   agentIdleTimeoutMinutes: number;
   agentDefaultLimits: { cpu: string; memory: string };
-  virtualizationEnabled?: boolean;
+  install: AgentsInstallSettings;
   resizeGate?: ResizeGatePort;
   owner: string | undefined;
   db: Db;
@@ -88,22 +86,10 @@ export function composeAgentsModule(deps: {
   onboardingChecklists: OnboardingChecklistReader;
   telegramBinding?: TelegramBindingPort;
   slackBinding?: SlackBindingPort;
-  resolveSlackChannelNames?: (
-    refs: { channelId: string; teamId: string }[],
-  ) => Promise<{ channelId: string; teamId: string; name: string | null }[]>;
-  grantProvisioner?: {
-    resolveSpecGrants(sel: {
-      connectionIds: string[];
-      providerConnectionId?: string;
-    }): Promise<{ grantedConnectionIds: string[] }>;
-    applyAfterCreate(
-      agentId: string,
-      sel: { connectionIds: string[] },
-    ): Promise<void>;
-  };
+  resolveSlackConversationLabels?: AgentsServiceDeps["resolveSlackConversationLabels"];
+  grantProvisioner?: AgentsServiceDeps["grantProvisioner"];
 }): {
   agents: AgentsService;
-  repo: AgentsRepository;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
 } {
   const k8s = createK8sClient(deps.api, deps.namespace);
@@ -117,7 +103,10 @@ export function composeAgentsModule(deps: {
       agentEnvRepo,
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       agentDefaultLimits: deps.agentDefaultLimits,
-      virtualizationEnabled: deps.virtualizationEnabled,
+      agentDefaultStorageSize: deps.install.agentDefaultStorageSize,
+      agentDefaultMounts: deps.install.agentDefaultMounts,
+      virtualizationEnabled: deps.install.virtualizationEnabled,
+      runtimeMigrationRetentionMs: deps.install.runtimeMigrationRetentionMs,
       resizeGate: deps.resizeGate,
       resizeLock: createXactLock(deps.db),
       owner: deps.owner,
@@ -125,6 +114,7 @@ export function composeAgentsModule(deps: {
       presetSeeder: deps.presetSeeder,
       cleanupHooks: deps.cleanupHooks,
       registrySecretPort,
+      secretRefs: createAgentSecretRefPort(k8s),
       runtimeMutator: deps.runtimeMutator,
       contributionsProgress: deps.contributionsProgress,
       onboardingChecklists: deps.onboardingChecklists,
@@ -132,7 +122,6 @@ export function composeAgentsModule(deps: {
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),
-      upsertChannel: upsertChannel(deps.db, owner),
       deleteChannelByType: deleteChannelByType(deps.db, owner),
       deleteSlackChannelByAgent: deleteSlackChannelByAgent(deps.db, owner),
       deleteChannelsByAgentIds: deleteChannelsByAgentIds(deps.db, owner),
@@ -148,9 +137,8 @@ export function composeAgentsModule(deps: {
       resolveSlackWorkspace: deps.resolveSlackWorkspace,
       telegramBinding: deps.telegramBinding,
       slackBinding: deps.slackBinding,
-      resolveSlackChannelNames: deps.resolveSlackChannelNames,
+      resolveSlackConversationLabels: deps.resolveSlackConversationLabels,
     }),
-    repo,
     isOwnedAgent: (agentId) =>
       deps.owner ? repo.isOwnedBy(agentId, deps.owner) : Promise.resolve(true),
   };
@@ -208,5 +196,27 @@ export function composePublicAgentPage(deps: {
       retireProfile: retire,
       log: deps.log,
     }),
+  };
+}
+
+export function connectionGrantProvisioner(
+  connections: Pick<
+    ConnectionsService,
+    "validateProviderConnection" | "validateGrantSet" | "setAgentConnections"
+  >,
+): NonNullable<AgentsServiceDeps["grantProvisioner"]> {
+  return {
+    async resolveSpecGrants(sel) {
+      if (sel.providerConnectionId)
+        await connections.validateProviderConnection(sel.providerConnectionId);
+      await connections.validateGrantSet(sel.connectionIds);
+      return {
+        grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
+      };
+    },
+    async applyAfterCreate(agentId, sel) {
+      if (sel.connectionIds.length)
+        await connections.setAgentConnections(agentId, sel.connectionIds);
+    },
   };
 }

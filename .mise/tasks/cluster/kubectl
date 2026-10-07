@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Run kubectl against the platform-k3s cluster. Usage: mise run cluster:kubectl -- get pods"
+#MISE description="Run kubectl against the cluster. Usage: mise run cluster:kubectl -- get pods"
 #MISE raw=true
-if [ -n "${IS_SANDBOX:-}" ]; then
-  KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
-else
-  KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/platform-k3s/copied-from-guest/kubeconfig.yaml"
-fi
-exec kubectl --kubeconfig="$KUBECONFIG" "$@"
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
+exec kubectl "$@"

@@ -65,10 +65,10 @@ exit 1
 		Command: []string{"/bin/sh", "-c", script},
 		Env:     env,
 		SecurityContext: &corev1.SecurityContext{
-			RunAsNonRoot:             ptrBool(true),
+			RunAsNonRoot:             new(true),
 			RunAsUser:                &user,
-			AllowPrivilegeEscalation: ptrBool(false),
-			ReadOnlyRootFilesystem:   ptrBool(true),
+			AllowPrivilegeEscalation: new(false),
+			ReadOnlyRootFilesystem:   new(true),
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},
 			},

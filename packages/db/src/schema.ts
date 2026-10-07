@@ -417,6 +417,7 @@ export const connectionGrants = pgTable(
     grantedAt: timestamp("granted_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    preferred: boolean("preferred").notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.connectionId, table.agentId] }),
@@ -616,79 +617,6 @@ export const apiKeys = pgTable(
   ],
 );
 
-export const experiments = pgTable(
-  "experiments",
-  {
-    id: text("id").primaryKey(),
-    owner: text("owner").notNull(),
-    driverAgentId: text("driver_agent_id").notNull(),
-    name: text("name").notNull(),
-    status: text("status").notNull().default("draft"),
-    skeleton: jsonb("skeleton").notNull(),
-    drift: jsonb("drift")
-      .notNull()
-      .default(sql`'[]'::jsonb`),
-    scriptPath: text("script_path").notNull(),
-    scriptSha256: text("script_sha256").notNull(),
-    scriptArtifactId: text("script_artifact_id").notNull(),
-    scriptVersion: integer("script_version").notNull(),
-    dashboardArtifactId: text("dashboard_artifact_id"),
-    customData: jsonb("custom_data"),
-    attachedArtifactIds: jsonb("attached_artifact_ids")
-      .notNull()
-      .default(sql`'[]'::jsonb`),
-    error: text("error"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    executedAt: timestamp("executed_at", { withTimezone: true }),
-    finishedAt: timestamp("finished_at", { withTimezone: true }),
-    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
-  },
-  (table) => [
-    index("experiments_owner_idx").on(table.owner),
-    uniqueIndex("experiments_driver_name_draft_idx")
-      .on(table.driverAgentId, table.name)
-      .where(sql`${table.status} = 'draft'`),
-    index("experiments_running_activity_idx")
-      .on(table.lastActivityAt)
-      .where(sql`${table.status} = 'running'`),
-    index("experiments_running_driver_idx")
-      .on(table.driverAgentId)
-      .where(sql`${table.status} = 'running'`),
-  ],
-);
-
-export const experimentSpans = pgTable(
-  "experiment_spans",
-  {
-    id: text("id").primaryKey(),
-    experimentId: text("experiment_id")
-      .notNull()
-      .references(() => experiments.id, { onDelete: "cascade" }),
-    spanId: text("span_id").notNull(),
-    stage: text("stage").notNull(),
-    iteration: integer("iteration"),
-    parentSpanId: text("parent_span_id"),
-    status: text("status").notNull().default("running"),
-    score: doublePrecision("score"),
-    artifactIds: jsonb("artifact_ids"),
-    attrs: jsonb("attrs"),
-    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
-    endedAt: timestamp("ended_at", { withTimezone: true }),
-  },
-  (table) => [
-    index("experiment_spans_experiment_started_idx").on(
-      table.experimentId,
-      table.startedAt,
-    ),
-    index("experiment_spans_experiment_stage_idx").on(
-      table.experimentId,
-      table.stage,
-    ),
-  ],
-);
-
 export const userFeatures = pgTable(
   "user_features",
   {
@@ -845,7 +773,16 @@ export const invocations = pgTable(
   {
     id: text("id").primaryKey(),
     driverAgentId: text("driver_agent_id").notNull(),
+    rootDriverId: text("root_driver_id").notNull(),
     owner: text("owner").notNull(),
+    label: text("label"),
+    prompt: text("prompt").notNull().default(""),
+    templateId: text("template_id"),
+    image: text("image"),
+    connections: jsonb("connections").$type<string[]>().notNull().default([]),
+    cpu: text("cpu"),
+    memory: text("memory"),
+    ttlMs: integer("ttl_ms"),
     resultSchema: jsonb("result_schema").notNull(),
     result: jsonb("result"),
     status: text("status").notNull().default("running"),
@@ -854,17 +791,33 @@ export const invocations = pgTable(
       .defaultNow()
       .notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    reapedAt: timestamp("reaped_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    experimentSpanId: text("experiment_span_id"),
+    transcriptCaptured: boolean("transcript_captured").notNull().default(false),
+    transcriptTruncated: boolean("transcript_truncated")
+      .notNull()
+      .default(false),
+    harnessConfig: jsonb("harness_config"),
+    origin: text("origin").notNull().default("script"),
+    awaitedUntil: timestamp("awaited_until", { withTimezone: true }),
+    claimedUntil: timestamp("claimed_until", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    wokeAt: timestamp("woke_at", { withTimezone: true }),
   },
   (table) => [
     index("invocations_driver_idx").on(table.driverAgentId),
+    index("invocations_undelivered_idx")
+      .on(table.completedAt)
+      .where(
+        sql`${table.origin} = 'tool' AND ${table.status} <> 'running' AND (${table.deliveredAt} IS NULL OR ${table.wokeAt} IS NULL)`,
+      ),
+    index("invocations_root_driver_idx").on(table.rootDriverId),
+    index("invocations_unreaped_idx")
+      .on(table.completedAt)
+      .where(sql`${table.reapedAt} IS NULL`),
     index("invocations_status_expiry_idx")
       .on(table.expiresAt)
       .where(sql`${table.status} = 'running'`),
-    index("invocations_experiment_span_idx")
-      .on(table.experimentSpanId)
-      .where(sql`${table.experimentSpanId} IS NOT NULL`),
   ],
 );
 
@@ -917,7 +870,6 @@ export const attentionRecords = pgTable(
     type: text("type").notNull(),
     title: text("title"),
     scheduleId: text("schedule_id"),
-    experimentId: text("experiment_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     activityAt: timestamp("activity_at", { withTimezone: true }),
     seenAt: timestamp("seen_at", { withTimezone: true }),

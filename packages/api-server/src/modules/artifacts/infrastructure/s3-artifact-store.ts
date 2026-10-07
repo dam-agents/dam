@@ -39,6 +39,17 @@ export function createS3ArtifactStore(deps: {
     }
   }
 
+  async function getObject(key: string) {
+    try {
+      return await deps.client.send(
+        new GetObjectCommand({ Bucket: deps.bucket, Key: key }),
+      );
+    } catch (err) {
+      if (err instanceof NoSuchKey || err instanceof NotFound) return null;
+      throw err;
+    }
+  }
+
   return {
     async put(input) {
       await deps.client.send(
@@ -52,17 +63,9 @@ export function createS3ArtifactStore(deps: {
     },
 
     async get(key): Promise<Artifact | null> {
-      let res;
-      try {
-        res = await deps.client.send(
-          new GetObjectCommand({ Bucket: deps.bucket, Key: key }),
-        );
-      } catch (err) {
-        if (err instanceof NoSuchKey || err instanceof NotFound) return null;
-        throw err;
-      }
-      const bytes = await res.Body?.transformToByteArray();
-      if (!bytes) return null;
+      const res = await getObject(key);
+      const bytes = await res?.Body?.transformToByteArray();
+      if (!res || !bytes) return null;
       const content = Buffer.from(bytes);
       return {
         key,
@@ -74,16 +77,8 @@ export function createS3ArtifactStore(deps: {
     },
 
     async getStream(key) {
-      let res;
-      try {
-        res = await deps.client.send(
-          new GetObjectCommand({ Bucket: deps.bucket, Key: key }),
-        );
-      } catch (err) {
-        if (err instanceof NoSuchKey || err instanceof NotFound) return null;
-        throw err;
-      }
-      if (!res.Body) return null;
+      const res = await getObject(key);
+      if (!res?.Body) return null;
       return {
         stream: res.Body.transformToWebStream(),
         contentType: res.ContentType ?? "application/octet-stream",

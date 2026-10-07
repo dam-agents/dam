@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "11"
+    agent-platform.ai/crd-schema-generation: "17"
     controller-gen.kubebuilder.io/version: v0.22.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -78,7 +78,8 @@ spec:
                 description: |-
                   Backend selects the isolation substrate the agent workload runs on;
                   nil = container. Immutable after create (enforced by the api-server,
-                  the sole spec writer). `vm` runs the agent as a persistent microVM on
+                  the sole spec writer), except that a runtime migration moves a
+                  container agent to `vm`, never back. `vm` runs the agent as a persistent microVM on
                   its owner's VM runner instead of a StatefulSet: the controller
                   drives the runner's machine API, and the agent Service resolves to the
                   machine's published port; the paired gateway is unaffected.
@@ -91,6 +92,16 @@ spec:
                   vm:
                     description: VM carries vm-backend props; present only when type
                       == "vm".
+                    properties:
+                      nestedVirtualization:
+                        description: |-
+                          NestedVirtualization asks for this agent's machine to get the node's
+                          virtualization extensions, so the guest can run KVM itself. It takes
+                          effect only on an install with virtualization.runner.nestedVirtualization
+                          and a node whose KVM allows nesting; the NestedVirtualization condition
+                          says whether it did. Other machines on the same runner are unaffected.
+                          Changing it restarts the agent's machine.
+                        type: boolean
                     type: object
                 required:
                 - type
@@ -131,6 +142,12 @@ spec:
                 items:
                   type: string
                 type: array
+              harness:
+                description: |-
+                  Harness names the harness the agent image runs (claude-code, codex,
+                  pi, bob, mock). One image serves every harness, and the agent reads
+                  this as PLATFORM_HARNESS; empty leaves the image's own default.
+                type: string
               hibernationTimeout:
                 description: 'HibernationTimeout overrides the chart-wide idle timeout
                   for this Agent: "0s" never hibernates, omitted inherits the default.
@@ -215,6 +232,15 @@ spec:
                   Container backend only — rejected on the vm backend, whose machine is
                   placed with its owner's VM runner.
                 type: object
+              requireConnectionAddress:
+                description: |-
+                  RequireConnectionAddress makes the agent's gateway inject a Connection's
+                  credential only into a request that names that Connection, by its token
+                  placeholder or its path prefix. Every other request goes upstream with
+                  the credential it already carries. For an agent that runs a nested
+                  platform, whose own gateways send credentials the outer gateway must
+                  not replace.
+                type: boolean
               resources:
                 description: Resources are the agent container's resource requests
                   and limits.
@@ -367,6 +393,13 @@ spec:
               observedGeneration:
                 description: ObservedGeneration is the spec generation last reconciled.
                 format: int64
+                type: integer
+              runtimeMigrationAttempts:
+                description: |-
+                  RuntimeMigrationAttempts counts the copy attempts of the runtime
+                  migration in progress; the migration fails once they run out. Zero when
+                  no migration runs.
+                format: int32
                 type: integer
             type: object
         type: object

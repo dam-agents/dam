@@ -22,8 +22,7 @@
 # §5a); the audit's `tool_shims` check keeps reporting it until that lands.
 #
 # TODO(creator): extend the default tool list below to every CLI the design
-# execs in a loop; drop this file entirely if no script runs hot. Then delete
-# the TODO comments.
+# execs in a loop; drop this file entirely if no script runs hot.
 
 # Cache the resolved paths: `mise bin-paths` costs ~210ms, an [ -x ] test ~0.6ms.
 TOOLPATH_CACHE="${WORK_DIR:-${HOME:-/home/agent}/work}/.cache/toolpaths"

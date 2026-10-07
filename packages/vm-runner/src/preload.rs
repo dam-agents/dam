@@ -151,9 +151,8 @@ mod tests {
     // TEST_SCENARIO: the chart mounts each default pull Secret under its place in the install's list. Both keys a pull Secret is written under are read, the Secrets are kept apart in list order rather than merged, and a Secret with no registry in it, or with nothing mounted, adds nothing — so a pass with nothing to fetch with is anonymous rather than one with an empty config.
     #[test]
     fn each_mounted_secret_keeps_its_own_registries_in_list_order() {
-        let dir =
-            std::env::temp_dir().join(format!("vm-runner-pull-secrets-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        let tmp = crate::testdir::TempDir::new("pull-secrets");
+        let dir = tmp.path();
         let write = |name: &str, key: &str, body: &str| {
             fs::create_dir_all(dir.join(name)).unwrap();
             fs::write(dir.join(name).join(key), body).unwrap();
@@ -169,7 +168,7 @@ mod tests {
         fs::create_dir_all(dir.join("004")).unwrap();
         write(".hidden", ".dockercfg", r#"{"docker.io":{"auth":"eA=="}}"#);
 
-        let docs = read_pull_secrets(&dir);
+        let docs = read_pull_secrets(dir);
 
         assert_eq!(
             docs,
@@ -179,6 +178,5 @@ mod tests {
             ]
         );
         assert!(read_pull_secrets(&dir.join("missing")).is_empty());
-        let _ = fs::remove_dir_all(&dir);
     }
 }

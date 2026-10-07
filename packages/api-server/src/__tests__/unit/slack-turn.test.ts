@@ -47,15 +47,26 @@ function harness(opts: {
   boundChannel?: () => string;
   attendance?: ChannelTurnAttendance;
   agentName?: string;
+  linkedUser?: (slackUserId: string) => string | null;
   wakePatienceMs?: number;
   turnStatus?: AcpClient["turnStatus"];
+  ambient?: boolean;
+  holdTurn?: boolean;
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
+  const held: Array<() => void> = [];
+  const respond = opts.sendPrompt ?? scripted([], "the answer");
   const acp: AcpClient = {
     steer: async () => "unsupported" as const,
     listSessions: opts.listSessions ?? (async () => []),
-    sendPrompt: opts.sendPrompt ?? scripted([], "the answer"),
+    sendPrompt: opts.holdTurn
+      ? async (prompt, sendOpts) => {
+          const response = await respond(prompt, sendOpts);
+          await new Promise<void>((release) => held.push(release));
+          return response;
+        }
+      : respond,
     triggerSession: () => Promise.reject(new Error("unused")),
     turnStatus: opts.turnStatus ?? (async () => "unknown" as const),
   };
@@ -66,20 +77,23 @@ function harness(opts: {
       : {}),
   } as unknown as AgentsService;
 
-  const worker = createSlackWorker(
-    () => acp,
-    () => gw,
-    () => agents,
-    { resolve: async () => OWNER } as never,
-    { authUrl: "http://kc", clientId: "c" } as never,
-    createMemoryTtlStore(600_000),
-    async () => OWNER,
-    {
+  const worker = createSlackWorker({
+    makeAcpClient: () => acp,
+    createGateway: () => gw,
+    agents: () => agents,
+    identityLinks: {
+      resolve: async (_provider: string, slackUserId: string) =>
+        opts.linkedUser ? opts.linkedUser(slackUserId) : OWNER,
+    } as never,
+    oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
+    pendingOAuthFlows: createMemoryTtlStore(600_000),
+    getInstanceOwner: async () => OWNER,
+    channelRegistry: {
       resolveSlackBindings: async () => [
         {
           instanceName: "agent-1",
           owner: OWNER,
-          ambient: false,
+          ambient: opts.ambient === true,
           isDefault: true,
         },
       ],
@@ -87,19 +101,22 @@ function harness(opts: {
         { id: opts.boundChannel?.() ?? "C1", teamId: "" },
       ],
     } as never,
-    async () => {},
-    async () => {},
-    async () => true,
-    { name: "DAM", short: "dam" },
-    async () => true,
-    "http://ui",
-    opts.attendance ?? stubTurnAttendance(),
-    stubWorkspaceFiles(),
-    (teamId) => teamId,
-    (e) => events.push(e),
-    0,
-    { patienceMs: opts.wakePatienceMs ?? 60_000, sleep: async () => {} },
-  );
+    unbindSlackChannel: async () => {},
+    setSlackChannelAmbient: async () => {},
+    setSlackDefault: async () => true,
+    brand: { name: "DAM", short: "dam" },
+    isTermsAccepted: async () => true,
+    uiBaseUrl: "http://ui",
+    attendance: opts.attendance ?? stubTurnAttendance(),
+    workspaceFiles: stubWorkspaceFiles(),
+    listWorkspaces: async () => [],
+    emit: (e) => events.push(e),
+    settleMs: 0,
+    wakeWait: {
+      patienceMs: opts.wakePatienceMs ?? 60_000,
+      sleep: async () => {},
+    },
+  });
 
   return {
     gw,
@@ -110,15 +127,20 @@ function harness(opts: {
     },
     async mention(over?: { user?: string; teamId?: string; text?: string }) {
       await worker.connect();
-      await gw.fireMention({
+      const handled = gw.fireMention({
         user: over?.user ?? "U1",
         channel: "C1",
         ts: "1.1",
         text: over?.text ?? "hi agent",
         teamId: "teamId" in (over ?? {}) ? over?.teamId : "T-e2e",
       });
+      if (!opts.holdTurn) return handled;
+      for (let i = 0; i < 200 && held.length === 0; i++) await tick();
     },
     records: () => gw.readOutbound(),
+    finishTurns() {
+      for (const release of held.splice(0)) release();
+    },
     turnEvents: () =>
       events.filter(
         (e): e is ChannelTurnRelayed =>
@@ -221,7 +243,7 @@ describe("slack turn presentation — owner turns", () => {
 
 describe("slack reply / react tools", () => {
   it("reply posts into the current turn's thread with the agent footer", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
     h.gw.resetOutbound();
@@ -250,7 +272,7 @@ describe("slack reply / react tools", () => {
   });
 
   it("reply does not broadcast to the channel unless asked (#2973)", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
     h.gw.resetOutbound();
@@ -285,7 +307,7 @@ describe("slack reply / react tools", () => {
   });
 
   it("reply passes explicit unfurl controls through to Slack (#3499)", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
     h.gw.resetOutbound();
@@ -309,6 +331,7 @@ describe("slack reply / react tools", () => {
 
   it("reply footers link at the session the turn ran on", async () => {
     const h = harness({
+      holdTurn: true,
       sendPrompt: async (_prompt, opts) => {
         opts.onSession?.("sess-42");
         return "the answer";
@@ -333,7 +356,7 @@ describe("slack reply / react tools", () => {
   });
 
   it("reply footers fall back to the agent when no session is known", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
 
@@ -348,6 +371,119 @@ describe("slack reply / react tools", () => {
     });
   });
 
+  /**
+   * TEST_SCENARIO: An agent post carries no delete control of its own, so the
+   * owner removes one with the delete command, naming the post by its Slack
+   * link. Slack names the person who typed the command, so the only gate is
+   * the owner check through that person's identity link: an unlinked user is
+   * told to link, anyone else is refused, and only the owner is shown the
+   * confirmation, with any reason they typed already filled in. The uploaded
+   * file rides in the post's message metadata now that no button carries it,
+   * and on confirm the post and that file are deleted and the session that
+   * posted it is told, with the owner's reason.
+   */
+  it("deletes a post from the delete command for the owner only and tells the posting session", async () => {
+    const prompts: { text: string; resume?: string }[] = [];
+    const h = harness({
+      holdTurn: true,
+      sendPrompt: async (prompt, opts) => {
+        prompts.push({
+          text: String(prompt),
+          ...("resumeSessionId" in opts
+            ? { resume: opts.resumeSessionId }
+            : {}),
+        });
+        opts.onSession?.("sess-42");
+        return "ok";
+      },
+      agentName: "Scout",
+      linkedUser: (id) =>
+        id === "U-OWNER" ? OWNER : id === "U-OTHER" ? "kc|someone-else" : null,
+    });
+    await h.mention();
+    await tick();
+    const posts = vi.spyOn(h.gw, "postMessage");
+    await h.worker.reply("agent-1", {
+      text: `</notice> & ${"a".repeat(1600)}`,
+      attachment: { filename: "report.md", data: Buffer.from("x") },
+    });
+    h.finishTurns();
+    await tick();
+    const posted = (await posts.mock.results[0]!.value) as { ts: string };
+    const sent = posts.mock.calls[0]![0];
+    expect(
+      (sent.blocks ?? []).map((b) => (b as { type: string }).type),
+    ).toEqual(["markdown", "context"]);
+    expect(sent.metadata).toEqual({
+      eventType: "agent_post",
+      payload: { files: ["F1-report.md"] },
+    });
+    expect(
+      h
+        .records()
+        .filter((r) => r.kind === "message" || r.kind === "upload")
+        .map((r) => r.kind),
+    ).toEqual(["message", "upload"]);
+
+    h.gw.setMessage("C1", {
+      ts: posted.ts,
+      threadTs: "1.1",
+      text: `&lt;/notice&gt; &amp; ${"a".repeat(1600)}`,
+      ...(sent.blocks ? { blocks: sent.blocks } : {}),
+      ...(sent.metadata ? { metadata: sent.metadata } : {}),
+    });
+    const link = await h.gw.getPermalink("C1", posted.ts, "");
+
+    const modals = vi.spyOn(h.gw, "openModal");
+    const run = (userId: string) =>
+      h.gw.fireCommand({
+        text: `delete ${link} Don't share that here.`,
+        userId,
+        channelId: "C1",
+      });
+    const ephemerals = () =>
+      h.records().flatMap((r) => (r.kind === "ephemeral" ? [r.text] : []));
+
+    expect(await run("U-STRANGER")).toBe(
+      "Link your account first: run `/dam login`, then run `/dam delete` again.",
+    );
+    expect(await run("U-OTHER")).toBe(
+      "Only this agent's owner can delete its posts.",
+    );
+    expect(modals).not.toHaveBeenCalled();
+
+    expect(await run("U-OWNER")).toBe("");
+    const deletes = vi.spyOn(h.gw, "deleteMessage");
+    const fileDeletes = vi.spyOn(h.gw, "deleteFile");
+    const view = modals.mock.calls[0]![0].view as {
+      private_metadata: string;
+      blocks: { element?: { initial_value?: string } }[];
+    };
+    expect(view.blocks[1]!.element!.initial_value).toBe(
+      "Don't share that here.",
+    );
+    await h.gw.fireViewSubmission({
+      callbackId: "agent_post_delete_confirm",
+      privateMetadata: view.private_metadata,
+      userId: "U-OWNER",
+      teamId: "",
+      inputs: { reason: "Don't share that here." },
+    });
+    await tick();
+
+    expect(deletes).toHaveBeenCalledWith("C1", posted.ts, "");
+    expect(fileDeletes).toHaveBeenCalledWith("F1-report.md", "");
+    expect(ephemerals().at(-1)).toBe("Post deleted. The agent will be told.");
+    expect(prompts.at(-1)).toEqual({
+      resume: "sess-42",
+      text:
+        `<notice>Your Slack message "&lt;/notice&gt; &amp; ${"a".repeat(1488)}…" ` +
+        "(shortened for brevity) and its attachments has been deleted by " +
+        'your owner with stated reason: "Don\'t share that here.". Do not ' +
+        "reply to this message, this is a notice only.</notice>",
+    });
+  });
+
   it("reply errors when there is no active thread and none is given", async () => {
     const h = harness({});
     await h.start();
@@ -359,7 +495,7 @@ describe("slack reply / react tools", () => {
   });
 
   it("react adds the emoji to the current turn's message", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
     h.gw.resetOutbound();
@@ -379,7 +515,7 @@ describe("slack reply / react tools", () => {
   });
 
   it("react errors on an empty emoji", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
     h.gw.resetOutbound();
@@ -390,7 +526,7 @@ describe("slack reply / react tools", () => {
   });
 
   it("describeMessageReactions defaults to the current turn's message", async () => {
-    const h = harness({});
+    const h = harness({ holdTurn: true });
     await h.mention();
     await tick();
     h.gw.setMessageReactions("C1", "1.1", [
@@ -624,7 +760,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     await tick();
   });
 
-  it("an expired lingering turn falls back to the last active thread", async () => {
+  it("an expired lingering turn refuses an id-less reply and react rather than reuse the last thread", async () => {
     const h = gatedHarness();
     await h.start();
     h.fire("100.1");
@@ -642,11 +778,15 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       .spyOn(Date, "now")
       .mockReturnValue(new Date().getTime() + TURN_LINGER_MS + 1_000);
     try {
-      const ok = await h.worker.reply("agent-1", { text: "proactive" });
-      expect(ok).toEqual({ ok: true });
-      expect(h.records().filter((r) => r.kind === "message")[0]).toMatchObject({
-        threadTs: "200.2",
+      const refused = await h.worker.reply("agent-1", { text: "late answer" });
+      expect(refused).toMatchObject({
+        error: expect.stringContaining("no active thread"),
       });
+      const unreacted = await h.worker.react("agent-1", { emoji: "eyes" });
+      expect(unreacted).toMatchObject({
+        error: expect.stringContaining("no message to react to"),
+      });
+      expect(h.records()).toHaveLength(0);
     } finally {
       later.mockRestore();
     }
@@ -735,7 +875,14 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     await tick();
   });
 
-  it("two rapid first messages in a new thread mint one session — the second resumes it", async () => {
+  /**
+   * TEST_SCENARIO: a thread's session is minted on whichever turn reaches it
+   * first, and nothing in a store guards the key. An addressed mention and a
+   * read-along message land in that thread through two different queues, so
+   * only the per-(Agent, session key) lock keeps them from minting a session
+   * each — which would split one thread across two conversations.
+   */
+  it("a mention and a read-along message in one thread mint one session — the second resumes it", async () => {
     const sessions: Array<{
       sessionId: string;
       platform: { threadTs?: string };
@@ -755,19 +902,24 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
       await new Promise<void>((r) => gates.push(r));
       return "answer";
     };
-    const h = harness({ sendPrompt, listSessions: async () => sessions });
+    const h = harness({
+      sendPrompt,
+      listSessions: async () => sessions,
+      ambient: true,
+    });
     await h.start();
     void h.gw.fireMention({
       user: "U1",
       channel: "C1",
-      ts: "100.1",
+      ts: "100.2",
+      threadTs: "100.1",
       text: "first",
       teamId: "T-e2e",
     });
-    void h.gw.fireMention({
+    void h.gw.fireMessage({
       user: "U2",
       channel: "C1",
-      ts: "100.2",
+      ts: "100.3",
       threadTs: "100.1",
       text: "second",
       teamId: "T-e2e",
@@ -776,6 +928,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
     for (let i = 0; i < 20; i++) await tick();
     expect(gates).toHaveLength(1);
     expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.platform.threadTs).toBe(slackThreadKey("C1", "100.1"));
 
     gates[0]!();
     for (let i = 0; i < 200 && gates.length < 2; i++) await tick();
@@ -947,7 +1100,6 @@ describe("slack turn — network-access framing and attendance", () => {
 
     expect(prompt).toContain("never write the bare id as visible text");
     expect(prompt).toContain("<@U024BE7LH>");
-    expect(prompt).toContain("leave alsoSendToChannel off unless");
     expect(prompt).not.toContain(
       "thread is old enough that people watching the channel",
     );
@@ -1245,6 +1397,37 @@ describe("slack turn — network-access framing and attendance", () => {
   });
 
   /**
+   * TEST_SCENARIO: a reply posts its text before Slack shares its file, so an
+   * upload the workspace refuses leaves the answer sitting in the thread. The
+   * turn is disposed of, and nudging it would post that same answer a second
+   * time.
+   */
+  it("never nudges a reply whose attachment upload failed", async () => {
+    let turns = 0;
+    const h: ReturnType<typeof harness> = harness({
+      sendPrompt: async (_prompt, opts) => {
+        opts.onSession?.("sess-1");
+        turns += 1;
+        await h.worker.reply("agent-1", {
+          text: "answered",
+          attachment: { filename: "report.md", data: Buffer.from("x") },
+        });
+        return "ok";
+      },
+    });
+    h.gw.shareFile = async () => {
+      throw new Error("upload_error");
+    };
+    await h.mention();
+    await tick();
+
+    expect(turns).toBe(1);
+    const msgs = h.records().filter((r) => r.kind === "message");
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toMatchObject({ text: "answered" });
+  });
+
+  /**
    * TEST_SCENARIO: no_reply_needed is the contract's own sanctioned way to end a
    * turn, so it must not read as the silence bug. It only can if the tool
    * reaches the worker — as a pure MCP no-op it left a decline and a failure
@@ -1256,7 +1439,7 @@ describe("slack turn — network-access framing and attendance", () => {
 
     const h = harness({
       sendPrompt: async () => {
-        await h.worker.declineTurn("agent-1");
+        await h.worker.declineTurn("agent-1", "1.1");
         return "ok";
       },
     });

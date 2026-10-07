@@ -6,31 +6,29 @@ description: >
 
 # Draft an Issue
 
-Follow [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md) for the content shape — the whole document, every section.
+Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md).
 
 ## Workflow
 
-1. **Understand the request thoroughly.** Read the user's prompt carefully — multiple times if it's long or ambiguous. Identify what problem they're describing, who it affects, and what outcome they want. Restate it back in one or two sentences to confirm shared understanding. Ask follow-ups for anything that would change the shape of the issue (scope, who it affects, dependencies on other work). Do not start drafting until you genuinely understand the ask.
+1. **Understand the request.** Identify the problem, who it affects, and the outcome wanted. Restate it in one or two sentences, and ask follow-ups for anything that would change the issue's shape (scope, who it affects, dependencies) before drafting. **Context leads every template** (why this matters, what led here): if the ask doesn't convey it, ask for it.
 
-   Because **Context leads every template** — why this matters, what led here — make sure you actually have it. If the user's ask doesn't convey that context, ask them for it before drafting. A ticket without real context is the main thing this step exists to prevent.
+   **Came from user feedback in Slack?** Get the permalink to the thread where it was raised (ask if you don't have it) — it goes in the **Follow up** section at the end of the body (see **Follow up** in the guidelines).
 
-2. **Let the user decide the type.** Every issue is an **epic**, **feature**, **task**, **bug**, or **research task** (see the guidelines doc). State which type you read the ask as and why, and let the user confirm or override — the type picks the template. Skip the question only when the type is unmistakable (e.g. the user said "bug" or described a clear defect).
+2. **Let the user decide the type**: epic, feature, task, bug, or research task (see the guidelines). Say which you read the ask as and why; the user confirms or overrides, and the type picks the template. Skip the question only when the type is unmistakable (e.g. the user said "bug" or described a clear defect).
 
-3. **Research the codebase thoroughly.** Do real investigation of the current state — read relevant files, trace how the feature works today, understand the user-visible behavior end-to-end. The goal is to describe the status quo *accurately*, not superficially. A shallow understanding produces a vague ticket.
+3. **Research the codebase.** Trace how the feature works today and its user-visible behavior end-to-end, so the issue describes the status quo accurately. **Keep the research out of the issue**: no file paths, function names, line numbers, data structures or architectural detail. A sentence that only makes sense to someone who has read the code gets rewritten.
 
-   **But keep the research out of the issue itself.** Do not pull file paths, function names, line numbers, data structures, or architectural detail into the draft. The research informs your writing; it does not appear in it. If a sentence only makes sense to someone who's read the code, rewrite it.
-
-4. **For any non-epic type: consider an epic.** Fetch the epics from the project board and check whether one clearly fits:
+4. **Non-epic types: consider an epic.** List the board's epics:
 
    ```sh
    gh project item-list 1 --owner dam-agents --limit 3000 --format json \
      | jq -r '.items[] | select(.status=="Epics") | "#\(.content.number)  \(.title)"'
    ```
 
-   If one does, read its body (`gh issue view <num> --repo dam-agents/dam`) to confirm, then put it on the draft's **Epic** line with a one-line justification. If nothing fits, leave the line out — placement can be decided later in triage. Epics themselves have no parent; skip this step.
+   If one clearly fits, confirm by reading its body (`gh issue view <num> --repo dam-agents/dam`) and put it on the draft's **Epic** line with a one-line justification. Otherwise omit the line; triage can place it later. Epics have no parent.
 
-5. **Decide output mode from the original prompt.** Read the user's initial ask and pick one:
-   - **Draft only** — produce the draft using the type's template and present the full title + body inline in the chat. Stop.
-   - **File right away** — hand off to the `file-issue` skill, which runs the dedupe → approve → file loop on top of the same draft.
+5. **Output mode, from the original prompt:**
+   - **Draft only**: present the full title + body inline, using the type's template. Stop.
+   - **File right away**: hand off to the `file-issue` skill (dedupe → approve → file on the same draft).
 
-   When in doubt, default to draft-only and ask whether to file.
+   When unsure, draft only and ask whether to file.

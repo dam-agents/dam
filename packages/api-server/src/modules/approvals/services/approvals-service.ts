@@ -25,13 +25,13 @@ function emitResolved(row: PendingApprovalRow): void {
   });
 }
 
-export interface WrittenEgressRule {
+interface WrittenEgressRule {
   id: string;
   verdict: "allow" | "deny";
   source: EgressRuleSource;
 }
 
-export type EgressRuleWriteOutcome =
+type EgressRuleWriteOutcome =
   | { kind: "inserted"; row: WrittenEgressRule }
   | {
       kind: "duplicate";
@@ -57,7 +57,7 @@ export interface WrapperFrameSender {
   send(agentId: string, frame: string): Promise<void>;
 }
 
-export interface CreateApprovalsServiceDeps {
+interface CreateApprovalsServiceDeps {
   repo: ApprovalsRepository;
   egressRuleWriter: EgressRuleWriter;
   wrapperFrameSender: WrapperFrameSender;
@@ -199,214 +199,145 @@ export function createApprovalsService(
       const row = await loadOwned(deps, id);
       if (!row || row.status !== "pending") return NOT_ACTIONABLE;
       if (row.type === "ext_authz") {
-        const casWon = await deps.repo.resolvePending(
-          id,
-          "allow_once",
-          deps.ownerSub,
-        );
-        if (casWon) emitResolved(row);
-        auditVerdict(deps, row, "allow", {
-          verdict: "allow_once",
-          ruleWritten: false,
-        });
-        return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
+        return resolveOnce(deps, row, "allow_once", "allow");
       }
-      const casWon = await resolveAndDeliverAcpNative(deps, row, "allow_once");
-      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
+      return resolveAndDeliverAcpNative(deps, row, "allow_once");
     },
 
     async approvePermanent(id) {
       const row = await loadOwned(deps, id);
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
-        const rule = {
-          host: row.payload.host,
-          method: row.payload.method,
-          pathPattern: row.payload.path,
-          verdict: "allow" as const,
-        };
-        const written = await deps.egressRuleWriter.insert({
-          id: randomUUID(),
-          agentId: row.agentId,
-          ...rule,
-          decidedBy: deps.ownerSub,
-          source: "inbox",
-        });
-        if (written.kind === "verdict-clash") {
-          throw verdictConflict(
-            deps,
-            row,
-            "allow",
-            {
-              host: row.payload.host,
-              method: row.payload.method,
-              pathPattern: row.payload.path,
-            },
-            written.existing,
-          );
-        }
-        const casWon = await deps.repo.resolvePending(
-          id,
-          "allow",
-          deps.ownerSub,
+        const { host, method, path } = row.payload;
+        return writeRuleAndResolve(
+          deps,
+          row,
+          { host, method, pathPattern: path, verdict: "allow" },
+          { host, method, pathPattern: path },
         );
-        const expiredFlipped = casWon
-          ? false
-          : await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
-        if (casWon || expiredFlipped) emitResolved(row);
-        auditVerdict(deps, row, "allow", {
-          verdict: "allow",
-          ...auditRuleFields(written),
-          host: row.payload.host,
-          method: row.payload.method,
-          pathPattern: row.payload.path,
-        });
-        return { outcome: casWon ? "applied" : "rule_written_expired", rule };
       }
-      const casWon = await resolveAndDeliverAcpNative(deps, row, "allow");
-      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
+      return resolveAndDeliverAcpNative(deps, row, "allow");
     },
 
     async approveHost(id) {
       const row = await loadOwned(deps, id);
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
-        const rule = {
-          host: row.payload.host,
-          method: "*",
-          pathPattern: "*",
-          verdict: "allow" as const,
-        };
-        const written = await deps.egressRuleWriter.insert({
-          id: randomUUID(),
-          agentId: row.agentId,
-          ...rule,
-          decidedBy: deps.ownerSub,
-          source: "inbox",
-        });
-        if (written.kind === "verdict-clash") {
-          throw verdictConflict(
-            deps,
-            row,
-            "allow",
-            { host: row.payload.host, hostWide: true },
-            written.existing,
-          );
-        }
-        const casWon = await deps.repo.resolvePending(
-          id,
-          "allow",
-          deps.ownerSub,
+        const { host } = row.payload;
+        return writeRuleAndResolve(
+          deps,
+          row,
+          { host, method: "*", pathPattern: "*", verdict: "allow" },
+          { host, hostWide: true },
         );
-        const expiredFlipped = casWon
-          ? false
-          : await deps.repo.resolveExpired(id, "allow", deps.ownerSub);
-        if (casWon || expiredFlipped) emitResolved(row);
-        auditVerdict(deps, row, "allow", {
-          verdict: "allow",
-          ...auditRuleFields(written),
-          host: row.payload.host,
-          hostWide: true,
-        });
-        return { outcome: casWon ? "applied" : "rule_written_expired", rule };
       }
-      const casWon = await resolveAndDeliverAcpNative(deps, row, "allow");
-      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
+      return resolveAndDeliverAcpNative(deps, row, "allow");
     },
 
     async denyForever(id) {
       const row = await loadOwned(deps, id);
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
-        const rule = {
-          host: row.payload.host,
-          method: row.payload.method,
-          pathPattern: row.payload.path,
-          verdict: "deny" as const,
-        };
-        const written = await deps.egressRuleWriter.insert({
-          id: randomUUID(),
-          agentId: row.agentId,
-          ...rule,
-          decidedBy: deps.ownerSub,
-          source: "inbox",
-        });
-        if (written.kind === "verdict-clash") {
-          throw verdictConflict(
-            deps,
-            row,
-            "deny",
-            {
-              host: row.payload.host,
-              method: row.payload.method,
-              pathPattern: row.payload.path,
-            },
-            written.existing,
-          );
-        }
-        const casWon = await deps.repo.resolvePending(
-          id,
-          "deny",
-          deps.ownerSub,
+        const { host, method, path } = row.payload;
+        return writeRuleAndResolve(
+          deps,
+          row,
+          { host, method, pathPattern: path, verdict: "deny" },
+          { host, method, pathPattern: path },
         );
-        const expiredFlipped = casWon
-          ? false
-          : await deps.repo.resolveExpired(id, "deny", deps.ownerSub);
-        if (casWon || expiredFlipped) emitResolved(row);
-        auditVerdict(deps, row, "deny", {
-          verdict: "deny",
-          ...auditRuleFields(written),
-          host: row.payload.host,
-          method: row.payload.method,
-          pathPattern: row.payload.path,
-        });
-        return { outcome: casWon ? "applied" : "rule_written_expired", rule };
       }
-      const casWon = await resolveAndDeliverAcpNative(deps, row, "deny");
-      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
+      return resolveAndDeliverAcpNative(deps, row, "deny");
     },
 
     async dismiss(id) {
       const row = await loadOwned(deps, id);
       if (!row || row.status !== "pending") return NOT_ACTIONABLE;
       if (row.type === "ext_authz") {
-        const casWon = await deps.repo.resolvePending(
-          id,
-          "deny_once",
-          deps.ownerSub,
-        );
-        if (casWon) emitResolved(row);
-        auditVerdict(deps, row, "deny", {
-          verdict: "deny_once",
-          ruleWritten: false,
-        });
-        return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
+        return resolveOnce(deps, row, "deny_once", "deny");
       }
-      const casWon = await resolveAndDeliverAcpNative(deps, row, "deny_once");
-      return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
+      return resolveAndDeliverAcpNative(deps, row, "deny_once");
     },
   };
+}
+
+async function resolveOnce(
+  deps: CreateApprovalsServiceDeps,
+  row: PendingApprovalRow,
+  verdict: "allow_once" | "deny_once",
+  decision: "allow" | "deny",
+): Promise<ApprovalActionOutcome> {
+  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
+  if (casWon) emitResolved(row);
+  auditVerdict(deps, row, decision, { verdict, ruleWritten: false });
+  return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
+}
+
+async function writeRuleAndResolve(
+  deps: CreateApprovalsServiceDeps,
+  row: PendingApprovalRow,
+  rule: {
+    host: string;
+    method: string;
+    pathPattern: string;
+    verdict: "allow" | "deny";
+  },
+  ruleFields: Record<string, unknown>,
+): Promise<ApprovalActionOutcome> {
+  const written = await deps.egressRuleWriter.insert({
+    id: randomUUID(),
+    agentId: row.agentId,
+    ...rule,
+    decidedBy: deps.ownerSub,
+    source: "inbox",
+  });
+  if (written.kind === "verdict-clash") {
+    throw verdictConflict(
+      deps,
+      row,
+      rule.verdict,
+      ruleFields,
+      written.existing,
+    );
+  }
+  const casWon = await deps.repo.resolvePending(
+    row.id,
+    rule.verdict,
+    deps.ownerSub,
+  );
+  const expiredFlipped = casWon
+    ? false
+    : await deps.repo.resolveExpired(row.id, rule.verdict, deps.ownerSub);
+  if (casWon || expiredFlipped) emitResolved(row);
+  auditVerdict(deps, row, rule.verdict, {
+    verdict: rule.verdict,
+    ...auditRuleFields(written),
+    ...ruleFields,
+  });
+  return { outcome: casWon ? "applied" : "rule_written_expired", rule };
 }
 
 async function resolveAndDeliverAcpNative(
   deps: CreateApprovalsServiceDeps,
   row: PendingApprovalRow,
   verdict: ApprovalVerdict,
-): Promise<boolean> {
-  if (row.payload.kind !== "acp_native") return false;
+): Promise<ApprovalActionOutcome> {
+  if (row.payload.kind !== "acp_native") return NOT_ACTIONABLE;
   const casWon = await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
   if (casWon) emitResolved(row);
   auditVerdict(deps, row, verdict.startsWith("allow") ? "allow" : "deny", {
     verdict,
     native: true,
   });
+  const outcome: ApprovalActionOutcome = casWon
+    ? { outcome: "applied", rule: null }
+    : NOT_ACTIONABLE;
   const rpcId = row.payload.rpcId;
-  if (rpcId === undefined || rpcId === null) return casWon;
+  if (rpcId === undefined || rpcId === null) return outcome;
   const optionId = pickOptionId(row.payload.options ?? [], verdict);
   const frame = JSON.stringify(buildAcpPermissionResponse(rpcId, optionId));
   try {
     await deps.wrapperFrameSender.send(row.agentId, frame);
     await deps.repo.markDelivered(row.id);
   } catch {}
-  return casWon;
+  return outcome;
 }

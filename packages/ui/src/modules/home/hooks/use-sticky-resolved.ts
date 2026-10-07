@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { type FeedItem, sortFeedItems } from "../lib/feed-item.js";
 
-export interface StickyResolved {
+interface StickyResolved {
   labelFor: (id: string) => string | null;
   keep: (item: FeedItem, label: string) => void;
   drop: (id: string) => void;

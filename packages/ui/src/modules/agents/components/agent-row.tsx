@@ -1,7 +1,7 @@
 import {
   Book,
+  Box,
   Chemistry,
-  Gift,
   OverflowMenuVertical,
 } from "@carbon/icons-react";
 
@@ -17,10 +17,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { clickableProps } from "@/lib/clickable";
 
-import { StatusBadge } from "../../../components/status-indicator.js";
+import {
+  AlwaysOnTag,
+  StatusBadge,
+} from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { AgentChannelChips } from "../../sandboxes/components/channels/agent-channel-chips.js";
+import { KitUpdateTag } from "../../starter-kits/components/kit-update-tag.js";
 import { OnboardingTag } from "../../starter-kits/components/onboarding-tag.js";
 import {
   agentKindBadge,
@@ -37,6 +41,7 @@ import {
   agentFailures,
   ContributionFailuresBadge,
 } from "./contribution-failures-badge.js";
+import { MigrateRuntimeAction } from "./migrate-runtime-action.js";
 import { FreeUpComputeItems } from "./power-menu-items.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
@@ -53,10 +58,14 @@ interface Props {
   updateBusy: boolean;
   onSelect: () => void;
   onUpdate: () => void;
+  migratePending: boolean;
+  onMigrate: () => void;
+  migrationControlsBusy: boolean;
+  onAbortMigration: () => void;
+  onRetryMigration: () => void;
   onConfigure: () => void;
   configureLabel: string;
   onShare?: () => void;
-  shareLabel?: string;
   onWake: () => void;
   onRestart: () => void;
   onPause: () => void;
@@ -77,10 +86,14 @@ export function AgentRow({
   updateBusy,
   onSelect,
   onUpdate,
+  migratePending,
+  onMigrate,
+  migrationControlsBusy,
+  onAbortMigration,
+  onRetryMigration,
   onConfigure,
   configureLabel,
   onShare,
-  shareLabel,
   onWake,
   onRestart,
   onPause,
@@ -126,7 +139,7 @@ export function AgentRow({
               aria-label={`From the ${kitBadge.label} starter kit`}
             >
               <span className="flex items-center gap-1.5">
-                <Gift size={12} aria-hidden />
+                <Box size={12} aria-hidden />
                 {kitBadge.label}
               </span>
             </Badge>
@@ -144,6 +157,7 @@ export function AgentRow({
             </Badge>
           )}
           <OnboardingTag agent={agent} />
+          <KitUpdateTag agentId={agent.id} />
           <ContributionFailuresBadge failures={agentFailures(agent)} />
           <UnsupportedContributionsBadge agent={agent} />
         </div>
@@ -174,6 +188,15 @@ export function AgentRow({
           busy={updateBusy}
           onUpdate={onUpdate}
         />
+        <MigrateRuntimeAction
+          agent={agent}
+          pending={migratePending}
+          onMigrate={onMigrate}
+          controlsBusy={migrationControlsBusy}
+          onAbort={onAbortMigration}
+          onRetry={onRetryMigration}
+        />
+        {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
         <span
           title={agent.overBudgetMessage ?? undefined}
           {...(agent.overBudgetMessage
@@ -184,11 +207,7 @@ export function AgentRow({
               }
             : {})}
         >
-          <StatusBadge
-            state={display.state}
-            working={working}
-            alwaysOn={agent.hibernationTimeoutMin === 0}
-          />
+          <StatusBadge state={display.state} working={working} />
         </span>
         {}
         <span onClick={(e) => e.stopPropagation()}>
@@ -204,7 +223,7 @@ export function AgentRow({
               </DropdownMenuItem>
               {onShareKnowledge && (
                 <DropdownMenuItem onSelect={onShareKnowledge}>
-                  {shareLabel ?? "Share knowledge base"}
+                  Share knowledge base
                 </DropdownMenuItem>
               )}
               {onAddToChannel && (messengers.slack || messengers.telegram) && (

@@ -2,19 +2,10 @@ import { Command, Option } from "commander";
 import { formatEgressRuleInline, gatewayRestartImpact } from "api-server-api";
 import { gatewayRestartNotice } from "../domain/restart-notice.js";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_INVALID_INPUT,
-  EXIT_RUNTIME_FAILURE,
-  EXIT_SUCCESS,
-} from "../../shared/exit-codes.js";
+import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { confirm, exitCancelled } from "../../shared/prompt.js";
 import type { EgressService } from "../services/egress-service.js";
@@ -61,30 +52,18 @@ export function buildCreateCommand(deps: {
           json?: boolean;
         },
       ) => {
-        const host = await resolveActiveHost(deps, {
-          flag: opts.server ? { server: opts.server } : undefined,
-          exitCodes: {
-            runtimeFailure: EXIT_RUNTIME_FAILURE,
-            belowFloor: EXIT_BELOW_FLOOR,
-          },
-        });
+        const host = await resolveActiveHost(deps, opts.server);
 
-        const resolver = createAgentResolver({
-          agentService: deps.createAgentService(host),
-        });
-        const resolved = await resolver.resolve(ref);
-        if (!resolved.ok) {
-          printResolveError(resolved.error, host);
-          process.exit(exitCodeForResolveError(resolved.error));
-        }
+        const agent = await resolveAgentOrExit(
+          deps.createAgentService(host),
+          ref,
+          host,
+        );
 
         const egress = deps.createEgressService(host);
         if (!opts.yes) {
-          const existing = await egress.listForAgent(resolved.value.id);
-          if (!existing.ok) {
-            printServiceError(existing.error, host);
-            process.exit(EXIT_RUNTIME_FAILURE);
-          }
+          const existing = await egress.listForAgent(agent.id);
+          exitOnServiceError(existing, host);
           const impact = gatewayRestartImpact({
             current: existing.value,
             adds: [
@@ -109,16 +88,13 @@ export function buildCreateCommand(deps: {
         }
 
         const result = await egress.create({
-          agentId: resolved.value.id,
+          agentId: agent.id,
           host: opts.host,
           method: opts.method,
           pathPattern: opts.path,
           verdict: opts.verdict,
         });
-        if (!result.ok) {
-          printServiceError(result.error, host);
-          process.exit(EXIT_RUNTIME_FAILURE);
-        }
+        exitOnServiceError(result, host);
 
         if (opts.json) {
           process.stdout.write(`${JSON.stringify(result.value)}\n`);

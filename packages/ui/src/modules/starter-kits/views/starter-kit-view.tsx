@@ -1,6 +1,13 @@
-import { ArrowLeft, Launch, Meter, PlayFilledAlt } from "@carbon/icons-react";
+import {
+  ArrowLeft,
+  Launch,
+  Meter,
+  PlayFilledAlt,
+  Time,
+} from "@carbon/icons-react";
 import {
   type ConnectionTemplateView,
+  formatEgressRuleInline,
   requirementAccepts,
   type StarterKitView,
 } from "api-server-api";
@@ -30,8 +37,13 @@ import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
-import { CATEGORY_LABEL, VM_BACKEND_LABEL } from "../lib/catalog-cards.js";
-import { kitIcon } from "../lib/kit-icon.js";
+import { KitCategoryTag } from "../components/kit-category-tag.js";
+import {
+  EGRESS_PRESET_DETAIL,
+  EGRESS_PRESET_LABEL,
+  kitEgressPreset,
+  VM_BACKEND_LABEL,
+} from "../lib/catalog-cards.js";
 import {
   describeAccepts,
   harnessesLine,
@@ -53,40 +65,78 @@ function acceptedTemplates(
   );
 }
 
+function requirementIconSlug(
+  accepts: readonly string[],
+  templates: readonly ConnectionTemplateView[],
+): string | undefined {
+  for (const accepted of accepts) {
+    const match = acceptedTemplates([accepted], templates).find(
+      (t) => t.iconSlug !== undefined,
+    );
+    if (match) return match.iconSlug;
+  }
+  return undefined;
+}
+
+interface FamilyTag {
+  id: string;
+  title: string;
+  iconSlug?: string;
+}
+
+function connectionFamilyTags(
+  requirements: StarterKitView["connections"],
+  templates: readonly ConnectionTemplateView[],
+): FamilyTag[] {
+  const tags = new Map<string, FamilyTag>();
+  for (const req of requirements) {
+    for (const t of acceptedTemplates(req.accepts, templates)) {
+      if (!t.family) continue;
+      const tag = tags.get(t.family.id) ?? { ...t.family };
+      tag.iconSlug ??= t.iconSlug;
+      tags.set(t.family.id, tag);
+    }
+  }
+  return [...tags.values()];
+}
+
 function Row({
   icon,
-  icons,
+  iconSlug,
   title,
+  tag,
   detail,
-  trailing,
+  action,
 }: {
   icon?: React.ReactNode;
-  icons?: string[];
+  iconSlug?: string;
   title: string;
+  tag?: React.ReactNode;
   detail?: string;
-  trailing?: React.ReactNode;
+  action?: React.ReactNode;
 }) {
-  const tile = icon ?? (icons && icons.length > 0);
+  const tile =
+    icon ??
+    (iconSlug && (
+      <ConnectionIcon
+        iconSlug={iconSlug}
+        alt=""
+        size={16}
+        className="text-foreground/80"
+      />
+    ));
   return (
-    <li className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
+    <li className="flex items-start gap-3 rounded-lg border border-border bg-card px-4 py-3">
       {tile && (
-        <div className="flex h-[38px] min-w-[38px] shrink-0 items-center justify-center gap-1 rounded-lg border border-border bg-card px-2">
-          {icon ??
-            icons
-              ?.slice(0, 3)
-              .map((slug) => (
-                <ConnectionIcon
-                  key={slug}
-                  iconSlug={slug}
-                  alt=""
-                  size={16}
-                  className="text-foreground/80"
-                />
-              ))}
+        <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-card">
+          {tile}
         </div>
       )}
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-foreground">{title}</p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="text-sm font-medium text-foreground">{title}</p>
+          {tag}
+        </div>
         {detail && (
           <ClampedText
             text={detail}
@@ -94,7 +144,7 @@ function Row({
           />
         )}
       </div>
-      {trailing}
+      {action}
     </li>
   );
 }
@@ -231,7 +281,6 @@ function KitDetail({
   kit: StarterKitView;
   onClose: () => void;
 }) {
-  const KitIcon = kitIcon(kit);
   const setView = useStore((s) => s.setView);
   const navigateToStarterKitSetup = useStore(
     (s) => s.navigateToStarterKitSetup,
@@ -260,27 +309,26 @@ function KitDetail({
       <div className="flex min-h-0 flex-1 flex-col">
         <DialogHeader
           title={kit.name}
-          titleAccessory={
-            <Badge variant="kit">{CATEGORY_LABEL[kit.category]}</Badge>
-          }
+          titleAccessory={<KitCategoryTag category={kit.category} />}
           subtitle={kit.description}
           onClose={onClose}
         >
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="flex size-6 items-center justify-center rounded-md border border-border text-muted-foreground">
-              <KitIcon size={14} />
-            </span>
-            {kit.connections.flatMap((req) =>
-              acceptedTemplates(req.accepts, templates.data ?? [])
-                .flatMap((t) => (t.family ? [t.family] : []))
-                .filter(
-                  (f, i, all) => all.findIndex((x) => x.id === f.id) === i,
-                )
-                .map((family) => (
-                  <Badge key={family.id} variant="muted" size="sm">
+            {connectionFamilyTags(kit.connections, templates.data ?? []).map(
+              (family) => (
+                <Badge key={family.id} variant="muted" size="sm">
+                  <span className="flex items-center gap-1.5">
+                    {family.iconSlug && (
+                      <ConnectionIcon
+                        iconSlug={family.iconSlug}
+                        alt=""
+                        size={14}
+                      />
+                    )}
                     {family.title}
-                  </Badge>
-                )),
+                  </span>
+                </Badge>
+              ),
             )}
             {skillCount > 0 && (
               <Badge variant="muted" size="sm">
@@ -304,7 +352,7 @@ function KitDetail({
               <Row
                 title={`${kit.name} knowledge base skills`}
                 detail="Installed by the kit's own bootstrap from its repository, so they are not listed under Skills."
-                trailing={
+                action={
                   <a
                     href={kbSeed.url}
                     target="_blank"
@@ -326,11 +374,6 @@ function KitDetail({
                   key={`in-kit:${skill.name}`}
                   title={skill.name}
                   detail={skill.description}
-                  trailing={
-                    <Badge variant="muted" size="sm">
-                      in the kit
-                    </Badge>
-                  }
                 />
               ))}
               {kit.skills.map((skill) => (
@@ -338,7 +381,7 @@ function KitDetail({
                   key={`external:${skill.source}:${skill.name}`}
                   title={skill.name}
                   detail={skill.source}
-                  trailing={
+                  tag={
                     <Badge variant="muted" size="sm">
                       installed at create
                     </Badge>
@@ -353,7 +396,7 @@ function KitDetail({
               <Row
                 title={kit.name}
                 detail={kit.image.ref}
-                trailing={
+                tag={
                   <Badge variant="muted" size="sm">
                     brings its own agent
                   </Badge>
@@ -367,11 +410,17 @@ function KitDetail({
               {kit.schedules.map((schedule) => (
                 <Row
                   key={schedule.name}
+                  icon={<Time size={16} className="text-kit" />}
                   title={schedule.name}
                   detail={kitScheduleCadence(schedule)}
-                  trailing={
-                    <Badge variant="muted" size="sm">
-                      {schedule.enabled ? "on" : "off"}
+                  tag={
+                    <Badge
+                      variant={schedule.enabled ? "template" : "muted"}
+                      size="sm"
+                    >
+                      {schedule.enabled
+                        ? "runs by default"
+                        : "optional, starts off"}
                     </Badge>
                   }
                 />
@@ -379,7 +428,9 @@ function KitDetail({
               <li className="text-sm text-muted-foreground">
                 {kit.onboarding === false
                   ? "Created on the new agent."
-                  : "Created on the new agent. They stay held until onboarding is finished, so nothing runs against a half-configured agent."}
+                  : "Created on the new agent. They stay held until onboarding is finished, so nothing runs against a half-configured agent."}{" "}
+                You can switch any of them on or off, or skip one, before you
+                create the agent.
               </li>
             </Section>
           )}
@@ -397,7 +448,7 @@ function KitDetail({
                     ? ` at ${shortKitVersion(kit.seed.commit)}`
                     : ""
                 } before the first session`}
-                trailing={
+                action={
                   <a
                     href={kit.seed.url}
                     target="_blank"
@@ -411,6 +462,24 @@ function KitDetail({
               />
             </Section>
           )}
+
+          <Section label="Network access">
+            <Row
+              title={EGRESS_PRESET_LABEL[kitEgressPreset(kit)]}
+              detail={EGRESS_PRESET_DETAIL[kitEgressPreset(kit)]}
+            />
+            {kit.egressRules.map((rule) => (
+              <Row
+                key={formatEgressRuleInline(rule)}
+                title={formatEgressRuleInline(rule)}
+                tag={
+                  <Badge variant="muted" size="sm">
+                    added by the kit
+                  </Badge>
+                }
+              />
+            ))}
+          </Section>
 
           {size && (
             <Section label="Compute">
@@ -435,13 +504,13 @@ function KitDetail({
               {kit.connections.map((req) => (
                 <Row
                   key={req.accepts.join("|")}
-                  icons={acceptedTemplates(req.accepts, templates.data ?? [])
-                    .map((t) => t.iconSlug)
-                    .filter((slug): slug is string => slug !== undefined)
-                    .filter((slug, i, all) => all.indexOf(slug) === i)}
+                  iconSlug={requirementIconSlug(
+                    req.accepts,
+                    templates.data ?? [],
+                  )}
                   title={describeAccepts(req.accepts, templateById)}
                   detail={req.note}
-                  trailing={
+                  tag={
                     <Badge
                       variant={req.required ? "template" : "muted"}
                       size="sm"
@@ -459,10 +528,10 @@ function KitDetail({
               {kit.channels.map((channel) => (
                 <Row
                   key={channel.type}
-                  icons={[channel.type]}
+                  iconSlug={channel.type}
                   title={channel.type === "slack" ? "Slack" : "Telegram"}
                   detail={channel.note}
-                  trailing={
+                  tag={
                     <Badge variant="muted" size="sm">
                       optional
                     </Badge>

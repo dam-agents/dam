@@ -14,6 +14,7 @@ import {
   scheduleListForOwnerInputSchema,
   scheduleListInputSchema,
   scheduleResetSessionInputSchema,
+  scheduleRunNowInputSchema,
   scheduleToggleInputSchema,
   scheduleUpdateOnceInputSchema,
   scheduleUpdateRRuleInputSchema,
@@ -152,4 +153,8 @@ export const schedulesRouter = t.router({
   resetSession: manageAgentsProcedure
     .input(scheduleResetSessionInputSchema)
     .mutation(({ ctx, input }) => ctx.schedules.resetSession(input.id)),
+
+  runNow: manageAgentsProcedure
+    .input(scheduleRunNowInputSchema)
+    .mutation(({ ctx, input }) => ctx.schedules.runNow(input.id)),
 });

@@ -25,7 +25,7 @@ export type FeedItem =
       session: AttentionItem;
     };
 
-export interface FeedSources {
+interface FeedSources {
   approvals: readonly ApprovalView[];
   attention: readonly AttentionItem[];
   runningAgentIds: ReadonlySet<string>;

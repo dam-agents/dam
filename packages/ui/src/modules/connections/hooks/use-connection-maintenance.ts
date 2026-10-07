@@ -29,9 +29,13 @@ export function useConnectionMaintenance() {
           ...(connection.hasClientSecret
             ? { onUpdateCredential: () => openUpdate(connection) }
             : {}),
+          ...(connection.githubUserToken && connection.status !== "pending"
+            ? { onEditScope: () => openEditScope(connection) }
+            : {}),
         };
       case "header":
       case "client-credentials":
+      case "sigv4":
         return { onUpdateCredential: () => openUpdate(connection) };
       case "github-app":
         return {

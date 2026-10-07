@@ -233,6 +233,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 		"EXT_AUTHZ_PORT", "EXT_AUTHZ_HOLD_SECONDS",
 		"PLATFORM_ISTIO_TRUST_DOMAIN", "PLATFORM_ISTIO_WAYPOINT_NAME",
 		"PLATFORM_TELEMETRY_COLLECTOR_HOST", "PLATFORM_TELEMETRY_COLLECTOR_PORT",
+		"PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS",
 	} {
 		os.Unsetenv(key)
 		t.Cleanup(func() { os.Unsetenv(key) })
@@ -403,4 +404,43 @@ func TestLoadFromEnv_RejectsARunnerRolloutOutOfRange(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, cfg.VM.Runner.Rollout.MaxConcurrent)
 	assert.Equal(t, 15*time.Minute, cfg.VM.Runner.Rollout.SettleTimeout.AsDuration())
+}
+
+// TEST_SCENARIO: the runtime migration's retention window comes from the chart as a duration. A negative one is a values typo, refused at start rather than read as "delete at once"; a set one is read as given.
+func TestLoadFromEnv_ReadsTheRuntimeMigrationRetention(t *testing.T) {
+	base := map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+	}
+	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}`
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"retention":"-1h"}}`
+	setEnv(t, base)
+	_, err := LoadFromEnv()
+	assert.Error(t, err)
+
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"retention":"168h"}}`
+	setEnv(t, base)
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, 7*24*time.Hour, cfg.VM.RuntimeMigration.Retention.AsDuration())
+}
+
+// TEST_SCENARIO: the copy Job caps come from the chart as counts. A negative one is a values typo, refused at start; set ones are read as given.
+func TestLoadFromEnv_ReadsTheRuntimeMigrationCopyCaps(t *testing.T) {
+	base := map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+	}
+	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}`
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"ownerConcurrency":-1}}`
+	setEnv(t, base)
+	_, err := LoadFromEnv()
+	assert.Error(t, err)
+
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"concurrency":4,"ownerConcurrency":2}}`
+	setEnv(t, base)
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Equal(t, 4, cfg.VM.RuntimeMigration.Concurrency)
+	assert.Equal(t, 2, cfg.VM.RuntimeMigration.OwnerConcurrency)
 }

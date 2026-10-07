@@ -1,8 +1,12 @@
 import type { Env, Handler } from "hono";
 
 import type { ShareViewerService } from "../services/share-viewer-service.js";
-import { isRestricted, PRIVATE_NO_STORE, type Authorize } from "./authorize.js";
-import { parseVersion } from "./version-query.js";
+import {
+  isRestricted,
+  namesCurrentVersion,
+  PRIVATE_NO_STORE,
+  type Authorize,
+} from "./authorize.js";
 
 export const RAW_ROUTE = "/a/:slug/raw";
 
@@ -16,14 +20,11 @@ export function createRawHandler(
     if (!authorized.ok) return authorized.response;
 
     const artifact = authorized.artifact;
-    const requested = parseVersion(c.req.query("v"));
-    const versionArg =
-      requested === undefined || requested === artifact.version
-        ? undefined
-        : requested;
+    if (!namesCurrentVersion(artifact, c.req.query("v")))
+      return c.text("not found", 404);
     const safeName = artifact.fileName.replace(/[\r\n"\\]/g, "");
 
-    const blob = await viewer.contentStream(artifact, versionArg);
+    const blob = await viewer.contentStream(artifact);
     if (!blob) return c.text("not found", 404);
 
     const isImage = blob.contentType.startsWith("image/");

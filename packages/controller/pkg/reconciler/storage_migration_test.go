@@ -31,7 +31,7 @@ func migrationConfig() *config.Config {
 			TerminationGracePeriod: 5,
 			ContainerSecurityContext: &corev1.SecurityContext{
 				Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-				RunAsUser:    ptrInt64(65532),
+				RunAsUser:    new(int64(65532)),
 			},
 		},
 		AgentTemplateDefaults: config.AgentTemplateDefaults{
@@ -435,13 +435,26 @@ func TestStorageMigration_SkipsVMBackend(t *testing.T) {
 	assert.Empty(t, jobs.Items)
 }
 
+// TEST_SCENARIO: a container Agent whose runtime migration is under way keeps the volumes the copy reads and the abort resumes on, so the storage migration leaves them alone until the runtime migration has ended one way or the other.
+func TestStorageMigration_SkipsAgentMidRuntimeMigration(t *testing.T) {
+	agent := agentCR()
+	agent.Annotations = map[string]string{annRuntimeMigration: runtimeMigrationRequested}
+	m, client := migrationManager(t, agent, rwxPVC("home-agent-my-agent-0", "my-agent", "home-agent"))
+
+	m.Reconcile(context.Background())
+
+	ann := getAgentAnnotations(t, m, "my-agent")
+	assert.Empty(t, ann[annStorageMigration])
+	jobs, err := client.BatchV1().Jobs("test-agents").List(context.Background(), metav1.ListOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, jobs.Items)
+}
+
 func renderedAgentSTS(name string) *appsv1.StatefulSet {
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-agents"},
 	}
 }
-
-func ptrInt64(v int64) *int64 { return &v }
 
 func TestStorageMigration_DisabledReleasesGatedAgents(t *testing.T) {
 	agent := agentCR()
@@ -585,7 +598,7 @@ func TestStorageMigration_DiscardsStaleTargetOnWrongClass(t *testing.T) {
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-			StorageClassName: ptrString("ibmc-vpc-file-500-iops-agent"),
+			StorageClassName: new("ibmc-vpc-file-500-iops-agent"),
 		},
 	}
 	staleJob := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: "mig-my-agent", Namespace: "test-agents"}}
@@ -619,7 +632,7 @@ func TestStorageMigration_NeverDeletesClaimedTarget(t *testing.T) {
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-			StorageClassName: ptrString("ibmc-vpc-file-500-iops-agent"),
+			StorageClassName: new("ibmc-vpc-file-500-iops-agent"),
 		},
 	}
 	m, client := migrationManager(t, agent,

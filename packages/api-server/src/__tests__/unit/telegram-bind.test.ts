@@ -6,10 +6,8 @@ import {
   executeTelegramUnbind,
   type TelegramBindingPort,
 } from "../../modules/agents/services/agents-service.js";
-import {
-  createTelegramBindFlowStore,
-  type TelegramBindFlowStore,
-} from "../../modules/channels/infrastructure/telegram-flows.js";
+import { createFlowStore } from "../../modules/channels/infrastructure/bind-flow-store.js";
+import type { TelegramPendingBind } from "../../modules/channels/infrastructure/telegram-flows.js";
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -22,7 +20,7 @@ async function harness(opts?: {
   racedTo?: string | null;
   postError?: string;
 }) {
-  const store: TelegramBindFlowStore = createTelegramBindFlowStore({
+  const store = createFlowStore<TelegramPendingBind>({
     now: () => 1_000,
     store: createMemoryTtlStore(600_000, () => 1_000),
   });

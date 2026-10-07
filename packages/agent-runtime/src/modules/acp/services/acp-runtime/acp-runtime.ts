@@ -5,8 +5,10 @@ import type { PodSession } from "agent-runtime-api";
 import {
   buildPlatformRunStartedNotification,
   buildPlatformTurnEndedNotification,
+  jsonRpcErrorDetails,
   platformUndeliveredPromptSchema,
   SessionType,
+  type PlatformTurnEndedParams,
   type PlatformUndeliveredPrompt,
 } from "api-server-api";
 
@@ -14,6 +16,10 @@ import {
   artifactTouchIn,
   type ArtifactTouch,
 } from "../../infrastructure/artifact-touch.js";
+import {
+  subAgentSpawnIn,
+  type SubAgentSpawn,
+} from "../../infrastructure/sub-agent-spawn.js";
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
   isRequest,
@@ -50,10 +56,7 @@ import {
   type HarnessTeardownReason,
 } from "./harness-lease.js";
 import { createPendingAgentRequests } from "./pending-agent-requests.js";
-import {
-  createPromptScheduler,
-  type QueueDropCause,
-} from "./prompt-scheduler.js";
+import { createPromptScheduler } from "./prompt-scheduler.js";
 import { createSessionBootstrap } from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
 
@@ -73,6 +76,8 @@ const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
 
 const RUN_TEXT_BYTES_CAP = 1024 * 1024;
 
+const TURN_ERROR_TEXT_CAP = 4 * 1024;
+
 export interface AcpRuntimeStatus {
   idle: boolean;
   backgroundWork: HeldSession[];
@@ -82,6 +87,7 @@ export interface AcpRuntime {
   attach(channel: ClientChannel, opts?: { viewer?: boolean }): void;
   status(): AcpRuntimeStatus;
   isSessionRunning(sessionId: string): boolean;
+  sessionFrames(sessionId: string): { frames: string[]; truncated: boolean };
   resetSession(sessionId: string): void;
   refreshEnv(opts: { force: boolean }): void;
   recycleForConfig(): void;
@@ -113,6 +119,7 @@ export interface AcpRuntimeDeps {
   onReportableTurnEnded?: (report: ReportableTurn) => void;
   isTerminalSessionActive?: (sessionId: string) => boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
+  onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
 }
 
 export const SCHEDULE_SURFACE = "schedule";
@@ -149,6 +156,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     deps.harnessLoadTimeoutMs ?? DEFAULT_HARNESS_LOAD_TIMEOUT_MS;
   let sessionCloseSupported = true;
   let sessionResumeSupported = false;
+  let initializeAnswer: { result?: unknown; error?: unknown } | null = null;
+  let initializeWaiters: { channel: ClientChannel; id: unknown }[] | null =
+    null;
   const engagedSessions = new Map<ClientChannel, Set<string>>();
   const nonViewerChannels = new Set<ClientChannel>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
@@ -389,6 +399,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (orphanedHarnessLoads.get(sessionId) !== outboundId) return false;
     orphanedHarnessLoads.delete(sessionId);
     deps.log?.(`orphaned session/load for ${sessionId} answered late; dropped`);
+    if (orphanedHarnessLoads.size === 0) lease.cancelRecycleRequest();
     return true;
   }
 
@@ -488,6 +499,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydratingSessions.clear();
     sessionCloseSupported = true;
     sessionResumeSupported = false;
+    initializeAnswer = null;
+    initializeWaiters = null;
     deps.backgroundWork?.clear();
   }
 
@@ -721,6 +734,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (mapping.method === "initialize") {
           sessionCloseSupported = hasSessionCapability(frame, "close");
           sessionResumeSupported = hasSessionCapability(frame, "resume");
+          const { result, error } = frame as {
+            result?: unknown;
+            error?: unknown;
+          };
+          for (const w of initializeWaiters ?? [])
+            sendToChannel(
+              w.channel,
+              JSON.stringify({ jsonrpc: "2.0", id: w.id, result, error }),
+            );
+          initializeWaiters = null;
+          if (result !== undefined) initializeAnswer = { result };
         }
 
         const sidFromResult = extractResultSessionId(frame);
@@ -777,6 +801,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           deps.sessionMetadata?.recordActivity(sid);
           if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
           const stopReason = extractStopReason(frame);
+          const error = extractTurnError(frame);
           transcript.append(
             sid,
             JSON.stringify(
@@ -784,6 +809,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                 sessionId: sid,
                 ...(promptId !== null && { promptId }),
                 ...(stopReason !== null && { stopReason }),
+                ...(error !== undefined && { error }),
               }),
             ),
           );
@@ -817,6 +843,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (!bootstrap.has(sessionId)) {
         const touch = artifactTouchIn(frame);
         if (touch) deps.onArtifactTouch(touch);
+        const spawn = subAgentSpawnIn(frame);
+        if (spawn) deps.onSubAgentSpawn?.(spawn);
       }
       if (bootstrap.has(sessionId)) {
         transcript.appendReplay(sessionId, line);
@@ -948,20 +976,33 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
 
       if (method === "session/load" && paramsSid) {
-        const replayBefore = extractReplayBefore(frame);
-        const loadToken = extractLoadToken(frame) ?? undefined;
+        const replayBefore = platformString(frame, "replayBefore");
+        const loadToken = platformString(frame, "loadToken") ?? undefined;
         if (replayBefore !== null) {
           bootstrap.requestPage(channel, frame.id, paramsSid, replayBefore, {
             loadToken,
           });
         } else {
           bootstrap.requestLoad(channel, frame.id, paramsSid, {
-            tail: extractTailFlag(frame),
+            tail: platformField(frame, "tail") === true,
             loadToken,
           });
         }
         return;
       }
+
+      if (method === "initialize" && initializeAnswer !== null) {
+        sendToChannel(
+          channel,
+          JSON.stringify({ jsonrpc: "2.0", id: frame.id, ...initializeAnswer }),
+        );
+        return;
+      }
+      if (method === "initialize" && initializeWaiters !== null) {
+        initializeWaiters.push({ channel, id: frame.id });
+        return;
+      }
+      if (method === "initialize") initializeWaiters = [];
 
       if (
         method === "session/prompt" &&
@@ -997,9 +1038,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           ? { ...(extractPlatformMeta(frame) ?? {}), ref: randomUUID() }
           : null;
       const promptId =
-        method === "session/prompt" ? extractPromptId(frame) : null;
+        method === "session/prompt" ? platformString(frame, "promptId") : null;
       const retryOf =
-        method === "session/prompt" ? extractRetryOf(frame) : null;
+        method === "session/prompt" ? platformString(frame, "retryOf") : null;
       const strippedFrame =
         platformMeta !== null || method === "session/prompt"
           ? stripPlatformMeta(frame)
@@ -1014,7 +1055,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
       const framedFrame =
         promptSessionId !== null &&
-        isDirectSurface(extractPromptSurface(frame)) &&
+        isDirectSurface(platformString(frame, "surface")) &&
         deps.sessionMetadata?.get(promptSessionId)?.meta.threadTs !== undefined
           ? frameDirectTurn(forwardFrame)
           : forwardFrame;
@@ -1054,11 +1095,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           originalId: frame.id,
           frame: rewritten,
           promptId,
-          runPrompt: extractPromptSurface(frame) === "cli",
+          runPrompt: platformString(frame, "surface") === "cli",
           unattended:
             nonViewerChannels.has(channel) &&
             (isMachineSession(promptSessionId) ||
-              extractPromptSurface(frame) === SCHEDULE_SURFACE),
+              platformString(frame, "surface") === SCHEDULE_SURFACE),
         });
         if (fate === "refused") {
           outboundIdToClient.delete(outboundId);
@@ -1126,6 +1167,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       return sessionIsRunning(sessionId);
     },
 
+    sessionFrames(sessionId) {
+      return transcript.lines(sessionId);
+    },
+
     resetSession(sessionId) {
       tearDownSession(sessionId);
       deps.log?.(`reset session ${sessionId}`);
@@ -1159,61 +1204,25 @@ function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
   return parsed.success ? parsed.data : null;
 }
 
-function extractTailFlag(frame: unknown): boolean {
-  if (!isNonNullObject(frame)) return false;
+function platformField(frame: unknown, key: string): unknown {
+  if (!isNonNullObject(frame)) return undefined;
   const params = frame.params;
-  if (!isNonNullObject(params)) return false;
+  if (!isNonNullObject(params)) return undefined;
   const meta = params._meta;
-  if (!isNonNullObject(meta)) return false;
+  if (!isNonNullObject(meta)) return undefined;
   const platform = meta.platform;
-  if (!isNonNullObject(platform)) return false;
-  return platform.tail === true;
+  return isNonNullObject(platform) ? platform[key] : undefined;
 }
 
-function extractReplayBefore(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const meta = params._meta;
-  if (!isNonNullObject(meta)) return null;
-  const platform = meta.platform;
-  if (!isNonNullObject(platform)) return null;
-  const replayBefore = platform.replayBefore;
-  return typeof replayBefore === "string" && replayBefore.length > 0
-    ? replayBefore
-    : null;
-}
-
-function extractLoadToken(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const meta = params._meta;
-  if (!isNonNullObject(meta)) return null;
-  const platform = meta.platform;
-  if (!isNonNullObject(platform)) return null;
-  const loadToken = platform.loadToken;
-  return typeof loadToken === "string" && loadToken.length > 0
-    ? loadToken
-    : null;
+function platformString(frame: unknown, key: string): string | null {
+  const value = platformField(frame, key);
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function rehydrateFailureMessage(error: unknown): string {
   if (isNonNullObject(error) && typeof error.message === "string")
     return error.message;
   return "the harness could not load this conversation; the message was not sent";
-}
-
-function extractPromptId(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const meta = params._meta;
-  if (!isNonNullObject(meta)) return null;
-  const platform = meta.platform;
-  if (!isNonNullObject(platform)) return null;
-  const promptId = platform.promptId;
-  return typeof promptId === "string" && promptId.length > 0 ? promptId : null;
 }
 
 function extractUndeliveredId(frame: unknown): string | null {
@@ -1237,30 +1246,6 @@ function extractUndeliveredPrompts(
     .max(HANDOVER_PROMPT_CAP)
     .safeParse(params.prompts);
   return parsed.success ? parsed.data : null;
-}
-
-function extractRetryOf(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const meta = params._meta;
-  if (!isNonNullObject(meta)) return null;
-  const platform = meta.platform;
-  if (!isNonNullObject(platform)) return null;
-  const retryOf = platform.retryOf;
-  return typeof retryOf === "string" && retryOf.length > 0 ? retryOf : null;
-}
-
-function extractPromptSurface(frame: unknown): string | null {
-  if (!isNonNullObject(frame)) return null;
-  const params = frame.params;
-  if (!isNonNullObject(params)) return null;
-  const meta = params._meta;
-  if (!isNonNullObject(meta)) return null;
-  const platform = meta.platform;
-  if (!isNonNullObject(platform)) return null;
-  const surface = platform.surface;
-  return typeof surface === "string" && surface.length > 0 ? surface : null;
 }
 
 function withMcpServers(frame: object, extra: unknown[]): object {
@@ -1291,9 +1276,6 @@ function toAcpPlatformMeta(session: PodSession): Record<string, unknown> {
     createdAt: session.createdAt,
     running: session.running,
     ...(session.scheduleId !== null && { scheduleId: session.scheduleId }),
-    ...(session.experimentId !== null && {
-      experimentId: session.experimentId,
-    }),
     ...(session.initialization === true && { initialization: true }),
     ...(session.threadTs !== null && { threadTs: session.threadTs }),
     ...(session.seenAt !== null && { seenAt: session.seenAt }),
@@ -1362,6 +1344,27 @@ function extractStopReason(frame: unknown): string | null {
   return typeof stopReason === "string" && stopReason.length > 0
     ? stopReason
     : null;
+}
+
+function extractTurnError(frame: unknown): PlatformTurnEndedParams["error"] {
+  if (!isNonNullObject(frame)) return undefined;
+  const error = frame.error;
+  if (!isNonNullObject(error)) return undefined;
+  const message =
+    typeof error.message === "string" && error.message.length > 0
+      ? capped(error.message)
+      : "Internal error";
+  const details = jsonRpcErrorDetails(error.data);
+  return {
+    message,
+    ...(details !== undefined && { details: capped(details) }),
+  };
+}
+
+function capped(text: string): string {
+  return text.length > TURN_ERROR_TEXT_CAP
+    ? `${text.slice(0, TURN_ERROR_TEXT_CAP)}…`
+    : text;
 }
 
 function extractAgentTextChunk(frame: unknown): string | null {

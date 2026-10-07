@@ -271,6 +271,58 @@ describe("ensureReady", () => {
     ).toBe("2026-07-14T00:00:00Z");
   });
 
+  // TEST_SCENARIO: while an agent moves to the new runtime the controller holds it down until the copy has booted, so waiting for it would only run out the wake timeout. The wake refuses at once with a cause callers turn into "try again in a few minutes", and it does not poke the agent awake.
+  it("refuses at once while the agent is moving to the new runtime", async () => {
+    const obj = agentObj("a1", HIBERNATED);
+    obj.metadata!.annotations!["agent-platform.ai/runtime-migration"] =
+      "copying";
+    const { repo, store } = harness([obj]);
+    const err = await repo.ensureReady("a1").then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err) && err.failure).toEqual({
+      kind: "migrating",
+    });
+    expect(
+      store.get("a1")?.metadata?.annotations?.[
+        "agent-platform.ai/last-activity"
+      ],
+    ).toBeUndefined();
+  });
+
+  // TEST_SCENARIO: a migration that failed after it stopped the container keeps it stopped until the owner retries or aborts, so the wake is refused at once with a cause that says the move failed.
+  it("refuses at once while a failed migration keeps the agent stopped", async () => {
+    const obj = agentObj("a1", [
+      ...HIBERNATED,
+      { type: "RuntimeMigrating", status: "False", reason: "Failed" },
+    ]);
+    obj.metadata!.annotations!["agent-platform.ai/runtime-migration"] =
+      "requested";
+    obj.metadata!.annotations!["agent-platform.ai/runtime-migration-source"] =
+      "{}";
+    const { repo } = harness([obj]);
+    const err = await repo.ensureReady("a1").then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err) && err.failure).toEqual({
+      kind: "migration-failed",
+    });
+  });
+
+  // TEST_SCENARIO: through the preflight the container keeps running, so a wake for it is served as usual.
+  it("serves a wake during the preflight", async () => {
+    const obj = agentObj("a1", [
+      ...READY,
+      { type: "RuntimeMigrating", status: "True", reason: "Requested" },
+    ]);
+    obj.metadata!.annotations!["agent-platform.ai/runtime-migration"] =
+      "requested";
+    const { repo } = harness([obj]);
+    await expect(repo.ensureReady("a1")).resolves.toBeUndefined();
+  });
+
   it("late ready at the deadline counts as success", async () => {
     const { store, lines } = harness([agentObj("a1", HIBERNATED)]);
     const original = store.get("a1")!;
@@ -304,6 +356,175 @@ describe("ensureReady", () => {
   });
 });
 
+const PIN_KEY = "agent-platform.ai/invocations-active";
+
+describe("requestStop", () => {
+  it("clears the Invocation Pin", async () => {
+    const { repo, store } = harness([agentObj("a1", READY)]);
+    store.get("a1")!.metadata!.annotations![PIN_KEY] = "true";
+    await repo.requestStop("a1");
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("");
+  });
+});
+
+describe("releaseInvocationPin", () => {
+  const ACTIVITY_KEY = "agent-platform.ai/last-activity";
+
+  function pinnedHarness(pin: string) {
+    const obj = agentObj("a1", READY);
+    obj.metadata!.annotations![PIN_KEY] = pin;
+    obj.metadata!.annotations![ACTIVITY_KEY] = "1970-01-01T00:00:00Z";
+    (obj.metadata as { resourceVersion?: string }).resourceVersion = "7";
+    const { client, store } = fakeK8s([obj]);
+    const patches: unknown[] = [];
+    const recording: K8sClient = {
+      ...client,
+      async patchCustomObject(plural, name, body) {
+        patches.push(body);
+        return client.patchCustomObject(plural, name, body);
+      },
+    };
+    const repo = createAgentsRepository(
+      recording,
+      createLiveAgentStateCache(recording),
+    );
+    return { repo, store, patches };
+  }
+
+  // TEST_SCENARIO: the reconcile reads a pinned Driver's version before it checks the Driver's Invocations, so the release can be conditional on that read.
+  it("reads the version of a pinned Driver", async () => {
+    const { repo } = pinnedHarness("true");
+
+    expect(await repo.readInvocationPin("a1")).toBe("7");
+  });
+
+  // TEST_SCENARIO: a pause cleared the pin after the reconcile listed this Driver from the cache; the read reports it unpinned so its stale clock is left alone.
+  it("reads no version once the pin is gone", async () => {
+    const { repo, patches } = pinnedHarness("");
+
+    expect(await repo.readInvocationPin("a1")).toBeNull();
+    expect(patches).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the release bumps the Driver's activity and drops its pin in one write that is conditional on the version the reconcile read, so a pause or spawn landing in between makes the write fail.
+  it("clears the pin and bumps activity in one conditional write", async () => {
+    const { repo, store, patches } = pinnedHarness("true");
+
+    await repo.releaseInvocationPin("a1", "7");
+
+    const ann = store.get("a1")?.metadata?.annotations ?? {};
+    expect(ann[PIN_KEY]).toBe("");
+    expect(ann[ACTIVITY_KEY]).not.toBe("1970-01-01T00:00:00Z");
+    expect(patches).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ resourceVersion: "7" }),
+      }),
+    ]);
+  });
+});
+
+describe("setInvocationPin", () => {
+  const STOP_KEY = "agent-platform.ai/stop-requested";
+
+  function recordingHarness(stop: string) {
+    const obj = agentObj("a1", READY);
+    obj.metadata!.annotations![STOP_KEY] = stop;
+    (obj.metadata as { resourceVersion?: string }).resourceVersion = "7";
+    const { client, store } = fakeK8s([obj]);
+    const patches: unknown[] = [];
+    const recording: K8sClient = {
+      ...client,
+      async patchCustomObject(plural, name, body) {
+        patches.push(body);
+        return client.patchCustomObject(plural, name, body);
+      },
+    };
+    const repo = createAgentsRepository(
+      recording,
+      createLiveAgentStateCache(recording),
+    );
+    return { repo, store, patches };
+  }
+
+  // TEST_SCENARIO: a spawn pins its Driver with a write conditional on the object it read, so a pause landing in between makes the write fail rather than pin a paused Driver.
+  it("pins a running Driver in one conditional write", async () => {
+    const { repo, store, patches } = recordingHarness("");
+
+    expect(await repo.setInvocationPin("a1")).toBe(true);
+
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("true");
+    expect(patches).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ resourceVersion: "7" }),
+      }),
+    ]);
+  });
+
+  // TEST_SCENARIO: a Driver spawns inside the settle window of a pause; the pin would revive it once the pause settles, so the spawn leaves it unpinned.
+  it("writes nothing while a stop or pause stands", async () => {
+    const { repo, store, patches } = recordingHarness(
+      "2026-09-28T09:00:00.000Z",
+    );
+
+    expect(await repo.setInvocationPin("a1")).toBe(false);
+
+    expect(patches).toEqual([]);
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBeUndefined();
+  });
+
+  // TEST_SCENARIO: a sibling spawn pinned the Driver first; this spawn still writes, because the reconcile's release is conditional on the Driver's version and only a write makes a spawn landing in between fail it.
+  it("writes the pin again when the Driver is already pinned", async () => {
+    const { repo, store, patches } = recordingHarness("");
+    store.get("a1")!.metadata!.annotations![PIN_KEY] = "true";
+
+    expect(await repo.setInvocationPin("a1")).toBe(true);
+
+    expect(patches).toHaveLength(1);
+  });
+
+  function conflicting(times: number) {
+    const obj = agentObj("a1", READY);
+    (obj.metadata as { resourceVersion?: string }).resourceVersion = "7";
+    const { client, store } = fakeK8s([obj]);
+    let left = times;
+    const patches: unknown[] = [];
+    const racing: K8sClient = {
+      ...client,
+      async patchCustomObject(plural, name, body) {
+        patches.push(body);
+        if (left-- > 0) {
+          throw Object.assign(new Error("409 Conflict"), { code: 409 });
+        }
+        return client.patchCustomObject(plural, name, body);
+      },
+    };
+    const repo = createAgentsRepository(
+      racing,
+      createLiveAgentStateCache(racing),
+    );
+    return { repo, store, patches };
+  }
+
+  // TEST_SCENARIO: the Driver changed between the read and the write, by a controller status update or a sibling's pin; the spawn reads it again and writes again instead of failing.
+  it("reads again and retries a write that lost to a concurrent change", async () => {
+    const { repo, store, patches } = conflicting(2);
+
+    expect(await repo.setInvocationPin("a1")).toBe(true);
+
+    expect(patches).toHaveLength(3);
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("true");
+  });
+
+  // TEST_SCENARIO: a Driver that keeps changing under the write is not pinned silently; the spawn fails so it leaves no Invocation behind.
+  it("fails once the write keeps losing", async () => {
+    const { repo, patches } = conflicting(99);
+
+    await expect(repo.setInvocationPin("a1")).rejects.toThrow("409");
+
+    expect(patches).toHaveLength(5);
+  });
+});
+
 describe("requestPause settle", () => {
   const STOP_KEY = "agent-platform.ai/stop-requested";
 
@@ -318,6 +539,14 @@ describe("requestPause settle", () => {
     };
     await vi.advanceTimersByTimeAsync(5_000);
     expect(ann()[STOP_KEY]).toBe("");
+  });
+
+  // TEST_SCENARIO: a pause must win over running sub-agents; it clears the Invocation Pin along with the session pin, so nothing restarts the Driver once the pause settles.
+  it("clears the Invocation Pin", async () => {
+    const { repo, store } = harness([agentObj("a1", READY)]);
+    store.get("a1")!.metadata!.annotations![PIN_KEY] = "true";
+    await repo.requestPause("a1");
+    expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("");
   });
 
   it("leaves a stop stamped during the settle window in place", async () => {

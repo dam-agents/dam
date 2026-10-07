@@ -1,4 +1,3 @@
 #!/usr/bin/env bash
-#MISE sources=["src/**/*.rs", "platform-init/src/**/*.rs"]
 set -euo pipefail
 cargo fmt

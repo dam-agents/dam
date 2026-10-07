@@ -7,7 +7,7 @@ import { ConnectionIcon } from "../../../connections/components/connection-icon.
 export type BindMessenger = "slack" | "telegram";
 
 export const PICKER_WIDTH = "max-w-197";
-export const TEXT_WIDTH = "max-w-132";
+const TEXT_WIDTH = "max-w-132";
 
 interface Props {
   messenger: BindMessenger;

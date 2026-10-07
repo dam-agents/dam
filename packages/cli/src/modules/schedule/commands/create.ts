@@ -5,15 +5,10 @@ import {
   hasVisibleOccurrence,
 } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
-import { createAgentResolver } from "../../agent/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { printServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import {
-  EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
   EXIT_SUCCESS,
@@ -147,28 +142,19 @@ export function buildCreateCommand(deps: {
         process.exit(EXIT_INVALID_INPUT);
       }
 
-      const host = await resolveActiveHost(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: {
-          runtimeFailure: EXIT_RUNTIME_FAILURE,
-          belowFloor: EXIT_BELOW_FLOOR,
-        },
-      });
+      const host = await resolveActiveHost(deps, opts.server);
 
-      const resolver = createAgentResolver({
-        agentService: deps.createAgentService(host),
-      });
-      const resolved = await resolver.resolve(ref);
-      if (!resolved.ok) {
-        printResolveError(resolved.error, host);
-        process.exit(exitCodeForResolveError(resolved.error));
-      }
+      const agent = await resolveAgentOrExit(
+        deps.createAgentService(host),
+        ref,
+        host,
+      );
 
       if (opts.once) {
         const timezone = opts.timezone ?? detectTimezone();
         const created = await deps.createScheduleService(host).createOnce({
           name: opts.name,
-          agentId: resolved.value.id,
+          agentId: agent.id,
           task: opts.task,
           timezone,
           ...(at ? { at } : {}),
@@ -211,7 +197,7 @@ export function buildCreateCommand(deps: {
       }
       const timezone = opts.timezone ?? detectTimezone();
 
-      if (!hasVisibleOccurrence(rrule, quietHours)) {
+      if (!hasVisibleOccurrence(rrule, timezone, quietHours)) {
         process.stderr.write(
           "error: quiet hours cover every scheduled occurrence — this schedule would never fire\n",
         );
@@ -220,7 +206,7 @@ export function buildCreateCommand(deps: {
 
       const result = await deps.createScheduleService(host).createRRule({
         name: opts.name,
-        agentId: resolved.value.id,
+        agentId: agent.id,
         rrule,
         timezone,
         quietHours,

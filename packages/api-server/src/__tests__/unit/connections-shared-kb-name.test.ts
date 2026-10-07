@@ -82,6 +82,7 @@ function makeRepoFake() {
     },
     grant: async () => {},
     revoke: async () => {},
+    setPreferred: async () => {},
     listAgentGrants: async () => [],
     listConnectionsForAgent: async () => [],
     listAgentsForConnection: async () => [],
@@ -107,7 +108,6 @@ function makeSecretStoreFake(): {
     put: async (ref, fields) => {
       stored.set(ref.path, { ...fields });
     },
-    putField: async () => {},
     putFields: async (ref, fields) => {
       stored.set(ref.path, { ...(stored.get(ref.path) ?? {}), ...fields });
     },
@@ -116,7 +116,6 @@ function makeSecretStoreFake(): {
     delete: async (ref) => {
       stored.delete(ref.path);
     },
-    list: async () => [],
   };
   return { store, stored };
 }
@@ -150,6 +149,11 @@ function makeService(
       pendingStore: createMemoryTtlStore(600_000),
     }),
     githubAppEngine: createGitHubAppEngine(),
+    s3CredentialProbe: {
+      probe: async () => {
+        throw new Error("Unexpected dependency: s3CredentialProbe");
+      },
+    },
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
     connectionLock: <T>(key: string, fn: () => Promise<T>): Promise<T> => {

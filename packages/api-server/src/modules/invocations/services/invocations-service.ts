@@ -2,49 +2,52 @@ import { randomBytes } from "node:crypto";
 import { emit, EventType } from "../../../events.js";
 import Ajv, { type ValidateFunction } from "ajv";
 import {
+  type AgentSetup,
   type AgentsService,
   DEFAULT_INVOCATION_TTL_MS,
+  type InvocationHarnessConfig,
+  type InvocationView,
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
+  type ProviderPresetType,
+  type SkillSetApplyResult,
+  type SkillsService,
 } from "api-server-api";
-import type { RuntimeMutator } from "../../runtime-delivery/index.js";
+import {
+  type RuntimeMutator,
+  workspaceCommandEvent,
+} from "../../runtime-delivery/index.js";
+import { harnessConfigEvent } from "../../harness-config/index.js";
 import { generateK8sName } from "../../agents/infrastructure/configmap-mappers.js";
+import { createInputFromSetup } from "../../agents/index.js";
+import { getLogger } from "../../../core/logger.js";
+import {
+  type DriverProvider,
+  inheritProvider,
+} from "../domain/provider-inheritance.js";
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
-import { invocationTargetName } from "../domain/target-name.js";
+import {
+  invocationScheduleId,
+  invocationTargetName,
+} from "../domain/target-name.js";
+import { createSetupFailure } from "./setup-failure.js";
+import {
+  HARNESS_CONFIG_STEP,
+  type ReadHarnessConfigSupport,
+} from "../domain/harness-config-refusal.js";
+import { harnessConfigRefusalFor } from "./harness-config-check.js";
 import type { DriverResolution } from "./driver-resolution.js";
 import type { TargetAdmission } from "./target-admission.js";
+import { REPORT_GRACE_MS, type TargetReaper } from "./target-reaper.js";
 import type {
+  InvocationOrigin,
   InvocationsRepository,
-  InvocationStatus,
 } from "../infrastructure/invocations-repository.js";
-
-export {
-  DEFAULT_INVOCATION_TTL_MS,
-  MIN_INVOCATION_TTL_MS,
-  MAX_INVOCATION_TTL_MS,
-};
-
-export function resolveInvocationTtlMs(ttlMs: number | undefined): number {
-  if (ttlMs === undefined) return DEFAULT_INVOCATION_TTL_MS;
-  return Math.min(
-    MAX_INVOCATION_TTL_MS,
-    Math.max(MIN_INVOCATION_TTL_MS, ttlMs),
-  );
-}
 
 export class AttenuationError extends Error {
   constructor(public readonly offending: string[]) {
     super(`connections not granted to the driver: ${offending.join(", ")}`);
     this.name = "AttenuationError";
-  }
-}
-
-export class ExperimentNotRunningError extends Error {
-  constructor(experimentId: string) {
-    super(
-      `experiment ${experimentId} is not running; spawns attached to it are rejected`,
-    );
-    this.name = "ExperimentNotRunningError";
   }
 }
 
@@ -64,17 +67,34 @@ export class InvalidSchemaError extends Error {
   }
 }
 
+export class ProviderMismatchError extends Error {
+  constructor(offered: ProviderPresetType[], runsOn: ProviderPresetType[]) {
+    super(
+      `the target cannot run on the driver's provider (${offered.join(", ")}); it runs on ${runsOn.join(", ")}`,
+    );
+    this.name = "ProviderMismatchError";
+  }
+}
+
+export interface SpawnTarget {
+  templateId?: string;
+  image?: string;
+  runsOn?: ProviderPresetType[];
+}
+
 export interface SpawnInput {
   driverAgentId: string;
   driverGrantIds: string[];
-  templateId?: string;
-  image?: string;
+  driverProviders: DriverProvider[];
+  target: SpawnTarget;
+  setup: AgentSetup;
   connections: string[];
   prompt: string;
   schema: unknown;
+  label?: string;
   ttlMs?: number;
-  size?: { cpu?: string; memory?: string };
-  experimentSpanId?: string;
+  harnessConfig?: InvocationHarnessConfig;
+  origin?: InvocationOrigin;
 }
 
 export interface RecordResult {
@@ -87,8 +107,15 @@ export interface InvocationsService {
   get(
     invocationId: string,
     driverAgentId: string,
-  ): Promise<{ status: InvocationStatus; result: unknown } | null>;
+  ): Promise<InvocationView | null>;
   recordResult(invocationId: string, result: unknown): Promise<RecordResult>;
+}
+
+function skillsSkippedReason(
+  skipped: SkillSetApplyResult["skipped"],
+): string | null {
+  if (skipped.length === 0) return null;
+  return skipped.map((s) => `${s.name} (${s.reason})`).join(", ");
 }
 
 export function createInvocationsService(deps: {
@@ -98,15 +125,21 @@ export function createInvocationsService(deps: {
   driverResolution: DriverResolution;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<void>;
-  isExperimentRunning?: (
-    experimentId: string,
-    driverAgentId: string,
-  ) => Promise<boolean>;
+  readHarnessConfigSupport: ReadHarnessConfigSupport;
   targetAdmission?: TargetAdmission;
+  reaper: TargetReaper;
+  reportGraceMs?: number;
+  skills?: Pick<SkillsService, "applyEntries">;
+  pinDriver?: (driverAgentId: string) => Promise<void>;
   now?: () => Date;
 }): InvocationsService {
   const now = deps.now ?? (() => new Date());
+  const reportGraceMs = deps.reportGraceMs ?? REPORT_GRACE_MS;
   const ajv = new Ajv({ allErrors: true, strict: false });
+  const failSetup = createSetupFailure({
+    repo: deps.repo,
+    reaper: deps.reaper,
+  });
 
   function compileSchema(schema: unknown): ValidateFunction {
     try {
@@ -135,20 +168,24 @@ export function createInvocationsService(deps: {
 
       compileSchema(input.schema);
 
+      const provider = inheritProvider(
+        input.driverProviders,
+        input.target.runsOn,
+      );
+      if (provider.kind === "incompatible")
+        throw new ProviderMismatchError(
+          provider.offered,
+          input.target.runsOn ?? [],
+        );
+
+      const created = createInputFromSetup(input.setup);
       if (deps.targetAdmission) {
         await deps.targetAdmission.assertCanEverFit({
-          ...(input.templateId ? { templateId: input.templateId } : {}),
-          ...(input.size ? { size: input.size } : {}),
+          ...(input.target.templateId
+            ? { templateId: input.target.templateId }
+            : {}),
+          ...(created.size ? { size: created.size } : {}),
         });
-      }
-
-      if (input.experimentSpanId && deps.isExperimentRunning) {
-        const experimentId = input.experimentSpanId.split("/", 1)[0]!;
-        if (
-          !(await deps.isExperimentRunning(experimentId, input.driverAgentId))
-        ) {
-          throw new ExperimentNotRunningError(experimentId);
-        }
       }
 
       const rootId = await deps.driverResolution.resolveRoot(
@@ -159,31 +196,55 @@ export function createInvocationsService(deps: {
       }
 
       const targetId = generateK8sName("agent");
-      const expiresAt = new Date(
-        now().getTime() + resolveInvocationTtlMs(input.ttlMs),
-      );
+      const ttlMs =
+        input.ttlMs === undefined
+          ? DEFAULT_INVOCATION_TTL_MS
+          : Math.min(
+              MAX_INVOCATION_TTL_MS,
+              Math.max(MIN_INVOCATION_TTL_MS, input.ttlMs),
+            );
+      const expiresAt = new Date(now().getTime() + ttlMs);
       await deps.repo.insert({
         id: targetId,
         driverAgentId: input.driverAgentId,
+        rootDriverId: rootId,
         owner: deps.owner,
+        label: input.label ?? null,
+        prompt: input.prompt,
+        templateId: input.target.templateId ?? null,
+        image: input.target.image ?? null,
+        connections: input.connections,
+        cpu: created.size?.cpu ?? null,
+        memory: created.size?.memory ?? null,
+        ttlMs,
         resultSchema: input.schema,
         expiresAt,
-        experimentSpanId: input.experimentSpanId ?? null,
+        harnessConfig: input.harnessConfig ?? null,
+        origin: input.origin ?? "script",
       });
       let agent;
       try {
+        await deps.pinDriver?.(input.driverAgentId);
         agent = await deps.agents.create({
           id: targetId,
-          name: invocationTargetName(randomBytes(6).toString("hex")),
+          name: invocationTargetName(
+            randomBytes(6).toString("hex"),
+            input.label,
+          ),
           sweepable: true,
           egressPreset: "none",
           telemetryAttributionId: rootId,
-          ...(input.templateId ? { templateId: input.templateId } : {}),
-          ...(input.image ? { image: input.image } : {}),
+          ...(input.target.templateId
+            ? { templateId: input.target.templateId }
+            : {}),
+          ...(input.target.image ? { image: input.target.image } : {}),
+          ...created,
           ...(input.connections.length
             ? { connectionIds: input.connections }
             : {}),
-          ...(input.size ? { size: input.size } : {}),
+          ...(provider.kind === "inherited"
+            ? { providerConnectionId: provider.id }
+            : {}),
         });
       } catch (err) {
         await deps.repo.delete(targetId).catch(() => {});
@@ -200,20 +261,67 @@ export function createInvocationsService(deps: {
         prompt: input.prompt,
         resultSchema: input.schema,
       });
-      await deps.runtimeMutator.bump(agent.id, [
-        {
-          id: `invocation:${agent.id}:${now().getTime()}`,
-          kind: "trigger",
-          payload: {
-            scheduleId: `invocation:${agent.id}`,
-            task,
-            sessionMode: "fresh",
+      const at = now();
+      try {
+        if (input.harnessConfig) {
+          await deps.runtimeMutator.bump(agent.id, [
+            harnessConfigEvent(
+              agent.id,
+              input.harnessConfig,
+              at.getTime(),
+              expiresAt,
+            ),
+          ]);
+        }
+        await deps.runtimeMutator.bump(agent.id, [
+          ...(input.setup.install
+            ? [
+                workspaceCommandEvent(
+                  "invocation-install",
+                  agent.id,
+                  input.setup.install.command,
+                  at,
+                ),
+              ]
+            : []),
+          {
+            id: `${invocationScheduleId(agent.id)}:${at.getTime()}`,
+            kind: "trigger",
+            payload: {
+              scheduleId: invocationScheduleId(agent.id),
+              task,
+              sessionMode: "fresh",
+            },
+            expiresAt,
           },
-          expiresAt,
-        },
-      ]);
+        ]);
+      } catch (err) {
+        await deps.agents.delete(agent.id).catch(() => {});
+        await deps.repo.delete(targetId).catch(() => {});
+        throw err;
+      }
       await deps.runtimeMutator.enqueueAfterCommit(agent.id);
       await deps.wakeAgent(agent.id);
+
+      if (input.setup.skills.length > 0 && deps.skills) {
+        let reason: string | null = null;
+        try {
+          const applied = await deps.skills.applyEntries({
+            agentId: agent.id,
+            skills: input.setup.skills,
+          });
+          reason = skillsSkippedReason(applied.skipped);
+        } catch (err) {
+          reason = err instanceof Error ? err.message : String(err);
+        }
+        if (reason !== null) {
+          getLogger().warn(
+            { agentId: agent.id, reason },
+            "invocations: the target's skills could not be applied",
+          );
+          await failSetup(agent.id, "skills", reason);
+        }
+      }
 
       return { id: agent.id };
     },
@@ -236,6 +344,16 @@ export function createInvocationsService(deps: {
       if (row.status !== "running") {
         return { ok: false, errors: `invocation already ${row.status}` };
       }
+      const refusal = await harnessConfigRefusalFor(
+        row,
+        deps.readHarnessConfigSupport,
+      );
+      if (refusal) {
+        return {
+          ok: false,
+          errors: await failSetup(invocationId, HARNESS_CONFIG_STEP, refusal),
+        };
+      }
       const validate = compileSchema(row.resultSchema);
       const value = coerceResult(result, validate);
       if (!validate(value)) {
@@ -245,9 +363,11 @@ export function createInvocationsService(deps: {
       if (!stored) {
         return { ok: false, errors: "invocation is no longer running" };
       }
-      try {
-        await deps.agents.delete(invocationId);
-      } catch {}
+      const timer = setTimeout(
+        () => void deps.reaper.reap({ id: row.id, owner: row.owner }),
+        reportGraceMs,
+      );
+      timer.unref();
       return { ok: true };
     },
   };

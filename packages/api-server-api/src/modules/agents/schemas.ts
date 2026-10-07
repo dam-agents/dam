@@ -52,11 +52,15 @@ export const agentPauseInputSchema = idSchema;
 export const agentUpgradeInputSchema = idSchema.extend({
   expectedToImage: z.string().min(1).optional(),
 });
+export const agentMigrateRuntimeInputSchema = idSchema;
+export const agentPlanRuntimeMigrationInputSchema = idSchema;
+export const agentAbortRuntimeMigrationInputSchema = idSchema;
+export const agentRetryRuntimeMigrationInputSchema = idSchema;
 export const agentDisconnectSlackInputSchema = idSchema.extend({
   slackChannelId: z.string().min(1).optional(),
 });
 
-export const agentKindSchema = z.enum(["knowledge-base", "experiment"]);
+export const agentKindSchema = z.enum(["knowledge-base"]);
 
 export const AGENT_ID_RE = /^agent-[0-9a-f]{16}$/;
 
@@ -85,6 +89,7 @@ export const agentCreateInputSchema = z
       .optional(),
     egressPreset: egressPresetSchema.optional(),
     hibernationTimeoutMin: z.number().int().min(0).optional(),
+    requireConnectionAddress: z.boolean().optional(),
     gitRepo: z
       .object({
         url: z.url(),
@@ -114,6 +119,7 @@ export const agentUpdateInputSchema = z.object({
   secretRef: z.string().optional(),
   hibernationTimeoutMin: z.number().int().min(0).nullable().optional(),
   size: agentSizeSchema.optional(),
+  requireConnectionAddress: z.boolean().optional(),
 });
 
 export const agentConnectSlackInputSchema = z.object({

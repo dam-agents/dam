@@ -1,0 +1,2 @@
+# Staged as .miserc.toml: harness.<agent>.toml loads only under -E <agent>.
+env_conf_d = true

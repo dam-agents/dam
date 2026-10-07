@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+#MISE description="CI only: print an e2e run's per-phase timings as Markdown, from the marks in E2E_TIMINGS and the Playwright JSON report in E2E_REPORT_JSON"
+#MISE hide=true
+# cd.yml's vm lane appends this to the job summary, so a change to the lane
+# can be judged by where its time went. The marks are "<epoch seconds>\t<phase>" lines: e2e_mark in
+# .mise/lib/cluster.sh writes them from cluster:install, e2e:install and
+# e2e:run, and the workflow adds the job's start and the times its background
+# k3s provision and image fetch finished. By path, like image:resolve; it
+# needs only jq, and never fails the job: a missing input prints a note.
+set -uo pipefail
+
+marks="${E2E_TIMINGS:-}"
+report="${E2E_REPORT_JSON:-}"
+
+echo "### e2e timings"
+echo
+if [ -z "$marks" ] || [ ! -s "$marks" ]; then
+  echo "No timing marks were recorded (E2E_TIMINGS is unset or empty)."
+  exit 0
+fi
+
+sort -n -s -k1,1 "$marks" | jq -rRs '
+  [split("\n")[] | select(length > 0) | split("\t") | {t: (.[0] | tonumber), phase: .[1]}] as $m
+  | ($m[0].t) as $t0
+  | (reduce $m[] as $x ({}; if has($x.phase) then . else .[$x.phase] = $x.t end)) as $at
+  | def span($from; $to):
+      if ($at[$from] != null and $at[$to] != null) then "\($at[$to] - $at[$from])s" else "n/a" end;
+    "| Phase | Duration |",
+    "|---|---|",
+    "| job start → k3s up | \(span("job started"; "k3s provisioned")) |",
+    "| job start → images ready | \(span("job started"; "images ready")) |",
+    "| install start → platform images loaded | \(span("install started"; "platform images loaded")) |",
+    "| platform images loaded → deployments ready | \(span("platform images loaded"; "deployments ready")) |",
+    "| stage-vm (its own run) | \(span("vm images staging started"; "vm images staging done")) |",
+    "| deployments ready → vm images staged (on the critical path) | \(span("deployments ready"; "vm images staged")) |",
+    "| install start → gate passed | \(span("install started"; "gate passed")) |",
+    "| suite | \(span("suite started"; "suite finished")) |",
+    "| **job start → suite finished** | **\(span("job started"; "suite finished"))** |",
+    "",
+    "<details><summary>Every mark</summary>",
+    "",
+    "| +s | Phase |",
+    "|---|---|",
+    ($m[] | "| \(.t - $t0) | \(.phase) |"),
+    "",
+    "</details>"
+'
+
+echo
+if [ -z "$report" ] || [ ! -s "$report" ]; then
+  echo "No Playwright JSON report (E2E_REPORT_JSON is unset or missing)."
+  exit 0
+fi
+jq -r '
+  def epoch: sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601;
+  [.. | objects | select(has("projectName") and has("results"))
+      | {project: .projectName, result: (.results[-1] // null)}
+      | select(.result != null)
+      | {project, status: .result.status,
+         start: (.result.startTime | epoch),
+         end: ((.result.startTime | epoch) + (.result.duration / 1000))}] as $tests
+  | ($tests | map(.start) | min) as $s0
+  | "Suite: \($tests | length) tests, \($tests | map(select(.status == "passed")) | length) passed, \($tests | map(select(.status != "passed" and .status != "skipped")) | length) failed, \($tests | map(select(.status == "skipped")) | length) skipped; wall \((($tests | map(.end) | max) - $s0) | floor)s.",
+    "",
+    "| Project | Tests | Starts at +s | Ends at +s | Wall |",
+    "|---|---|---|---|---|",
+    ($tests | group_by(.project) | map({
+        project: .[0].project, n: length,
+        start: (map(.start) | min), end: (map(.end) | max)})
+      | sort_by(.start)[]
+      | "| \(.project) | \(.n) | \((.start - $s0) | floor) | \((.end - $s0) | floor) | \((.end - .start) | floor)s |")
+' "$report" || echo "The Playwright JSON report could not be read."

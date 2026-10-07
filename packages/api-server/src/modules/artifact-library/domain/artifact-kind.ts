@@ -104,7 +104,7 @@ function detectTextKind(content: string): ArtifactKind | null {
   return null;
 }
 
-export function looksLikeText(content: Buffer): boolean {
+function looksLikeText(content: Buffer): boolean {
   const probe = content.subarray(0, 8192);
   return !probe.includes(0);
 }

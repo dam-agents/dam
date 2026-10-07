@@ -1,12 +1,12 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-09-24
+Last verified: 2026-10-07
 
 ## Overview
 
 How a desired configuration reaches a running Agent, and how one-shot directives are executed there exactly once.
 
-Eight subsystems push through this machinery — agents, connections, experiments, harness config, invocations, knowledge bases, schedules, and skills all produce Contributions or Events, and none of them owns the delivery path. What a Connection is and which rail each Contribution kind takes is [connections](connections.md); everything from the outbox onward is here.
+Seven subsystems push through this machinery — agents, connections, harness config, invocations, knowledge bases, schedules, and skills all produce Contributions or Events, and none of them owns the delivery path. What a Connection is and which rail each Contribution kind takes is [connections](connections.md); everything from the outbox onward is here.
 
 The subsystem cuts across two bounded contexts:
 
@@ -48,22 +48,20 @@ State changes write to the outbox, the worker reads and dispatches a fresh paylo
 
 ### Event
 
-A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` of the form `<key>:<epoch-ms>` (stable across redeliveries; an id without the timestamp never runs — see below), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl. The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh, and optionally gated by the schedule's Precheck — see [schedules](schedules.md#precheck)), **schedule-reset** (clear a schedule's state), **workspace-seed** (bring a repository into the work directory or the agent's home — a create's `gitRepo` or a kit's `seed`; on a branch pinned to a commit and tracking its origin, or a tag or commit detached; in place, never by clearing it), **workspace-command** (run a one-shot shell command in the workspace — a starter kit's or an experiment's install bootstrap), **initialization** (open the agent's first chat session with the turn the platform composed at create — a kit's briefing, or the onboarding command an experiment installs; queued behind the create's workspace events, so it opens once the workspace is ready), **satellite-outcome** (open a session carrying the result of a job a [satellite](satellites.md) finished, which outlived the turn that started it), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file). Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
+A one-shot directive the agent executes through a per-kind handler inside the agent-runtime. Each event carries an `id` of the form `<key>:<epoch-ms>` (stable across redeliveries; an id without the timestamp never runs — see below), a `kind`, a kind-specific `payload`, the agent-monotonic `version` slot it occupies, and an `expiresAt` ttl. The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh, and optionally gated by the schedule's Precheck — see [schedules](schedules.md#precheck)), **schedule-reset** (clear a schedule's state), **workspace-seed** (bring a repository into the work directory or the agent's home — a create's `gitRepo` or a kit's `seed`; on a branch pinned to a commit and tracking its origin, or a tag or commit detached; in place, never by clearing it), **workspace-command** (run a one-shot shell command in the workspace — a starter kit's or a spawned sub-agent's install bootstrap), **initialization** (open the agent's first chat session with the turn the platform composed at create — a kit's briefing or its onboarding command; queued behind the create's workspace events, so it opens once the workspace is ready), **satellite-outcome** and **sub-agent-outcome** (open or continue a session with the result of a [satellite](satellites.md) job or a sub-agent that outlived its turn), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file). Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
-While a workspace-mutating event (`workspace-seed`, `workspace-command`) is pending for an agent, the agent surfaces as *preparing workspace* rather than running, so chat waits for the mutation to settle instead of racing it. The events queued behind it wait too: a workspace mutation whose handler fails **halts the rest of that agent's events** until it settles — an initialization session never opens on a seed or install that has not happened — and the runtime **reports the failure with its reason** over the event report, so the row carries "refusing to seed a non-empty work directory" rather than a bare attempt count. The report is announced as an agent change the moment it lands — through the same outcome-handler seam the schedules use for Precheck verdicts — so a watching UI shows the failure while the platform is still retrying, not only once it has given up. The agent view surfaces it as `workspaceFailures`: the newest row per workspace kind carrying an error, its place in the attempt budget, whether the platform has given up. The chat names the reason and, while the retries last, the attempt it is on, so a step with minutes of budget left does not read as hung; past that it offers a retry that queues the same step again. A clean settle clears the error and is announced the same way, since no Agent resource changed behind it.
+While a workspace-mutating event (`workspace-seed`, `workspace-command`) is pending for an agent, the agent surfaces as *preparing workspace* rather than running, so chat waits for the mutation to settle instead of racing it. The events queued behind it wait too: a workspace mutation whose handler fails **halts the rest of that agent's events** until it settles — an initialization session never opens on a seed or install that has not happened — and the runtime **reports the failure with its reason** over the event report, so the row carries "refusing to seed a non-empty work directory" rather than a bare attempt count. The report is announced as an agent change the moment it lands — through the outcome-handler seam the schedules share, which isolates each kind's reactions so one that fails cannot silence the rest — so a watching UI shows the failure while the platform is still retrying, not only once it has given up. The agent view surfaces the newest failure per workspace kind: its error, its place in the attempt budget, whether the platform has given up. The chat names the reason and, while the retries last, the attempt it is on, so a step with minutes of budget left does not read as hung; past that it offers a retry that queues the same step again. A clean settle clears the error and is announced the same way, since no Agent resource changed behind it.
 
 Because a pending workspace mutation blocks the agent, its delivery is bounded rather than open-ended: the cron sweep keeps re-enqueuing the agent while the per-event attempt budget lasts, and once it is exhausted the worker stamps the event dispatched with a recorded error. A workspace-mutating kind the agent's runtime does not advertise is stamped the same way at dispatch time — capability filtering would drop it from every payload, so it could never settle. Both exits announce the same agent change as a clean settle, so the agent leaves *preparing workspace* instead of sitting there until the event's TTL; the mutation itself did not happen, which the event row's error records.
 
-`harness-config` carries the model/mode/config-defaults choices a user makes in the Config panel: one event per action, written once into the harness's own configuration file and never re-asserted, so the file stays the user's to edit. The mapping and option catalog its manifest declares, live model discovery, the seeded model, and the snapshot that renders the panel while the agent is stopped are owned by [harness configuration](harness-config.md).
+`harness-config` carries model/mode/config-defaults choices from the Config panel or a spawn: one event per action, written once into the harness's own configuration file and never re-asserted, so the file stays the user's to edit. The mapping and option catalog its manifest declares, live model discovery, the seeded model, and the snapshot that renders the panel while the agent is stopped are owned by [harness configuration](harness-config.md).
 
 All event kinds are built-in to every agent: the agent advertises the full set on `hello`, single-sourced from the schema enum. Contribution kinds, by contrast, are gated by what the manifest's drivers declare — so capability filtering applies to contributions, not events. (`harness-config` is the carve-out: every agent can receive the event, but only one whose manifest declares a `harness-config` driver has anywhere to write it — so it advertises a `harnessConfig` capability flag the UI gates on, and the handler no-ops without it.)
 
 
 ## The runtime channel
 
-Three tRPC routes, prefixed by protocol-major version (`runtime.v1.*`) —
-`applyState` into the agent, and `hello` plus the artifact-touch report from
-it. Adding a new contribution kind, event kind, or optional payload field stays on `v1` — capability flags carry the gate; new majors only on semantic break.
+The routes are prefixed by protocol-major version (`runtime.v1.*`). Adding a new contribution kind, event kind, or optional payload field stays on `v1` — capability flags carry the gate; new majors only on semantic break.
 
 ```mermaid
 sequenceDiagram
@@ -122,9 +120,9 @@ Unlike `hello`, it is not part of catch-up: it settles nothing, acks nothing, an
 
 Called on boot, on wake from hibernation, and on any agent-side reconnect. It never carries state itself — if the reported cursor is behind it enqueues a worker dispatch, and the catch-up arrives as an ordinary `applyState`. If the Contribution and Event kinds it advertises differ from the set on record, it first raises the desired version, which puts the row behind and so enqueues by the same rule.
 
-The call reports the agent's applied cursor (version and hash), its protocol and runtime versions, and its capability set — which contribution and event kinds it can apply, and which optional surfaces its image serves: harness configuration, and the pod's own watch surface for live updates. A surface the runtime does not claim is treated as absent, so an older image degrades to the polled path rather than to a broken one; each claim gates both the UI surfaces that read it and the platform's pod-facing streams. Because the claim decides membership in those streams, receiving it is itself an Agent change that the platform announces.
+The call reports the agent's applied cursor, its protocol and runtime versions, and its capabilities: the contribution and event kinds it can apply, and the optional surfaces its image serves (harness configuration, the pod's live-updates watch surface). A surface the runtime does not claim is treated as absent, so an older image degrades to the polled path rather than to a broken one; before its first hello an agent is unknown, not outdated, and is polled. Each claim gates both the UI surfaces that read it and the platform's pod-facing streams. Because the claim decides membership in those streams, receiving it is itself an Agent change that the platform announces.
 
-The returned `events` array is always empty today — catch-up state and events arrive via the worker's `applyState`, never inline.
+An agent reports itself as never applied when its cursor no longer describes its disk: its home lost the env file the last delivery wrote, as after a runtime migration, or its image binds its contribution drivers differently from when it applied. The platform then re-delivers the whole snapshot to every driver.
 
 ```mermaid
 sequenceDiagram
@@ -133,7 +131,7 @@ sequenceDiagram
   participant HS as harness-API-server
   participant PG as Postgres
 
-  RT->>HS: runtime.v1.hello (lastAppliedVersion, lastAppliedHash, capabilities)
+  RT->>HS: runtime.v1.hello (applied cursor, capabilities)
   HS->>PG: compare reported cursor with outbox version
   HS->>HS: enqueue worker dispatch if behind
   HS-->>RT: events: []
@@ -141,7 +139,7 @@ sequenceDiagram
   RT->>RT: reconcile contributions, run per-kind event handlers
 ```
 
-`hello` is read-only with respect to the outbox — the worker dispatch it enqueues is what stamps `dispatched_at`. Events never travel inside the `hello` response; they ride the `applyState` that follows.
+`hello` is read-only with respect to the outbox — the worker dispatch it enqueues is what stamps `dispatched_at`. Events never travel inside the `hello` response.
 
 ### Per-kind event handlers (agent-side)
 
@@ -173,7 +171,7 @@ sequenceDiagram
   RT->>RT: reconcile contributions
   RT->>RT: per-kind handler for E1.kind — does the work, records E1's run in the local state store
   RT-->>WK: appliedVersion=V, appliedHash
-  WK->>PG: UPDATE runtime_events SET dispatched_at = now() where version up to V AND dispatched_at IS NULL
+  WK->>PG: stamp the undispatched events up to V dispatched
   Note over WK: Next dispatch state-builder excludes E1
 ```
 
@@ -183,15 +181,9 @@ If the agent runs the handler but crashes before sending the apply response, the
 
 If the handler ran but the apply response is lost, same path — redelivery settles from the state store and the cursor advances. Re-fire is possible only if the crash lands between the side effect and the state-store write.
 
-If the handler succeeds and the agent acks but then crashes before doing anything else, that's fine — events are already marked dispatched.
-
-### Server-side `dispatched_at` stamping
-
-Owned by the worker, set in the apply-ack transaction using the cursor. The per-kind handler does not touch the outbox — its job is the side effect; dedupe bookkeeping lives in the agent's local state store.
-
 ### Expiry
 
-Event rows carry a producer-set `expires_at`; a schedule fire expires at its next occurrence to bound backlog ([schedules](schedules.md#fire)). The state-builder keeps live, undispatched events; the cron sweep deletes and counts expired ones `dropped-expired`, and notifies its kind listener. The agent checks incoming TTLs as defense in depth.
+Event rows carry a producer-set `expires_at` so a stale backlog never replays — schedules choose it per kind of fire ([schedules](schedules.md#fire), [on-demand run](schedules.md#on-demand-run)). The state-builder keeps live, undispatched events; the cron sweep deletes and counts expired ones `dropped-expired`, and notifies its kind listener. The agent checks incoming TTLs as defense in depth.
 
 ## Outbox + events
 
@@ -270,9 +262,7 @@ Redis is the signal path; BullMQ stores job state in Redis with relaxed durabili
 
 Every agent image ships a `runtime-manifest.yaml`. Each `drivers:` entry binds a kind — contribution **or** event — to an impl, resolved uniformly through the plugin registry. Built-in drivers are **on by default** with default bindings, so a manifest declares an entry only to *configure* a kind (e.g. `harness-config`'s file/keys/catalog), *override* its impl, or *disable* it with `false`; `impl` defaults to the kind name (so it's named only to override). The kinds advertised on `hello` are derived at boot from the resolved drivers — the built-in defaults, plus what the manifest declares, minus what it disables — never declared separately. Validated against a versioned schema at boot; fail-fast on a malformed manifest or an unknown kind.
 
-The shipped manifests live beside their agents in [`packages/agents/`](../../packages/agents/).
-
-The manifest declares only `drivers` and optional `extensions`; there is no `capabilities` block — advertised kinds are derived at runtime from the resolved drivers.
+The default shipped manifest lives in the shared base, [`packages/agents/base/`](../../packages/agents/base/), a harness's own in its directory beside it.
 
 A harness that needs custom code for a kind — contribution or event — rebinds that kind to a fresh impl name supplied under `extensions.impls`, naming the module to load it from; the built-in stays registered but unbound. Custom impl names may not collide with a built-in name — registration rejects collision and boot fails loud.
 
@@ -291,7 +281,7 @@ A harness that needs custom code for a kind — contribution or event — rebind
 2. Adds new contributions, updates changed ones, removes anything no longer in the snapshot.
 3. Returns per-driver outcome.
 
-Removal semantics depend on the kind and merge mode. For `file` contributions: `overwrite` and `section-marker` and `key-targeted` modes remove cleanly; `yaml-fill-if-missing` is the legacy carve-out — additive only, removal leaves stale entries until the user edits the file. New file producers must pick a remove-safe mode.
+Removal semantics depend on the kind and merge mode. For `file` contributions: `overwrite`, `section-marker` and `key-targeted` modes remove cleanly; `yaml-fill-if-missing` is the legacy carve-out — additive only, removal leaves stale entries until the user edits the file. New file producers must pick a remove-safe mode. A key-targeted write parses the file in its own format — ini included, whose sections are its top-level keys, so one file can hold a profile per Connection — and owns only the keys it wrote: a key that leaves a still-contributed path is removed exactly as a path that leaves the snapshot is, and the user's own entries beside them survive, though in the driver's serialisation (comments do not).
 
 Applying a snapshot ends with a post-apply hook: after contributions dispatch and events settle, the runtime hands the snapshot's contribution list to a composition-time subscriber — on every non-stale apply, driver failures included, so a consumer that must err toward acting sees failed installs too. Image-skill reconciliation rides it ([agent-skills](agent-skills.md#image-skill-lifecycle)).
 
@@ -346,19 +336,19 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
 | Postgres `agent_env` | User-typed env per agent | The Environment editor's store — read by the state-builder as `env` contributions, ordered first. |
 | Postgres `runtime_state_outbox` | One row per agent — the desired version, the two cursors behind it, and the Contribution kinds the last delivery dropped | Compared against the applied hash by the sweep; the dropped kinds are what the owner-facing warning reads. |
 | Postgres `runtime_events` | One row per pending event | Read by the state-builder; stamped by the worker as the agent settles each id, and claimed by the agent's own event report when one arrives. |
-| Runtime-state file on the agent PVC | The applied cursor and per-key event last-run timestamps | The timestamps settle redelivered events without re-firing; the cursor answers contribution staleness. |
+| Runtime-state file on the agent PVC | The applied cursor, the driver bindings it was applied under, and per-key event last-run timestamps | The timestamps settle redelivered events without re-firing; the cursor answers contribution staleness. |
 | Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path, for as long as the agent is running. |
 | Per-agent PVC env snapshot file | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot (in [`packages/agent-runtime/`](../../packages/agent-runtime/)); read by the harness/terminal spawn paths. |
 | `agents` table | Runtime registration per agent (protocol and runtime versions, advertised capabilities, last hello) plus the harness-config snapshot | Registration is rewritten on every `hello`; the snapshot on every apply, and on every pod report that changes it. |
 | Per-Agent PVC | Materialized files, MCP config, installed skills | Driver-written via runtime channel. |
-| Per-driver state file on the agent PVC | Driver's tracking of what it has previously written | Per-contribution-driver, opt-in. Section-marker file driver doesn't need it; key-targeted does. |
+| Per-driver state file on the agent PVC | Driver's tracking of what it has previously written | Per-contribution-driver, opt-in. Every file mode records the path; key-targeted also its keys. |
 
 ## Invariants
 
 - **One agent's delivery never waits on another's.** Every shared stage is either per-agent (the deduplication key, the outbox row lock, the agent-runtime's serialized apply, the connection to the pod) or held only for milliseconds (Postgres reads, the job fetch). The only long hold is the HTTP call itself, bounded by its deadline and by one active job per key, and the worker runs far more of those concurrently than agents can occupy. A wedged agent slows only its own deliveries.
 - **Mutation handlers never wait on agent reachability.** The user-facing response returns after the local transaction + BullMQ enqueue; delivery is the worker's concern. A hibernated, restarting, or unreachable agent does not delay or fail user actions.
 - **Postgres is the source of truth.** Every agent-bound change has a durable representation (a Connection grant, an outbox row, an event row) before any wire activity. BullMQ jobs and runtime-channel calls are signal/delivery paths only; either may fail or be replayed without correctness loss, with the cron sweep as the recovery path for a running agent and `hello` for one that wakes.
-- **State snapshots are idempotent, and the version bumps for every change to what the agent should hold.** That is each contribution edit, and a `hello` whose advertised Contribution or Event kinds differ from the set on record — the payload that agent should receive changes with them. Drivers tolerate repeated apply, and the agent rejects strictly older pushes, so replay across a reconnect cannot regress state. The sweep and a plain `hello` catch-up enqueue without a bump, and both fire only for a row the agent is behind — the sweep additionally only for an agent that is running — so a caught-up row cannot start a dispatch under a reader.
+- **State snapshots are idempotent, and the version bumps for every change to what the agent should hold.** That is each contribution edit, and a `hello` whose advertised Contribution or Event kinds differ from the set on record — the payload that agent should receive changes with them. Drivers tolerate repeated apply — a reconnect's replay, or the full re-apply an image that rebinds them asks for — and the agent rejects strictly older pushes, so neither regresses state. The sweep and a plain `hello` catch-up enqueue without a bump, and both fire only for a row the agent is behind — the sweep additionally only for an agent that is running — so a caught-up row cannot start a dispatch under a reader.
 - **Events fire once per dedupe key and fire time.** The agent's local state store (a per-key last-run timestamp, persisted on the PVC) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
 - **Events settle per id, contributions per version.** The worker stamps `dispatched_at` for the events the agent reports it ran, whatever the contribution outcome.
 - **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server's callbacks: `hello`, the artifact-touch report — the agent-runtime saying which session produced an artifact version, having seen the platform tool's marked result in that session's ACP stream — the session-directory report below, and the event report. The receiving side verifies the artifact belongs to the calling agent and never overwrites another session's attribution; the semantics live with [the artifact library](artifact-library.md).

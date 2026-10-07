@@ -1,4 +1,4 @@
-{{- $appName := printf "%s-apiserver" (include "platform.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $appName := include "platform.apiserver.fullname" . }}
 {{- $harnessSvc := printf "%s-harness" $appName | trunc 63 | trimSuffix "-" }}
 ---
 # Public Service. Carries only the public HTTP/tRPC port; harness
@@ -82,10 +82,13 @@ spec:
       # and K8s doesn't restart a pod when a mounted ConfigMap changes — so roll
       # the pod when the rendered templates change, making `helm upgrade` of a
       # template take effect instead of serving stale ones until the next restart.
+      # Credentials arrive through secretKeyRefs, which a Secret change doesn't
+      # refresh either, so the credentials Secret rolls the pod the same way.
       {{- $checksums := dict
             "checksum/harness-templates" (include (print $.Template.BasePath "/harness-templates.yaml") . | sha256sum)
             "checksum/starter-kits" (include (print $.Template.BasePath "/starter-kits.yaml") . | sha256sum)
-            "checksum/git-repos" (include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum) }}
+            "checksum/git-repos" (include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum)
+            "checksum/credentials" (include (print $.Template.BasePath "/apiserver/credentials.yaml") . | sha256sum) }}
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.apiServer "internal" $checksums) | nindent 6 }}
     spec:
       enableServiceLinks: false
@@ -179,7 +182,7 @@ spec:
             - name: MCP_PORT
               value: {{ .Values.apiServer.harnessServerPort | quote }}
             - name: PLATFORM_HARNESS_SERVER_URL
-              value: "http://{{ include "platform.fullname" . }}-apiserver-harness.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiServer.harnessServerPort }}"
+              value: {{ include "platform.apiserver.harnessUrl" . | quote }}
             - name: EXT_AUTHZ_PORT
               value: {{ .Values.apiServer.extAuthzPort | quote }}
             - name: UI_BASE_URL
@@ -192,11 +195,17 @@ spec:
             {{- end }}
             {{- if .Values.apiServer.slackBotToken }}
             - name: SLACK_BOT_TOKEN
-              value: {{ .Values.apiServer.slackBotToken | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: SLACK_BOT_TOKEN
             {{- end }}
             {{- if .Values.apiServer.slackAppToken }}
             - name: SLACK_APP_TOKEN
-              value: {{ .Values.apiServer.slackAppToken | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: SLACK_APP_TOKEN
             {{- end }}
             {{- if .Values.apiServer.slackClientId }}
             - name: SLACK_CLIENT_ID
@@ -204,7 +213,14 @@ spec:
             {{- end }}
             {{- if .Values.apiServer.slackClientSecret }}
             - name: SLACK_CLIENT_SECRET
-              value: {{ .Values.apiServer.slackClientSecret | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: SLACK_CLIENT_SECRET
+            {{- end }}
+            {{- if .Values.apiServer.slackTokenRotation }}
+            - name: SLACK_TOKEN_ROTATION
+              value: "true"
             {{- end }}
             {{- if .Values.apiServer.slackEnterpriseId }}
             - name: SLACK_ENTERPRISE_ID
@@ -212,11 +228,17 @@ spec:
             {{- end }}
             {{- if .Values.apiServer.telegramBotToken }}
             - name: TELEGRAM_BOT_TOKEN
-              value: {{ .Values.apiServer.telegramBotToken | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: TELEGRAM_BOT_TOKEN
             {{- end }}
             {{- if .Values.apiServer.imgbbApiKey }}
             - name: IMGBB_API_KEY
-              value: {{ .Values.apiServer.imgbbApiKey | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: IMGBB_API_KEY
             {{- end }}
             {{- if .Values.apiServer.telegramBotName }}
             - name: TELEGRAM_BOT_USERNAME
@@ -229,6 +251,8 @@ spec:
             {{- if .Values.virtualization.enabled }}
             - name: VIRTUALIZATION_ENABLED
               value: "true"
+            - name: RUNTIME_MIGRATION_RETENTION
+              value: {{ (.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString | quote }}
             {{- end }}
             {{- if .Values.apiServer.activityTracking.enabled }}
             - name: ACTIVITY_TRACKING_ENABLED
@@ -315,6 +339,15 @@ spec:
               value: {{ .Values.controller.agent.templateDefaults.resources.limits.cpu | quote }}
             - name: AGENT_DEFAULT_MEMORY_LIMIT
               value: {{ .Values.controller.agent.templateDefaults.resources.limits.memory | quote }}
+            # The size a persisted mount without one of its own gets, which a
+            # runtime migration falls back to when it sizes the moved agent's
+            # disk for its home.
+            - name: AGENT_DEFAULT_STORAGE_SIZE
+              value: {{ .Values.controller.agent.templateDefaults.storageSize | quote }}
+            # The mounts the controller renders for an Agent that names none,
+            # which a runtime migration plans from as the controller does.
+            - name: AGENT_DEFAULT_MOUNTS
+              value: {{ .Values.controller.agent.templateDefaults.mounts | default list | toJson | replace "$HOME" "/home/agent" | quote }}
             # Default per-user ceiling (#1900), same value the controller
             # enforces with; display-only here (the meter's ceiling figure).
             - name: DEFAULT_USER_CPU_BUDGET
@@ -339,17 +372,20 @@ spec:
             - name: STARTER_KITS_CATALOGS
               value: {{ $catalogs | toJson | quote }}
             {{- end }}
+            {{- with .Values.starterKits.pinned }}
+            - name: STARTER_KITS_PINNED
+              value: {{ . | quote }}
+            {{- end }}
             {{- $ghe := dig "enterprise" dict (.Values.github | default dict) }}
-            {{- $gheSecret := $ghe.tokenSecret | default dict }}
             {{- $gheHost := $ghe.host | default (dig "oauthAppDefaults" "githubEnterprise" "host" "" .Values.apiServer) }}
-            {{- if and $gheHost $gheSecret.name }}
+            {{- if and $gheHost $ghe.token }}
             - name: GITHUB_ENTERPRISE_HOST
               value: {{ $gheHost | quote }}
             - name: GITHUB_ENTERPRISE_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ $gheSecret.name | quote }}
-                  key: {{ $gheSecret.key | default "token" | quote }}
+                  name: {{ include "platform.apiserver.secrets.fullname" . }}
+                  key: GITHUB_ENTERPRISE_TOKEN
             {{- end }}
             {{- with .Values.apiServer.oauthAppDefaults.github }}
             {{- if .clientId }}
@@ -358,7 +394,10 @@ spec:
             {{- end }}
             {{- if .clientSecret }}
             - name: PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET
-              value: {{ .clientSecret | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: PLATFORM_DEFAULT_GITHUB_CLIENT_SECRET
             {{- end }}
             {{- if .appSlug }}
             - name: PLATFORM_DEFAULT_GITHUB_APP_SLUG
@@ -376,7 +415,10 @@ spec:
             {{- end }}
             {{- if .clientSecret }}
             - name: PLATFORM_DEFAULT_GHE_CLIENT_SECRET
-              value: {{ .clientSecret | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: PLATFORM_DEFAULT_GHE_CLIENT_SECRET
             {{- end }}
             {{- if .appSlug }}
             - name: PLATFORM_DEFAULT_GHE_APP_SLUG
@@ -390,7 +432,10 @@ spec:
             {{- end }}
             {{- if .clientSecret }}
             - name: PLATFORM_DEFAULT_SLACK_CLIENT_SECRET
-              value: {{ .clientSecret | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: PLATFORM_DEFAULT_SLACK_CLIENT_SECRET
             {{- end }}
             {{- end }}
             - name: REDIS_URL
@@ -399,7 +444,7 @@ spec:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ printf "%s-auth" (include "platform.redis.fullname" .) }}
+                  name: {{ include "platform.redis.authSecretName" . }}
                   key: password
             {{- end }}
             - name: APPROVAL_HOLD_SECONDS
@@ -499,6 +544,10 @@ spec:
             - name: LINKS_COMPUTE_REQUEST
               value: {{ .Values.links.computeRequest | quote }}
             {{- end }}
+            {{- if .Values.links.slackInstallRequest }}
+            - name: LINKS_SLACK_INSTALL_REQUEST
+              value: {{ .Values.links.slackInstallRequest | quote }}
+            {{- end }}
             {{- if .Values.clickstack.enabled }}
             # The api-server's own operational telemetry (request traces,
             # per-procedure metrics, logs) exports OTLP straight to the
@@ -507,7 +556,7 @@ spec:
             # namespace. The SDK only activates when this endpoint env is
             # present.
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://{{ include "platform.clickstack.collector.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:4318"
+              value: "http://{{ include "platform.clickstack.collector.host" . }}:4318"
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
               value: "http/protobuf"
             - name: OTEL_SERVICE_NAME
@@ -561,7 +610,7 @@ spec:
           # drivers polling through it with a 503 ("upstream connect error ...
           # connection termination"); a missed liveness check restarts the
           # container and kills every in-flight mesh connection at once. Both
-          # read as an api-server outage to an experiment loop, which has no
+          # read as an api-server outage to a driver's spawn, which has no
           # retry. Slow must degrade, not restart — same intent as the Keycloak
           # note above, which a 1s timeout silently defeats.
           readinessProbe:

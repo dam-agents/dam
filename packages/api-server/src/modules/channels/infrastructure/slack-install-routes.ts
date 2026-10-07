@@ -5,6 +5,7 @@ import type { TtlStore } from "../../../core/ttl-store.js";
 import type { SlackInstallService } from "../services/slack-install-service.js";
 import { securityLog } from "../../../core/security-log.js";
 import { formatError } from "../../../core/format-error.js";
+import { rotatingTokenFrom } from "./slack-token-rotation.js";
 
 const EXCHANGE_TIMEOUT_MS = 10_000;
 
@@ -16,6 +17,8 @@ export const SLACK_INSTALL_BOT_SCOPES = [
   "reactions:read",
   "channels:read",
   "groups:read",
+  "mpim:read",
+  "im:read",
   "im:write",
   "users:read",
   "users:read.email",
@@ -69,6 +72,8 @@ interface SlackOAuthAccessResponse {
   ok?: boolean;
   error?: string;
   access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
   team?: { id?: string; name?: string };
   enterprise?: { id?: string; name?: string } | null;
 }
@@ -77,18 +82,22 @@ async function exchangeInstallCode(
   oauth: SlackInstallOAuthConfig,
   code: string,
 ): Promise<SlackOAuthAccessResponse> {
-  const res = await fetch("https://slack.com/api/oauth.v2.access", {
-    method: "POST",
-    signal: AbortSignal.timeout(EXCHANGE_TIMEOUT_MS),
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      code,
-      client_id: oauth.clientId,
-      client_secret: oauth.clientSecret,
-      redirect_uri: oauth.callbackUrl,
-    }),
-  });
-  return (await res.json()) as SlackOAuthAccessResponse;
+  try {
+    const res = await fetch("https://slack.com/api/oauth.v2.access", {
+      method: "POST",
+      signal: AbortSignal.timeout(EXCHANGE_TIMEOUT_MS),
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: oauth.clientId,
+        client_secret: oauth.clientSecret,
+        redirect_uri: oauth.callbackUrl,
+      }),
+    });
+    return (await res.json()) as SlackOAuthAccessResponse;
+  } catch (err) {
+    return { ok: false, error: formatError(err) };
+  }
 }
 
 async function revokeToken(token: string): Promise<string | null> {
@@ -107,17 +116,6 @@ async function revokeToken(token: string): Promise<string | null> {
     return body.error ?? `http-${res.status}`;
   } catch (err) {
     return formatError(err);
-  }
-}
-
-async function exchangeOrError(
-  oauth: SlackInstallOAuthConfig,
-  code: string,
-): Promise<SlackOAuthAccessResponse> {
-  try {
-    return await exchangeInstallCode(oauth, code);
-  } catch (err) {
-    return { ok: false, error: formatError(err) };
   }
 }
 
@@ -181,7 +179,7 @@ export function createSlackInstallRoutes(deps: SlackInstallRoutesDeps) {
       return c.text("Invalid or expired install link. Ask for a new one.", 400);
     }
 
-    const result = await exchangeOrError(deps.oauth, code);
+    const result = await exchangeInstallCode(deps.oauth, code);
     const teamId = result.team?.id;
     if (!result.ok || !result.access_token || !teamId) {
       securityLog("error", "slack.install.failed", {
@@ -217,10 +215,15 @@ export function createSlackInstallRoutes(deps: SlackInstallRoutesDeps) {
       );
     }
 
+    const rotating = rotatingTokenFrom(result, Date.now());
     await deps.installs.record({
       teamId,
       teamName: result.team?.name ?? null,
       botToken: result.access_token,
+      rotation: rotating && {
+        refreshToken: rotating.refreshToken,
+        expiresAt: rotating.expiresAt,
+      },
       installedBy: pending.startedBy || null,
     });
 

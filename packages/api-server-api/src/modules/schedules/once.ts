@@ -9,11 +9,7 @@ export const OnceResult = {
 } as const;
 
 export type OnceState =
-  | "pending"
-  | "delivering"
-  | "completed"
-  | "missed"
-  | "failed";
+  "pending" | "delivering" | "completed" | "missed" | "failed";
 
 export function onceState(
   status: ScheduleStatus | null | undefined,

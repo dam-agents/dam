@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-09-23
+Last verified: 2026-10-01
 
 ## Overview
 
@@ -8,7 +8,7 @@ Last verified: 2026-09-23
 feature defaults **off**; a user opts in through a hidden "Experimental
 features" settings tab (revealed by five taps on the version string). The
 current features are advanced connection types, the new sandbox runtime,
-interactive artifacts, session costs, agent telemetry (a per-reply timeline
+interactive artifacts, session costs, addressed credential injection (a create-page and agent-settings switch for an agent whose gateway injects only requests that name a connection; a starter kit sets the same field whatever the flag says), agent telemetry (a per-reply timeline
 in the conversation) and agent avatars (a robot head drawn in the browser from
 a hash of the agent's name and its owner's identity, so nothing is stored,
 two people's default-named agents look different, and renaming an agent
@@ -18,13 +18,13 @@ browser: where a workspace grants the persona scope, the api-server uploads a
 PNG copy to a public image host for the message icon, whatever the owner's
 flag says ([channels](channels.md#slack-scopes-required-vs-optional)). Graduating a feature to always-on is deletion: drop its
 id from the enum and its gates from the UI — stored rows for a dropped id are
-simply never read again (Experiments, Knowledge Bases and the
+simply never read again (Knowledge Bases and the
 [starter kit](starter-kits.md) catalog graduated this way).
 
 A per-user flag says what a user wants to see; it cannot say what the install
 can do. The same module therefore answers a second, install-wide question —
 whether this deployment supports microVMs — read from the chart's own value
-rather than from any stored row. A surface that needs both, like either form that
+rather than from any stored row. The settings tab leaves the new sandbox runtime out entirely on an install that cannot run it, since its switch would change nothing there. A surface that needs both, like either form that
 creates an agent, asks both and acts only once each has answered: an unanswered
 question reads like a no, and an agent would otherwise be created as
 something its author did not choose. **A kit that declares `backend: vm` is the exception, and reads neither answer**

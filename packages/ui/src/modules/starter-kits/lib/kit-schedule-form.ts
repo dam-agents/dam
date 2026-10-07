@@ -97,7 +97,7 @@ function cadenceOf(values: ScheduleFormValues): string {
   return JSON.stringify(CADENCE_FIELDS.map((field) => values[field]));
 }
 
-export function cadenceEdited(
+function cadenceEdited(
   schedule: StarterKitSchedule,
   values: ScheduleFormValues,
 ): boolean {
@@ -120,12 +120,12 @@ export function keepsDeclaredCron(
   return "cron" in schedule && keepsDeclaredTiming(schedule, values);
 }
 
-export type KitScheduleFormOverride = Omit<
+type KitScheduleFormOverride = Omit<
   StarterKitScheduleOverride,
   "name" | "timing"
 > & { timing: { rrule: string; timezone: string } | undefined };
 
-export function precheckFromForm(
+function precheckFromForm(
   schedule: StarterKitSchedule,
   values: ScheduleFormValues,
 ): string | null | undefined {

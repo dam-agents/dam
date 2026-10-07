@@ -6,11 +6,13 @@ import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
-import { StarterKitSetupView } from "./modules/agents/views/agent-create-view.js";
-import { CodingAgentSetupView } from "./modules/agents/views/coding-agent-setup-view.js";
+import {
+  AgentCreateView,
+  StarterKitSetupView,
+} from "./modules/agents/views/agent-create-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import {
-  NotificationsBell,
+  ActivityButton,
   NotificationsPanel,
 } from "./modules/home/components/notifications-panel.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
@@ -18,6 +20,7 @@ import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
+import { isDarkTheme } from "./modules/platform/store/theme.js";
 import { PendingBindModal } from "./modules/sandboxes/components/channels/pending-bind-modal.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
@@ -37,12 +40,10 @@ export default function App() {
 
   useEffect(() => {
     const apply = () => {
-      const t = useStore.getState().theme;
-      const isDark =
-        t === "dark" ||
-        (t === "system" &&
-          window.matchMedia("(prefers-color-scheme: dark)").matches);
-      document.documentElement.classList.toggle("dark", isDark);
+      document.documentElement.classList.toggle(
+        "dark",
+        isDarkTheme(useStore.getState().theme),
+      );
     };
     apply();
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -60,8 +61,8 @@ const SETUP_VIEWS = new Set<Route["view"]>(["agent-new", "starter-kit-new"]);
 
 function MainApp() {
   const view = useStore((s) => s.view);
-  const activityOpen = useStore((s) => s.activityOpen);
-  const setActivityOpen = useStore((s) => s.setActivityOpen);
+  const activityOpen = useStore((s) => s.activityView !== null);
+  const setActivityView = useStore((s) => s.setActivityView);
 
   useLiveEvents();
   useAgentCrashToasts();
@@ -97,14 +98,14 @@ function MainApp() {
           <div className="relative z-content flex-1 min-w-0">
             <div className="pointer-events-none absolute top-0 right-0 z-raised px-4 pt-3 md:px-6">
               <div className="pointer-events-auto">
-                <NotificationsBell onOpen={() => setActivityOpen(true)} />
+                <ActivityButton onOpen={() => setActivityView("feed")} />
               </div>
             </div>
             <ChatView />
           </div>
         </div>
         {activityOpen && (
-          <NotificationsPanel onClose={() => setActivityOpen(false)} />
+          <NotificationsPanel onClose={() => setActivityView(null)} />
         )}
         <DialogOverlay />
         <PendingBindModal />
@@ -119,7 +120,7 @@ function MainApp() {
         <main className="relative z-content flex flex-1 flex-col overflow-y-auto">
           <div className="pointer-events-none sticky top-0 z-raised flex justify-end px-4 pt-3 md:px-6">
             <div className="pointer-events-auto">
-              <NotificationsBell onOpen={() => setActivityOpen(true)} />
+              <ActivityButton onOpen={() => setActivityView("feed")} />
             </div>
           </div>
           {view === "sandbox-home" ? (
@@ -140,7 +141,7 @@ function MainApp() {
               {view === "home" ? (
                 <HomeView />
               ) : view === "agent-new" ? (
-                <CodingAgentSetupView />
+                <AgentCreateView kit={null} />
               ) : view === "settings" ? (
                 <SettingsView />
               ) : view === "starter-kits" || view === "starter-kit" ? (
@@ -160,7 +161,7 @@ function MainApp() {
         </main>
       </div>
       {activityOpen && (
-        <NotificationsPanel onClose={() => setActivityOpen(false)} />
+        <NotificationsPanel onClose={() => setActivityView(null)} />
       )}
       <DialogOverlay />
       <PendingBindModal />

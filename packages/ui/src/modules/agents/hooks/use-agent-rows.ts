@@ -5,20 +5,21 @@ import type { AgentView, TemplateView } from "../../../types.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import { slotUnitOf } from "../../budgets/lib/slots.js";
 import { useAppConnections } from "../../connections/api/queries.js";
-import { useDriverSummaries } from "../../experiments/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
 import { useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
-import { isExperimentSandbox } from "../utils/agent-kind.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
 import {
   sandboxSubtitle,
   type SandboxSubtitleLookup,
 } from "../utils/sandbox-subtitle.js";
+import { useMigrateRuntime } from "./use-migrate-runtime.js";
 import {
   useRestartAgent,
   useSyncRestartingAgents,
 } from "./use-restart-agent.js";
+import { useRuntimeMigrationControls } from "./use-runtime-migration-controls.js";
+import { useSlowStartIds } from "./use-slow-start.js";
 import { useSuspendAgent, useSyncPausingAgents } from "./use-suspend-agent.js";
 import { useUpdateSandbox } from "./use-update-sandbox.js";
 import { useWakeAgent } from "./use-wake-agent.js";
@@ -31,17 +32,19 @@ export function useAgentRows() {
   const { data: agentsData } = useAgents();
   const connections = useAppConnections();
   const { data: budget } = useBudgetReserved();
-  const { data: driverSummaries } = useDriverSummaries({ silent: true });
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
   const pausingAgents = useStore((s) => s.pausingAgents);
   useSyncPausingAgents();
+  const slowStartIds = useSlowStartIds();
 
   const deleteAgent = useDeleteAgent();
   const suspend = useSuspendAgent();
   const { restart: restartAgent } = useRestartAgent();
   const wakeAgent = useWakeAgent();
   const update = useUpdateSandbox();
+  const migrate = useMigrateRuntime();
+  const migrationControls = useRuntimeMigrationControls();
 
   const restartingIds = useMemo(
     () => new Set(restartingAgents.keys()),
@@ -51,16 +54,6 @@ export function useAgentRows() {
     () => new Set(pausingAgents.keys()),
     [pausingAgents],
   );
-
-  const experimentCountByDriver = useMemo(() => {
-    if (!driverSummaries) return undefined;
-    return new Map(
-      driverSummaries.map((summary) => [
-        summary.driverAgentId,
-        new Set(summary.experiments.map((e) => e.name)).size,
-      ]),
-    );
-  }, [driverSummaries]);
 
   const subtitleLookup = useMemo<SandboxSubtitleLookup>(
     () => ({
@@ -75,18 +68,23 @@ export function useAgentRows() {
 
   const rowProps = (agent: AgentView) => ({
     agent,
-    display: resolveAgentDisplay(agent, restartingIds, pausingIds),
-    subtitle: sandboxSubtitle(agent, subtitleLookup, {
-      experimentCount:
-        isExperimentSandbox(agent) && experimentCountByDriver
-          ? (experimentCountByDriver.get(agent.id) ?? 0)
-          : undefined,
-    }),
+    display: resolveAgentDisplay(
+      agent,
+      restartingIds,
+      pausingIds,
+      slowStartIds,
+    ),
+    subtitle: sandboxSubtitle(agent, subtitleLookup),
     deletePending:
       deleteAgent.isPending && deleteAgent.variables?.id === agent.id,
     updatePending: update.updatingId === agent.id,
     updateBusy: update.updatingId !== null || update.updatingAll,
     onUpdate: () => void update.updateOne(agent),
+    migratePending: migrate.isMigrating(agent.id),
+    onMigrate: () => void migrate.migrateOne(agent),
+    migrationControlsBusy: migrationControls.isBusy(agent.id),
+    onAbortMigration: () => void migrationControls.abortOne(agent),
+    onRetryMigration: () => void migrationControls.retryOne(agent),
     onWake: () => wakeAgent.wake(agent.id),
     onRestart: () => restartAgent(agent.id),
     onPause: () => suspend.pause(agent.id),

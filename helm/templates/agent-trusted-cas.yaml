@@ -1,0 +1,20 @@
+{{- /*
+The CAs every agent trusts beside its gateway's own: the extra CAs the
+install names for a TLS-inspecting proxy beyond the gateways
+(controller.gatewayUpstreamExtraCAs), which also intercepts the hosts a
+gateway passes through untouched. Agent pods project it next to their
+gateway CA under /etc/platform/ca; the controller names it.
+*/}}
+{{- with .Values.controller.gatewayUpstreamExtraCAs }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-trusted-cas
+  namespace: {{ $.Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+    agent-platform.ai/managed-by: platform-helm
+data:
+  extra-cas.crt: |
+    {{- . | nindent 4 }}
+{{- end }}

@@ -13,6 +13,7 @@ export type EgressPreset = z.infer<typeof egressPresetSchema>;
 export type EgressRuleSource =
   | "manual"
   | "inbox"
+  | "kit"
   | `connection:${string}`
   | "preset:trusted"
   | "preset:all";

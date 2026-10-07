@@ -1,17 +1,7 @@
 import type {
-  SkillDeleteLocalInput,
-  SkillInstallInput,
-  SkillPublishInput,
-  SkillListLocalInput,
-  SkillReadLocalInput,
-  SkillReadPullRequestInput,
-  SkillReadSkillFileInput,
   Result,
-  SkillScanInput,
   SkillsDomainError,
   SkillsService,
-  SkillUninstallInput,
-  SkillWriteLocalInput,
 } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
 import { makeSkillName, type SkillName } from "../domain/skill-name.js";
@@ -54,112 +44,81 @@ function validateNameAndPaths(
 
 export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
   return {
-    install: (input: SkillInstallInput) => doInstall(deps, input),
-    uninstall: (input: SkillUninstallInput) => doUninstall(deps, input),
-    listLocal: (input?: SkillListLocalInput) => doListLocal(deps, input),
-    readLocal: (input: SkillReadLocalInput) => doReadLocal(deps, input),
-    readPullRequest: (input: SkillReadPullRequestInput) =>
+    async install(input) {
+      const validated = validateNameAndPaths(input.name, input.skillPaths);
+      if (!validated.ok) return validated;
+      return runInstall(
+        deps,
+        validated.value.name,
+        validated.value.skillPaths,
+        input,
+      );
+    },
+    async uninstall(input) {
+      const validated = validateNameAndPaths(input.name, input.skillPaths);
+      if (!validated.ok) return validated;
+      await deps.repo.remove(validated.value.name, validated.value.skillPaths);
+      return ok(undefined);
+    },
+    async listLocal(input) {
+      const skills = await deps.repo.listLocal(
+        deps.skillPaths,
+        deps.pristineSkillPaths,
+        input?.hashNames ? new Set(input.hashNames) : undefined,
+      );
+      return ok(skills);
+    },
+    async readLocal(input) {
+      const name = makeSkillName(input.name);
+      if (!name.ok) return name;
+      return deps.repo.readLocal(name.value, deps.skillPaths);
+    },
+    readPullRequest: (input) =>
       deps.github.getPullRequest(
         { owner: input.owner, repo: input.repo },
         input.number,
       ),
-    deleteLocal: (input: SkillDeleteLocalInput) => doDeleteLocal(deps, input),
-    writeLocal: (input: SkillWriteLocalInput) =>
-      runWriteLocal(deps, deps.skillPaths, input),
-    readSkillFile: (input: SkillReadSkillFileInput) =>
-      doReadSkillFile(deps, input),
-    scan: (input: SkillScanInput) => runScan(deps, input),
-    publish: (input: SkillPublishInput) => doPublish(deps, input),
+    async deleteLocal(input) {
+      const name = makeSkillName(input.name);
+      if (!name.ok) return name;
+      const resolved = await deps.repo.resolveLocalSkillDir(
+        name.value,
+        deps.skillPaths,
+      );
+      if (!resolved) return ok(undefined);
+      await deps.repo.remove(resolved.dir, deps.skillPaths);
+      return ok(undefined);
+    },
+    writeLocal: (input) => runWriteLocal(deps, deps.skillPaths, input),
+    async readSkillFile(input) {
+      const host = detectGithubOwnerRepo(input.source);
+      if (!host) {
+        return err({
+          kind: "SourceFetchFailed",
+          source: input.source,
+          detail: "not a github.com repository",
+        });
+      }
+      if (subPathEscapes(input.dir)) {
+        return err({
+          kind: "SourceFetchFailed",
+          source: input.source,
+          detail: `skill dir rejected: ${input.dir}`,
+        });
+      }
+      const read = await deps.github.getFileContent(
+        host,
+        input.version,
+        `${input.dir}/SKILL.md`,
+      );
+      if (!read.ok) return read;
+      return ok({ content: read.value });
+    },
+    scan: (input) => runScan(deps, input),
+    async publish(input) {
+      const name = makeSkillName(input.name);
+      if (!name.ok) return name;
+      return runPublish(deps, name.value, deps.skillPaths, input);
+    },
   };
-}
-
-async function doInstall(deps: SkillsServiceDeps, input: SkillInstallInput) {
-  const validated = validateNameAndPaths(input.name, input.skillPaths);
-  if (!validated.ok) return validated;
-  return runInstall(
-    deps,
-    validated.value.name,
-    validated.value.skillPaths,
-    input,
-  );
-}
-
-async function doReadSkillFile(
-  deps: SkillsServiceDeps,
-  input: SkillReadSkillFileInput,
-): Promise<Result<{ content: string }, SkillsDomainError>> {
-  const host = detectGithubOwnerRepo(input.source);
-  if (!host) {
-    return err({
-      kind: "SourceFetchFailed",
-      source: input.source,
-      detail: "not a github.com repository",
-    });
-  }
-  if (subPathEscapes(input.dir)) {
-    return err({
-      kind: "SourceFetchFailed",
-      source: input.source,
-      detail: `skill dir rejected: ${input.dir}`,
-    });
-  }
-  const read = await deps.github.getFileContent(
-    host,
-    input.version,
-    `${input.dir}/SKILL.md`,
-  );
-  if (!read.ok) return read;
-  return ok({ content: read.value });
-}
-
-async function doUninstall(
-  deps: SkillsServiceDeps,
-  input: SkillUninstallInput,
-) {
-  const validated = validateNameAndPaths(input.name, input.skillPaths);
-  if (!validated.ok) return validated;
-  await deps.repo.remove(validated.value.name, validated.value.skillPaths);
-  return ok(undefined);
-}
-
-async function doListLocal(
-  deps: SkillsServiceDeps,
-  input?: SkillListLocalInput,
-) {
-  const skills = await deps.repo.listLocal(
-    deps.skillPaths,
-    deps.pristineSkillPaths,
-    input?.hashNames ? new Set(input.hashNames) : undefined,
-  );
-  return ok(skills);
-}
-
-async function doReadLocal(
-  deps: SkillsServiceDeps,
-  input: SkillReadLocalInput,
-) {
-  const name = makeSkillName(input.name);
-  if (!name.ok) return name;
-  return deps.repo.readLocal(name.value, deps.skillPaths);
-}
-
-async function doDeleteLocal(
-  deps: SkillsServiceDeps,
-  input: SkillDeleteLocalInput,
-) {
-  const name = makeSkillName(input.name);
-  if (!name.ok) return name;
-  const resolved = await deps.repo.resolveLocalSkillDir(
-    name.value,
-    deps.skillPaths,
-  );
-  if (!resolved) return ok(undefined);
-  await deps.repo.remove(resolved.dir, deps.skillPaths);
-  return ok(undefined);
-}
-
-async function doPublish(deps: SkillsServiceDeps, input: SkillPublishInput) {
-  const name = makeSkillName(input.name);
-  if (!name.ok) return name;
-  return runPublish(deps, name.value, deps.skillPaths, input);
 }

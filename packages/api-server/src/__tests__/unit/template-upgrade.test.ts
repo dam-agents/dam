@@ -26,17 +26,27 @@ function infraAgent(overrides?: Partial<InfraAgent>): InfraAgent {
   };
 }
 
-function templateSpec(image: string): TemplateSpec {
-  return { version: "agent-platform.ai/v1", image, category: "harness" };
+function templateSpec(
+  image: string,
+  extra?: Partial<TemplateSpec>,
+): TemplateSpec {
+  return {
+    version: "agent-platform.ai/v1",
+    image,
+    category: "harness",
+    ...extra,
+  };
 }
 
 function harness(opts?: {
   agent?: InfraAgent | null;
   templateImage?: string | null;
+  template?: Partial<TemplateSpec>;
 }) {
   const agent = opts?.agent === undefined ? infraAgent() : opts.agent;
-  const patchImage = vi.fn(async (_id: string, image: string) =>
-    agent ? { ...agent, spec: { ...agent.spec, image } } : null,
+  const patchSpec = vi.fn(
+    async (_id: string, patch: { image: string; harness?: string }) =>
+      agent ? { ...agent, spec: { ...agent.spec, ...patch } } : null,
   );
   const run = executeTemplateUpgrade({
     owner: OWNER,
@@ -47,12 +57,12 @@ function harness(opts?: {
         : {
             spec: templateSpec(
               opts?.templateImage ?? "quay.io/dam-agents/claude-code:0.2.8",
+              opts?.template,
             ),
-            isOwned: false,
           },
-    patchImage,
+    patchSpec,
   });
-  return { run, patchImage };
+  return { run, patchSpec };
 }
 
 describe("templateImageUpdate", () => {
@@ -76,13 +86,32 @@ describe("template upgrade flow", () => {
   it("patches the agent onto the template's current image", async () => {
     const h = harness();
     const res = await h.run("agent-1");
-    expect(h.patchImage).toHaveBeenCalledWith(
-      "agent-1",
-      "quay.io/dam-agents/claude-code:0.2.8",
-    );
+    expect(h.patchSpec).toHaveBeenCalledWith("agent-1", {
+      image: "quay.io/dam-agents/claude-code:0.2.8",
+    });
     expect(res.ok && res.value.spec.image).toBe(
       "quay.io/dam-agents/claude-code:0.2.8",
     );
+  });
+
+  // TEST_SCENARIO: every harness template shares one image, so the image alone no longer says which harness runs. The upgrade must write the template's harness too, or an upgraded codex agent would boot as claude-code.
+  it("writes the template's harness beside the new image", async () => {
+    const h = harness({
+      agent: infraAgent({
+        templateId: "codex",
+        spec: {
+          name: "my-agent",
+          image: "quay.io/dam-agents/codex:0.2.7",
+        },
+      }),
+      templateImage: "quay.io/dam-agents/default:1",
+      template: { harness: "codex" },
+    });
+    await h.run("agent-1");
+    expect(h.patchSpec).toHaveBeenCalledWith("agent-1", {
+      image: "quay.io/dam-agents/default:1",
+      harness: "codex",
+    });
   });
 
   it("succeeds without patching when already current (idempotent)", async () => {
@@ -93,7 +122,7 @@ describe("template upgrade flow", () => {
     expect(res.ok && res.value.spec.image).toBe(
       "quay.io/dam-agents/claude-code:0.2.7",
     );
-    expect(h.patchImage).not.toHaveBeenCalled();
+    expect(h.patchSpec).not.toHaveBeenCalled();
   });
 
   it("rejects an unknown or unowned agent", async () => {
@@ -110,7 +139,7 @@ describe("template upgrade flow", () => {
       ok: false,
       error: { type: "TemplateNotFound" },
     });
-    expect(h.patchImage).not.toHaveBeenCalled();
+    expect(h.patchSpec).not.toHaveBeenCalled();
   });
 
   it("rejects when the template is no longer installed", async () => {
@@ -119,12 +148,12 @@ describe("template upgrade flow", () => {
       ok: false,
       error: { type: "TemplateNotFound" },
     });
-    expect(h.patchImage).not.toHaveBeenCalled();
+    expect(h.patchSpec).not.toHaveBeenCalled();
   });
 
   it("maps a patch-time disappearance to AgentNotFound", async () => {
     const h = harness();
-    h.patchImage.mockResolvedValueOnce(null);
+    h.patchSpec.mockResolvedValueOnce(null);
     expect(await h.run("agent-1")).toEqual({
       ok: false,
       error: { type: "AgentNotFound" },
@@ -149,6 +178,6 @@ describe("template upgrade flow", () => {
       ok: false,
       error: { type: "TemplateMoved" },
     });
-    expect(h.patchImage).not.toHaveBeenCalled();
+    expect(h.patchSpec).not.toHaveBeenCalled();
   });
 });

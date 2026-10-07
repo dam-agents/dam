@@ -38,8 +38,6 @@ const ENV_EXCLUDE_EXACT = new Set([
 const ENV_EXCLUDE_PREFIX = ["npm_config_", "npm_lifecycle_", "SSH_"];
 
 export const SSHD_MAX_ENV_ENTRIES = 950;
-const isKubernetesServiceLink = (k: string) =>
-  /_(PORT|SERVICE_HOST|SERVICE_PORT)(_[A-Z0-9_]+)?$/.test(k);
 
 export function buildSshEnvironmentFile(
   env: NodeJS.ProcessEnv,
@@ -56,7 +54,9 @@ export function buildSshEnvironmentFile(
       warn?.(`skipping env ${k} (value spans multiple lines)`);
       continue;
     }
-    (isKubernetesServiceLink(k) ? serviceLinks : lines).push(`${k}=${v}`);
+    const isServiceLink =
+      /_(PORT|SERVICE_HOST|SERVICE_PORT)(_[A-Z0-9_]+)?$/.test(k);
+    (isServiceLink ? serviceLinks : lines).push(`${k}=${v}`);
   }
   const all = [...lines, ...serviceLinks];
   const kept = all.slice(0, SSHD_MAX_ENV_ENTRIES);
@@ -65,24 +65,6 @@ export function buildSshEnvironmentFile(
       `dropped ${all.length - kept.length} env vars over sshd's ${SSHD_MAX_ENV_ENTRIES}-entry limit (Kubernetes service links first)`,
     );
   return kept.length ? kept.join("\n") + "\n" : "";
-}
-
-export function refreshSshEnvironment(
-  envReader: RuntimeEnvReader,
-  homeDir: string,
-  log: (msg: string) => void,
-): void {
-  const body = buildSshEnvironmentFile(mergedSpawnEnv(envReader), log);
-  const sshDir = join(homeDir, ".ssh");
-  const target = join(sshDir, "environment");
-  try {
-    mkdirSync(sshDir, { recursive: true, mode: 0o700 });
-    const tmp = `${target}.tmp`;
-    writeFileSync(tmp, body, { mode: 0o600 });
-    renameSync(tmp, target);
-  } catch (e) {
-    log(`failed to refresh ~/.ssh/environment: ${(e as Error).message}`);
-  }
 }
 
 export async function prepareSshd(
@@ -140,7 +122,16 @@ export function spawnSshd(
   envReader: RuntimeEnvReader,
   log: (msg: string) => void,
 ): void {
-  refreshSshEnvironment(envReader, prepared.homeDir, log);
+  const body = buildSshEnvironmentFile(mergedSpawnEnv(envReader), log);
+  const sshDir = join(prepared.homeDir, ".ssh");
+  const target = join(sshDir, "environment");
+  try {
+    mkdirSync(sshDir, { recursive: true, mode: 0o700 });
+    writeFileSync(`${target}.tmp`, body, { mode: 0o600 });
+    renameSync(`${target}.tmp`, target);
+  } catch (e) {
+    log(`failed to refresh ~/.ssh/environment: ${(e as Error).message}`);
+  }
   ws.binaryType = "nodebuffer";
   const child = spawn(
     prepared.sshdPath,

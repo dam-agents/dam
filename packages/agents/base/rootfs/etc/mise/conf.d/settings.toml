@@ -1,0 +1,6 @@
+# The agent's mise, and the image build's.
+[settings]
+experimental = true
+minimum_release_age = "7d"
+npm.package_manager = "npm"
+python.compile = false

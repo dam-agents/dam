@@ -24,8 +24,8 @@ export interface ReconcileOptions {
 export interface ComposeSkillsOptions {
   skillPaths: string[];
   pristineSkillPaths: string[];
+  githubToken: () => string;
   reconcile?: ReconcileOptions;
-  now?: () => Date;
   log: (msg: string) => void;
 }
 
@@ -40,7 +40,7 @@ export function composeSkills(opts: ComposeSkillsOptions): SkillsComposition {
     opts.pristineSkillPaths,
     "pristine skill path",
   );
-  const github = createGitHubRestClient();
+  const github = createGitHubRestClient({ token: opts.githubToken });
   const git = createGitProtocolClient();
   const repo = createLocalSkillRepository();
   const service = createSkillsService({
@@ -49,7 +49,7 @@ export function composeSkills(opts: ComposeSkillsOptions): SkillsComposition {
     repo,
     skillPaths,
     pristineSkillPaths,
-    now: opts.now ?? (() => new Date()),
+    now: () => new Date(),
     log: opts.log,
   });
   const reconciler = opts.reconcile

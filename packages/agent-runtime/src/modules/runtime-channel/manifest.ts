@@ -5,7 +5,7 @@ import {
   harnessConfigCatalog,
   type DriverBinding,
 } from "agent-runtime-api";
-import { load as parseYaml } from "js-yaml";
+import { loadYamlDocument } from "../../core/yaml-document.js";
 import { z } from "zod";
 
 const driverEntry = z.union([
@@ -20,14 +20,29 @@ const extensionImpl = z.object({
 });
 export type ExtensionImpl = z.infer<typeof extensionImpl>;
 
-export const modelDiscoverySpec = z.object({
+const modelListing = z.object({
+  path: z.string().startsWith("/").optional(),
+  shape: z
+    .enum(["openai-models", "litellm-model-info", "bedrock-inference-profiles"])
+    .optional(),
+});
+
+export const modelDiscoverySpec = modelListing.extend({
   urlEnv: z.array(z.string().min(1)).nonempty(),
   redirectEnv: z.array(z.string().min(1)).optional(),
   pinEnv: z.array(z.string().min(1)).optional(),
-  path: z.string().startsWith("/").optional(),
-  shape: z.enum(["openai-models", "litellm-model-info"]).optional(),
+  namePrefix: z.string().min(1).optional(),
+  lowercaseNames: z.boolean().optional(),
+  extendsCatalog: z.boolean().optional(),
+  fallback: modelListing.optional(),
 });
 export type ModelDiscoverySpec = z.infer<typeof modelDiscoverySpec>;
+
+export const modelDiscoverySources = z.union([
+  modelDiscoverySpec,
+  z.array(modelDiscoverySpec).nonempty(),
+]);
+export type ModelDiscoverySources = z.infer<typeof modelDiscoverySources>;
 
 export const harnessConfigBinding = z.object({
   file: z.string().min(1),
@@ -37,7 +52,12 @@ export const harnessConfigBinding = z.object({
     .object({
       model: z.string().min(1).optional(),
       mode: z.string().min(1).optional(),
-      configOptions: z.record(z.string().min(1), z.string().min(1)).optional(),
+      configOptions: z
+        .record(
+          z.string().min(1),
+          z.union([z.string().min(1), z.array(z.string().min(1)).nonempty()]),
+        )
+        .optional(),
     })
     .refine(
       (k) =>
@@ -50,7 +70,7 @@ export const harnessConfigBinding = z.object({
       },
     ),
   catalog: harnessConfigCatalog.optional(),
-  modelDiscovery: modelDiscoverySpec.optional(),
+  modelDiscovery: modelDiscoverySources.optional(),
 });
 export type HarnessConfigBinding = z.infer<typeof harnessConfigBinding>;
 
@@ -78,28 +98,19 @@ export const runtimeManifestSchema = z.object({
 });
 export type RuntimeManifest = z.infer<typeof runtimeManifestSchema>;
 
-export class ManifestLoadError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ManifestLoadError";
-  }
-}
-
 export function loadManifest(path: string): RuntimeManifest {
   if (!existsSync(path)) {
-    throw new ManifestLoadError(`runtime-manifest.yaml not found at ${path}`);
+    throw new Error(`runtime-manifest.yaml not found at ${path}`);
   }
   let raw: unknown;
   try {
-    raw = parseYaml(readFileSync(path, "utf8"));
+    raw = loadYamlDocument(readFileSync(path, "utf8"));
   } catch (err) {
-    throw new ManifestLoadError(
-      `failed to parse ${path}: ${(err as Error).message}`,
-    );
+    throw new Error(`failed to parse ${path}: ${(err as Error).message}`);
   }
   const parsed = runtimeManifestSchema.safeParse(raw);
   if (!parsed.success) {
-    throw new ManifestLoadError(
+    throw new Error(
       `invalid runtime-manifest.yaml at ${path}: ${parsed.error.message}`,
     );
   }
@@ -126,10 +137,6 @@ const BUILTIN_DRIVERS: Record<
   },
   trigger: { binding: { impl: "trigger" }, defaultOn: true },
   "schedule-reset": { binding: { impl: "trigger" }, defaultOn: true },
-  "experiment-execute": {
-    binding: { impl: "experiment-execute" },
-    defaultOn: true,
-  },
   initialization: { binding: { impl: "initialization" }, defaultOn: true },
   "workspace-seed": { binding: { impl: "workspace-seed" }, defaultOn: true },
   "workspace-command": {
@@ -141,16 +148,16 @@ const BUILTIN_DRIVERS: Record<
     binding: { impl: "satellite-outcome" },
     defaultOn: true,
   },
+  "sub-agent-outcome": {
+    binding: { impl: "sub-agent-outcome" },
+    defaultOn: true,
+  },
 };
 
 const KNOWN_KINDS = new Set<string>([
   ...contributionKind.options,
   ...eventKind.options,
 ]);
-
-function defaultImpl(kind: string): string {
-  return BUILTIN_DRIVERS[kind]?.binding.impl ?? kind;
-}
 
 export function resolveDrivers(
   manifest: RuntimeManifest,
@@ -161,7 +168,7 @@ export function resolveDrivers(
   }
   for (const [kind, entry] of Object.entries(manifest.drivers)) {
     if (!KNOWN_KINDS.has(kind)) {
-      throw new ManifestLoadError(
+      throw new Error(
         `unknown driver kind "${kind}" — not a contribution or event kind`,
       );
     }
@@ -169,7 +176,10 @@ export function resolveDrivers(
       delete out[kind];
       continue;
     }
-    out[kind] = { ...entry, impl: entry.impl ?? defaultImpl(kind) };
+    out[kind] = {
+      ...entry,
+      impl: entry.impl ?? BUILTIN_DRIVERS[kind]?.binding.impl ?? kind,
+    };
   }
   return out;
 }

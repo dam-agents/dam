@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import type { Schedule, ScheduleSpec } from "api-server-api";
 import { createSchedulesService } from "../../modules/schedules/services/schedules-service.js";
 import type { SchedulesRepository } from "../../modules/schedules/infrastructure/schedules-repository.js";
-import type { SchedulerRunner } from "../../modules/schedules/services/scheduler-runner.js";
+import type {
+  RunNowResult,
+  SchedulerRunner,
+} from "../../modules/schedules/services/scheduler-runner.js";
 
 const OWNER = "owner-1";
 const SCHEDULE_ID = "sched-1";
@@ -85,8 +88,7 @@ describe("updateRRule sessionMode", () => {
 describe("createRRule createdBy", () => {
   function makeCreateDeps() {
     let created:
-      | { agentId: string; owner: string; spec: ScheduleSpec }
-      | undefined;
+      { agentId: string; owner: string; spec: ScheduleSpec } | undefined;
     const repo = {
       async create(input: {
         agentId: string;
@@ -211,5 +213,92 @@ describe("updateRRule precheck status", () => {
     await service.updateRRule({ ...baseUpdate, precheck: "same.sh" });
 
     expect(getCleared()).toBe(0);
+  });
+});
+
+// TEST_SCENARIO: an enabled schedule with no next run has stopped for good, so a read names why instead of leaving the owner a bare last result; the reason is derived on read, so a repaired and re-armed schedule shows none.
+describe("stop reason", () => {
+  function withRule(rrule: string, nextRun?: string): Schedule {
+    const current = makeCurrent();
+    return {
+      ...current,
+      spec: { ...current.spec, rrule } as ScheduleSpec,
+      ...(nextRun ? { status: { nextRun } } : {}),
+    };
+  }
+
+  it("names why an enabled schedule has no next run", async () => {
+    const { service } = makeDeps(withRule("FREQ=DAILY;UNTIL=20200101T000000Z"));
+    const schedule = await service.get(SCHEDULE_ID);
+    expect(schedule?.status?.stopReason).toBe("it has no more occurrences");
+  });
+
+  it("names none for an armed schedule", async () => {
+    const { service } = makeDeps(withRule(RRULE, "2026-10-01T07:00:00.000Z"));
+    const schedule = await service.get(SCHEDULE_ID);
+    expect(schedule?.status?.stopReason).toBeUndefined();
+  });
+
+  it("names none for a paused schedule", async () => {
+    const current = withRule("FREQ=DAILY;UNTIL=20200101T000000Z");
+    const { service } = makeDeps({
+      ...current,
+      spec: { ...current.spec, enabled: false },
+    });
+    const schedule = await service.get(SCHEDULE_ID);
+    expect(schedule?.status?.stopReason).toBeUndefined();
+  });
+});
+
+describe("runNow", () => {
+  function makeRunNowDeps(opts?: { found?: boolean; outcome?: RunNowResult }) {
+    const ran: string[] = [];
+    const repo = {
+      async get() {
+        return opts?.found === false ? null : makeCurrent();
+      },
+    } as unknown as SchedulesRepository;
+    const runner = {
+      async runNow(id: string) {
+        ran.push(id);
+        return opts?.outcome ?? "started";
+      },
+    } as unknown as SchedulerRunner;
+    return {
+      service: createSchedulesService({
+        repo,
+        runner,
+        owner: OWNER,
+        agentBinding: "*",
+      }),
+      ran,
+    };
+  }
+
+  // TEST_SCENARIO: the repository read is the ownership check — the runner takes a bare id, so a caller who does not own the schedule must be refused before it is reached.
+  it("refuses a schedule the caller does not own", async () => {
+    const { service, ran } = makeRunNowDeps({ found: false });
+
+    await expect(service.runNow(SCHEDULE_ID)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(ran).toEqual([]);
+  });
+
+  it("asks the runner to fire the owned schedule", async () => {
+    const { service, ran } = makeRunNowDeps();
+
+    await service.runNow(SCHEDULE_ID);
+
+    expect(ran).toEqual([SCHEDULE_ID]);
+  });
+
+  // TEST_SCENARIO: a scheduled fire on an Agent still onboarding is held with nobody watching; here a user asked for it, so the refusal has to reach them rather than reading as a run that started.
+  it("reports a refused fire to the caller", async () => {
+    const { service } = makeRunNowDeps({ outcome: "onboarding-pending" });
+
+    await expect(service.runNow(SCHEDULE_ID)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
   });
 });

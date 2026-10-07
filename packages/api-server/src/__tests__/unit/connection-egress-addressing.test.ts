@@ -2,14 +2,18 @@
  * TEST_OVERVIEW: An agent may hold several Connections to one service, each with
  * its own credential. The gateway tells them apart by the path the agent asks
  * for, so every MCP server entry a Connection contributes is delivered under a
- * per-Connection path on the real host. The gateway strips that path again
- * before the request leaves, so the upstream sees the address it published.
+ * per-Connection path on the real host, and by the token value a client sends,
+ * so every credential placeholder a Connection hands the agent is its own. The
+ * gateway strips the path again before the request leaves, so the upstream sees
+ * the address it published.
  */
 import { describe, it, expect } from "vitest";
 import type { Contribution } from "api-server-api";
 import {
   applyConnectionEgressAddressing,
+  carriesCredentialPlaceholder,
   connectionEgressPathPrefix,
+  connectionEgressPlaceholder,
   stripConnectionEgressPrefix,
 } from "api-server-api";
 
@@ -122,19 +126,77 @@ describe("applyConnectionEgressAddressing", () => {
     );
   });
 
-  /** TEST_SCENARIO: Only the agent-facing address moves. Every other contribution
-   * reaches its own rail unchanged. */
-  it("leaves contributions of every other kind untouched", () => {
-    const env: Contribution = {
+  /** TEST_SCENARIO: A client that takes a token rather than a URL, gh through
+   * GH_TOKEN, sends whatever the env holds where the real token goes. That value
+   * is the Connection's other address, so the inert placeholder becomes the
+   * per-Connection one, in env and in the config files that carry it alike. */
+  it("carries the connection's token placeholder into credential env and files", () => {
+    const out = applyConnectionEgressAddressing("conn-aaa", [
+      inject("api.github.com"),
+      { kind: "env", name: "GH_TOKEN", placeholder: "dummy-placeholder" },
+      {
+        kind: "file",
+        path: "$HOME/.config/gh/hosts.yml",
+        format: "yaml",
+        mergeMode: "key-targeted",
+        content: {
+          "ghe.acme.com": {
+            oauth_token: "dummy-placeholder",
+            git_protocol: "https",
+          },
+        },
+      },
+    ]);
+    expect(out).toContainEqual({
       kind: "env",
       name: "GH_TOKEN",
-      placeholder: "dummy-placeholder",
+      placeholder: connectionEgressPlaceholder("conn-aaa"),
+    });
+    expect(out).toContainEqual(
+      expect.objectContaining({
+        kind: "file",
+        content: {
+          "ghe.acme.com": {
+            oauth_token: "platform:conn:conn-aaa",
+            git_protocol: "https",
+          },
+        },
+      }),
+    );
+  });
+
+  /** TEST_SCENARIO: Only the credential placeholder is an address. A literal
+   * env value and the gateway-side injection reach their rails unchanged. */
+  it("leaves non-credential env and the injections untouched", () => {
+    const host: Contribution = {
+      kind: "env",
+      name: "GH_HOST",
+      placeholder: "ghe.acme.com",
     };
+    const injection = inject("ghe.acme.com");
+    const out = applyConnectionEgressAddressing("conn-aaa", [injection, host]);
+    expect(out).toContainEqual(host);
+    expect(out).toContainEqual(injection);
+  });
+
+  /** TEST_SCENARIO: An MCP entry may carry the placeholder inside a header the
+   * MCP client sends verbatim. That header is then the second carrier of the
+   * address, so a path-scoped entry the platform cannot prefix still names its
+   * Connection. */
+  it("carries the placeholder into an MCP entry's headers", () => {
     const out = applyConnectionEgressAddressing("conn-aaa", [
       inject("mcp.slack.com"),
-      env,
+      {
+        kind: "mcp-entry",
+        name: "slack",
+        url: "https://mcp.slack.com/mcp",
+        headers: { Authorization: "Bearer dummy-placeholder" },
+      },
     ]);
-    expect(out).toContainEqual(env);
+    const entry = out.find((c) => c.kind === "mcp-entry");
+    expect(entry?.kind === "mcp-entry" && entry.headers).toEqual({
+      Authorization: "Bearer platform:conn:conn-aaa",
+    });
   });
 });
 
@@ -169,5 +231,122 @@ describe("stripConnectionEgressPrefix", () => {
         "/__platform_conn/conn-aaa/__platform_conn/conn-bbb/mcp",
       ),
     ).toBe("/__platform_conn/conn-bbb/mcp");
+  });
+});
+
+describe("addressing a credential that keeps a vendor prefix", () => {
+  /** TEST_SCENARIO: The Modal case. A client that refuses a secret without its
+   * vendor's prefix is handed one that keeps it, so the address still reaches the
+   * gateway and the client still accepts the value. */
+  it("keeps a vendor prefix on an env placeholder", () => {
+    const out = applyConnectionEgressAddressing("conn-modal", [
+      inject("api.modal.com", {
+        headerName: "x-modal-token-secret",
+        valueFormat: "{value}",
+      }),
+      {
+        kind: "env",
+        name: "MODAL_TOKEN_SECRET",
+        placeholder: "as-dummy-placeholder",
+      },
+    ]);
+    const env = out.find((c) => c.kind === "env");
+    expect(env).toMatchObject({ placeholder: "as-platform:conn:conn-modal" });
+  });
+
+  /** TEST_SCENARIO: The Kubernetes case. The credential sits inside a structured
+   * config file the agent's tools read, and is addressed there like an env value. */
+  it("addresses a placeholder nested in a structured file", () => {
+    const out = applyConnectionEgressAddressing("conn-k8s", [
+      inject("api.cluster.example"),
+      {
+        kind: "file",
+        path: "$HOME/.kube/connections/k8s.yaml",
+        format: "yaml",
+        mergeMode: "overwrite",
+        content: {
+          users: [{ name: "k8s", user: { token: "dummy-placeholder" } }],
+        },
+      },
+    ]);
+    const file = out.find((c) => c.kind === "file");
+    expect(file).toMatchObject({
+      content: { users: [{ user: { token: "platform:conn:conn-k8s" } }] },
+    });
+  });
+
+  /** TEST_SCENARIO: Only a recognised placeholder is rewritten. A literal value that
+   * happens to share a prefix, a base URL or a model name, is left exactly as set. */
+  it("leaves values that are not placeholders alone", () => {
+    const out = applyConnectionEgressAddressing("conn-x", [
+      inject("api.example.com"),
+      { kind: "env", name: "MODEL", placeholder: "aws/claude-opus-4-8" },
+      { kind: "env", name: "KEY", placeholder: "sk-not-a-placeholder" },
+      {
+        kind: "env",
+        name: "LONG",
+        placeholder: "toolongprefix-dummy-placeholder",
+      },
+    ]);
+    expect(
+      out
+        .filter((c) => c.kind === "env")
+        .map((c) => c.kind === "env" && c.placeholder),
+    ).toEqual([
+      "aws/claude-opus-4-8",
+      "sk-not-a-placeholder",
+      "toolongprefix-dummy-placeholder",
+    ]);
+  });
+});
+
+describe("what counts as addressed", () => {
+  /** TEST_SCENARIO: A connection whose only credential placeholder keeps a vendor
+   * prefix still hands the agent an address, so both the rival check and an agent
+   * that requires addresses treat it as addressed. */
+  it("counts a vendor-prefixed placeholder as an address", () => {
+    expect(
+      carriesCredentialPlaceholder([
+        inject("api.modal.com"),
+        {
+          kind: "env",
+          name: "MODAL_TOKEN_SECRET",
+          placeholder: "as-dummy-placeholder",
+        },
+      ]),
+    ).toBe(true);
+    expect(
+      carriesCredentialPlaceholder([
+        inject("api.example.com"),
+        { kind: "env", name: "KEY", placeholder: "sk-not-a-placeholder" },
+      ]),
+    ).toBe(false);
+  });
+});
+
+describe("connections stored before vendor-prefixed addressing", () => {
+  /** TEST_SCENARIO: A Kubernetes or IBM LiteLLM connection created earlier keeps
+   * the placeholder it was stored with. Delivery still turns it into an address,
+   * so such a connection keeps working on an agent that requires addresses. */
+  it("addresses the legacy kubeconfig token and LiteLLM key", () => {
+    const out = applyConnectionEgressAddressing("conn-old", [
+      inject("ete-litellm.example"),
+      { kind: "env", name: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy" },
+      {
+        kind: "file",
+        path: "$HOME/.kube/connections/old.yaml",
+        format: "yaml",
+        mergeMode: "overwrite",
+        content: {
+          users: [{ name: "old", user: { token: "injected-by-gateway" } }],
+        },
+      },
+    ]);
+    expect(out.find((c) => c.kind === "env")).toMatchObject({
+      placeholder: "sk-platform:conn:conn-old",
+    });
+    expect(out.find((c) => c.kind === "file")).toMatchObject({
+      content: { users: [{ user: { token: "platform:conn:conn-old" } }] },
+    });
   });
 });

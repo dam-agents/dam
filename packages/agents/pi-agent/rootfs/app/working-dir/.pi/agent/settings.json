@@ -1,0 +1,12 @@
+{
+  "quietStartup": true,
+  "tuiMode": "regular",
+  "defaultThinkingLevel": "medium",
+  "packages": [
+    "npm:@zhafron/pi-memory"
+  ],
+  "pi-memory": {
+    "dashboard": false,
+    "memoryDir": "~/.pi/agent/memory"
+  }
+}

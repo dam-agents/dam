@@ -11,5 +11,3 @@ export const attentionDismissInputSchema = z.object({
     .min(1)
     .max(200),
 });
-
-export type AttentionDismissInput = z.infer<typeof attentionDismissInputSchema>;

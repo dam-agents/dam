@@ -1,11 +1,7 @@
 export { composeStarterKitsForOwner } from "./compose.js";
-export {
-  createStarterKitsRepository,
-  type StarterKitsRepository,
-} from "./infrastructure/kits-repository.js";
+export type { StarterKitsRepository } from "./services/starter-kits-service.js";
 export {
   createCatalogRefresh,
-  type CatalogRefresh,
   type NamedCatalog,
 } from "./infrastructure/catalog-refresh.js";
 export { createGitRefResolver } from "./infrastructure/git-ref-resolver.js";
@@ -21,8 +17,6 @@ export {
 export {
   catalogEntryHosts,
   createGitHosts,
-  type EnterpriseHost,
-  type GitHosts,
 } from "./infrastructure/git-hosts.js";
 export {
   createOnboardingMarker,
@@ -30,10 +24,17 @@ export {
 } from "./services/onboarding-marker.js";
 export {
   createOnboardingChecklist,
-  type OnboardingChecklist,
   type OnboardingChecklistOps,
 } from "./services/onboarding-checklist.js";
 export {
   createOnboardingChecklistRepository,
   type OnboardingChecklistRepository,
 } from "./infrastructure/onboarding-checklist-repository.js";
+export {
+  createKitUpstream,
+  type KitUpstream,
+} from "./infrastructure/kit-upstream.js";
+export {
+  createKitUpdateReporter,
+  type KitUpdateReporter,
+} from "./services/kit-update-reporter.js";

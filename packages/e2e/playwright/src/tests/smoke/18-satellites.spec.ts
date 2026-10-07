@@ -3,7 +3,12 @@ import { expect, test } from "@playwright/test";
 import { baseUrl } from "../../config.js";
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
-import { ensureAgentExists, waitForAgentRunning } from "../../lib/agents.js";
+import { bootTimeoutMs } from "../../lib/backend.js";
+import {
+  deleteAgentIfPresent,
+  ensureAgentRunning,
+  waitForAgentRunning,
+} from "../../lib/agents.js";
 import { harnessName } from "../../lib/fixtures.js";
 
 /**
@@ -97,8 +102,7 @@ test.describe("satellites", () => {
     );
     expect(satellite?.grantedAgentIds).toEqual([]);
 
-    await ensureAgentExists(api, AGENT_NAME, harnessName);
-    const agentId = await waitForAgentRunning(api, AGENT_NAME);
+    const agentId = await ensureAgentRunning(api, AGENT_NAME);
 
     await api.satellites.grant.mutate({ satellite: SATELLITE, agentId });
     expect(
@@ -170,7 +174,7 @@ test.describe("satellites", () => {
   test("a connected satellite shows among Connections and is added to an agent there", async ({
     page,
   }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(bootTimeoutMs(240_000));
     const api = createApiClient(await getAccessToken());
     await acceptTerms(api);
     await removeIfPresent(api);
@@ -192,11 +196,10 @@ test.describe("satellites", () => {
     await expect(row).toBeVisible();
     await expect(row).not.toContainText(/Offline|Shutting down/);
 
-    await ensureAgentExists(api, AGENT_NAME, harnessName);
-    const agentId = await waitForAgentRunning(api, AGENT_NAME);
+    const agentId = await ensureAgentRunning(api, AGENT_NAME);
     await page.goto(`${baseUrl}/sandboxes/${agentId}/connections`);
     await page.getByTestId("open-connection-catalog").first().click();
-    await page.getByTestId("catalog-tab-satellites").click();
+    await page.getByTestId("catalog-tab-mcp").click();
     await page.getByTestId(`catalog-add-satellite-${SATELLITE}`).click();
     await expect(page.getByText("In this agent")).toBeVisible();
 
@@ -216,14 +219,20 @@ test.describe("satellites", () => {
    * before the agent exists. The new-agent form offers the same catalogue tab;
    * the pick is held in the draft and granted once the agent is created,
    * because a grant needs an agent id.
+   *
+   * This is the second agent the suite brings up, and the earlier tests' agent
+   * is still running when it starts. On the single-node CI cluster the two do
+   * not fit at once, so the agent that is finished with is taken down first,
+   * and the wait still allows for a start that queues behind its removal.
    */
   test("a satellite picked on the new-agent form is granted once the agent exists", async ({
     page,
   }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(bootTimeoutMs(600_000));
     const api = createApiClient(await getAccessToken());
     await acceptTerms(api);
     await removeIfPresent(api);
+    await deleteAgentIfPresent(api, AGENT_NAME);
     await api.satellites.connect.mutate({
       manifest: MANIFEST,
       host: "e2e-host",
@@ -248,13 +257,15 @@ test.describe("satellites", () => {
     }
 
     await page.getByTestId("open-connection-catalog").first().click();
-    await page.getByTestId("catalog-tab-satellites").click();
+    await page.getByTestId("catalog-tab-mcp").click();
     await page.getByTestId(`catalog-add-satellite-${SATELLITE}`).click();
     await page.getByTestId("catalog-close").click();
     await expect(page.getByTestId(`satellite-${SATELLITE}`)).toBeVisible();
-    await page.getByRole("button", { name: /create coding agent/i }).click();
+    await page.getByRole("button", { name: /create agent/i }).click();
 
-    const agentId = await waitForAgentRunning(api, CREATED_AGENT_NAME);
+    const agentId = await waitForAgentRunning(api, CREATED_AGENT_NAME, {
+      timeoutMs: bootTimeoutMs(360_000),
+    });
     expect(
       (await api.satellites.list.query()).find((s) => s.name === SATELLITE)
         ?.grantedAgentIds,

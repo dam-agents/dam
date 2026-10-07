@@ -21,7 +21,7 @@ export const ALL_SCOPES = [
 
 export const scopeSchema = z.enum(ALL_SCOPES);
 
-export const agentBindingSchema = z.union([
+const agentBindingSchema = z.union([
   z.literal("*"),
   z
     .array(z.string().min(1))

@@ -41,6 +41,7 @@ const GRACE: SlackUserInfo = {
 
 function harness(opts: {
   boundChannelId: string | null;
+  bound?: { id: string; teamId: string }[];
   users?: SlackUserInfo[];
   gatewayDown?: boolean;
   getUserInfo?: FakeSlackGateway["getUserInfo"];
@@ -61,37 +62,38 @@ function harness(opts: {
     ensureReady: async () => {},
   } as unknown as AgentsService;
 
-  const worker = createSlackWorker(
-    () => acp,
-    () => gw,
-    () => agents,
-    { resolve: async () => null } as never,
-    { authUrl: "http://kc", clientId: "c" } as never,
-    createMemoryTtlStore(600_000),
-    async () => OWNER,
-    {
+  const worker = createSlackWorker({
+    makeAcpClient: () => acp,
+    createGateway: () => gw,
+    agents: () => agents,
+    identityLinks: { resolve: async () => null } as never,
+    oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
+    pendingOAuthFlows: createMemoryTtlStore(600_000),
+    getInstanceOwner: async () => OWNER,
+    channelRegistry: {
       resolveSlackBindings: async () => [],
       resolveSlackChannelsByInstance: async () =>
-        opts.boundChannelId ? [{ id: opts.boundChannelId, teamId: "" }] : [],
+        opts.bound ??
+        (opts.boundChannelId ? [{ id: opts.boundChannelId, teamId: "" }] : []),
     },
-    async () => {},
-    async () => {},
-    async () => true,
-    { name: "DAM", short: "dam" },
-    async () => true,
-    "http://ui",
-    stubTurnAttendance(),
-    stubWorkspaceFiles(),
-    (teamId) => teamId,
-    () => {},
-  );
+    unbindSlackChannel: async () => {},
+    setSlackChannelAmbient: async () => {},
+    setSlackDefault: async () => true,
+    brand: { name: "DAM", short: "dam" },
+    isTermsAccepted: async () => true,
+    uiBaseUrl: "http://ui",
+    attendance: stubTurnAttendance(),
+    workspaceFiles: stubWorkspaceFiles(),
+    listWorkspaces: async () => [],
+    emit: () => {},
+  });
 
   return {
     gw,
     worker,
-    async describeUsers(userIds: string[]) {
+    async describeUsers(userIds: string[], chatId?: string) {
       await worker.connect().catch(() => {});
-      return worker.describeUsers("agent-1", userIds);
+      return worker.describeUsers("agent-1", userIds, chatId);
     },
   };
 }
@@ -116,6 +118,29 @@ describe("slack user lookup", () => {
     expect(await h.describeUsers(["U024BE7LH"])).toEqual({
       error: "slack bot not running",
     });
+  });
+
+  it("two workspaces: chatId says which one to look in", async () => {
+    const asked: string[] = [];
+    const h = harness({
+      boundChannelId: null,
+      bound: [
+        { id: "C-A", teamId: "T-A" },
+        { id: "C-B", teamId: "T-B" },
+      ],
+      getUserInfo: async (id, teamId) => {
+        asked.push(teamId);
+        return { ...ADA, id };
+      },
+    });
+
+    expect(await h.describeUsers(["U024BE7LH"])).toEqual({
+      error: expect.stringContaining("pass chatId"),
+    });
+    expect(await h.describeUsers(["U024BE7LH"], "C-B")).toEqual({
+      users: [ADA],
+    });
+    expect(asked).toEqual(["T-B"]);
   });
 
   it("resolves ids to the whole profile", async () => {

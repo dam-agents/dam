@@ -12,13 +12,13 @@ const invalidations: Record<Topic, () => readonly (readonly unknown[])[]> = {
   approvals: () => [approvalsKeys.all, egressRulesKeys.all],
   agents: () => [
     agentsKeys.root,
+    trpc.starterKits.updates.queryKey(),
     trpc.budgets.pathKey(),
     trpc.harnessConfig.pathKey(),
   ],
   schedules: () => [trpc.schedules.pathKey()],
   harnessConfig: () => [trpc.harnessConfig.pathKey()],
   kbShares: () => [trpc.kbShares.pathKey()],
-  experiments: () => [trpc.experiments.pathKey()],
   artifacts: () => [trpc.artifactLibrary.pathKey()],
   attention: () => [trpc.attention.pathKey()],
 };

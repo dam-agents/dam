@@ -36,8 +36,7 @@ export interface KbShareStringResult {
 }
 
 export type KbShareWorkspaceListing =
-  | { state: "listed"; roots: readonly string[] }
-  | { state: "unreachable" };
+  { state: "listed"; roots: readonly string[] } | { state: "unreachable" };
 
 export interface KbShareDefaults {
   roots: readonly string[];

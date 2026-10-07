@@ -46,7 +46,7 @@ const ms = (iso: string | undefined): number | null => {
 
 const isReply = (m: ReplyLike): boolean => m.role === "assistant" && !m.notice;
 
-export function exchangesOf(messages: readonly ReplyLike[]): Exchange[] {
+function exchangesOf(messages: readonly ReplyLike[]): Exchange[] {
   const exchanges: Exchange[] = [];
   const awaitingNextPrompt: Exchange[] = [];
   let promptAt: number | null = null;

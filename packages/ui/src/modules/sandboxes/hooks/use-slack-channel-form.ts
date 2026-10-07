@@ -1,6 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ChannelType, type SlackChannel } from "api-server-api";
 import { useForm } from "react-hook-form";
+import { match } from "ts-pattern";
 import { z } from "zod";
 
 import type { AgentView } from "../../../types.js";
@@ -9,12 +10,12 @@ import { planSlackChannelSave } from "../lib/slack-channel-save.js";
 
 export type { SlackChannel };
 
-export const slackChannelFormSchema = z.object({
+const slackChannelFormSchema = z.object({
   channelId: z.string().trim().min(1, "Enter the Slack channel ID."),
   ambient: z.boolean(),
 });
 
-export type SlackChannelFormValues = z.infer<typeof slackChannelFormSchema>;
+type SlackChannelFormValues = z.infer<typeof slackChannelFormSchema>;
 
 export function findSlackChannels(
   agent: AgentView | undefined,
@@ -23,7 +24,23 @@ export function findSlackChannels(
 }
 
 export function slackChannelLabel(channel: SlackChannel): string {
-  return channel.name ? `#${channel.name}` : channel.slackChannelId;
+  if (!channel.label) return channel.slackChannelId;
+  return match(channel.label)
+    .with({ kind: "channel" }, (l) => `#${l.name}`)
+    .with({ kind: "direct-message" }, (l) =>
+      l.with ? `DM with ${l.with}` : "Direct message",
+    )
+    .with({ kind: "group-direct-message" }, (l) =>
+      l.members.length > 0
+        ? `Group DM with ${l.members.join(", ")}`
+        : "Group DM",
+    )
+    .with({ kind: "gone" }, () => channel.slackChannelId)
+    .exhaustive(() => channel.slackChannelId);
+}
+
+export function isSlackConversationGone(channel: SlackChannel): boolean {
+  return channel.label?.kind === "gone";
 }
 
 export function useSlackChannelForm(

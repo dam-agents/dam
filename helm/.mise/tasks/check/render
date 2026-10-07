@@ -17,7 +17,9 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.devicePlugin.enabled=true --set virtualization.devicePlugin.scc=privileged \
   --set virtualization.runner.resources.limits.memory=8Gi \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
+  --set 'virtualization.runner.dnsCidrs[0]=10.0.2.3/32' \
   --set openshift.scc.anyuidCapNet.enabled=true --set agentNamespace=platform-agents \
+  --set virtualization.runner.scc=hostmount-anyuid \
   --set clickstack.enabled=true \
   | "${KUBECONFORM[@]}" "$@"
 # The node image cache adds one more object nothing else renders: the DaemonSet
@@ -46,8 +48,31 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
+  --set virtualization.runner.dnsPolicy=ClusterFirst \
   --set controller.envoyMitm.enabled=false \
   | "${KUBECONFORM[@]}" "$@"
+# A confined runner reaches DNS only at the resolver it uses. One that caches
+# on its own claim and names no resolver, a resolver range of /0, and an
+# egress entry naming the link-local metadata endpoint all fail the render.
+VM=(--set virtualization.enabled=true --set virtualization.runner.resources.limits.memory=8Gi
+  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0')
+for refused in 'virtualization.runner.dnsPolicy=Default' \
+  'virtualization.runner.dnsCidrs[0]=0.0.0.0/0' \
+  'virtualization.runner.egressCidrs[1]=169.254.169.254/32' \
+  'virtualization.runner.clusterDns=null'; do
+  extra=(--set "$refused")
+  case "$refused" in
+    *egressCidrs*) extra+=(--set 'virtualization.runner.dnsCidrs[0]=10.0.2.3/32') ;;
+    *clusterDns*) extra+=(--set virtualization.runner.dnsPolicy=ClusterFirst) ;;
+  esac
+  if helm template platform . "${COMMON[@]}" "${VM[@]}" "${extra[@]}" >/dev/null 2>&1; then
+    echo "a render setting $refused succeeded, but it leaves the runner's DNS or metadata open" >&2
+    exit 1
+  fi
+done
+# A runner on the node cache resolves nothing, so it needs no resolver named.
+helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images >/dev/null
 # Virtualization keys the chart no longer reads fail the render rather than
 # being dropped without a word.
 for removed in 'virtualization.imageCache.preload.enabled=false' \
@@ -58,9 +83,34 @@ for removed in 'virtualization.imageCache.preload.enabled=false' \
     exit 1
   fi
 done
+# istio.enforce=false is local-only. An offline render finds no local no-mesh
+# marker, so it must fail, and fail for that reason rather than another one; a
+# value that is not a boolean must not slip through as truthy either.
+for unenforced in '--set istio.enforce=false' '--set-string istio.enforce=false'; do
+  # shellcheck disable=SC2086
+  if out=$(helm template platform . "${COMMON[@]}" $unenforced 2>&1 >/dev/null); then
+    echo "a render with $unenforced succeeded, but only a local no-mesh cluster may leave the mesh unenforced" >&2
+    exit 1
+  fi
+  case "$out" in
+    *'istio.enforce=false is local-only'* | *'istio.enforce must be true or false'*) ;;
+    *) echo "a render with $unenforced failed for another reason: $out" >&2; exit 1 ;;
+  esac
+done
 # An install that reads kits from an enterprise host renders the api-server's
 # catalog credential, which the default values leave out entirely.
 helm template platform . "${COMMON[@]}" \
   --set github.enterprise.host=github.example.com \
-  --set github.enterprise.tokenSecret.name=kit-catalog-token \
+  --set github.enterprise.token=ghe-test-token \
+  | "${KUBECONFORM[@]}" "$@"
+# Every install token and client secret reaches the api-server through its
+# credentials Secret, which the default values leave out entirely.
+helm template platform . "${COMMON[@]}" \
+  --set apiServer.slackBotToken=t --set apiServer.slackAppToken=t \
+  --set apiServer.slackClientId=c --set apiServer.slackClientSecret=s \
+  --set apiServer.telegramBotToken=t --set apiServer.imgbbApiKey=k \
+  --set apiServer.oauthAppDefaults.github.clientId=c --set apiServer.oauthAppDefaults.github.clientSecret=s \
+  --set apiServer.oauthAppDefaults.githubEnterprise.host=github.example.com \
+  --set apiServer.oauthAppDefaults.githubEnterprise.clientId=c --set apiServer.oauthAppDefaults.githubEnterprise.clientSecret=s \
+  --set apiServer.oauthAppDefaults.slack.clientId=c --set apiServer.oauthAppDefaults.slack.clientSecret=s \
   | "${KUBECONFORM[@]}" "$@"

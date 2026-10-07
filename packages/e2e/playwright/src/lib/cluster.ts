@@ -10,7 +10,7 @@ function kubeconfig(): string {
   if (process.env.KUBECONFIG) return process.env.KUBECONFIG;
   if (process.env.IS_SANDBOX) return "/etc/rancher/k3s/k3s.yaml";
   const limaHome = process.env.LIMA_HOME ?? join(homedir(), ".lima");
-  const vm = process.env.E2E_VM_NAME ?? "platform-k3s-test";
+  const vm = process.env.LIMA_INSTANCE ?? "platform-k3s-test";
   return join(limaHome, vm, "copied-from-guest", "kubeconfig.yaml");
 }
 
@@ -109,4 +109,30 @@ export function scaleController(replicas: 0 | 1): void {
       "--timeout=60s",
     );
   }
+}
+
+export interface RetainedVolume {
+  name: string;
+  mount: string;
+  until: string;
+}
+
+export function retainedVolumes(agent: string): RetainedVolume[] {
+  const out = kubectl(
+    "-n",
+    AGENT_NS,
+    "get",
+    "pvc",
+    "-l",
+    `agent-platform.ai/retained-for=${agent}`,
+    "-o",
+    String.raw`jsonpath={range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.agent-platform\.ai/retained-mount}{"\t"}{.metadata.annotations.agent-platform\.ai/retained-until}{"\n"}{end}`,
+  );
+  return out
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [name = "", mount = "", until = ""] = line.split("\t");
+      return { name, mount, until };
+    });
 }

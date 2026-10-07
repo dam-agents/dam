@@ -1,12 +1,11 @@
 import { match } from "ts-pattern";
 
-export const TEMPLATE_NONE = "none";
-export const TEMPLATE_UNKNOWN = "unknown";
-export const TEMPLATE_OTHER = "other";
+const TEMPLATE_NONE = "none";
+const TEMPLATE_UNKNOWN = "unknown";
+const TEMPLATE_OTHER = "other";
 
 export type AgentTemplate =
-  | { agent: "unresolved" }
-  | { agent: "resolved"; templateId?: string };
+  { agent: "unresolved" } | { agent: "resolved"; templateId?: string };
 
 export type TemplateOf = (agentId: string) => string;
 

@@ -2,13 +2,10 @@ import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import type { TurnSummary } from "api-server-api";
 import { useMemo, useState } from "react";
 
+import { formatDurationMs } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import {
-  formatDurationMs,
-  formatTokens,
-  formatUsdCell,
-} from "../../metrics/lib/format.js";
+import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
 import { useTurn } from "../api/queries.js";
 import { RecordDetail, SpanDetail } from "./record-detail.js";
 import { TraceWaterfall } from "./trace-waterfall.js";
@@ -24,21 +21,26 @@ function summaryBits(turn: TurnSummary): string[] {
   return bits;
 }
 
+type Props = {
+  agentId: string;
+  turn: TurnSummary;
+  className?: string;
+  triggerClassName?: string;
+} & ({ sessionId: string } | { invocationId: string });
+
 export function TurnTelemetry({
   agentId,
-  sessionId,
   turn,
-}: {
-  agentId: string;
-  sessionId: string;
-  turn: TurnSummary;
-}) {
+  className = "-mt-7",
+  triggerClassName,
+  ...scope
+}: Props) {
   const [open, setOpen] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const detail = useTurn(
     agentId,
-    sessionId,
+    scope,
     open ? turn.startedAt : null,
     open ? turn.endedAt : null,
     turn.promptId,
@@ -60,7 +62,7 @@ export function TurnTelemetry({
   );
 
   return (
-    <div className="-mt-7">
+    <div className={className}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -68,6 +70,7 @@ export function TurnTelemetry({
         className={cn(
           "group inline-flex items-center gap-1.5 rounded-sm py-0.5 text-[11px] text-muted-foreground/70",
           "hover:text-foreground focus-visible:text-foreground",
+          triggerClassName,
         )}
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}

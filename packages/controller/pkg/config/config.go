@@ -9,7 +9,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -44,26 +43,28 @@ type Config struct {
 	LegacyAgentCPULimit    resource.Quantity
 	LegacyAgentMemoryLimit resource.Quantity
 
-	AgentProbesEnabled       bool
-	HarnessServerURL         string
-	HarnessServerPort        int
-	EnvoyImage               string
-	EnvoyPort                int
-	EnvoyMitmCAIssuer        string
-	VMRunnerCAIssuer         string
-	EnvoyMitmLeafDuration    time.Duration
-	EnvoyMitmLeafRenewBefore time.Duration
-	OTelEnv                  map[string]string
-	GatewayOTLPEndpoint      string
-	GatewayOTLPProtocol      string
-	ExtAuthzPort             int
-	ExtAuthzHoldSeconds      int
-	IstioTrustDomain         string
-	IstioWaypointName        string
-	TelemetryCollectorHost   string
-	TelemetryCollectorPort   int
-	ObjectStoreHost          string
-	ObjectStorePort          int
+	AgentProbesEnabled     bool
+	HarnessServerURL       string
+	HarnessServerPort      int
+	EnvoyImage             string
+	MachineDNSImage        string
+	EnvoyPort              int
+	EnvoyMitmCAIssuer      string
+	VMRunnerCAIssuer       string
+	OTelEnv                map[string]string
+	GatewayOTLPEndpoint    string
+	GatewayOTLPProtocol    string
+	ExtAuthzPort           int
+	ExtAuthzHoldSeconds    int
+	IstioTrustDomain       string
+	IstioWaypointName      string
+	TelemetryCollectorHost string
+	TelemetryCollectorPort int
+	ObjectStoreHost        string
+	ObjectStorePort        int
+
+	GatewayUpstreamTrustBundle string
+	ExtraTrustedCAs            string
 }
 
 const otelEnvPrefix = "OTEL_"
@@ -147,7 +148,7 @@ func (c *Config) TraceSamplingPercent() float64 {
 	arg := strings.TrimSpace(c.OTelEnv["OTEL_TRACES_SAMPLER_ARG"])
 	ratioArg := func() float64 {
 		if v, err := strconv.ParseFloat(arg, 64); err == nil {
-			return clampPercent(v * 100)
+			return min(max(v*100, 0), 100)
 		}
 		return 100
 	}
@@ -165,17 +166,6 @@ func (c *Config) TraceSamplingPercent() float64 {
 		return 100
 	default:
 		return 100
-	}
-}
-
-func clampPercent(p float64) float64 {
-	switch {
-	case p < 0:
-		return 0
-	case p > 100:
-		return 100
-	default:
-		return p
 	}
 }
 
@@ -199,26 +189,14 @@ func LoadFromEnv() (*Config, error) {
 		PodName:                podName,
 	}
 
-	if v := os.Getenv("AGENT_BASE"); v != "" {
-		dec := json.NewDecoder(strings.NewReader(v))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&cfg.AgentBase); err != nil {
-			return nil, fmt.Errorf("AGENT_BASE: invalid JSON: %w", err)
-		}
+	if err := decodeJSONEnv("AGENT_BASE", &cfg.AgentBase); err != nil {
+		return nil, err
 	}
-	if v := os.Getenv("AGENT_TEMPLATE_DEFAULTS"); v != "" {
-		dec := json.NewDecoder(strings.NewReader(v))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&cfg.AgentTemplateDefaults); err != nil {
-			return nil, fmt.Errorf("AGENT_TEMPLATE_DEFAULTS: invalid JSON: %w", err)
-		}
+	if err := decodeJSONEnv("AGENT_TEMPLATE_DEFAULTS", &cfg.AgentTemplateDefaults); err != nil {
+		return nil, err
 	}
-	if v := os.Getenv("WARM_POOL"); v != "" {
-		dec := json.NewDecoder(strings.NewReader(v))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&cfg.WarmPool); err != nil {
-			return nil, fmt.Errorf("WARM_POOL: invalid JSON: %w", err)
-		}
+	if err := decodeJSONEnv("WARM_POOL", &cfg.WarmPool); err != nil {
+		return nil, err
 	}
 	if cfg.AgentBase.AccessMode != "" {
 		slog.Warn("controller.agent.base.accessMode is deprecated and ignored — workspace volumes are always ReadWriteOnce (#2988); remove it from your values")
@@ -229,25 +207,23 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.AgentTemplateDefaults.AgentHome != "" {
 		slog.Warn("controller.agent.templateDefaults.agentHome is deprecated and ignored — the agent home is fixed at /home/agent; remove it from your values")
 	}
-	if v := os.Getenv("STORAGE_MIGRATION"); v != "" {
-		dec := json.NewDecoder(strings.NewReader(v))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&cfg.StorageMigration); err != nil {
-			return nil, fmt.Errorf("STORAGE_MIGRATION: invalid JSON: %w", err)
-		}
+	if err := decodeJSONEnv("STORAGE_MIGRATION", &cfg.StorageMigration); err != nil {
+		return nil, err
 	}
-	if v := os.Getenv("AGENT_VM"); v != "" {
-		dec := json.NewDecoder(strings.NewReader(v))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&cfg.VM); err != nil {
-			return nil, fmt.Errorf("AGENT_VM: invalid JSON: %w", err)
-		}
+	if err := decodeJSONEnv("AGENT_VM", &cfg.VM); err != nil {
+		return nil, err
 	}
 	if cfg.VM.Enabled && (cfg.VM.Runner.Image == "" || cfg.VM.Runner.Storage == "") {
 		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.image and runner.storage")
 	}
 	if cfg.VM.Enabled && (cfg.VM.Runner.Resources == nil || cfg.VM.Runner.Resources.Limits.Memory().IsZero()) {
 		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.resources.limits.memory — the runner admits machines against it, and without one it reads the node's allocatable")
+	}
+	if cfg.VM.RuntimeMigration.Retention < 0 {
+		return nil, fmt.Errorf("AGENT_VM: runtimeMigration.retention is %s, it must not be negative", cfg.VM.RuntimeMigration.Retention.AsDuration())
+	}
+	if cfg.VM.RuntimeMigration.Concurrency < 0 || cfg.VM.RuntimeMigration.OwnerConcurrency < 0 {
+		return nil, fmt.Errorf("AGENT_VM: runtimeMigration.concurrency and ownerConcurrency must not be negative (got %d and %d)", cfg.VM.RuntimeMigration.Concurrency, cfg.VM.RuntimeMigration.OwnerConcurrency)
 	}
 	if cfg.VM.Runner.Rollout.MaxConcurrent < 0 {
 		return nil, fmt.Errorf("AGENT_VM: runner.rollout.maxConcurrent is %d, it must not be negative", cfg.VM.Runner.Rollout.MaxConcurrent)
@@ -262,53 +238,51 @@ func LoadFromEnv() (*Config, error) {
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentProbesEnabled = envOrDefaultBool("AGENT_PROBES_ENABLED", true)
-	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2")
+	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1")
+	cfg.MachineDNSImage = envOrDefault("MACHINE_DNS_IMAGE", "mirror.gcr.io/coredns/coredns:1.14.7")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")
 	cfg.VMRunnerCAIssuer = envOrDefault("VM_RUNNER_CA_ISSUER", "platform-vm-runner-ca-issuer")
-	cfg.EnvoyMitmLeafDuration = envOrDefaultDuration("ENVOY_MITM_LEAF_DURATION", 0)
-	cfg.EnvoyMitmLeafRenewBefore = envOrDefaultDuration("ENVOY_MITM_LEAF_RENEW_BEFORE", 0)
 	cfg.ExtAuthzPort = envOrDefaultInt("EXT_AUTHZ_PORT", 4002)
 	cfg.ExtAuthzHoldSeconds = envOrDefaultInt("EXT_AUTHZ_HOLD_SECONDS", 1800)
 	cfg.IstioTrustDomain = envOrDefault("PLATFORM_ISTIO_TRUST_DOMAIN", "cluster.local")
 	cfg.IstioWaypointName = envOrDefault("PLATFORM_ISTIO_WAYPOINT_NAME", "apiserver-waypoint")
 	cfg.TelemetryCollectorHost = os.Getenv("PLATFORM_TELEMETRY_COLLECTOR_HOST")
 	cfg.TelemetryCollectorPort = envOrDefaultInt("PLATFORM_TELEMETRY_COLLECTOR_PORT", 4318)
-	cpuBudget, err := resource.ParseQuantity(envOrDefault("DEFAULT_USER_CPU_BUDGET", "4"))
-	if err != nil {
-		return nil, fmt.Errorf("DEFAULT_USER_CPU_BUDGET is not a valid K8s quantity: %w", err)
+	if extra := os.Getenv("PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS"); strings.TrimSpace(extra) != "" {
+		extras, err := ExtraTrustedCAs(extra)
+		if err != nil {
+			return nil, fmt.Errorf("PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS: %w", err)
+		}
+		bundle, err := GatewayUpstreamTrustBundle(systemCABundle, extras)
+		if err != nil {
+			return nil, fmt.Errorf("PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS: %w", err)
+		}
+		cfg.GatewayUpstreamTrustBundle = bundle
+		cfg.ExtraTrustedCAs = extras
 	}
-	memBudget, err := resource.ParseQuantity(envOrDefault("DEFAULT_USER_MEMORY_BUDGET", "8Gi"))
-	if err != nil {
-		return nil, fmt.Errorf("DEFAULT_USER_MEMORY_BUDGET is not a valid K8s quantity: %w", err)
+	for _, q := range []struct {
+		dst      *resource.Quantity
+		key, def string
+	}{
+		{&cfg.DefaultUserCPUBudget, "DEFAULT_USER_CPU_BUDGET", "4"},
+		{&cfg.DefaultUserMemoryBudget, "DEFAULT_USER_MEMORY_BUDGET", "8Gi"},
+		{&cfg.RequestsMinCPU, "REQUESTS_FROM_LIMITS_MIN_CPU", "100m"},
+		{&cfg.RequestsMinMemory, "REQUESTS_FROM_LIMITS_MIN_MEMORY", "128Mi"},
+		{&cfg.LegacyAgentCPULimit, "AGENT_LEGACY_CPU_LIMIT", "1"},
+		{&cfg.LegacyAgentMemoryLimit, "AGENT_LEGACY_MEMORY_LIMIT", "2Gi"},
+	} {
+		v, err := resource.ParseQuantity(envOrDefault(q.key, q.def))
+		if err != nil {
+			return nil, fmt.Errorf("%s is not a valid K8s quantity: %w", q.key, err)
+		}
+		*q.dst = v
 	}
-	cfg.DefaultUserCPUBudget = cpuBudget
-	cfg.DefaultUserMemoryBudget = memBudget
 	fraction, err := strconv.ParseFloat(envOrDefault("REQUESTS_FROM_LIMITS_FRACTION", "0.5"), 64)
 	if err != nil || fraction <= 0 || fraction > 1 {
 		return nil, fmt.Errorf("REQUESTS_FROM_LIMITS_FRACTION must be a number in (0, 1] (got %q)", os.Getenv("REQUESTS_FROM_LIMITS_FRACTION"))
 	}
-	minCPU, err := resource.ParseQuantity(envOrDefault("REQUESTS_FROM_LIMITS_MIN_CPU", "100m"))
-	if err != nil {
-		return nil, fmt.Errorf("REQUESTS_FROM_LIMITS_MIN_CPU is not a valid K8s quantity: %w", err)
-	}
-	minMemory, err := resource.ParseQuantity(envOrDefault("REQUESTS_FROM_LIMITS_MIN_MEMORY", "128Mi"))
-	if err != nil {
-		return nil, fmt.Errorf("REQUESTS_FROM_LIMITS_MIN_MEMORY is not a valid K8s quantity: %w", err)
-	}
 	cfg.RequestsFraction = fraction
-	cfg.RequestsMinCPU = minCPU
-	cfg.RequestsMinMemory = minMemory
-	legacyCPU, err := resource.ParseQuantity(envOrDefault("AGENT_LEGACY_CPU_LIMIT", "1"))
-	if err != nil {
-		return nil, fmt.Errorf("AGENT_LEGACY_CPU_LIMIT is not a valid K8s quantity: %w", err)
-	}
-	legacyMem, err := resource.ParseQuantity(envOrDefault("AGENT_LEGACY_MEMORY_LIMIT", "2Gi"))
-	if err != nil {
-		return nil, fmt.Errorf("AGENT_LEGACY_MEMORY_LIMIT is not a valid K8s quantity: %w", err)
-	}
-	cfg.LegacyAgentCPULimit = legacyCPU
-	cfg.LegacyAgentMemoryLimit = legacyMem
 	if v := os.Getenv("PLATFORM_OBJECT_STORE_AUTHORITY"); v != "" {
 		host, port, err := net.SplitHostPort(v)
 		if err != nil {
@@ -383,10 +357,6 @@ func (w *WarmPool) validate() error {
 	return nil
 }
 
-func (c *Config) APIServerURL() string {
-	return fmt.Sprintf("http://%s-apiserver-harness.%s.svc.cluster.local:%d", c.ReleaseName, c.ReleaseNamespace, c.HarnessServerPort)
-}
-
 func (c *Config) ExtAuthzServiceName(instanceID string) string {
 	return fmt.Sprintf("%s-extauthz-%s", c.ReleaseName, instanceID)
 }
@@ -403,6 +373,19 @@ func (c *Config) TelemetryEnabled() bool { return c.TelemetryCollectorHost != ""
 
 func (c *Config) PrincipalFor(instanceID string) string {
 	return fmt.Sprintf("%s/ns/%s/sa/%s", c.IstioTrustDomain, c.Namespace, instanceID)
+}
+
+func decodeJSONEnv(key string, dst any) error {
+	v := os.Getenv(key)
+	if v == "" {
+		return nil
+	}
+	dec := json.NewDecoder(strings.NewReader(v))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		return fmt.Errorf("%s: invalid JSON: %w", key, err)
+	}
+	return nil
 }
 
 func envOrDefault(key, def string) string {
@@ -425,15 +408,6 @@ func envOrDefaultBool(key string, def bool) bool {
 	if v := os.Getenv(key); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			return b
-		}
-	}
-	return def
-}
-
-func envOrDefaultDuration(key string, def time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
 		}
 	}
 	return def

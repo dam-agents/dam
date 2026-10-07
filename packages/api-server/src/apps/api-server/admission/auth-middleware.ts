@@ -4,9 +4,25 @@ import {
   clientSurface,
   emitUserAuthenticated,
   type Authenticate,
+  type AuthDenialKind,
   type SurfaceAttribution,
 } from "./auth.js";
-import { httpAuthDenial } from "./mappers.js";
+
+const httpAuthDenial: Record<
+  AuthDenialKind,
+  { status: 401 | 403 | 503; body: Record<string, string> }
+> = {
+  "missing-token": { status: 401, body: { error: "unauthorized" } },
+  unauthorized: { status: 401, body: { error: "unauthorized" } },
+  "auth-unavailable": { status: 503, body: { error: "auth unavailable" } },
+  forbidden: {
+    status: 403,
+    body: {
+      error: "forbidden",
+      message: "Access pending approval. Contact your administrator.",
+    },
+  },
+};
 
 export function createAuthMiddleware(
   authenticate: Authenticate,

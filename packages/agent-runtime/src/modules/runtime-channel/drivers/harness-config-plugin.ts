@@ -8,13 +8,14 @@ import type {
 } from "agent-runtime-api";
 import { parseFile } from "../infrastructure/file-codec.js";
 import {
-  createFileOps,
+  applyFiles,
   getNested,
   type FileDesired,
 } from "../infrastructure/file-ops.js";
-import type {
-  ModelDiscovery,
-  ModelDiscoveryOutcome,
+import {
+  selectDiscoverySource,
+  type ModelDiscovery,
+  type ModelDiscoveryOutcome,
 } from "../infrastructure/model-discovery.js";
 import type { HarnessConfigBinding } from "../manifest.js";
 import { expandHome } from "../../../core/expand-home.js";
@@ -44,7 +45,6 @@ export function createHarnessConfigPlugin(deps: {
   log: (msg: string) => void;
 }): HarnessConfigPlugin {
   const { binding, agentHome, envReader, discoverModels, log } = deps;
-  const fileOps = createFileOps();
 
   const apply: ApplyHarnessConfigFn = async (payload) => {
     if (!binding) {
@@ -59,15 +59,17 @@ export function createHarnessConfigPlugin(deps: {
     if (payload.mode !== undefined && keys.mode)
       toSet.set(keys.mode, payload.mode);
     for (const [id, value] of Object.entries(payload.configOptions ?? {})) {
-      const keyPath = keys.configOptions?.[id];
-      if (keyPath) toSet.set(keyPath, value);
-      else log(`[harness-config] no key mapping for "${id}" — skipping`);
+      const keyPaths = optionKeyPaths(keys, id);
+      if (keyPaths.length === 0)
+        log(`[harness-config] no key mapping for "${id}" — skipping`);
+      for (const keyPath of keyPaths) toSet.set(keyPath, value);
     }
     const toUnset: string[] = [];
     for (const field of payload.unset ?? []) {
-      const keyPath = keyPathFor(field, keys);
-      if (keyPath) toUnset.push(keyPath);
-      else log(`[harness-config] no key mapping for "${field}" — skipping`);
+      const keyPaths = keyPathsFor(field, keys);
+      if (keyPaths.length === 0)
+        log(`[harness-config] no key mapping for "${field}" — skipping`);
+      toUnset.push(...keyPaths);
     }
 
     if (toSet.size === 0 && toUnset.length === 0) {
@@ -96,7 +98,7 @@ export function createHarnessConfigPlugin(deps: {
       `[harness-config] → ${targetPath} (${format}): set ${[...toSet.keys()].join(", ") || "<none>"}${toUnset.length ? `; unset ${toUnset.join(", ")}` : ""}`,
     );
     const before = readCurrentValues(binding, agentHome, log);
-    await fileOps.apply(new Map([[targetPath, fragments]]), {
+    await applyFiles(new Map([[targetPath, fragments]]), {
       agentHome,
       log,
       onUnparseable: "throw",
@@ -113,12 +115,31 @@ export function createHarnessConfigPlugin(deps: {
       : { model: null, mode: null, configOptions: {} };
     if (opts?.discover === false) return values;
 
-    const outcome: ModelDiscoveryOutcome = binding
-      ? await discoverModels(binding.modelDiscovery, envReader.current())
-      : { status: "not-configured" };
+    const env = envReader.current();
+    const outcome: ModelDiscoveryOutcome = !binding
+      ? { status: "not-configured" }
+      : binding.modelDiscovery && !envReader.ready()
+        ? { status: "unavailable" }
+        : await discoverModels(binding.modelDiscovery, env);
     switch (outcome.status) {
-      case "observed":
-        return { ...values, availableModels: outcome.models };
+      case "observed": {
+        const extendsCatalog = selectDiscoverySource(
+          binding?.modelDiscovery,
+          env,
+        )?.spec.extendsCatalog;
+        const catalogModels = extendsCatalog
+          ? (binding?.catalog?.options.find((o) => o.id === "model")?.choices ??
+            [])
+          : [];
+        const listed = new Set(catalogModels.map((c) => c.value));
+        return {
+          ...values,
+          availableModels: [
+            ...catalogModels,
+            ...outcome.models.filter((m) => !listed.has(m.value)),
+          ],
+        };
+      }
       case "not-configured":
         return { ...values, availableModels: null };
       case "unavailable":
@@ -127,21 +148,21 @@ export function createHarnessConfigPlugin(deps: {
   };
 
   const seedModel = async (): Promise<boolean> => {
-    const spec = binding?.modelDiscovery;
-    if (!binding || !spec || !binding.keys.model) return false;
+    if (!binding?.modelDiscovery || !binding.keys.model) return false;
     const current = readCurrentValues(binding, agentHome, log);
     if (current.model) return false;
 
     const env = envReader.current();
-    const pinned = spec.pinEnv?.find((name) => !!env[name]?.trim());
+    const source = selectDiscoverySource(binding.modelDiscovery, env);
+    const pinned = source?.spec.pinEnv?.find((name) => !!env[name]?.trim());
     if (pinned) {
       log(`[harness-config] no model seeded: ${pinned} pins one already`);
       return false;
     }
 
-    const outcome = await discoverModels(spec, env);
+    const outcome = await discoverModels(binding.modelDiscovery, env);
     if (outcome.status !== "observed") return false;
-    if (!spec.redirectEnv?.includes(outcome.via)) {
+    if (!source?.spec.redirectEnv?.includes(outcome.via)) {
       log(
         `[harness-config] no model seeded: ${outcome.via} supplies the harness's own endpoint`,
       );
@@ -196,8 +217,9 @@ function readCurrentValues(
     typeof v === "string" ? v : null;
   const { keys } = binding;
   const configOptions: Record<string, string> = {};
-  for (const [id, keyPath] of Object.entries(keys.configOptions ?? {})) {
-    const v = getNested(obj, keyPath.split("."));
+  for (const id of Object.keys(keys.configOptions ?? {})) {
+    const [keyPath] = optionKeyPaths(keys, id);
+    const v = keyPath && getNested(obj, keyPath.split("."));
     if (typeof v === "string") {
       configOptions[id] = v;
     }
@@ -209,11 +231,20 @@ function readCurrentValues(
   };
 }
 
-function keyPathFor(
+function keyPathsFor(
   field: string,
   keys: HarnessConfigBinding["keys"],
-): string | undefined {
-  if (field === "model") return keys.model;
-  if (field === "mode") return keys.mode;
-  return keys.configOptions?.[field];
+): string[] {
+  if (field === "model") return keys.model ? [keys.model] : [];
+  if (field === "mode") return keys.mode ? [keys.mode] : [];
+  return optionKeyPaths(keys, field);
+}
+
+function optionKeyPaths(
+  keys: HarnessConfigBinding["keys"],
+  id: string,
+): string[] {
+  const mapped = keys.configOptions?.[id];
+  if (mapped === undefined) return [];
+  return typeof mapped === "string" ? [mapped] : [...mapped];
 }

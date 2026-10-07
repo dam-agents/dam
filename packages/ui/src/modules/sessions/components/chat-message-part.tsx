@@ -1,20 +1,52 @@
 import { Document } from "@carbon/icons-react";
+import { useState } from "react";
 
 import { formatBytes } from "@/lib/format-size";
 
 import { Markdown } from "../../../components/markdown.js";
-import type { MessagePart, Role } from "../../../types.js";
-import { HistoryBlock } from "./history-block.js";
+import type {
+  MessagePart,
+  Role,
+  ToolChip as ToolChipPart,
+} from "../../../types.js";
+import { DelegationBlock } from "../../invocations/components/delegation-block.js";
+import { useOwnedSpawns } from "../../invocations/components/delegation-owners.js";
+import {
+  awaitChipTitle,
+  isAwaitSubAgentsChip,
+} from "../../invocations/lib/sub-agent-chips.js";
+import { ActivityBlock } from "./activity-block.js";
 import { PermissionVerdictLine } from "./permission-prompt.js";
 import { ThoughtBlock } from "./thought-block.js";
 import { ToolChip } from "./tool-chip.js";
+
+function ToolPart({ chip }: { chip: ToolChipPart }) {
+  const spawns = useOwnedSpawns(chip);
+  if (spawns) return <DelegationBlock chip={chip} spawns={spawns} />;
+  if (isAwaitSubAgentsChip(chip))
+    return <ToolChip chip={{ ...chip, title: awaitChipTitle(chip) }} />;
+  return <ToolChip chip={chip} />;
+}
+
+function HistoryBlock({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <ActivityBlock
+      label="Conversation history"
+      open={open}
+      onToggle={() => setOpen((o) => !o)}
+    >
+      <div className="whitespace-pre-wrap break-words">{text}</div>
+    </ActivityBlock>
+  );
+}
 
 interface Props {
   part: MessagePart;
   role: Role;
   streaming: boolean;
   isLast: boolean;
-  onFileClick: (path: string) => void;
+  onFileClick?: (path: string) => void;
 }
 
 export function ChatMessagePart({
@@ -63,6 +95,6 @@ export function ChatMessagePart({
         </div>
       );
     default:
-      return <ToolChip chip={part} />;
+      return <ToolPart chip={part} />;
   }
 }

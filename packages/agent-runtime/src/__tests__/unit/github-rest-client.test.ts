@@ -12,10 +12,8 @@ describe("createGitHubRestClient", () => {
       "fetch",
       vi.fn().mockRejectedValue(new TypeError("fetch failed", { cause })),
     );
-    const res = await createGitHubRestClient().getCommitHead({
-      owner: "acme",
-      repo: "private",
-    });
+    const client = createGitHubRestClient({ token: () => "platform:conn:a" });
+    const res = await client.getCommitHead({ owner: "acme", repo: "private" });
     expect(res).toEqual({
       ok: false,
       error: {

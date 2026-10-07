@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { useForm } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
@@ -28,21 +28,24 @@ import {
   scheduleFormSchema,
   type ScheduleFormValues,
 } from "./schedule-form-schema.js";
+import type { ScheduleDraft } from "./schedule-kind-field.js";
 
 interface Props {
-  targetAgentId: string;
+  agentId: string;
   existing?: Schedule;
+  draft?: ScheduleDraft;
+  onDraftChange?: (draft: ScheduleDraft) => void;
   leadingFields?: ReactNode;
   onClose: () => void;
-  onSaved: () => void;
 }
 
 export function RecurringScheduleForm({
-  targetAgentId,
+  agentId,
   existing,
+  draft,
+  onDraftChange,
   leadingFields,
   onClose,
-  onSaved,
 }: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
@@ -65,9 +68,17 @@ export function RecurringScheduleForm({
   const { control, register, handleSubmit, watch, formState } =
     useForm<ScheduleFormValues>({
       resolver: zodResolver(scheduleFormSchema),
-      defaultValues: scheduleFormDefaults(existing),
+      defaultValues: { ...scheduleFormDefaults(existing), ...draft },
     });
   const { errors } = formState;
+
+  useEffect(() => {
+    if (!onDraftChange) return;
+    const sub = watch(({ name, task }) =>
+      onDraftChange({ name: name ?? "", task: task ?? "" }),
+    );
+    return () => sub.unsubscribe();
+  }, [watch, onDraftChange]);
 
   const values = watch();
 
@@ -91,7 +102,6 @@ export function RecurringScheduleForm({
           ? `Schedule "${v.name}" saved`
           : `Schedule "${v.name}" added`,
       });
-      onSaved();
       onClose();
     };
     if (existing) {
@@ -102,7 +112,7 @@ export function RecurringScheduleForm({
     } else {
       createSchedule.mutate(
         {
-          agentId: targetAgentId,
+          agentId,
           ...common,
           ...(precheck ? { precheck } : {}),
         },
@@ -181,7 +191,6 @@ export function RecurringScheduleForm({
         label={existing ? "Save" : "Create"}
         pendingLabel={existing ? "Saving…" : "Creating…"}
         pending={mutation.isPending}
-        disabled={!targetAgentId}
       />
     </form>
   );

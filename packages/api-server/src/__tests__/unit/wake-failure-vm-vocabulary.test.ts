@@ -21,15 +21,20 @@ const vocabulary = JSON.parse(
   ),
 ) as { reasons: string[] };
 
+const controllerOnlyReasons = new Set(["MachineRunnerUnschedulable"]);
+
 const machineReasons = [...POD_FAILURE_REASONS].filter((r) =>
   r.startsWith("Machine"),
 );
+const runnerReasons = machineReasons.filter(
+  (r) => !controllerOnlyReasons.has(r),
+);
 
 describe("the VM runner's failure reasons", () => {
-  // TEST_SCENARIO: every machine reason this module treats as a failed wake is one the runner can report.
+  // TEST_SCENARIO: every machine reason this module treats as a failed wake is one the runner can report, except the ones the controller sets itself.
   it("are all in the machine API's vocabulary", () => {
-    expect(machineReasons.length).toBeGreaterThan(0);
-    for (const reason of machineReasons) {
+    expect(runnerReasons.length).toBeGreaterThan(0);
+    for (const reason of runnerReasons) {
       expect(vocabulary.reasons).toContain(reason);
     }
   });

@@ -1,7 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import { CardButton } from "@/components/ui/card-button";
 
-import { StatusBadge } from "../../../../components/status-indicator.js";
+import {
+  AlwaysOnTag,
+  StatusBadge,
+} from "../../../../components/status-indicator.js";
 import type { AgentView } from "../../../../types.js";
 import { formatCpuMemory, sizeInMi } from "../../../budgets/lib/slots.js";
 import { AgentChannelChips } from "../../../sandboxes/components/channels/agent-channel-chips.js";
@@ -62,10 +65,10 @@ export function AgentPickerCard({
           )}
         </AgentChannelChips>
       </span>
-      <StatusBadge
-        state={display.state}
-        alwaysOn={hibernationTimeoutMin === 0}
-      />
+      <span className="flex shrink-0 items-center gap-2">
+        {hibernationTimeoutMin === 0 && <AlwaysOnTag />}
+        <StatusBadge state={display.state} />
+      </span>
     </CardButton>
   );
 }

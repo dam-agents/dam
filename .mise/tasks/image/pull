@@ -1,0 +1,35 @@
+#!/usr/bin/env -S usage bash
+#MISE description="Pull an image for the host's arch into a named image tar"
+#MISE hide=true
+#MISE dir="{{cwd}}"
+#USAGE arg "<ref>"
+#USAGE arg "<tar>"
+#USAGE arg "<name>" help="The name it imports as, e.g. platform-mock:latest"
+set -euo pipefail
+l="$(mktemp -d)"
+trap 'rm -rf "$l"' EXIT
+platform="linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')"
+# A registry can cut a layer download short ("error writing layer: unexpected
+# EOF" from quay.io, on a CI run that pulls five images at once), so a failed
+# pull is retried, each time into an empty layout.
+for attempt in 1 2 3; do
+  crane pull --format=oci --platform "$platform" "$usage_ref" "$l" && break
+  [ "$attempt" -lt 3 ] || exit 1
+  echo "pull of $usage_ref failed (attempt $attempt); retrying in $((attempt * 5))s" >&2
+  rm -rf "${l:?}"/* "${l:?}"/.[!.]* 2>/dev/null || true
+  sleep $((attempt * 5))
+done
+# --platform picks from a multi-arch index, but a single-arch image comes back
+# as whatever it was built for: the e2e mock is published for amd64 alone, and
+# an arm64 Mac imported and staged a tree none of its machines could exec. It
+# exits 3, apart from a failed pull, so a caller can build the image instead.
+manifest="$(jq -r '.manifests[0].digest' "$l/index.json")"
+config="$(jq -r '.config.digest' "$l/blobs/${manifest/://}")"
+arch="$(jq -r '.architecture' "$l/blobs/${config/://}")"
+[ "linux/$arch" = "$platform" ] || { echo "$usage_ref is built for linux/$arch, not this host's $platform" >&2; exit 3; }
+"$(dirname "$0")/name-layout" "$l" "$usage_name"
+mkdir -p "$(dirname "$usage_tar")"
+tar -C "$l" -cf "$usage_tar" $(ls -A "$l")
+# Older than any source, so a package's :oci task still builds the checkout
+# over a pulled image rather than taking it for its own output.
+touch -t 198001010000 "$usage_tar"

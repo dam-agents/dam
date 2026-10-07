@@ -444,7 +444,7 @@ func twoCredentialChain(firstName, secondName, host string) envoyHostChain {
 func TestRenderEnvoyBootstrap_CredentialedRoutePinnedToStaticCluster(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	assert.Contains(t, got, "name: upstream_platform-conn-github")
@@ -463,7 +463,7 @@ func TestRenderEnvoyBootstrap_CredentialedRoutePinnedToStaticCluster(t *testing.
 }
 
 func TestRenderEnvoyBootstrap_EmptyRoutesNoLeafTLSReferences(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil)
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil, false)
 	require.NoError(t, err)
 	assert.NotContains(t, got, "tls.key",
 		"empty-routes bootstrap must not reference the leaf TLS private key — pod has no envoy-tls volume to back it")
@@ -476,7 +476,7 @@ func TestRenderEnvoyBootstrap_ObjectStoreRoutesRenderedWhenConfigured(t *testing
 	cfg := *bootstrapTestCfg
 	cfg.ObjectStoreHost = "platform-seaweedfs.platform.svc.cluster.local"
 	cfg.ObjectStorePort = 8333
-	got, err := renderEnvoyBootstrap("inst-1", "", &cfg, nil)
+	got, err := renderEnvoyBootstrap("inst-1", "", &cfg, nil, false)
 	require.NoError(t, err)
 
 	assert.Contains(t, got, "exact: platform-seaweedfs.platform.svc.cluster.local:8333")
@@ -487,7 +487,7 @@ func TestRenderEnvoyBootstrap_ObjectStoreRoutesRenderedWhenConfigured(t *testing
 }
 
 func TestRenderEnvoyBootstrap_NoObjectStoreNoStoreRoutes(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil)
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil, false)
 	require.NoError(t, err)
 	assert.NotContains(t, got, "objectstore_passthrough")
 }
@@ -495,7 +495,7 @@ func TestRenderEnvoyBootstrap_NoObjectStoreNoStoreRoutes(t *testing.T) {
 func TestRenderEnvoyBootstrap_NoCredentialedRouteForwardsViaDynamicForwardProxy(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		allowOnlyChain("platform-allow-only-npm", "registry.npmjs.org"),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	assert.NotContains(t, got, "upstream_platform-allow-only-npm")
@@ -507,7 +507,7 @@ func TestRenderEnvoyBootstrap_MixedRoutesOnlyPinCredentialed(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
 		allowOnlyChain("platform-allow-only-npm", "registry.npmjs.org"),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	doc := mustParseBootstrap(t, got)
@@ -525,7 +525,7 @@ func telemetryTestCfg() *config.Config {
 }
 
 func TestRenderEnvoyBootstrap_TelemetryStampsTrustedAgentID(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", "", telemetryTestCfg(), nil)
+	got, err := renderEnvoyBootstrap("inst-1", "", telemetryTestCfg(), nil, false)
 	require.NoError(t, err)
 
 	doc := mustParseBootstrap(t, got)
@@ -561,7 +561,7 @@ func TestRenderEnvoyBootstrap_TelemetryStampsTrustedAgentID(t *testing.T) {
 func TestRenderEnvoyBootstrap_TelemetryRendersValidYAML(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", telemetryTestCfg(), []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 	doc := mustParseBootstrap(t, got)
 	assert.NotNil(t, filterChainNamed(t, doc, "terminate_otel_collector"))
@@ -570,7 +570,7 @@ func TestRenderEnvoyBootstrap_TelemetryRendersValidYAML(t *testing.T) {
 }
 
 func TestRenderEnvoyBootstrap_TelemetryDisabledNoCollectorChain(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil)
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil, false)
 	require.NoError(t, err)
 	assert.NotContains(t, got, "terminate_otel_collector")
 	assert.NotContains(t, got, "otel_collector")
@@ -579,7 +579,7 @@ func TestRenderEnvoyBootstrap_TelemetryDisabledNoCollectorChain(t *testing.T) {
 }
 
 func TestRenderEnvoyBootstrap_TelemetryAttributionOverride(t *testing.T) {
-	got, err := renderEnvoyBootstrap("target-1", "driver-root", telemetryTestCfg(), nil)
+	got, err := renderEnvoyBootstrap("target-1", "driver-root", telemetryTestCfg(), nil, false)
 	require.NoError(t, err)
 
 	assert.Contains(t, got, "key: x-platform-agent-id")
@@ -598,7 +598,7 @@ func TestRenderEnvoyBootstrap_TelemetryAttributionOverride(t *testing.T) {
 }
 
 func TestRenderEnvoyBootstrap_TelemetryAttributionOverrideEqualToInstanceIsNoop(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", "inst-1", telemetryTestCfg(), nil)
+	got, err := renderEnvoyBootstrap("inst-1", "inst-1", telemetryTestCfg(), nil, false)
 	require.NoError(t, err)
 	assert.Contains(t, got, "value: inst-1")
 	assert.NotContains(t, got, "key: x-platform-invocation-id")
@@ -642,7 +642,7 @@ func TestEnvoyVolumes_NoLeafWhenNoSecretsNoTelemetry(t *testing.T) {
 func TestRenderEnvoyBootstrap_TelemetryHostCollisionDropsCredentialedChain(t *testing.T) {
 	cfg := telemetryTestCfg()
 	colliding := credentialedChain("platform-conn-collector", cfg.TelemetryCollectorHost)
-	got, err := renderEnvoyBootstrap("inst-1", "", cfg, []envoyHostChain{colliding})
+	got, err := renderEnvoyBootstrap("inst-1", "", cfg, []envoyHostChain{colliding}, false)
 	require.NoError(t, err)
 	doc := mustParseBootstrap(t, got)
 	assert.NotNil(t, filterChainNamed(t, doc, "terminate_otel_collector"),
@@ -659,7 +659,7 @@ func TestRenderEnvoyBootstrap_TelemetryHostCollisionDropsCredentialedChain(t *te
 func TestRenderEnvoyBootstrap_TelemetryHostCollisionDropsPromotedChain(t *testing.T) {
 	cfg := telemetryTestCfg()
 	promoted := allowOnlyChain("l7", cfg.TelemetryCollectorHost)
-	got, err := renderEnvoyBootstrap("inst-1", "", cfg, []envoyHostChain{promoted})
+	got, err := renderEnvoyBootstrap("inst-1", "", cfg, []envoyHostChain{promoted}, false)
 	require.NoError(t, err)
 	doc := mustParseBootstrap(t, got)
 	assert.NotNil(t, filterChainNamed(t, doc, "terminate_otel_collector"),
@@ -671,7 +671,7 @@ func TestRenderEnvoyBootstrap_TelemetryHostCollisionDropsPromotedChain(t *testin
 
 // TEST_SCENARIO: the gateway forwards ordinary agent traffic to whatever host the request names, and the collector answers to more names than the one configured value — short service DNS, its cluster IP, a second port. Matching those to stamp selectively cannot be made exhaustive, so the outer listener stamps every request it forwards for the agent, overwriting whatever the agent set.
 func TestRenderEnvoyBootstrap_OuterListenerStampsAttributionOnAllEgress(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", "", telemetryTestCfg(), nil)
+	got, err := renderEnvoyBootstrap("inst-1", "", telemetryTestCfg(), nil, false)
 	require.NoError(t, err)
 	rc := outerRouteConfig(t, mustParseBootstrap(t, got))
 	require.NotNil(t, rc, "the outer listener must have a route configuration")
@@ -686,7 +686,7 @@ func TestRenderEnvoyBootstrap_OuterListenerStampsAttributionOnAllEgress(t *testi
 
 // TEST_SCENARIO: an Invocation target attributes to its root Driver, so the id the gateway stamps is the Driver's and the target's own id rides alongside it. The outer listener must carry that same pairing, not the plain non-target stamp.
 func TestRenderEnvoyBootstrap_OuterListenerStampsInvocationIDForTarget(t *testing.T) {
-	got, err := renderEnvoyBootstrap("target-1", "driver-root", telemetryTestCfg(), nil)
+	got, err := renderEnvoyBootstrap("target-1", "driver-root", telemetryTestCfg(), nil, false)
 	require.NoError(t, err)
 	rc := outerRouteConfig(t, mustParseBootstrap(t, got))
 	require.NotNil(t, rc)
@@ -707,7 +707,7 @@ func TestRenderEnvoyBootstrap_OuterListenerStampsInvocationIDForTarget(t *testin
 // TEST_SCENARIO: two places now apply the attribution stamp, and a stamp that differed between them would attribute the same agent's telemetry two ways depending on the route it took. They are rendered from one helper, and this pins that they agree.
 func TestRenderEnvoyBootstrap_OuterListenerAndCollectorChainStampAlike(t *testing.T) {
 	for _, ids := range [][2]string{{"inst-1", ""}, {"target-1", "driver-root"}} {
-		got, err := renderEnvoyBootstrap(ids[0], ids[1], telemetryTestCfg(), nil)
+		got, err := renderEnvoyBootstrap(ids[0], ids[1], telemetryTestCfg(), nil, false)
 		require.NoError(t, err)
 		doc := mustParseBootstrap(t, got)
 		rc := outerRouteConfig(t, doc)
@@ -719,7 +719,7 @@ func TestRenderEnvoyBootstrap_OuterListenerAndCollectorChainStampAlike(t *testin
 
 // TEST_SCENARIO: with no telemetry backend there is no collector to attribute to, so the gateway has no reason to disclose the agent's id to every plaintext host it calls — it removes the headers instead of stamping them, and still forwards none the agent set.
 func TestRenderEnvoyBootstrap_OuterListenerStripsAttributionWithoutTelemetry(t *testing.T) {
-	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil)
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil, false)
 	require.NoError(t, err)
 	rc := outerRouteConfig(t, mustParseBootstrap(t, got))
 	require.NotNil(t, rc)
@@ -727,71 +727,6 @@ func TestRenderEnvoyBootstrap_OuterListenerStripsAttributionWithoutTelemetry(t *
 		"nothing to attribute to, so nothing is disclosed")
 	assert.Equal(t, []any{"x-platform-agent-id", "x-platform-invocation-id"},
 		rc["request_headers_to_remove"])
-}
-
-func secretWithEnvMappings(name, secretType string, rawJSON string) corev1.Secret {
-	s := ownerSecret(name, secretType, "")
-	if s.Annotations == nil {
-		s.Annotations = map[string]string{}
-	}
-	s.Annotations[envoyEnvMappingsAnn] = rawJSON
-	return s
-}
-
-func envByName(envs []corev1.EnvVar) map[string]string {
-	out := map[string]string{}
-	for _, e := range envs {
-		out[e.Name] = e.Value
-	}
-	return out
-}
-
-func TestCredentialEnvVars_ReadsEnvMappingsAnnotation(t *testing.T) {
-	got := credentialEnvVars([]corev1.Secret{
-		secretWithEnvMappings(
-			"platform-cred-aaa",
-			"generic",
-			`[{"envName":"FOO","placeholder":"foo-sentinel"},{"envName":"BAR","placeholder":"bar-sentinel"}]`,
-		),
-	})
-	envs := envByName(got)
-	assert.Equal(t, "foo-sentinel", envs["FOO"])
-	assert.Equal(t, "bar-sentinel", envs["BAR"])
-	assert.Len(t, envs, 2)
-}
-
-func TestCredentialEnvVars_FirstSecretWinsOnEnvNameCollision(t *testing.T) {
-	got := credentialEnvVars([]corev1.Secret{
-		secretWithEnvMappings(
-			"platform-cred-aaa",
-			"generic",
-			`[{"envName":"SHARED","placeholder":"first"}]`,
-		),
-		secretWithEnvMappings(
-			"platform-cred-zzz",
-			"generic",
-			`[{"envName":"SHARED","placeholder":"second"}]`,
-		),
-	})
-	envs := envByName(got)
-	assert.Equal(t, "first", envs["SHARED"])
-	assert.Len(t, envs, 1)
-}
-
-func TestCredentialEnvVars_ConnectionEnvMappingsDeclareTheVars(t *testing.T) {
-	gh := ownerSecret("platform-conn-github", "connection", "github")
-	delete(gh.Annotations, envoyHostPatternAnn)
-	gh.Annotations[envoyEnvMappingsAnn] = `[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"}]`
-
-	ghe := ownerSecret("platform-conn-ghe", "connection", "github-enterprise")
-	delete(ghe.Annotations, envoyHostPatternAnn)
-	ghe.Annotations[envoyEnvMappingsAnn] =
-		`[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"},` +
-			`{"envName":"GH_HOST","placeholder":"ghe.example.com"}]`
-
-	envs := envByName(credentialEnvVars([]corev1.Secret{gh, ghe}))
-	assert.Equal(t, "dummy-placeholder", envs["GH_TOKEN"])
-	assert.Equal(t, "ghe.example.com", envs["GH_HOST"])
 }
 
 func TestChainsFromSecrets_ConnectionSecretFansIntoNChains(t *testing.T) {
@@ -951,7 +886,7 @@ func TestSDSFileKeyForHost_StableAndShort(t *testing.T) {
 func TestRenderEnvoyBootstrap_QueryParamCredentialRendersLuaFilter(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		queryParamChain("platform-cred-bob", "prod.ibm-bob-staging.cloud.ibm.com", "X-Bobshell-Cred", "key"),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	assert.Contains(t, got, luaFilterType)
@@ -965,7 +900,7 @@ func TestRenderEnvoyBootstrap_QueryParamCredentialRendersLuaFilter(t *testing.T)
 func TestRenderEnvoyBootstrap_HeaderOnlyChainSkipsLua(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 	assert.NotContains(t, got, luaFilterType)
 	assert.Contains(t, got, "header: Authorization")
@@ -976,7 +911,7 @@ func TestRenderEnvoyBootstrap_HostileValuesEscapedNotInjected(t *testing.T) {
 	const hostileHeader = "X-Evil\": pwned\n"
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		queryParamChain("platform-cred-x", hostile, hostileHeader, "key"),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	doc := mustParseBootstrap(t, got)
@@ -998,7 +933,7 @@ func TestRenderEnvoyBootstrap_HostileValuesEscapedNotInjected(t *testing.T) {
 func TestRenderEnvoyBootstrap_TwoCredentialsOnSameHostStackInOneChain(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		twoCredentialChain("platform-cred-header", "platform-cred-query", "prod.ibm-bob-staging.cloud.ibm.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	injectorHeaders := strings.Count(got, "header: Authorization")
@@ -1052,7 +987,7 @@ func TestChainsFromSecrets_SameHeaderFromTwoConnectionsBothSurvive(t *testing.T)
 	assert.Equal(t, first.Name, chains[0].Credentials[0].SecretName)
 	assert.Equal(t, second.Name, chains[0].Credentials[1].SecretName)
 	assert.Equal(t, []string{"conn-a", "conn-b"}, chains[0].ConnectionIDs())
-	assert.True(t, chains[0].Contested())
+	assert.True(t, chains[0].ContestedAt("/"))
 }
 
 func TestChainsFromSecrets_SameHeaderTwiceWithinOneConnectionKeepsFirst(t *testing.T) {
@@ -1064,7 +999,7 @@ func TestChainsFromSecrets_SameHeaderTwiceWithinOneConnectionKeepsFirst(t *testi
 	chains := chainsFromSecrets([]corev1.Secret{only}, nil)
 	require.Len(t, chains, 1)
 	require.Len(t, chains[0].Credentials, 1)
-	assert.False(t, chains[0].Contested())
+	assert.False(t, chains[0].ContestedAt("/"))
 }
 
 func TestChainsFromSecrets_DistinctHeadersFromTwoConnectionsAreNotContested(t *testing.T) {
@@ -1081,7 +1016,7 @@ func TestChainsFromSecrets_DistinctHeadersFromTwoConnectionsAreNotContested(t *t
 	chains := chainsFromSecrets([]corev1.Secret{a, b}, nil)
 	require.Len(t, chains, 1)
 	require.Len(t, chains[0].Credentials, 2)
-	assert.False(t, chains[0].Contested())
+	assert.False(t, chains[0].ContestedAt("/"))
 	assert.Empty(t, chains[0].CredentialsDisabledAt("conn-a", "/"))
 	assert.Empty(t, chains[0].CredentialsDisabledAt("conn-b", "/"))
 }
@@ -1218,33 +1153,6 @@ func TestEnvoySecretsRev_TemplateRevBumpRollsExistingPods(t *testing.T) {
 	assert.NotEqual(t, one, two)
 }
 
-func TestCredentialEnvVars_RespectsEnvMappingsAnnotation(t *testing.T) {
-	s := ownerSecret("platform-cred-x", "generic", "")
-	s.Annotations[envoyEnvMappingsAnn] = `[{"envName":"GH_TOKEN","placeholder":"dummy-placeholder"},{"envName":"OTHER","placeholder":"ph"}]`
-
-	envs := credentialEnvVars([]corev1.Secret{s})
-
-	got := map[string]string{}
-	for _, e := range envs {
-		got[e.Name] = e.Value
-	}
-	assert.Equal(t, "dummy-placeholder", got["GH_TOKEN"])
-	assert.Equal(t, "ph", got["OTHER"])
-}
-
-func TestCredentialEnvVars_MalformedAnnotationContributesNothing(t *testing.T) {
-	broken := ownerSecret("platform-conn-broken", "connection", "broken")
-	broken.Annotations[envoyEnvMappingsAnn] = "not json"
-
-	ok := ownerSecret("platform-conn-ok", "connection", "ok")
-	ok.Annotations[envoyEnvMappingsAnn] = `[{"envName":"FOO","placeholder":"ph"}]`
-
-	envs := credentialEnvVars([]corev1.Secret{broken, ok})
-
-	require.Len(t, envs, 1)
-	assert.Equal(t, "FOO", envs[0].Name)
-}
-
 func http2CredentialedChain(secretName, host string) envoyHostChain {
 	c := credentialedChain(secretName, host)
 	c.HTTP2 = true
@@ -1254,7 +1162,7 @@ func http2CredentialedChain(secretName, host string) envoyHostChain {
 func TestRenderEnvoyBootstrap_HTTP2ChainAdvertisesH2AndMirrorsUpstream(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		http2CredentialedChain("platform-cred-modal-id", "api.modal.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	assert.Contains(t, got, "alpn_protocols")
@@ -1266,7 +1174,7 @@ func TestRenderEnvoyBootstrap_HTTP2ChainAdvertisesH2AndMirrorsUpstream(t *testin
 func TestRenderEnvoyBootstrap_RestChainStaysHTTP1(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 	assert.NotContains(t, got, "alpn_protocols")
 	assert.NotContains(t, got, "use_downstream_protocol_config")
@@ -1305,7 +1213,7 @@ const testOTLPEndpoint = "http://otel-collector.platform.svc.cluster.local:4317"
 func TestRenderEnvoyBootstrap_TelemetryOffWithoutEndpoint(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 	assert.NotContains(t, got, "OpenTelemetryConfig")
 	assert.NotContains(t, got, "access_log")
@@ -1318,7 +1226,7 @@ func TestRenderEnvoyBootstrap_TelemetryOffWithoutEndpoint(t *testing.T) {
 func TestRenderEnvoyBootstrap_TelemetryAllSignals(t *testing.T) {
 	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	assert.Contains(t, got, "type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig")
@@ -1383,7 +1291,7 @@ func statAdmitted(patterns []map[string]any, name string) bool {
 func TestRenderEnvoyBootstrap_GatewayStatsExcludePerWorkerSeries(t *testing.T) {
 	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	patterns := statsInclusionPatterns(t, mustParseBootstrap(t, got))
@@ -1425,7 +1333,7 @@ func TestRenderEnvoyBootstrap_GatewayStatsExcludePerWorkerSeries(t *testing.T) {
 
 // TEST_SCENARIO: every gateway pushes the same stat names, so without a resource attribute on the sink the rows arrive indistinguishable and attributable to no gateway at all. The environment resource detector reads the OTEL_RESOURCE_ATTRIBUTES the controller already sets on the gateway pod, which is where platform.gateway.id lives - the same identity the tracer resolves.
 func TestRenderEnvoyBootstrap_StatsSinkCarriesGatewayIdentity(t *testing.T) {
-	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), nil)
+	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), nil, false)
 	require.NoError(t, err)
 
 	doc := mustParseBootstrap(t, got)
@@ -1441,7 +1349,7 @@ func TestRenderEnvoyBootstrap_StatsSinkCarriesGatewayIdentity(t *testing.T) {
 
 // TEST_SCENARIO: Envoy's default flush is every five seconds, which writes a row per stat twelve times a minute for every gateway on the cluster. Gateway stats answer operational questions that a per-minute series answers just as well, so the interval is pinned rather than left at the default.
 func TestRenderEnvoyBootstrap_GatewayStatsFlushInterval(t *testing.T) {
-	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), nil)
+	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), nil, false)
 	require.NoError(t, err)
 	assert.Equal(t, "60s", mustParseBootstrap(t, got)["stats_flush_interval"])
 }
@@ -1462,7 +1370,7 @@ func TestRenderEnvoyBootstrap_HTTPProtocol(t *testing.T) {
 	got, err := renderEnvoyBootstrap("agent-7", "", otelCfgEnv(map[string]string{
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel.platform.svc:4318",
 		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
-	}), nil)
+	}), nil, false)
 	require.NoError(t, err)
 	tracer := otelTracerBlock(got)
 	assert.Contains(t, tracer, "http_service")
@@ -1497,13 +1405,13 @@ func TestRenderEnvoyBootstrap_SamplingFromEnv(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_ENDPOINT": testOTLPEndpoint,
 		"OTEL_TRACES_SAMPLER":         "parentbased_traceidratio",
 		"OTEL_TRACES_SAMPLER_ARG":     "0.1",
-	}), nil)
+	}), nil, false)
 	require.NoError(t, err)
 	assert.Regexp(t, `random_sampling:\s*\n\s*value: 10\n`, got)
 }
 
 func TestRenderEnvoyBootstrap_PlaintextCollectorNoUpstreamTLS(t *testing.T) {
-	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg("http://otel:4317"), nil)
+	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg("http://otel:4317"), nil, false)
 	require.NoError(t, err)
 	cluster := clusterNamed(t, mustParseBootstrap(t, got), "otel_export")
 	require.NotNil(t, cluster)
@@ -1511,7 +1419,7 @@ func TestRenderEnvoyBootstrap_PlaintextCollectorNoUpstreamTLS(t *testing.T) {
 }
 
 func TestRenderEnvoyBootstrap_HTTPSCollectorGetsUpstreamTLS(t *testing.T) {
-	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg("https://otel.example.com:4318"), nil)
+	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg("https://otel.example.com:4318"), nil, false)
 	require.NoError(t, err)
 	assert.Contains(t, got, "address: otel.example.com")
 	assert.Contains(t, got, "port_value: 4318")
@@ -1527,7 +1435,7 @@ func TestRenderEnvoyBootstrap_TracingOnHeaderCredentialChains(t *testing.T) {
 	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
 		credentialedChain("platform-conn-anthropic", "api.anthropic.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 	assert.Equal(t, 3, strings.Count(got, "OpenTelemetryConfig"),
 		"tracing provider must be on the outer egress HCM and each header-credential chain")
@@ -1540,7 +1448,7 @@ func TestRenderEnvoyBootstrap_TracingOnHeaderCredentialChains(t *testing.T) {
 func TestRenderEnvoyBootstrap_TracingNotOnQueryParamChains(t *testing.T) {
 	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), []envoyHostChain{
 		queryParamChain("platform-cred-q", "api.example.com", "X-Key", "key"),
-	})
+	}, false)
 	require.NoError(t, err)
 	assert.Equal(t, 1, strings.Count(got, "OpenTelemetryConfig"),
 		"query-param chains must stay untraced")
@@ -1549,7 +1457,7 @@ func TestRenderEnvoyBootstrap_TracingNotOnQueryParamChains(t *testing.T) {
 func TestRenderEnvoyBootstrap_AccessLogNeverLogsCredentials(t *testing.T) {
 	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), []envoyHostChain{
 		queryParamChain("platform-cred-q", "api.example.com", "X-Key", "key"),
-	})
+	}, false)
 	require.NoError(t, err)
 	assert.Contains(t, got, "%REQ_WITHOUT_QUERY(:PATH)%")
 	assert.NotContains(t, got, "%REQ(:PATH)%")
@@ -1557,7 +1465,7 @@ func TestRenderEnvoyBootstrap_AccessLogNeverLogsCredentials(t *testing.T) {
 }
 
 func TestRenderEnvoyBootstrap_ExternalEgressStripsTraceContext(t *testing.T) {
-	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), nil)
+	got, err := renderEnvoyBootstrap("agent-7", "", otelCfg(testOTLPEndpoint), nil, false)
 	require.NoError(t, err)
 	assert.Regexp(t, `request_headers_to_remove:\s*\n\s*-\s*traceparent\s*\n\s*-\s*tracestate`, got)
 }
@@ -1596,7 +1504,7 @@ func TestRenderEnvoyBootstrap_TransitAndOTelCoexist(t *testing.T) {
 	}
 	got, err := renderEnvoyBootstrap("agent-7", "", cfg, []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	var doc map[string]any
@@ -1628,12 +1536,12 @@ func TestEnvoyVolumes_NoLeafWhenOTelOnlyNoSecrets(t *testing.T) {
 func TestRenderEnvoyBootstrap_CollectorConnectNotTraced(t *testing.T) {
 	cfg := telemetryTestCfg()
 	cfg.OTelEnv = map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": testOTLPEndpoint}
-	got, err := renderEnvoyBootstrap("agent-7", "", cfg, nil)
+	got, err := renderEnvoyBootstrap("agent-7", "", cfg, nil, false)
 	require.NoError(t, err)
 	assert.Contains(t, got, "exact: platform-clickstack-collector.platform.svc.cluster.local:4318")
 	assert.Regexp(t, `tracing:\s*\n\s*overall_sampling:\s*\n\s*numerator: 0\n\s*random_sampling:\s*\n\s*numerator: 0`, got)
 
-	got, err = renderEnvoyBootstrap("agent-7", "", telemetryTestCfg(), nil)
+	got, err = renderEnvoyBootstrap("agent-7", "", telemetryTestCfg(), nil, false)
 	require.NoError(t, err)
 	assert.NotContains(t, got, "numerator: 0")
 }
@@ -1641,7 +1549,7 @@ func TestRenderEnvoyBootstrap_CollectorConnectNotTraced(t *testing.T) {
 func TestRenderEnvoyBootstrap_TransitChainErrorOnlyAccessLog(t *testing.T) {
 	cfg := telemetryTestCfg()
 	cfg.OTelEnv = map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": testOTLPEndpoint}
-	got, err := renderEnvoyBootstrap("agent-7", "", cfg, nil)
+	got, err := renderEnvoyBootstrap("agent-7", "", cfg, nil, false)
 	require.NoError(t, err)
 	chain := filterChainNamed(t, mustParseBootstrap(t, got), "terminate_otel_collector")
 	require.NotNil(t, chain)
@@ -1651,7 +1559,7 @@ func TestRenderEnvoyBootstrap_TransitChainErrorOnlyAccessLog(t *testing.T) {
 	assert.Contains(t, string(chainYAML), "status_code_filter")
 	assert.Contains(t, string(chainYAML), "response_flag_filter")
 
-	got, err = renderEnvoyBootstrap("agent-7", "", telemetryTestCfg(), nil)
+	got, err = renderEnvoyBootstrap("agent-7", "", telemetryTestCfg(), nil, false)
 	require.NoError(t, err)
 	chain = filterChainNamed(t, mustParseBootstrap(t, got), "terminate_otel_collector")
 	require.NotNil(t, chain)
@@ -1668,7 +1576,7 @@ func TestRenderEnvoyBootstrap_GatewayOverrideDecouplesFromControllerEnv(t *testi
 	}
 	cfg.GatewayOTLPEndpoint = "http://collector.platform.svc:4317"
 	cfg.GatewayOTLPProtocol = "grpc"
-	got, err := renderEnvoyBootstrap("agent-7", "", &cfg, nil)
+	got, err := renderEnvoyBootstrap("agent-7", "", &cfg, nil, false)
 	require.NoError(t, err)
 
 	assert.Contains(t, got, "stats_sinks", "gRPC override must enable the stats sink")
@@ -1780,7 +1688,7 @@ func portUpgradesChain(secretName, host string, port int, caFile string) envoyHo
 func TestRenderEnvoyBootstrap_PortChainPinsUpstreamAndRewritesAuthority(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		portUpgradesChain("platform-conn-k8s", "api.cluster.example", 6443, ""),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	assert.Contains(t, got, "port_value: 6443")
@@ -1791,7 +1699,7 @@ func TestRenderEnvoyBootstrap_PortChainPinsUpstreamAndRewritesAuthority(t *testi
 func TestRenderEnvoyBootstrap_UpgradesChainTunnelsWebsocketAndSpdy(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		portUpgradesChain("platform-conn-k8s", "api.cluster.example", 6443, ""),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	assert.Contains(t, got, "upgrade_type: spdy/3.1")
@@ -1802,7 +1710,7 @@ func TestRenderEnvoyBootstrap_UpgradesChainTunnelsWebsocketAndSpdy(t *testing.T)
 func TestRenderEnvoyBootstrap_NonUpgradesChainOmitsTunneling(t *testing.T) {
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		credentialedChain("platform-conn-github", "api.github.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 	assert.NotContains(t, got, "spdy/3.1")
 	assert.NotContains(t, got, "idle_timeout: 14400s")
@@ -1812,7 +1720,7 @@ func TestRenderEnvoyBootstrap_UpstreamCAFileReplacesSystemBundle(t *testing.T) {
 	caFile := "/etc/envoy/credentials/cred-platform-conn-k8s/upstream-ca.crt"
 	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{
 		portUpgradesChain("platform-conn-k8s", "api.cluster.example", 6443, caFile),
-	})
+	}, false)
 	require.NoError(t, err)
 
 	assert.Contains(t, got, "filename: "+caFile)
@@ -1824,8 +1732,336 @@ func TestRenderEnvoyBootstrap_PortUpgradesCARendersValidYAML(t *testing.T) {
 		portUpgradesChain("platform-conn-k8s", "api.cluster.example", 6443,
 			"/etc/envoy/credentials/cred-platform-conn-k8s/upstream-ca.crt"),
 		credentialedChain("platform-conn-github", "api.github.com"),
-	})
+	}, false)
 	require.NoError(t, err)
 	var doc map[string]any
 	require.NoError(t, yaml.Unmarshal([]byte(got), &doc), "rendered bootstrap must be valid YAML")
+}
+
+func secureOTelCfg() config.Config {
+	cfg := *bootstrapTestCfg
+	cfg.GatewayOTLPEndpoint = "https://collector.example:4317"
+	cfg.GatewayOTLPProtocol = "grpc"
+	return cfg
+}
+
+func TestRenderEnvoyBootstrap_UpstreamTrustDefaultsToTheEnvoyImageBundle(t *testing.T) {
+	cfg := secureOTelCfg()
+	got, err := renderEnvoyBootstrap("inst-1", "", &cfg, []envoyHostChain{
+		credentialedChain("platform-conn-anthropic", "api.anthropic.com"),
+	}, false)
+	require.NoError(t, err)
+
+	assert.Equal(t, 3, strings.Count(got, "filename: /etc/ssl/certs/ca-certificates.crt"),
+		"the forward proxy, the credentialed upstream and the OTel export each verify against the image's bundle")
+	assert.NotContains(t, got, envoyUpstreamCAKey)
+}
+
+func TestRenderEnvoyBootstrap_ExtraCAsMoveEveryUpstreamOntoTheMountedBundle(t *testing.T) {
+	cfg := secureOTelCfg()
+	cfg.GatewayUpstreamTrustBundle = "-----BEGIN CERTIFICATE-----\nbundle\n-----END CERTIFICATE-----\n"
+	got, err := renderEnvoyBootstrap("inst-1", "", &cfg, []envoyHostChain{
+		credentialedChain("platform-conn-anthropic", "api.anthropic.com"),
+	}, false)
+	require.NoError(t, err)
+
+	assert.Equal(t, 3, strings.Count(got, "filename: /etc/envoy/upstream-ca.pem"))
+	assert.NotContains(t, got, "/etc/ssl/certs/ca-certificates.crt")
+	mustParseBootstrap(t, got)
+}
+
+func TestRenderEnvoyBootstrap_AConnectionsOwnCAStillWinsOverExtraCAs(t *testing.T) {
+	cfg := *bootstrapTestCfg
+	cfg.GatewayUpstreamTrustBundle = "-----BEGIN CERTIFICATE-----\nbundle\n-----END CERTIFICATE-----\n"
+	caFile := "/etc/envoy/credentials/cred-platform-conn-k8s/upstream-ca.crt"
+	got, err := renderEnvoyBootstrap("inst-1", "", &cfg, []envoyHostChain{
+		portUpgradesChain("platform-conn-k8s", "api.cluster.example", 6443, caFile),
+	}, false)
+	require.NoError(t, err)
+
+	assert.Contains(t, got, "filename: "+caFile)
+	assert.Contains(t, got, "filename: /etc/envoy/upstream-ca.pem", "the forward proxy still takes the extended bundle")
+}
+
+func TestBuildEnvoyBootstrapConfigMap_CarriesTheTrustBundleOnlyWhenConfigured(t *testing.T) {
+	owner := metav1.OwnerReference{APIVersion: "v1", Kind: "ConfigMap", Name: "owner", UID: "uid"}
+
+	cm, err := BuildEnvoyBootstrapConfigMap("inst-1", "", false, bootstrapTestCfg, owner, nil, nil, false)
+	require.NoError(t, err)
+	assert.NotContains(t, cm.Data, envoyUpstreamCAKey)
+
+	cfg := *bootstrapTestCfg
+	cfg.GatewayUpstreamTrustBundle = "-----BEGIN CERTIFICATE-----\nbundle\n-----END CERTIFICATE-----\n"
+	cm, err = BuildEnvoyBootstrapConfigMap("inst-1", "", false, &cfg, owner, nil, nil, false)
+	require.NoError(t, err)
+	assert.Equal(t, cfg.GatewayUpstreamTrustBundle, cm.Data[envoyUpstreamCAKey])
+}
+
+func TestEnvoyGatewayRev_RollsTheGatewayOnlyWhenTheTrustBundleChanges(t *testing.T) {
+	secrets := []corev1.Secret{ownerSecret("platform-conn-github", "connection", "github")}
+	hosts := []string{"api.github.com"}
+
+	assert.Equal(t, envoySecretsRev(secrets, hosts), envoyGatewayRev(bootstrapTestCfg, secrets, hosts, false),
+		"an install without extra CAs keeps today's revision, so upgrading rolls no gateway")
+
+	withCA := *bootstrapTestCfg
+	withCA.GatewayUpstreamTrustBundle = "bundle one"
+	otherCA := *bootstrapTestCfg
+	otherCA.GatewayUpstreamTrustBundle = "bundle two"
+	assert.NotEqual(t, envoyGatewayRev(bootstrapTestCfg, secrets, hosts, false), envoyGatewayRev(&withCA, secrets, hosts, false))
+	assert.NotEqual(t, envoyGatewayRev(&withCA, secrets, hosts, false), envoyGatewayRev(&otherCA, secrets, hosts, false))
+	assert.Equal(t, envoyGatewayRev(&withCA, secrets, hosts, false), envoyGatewayRev(&withCA, secrets, hosts, false))
+}
+
+func signingSecret(name, connection, host string) corev1.Secret {
+	s := ownerSecret(name, "connection", connection)
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"` + host + `","pathPattern":"/bucket","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}},
+		{"host":"` + host + `","pathPattern":"/bucket?*","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}},
+		{"host":"` + host + `","pathPattern":"/bucket/*","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+	s.Data = map[string][]byte{
+		"access_key_id":     []byte("AKIAEXAMPLE"),
+		"secret_access_key": []byte("not-a-real-secret"),
+		"aws-credentials":   []byte("[default]\naws_access_key_id = AKIAEXAMPLE\naws_secret_access_key = not-a-real-secret\n"),
+	}
+	return s
+}
+
+func TestChainsFromSecrets_SigningEntriesOnOneHostCollapseIntoOneSigner(t *testing.T) {
+	chains := chainsFromSecrets([]corev1.Secret{signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")}, nil)
+	require.Len(t, chains, 1)
+	c := chains[0]
+	assert.True(t, c.Credentialed(), "a signing chain pins its upstream like an injecting one")
+	assert.Empty(t, c.Credentials, "a signer injects no header value, so it is not a credential injector")
+	require.Len(t, c.Signers, 1, "the bucket's path scopes share one key pair, so one signer covers the host")
+	signer := c.Signers[0]
+	assert.Equal(t, "conn-cos", signer.ConnectionID)
+	assert.Equal(t, "cred-platform-conn-cos", signer.VolumeName)
+	assert.Equal(t, "aws-credentials", signer.CredentialsKey)
+	assert.Equal(t, "us-south", signer.Region)
+	assert.Equal(t, "s3", signer.Service)
+	assert.Equal(t, []string{"/bucket", "/bucket?*", "/bucket/*"}, signer.PathPatterns,
+		"the collapsed entries' path scopes bound the signer, so a sibling connection's wider egress rules cannot lend its keys to another bucket")
+	assert.False(t, signer.HostWide())
+	assert.Equal(t, []string{"conn-cos"}, c.ConnectionIDs())
+	assert.Equal(t, []string{"/"}, c.ScopesOf("conn-cos"), "a signer answers to its address on the whole host")
+	assert.Equal(t, []string{"/"}, c.PathScopes(), "signing scopes cut no routes: the signing guard bounds the step on the path it sees")
+}
+
+func TestChainsFromSecrets_SigningEntryWithoutPathPatternSignsTheWholeHost(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"s3.example.cloud","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Signers, 1)
+	assert.Nil(t, chains[0].Signers[0].PathPatterns, "a connection without a bucket keeps signing the whole host")
+	assert.True(t, chains[0].Signers[0].HostWide())
+}
+
+func TestChainsFromSecrets_AHostWideSigningEntryWidensTheSignerPastItsBucketEntries(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"s3.example.cloud","pathPattern":"/bucket/*","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}},
+		{"host":"s3.example.cloud","pathPattern":"/","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}},
+		{"host":"s3.example.cloud","pathPattern":"/bucket","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Signers, 1)
+	assert.True(t, chains[0].Signers[0].HostWide(), "one entry on the whole host means the egress rules admit every path, so the guard bounds nothing")
+}
+
+func TestChainsFromSecrets_TwoSignersOnOneHostKeepTheirOwnScopes(t *testing.T) {
+	scratch := signingSecret("platform-conn-scratch", "conn-scratch", "s3.example.cloud")
+	scratch.Annotations[envoyInjectionHostsAnn] = strings.ReplaceAll(scratch.Annotations[envoyInjectionHostsAnn], "/bucket", "/scratch")
+	wide := signingSecret("platform-conn-wide", "conn-wide", "s3.example.cloud")
+	wide.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"s3.example.cloud","signing":{"region":"us-south","service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{scratch, wide}, nil)
+	require.Len(t, chains, 1)
+	require.Len(t, chains[0].Signers, 2)
+	assert.Equal(t, []string{"/scratch", "/scratch?*", "/scratch/*"}, chains[0].Signers[0].PathPatterns)
+	assert.Nil(t, chains[0].Signers[1].PathPatterns,
+		"the wide connection's egress rules admit /prod on the host, but only its own signer may sign there")
+}
+
+func TestLuaGlobPattern_MatchesTheEgressRulePatternLiterally(t *testing.T) {
+	assert.Equal(t, "^/bucket$", luaGlobPattern("/bucket"))
+	assert.Equal(t, "^/bucket%?.*$", luaGlobPattern("/bucket?*"), "the ? before the query is literal, as in the egress rule")
+	assert.Equal(t, "^/bucket/.*$", luaGlobPattern("/bucket/*"), "/bucket/* does not cover /bucketx or /bucket")
+	assert.Equal(t, "^/my%.data%-set/.*$", luaGlobPattern("/my.data-set/*"), "dots and dashes in a bucket name are literal")
+	assert.Equal(t, "^/__platform_conn/[%w%._~%-]+(/.*)$", luaAddressedPathPattern(),
+		"a path-prefixed address is stripped before matching, as ext_authz strips it before the egress rule")
+}
+
+func TestChainsFromSecrets_SigningMissingCredentialsKeyDegradesToAllowOnly(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	delete(s.Data, "aws-credentials")
+	warnings := captureWarnings(t)
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	assert.Equal(t, "s3.example.cloud", chains[0].Host)
+	assert.False(t, chains[0].Credentialed(),
+		"a missing credentials file is a fatal Envoy boot error, so the host must degrade to allow-only")
+	assert.Contains(t, warningMessages(*warnings), "connection Secret missing credentials data key; rendering host allow-only (no request signing)")
+}
+
+func TestChainsFromSecrets_TraversalCredentialsKeyDegradesToAllowOnly(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"s3.example.cloud","signing":{"region":"us-south","service":"s3","credentialsKey":"../../tls/tls.key"}}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	assert.False(t, chains[0].Credentialed(),
+		"a credentialsKey with path separators must not escape the Secret mount")
+}
+
+func TestChainsFromSecrets_SigningEntryWithoutRegionDegradesToAllowOnly(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"s3.example.cloud","signing":{"service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	require.Len(t, chains, 1)
+	assert.False(t, chains[0].Credentialed())
+}
+
+func TestEnvoySecretsRev_CredentialsKeyRollsExistingPodsButRotationDoesNot(t *testing.T) {
+	missing := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	delete(missing.Data, "aws-credentials")
+	healed := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	rotated := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	rotated.Data["aws-credentials"] = []byte("[default]\naws_access_key_id = AKIAROTATED\naws_secret_access_key = also-not-real\n")
+
+	assert.NotEqual(t,
+		envoySecretsRev([]corev1.Secret{missing}, nil),
+		envoySecretsRev([]corev1.Secret{healed}, nil),
+		"the credentials file appearing must roll the gateway, like an SDS key")
+	assert.Equal(t,
+		envoySecretsRev([]corev1.Secret{healed}, nil),
+		envoySecretsRev([]corev1.Secret{rotated}, nil),
+		"new key contents are picked up through the watched directory, so rotation must not roll the gateway")
+}
+
+func signingFilter(t *testing.T, filters []map[string]any, name string) map[string]any {
+	t.Helper()
+	for _, f := range filters {
+		if f["name"] == name {
+			return f
+		}
+	}
+	require.FailNow(t, "no http filter named "+name)
+	return nil
+}
+
+func innerFilterConfig(t *testing.T, filter map[string]any) map[string]any {
+	t.Helper()
+	cfg := filter["typed_config"].(map[string]any)
+	require.Equal(t, extensionWithMatcherType, cfg["@type"])
+	return cfg["extension_config"].(map[string]any)["typed_config"].(map[string]any)
+}
+
+// TEST_SCENARIO: A sigv4 Connection with a bucket is granted. The gateway must sign only requests that name the Connection, sign the upstream authority it will forward to, leave its own marker header out of the signature, and read the keys from the mounted credentials file alone.
+func TestRenderEnvoyBootstrap_SigningSecretRendersGuardAndSignerBeforeTheForwardProxy(t *testing.T) {
+	chains := chainsFromSecrets([]corev1.Secret{
+		signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud"),
+	}, nil)
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, chains, false)
+	require.NoError(t, err)
+	doc := mustParseBootstrap(t, got)
+	signer := chains[0].Signers[0]
+
+	names := httpFilterNamesForHost(t, doc, "s3.example.cloud")
+	assert.Equal(t, []string{
+		"connection_address",
+		"envoy.filters.http.ext_authz",
+		signer.GuardFilterName(),
+		signer.FilterName(),
+		"envoy.filters.http.dynamic_forward_proxy",
+		"envoy.filters.http.router",
+	}, names)
+
+	filters := httpFiltersForHost(t, doc, "s3.example.cloud")
+	guard := signingFilter(t, filters, signer.GuardFilterName())
+	assertInjectsOnlyWhenAddressed(t, guard, "conn-cos")
+	guardCfg := innerFilterConfig(t, guard)
+	assert.Equal(t, luaFilterType, guardCfg["@type"])
+	script := guardCfg["default_source_code"].(map[string]any)["inline_string"].(string)
+	assert.Contains(t, script, `local PREFIX = "STREAMING-"`)
+	assert.Contains(t, script, `[":status"] = "400"`)
+	assert.Contains(t, script, "request_checksum_calculation = when_required")
+	assert.Contains(t, script, `local PATTERNS = {"^/bucket$", "^/bucket%?.*$", "^/bucket/.*$"}`,
+		"the guard matches the bucket's three egress-rule patterns on the path as sent, so /bucketx and /prod/x are outside")
+	assert.Contains(t, script, `[":status"] = "403"`)
+	assert.Contains(t, script, `rh:respond({[":status"] = "403", ["content-type"] = "text/plain"}, SCOPE_BODY)`)
+	assert.Contains(t, script, "The storage connection conn-cos is limited to /bucket, /bucket?*, /bucket/* on s3.example.cloud")
+	assert.Less(t, strings.Index(script, `"403"`), strings.Index(script, `"400"`),
+		"a request outside the bucket is refused before its body shape is looked at")
+
+	signing := signingFilter(t, filters, signer.FilterName())
+	assertInjectsOnlyWhenAddressed(t, signing, "conn-cos")
+	cfg := innerFilterConfig(t, signing)
+	assert.Equal(t, "type.googleapis.com/envoy.extensions.filters.http.aws_request_signing.v3.AwsRequestSigning", cfg["@type"])
+	assert.Equal(t, "s3", cfg["service_name"])
+	assert.Equal(t, "us-south", cfg["region"])
+	assert.Equal(t, "s3.example.cloud", cfg["host_rewrite"],
+		"the router's host_rewrite_literal runs after the filters, so the signer rewrites the authority itself")
+	assert.Equal(t, true, cfg["use_unsigned_payload"])
+	assert.Equal(t, []any{map[string]any{"exact": connectionAddressHeader}}, cfg["match_excluded_headers"],
+		"the marker is removed by the vhost after signing, so it must not be in the signed headers")
+	provider := cfg["credential_provider"].(map[string]any)
+	assert.Equal(t, true, provider["custom_credential_provider_chain"],
+		"no fallback to environment or instance metadata credentials")
+	file := provider["credentials_file_provider"].(map[string]any)
+	assert.Equal(t, "default", file["profile"])
+	source := file["credentials_data_source"].(map[string]any)
+	assert.Equal(t, "/etc/envoy/credentials/cred-platform-conn-cos/aws-credentials", source["filename"])
+	assert.Equal(t, map[string]any{"path": "/etc/envoy/credentials/cred-platform-conn-cos"}, source["watched_directory"])
+	assert.NotContains(t, got, "AKIAEXAMPLE", "the key material stays in the mounted file, never in the bootstrap")
+
+	assert.Contains(t, got, "host_rewrite_literal: s3.example.cloud")
+	assert.NotNil(t, clusterNamed(t, doc, chains[0].UpstreamCluster), "a signing chain forwards to a pinned upstream cluster")
+}
+
+func TestRenderEnvoyBootstrap_SigningChainOnANonDefaultPortSignsTheAuthorityWithPort(t *testing.T) {
+	s := signingSecret("platform-conn-minio", "conn-minio", "minio.example.internal")
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"minio.example.internal","port":9000,"signing":{"region":"us-east-1","service":"s3","credentialsKey":"aws-credentials"}}
+	]`
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, chains, false)
+	require.NoError(t, err)
+
+	cfg := innerFilterConfig(t, signingFilter(t,
+		httpFiltersForHost(t, mustParseBootstrap(t, got), "minio.example.internal"),
+		chains[0].Signers[0].FilterName()))
+	assert.Equal(t, "minio.example.internal:9000", cfg["host_rewrite"])
+	assert.Contains(t, got, "host_rewrite_literal: minio.example.internal:9000")
+}
+
+func TestRenderEnvoyBootstrap_SigningSecretMissingKeyStillBoots(t *testing.T) {
+	s := signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")
+	delete(s.Data, "aws-credentials")
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, chainsFromSecrets([]corev1.Secret{s}, nil), false)
+	require.NoError(t, err)
+
+	assert.NotContains(t, got, "aws_request_signing")
+	assert.NotContains(t, got, "connection_address")
+	assert.Equal(t, []string{
+		"envoy.filters.http.ext_authz",
+		"envoy.filters.http.dynamic_forward_proxy",
+		"envoy.filters.http.router",
+	}, httpFilterNamesForHost(t, mustParseBootstrap(t, got), "s3.example.cloud"))
 }

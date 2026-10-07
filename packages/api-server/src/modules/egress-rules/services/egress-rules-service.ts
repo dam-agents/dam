@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import {
-  promotedHosts,
   type EgressPreset,
   type EgressRuleCreateInput,
   type EgressRuleUpdateInput,
@@ -12,11 +11,12 @@ import type { EgressRulesRepository } from "../infrastructure/egress-rules-repos
 import type { EgressRuleRow } from "../domain/types.js";
 import type { AgentL7HostsPort } from "../infrastructure/k8s-agent-l7-hosts-port.js";
 import type { PresetSeeder } from "./preset-seeder.js";
+import { reconvergeAgentL7Hosts } from "./l7-promotion-reconcile.js";
 import { securityLog } from "../../../core/security-log.js";
 
 export interface CreateEgressRulesServiceDeps {
   repo: EgressRulesRepository;
-  l7Hosts?: AgentL7HostsPort;
+  l7Hosts: AgentL7HostsPort;
   presetSeeder?: PresetSeeder;
   trustedHosts: readonly string[];
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
@@ -41,10 +41,16 @@ function toView(row: EgressRuleRow): EgressRuleView {
 export function createEgressRulesService(
   deps: CreateEgressRulesServiceDeps,
 ): EgressRulesService {
-  async function reconvergePromotions(agentId: string): Promise<void> {
-    if (!deps.l7Hosts) return;
-    const rows = await deps.repo.listForAgent(agentId);
-    await deps.l7Hosts.set(agentId, promotedHosts(rows));
+  function logNotOwner(agentId: string, detail: Record<string, unknown>) {
+    securityLog("warn", "authz.owner_mismatch", {
+      category: "authz",
+      actor: deps.ownerSub,
+      actorKind: "user",
+      agentId,
+      decision: "deny",
+      reason: "not-owner",
+      detail,
+    });
   }
 
   return {
@@ -58,15 +64,7 @@ export function createEgressRulesService(
       const rule = await deps.repo.getById(id);
       if (!rule || !(await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub))) {
         if (rule) {
-          securityLog("warn", "authz.owner_mismatch", {
-            category: "authz",
-            actor: deps.ownerSub,
-            actorKind: "user",
-            agentId: rule.agentId,
-            decision: "deny",
-            reason: "not-owner",
-            detail: { surface: "egress-rule.get", ruleId: id },
-          });
+          logNotOwner(rule.agentId, { surface: "egress-rule.get", ruleId: id });
         }
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -87,15 +85,7 @@ export function createEgressRulesService(
 
     async create(input: EgressRuleCreateInput) {
       if (!(await deps.isAgentOwnedBy(input.agentId, deps.ownerSub))) {
-        securityLog("warn", "authz.owner_mismatch", {
-          category: "authz",
-          actor: deps.ownerSub,
-          actorKind: "user",
-          agentId: input.agentId,
-          decision: "deny",
-          reason: "not-owner",
-          detail: { surface: "egress-rule.create" },
-        });
+        logNotOwner(input.agentId, { surface: "egress-rule.create" });
         throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
       }
       let row = await deps.repo.insert({
@@ -151,7 +141,7 @@ export function createEgressRulesService(
             : {}),
         },
       });
-      await reconvergePromotions(input.agentId);
+      await reconvergeAgentL7Hosts(deps, input.agentId);
       return toView(row);
     },
 
@@ -159,14 +149,9 @@ export function createEgressRulesService(
       const rule = await deps.repo.getById(input.id);
       if (!rule || !(await deps.isAgentOwnedBy(rule.agentId, deps.ownerSub))) {
         if (rule) {
-          securityLog("warn", "authz.owner_mismatch", {
-            category: "authz",
-            actor: deps.ownerSub,
-            actorKind: "user",
-            agentId: rule.agentId,
-            decision: "deny",
-            reason: "not-owner",
-            detail: { surface: "egress-rule.update", ruleId: input.id },
+          logNotOwner(rule.agentId, {
+            surface: "egress-rule.update",
+            ruleId: input.id,
           });
         }
         throw new TRPCError({
@@ -205,7 +190,7 @@ export function createEgressRulesService(
           priorVerdict: rule.verdict,
         },
       });
-      await reconvergePromotions(updated.agentId);
+      await reconvergeAgentL7Hosts(deps, updated.agentId);
       return toView(updated);
     },
 
@@ -226,20 +211,12 @@ export function createEgressRulesService(
           pathPattern: rule.pathPattern,
         },
       });
-      await reconvergePromotions(rule.agentId);
+      await reconvergeAgentL7Hosts(deps, rule.agentId);
     },
 
     async applyPreset(agentId: string, preset: EgressPreset) {
       if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) {
-        securityLog("warn", "authz.owner_mismatch", {
-          category: "authz",
-          actor: deps.ownerSub,
-          actorKind: "user",
-          agentId,
-          decision: "deny",
-          reason: "not-owner",
-          detail: { surface: "egress-rule.preset" },
-        });
+        logNotOwner(agentId, { surface: "egress-rule.preset" });
         throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
       }
       if (!deps.presetSeeder) return;

@@ -1,4 +1,5 @@
-import { dump as stringifyYaml, load as parseYaml } from "js-yaml";
+import { dump as stringifyYaml } from "js-yaml";
+import { loadYamlDocument } from "../../../core/yaml-document.js";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import type { FileFormat } from "agent-runtime-api";
 
@@ -7,13 +8,44 @@ export function parseFile(format: FileFormat, content: string): unknown {
     case "json":
       return content ? JSON.parse(content) : {};
     case "yaml":
-      return parseYaml(content) ?? {};
+      return loadYamlDocument(content) ?? {};
     case "toml":
       return content ? parseToml(content) : {};
     case "ini":
+      return parseIni(content);
     case "text":
       return content;
   }
+}
+
+type IniSection = Record<string, string>;
+
+function parseIni(content: string): Record<string, string | IniSection> {
+  const out: Record<string, string | IniSection> = {};
+  let section: IniSection | undefined;
+  let lastKey: string | undefined;
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith(";")) {
+      continue;
+    }
+    const target = section ?? out;
+    if (/^\s/.test(line) && lastKey !== undefined) {
+      target[lastKey] = `${String(target[lastKey])}\n${line}`;
+      continue;
+    }
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      section = {};
+      out[trimmed.slice(1, -1).trim()] = section;
+      lastKey = undefined;
+      continue;
+    }
+    const eq = trimmed.indexOf("=");
+    const key = (eq === -1 ? trimmed : trimmed.slice(0, eq)).trim();
+    target[key] = eq === -1 ? "" : trimmed.slice(eq + 1).trim();
+    lastKey = key;
+  }
+  return out;
 }
 
 export function serializeFile(format: FileFormat, value: unknown): string {
@@ -44,10 +76,10 @@ function serializeIni(value: unknown): string {
     }
   }
   for (const [sec, body] of sections) {
-    out.push(`\n[${sec}]`);
+    out.push(out.length === 0 ? `[${sec}]` : `\n[${sec}]`);
     for (const [k, v] of Object.entries(body)) {
       out.push(`${k}=${String(v)}`);
     }
   }
-  return out.join("\n") + "\n";
+  return out.length === 0 ? "" : out.join("\n") + "\n";
 }

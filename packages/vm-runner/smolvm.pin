@@ -4,10 +4,11 @@
 # at runtime, and a guest agent from one version talking to a library from
 # another is not a combination anybody tests. So this file is the one place the
 # version is named — .mise/fetch-smolvm clones the source at tag= and refuses a
-# tree that is not commit=, and the Dockerfile installs the release tarball of
+# tree that is not commit=, and the image build installs the release tarball of
 # the same tag, refusing one whose digest is not the sha256- line for its
 # architecture (the release's own checksums.sha256).
-tag=v1.16.0
-commit=e1dd54bf7be6d144ad6bdef4ebf310f57809a6a6
-sha256-linux-x86_64=cb7d6ea34914b4d71958e16eafc8a3220fe9e8cd5b76fa983ef9f648159f4c9b
-sha256-linux-arm64=5824fa3c830c0d7861307a10eb09d10baf327e7a07c7697f2769fee796ded1db
+tag=v1.23.4
+commit=8001327b314c132cba806429bbcdad837e5e71f6
+sha256-linux-x86_64=b8e0e89f6e7427424f4dfad09ef13c7d6802748c58ed5356163344f485e9ff9c
+sha256-linux-arm64=d07e83ce574840219fd08e7ff1e778990c9c23f0e5ccbb27872ad86f815f7227
+sha256-darwin-arm64=cadd607214c5f6ee9c18d216ffc94163176c05fabe08a3b2574f8689a6f3c888

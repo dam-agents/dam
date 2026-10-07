@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #MISE description="Decide whether a component image must be built or can be reused from the registry; see the usage block below"
 # Decide whether a container image must be built or can be reused from the
-# registry. Single source of truth shared by the per-package `image` mise tasks and
+# registry. Single source of truth shared by `//packages/agents:oci` and
 # CI (the `changes` job) so the dependency graph and skip logic never drift.
 #
 # An image is REUSABLE when its effective source (its own paths PLUS its base's,
@@ -14,182 +14,221 @@
 #
 # Usage:
 #   mise run image:resolve -- resolve <component>        -> "BUILD" | "REUSE <full-ref>"
-#   mise run image:resolve -- build-or-reuse <c> -- ...  -> pull+tag locally, or `docker build ... -t <local-tag>`
+#   mise run image:resolve -- source-sha <component>     -> the commit that last touched its effective source
 #   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
-#   mise run image:resolve -- list-agents                -> the harness agent components (chart-pinned by source sha)
-#   mise run image:resolve -- list-workloads             -> the claude-code-derived workload components
+#   mise run image:resolve -- list-workloads            -> the workload components, each packed onto the default image
 #   mise run image:resolve -- list-pinned-tags           -> every component whose chart/kit tag pin-tags rewrites
-#   mise run image:resolve -- list-components            -> every published image (cd.yml scans them all)
+#   mise run image:resolve -- list-components            -> every published image (security.yml scans them all)
+#   mise run image:resolve -- list-third-party           -> every third-party image ref the chart runs (security.yml scans them too)
 #   mise run image:resolve -- paths <component>          -> effective source paths (debug)
-#   mise run image:resolve -- --self-check               -> run assertions (no docker/network; git optional)
+#   mise run image:resolve -- tar-path <component>       -> where its :oci task writes its image tar
+#   mise run image:resolve -- --self-check               -> run assertions (no registry/network; git optional)
 # (the leading `--` keeps mise from parsing the subcommand's own `--`)
 #
 # Env: IMAGE_PREFIX (default quay.io/dam-agents), GITHUB_SHA, EVENT (gha-outputs
 # archs + workload skip: pull_request never builds workloads),
-# RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI tag/schedule: publish all),
-# RESOLVE_REUSE_AGENTS=1 exempts agents and workloads from
-# RESOLVE_NO_REUSE (CI main: they rebuild only when their effective source moved
-# — the published chart pins their source-sha tags, so an unchanged one keeps
-# last deploy's tag).
+# RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI tag/schedule/dispatch: publish
+# all, which also picks up newer Debian packages and uncached tool trees). A
+# main push reuses every image whose effective source did not move.
 # Written for bash 3.2 (macOS) — no associative arrays.
 set -euo pipefail
 
 IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 
-# Test-only files never ship (final images copy dist/ + node_modules), so they
-# don't move the last-touching commit. Ceiling: a reused image may differ in
-# builder-stage test sources; runtime content is identical.
-TEST_EXCLUDES=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*vitest.config.ts'
+# Test-only files and the agents' READMEs never ship (final images copy dist/ +
+# node_modules, an agent's rootfs), so they don't move the last-touching commit.
+# Ceiling: a reused image may differ in builder-stage test sources; runtime
+# content is identical.
+UNSHIPPED=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*_test.go :(exclude)*vitest.config.ts :(exclude)packages/agents/*/README.md'
 
-# platform-base's build context is the repo root but it only COPYs these paths;
-# keep in sync with packages/platform-base/Dockerfile.
-PLATFORM_BASE_PATHS="packages/platform-base packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/experiment-sdk packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
+# Source of the agent images (//packages/agents:oci), besides their own
+# directory: the task, image:pack and image:name-layout that put them
+# together, and the base. The root config names their Debian base; a bump of
+# another tool there re-tags them too, which errs toward rebuilds.
+MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci .mise/tasks/image/pack .mise/tasks/image/name-layout packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
-# harness agents on platform-base; CI's `agents` build/merge matrix
-AGENTS="claude-code codex pi-agent bob k-search"
-# claude-code-derived workloads; single registration point, also emitted as
-# CI's `workloads` build/merge matrix
-WORKLOADS="nous openevolve shinkaevolve gepa skydiscover"
+# agent images; CI's `agents` build/merge matrix. The default image carries
+# every harness, whose directories stay its sources.
+AGENTS="default"
+HARNESSES="claude-code codex pi-agent bob"
+# workloads, each packed onto the default image; single registration point,
+# also emitted as CI's `workloads` build/merge matrix
+WORKLOADS="nous openevolve shinkaevolve gepa skydiscover k-search"
+# Components image:pack builds on the host, plus the task that packs them, the
+# base and toolchain pins in the root config and the tools' exact versions in
+# mise.lock. A lockfile bump for another tool re-tags them too, which errs
+# toward rebuilds.
+PACK_TOOLING=".mise/tasks/image/pack .mise/config.toml mise.lock"
+# The pnpm workspace: its root manifests and lockfile.
+PNPM_ROOT="package.json pnpm-workspace.yaml pnpm-lock.yaml packages/dev-config"
+# The images cd.yml's build-images job builds, both arches in one job each.
+IMAGES="controller ui api-server keycloak vm-runner"
+
 # Components whose chart or kit tag is rewritten from a source sha by pin-tags:
-# the harnesses, keycloak, the vm-runner and every workload, since a starter kit
+# the default image, keycloak, the vm-runner and every workload, since a starter kit
 # names its image directly and its tag has to be pinned the same way a
 # Template's is.
 PINNED_TAGS="keycloak vm-runner $AGENTS $WORKLOADS"
 
+# Every non-empty `image`/`*Image` string and repository+tag/digest pair in the
+# chart values, plus the mirror's copies. Our own images have no tag there.
+# Ceiling: images only cluster:install deploys (the dev cluster's add-ons) are
+# not listed.
+third_party() {
+  {
+    yq -r '.. | select(tag == "!!map") | (
+      (to_entries[] | select((.key | test("(^i|I)mage$")) and (.value | tag) == "!!str" and .value != "") | .value),
+      (select((.repository // "") != "" and (.tag // "") != "") | .repository + ":" + .tag),
+      (select((.repository // "") != "" and (.digest // "") != "") | .repository + "@" + .digest))' helm/values.yaml
+    sed -n '/^MIRRORS="/,/^"$/{/:/s|.*/|'"$IMAGE_PREFIX"'/|p;}' .mise/tasks/image/mirror
+  } | sort -u
+}
+
 is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
 
+# Where a component's :oci task writes its image tar.
+tar_path() {
+  local d=packages/keycloak-theme
+  [ "$1" = keycloak ] || for d in "packages/$1" "packages/agents/$1" "packages/e2e/agents/$1"; do [ -d "$d" ] && break; done
+  echo "$d/dist/oci/$1.tar"
+}
+
 own_paths() {
-  if is_workload "$1"; then echo "packages/agents/$1"; return; fi
+  if is_workload "$1"; then echo "$MISE_IMAGE_PATHS packages/agents/$1"; return; fi
   case "$1" in
-    platform-base) echo "$PLATFORM_BASE_PATHS" ;;
-    claude-code|codex|pi-agent|bob|k-search) echo "packages/agents/$1" ;;
+    # The mock's harness bundles the mock control API client.
+    mock) echo "packages/e2e/agents/mock packages/e2e/agents/mock-api" ;;
     # The runner is the Rust workspace, whole: the runner and platform-init,
     # their lockfile, the pin naming the smolvm tree they build against, the
-    # script that fetches it and the Dockerfile. It is also the image's only
-    # build context, so nothing the image compiles in can live outside it.
-    vm-runner) echo "packages/vm-runner" ;;
-    # keycloak = upstream Keycloak + the Keycloakify theme baked in. The theme
-    # build also depends on dev-config and (any) lockfile change — lockfile
-    # bumps re-tag it even when unrelated, which errs toward rebuilds. Its
-    # source-sha tag is what the published chart pins as the image tag, so a
-    # release that doesn't touch these paths doesn't roll the Keycloak pod.
-    keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml" ;;
-    mock) echo "packages/e2e/agents/mock" ;;
+    # script that fetches it, image.toml and the task that builds the image
+    # from it all. Beside it, the task that names the image, its base and the
+    # Rust toolchain that compiles it: their pins in the root config, the
+    # toolchain's exact version in mise.lock. A lockfile bump for another tool re-tags it too,
+    # which errs toward rebuilds.
+    vm-runner) echo "packages/vm-runner .mise/tasks/image/name-layout .mise/config.toml mise.lock" ;;
+    # Each TS image's own package and its workspace dependencies, transitively.
+    controller) echo "packages/controller $PACK_TOOLING" ;;
+    ui) echo "packages/ui packages/agent-runtime-api packages/api-server-api $PNPM_ROOT $PACK_TOOLING" ;;
+    api-server) echo "packages/api-server packages/agent-runtime-api packages/api-server-api packages/db packages/e2e/agents/mock-api $PNPM_ROOT $PACK_TOOLING" ;;
+    # keycloak = upstream Keycloak, pinned in the root config, + the
+    # Keycloakify theme, packed onto it by image:pack. The theme build also
+    # depends on dev-config and (any) lockfile change — lockfile and root
+    # config bumps re-tag it even when unrelated, which errs toward rebuilds. Its source-sha tag is what the published chart
+    # pins as the image tag, so a release that doesn't touch these paths
+    # doesn't roll the Keycloak pod.
+    keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack .mise/config.toml" ;;
+    default) echo "$MISE_IMAGE_PATHS packages/agents/default $(for h in $HARNESSES; do printf ' packages/agents/%s' "$h"; done)" ;;
+    claude-code|codex|pi-agent|bob) echo "$MISE_IMAGE_PATHS packages/agents/$1" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
 
 base_of() {
-  if is_workload "$1"; then echo "claude-code"; return; fi
+  if is_workload "$1"; then echo "default"; return; fi
   case "$1" in
-    platform-base|keycloak|vm-runner) echo "" ;;
-    claude-code|codex|pi-agent|bob|k-search|mock) echo "platform-base" ;;
+    mock) echo "default" ;;
+    controller|ui|api-server|keycloak|vm-runner|default|claude-code|codex|pi-agent|bob) echo "" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
-
-# Local docker tag the `image` tasks build/pull to (mirrors values-local.yaml).
-local_tag() { case "$1" in platform-base) echo "platform-base" ;; *) echo "platform-$1:latest" ;; esac; }
 
 effective_paths() {
   local base; base="$(base_of "$1")"
   if [ -n "$base" ]; then echo "$(own_paths "$1") $(effective_paths "$base")"; else own_paths "$1"; fi
 }
 
-registry_has() { docker manifest inspect "$1" >/dev/null 2>&1 || docker buildx imagetools inspect "$1" >/dev/null 2>&1; }
+registry_has() { crane digest "$1" >/dev/null 2>&1; }
 
 # Last commit touching the component's effective source (tests excluded).
 # Empty when git/history is unavailable — callers pick their own fallback.
-source_sha() { git log -1 --format=%H -- $(effective_paths "$1") $TEST_EXCLUDES 2>/dev/null || true; }
+source_sha() { git log -1 --format=%H -- $(effective_paths "$1") $UNSHIPPED 2>/dev/null || true; }
 
 resolve() {
   local comp="$1" paths sha ref
   [ -n "${RESOLVE_NO_REUSE:-}" ] && { echo BUILD; return; }
   paths="$(effective_paths "$comp")"
   # Uncommitted change (or untracked file) in the effective source ⇒ must build.
-  [ -n "$(git status --porcelain -- $paths $TEST_EXCLUDES 2>/dev/null)" ] && { echo BUILD; return; }
+  [ -n "$(git status --porcelain -- $paths $UNSHIPPED 2>/dev/null)" ] && { echo BUILD; return; }
   sha="$(source_sha "$comp")"
   [ -z "$sha" ] && { echo BUILD; return; }
   ref="${IMAGE_PREFIX}/${comp}:${sha}"
   if registry_has "$ref"; then echo "REUSE $ref"; else echo BUILD; fi
 }
 
-build_or_reuse() {
-  local comp="$1"; shift
-  [ "${1:-}" = "--" ] && shift
-  [ -n "${SKIP_IMAGE_BUILD:-}" ] && exit 0
-  local decision ref lt; lt="$(local_tag "$comp")"
-  decision="$(resolve "$comp")"
-  if [ "${decision%% *}" = REUSE ]; then
-    ref="${decision#REUSE }"
-    echo "↺ reuse $ref -> $lt"
-    if docker pull "$ref" && docker tag "$ref" "$lt"; then return 0; fi
-    echo "  pull failed, building instead" >&2
-  fi
-  echo "⚒ build $lt"
-  docker build -t "$lt" ${GITHUB_TOKEN:+--secret id=GITHUB_TOKEN,env=GITHUB_TOKEN} "$@"
-}
-
-# Agents and workloads honour RESOLVE_REUSE_AGENTS despite
-# RESOLVE_NO_REUSE (see header); platform-base and keycloak keep the caller's mode.
-resolve_derived() {
-  ( [ -z "${RESOLVE_REUSE_AGENTS:-}" ] || unset RESOLVE_NO_REUSE; resolve "$1" )
-}
-
-# tag portion to hand children as BASE_IMAGE / to publish under this run's sha
-tag_for() {
-  local d; d="$(resolve_derived "$1")"
-  if [ "${d%% *}" = REUSE ]; then local r="${d#REUSE }"; echo "${r##*:}"; else echo "${GITHUB_SHA:?GITHUB_SHA required}"; fi
+# The components of a list that resolve to BUILD, as a JSON array. An `if`,
+# not `&&`: a reused last component would end the loop, and with it this
+# pipeline, with status 1.
+stale_json() {
+  local c
+  for c in "$@"; do
+    if [ "$(resolve "$c" | cut -d' ' -f1)" = BUILD ]; then echo "$c"; fi
+  done | jq -R . | jq -cs 'map(select(length>0))'
 }
 
 gha_outputs() {
-  local archs pb pb_tag built a agents_json cc_tag wl_built w workloads_json s src
+  local archs a s src agents_json workloads_json='[]' images_json='[]' mock=false
   archs='["amd64","arm64"]'; [ "${EVENT:-}" = pull_request ] && archs='["amd64"]'
   # source_shas: per-component last-touching-source sha — non-PR runs tag their
   # images with it so PR reuse hits even when that commit was never a green
   # push tip. Falls back to GITHUB_SHA (a duplicate of the sha tag, harmless).
-  src="$(for a in platform-base keycloak vm-runner $AGENTS $WORKLOADS; do
+  src="$(for a in $IMAGES mock $AGENTS $WORKLOADS; do
     s="$(source_sha "$a")"; printf '%s=%s\n' "$a" "${s:-${GITHUB_SHA:-}}"
   done | jq -cRn '[inputs | split("=") | {(.[0]): .[1]}] | add')"
-  if [ "$(resolve platform-base | cut -d' ' -f1)" = REUSE ]; then pb=false; else pb=true; fi
-  pb_tag="$(tag_for platform-base)"
-  built=()
-  for a in $AGENTS; do
-    [ "$(resolve_derived "$a" | cut -d' ' -f1)" = BUILD ] && built+=("$a")
-  done
-  agents_json="$(printf '%s\n' "${built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
-  cc_tag="$(tag_for claude-code)"
-  # Workloads are slow, rarely-changing builds on the claude-code base: PRs
-  # never build them.
-  wl_built=()
+  agents_json="$(stale_json $AGENTS)"
+  # A PR builds its images and the mock in e2e, which resolves them itself,
+  # and never builds workloads: slow, rarely-changing builds on the default
+  # image.
   if [ "${EVENT:-}" != pull_request ]; then
-    for w in $WORKLOADS; do
-      [ "$(resolve_derived "$w" | cut -d' ' -f1)" = BUILD ] && wl_built+=("$w")
-    done
+    workloads_json="$(stale_json $WORKLOADS)"
+    images_json="$(stale_json $IMAGES)"
+    [ "$(resolve mock | cut -d' ' -f1)" = BUILD ] && mock=true
   fi
-  workloads_json="$(printf '%s\n' "${wl_built[@]:-}" | jq -R . | jq -cs 'map(select(length>0))')"
-  printf 'platform_base=%s\nplatform_base_tag=%s\nagents=%s\narchs=%s\nworkloads=%s\nclaude_code_base_tag=%s\nsource_shas=%s\n' \
-    "$pb" "$pb_tag" "$agents_json" "$archs" "$workloads_json" "$cc_tag" "$src"
+  printf 'agents=%s\narchs=%s\nworkloads=%s\nimages=%s\nmock=%s\nsource_shas=%s\n' \
+    "$agents_json" "$archs" "$workloads_json" "$images_json" "$mock" "$src"
 }
 
 self_check() {
   local f=0
   chk() { if [ "$1" != "$2" ]; then echo "FAIL: expected [$2] got [$1]" >&2; f=1; fi; }
   has() { case "$1" in *"$2"*) ;; *) echo "FAIL: [$1] missing [$2]" >&2; f=1 ;; esac; }
-  chk "$(base_of nous)" claude-code
-  chk "$(base_of shinkaevolve)" claude-code
-  chk "$(base_of gepa)" claude-code
-  chk "$(base_of skydiscover)" claude-code
-  chk "$(base_of claude-code)" platform-base
-  chk "$(base_of platform-base)" ""
+  chk "$(base_of nous)" default
+  chk "$(base_of shinkaevolve)" default
+  chk "$(base_of gepa)" default
+  chk "$(base_of skydiscover)" default
+  chk "$(base_of claude-code)" ""
+  chk "$(base_of k-search)" default
+  chk "$(base_of mock)" default
+  has "$(effective_paths claude-code)" packages/agents/claude-code
+  has "$(effective_paths claude-code)" packages/agents/base
+  has "$(effective_paths claude-code)" packages/agent-runtime
+  has "$(effective_paths claude-code)" .mise/config.toml
+  has "$(effective_paths bob)" packages/agents/bob
+  chk "$(base_of default)" ""
+  has "$(effective_paths default)" packages/agents/default
+  has "$(effective_paths default)" packages/agents/pi-agent
+  has "$(effective_paths default)" packages/agents/base
   chk "$(base_of keycloak)" ""
+  chk "$(base_of controller)" ""
+  chk "$(base_of ui)" ""
+  chk "$(base_of api-server)" ""
+  has "$(effective_paths controller)" packages/controller
+  has "$(effective_paths ui)" packages/api-server-api
+  has "$(effective_paths ui)" pnpm-lock.yaml
+  has "$(effective_paths api-server)" packages/db
+  has "$(effective_paths api-server)" .mise/tasks/image/pack
   chk "$(base_of vm-runner)" ""
   has "$(effective_paths keycloak)" packages/keycloak-theme
-  chk "$(effective_paths vm-runner)" packages/vm-runner
+  has "$(effective_paths keycloak)" .mise/config.toml
+  has "$(effective_paths vm-runner)" packages/vm-runner
+  has "$(effective_paths vm-runner)" mise.lock
   has "$PINNED_TAGS" vm-runner
-  chk "$(local_tag platform-base)" platform-base
-  chk "$(local_tag bob)" "platform-bob:latest"
-  has "$(effective_paths nous)" packages/platform-base
+  has "$(third_party)" mirror.gcr.io/envoyproxy/envoy:
+  has "$(third_party)" ghcr.io/squat/generic-device-plugin@sha256:
+  has "$(third_party)" "$IMAGE_PREFIX/clickhouse-operator:"
+  case "$(third_party)" in *"$IMAGE_PREFIX/controller"*) echo "FAIL: own image in third_party" >&2; f=1 ;; esac
+  has "$(effective_paths nous)" packages/agents/base
+  has "$(effective_paths mock)" packages/e2e/agents/mock-api
+  has "$(effective_paths k-search)" packages/agents/claude-code
   has "$(effective_paths nous)" packages/agents/claude-code
   has "$(effective_paths nous)" packages/agents/nous
   has "$(effective_paths shinkaevolve)" packages/agents/shinkaevolve
@@ -199,32 +238,40 @@ self_check() {
   has "$(effective_paths skydiscover)" packages/agents/skydiscover
   has "$(effective_paths skydiscover)" packages/agents/claude-code
   # NO_REUSE reproduces the full-build (tag/schedule/dispatch) output without
-  # git/docker.
+  # git or a registry.
   local out; out="$(EVENT=push GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
-  has "$out" 'platform_base=true'
-  has "$out" 'agents=["claude-code","codex","pi-agent","bob","k-search"]'
-  has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa","skydiscover"]'
+  has "$out" 'agents=["default"]'
+  has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa","skydiscover","k-search"]'
   has "$out" 'archs=["amd64","arm64"]'
-  has "$out" 'claude_code_base_tag=deadbeef'
-  has "$out" 'source_shas={"platform-base":"'
+  has "$out" 'source_shas={"controller":"'
+  has "$out" '"keycloak":"'
   has "$out" '"vm-runner":"'
+  has "$out" '"mock":"'
+  has "$out" 'images=["controller","ui","api-server","keycloak","vm-runner"]'
+  has "$out" 'mock=true'
   # PRs never build workloads — the EVENT gate short-circuits before any
   # resolve; NO_REUSE keeps the other components' resolves hermetic.
   out="$(EVENT=pull_request GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
   has "$out" 'workloads=[]'
+  has "$out" 'images=[]'
+  has "$out" 'mock=false'
   has "$out" 'archs=["amd64"]'
+  # A reused component, last in its list, leaves it out and fails nothing.
+  out="$(resolve() { case "$1" in b) echo "REUSE x" ;; *) echo BUILD ;; esac; }; stale_json a b)" || { echo "FAIL: stale_json failed on a reused last component" >&2; f=1; }
+  chk "$out" '["a"]'
   [ "$f" = 0 ] && echo "self-check OK" || exit 1
 }
 
 case "${1:-}" in
   resolve)        resolve "$2" ;;
-  build-or-reuse) shift; build_or_reuse "$@" ;;
+  source-sha)     source_sha "$2" ;;
   gha-outputs)    gha_outputs ;;
-  list-agents)    echo $AGENTS ;;
   list-workloads) echo $WORKLOADS ;;
   list-pinned-tags) echo $PINNED_TAGS ;;
-  list-components) echo api-server ui controller vm-runner platform-base keycloak $AGENTS $WORKLOADS ;;
+  list-components) echo $IMAGES $AGENTS $WORKLOADS ;;
+  list-third-party) third_party ;;
   paths)          effective_paths "$2" ;;
+  tar-path)       tar_path "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: resolve-image.sh {resolve|build-or-reuse|gha-outputs|list-agents|list-workloads|list-pinned-tags|list-components|paths|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: image:resolve {resolve|source-sha|gha-outputs|list-workloads|list-pinned-tags|list-components|list-third-party|paths|tar-path|--self-check}" >&2; exit 2 ;;
 esac

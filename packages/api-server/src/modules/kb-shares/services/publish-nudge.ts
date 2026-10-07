@@ -59,14 +59,12 @@ function extractKbPublishCapability(raw: unknown): number | null {
 export function createKbShareFlushNudge(
   deps: KbShareFlushNudgeDeps,
 ): KbShareFlushNudge {
-  function capsFor(): KbPublishSyncInput["caps"] {
-    return {
-      perFileMaxBytes: deps.limits.perFileMaxBytes,
-      totalMaxBytes: deps.limits.totalMaxBytes,
-      maxFiles: deps.limits.maxFiles,
-      maxWalkDepth: MAX_WALK_DEPTH,
-    };
-  }
+  const caps: KbPublishSyncInput["caps"] = {
+    perFileMaxBytes: deps.limits.perFileMaxBytes,
+    totalMaxBytes: deps.limits.totalMaxBytes,
+    maxFiles: deps.limits.maxFiles,
+    maxWalkDepth: MAX_WALK_DEPTH,
+  };
 
   async function capabilityFor(
     agentId: string,
@@ -122,7 +120,7 @@ export function createKbShareFlushNudge(
       }
       await deps.pod.sync(agentId, {
         roots: [...row.roots],
-        caps: capsFor(),
+        caps,
         flush: true,
       });
     },
@@ -137,7 +135,7 @@ export function createKbShareFlushNudge(
         }
         await deps.pod.sync(agentId, {
           roots: [...row.roots],
-          caps: capsFor(),
+          caps,
           flush: row.dirtyAt !== null,
         });
       } catch (err) {
@@ -149,7 +147,7 @@ export function createKbShareFlushNudge(
       try {
         await deps.pod.sync(agentId, {
           roots: null,
-          caps: capsFor(),
+          caps,
           flush: false,
         });
       } catch {

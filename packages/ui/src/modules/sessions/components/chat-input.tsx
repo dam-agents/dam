@@ -109,16 +109,13 @@ export function ChatInput({
     [key, setDraft],
   );
 
-  const removeAttachment = useCallback(
-    (index: number) => {
-      if (!key) return;
-      const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
-      setDraft(key, {
-        attachments: current.attachments.filter((_, i) => i !== index),
-      });
-    },
-    [key, setDraft],
-  );
+  const removeAttachment = (index: number) => {
+    if (!key) return;
+    const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
+    setDraft(key, {
+      attachments: current.attachments.filter((_, i) => i !== index),
+    });
+  };
 
   const onPaste = useCallback(
     (e: React.ClipboardEvent) => {

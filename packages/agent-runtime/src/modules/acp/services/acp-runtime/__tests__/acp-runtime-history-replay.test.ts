@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { createWorld, frames, type Client, type Frame } from "./acp-world.js";
 
 /**
@@ -53,8 +53,7 @@ function replayForsOf(client: Client): (string | undefined)[] {
 
 function clippedOf(client: Client, id: number): unknown {
   const reply = client.reply(id) as
-    | { result?: { _meta?: { platform?: { clipped?: unknown } } } }
-    | undefined;
+    { result?: { _meta?: { platform?: { clipped?: unknown } } } } | undefined;
   return reply?.result?._meta?.platform?.clipped;
 }
 
@@ -62,6 +61,14 @@ function olderOf(client: Client, id: number): string {
   const clipped = clippedOf(client, id) as { older?: string };
   expect(typeof clipped.older).toBe("string");
   return clipped.older!;
+}
+
+function startTurn(world: ReturnType<typeof createWorld>): Client {
+  const alice = world.connect();
+  alice.send(frames.newSession(1));
+  world.harness().replyTo("session/new", { sessionId: "sess-busy" });
+  alice.send(frames.prompt(2, "sess-busy", "run for a while"));
+  return alice;
 }
 
 function loadTail(id: number, sessionId: string, loadToken?: string): Frame {
@@ -125,6 +132,10 @@ function warmTranscript(
 }
 
 describe("acp-runtime: history replay", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   /**
    * TEST_SCENARIO: Six messages have accumulated and the tail cap is three.
    * A viewer that opts into the tail must receive exactly the newest three,
@@ -405,6 +416,137 @@ describe("acp-runtime: history replay", () => {
     });
 
     expect(replayedUpdates(bob)).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A cold load runs past its budget while a turn is running,
+   * so the recycle of the seemingly wedged harness waits for the turn, with a
+   * grace period. Then the load answers, a moment late: the harness is alive.
+   * Killing it anyway would end the running turn for nothing, and the
+   * harness would record that turn's tool call as rejected by the user.
+   */
+  it("should call off the recycle when the abandoned load answers late", () => {
+    vi.useFakeTimers();
+    const world = createWorld({
+      harnessLoadTimeoutMs: 30_000,
+      envForceRecycleMs: 60_000,
+    });
+    const alice = startTurn(world);
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+    const abandoned = world.harness().received("session/load")[0]!.id;
+
+    vi.advanceTimersByTime(30_000);
+    expect(bob.reply(1)).toMatchObject({ error: { code: -32000 } });
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: abandoned,
+      result: { sessionId: SESSION, modes: null },
+    });
+    vi.advanceTimersByTime(60_000);
+
+    expect(world.harness().killed()).toBe(false);
+    expect(alice.closes).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: An env change is already waiting for the running turn
+   * when a cold load runs past its budget and then answers late. The late
+   * answer clears the harness of being wedged, but not of the credentials it
+   * still holds: the env recycle stays owed and goes through when its grace
+   * period ends.
+   */
+  it("should keep an owed env recycle when the abandoned load answers late", () => {
+    vi.useFakeTimers();
+    const world = createWorld({
+      harnessLoadTimeoutMs: 30_000,
+      envForceRecycleMs: 60_000,
+    });
+    const alice = startTurn(world);
+    world.runtime.refreshEnv({ force: true });
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+    const abandoned = world.harness().received("session/load")[0]!.id;
+
+    vi.advanceTimersByTime(30_000);
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: abandoned,
+      result: { sessionId: SESSION, modes: null },
+    });
+    vi.advanceTimersByTime(30_000);
+
+    expect(world.harness().killed()).toBe(true);
+    expect(alice.closes[0]).toMatchObject({
+      code: 1011,
+      reason: "agent recycled for env change",
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: A cold load runs past its budget while a turn is running,
+   * and only then does an env change arrive, before the load answers late.
+   * The change came while the harness was thought wedged, but it is owed all
+   * the same: the late answer must not call it off with the unresponsive
+   * recycle, or the harness would keep the old credentials.
+   */
+  it("should keep an env recycle that arrives before the late answer", () => {
+    vi.useFakeTimers();
+    const world = createWorld({
+      harnessLoadTimeoutMs: 30_000,
+      envForceRecycleMs: 60_000,
+    });
+    const alice = startTurn(world);
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+    const abandoned = world.harness().received("session/load")[0]!.id;
+
+    vi.advanceTimersByTime(30_000);
+    world.runtime.refreshEnv({ force: true });
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: abandoned,
+      result: { sessionId: SESSION, modes: null },
+    });
+    vi.advanceTimersByTime(60_000);
+
+    expect(world.harness().killed()).toBe(true);
+    expect(alice.closes[0]).toMatchObject({
+      code: 1011,
+      reason: "agent recycled for env change",
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: Two cold loads run past their budget while a turn is
+   * running, and only one of them ever answers. The harness still owes the
+   * other, so it stays wedged and is recycled when the grace period ends.
+   */
+  it("should still recycle when another abandoned load stays unanswered", () => {
+    vi.useFakeTimers();
+    const world = createWorld({
+      harnessLoadTimeoutMs: 30_000,
+      envForceRecycleMs: 60_000,
+    });
+    const alice = startTurn(world);
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+    bob.send(loadTail(2, "sess-other"));
+    const [answered] = world.harness().received("session/load");
+
+    vi.advanceTimersByTime(30_000);
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: answered!.id,
+      result: { sessionId: SESSION, modes: null },
+    });
+    vi.advanceTimersByTime(60_000);
+
+    expect(world.harness().killed()).toBe(true);
+    expect(alice.closes[0]).toMatchObject({
+      code: 1011,
+      reason: "agent restarted after it stopped answering",
+    });
   });
 
   /**

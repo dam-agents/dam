@@ -10,10 +10,15 @@ import {
   type StarterKitSchedule,
   type StarterKitScheduleOverride,
   type StarterKitView,
+  type TemplateHarness,
 } from "api-server-api";
 
 import type { ProviderRef } from "../../providers/components/provider-item.js";
 import type { SetupProviderPolicy } from "../../sandboxes/lib/setup-policy.js";
+import {
+  CRON_TIMEZONE,
+  cronToText,
+} from "../../schedules/lib/schedule-format.js";
 
 export interface StarterKitSetupDraft {
   name: string;
@@ -23,16 +28,9 @@ export interface StarterKitSetupDraft {
   slackChannelId: string;
   skippedSchedules: string[];
   scheduleOverrides: StarterKitScheduleOverride[];
-  skipSeed: boolean;
 }
 
-export function kitSeedRemovable(
-  kit: Pick<StarterKitView, "seed" | "install">,
-): boolean {
-  return kit.seed !== undefined && kit.install === undefined;
-}
-
-export interface GrantedConnection {
+interface GrantedConnection {
   id: string;
   templateId: string;
   name?: string;
@@ -43,12 +41,12 @@ export type TemplateIndex = ReadonlyMap<
   Pick<ConnectionTemplateView, "id" | "name" | "family">
 >;
 
-export interface RequirementStatus {
+interface RequirementStatus {
   requirement: StarterKitConnectionRequirement;
   satisfied: boolean;
 }
 
-export function draftConnectionIds(draft: StarterKitSetupDraft): string[] {
+function draftConnectionIds(draft: StarterKitSetupDraft): string[] {
   return [
     ...new Set([
       ...draft.connectionIds,
@@ -95,10 +93,7 @@ export function isStarterKitSetupComplete(
 }
 
 export function buildStarterKitApplyInput(
-  kit: Pick<
-    StarterKitView,
-    "id" | "catalog" | "image" | "connections" | "seed" | "install"
-  >,
+  kit: Pick<StarterKitView, "id" | "catalog" | "image" | "connections">,
   draft: StarterKitSetupDraft,
   owned: readonly GrantedConnection[],
   templates: TemplateIndex,
@@ -116,7 +111,6 @@ export function buildStarterKitApplyInput(
     connectionIds: draftConnectionIds(draft),
     ...(kit.image ? {} : { templateId: draft.templateId ?? undefined }),
     ...(slackChannelId ? { slackChannelId } : {}),
-    skipSeed: draft.skipSeed && kitSeedRemovable(kit),
     skipSchedules: draft.skippedSchedules,
     scheduleOverrides: draft.scheduleOverrides.filter(
       (o) => !draft.skippedSchedules.includes(o.name),
@@ -203,25 +197,7 @@ export function describeAccepts(
 export function kitScheduleCadence(schedule: StarterKitSchedule): string {
   if ("rrule" in schedule)
     return `${rruleToText(schedule.rrule)} (${schedule.timezone})`;
-  return schedule.cron;
-}
-
-export function effectiveTiming(
-  schedule: StarterKitSchedule,
-  override: StarterKitScheduleOverride | undefined,
-): { cron: string } | { rrule: string; timezone: string } {
-  if (override?.timing) return override.timing;
-  return "cron" in schedule
-    ? { cron: schedule.cron }
-    : { rrule: schedule.rrule, timezone: schedule.timezone };
-}
-
-export function describeTiming(
-  timing: { cron: string } | { rrule: string; timezone: string },
-): string {
-  return "cron" in timing
-    ? timing.cron
-    : `${rruleToText(timing.rrule)} (${timing.timezone})`;
+  return `${cronToText(schedule.cron)} (${CRON_TIMEZONE})`;
 }
 
 export function withOverride(
@@ -275,7 +251,7 @@ const HARNESS_LABEL: Record<HarnessFamily, string> = {
   bob: "Bob",
 };
 
-export function harnessFamilyLabel(
+function harnessFamilyLabel(
   harness: HarnessFamily | undefined,
 ): string | undefined {
   return harness ? HARNESS_LABEL[harness] : undefined;
@@ -302,13 +278,14 @@ export function kitResourcesLine(
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-export function allowedHarnesses<T extends { harness?: HarnessFamily }>(
+export function allowedHarnesses<T extends { harness?: TemplateHarness }>(
   kit: Pick<StarterKitView, "harnesses">,
   harnesses: readonly T[],
 ): T[] {
   if (!kit.harnesses) return [...harnesses];
+  const accepted = new Set<string>(kit.harnesses);
   return harnesses.filter(
-    (t) => t.harness !== undefined && kit.harnesses!.includes(t.harness),
+    (t) => t.harness !== undefined && accepted.has(t.harness),
   );
 }
 

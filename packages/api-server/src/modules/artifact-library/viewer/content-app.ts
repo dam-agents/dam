@@ -11,6 +11,7 @@ import {
   allowed,
   denied,
   isRestricted,
+  namesCurrentVersion,
   PRIVATE_NO_STORE,
   type Authorized,
 } from "./authorize.js";
@@ -20,7 +21,6 @@ import {
   renderImageInner,
   renderTextKindInner,
 } from "./renderer.js";
-import { parseVersion } from "./version-query.js";
 
 const RENDER_MAX_BYTES = 10 * 1024 * 1024;
 
@@ -58,10 +58,9 @@ export function createContentApp(deps: ContentAppDeps): Hono {
       .with({ state: "restricted" }, async (r) => {
         c.header("Cache-Control", PRIVATE_NO_STORE);
         const token = c.req.query("t");
-        const version = parseVersion(c.req.query("v")) ?? r.artifact.version;
         const valid =
           token !== undefined &&
-          (await renderTokens.redeem(token, r.artifact.id, version));
+          (await renderTokens.redeem(token, r.artifact.id, r.artifact.version));
         return valid
           ? allowed(r.artifact)
           : denied(c.text("unauthorized", 401));
@@ -75,16 +74,13 @@ export function createContentApp(deps: ContentAppDeps): Hono {
     if (!authorized.ok) return authorized.response;
 
     const artifact = authorized.artifact;
-    const requested = parseVersion(c.req.query("v"));
-    const version = requested ?? artifact.version;
-    const versionArg = version === artifact.version ? undefined : version;
-    const meta = await viewer.meta(artifact, versionArg);
-    if (!meta) return c.text("not found", 404);
+    if (!namesCurrentVersion(artifact, c.req.query("v")))
+      return c.text("not found", 404);
 
     const kind = artifact.kind as ArtifactKind;
     const token = c.req.query("t");
     const rawUrl =
-      `/a/${slug}/raw?v=${version}` +
+      `/a/${slug}/raw?v=${artifact.version}` +
       (isRestricted(artifact) && token !== undefined
         ? `&t=${encodeURIComponent(token)}`
         : "");
@@ -92,11 +88,11 @@ export function createContentApp(deps: ContentAppDeps): Hono {
       renderDownloadInner({
         title: artifact.title,
         fileName: artifact.fileName,
-        sizeBytes: meta.sizeBytes,
+        sizeBytes: artifact.sizeBytes,
         rawUrl: `${rawUrl}&download=1`,
       });
     if (kind !== "binary") {
-      const blob = await viewer.content(artifact, versionArg, RENDER_MAX_BYTES);
+      const blob = await viewer.content(artifact, RENDER_MAX_BYTES);
       return c.html(
         blob
           ? renderTextKindInner(kind, blob.content.toString("utf8"), {
@@ -106,7 +102,7 @@ export function createContentApp(deps: ContentAppDeps): Hono {
           : downloadInner(),
       );
     }
-    if (meta.contentType.startsWith("image/"))
+    if (artifact.contentType.startsWith("image/"))
       return c.html(renderImageInner(rawUrl, artifact.title));
     return c.html(downloadInner());
   });

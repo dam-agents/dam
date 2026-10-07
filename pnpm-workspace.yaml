@@ -3,8 +3,24 @@ packages:
   - "packages/e2e/agents/mock"
   - "packages/e2e/agents/mock-api"
   - "packages/e2e/playwright"
-  - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
+  - "packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
+minimumReleaseAgeExclude:
+  # The pi-agent image pins @earendil-works/pi-coding-agent 1.0.2 (2026-10-04)
+  # and the pi-dynamic-providers extension type-checks against the same
+  # version; the fork publishes all its packages in lockstep. Drop these once
+  # the release ages past the floor (2026-10-11).
+  - "@earendil-works/chord@1.0.2"
+  - "@earendil-works/pi-agent-core@1.0.2"
+  - "@earendil-works/pi-ai@1.0.2"
+  - "@earendil-works/pi-codemode@1.0.2"
+  - "@earendil-works/pi-coding-agent@1.0.2"
+  - "@earendil-works/pi-mcp@1.0.2"
+  - "@earendil-works/pi-telemetry@1.0.2"
+  - "@earendil-works/pi-tui@1.0.2"
+  # @earendil-works/pi-ai 1.0.2 pins @anthropic-ai/sdk 0.129.0 (2026-09-28).
+  # Drop this once it ages past the floor (2026-10-05).
+  - "@anthropic-ai/sdk@0.129.0"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while
@@ -24,19 +40,11 @@ trustPolicyExclude:
   # maintainer (paulmillr), GitHub tag matches, restored in 5.0.0 via
   # `trustedPublisher: github`. Benign publisher-side workflow change.
   - "chokidar@4.0.3"
-  # tinyexec@1.2.2 downgraded from trusted-publisher (1.1.1) to provenance-
-  # attestation. Same upstream (tinylibs), no open advisories. Pulled in
-  # transitively by vitest. Only surfaces in `pnpm deploy --legacy` paths
-  # (platform-base Dockerfile) because legacy deploy bypasses the lockfile
-  # and re-resolves to latest. Normal pnpm install pins 1.1.1 via the
-  # lockfile and is unaffected.
-  - "tinyexec@1.2.2"
 allowBuilds:
   '@carbon/icon-helpers': false
   '@carbon/icons-react': false
   '@google/genai': true
   '@ibm/plex': false
-  argon2: true
   esbuild: true
   grpc-tools: true
   koffi: true
@@ -44,43 +52,15 @@ allowBuilds:
   protobufjs: true
   sharp: true
 overrides:
-  "@anthropic-ai/sdk@<0.91.1": "0.91.1"
-  "@babel/core@<7.29.6": "7.29.6"
   "@hono/node-server@<2.0.10": "2.0.12"
-  "@humanfs/node@<0.16.8": "0.16.8"
-  "@opentelemetry/propagator-jaeger@<2.9.0": "2.9.0"
-  "axios@<1.18.0": "1.18.0"
-  "baseline-browser-mapping@<2.11.0": "2.11.0"
-  "body-parser@<2.3.0": "2.3.0"
-  "brace-expansion@2": "2.1.4"
-  "brace-expansion@5": "5.0.9"
-  "browserslist@<4.28.7": "4.28.7"
   "esbuild@<0.25.0": "0.25.12"
   "esbuild@>=0.27.3 <0.28.1": "0.28.1"
-  "fast-uri@<3.1.8": "3.1.8"
-  "form-data@<4.0.6": "4.0.6"
-  "ip-address@<10.3.1": "10.3.1"
-  "js-yaml@<4.3.2": "4.3.2"
-  "nanoid@3": "3.3.18"
-  "postcss@<8.5.23": "8.5.23"
-  "protobufjs@<7.6.5": "7.6.5"
-  "proxy-addr@<2.0.8": "2.0.8"
-  "qs@<6.16.0": "6.16.0"
   "serialize-javascript@<7.0.5": "7.0.5"
-  "tar@<7.5.21": "7.5.21"
-  "undici@8": "8.9.0"
-  "ws@<8.21.0": "8.21.0"
 
 packageExtensions:
   "drizzle-kit":
     "peerDependencies":
       "drizzle-orm": "*"
-  "@hookform/resolvers":
-    "peerDependencies":
-      "zod": "*"
-    "peerDependenciesMeta":
-      "zod":
-        "optional": true
   "keycloakify":
     "peerDependencies":
       "react": "*"

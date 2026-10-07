@@ -6,6 +6,7 @@ import type {
   SkillPublishRecord,
   SkillSource,
 } from "api-server-api";
+import { parseGithubRepo } from "agent-runtime-api";
 import type { AgentsRepository } from "../../agents/infrastructure/agents-repository.js";
 import type { AgentSkillsRepository } from "../infrastructure/agent-skills-repository.js";
 import { ensureAgentReachable } from "./ensure-agent-reachable.js";
@@ -13,7 +14,6 @@ import {
   AgentRuntimeUpstreamError,
   type AgentRuntimeSkillsClient,
 } from "../infrastructure/agent-runtime-client.js";
-import { detectHost } from "../domain/git-host.js";
 import { upstreamToTrpc } from "../infrastructure/upstream-to-trpc.js";
 import { securityLog } from "../../../core/security-log.js";
 
@@ -44,7 +44,7 @@ export async function publishSkill(
       message: "skill source not found",
     });
 
-  const host = detectHost(source.gitUrl);
+  const host = parseGithubRepo(source.gitUrl);
   if (!host) {
     throw new TRPCError({
       code: "NOT_IMPLEMENTED",

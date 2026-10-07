@@ -5,7 +5,7 @@ import type { PlatformStore } from "../../store.js";
 import type { AgentView } from "../../types.js";
 import { routeToPath } from "../platform/lib/routes.js";
 
-export interface RestartingEntry {
+interface RestartingEntry {
   seenNonRunning: boolean;
   clickedAt: number;
   parkedAtClick: boolean;
@@ -21,6 +21,8 @@ export interface AgentsSlice {
   setPausingAgent: (id: string, entry: { clickedAt: number }) => void;
   clearPausingAgent: (id: string) => void;
   setPausingAgents: (map: Map<string, { clickedAt: number }>) => void;
+  startingSince: Map<string, number>;
+  setStartingSince: (map: Map<string, number>) => void;
   unreachableAgents: ReadonlySet<string>;
   markAgentUnreachable: (id: string) => void;
   clearAgentUnreachable: (id: string) => void;
@@ -72,6 +74,9 @@ export const createAgentsSlice: StateCreator<
       return { pausingAgents: next };
     }),
   setPausingAgents: (map) => set({ pausingAgents: map }),
+
+  startingSince: new Map(),
+  setStartingSince: (map) => set({ startingSince: map }),
 
   unreachableAgents: new Set(),
   markAgentUnreachable: (id) =>
@@ -175,4 +180,18 @@ export function transitionPausingAgents(
     next.set(id, entry);
   }
   return next.size === current.size ? current : next;
+}
+
+export function transitionStartingSince(
+  current: Map<string, number>,
+  agents: readonly AgentView[],
+  now: number = Date.now(),
+): Map<string, number> {
+  const next = new Map<string, number>();
+  for (const a of agents)
+    if (a.state === "starting") next.set(a.id, current.get(a.id) ?? now);
+  const same =
+    next.size === current.size &&
+    [...next].every(([id, since]) => current.get(id) === since);
+  return same ? current : next;
 }

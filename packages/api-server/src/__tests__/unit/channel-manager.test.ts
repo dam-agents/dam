@@ -24,7 +24,7 @@ function fakeSlackWorker(): SlackWorker {
       conversationId: "C1",
       messageTs: "1.1",
     })),
-    resolveConversationNames: vi.fn(async () => []),
+    resolveConversationLabels: vi.fn(async () => []),
     readThread: vi.fn(async () => ({
       messages: [],
       conversationId: "C1",
@@ -72,7 +72,7 @@ describe("channel-manager bootstrap", () => {
     await manager.bootstrap(new Map([["agent-1", [channel]]]));
 
     expect(slackWorker.connect).toHaveBeenCalledTimes(1);
-    expect(slackWorker.start).toHaveBeenCalledWith("agent-1", channel);
+    expect(slackWorker.start).toHaveBeenCalledWith("agent-1");
 
     await manager.stopAll();
   });
@@ -173,7 +173,7 @@ describe("channel-manager bootstrap", () => {
     };
     await manager.bootstrap(new Map([["agent-1", [channel]]]));
 
-    expect(slackWorker.start).toHaveBeenCalledWith("agent-1", channel);
+    expect(slackWorker.start).toHaveBeenCalledWith("agent-1");
 
     await manager.stopAll();
     vi.useRealTimers();
@@ -187,10 +187,11 @@ describe("channel-manager user lookup", () => {
 
     await manager.describeUsers("agent-1", ChannelType.Slack, ["U1", "U2"]);
 
-    expect(slackWorker.describeUsers).toHaveBeenCalledWith("agent-1", [
-      "U1",
-      "U2",
-    ]);
+    expect(slackWorker.describeUsers).toHaveBeenCalledWith(
+      "agent-1",
+      ["U1", "U2"],
+      undefined,
+    );
 
     await manager.stopAll();
   });

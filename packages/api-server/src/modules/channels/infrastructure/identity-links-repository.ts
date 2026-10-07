@@ -31,6 +31,21 @@ export function findIdentityByExternalUser(db: Db) {
   };
 }
 
+export function findExternalUsersByIdentity(db: Db) {
+  return async (provider: string, keycloakSub: string): Promise<string[]> => {
+    const rows = await db
+      .select({ externalUserId: identityLinks.externalUserId })
+      .from(identityLinks)
+      .where(
+        and(
+          eq(identityLinks.provider, provider),
+          eq(identityLinks.keycloakSub, keycloakSub),
+        ),
+      );
+    return rows.map((r) => r.externalUserId);
+  };
+}
+
 export function upsertIdentityLink(db: Db) {
   return async (
     provider: string,

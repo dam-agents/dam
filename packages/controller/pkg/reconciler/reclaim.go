@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"sort"
 	"time"
 
@@ -24,6 +23,7 @@ type reclaimCandidate struct {
 	idleSince time.Time
 	cpu       resource.Quantity
 	mem       resource.Quantity
+	vmMiB     int
 }
 
 func (r *AgentReconciler) reclaimIdleRoom(ctx context.Context, agent *apiv1.Agent, owner string) (bool, error) {
@@ -36,16 +36,8 @@ func (r *AgentReconciler) reclaimIdleRoom(ctx context.Context, agent *apiv1.Agen
 		return false, err
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	for _, c := range chosen {
-		if err := r.stampReclaimed(ctx, c.name, now); err != nil {
-			return false, err
-		}
-		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, c.name); err != nil {
-			return false, err
-		}
-		slog.InfoContext(ctx, "reclaimed idle agent to admit a blocked start",
-			"agent", c.name, "for", agent.Name, "owner", owner, "idleFor", time.Since(c.idleSince).Round(time.Second))
+	if err := r.hibernateReclaimed(ctx, chosen, owner, agent.Name, "reclaimed idle agent to admit a blocked start"); err != nil {
+		return false, err
 	}
 	return true, nil
 }
@@ -128,7 +120,11 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 			continue
 		}
 		cpu, mem := r.limitsOf(&peer.Spec)
-		out = append(out, reclaimCandidate{name: peer.Name, idleSince: idleSince, cpu: cpu, mem: mem})
+		c := reclaimCandidate{name: peer.Name, idleSince: idleSince, cpu: cpu, mem: mem}
+		if peer.Spec.IsVM() {
+			c.vmMiB = r.accountedMemoryMiB(peer.Name, &peer.Spec)
+		}
+		out = append(out, c)
 	}
 	return out, nil
 }
@@ -137,13 +133,13 @@ func reclaimEligible(annotations map[string]string, idleTimeout time.Duration, n
 	if idleTimeout <= 0 {
 		return time.Time{}, false
 	}
-	if annotations[annActiveSession] == "true" || annotations[annExperimentActive] == "true" {
+	if annotations[annActiveSession] == "true" || annotations[annInvocationsActive] == "true" {
 		return time.Time{}, false
 	}
 	if annotations[annSweepable] == "true" {
 		return time.Time{}, false
 	}
-	if annotations[annStopRequested] != "" || annotations[annStorageMigration] != "" {
+	if annotations[annStopRequested] != "" || annotations[annStorageMigration] != "" || annotations[annRuntimeMigration] != "" {
 		return time.Time{}, false
 	}
 	last, err := time.Parse(time.RFC3339, annotations[annLastActivity])

@@ -100,6 +100,10 @@ export const scheduleResetSessionInputSchema = z.object({
   id: z.string().min(1),
 });
 
+export const scheduleRunNowInputSchema = z.object({
+  id: z.string().min(1),
+});
+
 const quietWindowConfigMapSchema = z.object({
   startTime: z.string(),
   endTime: z.string(),
@@ -160,16 +164,6 @@ export const scheduleSpecSchema = z.discriminatedUnion("type", [
   scheduleSpecRRuleSchema,
   scheduleSpecOnceSchema,
 ]);
-
-export const scheduleStatusSchema = z.object({
-  lastRun: z.string().optional(),
-  nextRun: z.string().optional(),
-  lastResult: z.string().optional(),
-  lastDeclinedAt: z.string().optional(),
-  declinedCount: z.number().int().nonnegative().optional(),
-  lastPrecheckError: z.string().optional(),
-  precheckFailedCount: z.number().int().nonnegative().optional(),
-});
 
 export const precheckVerdictSchema = z.enum([
   "allowed",

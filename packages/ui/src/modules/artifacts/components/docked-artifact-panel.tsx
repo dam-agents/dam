@@ -1,20 +1,18 @@
 import {
   Close,
-  Code,
   Download,
   Edit,
   Launch,
   Maximize,
   Save,
   Share,
-  View,
 } from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { RenderToggle } from "@/components/render-toggle";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
-import { useDashboardFeedPost } from "../../experiments/hooks/use-dashboard-feed-post.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { FullscreenPreviewDialog } from "../../files/components/fullscreen-preview-dialog.js";
 import {
@@ -25,7 +23,7 @@ import {
 } from "../api/queries.js";
 import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
 import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
-import { canSendArtifactPrompt } from "../lib/artifact-prompt.js";
+import { canUseArtifactBridge } from "../lib/artifact-bridge.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
 import { downloadArtifact } from "../lib/transfer.js";
@@ -101,11 +99,14 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
     showFrame && artifact ? artifact.id : null,
     shownVersion,
   );
-  const experimentFeedPost = useDashboardFeedPost(openArtifactId);
   const startSession = useStartArtifactSession(artifact);
-  const feedPostForShown =
-    shownVersion === latest ? experimentFeedPost : undefined;
 
+  const bridgeOpen = canUseArtifactBridge(
+    artifact,
+    enabled,
+    agentId,
+    shownVersion,
+  );
   const frame =
     artifact && preview.data ? (
       <DeferredFrame
@@ -114,12 +115,8 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
         title={artifact.title}
         className="h-full w-full bg-white"
         deferMs={0}
-        postData={feedPostForShown}
-        onSendPrompt={
-          canSendArtifactPrompt(artifact, enabled, agentId, shownVersion)
-            ? onSendPrompt
-            : undefined
-        }
+        onSendPrompt={bridgeOpen ? onSendPrompt : undefined}
+        agentApiArtifactId={bridgeOpen ? artifact.id : undefined}
       />
     ) : null;
   const frameFallback = (
@@ -197,14 +194,10 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
               </>
             )}
             {renderable && (
-              <Button
-                variant="outline"
-                size="xs"
-                onClick={() => setShowSource((s) => !s)}
-              >
-                {showSource ? <View size={14} /> : <Code size={14} />}
-                {showSource ? "Preview" : "Source"}
-              </Button>
+              <RenderToggle
+                rendered={!showSource}
+                onToggle={() => setShowSource((s) => !s)}
+              />
             )}
             {artifact && (
               <Button

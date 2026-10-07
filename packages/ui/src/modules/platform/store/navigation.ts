@@ -13,11 +13,7 @@ import {
 } from "../lib/routes.js";
 
 type ParameterlessView =
-  | "home"
-  | "terms"
-  | "artifacts"
-  | "agent-new"
-  | "starter-kits";
+  "home" | "terms" | "artifacts" | "agent-new" | "starter-kits";
 
 export interface NavigationSlice {
   view: View;

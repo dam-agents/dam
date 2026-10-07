@@ -5,13 +5,13 @@
   "type": "module",
   "main": "./src/index.ts",
   "dependencies": {
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "^0.45.3",
     "postgres": "^3.4.7"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "drizzle-kit": "^0.31.4",
+    "@types/node": "^26.6.3",
     "dev-config": "workspace:*",
-    "typescript": "^6.0.2"
+    "drizzle-kit": "^0.31.11",
+    "typescript": "^6.0.3"
   }
 }

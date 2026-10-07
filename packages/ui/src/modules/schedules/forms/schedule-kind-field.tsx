@@ -3,6 +3,11 @@ import { SectionLabel } from "@/components/ui/section-label";
 
 export type ScheduleKind = "repeat" | "once";
 
+export interface ScheduleDraft {
+  name: string;
+  task: string;
+}
+
 export function ScheduleKindField({
   value,
   onChange,

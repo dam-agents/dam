@@ -2,8 +2,8 @@ import type { PromptBlock, ProviderPresetType } from "api-server-api";
 import type {
   AgentKind,
   EnvVar,
-  HarnessFamily,
   SlackChannel,
+  TemplateHarness,
 } from "api-server-api";
 
 export type Role = "user" | "assistant";
@@ -21,28 +21,28 @@ export interface ToolChip {
   content?: ToolContent[];
 }
 
-export interface TextPart {
+interface TextPart {
   kind: "text";
   text: string;
 }
 
-export interface ThoughtPart {
+interface ThoughtPart {
   kind: "thought";
   text: string;
 }
 
-export interface HistoryPart {
+interface HistoryPart {
   kind: "history";
   text: string;
 }
 
-export interface ImagePart {
+interface ImagePart {
   kind: "image";
   data: string;
   mimeType: string;
 }
 
-export interface FilePart {
+interface FilePart {
   kind: "file";
   name: string;
   mimeType: string;
@@ -50,7 +50,7 @@ export interface FilePart {
   size?: number;
 }
 
-export interface UploadedFilePart extends FilePart {
+interface UploadedFilePart extends FilePart {
   data: string;
   size: number;
 }
@@ -98,7 +98,6 @@ export interface Message {
 }
 
 export type { SessionView } from "api-server-api";
-export { SessionType } from "api-server-api";
 
 export interface TemplateView {
   id: string;
@@ -106,7 +105,7 @@ export interface TemplateView {
   image: string;
   description?: string;
   category: "harness";
-  harness?: HarnessFamily;
+  harness?: TemplateHarness;
   providers?: ProviderPresetType[];
   tags?: string[];
   docsUrl?: string;
@@ -129,6 +128,7 @@ export type AgentState =
   | "hibernating"
   | "hibernated"
   | "over_budget"
+  | "migrating"
   | "error";
 
 export interface AgentView {
@@ -137,11 +137,12 @@ export interface AgentView {
   createdAt?: string;
   templateId: string | null;
   templateUpdate: { fromImage: string; toImage: string } | null;
-  features: { liveUpdates: boolean };
+  features: { liveUpdates: boolean | null };
   image: string;
   description?: string;
   env?: EnvVar[];
   hibernationTimeoutMin: number;
+  requireConnectionAddress: boolean;
   grantedSecretIds: string[];
   grantedConnectionIds: string[];
   state: AgentState;
@@ -151,6 +152,7 @@ export interface AgentView {
   overBudgetMessage?: string;
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
+  notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
   contributionFailures: { kind: string; message: string }[];
@@ -170,10 +172,39 @@ export interface AgentView {
   onboardingSteps?: OnboardingStep[];
   spawnedBy: string | null;
   vm: boolean;
+  runtimeMigration: RuntimeMigrationView | null;
+  runtimeMigratable: boolean;
   kind?: AgentKind;
 }
 
-export interface QuietWindowView {
+export type RuntimeMigrationPhase =
+  | "requested"
+  | "stopping"
+  | "copying"
+  | "booting"
+  | "verified"
+  | "failed"
+  | "aborting";
+
+export interface RuntimeMigrationView {
+  phase: RuntimeMigrationPhase;
+  message?: string;
+  attempts?: number;
+  abortable: boolean;
+  retryable: boolean;
+}
+
+export interface RuntimeMigrationPlanView {
+  unmovable: { path: string; reason: string }[];
+  storageSize: string;
+  storageResized: boolean;
+  bootsSleepingAgent: boolean;
+  retentionMs: number | null;
+  allowed: boolean;
+  refusal: { type: string; reasons: string[] } | null;
+}
+
+interface QuietWindowView {
   startTime: string;
   endTime: string;
   enabled: boolean;
@@ -200,6 +231,7 @@ export interface Schedule {
     lastRun?: string;
     nextRun?: string;
     lastResult?: string;
+    stopReason?: string;
     lastDeclinedAt?: string;
     declinedCount?: number;
     lastPrecheckError?: string;
@@ -208,26 +240,16 @@ export interface Schedule {
 }
 
 export type {
+  BedrockPins,
   BobModelPins,
   EgressPreset,
-  EnvMapping,
   EnvVar,
-  InjectionConfig,
-  ProviderPreset,
-  ProviderPresetMode,
   ProviderPresetType,
 } from "api-server-api";
 export {
+  BEDROCK_REGION_PATTERN,
+  BEDROCK_TEMPLATE_ID,
   BOB_CHAT_MODES,
-  DEFAULT_ENV_PLACEHOLDER,
-  isProviderPresetType,
   isValidEnvName,
-  PROVIDER_PRESET_TYPES,
   PROVIDERS,
 } from "api-server-api";
-
-export interface McpConnection {
-  hostname: string;
-  connectedAt: string;
-  expired: boolean;
-}

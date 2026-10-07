@@ -40,7 +40,7 @@ export const skillListResultSchema = z.object({
   visibility: z.enum(["public", "private"]).optional(),
 });
 
-export const scanFailureCodes = [
+const scanFailureCodes = [
   "needs_github_connection",
   "needs_sandbox",
   "repo_unreachable",

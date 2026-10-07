@@ -4,6 +4,7 @@ import { FormField } from "@/components/form-field";
 import { Input } from "@/components/ui/input";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Switch } from "@/components/ui/switch";
 import { HintTooltip } from "@/components/ui/tooltip";
 
 import { AgentAvatar } from "../../../agents/components/avatar/agent-avatar.js";
@@ -120,7 +121,6 @@ export function ConnectionsSetupSection({
   satelliteNames,
   onToggleSatellite,
   onOpenCatalog,
-  title,
   leading,
   excludeIds,
 }: {
@@ -129,9 +129,8 @@ export function ConnectionsSetupSection({
   satelliteNames: string[];
   onToggleSatellite: (name: string, granted: boolean) => void;
   onOpenCatalog: () => void;
-  title?: string;
   leading?: React.ReactNode;
-  excludeIds?: ReadonlySet<string>;
+  excludeIds: ReadonlySet<string>;
 }) {
   const connectionsQ = useAppConnections();
   const { data: satellites = NO_SATELLITES } = useSatellites();
@@ -146,7 +145,7 @@ export function ConnectionsSetupSection({
   );
   const staged = useMemo(
     () =>
-      excludeProviderConnections(granted).filter((c) => !excludeIds?.has(c.id)),
+      excludeProviderConnections(granted).filter((c) => !excludeIds.has(c.id)),
     [granted, excludeIds],
   );
   const { populated: groups, templateById } = useCatalogGroups(staged);
@@ -170,7 +169,7 @@ export function ConnectionsSetupSection({
         templateById={templateById}
         onToggleGrant={onToggle}
         onOpenCatalog={onOpenCatalog}
-        {...(title ? { title } : {})}
+        title="Connections"
         {...(leading || satellitesCard
           ? {
               leading: (
@@ -197,7 +196,7 @@ export function LifecycleSetupSection({
 }) {
   return (
     <section className="mb-8">
-      <SectionLabel spaced>Lifecycle</SectionLabel>
+      <SectionLabel spaced>Availability</SectionLabel>
       <Inset>
         <LifecycleField
           value={value ?? DEFAULT_HIBERNATE_MIN}
@@ -205,6 +204,40 @@ export function LifecycleSetupSection({
           sizeMi={sizeMi}
         />
       </Inset>
+    </section>
+  );
+}
+
+export function ConnectionAddressingSetupSection({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <section className="mb-8">
+      <SectionLabel spaced>Credential injection</SectionLabel>
+      <label className="flex cursor-pointer items-start justify-between gap-4">
+        <span>
+          <span className="block text-sm font-medium text-foreground">
+            Inject only into addressed requests
+          </span>
+          <span className="mt-0.5 block text-sm text-muted-foreground">
+            Credentials go only into requests that name a connection; others are
+            sent as-is. For agents whose tools (Docker containers, nested
+            agents) call the same services with their own credentials or none.
+          </span>
+        </span>
+        <Switch
+          checked={value}
+          onCheckedChange={onChange}
+          disabled={disabled}
+          label="Inject only into addressed requests"
+        />
+      </label>
     </section>
   );
 }

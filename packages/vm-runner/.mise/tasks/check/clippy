@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# `smolvm.pin` names the clone this compiles against. The provider that makes
-# it is not a task, so its staleness never reaches this key, and a pin that
-# moves `commit=` alone leaves `Cargo.lock` untouched — smolvm is a path
-# dependency there. Undeclared, it replays a pass taken against the old source.
 #MISE sources=["src/**/*.rs", "platform-init/src/**/*.rs", "Cargo.toml", "platform-init/Cargo.toml", "Cargo.lock", "smolvm.pin"]
 #MISE outputs=[]
 #MISE cache.enabled=true

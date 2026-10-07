@@ -27,7 +27,7 @@ const exec = promisify(execFile);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(HERE, "../..");
-const BIN_PATH = join(PKG_ROOT, "dist", "bin.js");
+const BIN_PATH = join(PKG_ROOT, "dist", "js", "bin.js");
 
 interface RunResult {
   exitCode: number;

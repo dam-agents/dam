@@ -45,6 +45,7 @@ function makeRepoFake() {
     },
     grant: async () => {},
     revoke: async () => {},
+    setPreferred: async () => {},
     listAgentGrants: async () => [],
     listConnectionsForAgent: async () => [],
     listAgentsForConnection: async () => [],
@@ -67,7 +68,6 @@ function makeSecretStoreFake() {
     put: async (ref, fields) => {
       stored.set(ref.path, { ...fields });
     },
-    putField: async () => {},
     putFields: async (ref, fields) => {
       stored.set(ref.path, { ...(stored.get(ref.path) ?? {}), ...fields });
     },
@@ -77,7 +77,6 @@ function makeSecretStoreFake() {
       deleted.push(ref.path);
       stored.delete(ref.path);
     },
-    list: async () => [],
   };
   return { store, stored, deleted };
 }
@@ -126,6 +125,11 @@ function makeService(
       now: () => NOW_MS,
     }),
     githubAppEngine,
+    s3CredentialProbe: {
+      probe: async () => {
+        throw new Error("Unexpected dependency: s3CredentialProbe");
+      },
+    },
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
     connectionLock: <T>(key: string, fn: () => Promise<T>): Promise<T> => {
@@ -266,7 +270,7 @@ describe("github-app connection create", () => {
       publicKeyEncoding: { type: "spki", format: "pem" },
       privateKeyEncoding: { type: "pkcs1", format: "pem" },
     });
-    await svc.update(id, rotatedPem.replaceAll("\n", "\\n"));
+    await svc.update(id, { value: rotatedPem.replaceAll("\n", "\\n") });
 
     expect(stored.get(SECRET_PATH)!.private_key).toBe(rotatedPem.trim());
     const auth = rows.get(id)!.auth;
@@ -280,7 +284,9 @@ describe("github-app connection create", () => {
     const id = await svc.createFromTemplate(createInput());
     const authBefore = rows.get(id)!.auth;
 
-    await expect(svc.update(id, "not-a-key")).rejects.toThrow(/PEM-encoded/);
+    await expect(svc.update(id, { value: "not-a-key" })).rejects.toThrow(
+      /PEM-encoded/,
+    );
 
     expect(stored.get(SECRET_PATH)!.private_key).toBe(PRIVATE_KEY_PEM.trim());
     expect(rows.get(id)!.auth).toEqual(authBefore);

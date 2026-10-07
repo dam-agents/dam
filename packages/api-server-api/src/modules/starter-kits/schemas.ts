@@ -1,13 +1,21 @@
 import { z } from "zod";
+import { agentNameSchema } from "../agents/schemas.js";
 import {
-  agentNameSchema,
-  agentSizeSchema,
-  storageQuantitySchema,
-} from "../agents/schemas.js";
+  agentSetupEnvVarSchema,
+  agentSetupInstallSchema,
+  agentSetupResourcesSchema,
+  agentSetupShape,
+  agentSetupSkillSchema,
+} from "../agents/setup.js";
 import {
   isProviderPresetType,
   type ProviderPresetType,
 } from "../connections/providers.js";
+import {
+  egressPresetSchema,
+  egressRuleCreateInputSchema,
+  ruleVerdictSchema,
+} from "../egress-rules/schemas.js";
 import { precheckSchema, quietWindowSchema } from "../schedules/schemas.js";
 import { harnessFamilySchema } from "../templates/schemas.js";
 
@@ -60,10 +68,7 @@ export const starterKitScheduleSchema = z.union([
   starterKitRRuleScheduleSchema,
 ]);
 
-export const starterKitExternalSkillSchema = z.object({
-  source: z.url(),
-  name: z.string().min(1),
-});
+export const starterKitExternalSkillSchema = agentSetupSkillSchema;
 
 export const starterKitBundledSkillsSchema = z.object({
   path: z.string().min(1),
@@ -74,10 +79,7 @@ export const resolvedSkillSchema = z.object({
   description: z.string(),
 });
 
-export const starterKitEnvVarSchema = z.object({
-  name: z.string().min(1),
-  value: z.string(),
-});
+export const starterKitEnvVarSchema = agentSetupEnvVarSchema;
 
 const providerListSchema = z.array(
   z.custom<ProviderPresetType>(
@@ -92,16 +94,17 @@ export const starterKitImageSchema = z.object({
   providers: providerListSchema.optional(),
 });
 
+export const starterKitEgressRuleSchema = egressRuleCreateInputSchema
+  .omit({ agentId: true })
+  .extend({ verdict: ruleVerdictSchema.default("allow") });
+
 export const starterKitKnowledgeBaseSchema = z.object({
   shareRoots: z.array(z.string().min(1)).min(1).max(20),
 });
 
-export const starterKitInstallSchema = z.object({
-  command: z.string().min(1),
-});
+export const starterKitInstallSchema = agentSetupInstallSchema;
 
-export const starterKitResourcesSchema = agentSizeSchema.extend({
-  storage: storageQuantitySchema.optional(),
+export const starterKitResourcesSchema = agentSetupResourcesSchema.extend({
   note: z.string().min(1).optional(),
 });
 
@@ -120,10 +123,12 @@ export const starterKitSchema = z.object({
   video: z.url().optional(),
   docsUrl: z.url().optional(),
   image: starterKitImageSchema.optional(),
-  backend: z.literal("vm").optional(),
+  backend: agentSetupShape.backend,
+  egressPreset: egressPresetSchema.optional(),
+  egressRules: z.array(starterKitEgressRuleSchema).max(50).default([]),
   resources: starterKitResourcesSchema.optional(),
   knowledgeBase: starterKitKnowledgeBaseSchema.optional(),
-  install: starterKitInstallSchema.optional(),
+  install: agentSetupShape.install,
   harnesses: z.array(harnessFamilySchema).min(1).optional(),
   providers: providerListSchema.min(1).optional(),
   seed: z
@@ -155,10 +160,11 @@ export const starterKitSchema = z.object({
   connections: z.array(starterKitConnectionRequirementSchema).default([]),
   channels: z.array(starterKitChannelSchema).default([]),
   schedules: z.array(starterKitScheduleSchema).default([]),
-  skills: z.array(starterKitExternalSkillSchema).default([]),
+  skills: agentSetupShape.skills,
   bundledSkills: starterKitBundledSkillsSchema.optional(),
-  env: z.array(starterKitEnvVarSchema).default([]),
+  env: agentSetupShape.env,
   hibernationTimeoutMin: z.number().int().min(0).optional(),
+  requireConnectionAddress: z.boolean().optional(),
 });
 
 export const onboardingStepSchema = z.object({
@@ -206,5 +212,19 @@ export const starterKitApplyInputSchema = z.object({
   slackChannelId: z.string().min(1).optional(),
   skipSchedules: z.array(z.string().min(1)).default([]),
   scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
-  skipSeed: z.boolean().optional(),
+});
+
+export const seedStampSchema = z.object({
+  url: z.string().min(1),
+  branch: z.string().min(1).optional(),
+  commit: z.string().regex(/^[0-9a-f]{40}$/i),
+});
+
+export const kitUpdatePendingSchema = z.object({
+  targetCommit: z.string().regex(/^[0-9a-f]{40}$/i),
+  startedAt: z.string().min(1),
+});
+
+export const kitUpdateAgentInputSchema = z.object({
+  agentId: z.string().min(1),
 });

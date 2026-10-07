@@ -26,6 +26,7 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
       });
     },
     isSessionRunning: () => false,
+    sessionFrames: () => ({ frames: [], truncated: false }),
     status: () => ({
       idle: true,
       backgroundWork: [],

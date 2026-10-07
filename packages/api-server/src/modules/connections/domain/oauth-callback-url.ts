@@ -9,7 +9,7 @@ export function applyCallbackAlias(
   );
 }
 
-export const DEFAULT_OAUTH_RETURN_TO = "/settings/connections";
+const DEFAULT_OAUTH_RETURN_TO = "/settings/connections";
 
 export function sanitizeReturnTo(returnTo: string | undefined): string {
   if (!returnTo) return DEFAULT_OAUTH_RETURN_TO;

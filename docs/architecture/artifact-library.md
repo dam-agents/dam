@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-09-16
+Last verified: 2026-09-30
 
 ## Overview
 
@@ -13,7 +13,9 @@ sandbox's Agent when a person promotes a workspace file (or to the user, for
 manual uploads) — and outlives both the sandbox and the agent that produced
 it.
 Publishing a new revision keeps the same identity and share link and appends
-to a per-artifact **version history** viewers can flip through. The history
+to a per-artifact **version history** the owner can flip through in the app;
+the share link itself only ever serves the current version
+([sharing model](#sharing-model)). The history
 holds every version including the current one — creation writes the first row,
 each revision writes its own — and a version records the session that
 produced it when one is known, which is how the Home feed shows an artifact on
@@ -81,16 +83,46 @@ Accepted prompts use the normal chat reporting for replies, queued turns and
 delivery errors; the page receives no separate answer. Publishing an updated
 artifact uses the normal version flow.
 
-The renderer injects a platform-owned prompt API without changing the stored
-HTML. It sends requests to the host over `window.postMessage`; the in-app
-sandbox retains an opaque origin and receives no app credentials. The host
+The same page can also **share state with its Agent** through the **Artifact
+API**, an HTTP server the publishing Agent runs inside its own sandbox on the
+fixed Artifact API Port, bound to loopback. The state lives with the Agent, so
+both the page and the Agent read and change it, unlike the page's own browser
+storage, which the Agent never sees. Unlike a prompt, this is request and
+response. One request travels four hops: the page posts it to the host app; the
+app checks the frame and the same gate as for prompts, then calls the api-server
+with the owner's own session; the api-server checks the artifact and wakes its
+Agent through the reachability primitive ([agent-lifecycle](agent-lifecycle.md#wake));
+agent-runtime relays it over loopback to the Agent's server, and the answer comes
+back the same way. The call names an artifact, never an Agent: the api-server
+reads the publishing Agent from the artifact, so a page can only reach the Agent
+that published it, and uploaded artifacts (no publishing Agent) get no access. It
+serves only artifacts that are owned by the caller, HTML, interactive and
+private, whatever the feature flag says. Any HTTP status the server returns is a
+normal answer; a typed failure reason reports only what the platform could not
+deliver, such as nothing listening on the port, a timeout, a body over the size
+cap or too many requests in flight from one frame. The bridge also rejects any
+request the host has not answered within three minutes, longer than a wake plus
+the relay timeout, so every call settles even when the host drops it. Bodies are text only and
+capped both ways, and only the content type crosses in either direction. The
+Agent starts and keeps its server alive itself; the platform never starts,
+supervises or restarts it, so after hibernation the page reports nothing
+listening until the Agent starts it again. The contract is in
+[`packages/api-server-api/`](../../packages/api-server-api/) and
+[`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
+
+The renderer injects a platform-owned bridge (`sendPrompt` and `request`)
+without changing the stored HTML. It sends requests to the host over
+`window.postMessage`; the in-app sandbox retains an opaque origin and receives
+no app credentials. The host
 validates both the message payload and the sending window against its preview
 frame: the injected API is an authoring convenience, not an authorization gate.
+The page still never holds a credential for either call. The frame is sandboxed
+without modals, so browser dialogs are blocked.
 
 Callbacks are available only in the chat's docked preview, including fullscreen,
 and work in a newly started conversation without reloading the page.
-Library previews and historical versions cannot send prompts, and disabling the
-feature disconnects the callback. There is no permanent Session binding: the
+Library previews and historical versions cannot send prompts or requests, and
+disabling the feature disconnects both. There is no permanent Session binding: the
 currently open conversation is the destination. Interactive pages cannot be shared,
 including with named viewers; that restriction is enforced with the sharing write.
 Retention remains available, and a separate static copy can be shared.
@@ -133,6 +165,14 @@ two that have one, so switching between them never changes the link.
   inside it — restricted ones never appear there, since the page itself has no
   viewer; a folder with nothing public is indistinguishable from a nonexistent
   one.
+- A share link serves **only the current version** — the page, the framed
+  content and the source download alike, for public and restricted links.
+  The page offers no version navigation and frames the current version
+  whatever a visitor asks for; a frame or byte address naming any other
+  version answers "not found". A share link is a publishing surface, not a
+  revision log: an owner who removes something in a revision has removed it
+  from everyone holding the link. The history stays with the owner, in the
+  app.
 - Each successful share-page render increments a per-artifact **view count**,
   surfaced in-app as a cheap reach signal.
 
@@ -181,8 +221,8 @@ switches. Every restricted response is marked private and uncacheable so no
 shared cache replays it to the next visitor.
 
 **The artifact frame.** A share page is two documents from two origins. The
-outer page, on the share host, is platform chrome (title banner, version
-navigation, source download); the inner document is the user content, loaded
+outer page, on the share host, is platform chrome (title banner and source
+download); the inner document is the user content, loaded
 from the content host in an iframe. The browser's same-origin rule is the
 boundary: artifact code runs as the content origin, so it can neither read the
 share session cookie nor call the share host as the signed-in viewer. The
@@ -193,8 +233,8 @@ serves raw bytes under a sandbox directive so a document opened directly
 cannot run either.
 
 The content host cannot see the share session, so a restricted frame carries
-a **render token**: minted by the share page for exactly one artifact and
-version after the viewer passed, with a short expiry, redeemed by the
+a **render token**: minted by the share page for exactly one artifact and its
+current version after the viewer passed, with a short expiry, redeemed by the
 content host on the document and on its raw bytes. It is a short-lived,
 single-purpose bearer grant — not a session and not an identity; anyone
 holding it can replay it until expiry, after which a pasted frame address
@@ -309,11 +349,7 @@ flowchart LR
   Folder membership is mutable and advisory: any artifact can be filed into
   any folder, moved to another, or taken out again from the library itself, so
   organising a library is not tied to the moment each artifact was published.
-  Nothing reads membership as a claim about provenance — an
-  [experiment](experiments.md) lineage folder is an ordinary destination,
-  listed among the other folders under its plain name (its full name when that
-  would collide), and what a run produced is recorded by the experiment rather
-  than by where the artifact sits.
+  Nothing reads membership as a claim about provenance.
 - Each sandbox's home view gains an **Artifacts section** listing what that
   agent published, grouped into the same collapsible folder groups as the
   library, with the same actions.
@@ -334,8 +370,7 @@ flowchart LR
   artifact a preview is showing closes that preview.
 - On the two agent-scoped surfaces a folder shows only that agent's artifacts,
   every user folder is listed even when empty (so there is always a filing
-  target), and an experiment lineage folder appears only while it holds one of
-  the agent's artifacts. The library itself lists every folder unconditionally.
+  target). The library itself lists every folder unconditionally.
 
 ## Lifecycle and cleanup
 
@@ -386,10 +421,7 @@ library section the artifact lands in — a person promoting a workspace file
 publishes with the sandbox's agent attached. The surface says who filed it:
 agent publishes arrive over the per-agent MCP server, person-driven ones over
 the browser's tRPC surface, so the person-or-agent question is asked of the
-surface, never of the attribution. Artifacts the platform writes for its own bookkeeping
-(an experiment's dashboard, script clone, or results snapshot) are marked
-internal by the caller and raise no publish at all: they are machinery, and
-counting them would report the platform's own writes as user activity.
+surface, never of the attribution.
 
 ## Where the code lives
 

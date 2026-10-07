@@ -59,14 +59,13 @@ export interface ScheduleSpecOnce {
 }
 
 export type ScheduleSpec =
-  | ScheduleSpecCron
-  | ScheduleSpecRRule
-  | ScheduleSpecOnce;
+  ScheduleSpecCron | ScheduleSpecRRule | ScheduleSpecOnce;
 
 export interface ScheduleStatus {
   lastRun?: string;
   nextRun?: string;
   lastResult?: string;
+  stopReason?: string;
   lastDeclinedAt?: string;
   declinedCount?: number;
   lastPrecheckError?: string;
@@ -121,4 +120,5 @@ export interface SchedulesService {
   delete: (id: string) => Promise<void>;
   toggle: (id: string) => Promise<Schedule | null>;
   resetSession: (id: string) => Promise<void>;
+  runNow: (id: string) => Promise<void>;
 }

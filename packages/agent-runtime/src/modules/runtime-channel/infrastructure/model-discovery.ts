@@ -1,7 +1,32 @@
 import type { HarnessConfigChoice } from "agent-runtime-api";
-import type { ModelDiscoverySpec } from "../manifest.js";
+import type { ModelDiscoverySources, ModelDiscoverySpec } from "../manifest.js";
 
 type ModelListShape = NonNullable<ModelDiscoverySpec["shape"]>;
+
+export interface DiscoverySource {
+  spec: ModelDiscoverySpec;
+  via: string;
+  base: string;
+}
+
+function discoverySources(
+  sources: ModelDiscoverySources | undefined,
+): readonly ModelDiscoverySpec[] {
+  if (sources === undefined) return [];
+  return Array.isArray(sources) ? sources : [sources];
+}
+
+export function selectDiscoverySource(
+  sources: ModelDiscoverySources | undefined,
+  env: Record<string, string>,
+): DiscoverySource | null {
+  for (const spec of discoverySources(sources)) {
+    const via = spec.urlEnv.find((name) => !!env[name]?.trim());
+    const base = via ? env[via]?.trim() : undefined;
+    if (via && base) return { spec, via, base };
+  }
+  return null;
+}
 
 export type ModelDiscoveryOutcome =
   | { status: "not-configured" }
@@ -9,7 +34,7 @@ export type ModelDiscoveryOutcome =
   | { status: "unavailable" };
 
 export type ModelDiscovery = (
-  spec: ModelDiscoverySpec | undefined,
+  spec: ModelDiscoverySources | undefined,
   env: Record<string, string>,
 ) => Promise<ModelDiscoveryOutcome>;
 
@@ -18,9 +43,9 @@ const DISCOVERY_ATTEMPTS = 2;
 
 const CONVERSATIONAL_MODES = new Set(["chat", "completion", "responses"]);
 
-function discoveryUrl(spec: ModelDiscoverySpec, base: string): string {
+function discoveryUrl(listing: { path?: string }, base: string): string {
   const trimmed = base.replace(/\/+$/, "");
-  if (spec.path) return `${trimmed}${spec.path}`;
+  if (listing.path) return `${trimmed}${listing.path}`;
   const root = /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
   return `${root}/models`;
 }
@@ -37,19 +62,37 @@ function liteLlmModelName(entry: Record<string, unknown>): string | null {
   return typeof name === "string" && name.length > 0 ? name : null;
 }
 
-const modelIdReaders: Record<
+function activeInferenceProfileId(
+  entry: Record<string, unknown>,
+): string | null {
+  if (entry.status !== "ACTIVE") return null;
+  const id = entry.inferenceProfileId;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+const listReaders: Record<
   ModelListShape,
-  (entry: Record<string, unknown>) => string | null
+  { listKey: string; id: (entry: Record<string, unknown>) => string | null }
 > = {
-  "litellm-model-info": liteLlmModelName,
-  "openai-models": openAiModelId,
+  "litellm-model-info": { listKey: "data", id: liteLlmModelName },
+  "openai-models": { listKey: "data", id: openAiModelId },
+  "bedrock-inference-profiles": {
+    listKey: "inferenceProfileSummaries",
+    id: activeInferenceProfileId,
+  },
 };
+
+function publishedName(spec: ModelDiscoverySpec, id: string): string {
+  const name = spec.lowercaseNames ? id.toLowerCase() : id;
+  const prefix = spec.namePrefix ?? "";
+  return name.startsWith(prefix) ? name : prefix + name;
+}
 
 function chatModelIdOf(entry: unknown, shape: ModelListShape): string | null {
   if (entry === null || typeof entry !== "object") return null;
   const record = entry as Record<string, unknown>;
-  const id = modelIdReaders[shape](record);
-  return id && !/embedding/i.test(id) ? id : null;
+  const id = listReaders[shape].id(record);
+  return id && !/embed/i.test(id) ? id : null;
 }
 
 export function createModelDiscovery(deps: {
@@ -57,14 +100,13 @@ export function createModelDiscovery(deps: {
   fetchImpl?: typeof globalThis.fetch;
 }): ModelDiscovery {
   const doFetch = deps.fetchImpl ?? globalThis.fetch;
-  return async (spec, env) => {
-    if (!spec) return { status: "not-configured" };
-    const via = spec.urlEnv.find((name) => !!env[name]?.trim());
-    const base = via ? env[via]?.trim() : undefined;
-    if (!via || !base) return { status: "unavailable" };
 
-    const shape = spec.shape ?? "openai-models";
-    const url = discoveryUrl(spec, base);
+  const list = async (
+    url: string,
+    shape: ModelListShape,
+    spec: ModelDiscoverySpec,
+    via: string,
+  ): Promise<ModelDiscoveryOutcome | "refused"> => {
     for (let attempt = 1; attempt <= DISCOVERY_ATTEMPTS; attempt++) {
       const last = attempt === DISCOVERY_ATTEMPTS;
       try {
@@ -74,16 +116,17 @@ export function createModelDiscovery(deps: {
         });
         if (!res.ok) {
           deps.log(`[harness-config] model discovery ${url} → ${res.status}`);
-          return { status: "unavailable" };
+          return "refused";
         }
-        const body = (await res.json()) as { data?: unknown };
-        const data = Array.isArray(body.data) ? body.data : null;
+        const body = (await res.json()) as Record<string, unknown>;
+        const raw = body[listReaders[shape].listKey];
+        const data = Array.isArray(raw) ? raw : null;
         if (!data) return { status: "unavailable" };
         const ids = [
           ...new Set(
             data.flatMap((m): string[] => {
               const id = chatModelIdOf(m, shape);
-              return id ? [id] : [];
+              return id ? [publishedName(spec, id)] : [];
             }),
           ),
         ].sort();
@@ -104,6 +147,26 @@ export function createModelDiscovery(deps: {
         );
         if (last) return { status: "unavailable" };
       }
+    }
+    return { status: "unavailable" };
+  };
+
+  return async (sources, env) => {
+    if (discoverySources(sources).length === 0) {
+      return { status: "not-configured" };
+    }
+    const selected = selectDiscoverySource(sources, env);
+    if (!selected) return { status: "not-configured" };
+    const { spec, via, base } = selected;
+
+    for (const listing of spec.fallback ? [spec, spec.fallback] : [spec]) {
+      const outcome = await list(
+        discoveryUrl(listing, base),
+        listing.shape ?? "openai-models",
+        spec,
+        via,
+      );
+      if (outcome !== "refused") return outcome;
     }
     return { status: "unavailable" };
   };

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+#MISE description="Build the api-server image to dist/oci/api-server.tar"
+#MISE sources=["src/**", "proto/**", "tsup.config.ts", "tsconfig.json", "package.json", ".mise/tasks/oci", "{{config_root}}/../agent-runtime-api/src/**", "{{config_root}}/../agent-runtime-api/package.json", "{{config_root}}/../api-server-api/src/**", "{{config_root}}/../api-server-api/package.json", "{{config_root}}/../db/src/**", "{{config_root}}/../db/package.json", "{{config_root}}/../db/drizzle/**", "{{config_root}}/../e2e/agents/mock-api/src/**", "{{config_root}}/../../pnpm-lock.yaml", "{{config_root}}/../../.mise/tasks/image/pack", "{{config_root}}/../../.mise/config.toml", "{{config_root}}/../../mise.lock"]
+#MISE outputs=["dist/oci/api-server.tar"]
+set -euo pipefail
+base="$(mise config get -f "$MISE_CONFIG_ROOT/../../.mise/config.toml" vars.base_image_api_server)"
+pnpm exec tsup
+root="$(mktemp -d)" npm="$(mktemp -d)"
+trap 'rm -rf "$root" "$npm"' EXIT
+# The image's native modules, for Linux of the host's arch, whatever the host.
+pnpm --filter api-server deploy --frozen-lockfile --prod --node-linker=hoisted \
+  --os=linux --cpu="$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')" --libc=glibc "$root/app"
+# What pnpm writes for itself, which nothing reads at run time, varies every
+# build or names the checkout: its records, settings and lockfiles, and pnpm
+# 12's leftover staging files under random names. So do package.json's key
+# order and the file: paths it gives the workspace packages, which get back
+# the workspace:* the repo names them by.
+rm -f "$root"/app/pnpm-{workspace,lock}.yaml "$root"/app/node_modules/.{modules.yaml,pnpm-workspace-state-v1.json,pnpm/lock.yaml}
+find "$root/app/node_modules" -name '*_pacquet-stage_*' -delete
+jq -S '.dependencies |= map_values(if test("@file:|^file:") then "workspace:*" else . end)' "$root/app/package.json" > "$npm/package.json"
+mv "$npm/package.json" "$root/app/package.json"
+mkdir -p "$root/app/packages/db"
+cp -R ../db/drizzle "$root/app/packages/db/"
+# The server runs on node alone. The base's bundled npm is the one scanners
+# flag and nothing runs, so it is removed.
+mkdir -p "$npm/usr/lib/node_modules_26" "$npm/usr/bin"
+touch "$npm/usr/lib/node_modules_26/.wh.npm"
+for b in npm npm-26 npx npx-26; do touch "$npm/usr/bin/.wh.$b"; done
+# The --import preload wires OpenTelemetry before the app evaluates; it is a
+# no-op unless an OTLP endpoint is configured in the environment.
+"$MISE_CONFIG_ROOT/../../.mise/tasks/image/pack" "$base" "$root" dist/oci/api-server.tar platform-api-server:latest \
+  --owner 65532:0 --root-layer "$npm" --cmd node,--import,./dist/js/telemetry.js,dist/js/index.js

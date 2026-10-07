@@ -14,13 +14,6 @@ import type { CaseStudyRetentionSweeper } from "./services/retention-sweeper.js"
 
 type AppEnv = { Variables: ApiVariables };
 
-export interface CaseStudiesModuleDeps {
-  db: Db;
-  inspectorRole: string;
-  retentionDays: number;
-  graceDays: number;
-}
-
 export interface CaseStudiesModule {
   submissions: CaseStudySubmissionsService;
   inspection: CaseStudyInspectionService;
@@ -28,9 +21,12 @@ export interface CaseStudiesModule {
   mount(app: Hono<AppEnv>): void;
 }
 
-export function composeCaseStudiesModule(
-  deps: CaseStudiesModuleDeps,
-): CaseStudiesModule {
+export function composeCaseStudiesModule(deps: {
+  db: Db;
+  inspectorRole: string;
+  retentionDays: number;
+  graceDays: number;
+}): CaseStudiesModule {
   const repo = createCaseStudiesRepository(deps.db);
   const submissions = createCaseStudySubmissions({
     repo,

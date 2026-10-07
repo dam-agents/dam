@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+args=()
+for a; do
+  case $a in --target=*) ;; *) args+=("$a") ;; esac
+done
+exec zig cc -target "$(uname -m)-linux-gnu" "${args[@]}"

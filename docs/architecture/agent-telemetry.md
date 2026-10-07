@@ -1,6 +1,6 @@
 # Agent Telemetry (trace and log read path)
 
-Last verified: 2026-09-21
+Last verified: 2026-09-24
 
 ## Overview
 
@@ -140,8 +140,8 @@ neither query has to span two tables.
 
 ## Contract
 
-Three owner-scoped reads, all query-only. The two Turn reads are always scoped to one owned
-agent and one Session; the record read narrows on request. The field-level shapes live in the contract package
+Four owner-scoped reads, all query-only. The Turn reads are scoped to one owned agent and
+one Session, or to an Invocation target the caller drove; the record read narrows on request. The field-level shapes live in the contract package
 [`packages/api-server-api/`](../../packages/api-server-api/).
 
 - **Turns** — the listing for one Session over a window: when each Turn started, how long it
@@ -149,7 +149,11 @@ agent and one Session; the record read narrows on request. The field-level shape
   and what it cost.
 - **Turn** — one Turn in full, addressed by its prompt id within a window, or by its time
   range when it has none: its spans, its log records, and the resolved attachment between
-  them.
+  them. Addressed by an Invocation target instead of a Session, it holds that target's run.
+- **Invocation turns** — one Turn per Invocation target the caller names, each covering the
+  target's whole run. A target answers a single prompt, so its records and spans are summed
+  as one exchange rather than split by prompt id; a target with no rows is absent, not zero.
+  This is how a driver's delegation reads the same numbers its own replies show.
 - **Log records** — a flat read across traces, filtered by Session, by event, or by a text
   match over the record and its attributes; the way to answer *what did my agent do* without
   starting from a trace.

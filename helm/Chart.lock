@@ -1,6 +1,6 @@
 dependencies:
 - name: clickstack
   repository: https://clickhouse.github.io/ClickStack-helm-charts
-  version: 3.0.0
-digest: sha256:8022f03da08e8124b067d4d4187ea1cce79bc5e8fbf336a6ee9aec742d713c3e
-generated: "2026-06-26T07:02:36.606817+02:00"
+  version: 3.4.0
+digest: sha256:d32d4563c38a9103b8803668eaeb52de94c5a275fe1b3c0e24d59bdb94605fc9
+generated: "2026-10-01T15:11:33.087467+02:00"

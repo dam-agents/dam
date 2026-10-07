@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { err, ok } from "../../core/result.js";
+import { err, ok } from "agent-runtime-api";
 import { verdictFor } from "../../modules/runtime-channel/domain/precheck.js";
 
 // TEST_OVERVIEW: The exit-code contract a Precheck is written against, and what a fire hands the turn it allows.

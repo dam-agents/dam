@@ -1,4 +1,11 @@
-import { Asleep, Play, Power, Renew, Warning } from "@carbon/icons-react";
+import {
+  Asleep,
+  Migrate,
+  Play,
+  Power,
+  Renew,
+  Warning,
+} from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +34,7 @@ interface OverlayCopy {
 
 const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   running: { description: "" },
-  starting: { description: "The agent is starting up." },
+  starting: { description: "" },
   preparing_workspace: {
     description: "Setting up the workspace. This finishes shortly.",
   },
@@ -46,6 +53,12 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
     description:
       "Starting this agent would exceed your compute budget. Pause or stop " +
       "a running agent to free room, then start this one again.",
+  },
+  migrating: {
+    Icon: Migrate,
+    description:
+      "The agent is moving to the new sandbox runtime. It is back once its " +
+      "data has been copied, which takes a few minutes.",
   },
 };
 
@@ -120,13 +133,36 @@ export function AgentUnavailableOverlay({
         <h2 className="text-5xl font-normal tracking-tight text-foreground">
           {agent.name}
         </h2>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 empty:hidden">
           <VmRuntimeBadge agent={agent} />
-          <StatusBadge state={state} />
+          {state !== "starting" && <StatusBadge state={state} />}
         </div>
       </div>
-      <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
+      {description && (
+        <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
+      )}
+      {state === "starting" && (
+        <p role="status" className="sr-only">
+          The agent is starting up.
+        </p>
+      )}
       {!Icon && <StartupTip sandbox={agent.name} />}
+      {display.slowStart && !agent.podTerminationReason && (
+        <div className="flex max-w-105 flex-col gap-2 text-sm">
+          <p
+            role="status"
+            className="flex items-center justify-center gap-1.5 text-warning"
+          >
+            <Warning size={14} className="shrink-0" />
+            Starting is taking longer than usual.
+          </p>
+          {agent.notReadyMessage && (
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2 text-left font-mono text-xs text-muted-foreground">
+              {agent.notReadyMessage}
+            </pre>
+          )}
+        </div>
+      )}
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
           <Warning size={14} className="shrink-0" />

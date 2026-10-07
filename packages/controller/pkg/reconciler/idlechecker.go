@@ -43,7 +43,9 @@ func (c *IdleChecker) WithMachineHalt(halt MachineHalt) *IdleChecker {
 
 func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *IdleChecker {
 	c := &IdleChecker{client: client, dynamic: dyn, config: cfg}
-	c.busyProbe = c.podIsBusy
+	c.busyProbe = func(ctx context.Context, name string) bool {
+		return agentPodIsBusy(ctx, c.config.Namespace, name)
+	}
 	return c
 }
 
@@ -85,14 +87,7 @@ func (c *IdleChecker) checkInterval() time.Duration {
 	if timeout <= 0 {
 		return maxIdleCheckInterval
 	}
-	d := timeout / idleSweepsPerTimeout
-	if d < minIdleCheckInterval {
-		d = minIdleCheckInterval
-	}
-	if d > maxIdleCheckInterval {
-		d = maxIdleCheckInterval
-	}
-	return d
+	return min(max(timeout/idleSweepsPerTimeout, minIdleCheckInterval), maxIdleCheckInterval)
 }
 
 func (c *IdleChecker) check(ctx context.Context) {
@@ -119,7 +114,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 		if effective > 0 && (shortest == 0 || effective < shortest) {
 			shortest = effective
 		}
-		if shouldRun(agent.GetAnnotations(), effective, now) {
+		if shouldRunMigrating(agent.GetAnnotations(), runtimeMigrationOfObject(agent), effective, now) {
 			continue
 		}
 
@@ -133,7 +128,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 		}
 
 		slog.Info("hibernating idle agent", "agent", name)
-		if err := c.hibernate(ctx, ownerOf(agent), name); err != nil {
+		if err := c.hibernate(ctx, agent.GetLabels()[envoyOwnerLabel], name); err != nil {
 			slog.Error("idle checker: hibernating", "agent", name, "error", err)
 			continue
 		}
@@ -201,10 +196,6 @@ func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
 	return &metav1.Duration{Duration: d}
 }
 
-func (c *IdleChecker) podIsBusy(ctx context.Context, agentName string) bool {
-	return agentPodIsBusy(ctx, c.config.Namespace, agentName)
-}
-
 func agentPodIsBusy(ctx context.Context, namespace, agentName string) bool {
 	url := fmt.Sprintf("http://%s.%s.svc:8080/api/status", agentName, namespace)
 	client := &http.Client{Timeout: 3 * time.Second, Transport: telemetry.WrapTransport(nil)}
@@ -247,10 +238,11 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 	})
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a machine that cannot be stopped now — its runner is restarting or unreachable — does not keep the rest of the pair up. The gateway is scaled down anyway, and the agent's own next reconcile, which asks for the machine stopped because the agent should not run, stops it once the runner answers.
 func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, halt MachineHalt, owner, namespace, name string) error {
 	if halt != nil {
 		if err := halt(ctx, owner, name); err != nil {
-			return err
+			slog.WarnContext(ctx, "stopping the agent's machine failed; scaling the rest down, the next reconcile stops the machine", "agent", name, "owner", owner, "error", err)
 		}
 	}
 	sss, err := kube.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{
@@ -282,8 +274,3 @@ func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, halt M
 }
 
 type MachineHalt func(ctx context.Context, owner, name string) error
-
-func ownerOf(agent *unstructured.Unstructured) string {
-	labels := agent.GetLabels()
-	return labels[envoyOwnerLabel]
-}

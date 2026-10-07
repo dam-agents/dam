@@ -33,9 +33,10 @@ provision:
         - "container-log-max-files=3"
       EOF
       if [ ! -d /var/lib/rancher/k3s ]; then
-        # Pinned: v1.36.2+k3s1 bumped bundled Traefik to chart v40.x, whose validate-install-crd
-        # rejects our pre-applied Gateway API v1.2.0/standard CRDs. v1.36.1 ships Traefik v3.6.13.
-        export INSTALL_K3S_VERSION="v1.36.1+k3s1"
+        # Pinned: k3s ships the Gateway API CRDs through its own gateway-api-crd
+        # chart, so GATEWAY_API_VERSION in .mise/tasks/cluster/install must match the
+        # bundle this k3s carries (v1.6.1 in v1.37.0).
+        export INSTALL_K3S_VERSION="v1.37.0+k3s1"
         export INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16445"
         # Skip the k3s-selinux RPM when SELinux isn't active (absent or Disabled):
         # its binary relabel step fails under set -e on a disabled-SELinux host.
@@ -49,10 +50,13 @@ provision:
         # died 120s later on a missing kubeconfig. Fetch to a file so the failure
         # is visible, and retry the pair: the installer is re-runnable, and a
         # transient GitHub error is not worth losing a cluster provision over.
+        # The script comes from the pinned release tag on GitHub, not get.k3s.io:
+        # it then matches the version it installs, and the provision depends on
+        # GitHub alone.
         installer=$(mktemp /tmp/k3s-install.XXXXXX)
         attempt=1
         while :; do
-          if curl -sfL --retry 3 --retry-delay 2 --retry-all-errors https://get.k3s.io -o "$installer" && sh "$installer"; then
+          if curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors "https://raw.githubusercontent.com/k3s-io/k3s/${INSTALL_K3S_VERSION}/install.sh" -o "$installer" && sh "$installer"; then
             break
           fi
           if [ "$attempt" -ge 4 ]; then

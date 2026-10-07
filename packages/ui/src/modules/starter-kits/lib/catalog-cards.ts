@@ -1,10 +1,32 @@
-import type { ConnectionTemplateView, StarterKitView } from "api-server-api";
+import type {
+  ConnectionTemplateView,
+  EgressPreset,
+  StarterKitView,
+} from "api-server-api";
 
 import { connectionRequirements, describeAccepts } from "./setup.js";
 
 export const VM_BACKEND_LABEL = "New sandbox runtime";
 
-export const CATEGORY_ORDER: StarterKitView["category"][] = [
+export const EGRESS_PRESET_LABEL: Record<EgressPreset, string> = {
+  none: "No web access",
+  trusted: "Trusted sites only",
+  all: "Full web access",
+};
+
+export const EGRESS_PRESET_DETAIL: Record<EgressPreset, string> = {
+  none: "Strict default-deny: no rules are added, so every host needs your approval.",
+  trusted: "Trusted defaults: npm, PyPI, GitHub, Anthropic and similar.",
+  all: "Every host is allowed.",
+};
+
+export function kitEgressPreset(
+  kit: Pick<StarterKitView, "egressPreset">,
+): EgressPreset {
+  return kit.egressPreset ?? "trusted";
+}
+
+const CATEGORY_ORDER: StarterKitView["category"][] = [
   "software",
   "knowledge",
   "productivity",
@@ -18,7 +40,7 @@ export const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
   research: "Research",
 };
 
-export interface KitBadge {
+interface KitBadge {
   key: string;
   label: string;
   iconSlug?: string;
@@ -34,6 +56,7 @@ export function kitBadges(
     | "skillsInKit"
     | "knowledgeBase"
     | "backend"
+    | "egressPreset"
   >,
   templates: readonly ConnectionTemplateView[],
   templateById: ReadonlyMap<string, ConnectionTemplateView>,
@@ -73,6 +96,12 @@ export function kitBadges(
   if (kit.backend === "vm")
     badges.push({ key: "backend", label: VM_BACKEND_LABEL });
 
+  if (kit.egressPreset && kit.egressPreset !== "trusted")
+    badges.push({
+      key: "egress",
+      label: EGRESS_PRESET_LABEL[kit.egressPreset],
+    });
+
   const skills = kit.skillsInKit.length + kit.skills.length;
   if (skills > 0) {
     badges.push({
@@ -105,4 +134,15 @@ export function sortKits(kits: readonly StarterKitView[]): StarterKitView[] {
       CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category) ||
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
+}
+
+export function splitPinned(
+  shown: readonly StarterKitView[],
+  view: { filter: StarterKitView["category"] | "all"; query: string },
+): { pinned: StarterKitView | undefined; rest: StarterKitView[] } {
+  const pinned =
+    view.filter === "all" && view.query.trim().length === 0
+      ? shown.find((kit) => kit.pinned)
+      : undefined;
+  return { pinned, rest: shown.filter((kit) => kit !== pinned) };
 }

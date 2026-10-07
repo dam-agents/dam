@@ -14,9 +14,7 @@ const DEFAULT_QUEUE_PARK_MS = 90 * 1000;
 export type PromptFate = "started" | "queued" | "refused";
 
 export type QueueDropCause =
-  | "park-expired"
-  | "session-forgotten"
-  | "scheduler-cleared";
+  "park-expired" | "session-forgotten" | "scheduler-cleared";
 
 export interface PromptSubmission {
   sessionId: string;

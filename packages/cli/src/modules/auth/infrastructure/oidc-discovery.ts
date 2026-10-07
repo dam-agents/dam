@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { err, ok, type Result } from "../../../result.js";
 import type { OidcDiscoveryError } from "../domain/errors.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 export interface OidcMetadata {
   deviceAuthorizationEndpoint: string;
@@ -12,9 +13,7 @@ export interface OidcDiscovery {
   discover(issuer: string): Promise<Result<OidcMetadata, OidcDiscoveryError>>;
 }
 
-export interface HttpOidcDiscoveryOpts {
-  timeoutMs?: number;
-}
+const TIMEOUT_MS = 5000;
 
 const oidcDiscoverySchema = z.object({
   token_endpoint: z.string().min(1),
@@ -22,22 +21,14 @@ const oidcDiscoverySchema = z.object({
   device_authorization_endpoint: z.string().min(1).optional(),
 });
 
-function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
-
-export function createOidcDiscovery(
-  opts: HttpOidcDiscoveryOpts = {},
-): OidcDiscovery {
-  const timeoutMs = opts.timeoutMs ?? 5000;
-
+export function createOidcDiscovery(): OidcDiscovery {
   return {
     async discover(issuer) {
       const url = `${issuer.replace(/\/+$/, "")}/.well-known/openid-configuration`;
 
       let res: Response;
       try {
-        res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+        res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       } catch (e) {
         return err({
           kind: "oidc-discovery",

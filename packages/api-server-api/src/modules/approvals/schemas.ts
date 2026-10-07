@@ -23,7 +23,7 @@ export const approvalApproveHostInputSchema = idSchema;
 export const approvalDenyForeverInputSchema = idSchema;
 export const approvalDismissInputSchema = idSchema;
 
-export const approvalActionRuleSchema = z.object({
+const approvalActionRuleSchema = z.object({
   host: z.string(),
   method: z.string(),
   pathPattern: z.string(),

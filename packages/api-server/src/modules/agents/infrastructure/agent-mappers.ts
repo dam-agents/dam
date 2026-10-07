@@ -1,4 +1,9 @@
-import { agentKindSchema } from "api-server-api";
+import type { z } from "zod";
+import {
+  agentKindSchema,
+  kitUpdatePendingSchema,
+  seedStampSchema,
+} from "api-server-api";
 
 import { POD_FAILURE_REASONS } from "../domain/wake-failure.js";
 import { type RuntimeFeatures } from "agent-runtime-api";
@@ -13,7 +18,10 @@ import type {
   ChannelConfig,
   ContributionKind,
   DriverFailure,
+  RuntimeMigration,
   TemplateUpdate,
+  KitUpdatePending,
+  SeedStamp,
 } from "api-server-api";
 import type { KubeObject } from "./k8s.js";
 import {
@@ -29,14 +37,45 @@ import {
   LAST_ACTIVITY_KEY,
   READY_REASON_HIBERNATED,
   READY_REASON_OVER_BUDGET,
+  RUNTIME_MIGRATING_CONDITION,
+  RUNTIME_MIGRATION_KEY,
+  RUNTIME_MIGRATION_MESSAGE_KEY,
+  RUNTIME_MIGRATION_SNAPSHOT_KEY,
+  RUNTIME_MIGRATION_SOURCE_KEY,
+  RUNTIME_MIGRATION_TARGET_KEY,
   STOP_REQUESTED_KEY,
+  STORAGE_MIGRATION_KEY,
   VERSION,
   ANN_STARTER_KIT,
   ANN_STARTER_KIT_ONBOARDED,
+  ANN_STARTER_KIT_SEED,
+  ANN_KIT_UPDATE_PENDING,
+  ANN_KIT_UPDATE_SKIPPED,
 } from "./labels.js";
 import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
+import {
+  runtimeMigrationHold,
+  runtimeMigrationOf,
+  runtimeMigrationRefusal,
+  type RuntimeMigrationHold,
+  type RuntimeMigrationContext,
+} from "../domain/runtime-migration.js";
 
 const SPEC_VERSION = `${GROUP}/${VERSION}`;
+
+function jsonAnnotation<K extends string, T>(
+  key: K,
+  schema: z.ZodType<T>,
+  raw: string | undefined,
+): Partial<Record<K, T>> {
+  if (!raw) return {};
+  try {
+    const parsed = schema.safeParse(JSON.parse(raw));
+    return parsed.success ? ({ [key]: parsed.data } as Record<K, T>) : {};
+  } catch {
+    return {};
+  }
+}
 
 export interface AgentObject extends KubeObject {
   spec?: Record<string, unknown>;
@@ -52,12 +91,14 @@ interface AgentStatusObject {
   }>;
   agentPodRestarts?: number;
   agentPodRestartReason?: string;
+  runtimeMigrationAttempts?: number;
 }
 
 export interface InfraAgent {
   id: string;
   name: string;
   createdAt?: string;
+  resourceVersion?: string;
   templateId?: string;
   owner?: string;
   spec: AgentSpec;
@@ -68,15 +109,24 @@ export interface InfraAgent {
   kbShareRoots?: string[];
   starterKit?: string;
   starterKitOnboarded?: string;
+  starterKitSeed?: SeedStamp;
+  kitUpdatePending?: KitUpdatePending;
+  kitUpdateSkipped?: string;
   hibernatedSince?: Date;
   ready: boolean;
   hibernated: boolean;
   stopRequested: boolean;
+  runtimeMigration?: RuntimeMigration;
+  runtimeMigrationHold?: RuntimeMigrationHold;
+  runtimeMigrationTarget?: string;
+  runtimeMigrationSnapshot?: string;
+  storageMigrating?: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
   error?: string;
   reconciledReason?: string;
   podTerminationReason?: string;
+  notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
   agentPodNotReadyReason?: string;
@@ -94,6 +144,7 @@ export function computeAgentState(
   preparingWorkspace = false,
 ): AgentState {
   if (infra.error) return "error";
+  if ((infra.runtimeMigrationHold ?? "none") !== "none") return "migrating";
   if (infra.ready)
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (infra.hibernated) return "hibernated";
@@ -120,28 +171,6 @@ export function readyConditionStatus(
 function readyCondition(obj: KubeObject) {
   const status = (obj.status ?? {}) as AgentStatusObject;
   return status.conditions?.find((c) => c.type === "Ready");
-}
-
-function agentPodTerminationMessage(obj: KubeObject): string | undefined {
-  const status = (obj.status ?? {}) as AgentStatusObject;
-  const c = status.conditions?.find((c) => c.type === "AgentPodReady");
-  if (c?.status !== "False" || !c.message) return undefined;
-  return c.reason && POD_FAILURE_REASONS.has(c.reason) ? c.message : undefined;
-}
-
-function agentPodRestarts(obj: KubeObject): number {
-  const status = (obj.status ?? {}) as AgentStatusObject;
-  const restarts = status.agentPodRestarts;
-  return typeof restarts === "number" &&
-    Number.isFinite(restarts) &&
-    restarts > 0
-    ? restarts
-    : 0;
-}
-
-function agentPodRestartReason(obj: KubeObject): string | undefined {
-  const status = (obj.status ?? {}) as AgentStatusObject;
-  return status.agentPodRestartReason || undefined;
 }
 
 export function agentOwner(obj: KubeObject): string | undefined {
@@ -174,6 +203,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       : undefined;
 
   const agentPod = status.conditions?.find((c) => c.type === "AgentPodReady");
+  const restarts = status.agentPodRestarts;
   const gatewayPod = status.conditions?.find(
     (c) => c.type === "GatewayPodReady",
   );
@@ -190,10 +220,22 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       ? new Date(ready.lastTransitionTime)
       : undefined;
   const createdAt = createdAtOf(obj);
+  const migrating = status.conditions?.find(
+    (c) => c.type === RUNTIME_MIGRATING_CONDITION,
+  );
+  const runtimeMigration = runtimeMigrationOf({
+    requested: annotations[RUNTIME_MIGRATION_KEY],
+    legacyMessage: annotations[RUNTIME_MIGRATION_MESSAGE_KEY],
+    ...(migrating ? { condition: migrating } : {}),
+    attempts: status.runtimeMigrationAttempts,
+    vm: crSpec.backend?.type === "vm",
+  });
+  const resourceVersion = obj.metadata?.resourceVersion;
   return {
     id,
     name: spec.name,
     ...(createdAt ? { createdAt } : {}),
+    ...(resourceVersion ? { resourceVersion } : {}),
     templateId: obj.metadata?.labels?.[LABEL_TEMPLATE_REF],
     owner: agentOwner(obj),
     spec,
@@ -210,10 +252,37 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ...(annotations[ANN_STARTER_KIT]
       ? { starterKit: annotations[ANN_STARTER_KIT] }
       : {}),
+    ...jsonAnnotation(
+      "starterKitSeed",
+      seedStampSchema,
+      annotations[ANN_STARTER_KIT_SEED],
+    ),
+    ...jsonAnnotation(
+      "kitUpdatePending",
+      kitUpdatePendingSchema,
+      annotations[ANN_KIT_UPDATE_PENDING],
+    ),
+    ...(annotations[ANN_KIT_UPDATE_SKIPPED]
+      ? { kitUpdateSkipped: annotations[ANN_KIT_UPDATE_SKIPPED] }
+      : {}),
     ...(hibernatedSince ? { hibernatedSince } : {}),
     ready: ready?.status === "True",
     hibernated,
     stopRequested: !!annotations[STOP_REQUESTED_KEY],
+    ...(runtimeMigration ? { runtimeMigration } : {}),
+    runtimeMigrationHold: runtimeMigrationHold(
+      runtimeMigration,
+      !!annotations[RUNTIME_MIGRATION_SOURCE_KEY],
+    ),
+    ...(annotations[RUNTIME_MIGRATION_TARGET_KEY]
+      ? { runtimeMigrationTarget: annotations[RUNTIME_MIGRATION_TARGET_KEY] }
+      : {}),
+    ...(annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY]
+      ? {
+          runtimeMigrationSnapshot: annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY],
+        }
+      : {}),
+    storageMigrating: !!annotations[STORAGE_MIGRATION_KEY],
     overBudget:
       ready?.status === "False" && ready.reason === READY_REASON_OVER_BUDGET,
     overBudgetMessage:
@@ -223,9 +292,24 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     error,
     reconciledReason:
       reconciled?.status === "False" ? reconciled.reason : undefined,
-    podTerminationReason: agentPodTerminationMessage(obj),
-    podRestarts: agentPodRestarts(obj),
-    podRestartReason: agentPodRestartReason(obj),
+    podTerminationReason:
+      agentPod?.status === "False" &&
+      agentPod.message &&
+      agentPod.reason &&
+      POD_FAILURE_REASONS.has(agentPod.reason)
+        ? agentPod.message
+        : undefined,
+    notReadyMessage:
+      agentPod?.status === "False" &&
+      agentPod.message &&
+      !POD_FAILURE_REASONS.has(agentPod.reason ?? "")
+        ? agentPod.message
+        : undefined,
+    podRestarts:
+      typeof restarts === "number" && Number.isFinite(restarts) && restarts > 0
+        ? restarts
+        : 0,
+    podRestartReason: status.agentPodRestartReason || undefined,
     agentPodNotReadyReason:
       agentPod?.status === "False" ? agentPod.reason : undefined,
     agentPodReady: agentPod ? agentPod.status === "True" : undefined,
@@ -245,6 +329,7 @@ export function assembleAgent(
   features: RuntimeFeatures,
   unsupportedContributionKinds: ContributionKind[],
   workspaceFailures: WorkspaceFailure[],
+  runtimeMigrationContext: RuntimeMigrationContext,
   onboardingSteps?: OnboardingStep[],
 ): Agent {
   return {
@@ -253,6 +338,11 @@ export function assembleAgent(
     ...(infra.createdAt ? { createdAt: infra.createdAt } : {}),
     templateId: infra.templateId,
     templateUpdate,
+    ...(infra.runtimeMigration
+      ? { runtimeMigration: infra.runtimeMigration }
+      : {}),
+    runtimeMigratable:
+      runtimeMigrationRefusal(infra, runtimeMigrationContext) === null,
     spec: infra.spec,
     state: computeAgentState(infra, preparingWorkspace),
     effectiveHibernationTimeoutMin: resolveEffectiveHibernationTimeoutMin(
@@ -264,6 +354,7 @@ export function assembleAgent(
     overBudget: infra.overBudget,
     overBudgetMessage: infra.overBudgetMessage,
     podTerminationReason: infra.podTerminationReason,
+    notReadyMessage: infra.notReadyMessage,
     podRestarts: infra.podRestarts,
     podRestartReason: infra.podRestartReason,
     contributionFailures,
@@ -275,6 +366,9 @@ export function assembleAgent(
     kbShareRoots: infra.kbShareRoots,
     starterKit: infra.starterKit,
     starterKitOnboarded: infra.starterKitOnboarded,
+    starterKitSeed: infra.starterKitSeed,
+    kitUpdatePending: infra.kitUpdatePending,
+    kitUpdateSkipped: infra.kitUpdateSkipped,
     ...(onboardingSteps ? { onboardingSteps } : {}),
     features,
   };
@@ -303,13 +397,6 @@ export function buildAgentObject(
     },
     spec,
   };
-}
-
-export function findOrphanedAgentIds(
-  infraIds: Set<string>,
-  psqlAgentIds: string[],
-): string[] {
-  return psqlAgentIds.filter((id) => !infraIds.has(id));
 }
 
 function splitRoots(raw: string | undefined): string[] | undefined {

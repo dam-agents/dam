@@ -21,18 +21,16 @@ import {
   createDeliverySweeper,
   type DeliverySweeper,
 } from "./services/delivery-sweeper.js";
-import { createRedisApprovalsBus } from "./infrastructure/redis-approvals-bus.js";
 import { startWakeHeldCallsSaga } from "./sagas/wake-held-calls.js";
 import type { Subscription } from "rxjs";
 import type { RedisBus } from "../../core/redis-bus.js";
 
-export interface ComposeApprovalsServiceDeps {
+interface ComposeApprovalsServiceDeps {
   db: Db;
   ownerSub: string;
   agentBinding: readonly string[] | "*";
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   egressRuleWriter: EgressRuleWriter;
-  bus: RedisBus;
   wrapperFrameSender: WrapperFrameSender;
 }
 
@@ -51,7 +49,7 @@ export function composeApprovalsService(deps: ComposeApprovalsServiceDeps): {
   return { service };
 }
 
-export interface ComposeApprovalsSystemDeps {
+interface ComposeApprovalsSystemDeps {
   db: Db;
   bus: RedisBus;
   identityResolver: AgentIdentityResolver;
@@ -60,10 +58,6 @@ export interface ComposeApprovalsSystemDeps {
   wrapperFrameSender: WrapperFrameSender;
   holdSeconds: number;
   platformAllowedHosts: readonly string[];
-  sweep?: {
-    staleMs?: number;
-    batchSize?: number;
-  };
 }
 
 export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
@@ -73,7 +67,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
   wakeSaga: Subscription;
 } {
   const repo = createApprovalsRepository(deps.db);
-  const wakeSaga = startWakeHeldCallsSaga(createRedisApprovalsBus(deps.bus));
+  const wakeSaga = startWakeHeldCallsSaga(deps.bus);
   const relay = createApprovalsRelayService({ repo, bus: deps.bus });
   const gate = createExtAuthzGate({
     repo,
@@ -87,8 +81,8 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
   const sweeper = createDeliverySweeper({
     repo,
     wrapperFrameSender: deps.wrapperFrameSender,
-    staleMs: deps.sweep?.staleMs ?? 30_000,
-    batchSize: deps.sweep?.batchSize ?? 50,
+    staleMs: 30_000,
+    batchSize: 50,
   });
   return { relay, gate, sweeper, wakeSaga };
 }
@@ -104,17 +98,4 @@ export function listPendingApprovalAgentIds(db: Db): Promise<string[]> {
   return createApprovalsRepository(db).listDistinctAgentIds();
 }
 
-export type { ApprovalsRelayService } from "./services/approvals-relay-service.js";
-export type {
-  ExtAuthzGate,
-  ExtAuthzGateInput,
-  ExtAuthzVerdict,
-  EgressAttendance,
-  EgressRuleMatcher,
-  AgentIdentityResolver,
-} from "./services/ext-authz-gate.js";
-export type { DeliverySweeper } from "./services/delivery-sweeper.js";
-export type {
-  EgressRuleWriter,
-  WrapperFrameSender,
-} from "./services/approvals-service.js";
+export type { ApprovalsRelayService, ExtAuthzGate, WrapperFrameSender };

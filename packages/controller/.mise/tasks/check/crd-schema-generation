@@ -25,13 +25,11 @@ if ! git rev-parse -q --verify "$base_ref^{commit}" >/dev/null; then
   exit 1
 fi
 crds=helm/crds
-legacy=deploy/helm/platform/crds # chart location before the move to helm/
 gen='.metadata.annotations["agent-platform.ai/crd-schema-generation"] // "0"'
 spec='.spec | del(.. | .description?)' # descriptions are docs, not a functional schema change
 status=0
 for f in "$crds"/*.yaml; do
   base="$base_ref:$crds/$(basename "$f")"
-  git cat-file -e "$base" 2>/dev/null || base="$base_ref:$legacy/$(basename "$f")"
   if ! git cat-file -e "$base" 2>/dev/null; then
     echo "crd-generation: $(basename "$f") is new since $base_ref — no prior schema to compare"
     continue

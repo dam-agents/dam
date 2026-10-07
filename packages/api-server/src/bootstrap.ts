@@ -1,15 +1,27 @@
 import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
-import type { TriggerEventPayload } from "agent-runtime-api";
-import { createApi } from "./modules/agents/infrastructure/k8s.js";
+import {
+  type TriggerEventPayload,
+  workspaceMutationEventKinds,
+} from "agent-runtime-api";
+import {
+  createAgentInformer,
+  createApi,
+  createK8sClient,
+  createLeaseApi,
+  podBaseUrl,
+} from "./modules/agents/infrastructure/k8s.js";
+import { createKitUpdateMarks } from "./modules/agents/infrastructure/kit-update-marks.js";
 import {
   AGENTS_PLURAL,
   ANN_STARTER_KIT_ONBOARDED,
+  INVOCATIONS_ACTIVE_KEY,
   LABEL_OWNER,
 } from "./modules/agents/infrastructure/labels.js";
 import {
   composeAgentsModule,
   composePublicAgentPage,
+  connectionGrantProvisioner,
   createAgentsRepository,
   createAgentEnvRepository,
   createAgentRegistrySecretPort,
@@ -19,11 +31,13 @@ import {
   deleteChannelsByAgent,
   listChannelsByOwner,
   findSlackBindingsByChannelId,
+  claimUnscopedSlackBindings,
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
   setSlackChannelDefault,
   createAgentSweep,
+  createRuntimeMigrationSwitch,
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
@@ -40,8 +54,8 @@ import {
   listKbShareAgentIds,
   startKbShareSync,
 } from "./modules/kb-shares/index.js";
-import { createK8sClient } from "./modules/agents/infrastructure/k8s.js";
 import { createAcpClient, type AcpClientFactory } from "./core/acp-client.js";
+import { retryWhileUnreachable } from "./core/retry-unreachable.js";
 import { createPostgresState } from "@chat-adapter/state-pg";
 import {
   createSlackWorker,
@@ -52,7 +66,11 @@ import { createImgbbAgentIcons } from "./modules/channels/infrastructure/agent-a
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
 import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
-import { createFakeSlackGateway } from "./modules/channels/infrastructure/fake-slack-gateway.js";
+import {
+  createFakeSlackGateway,
+  FAKE_WORKSPACE,
+} from "./modules/channels/infrastructure/fake-slack-gateway.js";
+import { createFakeSlackTokenRotation } from "./modules/channels/infrastructure/fake-slack-token-rotation.js";
 import { createTelegramWorker } from "./modules/channels/infrastructure/telegram.js";
 import {
   createChannelManager,
@@ -62,6 +80,7 @@ import {
 import { createIdentityLinkService } from "./modules/channels/services/identity-link-service.js";
 import {
   findIdentityByExternalUser,
+  findExternalUsersByIdentity,
   upsertIdentityLink,
   deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
@@ -73,11 +92,12 @@ import {
   allConversationAgentIds,
   deleteConversationsByAgent,
 } from "./modules/channels/infrastructure/telegram-conversations-repository.js";
-import {
-  createTelegramBindFlowStore,
-  type TelegramOAuthPending,
+import type {
+  TelegramOAuthPending,
+  TelegramPendingBind,
 } from "./modules/channels/infrastructure/telegram-flows.js";
-import { createSlackBindFlowStore } from "./modules/channels/infrastructure/slack-flows.js";
+import type { SlackPendingBind } from "./modules/channels/infrastructure/slack-flows.js";
+import { createFlowStore } from "./modules/channels/infrastructure/bind-flow-store.js";
 import type { SlackInstallPending } from "./modules/channels/infrastructure/slack-install-routes.js";
 import {
   findSlackInstall,
@@ -88,21 +108,24 @@ import {
 import { createSlackWorkspaceProbe } from "./modules/channels/services/slack-workspace-probe.js";
 import { createSlackInstallService } from "./modules/channels/services/slack-install-service.js";
 import {
+  createSlackTokenRotation,
+  noSlackTokenRotation,
+  type SlackTokenRotation,
+} from "./modules/channels/infrastructure/slack-token-rotation.js";
+import {
   composeRuntimeDelivery,
   createBullConnection,
 } from "./modules/runtime-delivery/index.js";
 import {
   createHarnessConfigSnapshotWriter,
-  sessionModelChoices,
+  harnessConfigSupportOf,
+  composeSessionModelChoices,
 } from "./modules/harness-config/index.js";
 import {
   composeSchedulesAtBoot,
   createSchedulesCleanupHook,
 } from "./modules/schedules/index.js";
-import {
-  createKubernetesSecretStore,
-  createSecretStoreRegistry,
-} from "./modules/secret-store/index.js";
+import { createKubernetesSecretStore } from "./modules/secret-store/index.js";
 import {
   composeAttentionRetention,
   composeSessionWatcher,
@@ -131,7 +154,7 @@ import { composeAuditModule } from "./modules/audit/index.js";
 import { composeLiveEventsModule } from "./modules/live-events/index.js";
 import { composeE2eModule } from "./modules/e2e/compose.js";
 import { composeTermsModule } from "./modules/terms/index.js";
-import { loadConfig } from "./config.js";
+import { agentsInstallSettings, loadConfig } from "./config.js";
 import { configureLogger, getLogger } from "./core/logger.js";
 import { reconcileUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants.js";
 import { reportUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants-report.js";
@@ -141,23 +164,27 @@ import { formatError } from "./core/format-error.js";
 import type { ApiServerDeps } from "./apps/api-server/deps.js";
 import {
   createAuth,
-  startJwksWarmup,
   type SurfaceAttribution,
-} from "./apps/api-server/admission/index.js";
-import { createSessionPresence } from "./apps/api-server/agent-proxies/index.js";
+} from "./apps/api-server/admission/auth.js";
+import { startJwksWarmup } from "./apps/api-server/admission/jwks-warmup.js";
+import { createSessionPresence } from "./apps/api-server/agent-proxies/session-presence.js";
 import {
   composeApiKeysModule,
   createApiKeysCleanupHook,
   listApiKeyAgentIds,
 } from "./modules/api-keys/index.js";
 import {
+  composeArtifactExpirySweeper,
+  composeArtifactLibraryForOwner,
   composeShareAuth,
   composeShareRenderTokens,
   composeShareViewer,
+  createAgentApiPodClient,
   createByLinkHostGate,
   createContentApp,
   createShareAuthRoutes,
   createShareViewerApp,
+  type ArtifactLibraryFor,
 } from "./modules/artifact-library/index.js";
 import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
@@ -172,15 +199,20 @@ import {
   createGitCatalogSource,
   createGitHosts,
   createGitRefResolver,
+  createKitUpstream,
+  createKitUpdateReporter,
   createResolvedCatalogRepository,
-  createStarterKitsRepository,
   parseCatalogSeeds,
 } from "./modules/starter-kits/index.js";
-import { composeTemplatesModule } from "./modules/templates/compose.js";
 import {
   composeInvocationLivenessSweep,
+  composeSubAgentOutcomeDelivery,
   createDriverResolutionAdapter,
   createInvocationsCleanupHook,
+  createPodSessionClient,
+  createInvocationSetupFailure,
+  HARNESS_CONFIG_STEP,
+  composeInvocationPinReconciler,
   listInvocationAgentIds,
 } from "./modules/invocations/index.js";
 import {
@@ -207,19 +239,6 @@ import {
   createAgentArtifactsSweeper,
   type AgentCleanupSource,
 } from "./sagas/agent-artifacts-sweeper.js";
-import {
-  composeExperimentInactivitySweep,
-  createExperimentsCleanupHook,
-  listOpenExperimentDriverIds,
-  reconcileExperimentPins,
-} from "./modules/experiments/index.js";
-import { EXPERIMENT_ACTIVE_KEY } from "./modules/agents/infrastructure/labels.js";
-import {
-  composeArtifactExpirySweeper,
-  composeArtifactLibraryForOwner,
-} from "./modules/artifact-library/index.js";
-import { createK8sClient as createAgentsK8sClient } from "./modules/agents/infrastructure/k8s.js";
-import { loadTrustedHosts } from "./bootstrap/trusted-hosts.js";
 import { createPeriodicJobs } from "./core/periodic-jobs.js";
 import { createRedisTtlStore } from "./core/ttl-store.js";
 import { createXactLock } from "./core/xact-lock.js";
@@ -231,13 +250,8 @@ import {
   startAgentStateCache,
   createLiveAgentStateCache,
 } from "./modules/agents/infrastructure/agent-state-cache.js";
-import {
-  createAgentInformer,
-  createLeaseApi,
-} from "./modules/agents/infrastructure/k8s.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
-import { podBaseUrl } from "./modules/agents/infrastructure/k8s.js";
 import {
   composeSatellitesModule,
   createOutcomeDelivery,
@@ -259,7 +273,16 @@ export async function bootstrap() {
       ? readFileSync(config.databaseCaCertPath, "utf8")
       : undefined,
   };
-  await runMigrations(config.databaseUrl, config.migrationsPath, dbTls);
+  const bootRetry = {
+    budgetMs: 120_000,
+    delayMs: 2_000,
+    log: (msg: string) => getLogger().warn(msg),
+  };
+  await retryWhileUnreachable(
+    "migrations",
+    () => runMigrations(config.databaseUrl, config.migrationsPath, dbTls),
+    bootRetry,
+  );
   const { db, sql } = createDb(config.databaseUrl, {
     tls: dbTls,
     poolMax: config.databasePoolMax,
@@ -288,21 +311,21 @@ export async function bootstrap() {
         }
       : null,
   });
-  await artifactsModule.ensureReady();
+  await retryWhileUnreachable(
+    "object storage",
+    () => artifactsModule.ensureReady(),
+    bootRetry,
+  );
   const artifacts = artifactsModule.service;
 
   if (!config.redisUrl)
     throw new Error("REDIS_URL is required (Redis is a platform primitive)");
-  const bullConnection = createBullConnection(
-    config.redisUrl,
-    config.redisPassword ?? undefined,
-  );
-  const redisBus = createRedisBus(config.redisUrl, {
-    password: config.redisPassword ?? undefined,
-  });
+  const redisPassword = config.redisPassword ?? undefined;
+  const bullConnection = createBullConnection(config.redisUrl, redisPassword);
+  const redisBus = createRedisBus(config.redisUrl, { password: redisPassword });
   const sharedRedis = createBullConnection(
     config.redisUrl,
-    config.redisPassword ?? undefined,
+    redisPassword,
   ) as import("ioredis").Redis;
 
   const turnAttendance = createTurnAttendance(sharedRedis);
@@ -322,6 +345,10 @@ export async function bootstrap() {
     log: (m) => getLogger().warn(`[agents] ${m}`),
   });
   const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
+  const delegationFrames = createPodSessionClient({
+    namespace: config.namespace,
+    isReady: (agentId) => agentsRepo.isReady(agentId),
+  });
   const liveAgentsRepo = createAgentsRepository(
     k8sClient,
     createLiveAgentStateCache(k8sClient),
@@ -330,13 +357,12 @@ export async function bootstrap() {
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
   const resolvedCatalog = createResolvedCatalogRepository(db);
-  const starterKitsRepo = createStarterKitsRepository({
-    resolved: resolvedCatalog,
-  });
   const kitGitHosts = createGitHosts({
     host: config.githubEnterpriseHost,
     token: config.githubEnterpriseToken,
   });
+  const kitRefs = createGitRefResolver(kitGitHosts);
+  const kitUpstream = createKitUpstream({ hosts: kitGitHosts, refs: kitRefs });
   const starterKitsRefresh = createCatalogRefresh({
     catalogs: parseCatalogSeeds(
       config.starterKitsCatalogs,
@@ -359,10 +385,11 @@ export async function bootstrap() {
       ];
     }),
     repo: resolvedCatalog,
-    refs: createGitRefResolver(kitGitHosts),
+    refs: kitRefs,
     sourceForEntry: (gitUrl, ref) =>
       createGitCatalogSource(kitGitHosts, gitUrl, ref),
     appVersion: config.appVersion,
+    pinnedKit: config.starterKitsPinned,
     scanSkills: async (gitUrl, ref, subPath) =>
       (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({
         name: skill.name,
@@ -389,9 +416,6 @@ export async function bootstrap() {
       jwksUrl: `${config.keycloakUrl}/realms/${config.keycloakRealm}/protocol/openid-connect/certs`,
       audience: config.keycloakApiAudience,
       requiredRole: config.keycloakRequiredRole,
-      uiClientId: config.keycloakClientId,
-      cliClientId: config.keycloakCliClientId,
-      coreRole: config.keycloakInspectorRole,
     },
     {
       verifyApiKey: apiKeysModule.validator,
@@ -564,15 +588,15 @@ export async function bootstrap() {
   };
   const subPseudonymizer = createSubPseudonymizer(config.activityHmacKey);
 
-  const secretStores = createSecretStoreRegistry();
-  secretStores.register(createKubernetesSecretStore({ k8s: k8sClient }));
+  const secretStore = createKubernetesSecretStore({ k8s: k8sClient });
 
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
   const SLACK_INSTALL_HANDOFF_TTL_MS = 24 * 60 * 60 * 1000;
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
-    secretStore: secretStores.default(),
+    e2eEnabled: config.e2eEnabled,
+    secretStore,
     pendingFlowStore: createRedisTtlStore(
       sharedRedis,
       "oauth:connections",
@@ -621,7 +645,8 @@ export async function bootstrap() {
       templates: connectionsBoot.templates,
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
-      secretStore: secretStores.default(),
+      s3CredentialProbe: connectionsBoot.s3CredentialProbe,
+      secretStore,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       agentsRepo,
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
@@ -638,6 +663,16 @@ export async function bootstrap() {
       );
       process.exit(1);
     });
+  await periodicJobs
+    .register("connection-account-label-backfill", 3_600_000, () =>
+      connectionsBoot.accountLabelBackfill.tickOnce(),
+    )
+    .catch((err) => {
+      getLogger().error(
+        `periodic job connection-account-label-backfill registration failed: ${formatError(err)}`,
+      );
+      process.exit(1);
+    });
 
   const { service: termsService, isAcceptedPort: isTermsAccepted } =
     composeTermsModule({
@@ -647,17 +682,26 @@ export async function bootstrap() {
     });
 
   const fakeSlackGateway =
-    config.e2eEnabled && !(config.slackBotToken && config.slackAppToken)
+    config.e2eEnabled && !config.slackAppToken
       ? createFakeSlackGateway()
       : undefined;
+  const fakeSlackRotation = fakeSlackGateway
+    ? createFakeSlackTokenRotation()
+    : undefined;
 
   const { service: e2eService } = composeE2eModule({
     namespace: config.namespace,
     slack: fakeSlackGateway,
-    ...(fakeSlackGateway
+    ...(fakeSlackGateway && fakeSlackRotation
       ? {
           slackInstalls: {
             record: (install) => slackInstalls.record(install),
+            importHelmToken: (teamId, token) =>
+              slackInstalls.importHelmToken(teamId, token),
+            renewAll: () => slackInstalls.renewAll(),
+            resolveBotToken: (teamId) => slackInstalls.resolveBotToken(teamId),
+            forgetBotToken: (teamId) => slackInstalls.forgetBotToken(teamId),
+            rotation: fakeSlackRotation,
           },
         }
       : {}),
@@ -767,6 +811,7 @@ export async function bootstrap() {
 
   const { agents: systemAgents } = composeAgentsModule({
     cleanupHooks: [],
+    install: agentsInstallSettings(config),
     api,
     resolveSlackWorkspace: (slackChannelId) =>
       resolveSlackWorkspace(slackChannelId),
@@ -787,6 +832,7 @@ export async function bootstrap() {
 
   const identityLinkService = createIdentityLinkService({
     findByExternalUser: findIdentityByExternalUser(db),
+    findExternalUsers: findExternalUsersByIdentity(db),
     upsert: upsertIdentityLink(db),
     delete: deleteIdentityLink(db),
   });
@@ -802,7 +848,7 @@ export async function bootstrap() {
     OAUTH_FLOW_TTL_MS,
   );
   const telegramBindFlows = config.telegramBotToken
-    ? createTelegramBindFlowStore({
+    ? createFlowStore<TelegramPendingBind>({
         store: createRedisTtlStore(
           sharedRedis,
           "bind:telegram",
@@ -810,7 +856,7 @@ export async function bootstrap() {
         ),
       })
     : undefined;
-  const slackBindFlows = createSlackBindFlowStore({
+  const slackBindFlows = createFlowStore<SlackPendingBind>({
     store: createRedisTtlStore(sharedRedis, "bind:slack", OAUTH_FLOW_TTL_MS),
   });
   const slackOauthCallbackUrl =
@@ -826,13 +872,29 @@ export async function bootstrap() {
     "install:slack",
     SLACK_INSTALL_HANDOFF_TTL_MS,
   );
+  const slackTokenRotation: SlackTokenRotation =
+    fakeSlackRotation ??
+    (config.slackClientId && config.slackClientSecret
+      ? createSlackTokenRotation({
+          clientId: config.slackClientId,
+          clientSecret: config.slackClientSecret,
+        })
+      : noSlackTokenRotation);
+  const listActiveSlackWorkspaces = async () =>
+    (await listSlackInstalls(db)())
+      .filter((i) => i.credentialState === "active")
+      .map((i) => i.teamId);
   const slackInstalls = createSlackInstallService({
     find: findSlackInstall(db),
+    list: listSlackInstalls(db),
+    claimUnscopedBindings: claimUnscopedSlackBindings(db),
     upsert: upsertSlackInstall(db),
     setState: setSlackCredentialState(db),
-    secrets: secretStores.default(),
+    secrets: secretStore,
     installLock: createXactLock(db),
-    envBotToken: config.slackBotToken,
+    rotation: slackTokenRotation,
+    exchangeLongLivedTokens:
+      config.slackTokenRotation || fakeSlackRotation !== undefined,
   });
 
   const chatSdkDatabaseUrl = config.databaseCaCertPath
@@ -856,18 +918,17 @@ export async function bootstrap() {
     resolveSlackChannelsByInstance: findSlackChannelsByAgent(db),
   };
 
-  const slackTokens =
-    config.slackBotToken && config.slackAppToken
-      ? { botToken: config.slackBotToken, appToken: config.slackAppToken }
-      : null;
+  const slackAppToken = config.slackAppToken;
 
-  const slackGatewayFactory = slackTokens
+  const slackGatewayFactory = slackAppToken
     ? () =>
         createBoltSlackGateway({
           resolveBotToken: slackInstalls.resolveBotToken,
-          setOriginalWorkspace: slackInstalls.setOriginalWorkspace,
-          envBotToken: slackTokens.botToken,
-          appToken: slackTokens.appToken,
+          importHelmToken: slackInstalls.importHelmToken,
+          renewTokens: slackInstalls.renewAll,
+          forgetBotToken: slackInstalls.forgetBotToken,
+          helmBotToken: config.slackBotToken,
+          appToken: slackAppToken,
           commandName: `/${config.brand.short}`,
           onCredentialRejected: slackInstalls.markRejected,
         })
@@ -875,56 +936,53 @@ export async function bootstrap() {
       ? () => fakeSlackGateway
       : undefined;
 
-  const acpTurnWatch = {
-    stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
-  };
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({
       namespace: config.namespace,
       instanceName,
-      turnWatch: acpTurnWatch,
+      stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
     });
 
   const slackWorker = slackGatewayFactory
-    ? createSlackWorker(
+    ? createSlackWorker({
         makeAcpClient,
-        slackGatewayFactory,
-        () => systemAgents,
-        identityLinkService,
-        {
+        createGateway: slackGatewayFactory,
+        agents: () => systemAgents,
+        identityLinks: identityLinkService,
+        oauthConfig: {
           keycloakExternalUrl: config.keycloakExternalUrl,
           keycloakUrl: config.keycloakUrl,
           keycloakRealm: config.keycloakRealm,
           keycloakClientId: config.keycloakClientId,
           callbackUrl: slackOauthCallbackUrl,
         },
-        pendingSlackOAuthFlows,
-        (agentId) => agentsRepo.getOwner(agentId),
+        pendingOAuthFlows: pendingSlackOAuthFlows,
+        getInstanceOwner: (agentId) => agentsRepo.getOwner(agentId),
         channelRegistry,
-        deleteSlackChannelBinding(db),
-        setSlackChannelAmbient(db),
-        setSlackChannelDefault(db),
-        { name: config.brand.name, short: config.brand.short },
+        unbindSlackChannel: deleteSlackChannelBinding(db),
+        setSlackChannelAmbient: setSlackChannelAmbient(db),
+        setSlackDefault: setSlackChannelDefault(db),
+        brand: { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
-        config.uiBaseUrl,
-        turnAttendance,
-        (agentId) =>
+        uiBaseUrl: config.uiBaseUrl,
+        attendance: turnAttendance,
+        workspaceFiles: (agentId) =>
           createAgentWorkspaceFiles(
             `http://${podBaseUrl(agentId, config.namespace)}/api/trpc`,
           ),
-        slackInstalls.canonicalWorkspaceName,
-        undefined,
-        DEFAULT_SETTLE_MS,
-        undefined,
-        config.imgbbApiKey ? createImgbbAgentIcons(config.imgbbApiKey) : null,
-      )
+        listWorkspaces: listActiveSlackWorkspaces,
+        settleMs: DEFAULT_SETTLE_MS,
+        agentIcon: config.imgbbApiKey
+          ? createImgbbAgentIcons(config.imgbbApiKey)
+          : null,
+      })
     : undefined;
 
   const resolveSlackWorkspace = createSlackWorkspaceProbe({
-    listInstalledWorkspaces: async () =>
-      (await listSlackInstalls(db)())
-        .filter((i) => i.credentialState === "active")
-        .map((i) => i.teamId),
+    listInstalledWorkspaces: async () => [
+      ...(fakeSlackGateway ? [FAKE_WORKSPACE] : []),
+      ...(await listActiveSlackWorkspaces()),
+    ],
     conversationStanding: async (slackChannelId, teamId) =>
       channelManager.slackConversationStanding(slackChannelId, teamId),
   });
@@ -1027,17 +1085,7 @@ export async function bootstrap() {
         return r ? { ownerSub: r.owner, agentId: r.agentId } : null;
       },
     },
-    ruleMatcher: {
-      match: async (agentId, host, method, path) => {
-        const matched = await createEgressRuleMatchAdapter(db).match(
-          agentId,
-          host,
-          method,
-          path,
-        );
-        return matched ? { verdict: matched.verdict } : null;
-      },
-    },
+    ruleMatcher: createEgressRuleMatchAdapter(db),
     attendance: turnAttendance,
     wrapperFrameSender,
     holdSeconds: config.approvalHoldSeconds,
@@ -1045,12 +1093,16 @@ export async function bootstrap() {
       ? [new URL(config.objectStorageAgentEndpoint).hostname]
       : [],
   });
+  if (config.slackAppToken) {
+    await periodicJobs.register("slack-token-renew", 10 * 60_000, () =>
+      slackInstalls.renewAll(),
+    );
+  }
   await periodicJobs.register("approvals-delivery-sweep", 30_000, () =>
     deliverySweeper.tick(),
   );
 
-  const agentsCleanupK8s = createAgentsK8sClient(api, config.namespace);
-  const registrySecretPort = createAgentRegistrySecretPort(agentsCleanupK8s);
+  const registrySecretPort = createAgentRegistrySecretPort(k8sClient);
 
   const schedulesBoot = composeSchedulesAtBoot({
     db,
@@ -1058,11 +1110,12 @@ export async function bootstrap() {
       maxOpen: config.onceScheduleAgentMaxOpen,
       maxPerHour: config.onceScheduleAgentMaxPerHour,
     },
-    sessionModelChoices: async (agentId) =>
-      sessionModelChoices(
+    sessionModelChoices: composeSessionModelChoices({
+      db,
+      getCapabilities: async (agentId) =>
         (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
           ?.runtimeCapabilities ?? null,
-      ),
+    }),
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
@@ -1076,6 +1129,9 @@ export async function bootstrap() {
         agent.starterKitOnboarded === undefined
       );
     },
+    runtimeMigrating: async (agentId) =>
+      ((await agentsRepo.get(agentId))?.runtimeMigrationHold ?? "none") !==
+      "none",
   });
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
@@ -1109,14 +1165,20 @@ export async function bootstrap() {
     },
   );
 
-  const artifactLibraryForSystem = (owner: string) =>
+  const agentApiPodClient = createAgentApiPodClient(config.namespace);
+  const artifactLibraryFor: ArtifactLibraryFor = (owner, surface, opts) =>
     composeArtifactLibraryForOwner({
       db,
       artifacts,
       owner,
-      surface: "system",
+      surface,
       shareBaseUrl: config.shareBaseUrl,
+      agentExists: opts?.agentExists,
+      ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+      agentApi: agentApiPodClient,
     }).artifactLibrary;
+  const artifactLibraryForSystem = (owner: string) =>
+    artifactLibraryFor(owner, "system");
 
   const agentCleanupSources: AgentCleanupSource[] = [
     {
@@ -1161,20 +1223,12 @@ export async function bootstrap() {
         runtimeDelivery.outboxRepo.deleteForAgent(agentId),
     },
     {
-      name: "experiments",
-      listAgentIds: () => listOpenExperimentDriverIds(db),
-      cleanup: createExperimentsCleanupHook({
-        db,
-        artifactLibraryFor: artifactLibraryForSystem,
-        agentsFor: (owner) => harnessAgentsServiceFor(owner),
-      }),
-    },
-    {
       name: "invocations",
       listAgentIds: () => listInvocationAgentIds(db),
       cleanup: createInvocationsCleanupHook({
         db,
         agentsFor: (owner) => harnessAgentsServiceFor(owner),
+        frames: delegationFrames,
       }),
     },
     {
@@ -1226,7 +1280,7 @@ export async function bootstrap() {
     findKbShareOwnerByAgent(db),
   ];
   const agentArtifactsSweeper = createAgentArtifactsSweeper({
-    k8s: agentsCleanupK8s,
+    k8s: k8sClient,
     sources: agentCleanupSources,
     resolveOwner: async (agentId) => {
       for (const lookup of orphanOwnerLookups) {
@@ -1237,45 +1291,6 @@ export async function bootstrap() {
     },
     batchSize: 200,
   });
-
-  const experimentPin = {
-    set: (agentId: string) =>
-      agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, "true"),
-    clear: (agentId: string) =>
-      agentsRepo.patchAnnotation(agentId, EXPERIMENT_ACTIVE_KEY, ""),
-  };
-  const experimentInactivityMs = config.experimentInactivitySeconds * 1000;
-  const experimentInactivitySweep = composeExperimentInactivitySweep({
-    db,
-    inactivityMs: experimentInactivityMs,
-    batchSize: 200,
-    pin: experimentPin,
-    artifactLibraryFor: artifactLibraryForSystem,
-    agentsFor: (owner) => harnessAgentsServiceFor(owner),
-  });
-  await periodicJobs.register(
-    "experiment-inactivity-sweep",
-    Math.min(experimentInactivityMs, 5 * 60_000),
-    () => experimentInactivitySweep.tick(),
-  );
-
-  void reconcileExperimentPins({
-    db,
-    listPinnedAgentIds: () =>
-      agentsRepo.listAgentIdsWithAnnotation(EXPERIMENT_ACTIVE_KEY, "true"),
-    pin: experimentPin,
-  }).then(
-    ({ set, cleared }) => {
-      if (set > 0 || cleared > 0) {
-        process.stderr.write(
-          `[experiments] pin reconciliation: set ${set}, cleared ${cleared}\n`,
-        );
-      }
-    },
-    (err) => {
-      process.stderr.write(`[experiments] pin reconciliation failed: ${err}\n`);
-    },
-  );
 
   await periodicJobs.register("agent-artifacts-sweep", 30 * 60_000, () =>
     agentArtifactsSweeper.tick(),
@@ -1320,54 +1335,45 @@ export async function bootstrap() {
     () => schedulesBoot.retentionTick(),
   );
 
-  const { readSpec: harnessReadTemplateSpec } =
-    composeTemplatesModule(templatesRepo);
   const wakeAgentFor = async (agentId: string) => {
     await agentsRepo.wakeIfHibernated(agentId);
   };
-  const harnessAgentsServiceFor = (owner: string) => {
-    const connections = connectionsServiceFor(owner);
-    return composeAgentsModule({
+  const harnessAgentsServiceFor = (owner: string) =>
+    composeAgentsModule({
       api,
       resolveSlackWorkspace,
       agentStateCache,
       namespace: config.namespace,
       agentIdleTimeoutMinutes: config.agentIdleTimeoutMinutes,
-      virtualizationEnabled: config.virtualizationEnabled,
+      install: agentsInstallSettings(config),
       agentDefaultLimits: {
         cpu: config.agentDefaultCpuLimit,
         memory: config.agentDefaultMemoryLimit,
       },
       owner,
       db,
-      readTemplateSpec: harnessReadTemplateSpec,
+      readTemplateSpec: templatesRepo.readSpec,
       presetSeeder,
       cleanupHooks: agentCleanupHooks,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       contributionsProgress: contributionsProgressPort,
       onboardingChecklists,
-      grantProvisioner: {
-        async resolveSpecGrants(sel) {
-          if (sel.providerConnectionId)
-            await connections.validateProviderConnection(
-              sel.providerConnectionId,
-            );
-          await connections.validateGrantSet(sel.connectionIds);
-          return {
-            grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
-          };
-        },
-        async applyAfterCreate(agentId, sel) {
-          if (sel.connectionIds.length)
-            await connections.setAgentConnections(agentId, sel.connectionIds);
-        },
-      },
+      grantProvisioner: connectionGrantProvisioner(
+        connectionsServiceFor(owner),
+      ),
     }).agents;
-  };
+
+  const readAgentCapabilities = (agentId: string) =>
+    runtimeDelivery.agentsRuntimeRepo
+      .get(agentId)
+      .then((r) => r?.runtimeCapabilities ?? null);
+  const readHarnessConfigSupport = async (agentId: string) =>
+    harnessConfigSupportOf(await readAgentCapabilities(agentId));
 
   const invocationLivenessSweep = composeInvocationLivenessSweep({
     db,
     agentsFor: harnessAgentsServiceFor,
+    readHarnessConfigSupport,
     readTargetRestart: async (agentId) => {
       const agent = await agentsRepo.get(agentId);
       return agent
@@ -1377,10 +1383,66 @@ export async function bootstrap() {
           }
         : null;
     },
+    hasAgent: async (agentId) => (await agentsRepo.get(agentId)) !== null,
     batchSize: 200,
+    frames: delegationFrames,
   });
+  const invocationPinReconciler = composeInvocationPinReconciler({
+    db,
+    listPinnedAgentIds: () =>
+      agentsRepo.listAgentIdsWithAnnotation(INVOCATIONS_ACTIVE_KEY, "true"),
+    readPin: (agentId) => agentsRepo.readInvocationPin(agentId),
+    release: (agentId, version) =>
+      agentsRepo.releaseInvocationPin(agentId, version),
+  });
+  await periodicJobs.register("invocation-pin-reconcile", 60_000, () =>
+    invocationPinReconciler.tick(),
+  );
+
+  const invocationSetupFailure = createInvocationSetupFailure({
+    db,
+    agentsFor: harnessAgentsServiceFor,
+    frames: delegationFrames,
+  });
+  for (const kind of workspaceMutationEventKinds)
+    runtimeDelivery.registerEventOutcomeHandler(kind, async (event, input) => {
+      if (input.outcome === "ok") return;
+      await invocationSetupFailure(
+        event.agentId,
+        kind === "workspace-seed" ? "seed" : "install",
+        input.detail ?? input.outcome,
+      );
+    });
+  runtimeDelivery.registerEventOutcomeHandler(
+    "harness-config",
+    async (event, input) => {
+      if (input.outcome === "ok") return;
+      await invocationSetupFailure(
+        event.agentId,
+        HARNESS_CONFIG_STEP,
+        input.detail ?? input.outcome,
+      );
+    },
+  );
   await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>
     invocationLivenessSweep.tick(),
+  );
+  const subAgentOutcomes = composeSubAgentOutcomeDelivery({
+    db,
+    bump: (agentId, events) =>
+      runtimeDelivery.runtimeMutator.bump(agentId, events),
+    enqueue: (agentId) =>
+      runtimeDelivery.runtimeMutator.enqueueAfterCommit(agentId),
+    wakeUnlessStopped: (agentId) => agentsRepo.wakeUnlessStopped(agentId),
+    log: (msg) => {
+      process.stderr.write(`${msg}\n`);
+    },
+  });
+  await periodicJobs.register("sub-agent-outcome-delivery", 10_000, () =>
+    subAgentOutcomes.deliver(),
+  );
+  await periodicJobs.register("sub-agent-outcome-wake-retry", 3_600_000, () =>
+    subAgentOutcomes.retry(),
   );
 
   const agentSweep = createAgentSweep({
@@ -1388,6 +1450,17 @@ export async function bootstrap() {
     agentsFor: harnessAgentsServiceFor,
   });
   await periodicJobs.register("agent-sweep", 60_000, () => agentSweep.tick());
+
+  const runtimeMigrationSwitch = createRuntimeMigrationSwitch({
+    listAgents: () => agentsRepo.list(),
+    getAgent: (id) => liveAgentsRepo.getLive(id, undefined),
+    writeMigration: (id, patch) =>
+      liveAgentsRepo.writeRuntimeMigration(id, undefined, patch),
+    log: (message) => process.stderr.write(`${message}\n`),
+  });
+  await periodicJobs.register("runtime-migration-switch", 15_000, () =>
+    runtimeMigrationSwitch.tick(),
+  );
 
   const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
     composeSessionDirectory(db);
@@ -1403,10 +1476,9 @@ export async function bootstrap() {
     attentionRetentionTick(),
   );
 
+  const listRegisteredAgentIds = listAgentIdsByOwner(db, subPseudonymizer);
   const apiServerDeps: ApiServerDeps = {
     agentStateCache,
-    periodicJobs,
-    sharedRedis,
     config,
     api,
     db,
@@ -1427,14 +1499,11 @@ export async function bootstrap() {
     presetSeeder,
     trustedHosts,
     agentCleanupHooks,
-    secretStores,
+    secretStore,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     contributionsProgress: contributionsProgressPort,
     onboardingChecklists,
-    getAgentCapabilities: (agentId) =>
-      runtimeDelivery.agentsRuntimeRepo
-        .get(agentId)
-        .then((r) => r?.runtimeCapabilities ?? null),
+    getAgentCapabilities: readAgentCapabilities,
     schedulesBoot,
     mountTelemetryRoutes: (app) =>
       app.route(
@@ -1443,12 +1512,12 @@ export async function bootstrap() {
           reader: telemetryReader,
           listLiveAgentIds: (ownerSub) =>
             liveAgentsRepo.list(ownerSub).then((list) => list.map((a) => a.id)),
-          listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
+          listRegisteredAgentIds,
         }),
       ),
     mountUsageRoutes: usage.mount,
     mountCaseStudiesRoutes: caseStudies.mount,
-    listRegisteredAgentIds: listAgentIdsByOwner(db, subPseudonymizer),
+    listRegisteredAgentIds,
     metricsReader,
     telemetryReader,
     sessionDirectory,
@@ -1456,14 +1525,15 @@ export async function bootstrap() {
     isTermsAccepted,
     e2e: e2eService,
     artifacts,
+    delegationFrames,
     liveEvents: liveEventsModule.liveEvents,
     k8sClient,
     agentsRepo,
     connectionsBoot,
     templatesRepo,
-    starterKitsRepo,
+    starterKitsRepo: resolvedCatalog,
+    kitUpstream,
     reposService,
-    userDirectory,
     apiKeysModule,
     satellitesBoot,
     auth,
@@ -1473,9 +1543,18 @@ export async function bootstrap() {
     shareHostGate,
     publicAgentPageService,
     sessionPresence,
+    wakeAgent: wakeAgentFor,
+    artifactLibraryFor,
   };
+  const onboardingChecklistFor = (owner: string) =>
+    createOnboardingChecklist({
+      agents: harnessAgentsServiceFor(owner),
+      repo: onboardingChecklists,
+      ownerSub: owner,
+    });
   const harnessDeps = {
     satellitesBoot,
+    secretStore,
     agentStateCache,
     config,
     api,
@@ -1488,6 +1567,11 @@ export async function bootstrap() {
     runtimeMutator: runtimeDelivery.runtimeMutator,
     runtimeProgress: contributionsProgressPort,
     artifacts,
+    delegationFrames,
+    k8sClient,
+    agentsRepo,
+    templatesRepo,
+    artifactLibraryFor,
     agentsServiceFor: harnessAgentsServiceFor,
     connectionsServiceFor,
     caseStudySubmissions: caseStudies.submissions,
@@ -1497,29 +1581,25 @@ export async function bootstrap() {
       ? createAgentTelemetry({ reader: metricsReader })
       : createUnavailableAgentTelemetry(),
     wakeAgent: wakeAgentFor,
+    readHarnessConfigSupport,
     markOnboardingComplete: (agentId: string, owner: string) =>
       createOnboardingMarker({
         agents: harnessAgentsServiceFor(owner),
         markAgentOnboarded: (id, at) =>
           agentsRepo.patchAnnotation(id, ANN_STARTER_KIT_ONBOARDED, at),
       })(agentId, owner),
+    kitUpdateReporter: createKitUpdateReporter({
+      agentsFor: harnessAgentsServiceFor,
+      marks: createKitUpdateMarks(agentsRepo),
+    }),
     onboardingChecklist: {
       set: (
         agentId: string,
         owner: string,
         steps: readonly { id: string; label: string }[],
-      ) =>
-        createOnboardingChecklist({
-          agents: harnessAgentsServiceFor(owner),
-          repo: onboardingChecklists,
-          ownerSub: owner,
-        }).set(agentId, steps),
+      ) => onboardingChecklistFor(owner).set(agentId, steps),
       complete: (agentId: string, owner: string, id: string) =>
-        createOnboardingChecklist({
-          agents: harnessAgentsServiceFor(owner),
-          repo: onboardingChecklists,
-          ownerSub: owner,
-        }).complete(agentId, id),
+        onboardingChecklistFor(owner).complete(agentId, id),
     },
   };
   const extAuthzDeps = {
@@ -1556,4 +1636,21 @@ export async function bootstrap() {
   };
 
   return { apiServerDeps, harnessDeps, extAuthzDeps, cleanup };
+}
+
+function loadTrustedHosts(path: string): readonly string[] {
+  if (!path) return [];
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (err) {
+    process.stderr.write(
+      `trusted-hosts: ${path}: ${err instanceof Error ? err.message : err}\n`,
+    );
+    return [];
+  }
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"));
 }

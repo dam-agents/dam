@@ -1,6 +1,11 @@
 import { Add, ArrowLeft, Filter } from "@carbon/icons-react";
-import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
-import { type CSSProperties, type Ref, useCallback, useMemo } from "react";
+import {
+  SESSION_CATEGORIES,
+  sessionCategoryOf,
+  SessionMode,
+  TELEMETRY_MAX_SINCE_HOURS,
+} from "api-server-api";
+import { type CSSProperties, type Ref, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
@@ -10,9 +15,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SectionLabel } from "@/components/ui/section-label";
 import { Spinner } from "@/components/ui/spinner";
-import { Tooltip } from "@/components/ui/tooltip";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
@@ -23,13 +26,9 @@ import { isUnreadSession } from "../../home/lib/unread.js";
 import { useSessionCosts } from "../../metrics/api/queries.js";
 import { downloadTelemetryExport } from "../../telemetry/api/download-export.js";
 import { useAgentBackgroundWork } from "../api/background-work.js";
-import { setSessionSeen, useAcpSessions } from "../api/queries.js";
+import { setSessionSeen, useSessionPages } from "../api/queries.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
-import {
-  SESSION_CATEGORIES,
-  SESSION_CATEGORY_LABELS,
-  sessionCategory,
-} from "../lib/session-category.js";
+import { SESSION_CATEGORY_LABELS } from "../lib/session-category.js";
 import { useSessionConversations } from "../lib/use-session-conversations.js";
 import { SessionListSkeleton } from "./session-list-skeleton.js";
 import { SessionRow } from "./session-row.js";
@@ -60,45 +59,29 @@ export function SessionsSidebar({
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const sessionFilter = useStore((s) => s.sessionFilter);
   const toggleSessionFilter = useStore((s) => s.toggleSessionFilter);
-  const listInclude = useMemo(
-    () => ({
-      channels: sessionFilter.includes("channels"),
-      scheduled: sessionFilter.includes("scheduled"),
-    }),
-    [sessionFilter],
-  );
   const deleteSession = useStore((s) => s.deleteSession);
   const showConfirm = useStore((s) => s.showConfirm);
   const goBack = useStore((s) => s.goBack);
-  const pendingLaunch = useStore((s) => s.pendingLaunch);
-  const focusPendingLaunch = useStore((s) => s.focusPendingLaunch);
 
   const agentOperable = useIsAgentOperable(selectedAgent);
   const conversationOf = useSessionConversations(selectedAgent);
-  const { data, isFetching } = useAcpSessions(selectedAgent, listInclude, {
+  const {
+    sessions: listed,
+    isFetching,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useSessionPages(selectedAgent, sessionFilter, {
     enabled: agentOperable,
     activeSessionId: sessionId,
   });
-  const sessions: SessionView[] = data ?? EMPTY;
-  const loading = data === undefined && isFetching;
+  const sessions: SessionView[] = listed ?? EMPTY;
+  const loading = listed === undefined && isFetching;
+  const filtered = sessionFilter.length < SESSION_CATEGORIES.length;
 
   const visibleSessions = useMemo(
-    () => sessions.filter((s) => sessionFilter.includes(sessionCategory(s))),
+    () => sessions.filter((s) => sessionFilter.includes(sessionCategoryOf(s))),
     [sessions, sessionFilter],
-  );
-  const launchingRun =
-    pendingLaunch &&
-    pendingLaunch.agentId === selectedAgent &&
-    !sessions.some((s) => s.experimentId === pendingLaunch.runId)
-      ? pendingLaunch
-      : null;
-
-  const [conversationSessions, runSessions] = useMemo(
-    () => [
-      visibleSessions.filter((s) => sessionCategory(s) !== "experiments"),
-      visibleSessions.filter((s) => sessionCategory(s) === "experiments"),
-    ],
-    [visibleSessions],
   );
 
   const { data: features } = useFeatures();
@@ -125,15 +108,15 @@ export function SessionsSidebar({
   const draftKeys = useStore(useShallow((s) => keysWithDraftContent(s.drafts)));
   const draftKeySet = useMemo(() => new Set(draftKeys), [draftKeys]);
 
-  const confirmDelete = useCallback(
-    async (sid: string, title: string | null | undefined) => {
-      const label = title || sid.slice(0, 12);
-      if (await showConfirm(`Delete session "${label}"?`, "Delete Session")) {
-        deleteSession(sid);
-      }
-    },
-    [showConfirm, deleteSession],
-  );
+  const confirmDelete = async (
+    sid: string,
+    title: string | null | undefined,
+  ) => {
+    const label = title || sid.slice(0, 12);
+    if (await showConfirm(`Delete session "${label}"?`, "Delete Session")) {
+      deleteSession(sid);
+    }
+  };
 
   const renderRow = (s: (typeof sessions)[number]) => {
     const isOpen = s.sessionId === sessionId;
@@ -190,12 +173,14 @@ export function SessionsSidebar({
           <Button
             variant="ghost"
             size="xs"
-            className="text-sm font-normal text-muted-foreground"
+            className="min-w-0 text-sm font-normal text-muted-foreground"
           >
             <Filter size={14} />
-            {sessionFilter.length === SESSION_CATEGORIES.length
-              ? "All"
-              : `Filter (${sessionFilter.length})`}
+            <span className="truncate">
+              {sessionFilter.length === SESSION_CATEGORIES.length
+                ? "All"
+                : `Filter (${sessionFilter.length})`}
+            </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
@@ -246,37 +231,26 @@ export function SessionsSidebar({
     >
       <div className="flex-1 overflow-y-auto">
         {loading && <SessionListSkeleton />}
-        {!loading && sessions.length === 0 && (
+        {!loading && visibleSessions.length === 0 && (
           <p className="px-4 py-5 text-xs text-muted-foreground">
-            No sessions yet
+            {filtered ? "No sessions match the filter" : "No sessions yet"}
           </p>
         )}
-        {!loading && sessions.length > 0 && visibleSessions.length === 0 && (
-          <p className="px-4 py-5 text-xs text-muted-foreground">
-            No sessions match the filter
-          </p>
-        )}
-        {conversationSessions.map(renderRow)}
-        {(runSessions.length > 0 || launchingRun) && (
-          <SectionLabel className="block px-4 pb-1 pt-4">
-            Experiment runs
-          </SectionLabel>
-        )}
-        {launchingRun && (
-          <Tooltip content="Show the launch progress">
-            <button
-              type="button"
-              onClick={focusPendingLaunch}
-              className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50"
+        {visibleSessions.map(renderRow)}
+        {hasNextPage && (
+          <div className="px-4 py-3">
+            <Button
+              variant="ghost"
+              size="xs"
+              className="w-full text-sm font-normal text-muted-foreground"
+              disabled={isFetchingNextPage}
+              onClick={() => void fetchNextPage()}
             >
-              <Spinner />
-              <span className="min-w-0 flex-1 truncate">
-                Starting run — waking the agent…
-              </span>
-            </button>
-          </Tooltip>
+              {isFetchingNextPage ? <Spinner /> : null}
+              Show older sessions
+            </Button>
+          </div>
         )}
-        {runSessions.map(renderRow)}
       </div>
     </SidebarSection>
   );

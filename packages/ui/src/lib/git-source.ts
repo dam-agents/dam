@@ -9,7 +9,7 @@ export function orgRepo(gitUrl: string): string {
   return repoSlug(gitUrl).replace(/^[^/]+\//, "");
 }
 
-export function isKnownGitHost(gitUrl: string): boolean {
+function isKnownGitHost(gitUrl: string): boolean {
   return /(github|gitlab|bitbucket)/i.test(gitUrl);
 }
 

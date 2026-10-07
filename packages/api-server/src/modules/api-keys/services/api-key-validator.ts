@@ -11,7 +11,7 @@ export interface ValidatedApiKey {
 
 export type ApiKeyValidationFailure = "unknown" | "expired" | "revoked";
 
-export interface ApiKeyValidatorDeps {
+interface ApiKeyValidatorDeps {
   hashToken: (token: string) => string;
   findByHash: (hash: string) => Promise<ApiKeyRow | null>;
   touchLastUsed: (id: string) => Promise<void>;

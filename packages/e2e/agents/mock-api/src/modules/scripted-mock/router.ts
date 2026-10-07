@@ -21,10 +21,6 @@ export const scriptedMockRouter = t.router({
     .output(getReceivedPromptsResultSchema)
     .query(({ ctx }) => ctx.scriptedMock.getReceivedPrompts()),
 
-  reset: t.procedure
-    .output(resetResultSchema)
-    .mutation(({ ctx }) => ctx.scriptedMock.reset()),
-
   getEnv: t.procedure
     .input(getEnvInputSchema)
     .output(getEnvResultSchema)

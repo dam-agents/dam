@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createEgressRulesService } from "../../modules/egress-rules/services/egress-rules-service.js";
 import { createEgressRuleWriter } from "../../modules/egress-rules/services/egress-rule-writer.js";
 import { createConnectionRulesSync } from "../../modules/egress-rules/services/connection-rules-sync.js";
+import { createKitRulesSeeder } from "../../modules/egress-rules/services/kit-rules-seeder.js";
 import type { EgressRulesRepository } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import type { NewEgressRule } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../../modules/egress-rules/domain/types.js";
@@ -299,5 +300,34 @@ describe("connection-rules-sync: threads port into the inserted rule", () => {
       port: 6443,
       source: "connection:conn-1",
     });
+  });
+});
+
+describe("kit-rules-seeder: a kit rule never silently loses to a preset row", () => {
+  // TEST_SCENARIO: a kit that denies a host its preset already allows would otherwise leave the allow in place without a word; the seeder must refuse so apply can undo the create.
+  it("refuses a kit rule whose verdict clashes with the row already there", async () => {
+    const { repo } = fakeRepo([], {
+      insertOrPromoteFromPreset: async (row) => ({
+        ...rowFrom(row),
+        verdict: "allow",
+        source: "kit",
+      }),
+    });
+    const seeder = createKitRulesSeeder({ repo, l7Hosts: fakeL7Hosts().port });
+
+    await expect(
+      seeder.seed(
+        "a1",
+        [
+          {
+            host: "github.com",
+            method: "*",
+            pathPattern: "*",
+            verdict: "deny",
+          },
+        ],
+        "sub-1",
+      ),
+    ).rejects.toThrow(/clashes/);
   });
 });

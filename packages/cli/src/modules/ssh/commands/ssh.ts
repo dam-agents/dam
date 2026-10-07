@@ -2,22 +2,16 @@ import { spawn } from "node:child_process";
 import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { createAgentResolver, type AgentService } from "../../agent/index.js";
+import type { AgentService } from "../../agent/index.js";
 import type { EgressService } from "../../egress/index.js";
-import {
-  exitCodeForResolveError,
-  printResolveError,
-} from "../../agent/commands/errors.js";
-import { printServiceError } from "../../shared/trpc/print.js";
+import { resolveAgentOrExit } from "../../agent/commands/errors.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
 import {
   resolveActiveHost,
   resolveHostFromConfig,
 } from "../../shared/preflight.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
-import {
-  EXIT_BELOW_FLOOR,
-  EXIT_RUNTIME_FAILURE,
-} from "../../shared/exit-codes.js";
+import { EXIT_RUNTIME_FAILURE } from "../../shared/exit-codes.js";
 import { connectRawBridge } from "../infrastructure/raw-bridge.js";
 import { ensureKeyPair, sshPaths } from "../infrastructure/ssh-keys.js";
 import {
@@ -27,10 +21,7 @@ import {
   ensureManagedSshHost,
   pruneManagedHosts,
 } from "../infrastructure/launch.js";
-import {
-  ensureEditorEgress,
-  VSCODE_REMOTE_HOSTS,
-} from "../infrastructure/editor-egress.js";
+import { ensureEditorEgress } from "../infrastructure/editor-egress.js";
 
 export interface SshDeps {
   tokenProvider: TokenProvider;
@@ -50,7 +41,7 @@ const MODE_BINS: Record<LaunchMode, readonly string[]> = {
   zed: ["zed"],
 };
 
-export function inferMode(base: string): LaunchMode | undefined {
+function inferMode(base: string): LaunchMode | undefined {
   return MODES.find((m) => MODE_BINS[m].includes(base));
 }
 
@@ -91,7 +82,7 @@ export function buildSshCommand(deps: SshDeps): Command {
           }
         }
 
-        const host = await resolveSshHost(deps, opts.server);
+        const host = await resolveActiveHost(deps, opts.server);
         const paths = sshPaths();
         const [agent] = await Promise.all([
           resolveAgent(deps, host, agentRef),
@@ -110,7 +101,6 @@ export function buildSshCommand(deps: SshDeps): Command {
           await ensureEditorEgress({
             egress: deps.createEgressService(host),
             agentId: agent.id,
-            hosts: VSCODE_REMOTE_HOSTS,
             note: (m) => process.stderr.write(`dam ssh: ${m}\n`),
           });
 
@@ -162,16 +152,13 @@ export function buildSshCommand(deps: SshDeps): Command {
           process.exit(0);
         }
 
-        const host = await resolveSshHost(deps, opts.server);
+        const host = await resolveActiveHost(deps, opts.server);
         const paths = sshPaths();
         await orExit(ensureKeyPair(paths), (e) => e.message);
 
         if (opts.all) {
           const listed = await deps.createAgentService(host).list();
-          if (!listed.ok) {
-            printServiceError(listed.error, host);
-            process.exit(EXIT_RUNTIME_FAILURE);
-          }
+          exitOnServiceError(listed, host);
           const rows: { name: string; alias: string }[] = [];
           for (const a of listed.value)
             rows.push({
@@ -222,10 +209,7 @@ export function buildSshCommand(deps: SshDeps): Command {
     .argument("<agent>", "agent name or ID")
     .option("--server <url>", "override the configured server URL")
     .action(async (agentRef: string, opts: { server?: string }) => {
-      const host = await resolveHostFromConfig(deps, {
-        flag: opts.server ? { server: opts.server } : undefined,
-        exitCodes: { runtimeFailure: EXIT_RUNTIME_FAILURE },
-      });
+      const host = await resolveHostFromConfig(deps, opts.server);
       const paths = sshPaths();
       const [agent, publicKey, tok] = await Promise.all([
         resolveAgent(deps, host, agentRef),
@@ -259,30 +243,12 @@ export function buildSshCommand(deps: SshDeps): Command {
   return ssh;
 }
 
-function resolveSshHost(deps: SshDeps, serverFlag?: string) {
-  return resolveActiveHost(deps, {
-    flag: serverFlag ? { server: serverFlag } : undefined,
-    exitCodes: {
-      runtimeFailure: EXIT_RUNTIME_FAILURE,
-      belowFloor: EXIT_BELOW_FLOOR,
-    },
-  });
-}
-
 async function resolveAgent(
   deps: SshDeps,
   host: string,
   agentRef: string,
 ): Promise<{ id: string; name: string }> {
-  const resolver = createAgentResolver({
-    agentService: deps.createAgentService(host),
-  });
-  const resolved = await resolver.resolve(agentRef);
-  if (!resolved.ok) {
-    printResolveError(resolved.error, host);
-    process.exit(exitCodeForResolveError(resolved.error));
-  }
-  return resolved.value;
+  return resolveAgentOrExit(deps.createAgentService(host), agentRef, host);
 }
 
 function die(msg: string): never {

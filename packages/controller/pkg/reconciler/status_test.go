@@ -83,7 +83,7 @@ func TestSetBackoffExceeded_StampsTerminalCondition(t *testing.T) {
 	})
 	require.NoError(t, err)
 	dyn := newFakeDynamic(u)
-	r := NewAgentReconciler(nil, &config.Config{Namespace: "test-agents"}).WithDynamicClient(dyn)
+	r := NewAgentReconciler(nil, dyn, &config.Config{Namespace: "test-agents"})
 
 	r.SetBackoffExceeded(context.Background(), "my-agent", 16,
 		fmt.Errorf("gateway Service ClusterIP not yet assigned"))
@@ -105,7 +105,7 @@ func TestSetError_DoesNotDowngradeBackoffExceeded(t *testing.T) {
 	})
 	require.NoError(t, err)
 	dyn := newFakeDynamic(u)
-	r := NewAgentReconciler(nil, &config.Config{Namespace: "test-agents"}).WithDynamicClient(dyn)
+	r := NewAgentReconciler(nil, dyn, &config.Config{Namespace: "test-agents"})
 
 	r.SetBackoffExceeded(context.Background(), "my-agent", 16, fmt.Errorf("boom"))
 	_ = r.setError(context.Background(), "my-agent", "still failing")

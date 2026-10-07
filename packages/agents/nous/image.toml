@@ -1,0 +1,11 @@
+# The nous config environment over claude-code's: mise -E claude-code,nous.
+
+[tools."pipx:AI-native-Systems-Research/agentic-strategy-evolution"]
+version = "v0.5.0"
+
+[oci.env]
+NOUS_VENV = "/opt/nous-venv"
+NOUS_ALLOW_AUTO_APPROVE = "1"
+NOUS_CAMPAIGN_PARENT = "/home/agent/nous-campaigns"
+NO_PROXY = "127.0.0.1,localhost,::1"
+no_proxy = "127.0.0.1,localhost,::1"

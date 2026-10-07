@@ -26,7 +26,7 @@ Features, tasks, bugs, and research tasks can attach to an epic. If the issue cl
 - It's fine to flag open questions or naming uncertainty — invite the reader to push back.
 - Concise but complete. If a subsection has nothing to say, cut it.
 - **Be brief.** One idea per sentence. Active voice. Cut filler, restatement, and any sentence that carries no new fact. A reader should get the problem from the first paragraph. Length is not thoroughness.
-- **No personal data.** This repo is public. Never name a person — no real names, Slack display names, GitHub logins, or emails — in the body, in Context, or in a quoted report. Attribute to a role instead: "a user", "a researcher", "the team". Do not link a message that identifies a person, even when that message is what motivated the issue — describe what the report showed instead. The one deliberate exception is the **Filed by** footer — see [Attribution](#attribution).
+- **No personal data.** This repo is public. Never name a person — no real names, Slack display names, GitHub logins, or emails — in the body, in Context, or in a quoted report. Attribute to a role instead: "a user", "a researcher", "the team". Do not link a message that identifies a person, even when that message is what motivated the issue — describe what the report showed instead. Two deliberate exceptions: the **Filed by** footer — see [Attribution](#attribution) — and the Slack thread link in **Follow up** — see [Follow up](#follow-up).
 - **One bullet, one line.** Do not hard-wrap bullet or paragraph text, and do not indent continuation lines. Let the client wrap. Hard-wrapped bullets render as ragged, oddly indented text.
 - **"As a user" always.** A user story's role is always "a user" — never a narrower persona like "an operator", "a designer", or "a PM", even when the ask came from one person's workflow. A narrow role makes the issue read as if it only serves that group, and it narrows how the team scopes the work.
 - **State the problem, not the solution.** This holds hardest in the **title** — name the problem or the misbehaviour, never the fix. "Network approval requests demand an answer before the user is ready" states a problem; "Add a dismiss button to approval toasts" prescribes an answer. Watch for a title that commands a change: "add", "let users", "make it possible to", "support" all smuggle a solution into the one line everyone reads. A prescribed fix constrains whoever picks the issue up; they should judge the approach themselves. A **task** is the exception — the work itself is the point, so its title may name the work ("Upgrade the node runtime"); it still must not name a chosen implementation. **Goal** states the user-visible outcome, not the mechanism. Put a solution you have in mind under **Proposed solution**, with the reasoning, and leave the genuine alternatives in **Open Questions**.
@@ -59,9 +59,21 @@ A best-effort footer beats a missing one; when the footer is required, never dro
 
 This is the one place a real person is named — see **No personal data** above. The footer credits a *team member* who asked for the work. It never names a user, a reporter, or a research participant.
 
+## Follow up
+
+**When an issue comes from user feedback in Slack, end the body with a Follow up section linking the Slack thread where it was raised**, so whoever picks it up can go back to the user and tell them when it's fixed:
+
+```markdown
+## Follow up
+
+- User request: <Slack thread permalink>
+```
+
+Link the thread where the user raised it, not the channel. One bullet per thread when several users asked for the same thing. The link is allowed even though the thread names the person: the IBM Slack workspace needs an IBM login, so it reveals nothing to a public reader. Everything in **No personal data** still applies to the rest of the body. Omit the section when the issue didn't come from Slack.
+
 ## Templates
 
-Every template starts with a **Title** — short, declarative, no jargon; names the problem, not the component and not the fix, except in a **task**, whose title may name the work (see **State the problem, not the solution** above). Prefix the title with `UI - ` when the problem is in the web UI (e.g. `UI - A long artifact is unreadable in the chat view's narrow column`) — that prefix is how the board groups UI work. Every template then leads with **Context** — why we're here, what led to this. Features, tasks, bugs, and research tasks may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed. Every template ends with the **Filed by** footer, unless the account you file as belongs to the person who asked — see [Attribution](#attribution).
+Every template starts with a **Title** — short, declarative, no jargon; names the problem, not the component and not the fix, except in a **task**, whose title may name the work (see **State the problem, not the solution** above). Prefix the title with `UI - ` when the problem is in the web UI (e.g. `UI - A long artifact is unreadable in the chat view's narrow column`) — that prefix is how the board groups UI work. Every template then leads with **Context** — why we're here, what led to this. Features, tasks, bugs, and research tasks may carry an **Epic** line; it's metadata for the draft, not part of the issue body — the epic link is applied when the issue is filed. Every template ends with **Follow up** when the issue came from user feedback in Slack (see [Follow up](#follow-up)), then the **Filed by** footer, unless the account you file as belongs to the person who asked — see [Attribution](#attribution).
 
 ### Epic
 
@@ -89,6 +101,12 @@ An epic defines the value, not a single fix, and gives enough shape that issues 
 ## Open Questions
 
 <Key decisions or unknowns.>
+
+## Follow up
+
+<only when the issue came from user feedback in Slack — otherwise omit this section>
+
+- User request: <Slack thread permalink>
 
 <omit this footer if the account you file as belongs to the person who asked>
 
@@ -139,6 +157,12 @@ The **Problem** describes what's wrong or missing today from the user's point of
 
 <optional — links to designs, research, related issues, docs, or other supporting material>
 
+## Follow up
+
+<only when the issue came from user feedback in Slack — otherwise omit this section>
+
+- User request: <Slack thread permalink>
+
 <omit this footer if the account you file as belongs to the person who asked>
 
 ---
@@ -169,6 +193,12 @@ A task states the work and what it unblocks. It's the one type where naming engi
 ## Done when
 
 <The observable end state — how we know it's finished.>
+
+## Follow up
+
+<only when the issue came from user feedback in Slack — otherwise omit this section>
+
+- User request: <Slack thread permalink>
 
 <omit this footer if the account you file as belongs to the person who asked>
 
@@ -204,6 +234,12 @@ Lead with observed vs. expected behavior. Reproduction steps should be minimal a
 ## Steps to Reproduce
 
 1. <minimal, numbered steps>
+
+## Follow up
+
+<only when the issue came from user feedback in Slack — otherwise omit this section>
+
+- User request: <Slack thread permalink>
 
 <omit this footer if the account you file as belongs to the person who asked>
 
@@ -251,6 +287,12 @@ A research task defines what we need to learn and why, before committing to buil
 ## Additional resources
 
 <optional — links to existing research, related issues, docs, or other supporting material>
+
+## Follow up
+
+<only when the issue came from user feedback in Slack — otherwise omit this section>
+
+- User request: <Slack thread permalink>
 
 <omit this footer if the account you file as belongs to the person who asked>
 

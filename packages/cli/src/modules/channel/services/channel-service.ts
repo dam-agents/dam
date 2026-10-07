@@ -1,6 +1,10 @@
 import type { ChannelConfig, ChannelType } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
-import { classifyTrpcError, trpcCall } from "../../shared/trpc/classify.js";
+import {
+  classifyTrpcError,
+  trpcCall,
+  trpcErrorCode,
+} from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type {
   AuthRequiredError,
@@ -9,6 +13,7 @@ import type {
   ChannelPreconditionError,
   TransportError,
 } from "../domain/errors.js";
+import { errorMessage } from "../../shared/error-message.js";
 
 type ChannelResult<T> = Result<T, TransportError | AuthRequiredError>;
 type ChannelList = readonly ChannelConfig[];
@@ -51,8 +56,8 @@ export function createChannelService(deps: {
         });
         return ok(agent.channels);
       } catch (e) {
-        const code = (e as { data?: { code?: string } })?.data?.code;
-        const message = e instanceof Error ? e.message : String(e);
+        const code = trpcErrorCode(e);
+        const message = errorMessage(e);
         if (code === "CONFLICT")
           return err({ kind: "channel-conflict", message });
         if (code === "PRECONDITION_FAILED")

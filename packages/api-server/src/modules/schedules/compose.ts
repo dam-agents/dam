@@ -56,13 +56,13 @@ export interface ComposeSchedulesAtBootOpts {
   ) => Promise<void>;
   redis: Redis;
   onboardingPending?: (agentId: string) => Promise<boolean>;
-  log?: (msg: string) => void;
+  runtimeMigrating?: (agentId: string) => Promise<boolean>;
 }
 
 export function composeSchedulesAtBoot(
   opts: ComposeSchedulesAtBootOpts,
 ): SchedulesBoot {
-  const log = opts.log ?? ((m) => process.stderr.write(`[schedules] ${m}\n`));
+  const log = (m: string) => process.stderr.write(`[schedules] ${m}\n`);
   const repo = createSchedulesRepository(opts.db);
   const queue = createScheduleQueue(opts.bullConnection);
   const runner = createSchedulerRunner({
@@ -78,6 +78,9 @@ export function composeSchedulesAtBoot(
     ),
     ...(opts.onboardingPending
       ? { onboardingPending: opts.onboardingPending }
+      : {}),
+    ...(opts.runtimeMigrating
+      ? { runtimeMigrating: opts.runtimeMigrating }
       : {}),
     log,
   });

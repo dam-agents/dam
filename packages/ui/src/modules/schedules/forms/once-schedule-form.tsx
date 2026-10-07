@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
@@ -27,21 +27,24 @@ import {
   onceLocalMoment,
 } from "./once-form-schema.js";
 import { OnceModelField } from "./once-model-field.js";
+import type { ScheduleDraft } from "./schedule-kind-field.js";
 
 interface Props {
-  targetAgentId: string;
+  agentId: string;
   existing?: Schedule;
+  draft?: ScheduleDraft;
+  onDraftChange?: (draft: ScheduleDraft) => void;
   leadingFields?: ReactNode;
   onClose: () => void;
-  onSaved: () => void;
 }
 
 export function OnceScheduleForm({
-  targetAgentId,
+  agentId,
   existing,
+  draft,
+  onDraftChange,
   leadingFields,
   onClose,
-  onSaved,
 }: Props) {
   const createOnce = useCreateOnceSchedule();
   const updateOnce = useUpdateOnceSchedule();
@@ -52,9 +55,17 @@ export function OnceScheduleForm({
   const { control, register, handleSubmit, watch, formState } =
     useForm<OnceFormValues>({
       resolver: zodResolver(onceFormSchema),
-      defaultValues: onceFormDefaults(existing),
+      defaultValues: { ...onceFormDefaults(existing), ...draft },
     });
   const { errors } = formState;
+
+  useEffect(() => {
+    if (!onDraftChange) return;
+    const sub = watch(({ name, task }) =>
+      onDraftChange({ name: name ?? "", task: task ?? "" }),
+    );
+    return () => sub.unsubscribe();
+  }, [watch, onDraftChange]);
   const when = watch("when");
 
   const handleDelete = async () => {
@@ -80,7 +91,6 @@ export function OnceScheduleForm({
             ? `One-time task "${v.name}" scheduled`
             : `One-time task "${v.name}" started`,
       });
-      onSaved();
       onClose();
     };
     const fields = {
@@ -96,7 +106,7 @@ export function OnceScheduleForm({
       );
     } else {
       createOnce.mutate(
-        { agentId: targetAgentId, ...fields, ...(at ? { at } : {}) },
+        { agentId, ...fields, ...(at ? { at } : {}) },
         { onSuccess },
       );
     }
@@ -185,7 +195,7 @@ export function OnceScheduleForm({
         )}
 
         {existing?.inSession !== "continue" && (
-          <OnceModelField agentId={targetAgentId} register={register} />
+          <OnceModelField agentId={agentId} register={register} />
         )}
 
         <FormField label="Prompt" error={errors.task?.message} disableInset>
@@ -218,7 +228,6 @@ export function OnceScheduleForm({
         label={existing ? "Save" : when === "now" ? "Run now" : "Schedule"}
         pendingLabel={existing ? "Saving…" : "Creating…"}
         pending={mutation.isPending}
-        disabled={!targetAgentId}
       />
     </form>
   );

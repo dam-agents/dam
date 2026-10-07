@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { createApiClient, createWsApiClient } from "../../lib/api-client.js";
 import { waitForAgentRunning } from "../../lib/agents.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
+import { bootTimeoutMs, onLaneBackend } from "../../lib/backend.js";
 import { baseUrl } from "../../config.js";
 import { harnessName } from "../../lib/fixtures.js";
 
@@ -120,15 +121,14 @@ async function callTool(
     : [JSON.parse(raw) as { id?: number; result?: unknown }];
   const reply = messages.find((m) => m.id === 2);
   const result = reply?.result as
-    | { content: { text: string }[]; isError?: boolean }
-    | undefined;
+    { content: { text: string }[]; isError?: boolean } | undefined;
   expect(result, raw).toBeDefined();
   expect(result!.isError ?? false, raw).toBe(false);
   return result!.content.map((c) => c.text).join("\n");
 }
 
 test("share a knowledge base and read it over the share-host MCP endpoint", async () => {
-  test.setTimeout(360_000);
+  test.setTimeout(bootTimeoutMs(360_000));
   const token = await getAccessToken();
   const httpApi = createApiClient(token);
   await acceptTerms(httpApi);
@@ -137,11 +137,13 @@ test("share a knowledge base and read it over the share-host MCP endpoint", asyn
   try {
     let agentId = "";
     await test.step("create the knowledge base and seed its wiki", async () => {
-      await api.agents.create.mutate({
-        name: KB_NAME,
-        templateId: harnessName,
-        kbShareRoots: ["wiki"],
-      });
+      await api.agents.create.mutate(
+        onLaneBackend({
+          name: KB_NAME,
+          templateId: harnessName,
+          kbShareRoots: ["wiki"],
+        }),
+      );
       agentId = await waitForAgentRunning(httpApi, KB_NAME);
       await agentFilesMutation(token, agentId, "mkdir", { path: "work/wiki" });
       const write = await agentFilesMutation(token, agentId, "write", {

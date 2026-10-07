@@ -44,6 +44,15 @@ describe("podTerminationReason", () => {
     );
   });
 
+  // TEST_SCENARIO: a guest that stopped answering keeps its agent starting. Its not-ready message is what the UI shows once the start runs long, and it must not read as a crash.
+  it("carries a machine's not-ready message apart from a crash", () => {
+    const infra = parseInfraAgent(
+      agentWith("MachineNotReady", "machine is running"),
+    );
+    expect(infra.podTerminationReason).toBeUndefined();
+    expect(infra.notReadyMessage).toBe("machine is running");
+  });
+
   it("still reports a container agent that was OOM-killed", () => {
     const infra = parseInfraAgent(
       agentWith("OutOfMemory", "out of memory (OOMKilled)"),
@@ -65,6 +74,7 @@ function viewOf(status: Record<string, unknown>) {
       {} as RuntimeFeatures,
       [],
       [],
+      { virtualizationEnabled: false, defaultMounts: [] },
     ),
   );
 }

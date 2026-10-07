@@ -3,6 +3,7 @@ import { z } from "zod";
 const USER_LOOKUP_TIMEOUT_MS = 10_000;
 
 export interface GitHubIdentity {
+  login: string;
   name: string;
   email: string;
 }
@@ -14,7 +15,7 @@ const userSchema = z.object({
   email: z.string().nullable(),
 });
 
-function sanitizeName(name: string): string {
+export function stripControlChars(name: string): string {
   return [...name]
     .filter((c) => {
       const code = c.codePointAt(0) ?? 0;
@@ -25,10 +26,8 @@ function sanitizeName(name: string): string {
 
 export async function resolveGitHubIdentity(
   accessToken: string,
-  opts: { fetchImpl?: typeof fetch } = {},
 ): Promise<GitHubIdentity> {
-  const fetchImpl = opts.fetchImpl ?? fetch;
-  const res = await fetchImpl("https://api.github.com/user", {
+  const res = await fetch("https://api.github.com/user", {
     signal: AbortSignal.timeout(USER_LOOKUP_TIMEOUT_MS),
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -42,7 +41,8 @@ export async function resolveGitHubIdentity(
   }
   const user = userSchema.parse(await res.json());
   return {
-    name: sanitizeName(user.name ?? user.login),
+    login: stripControlChars(user.login),
+    name: stripControlChars(user.name ?? user.login),
     email: user.email ?? `${user.id}+${user.login}@users.noreply.github.com`,
   };
 }

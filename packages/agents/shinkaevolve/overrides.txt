@@ -1,0 +1,3 @@
+# shinka-evolve pins hydra-core==1.3.2; the CVE-2026-68508 floor overrides it
+# on the API-compatible 1.3 line.
+hydra-core>=1.3.4,<1.4

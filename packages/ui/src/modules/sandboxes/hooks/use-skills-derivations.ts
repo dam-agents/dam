@@ -7,8 +7,18 @@ import { repoSlug } from "@/lib/git-source";
 import { publishedDuplicatesBySource } from "../components/skills/published-duplicates.js";
 import type { SaveSetGroup } from "../components/skills/save-skill-set-modal.js";
 import { isDrifted } from "../components/skills/skill-drift.js";
-import { filterByQuery } from "../components/skills/skill-search.js";
 import type { SkillsSurface } from "./use-skills-surface.js";
+
+function filterByQuery<T extends { name: string; description: string }>(
+  items: T[],
+  query: string,
+): T[] {
+  const needle = query.toLowerCase();
+  if (!needle) return items;
+  return items.filter((item) =>
+    `${item.name} ${item.description}`.toLowerCase().includes(needle),
+  );
+}
 
 export interface SkillsDerivations {
   q: string;

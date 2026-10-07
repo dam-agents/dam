@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-09-24
+Last verified: 2026-10-05
 
 ## Overview
 
@@ -16,11 +16,13 @@ Three rules carry the security model:
    every resource the user creates. Per-user credential isolation is the
    `agent-platform.ai/owner` label on the K8s Secret — the controller's selector
    refuses to mount any other owner's Secret into a given owner's gateway pod.
+   An Agent's `secretRef`, whose keys become its environment, is honoured
+   only for a Secret with its owner's label that the platform does not manage.
 3. **Two boundaries, layered.** The agent → gateway hop is gated at the
    *kernel* by per-pair NetworkPolicies at both ends;
    the gateway → api-server hops (harness and ext-authz) are gated at
    the *mesh* by per-Agent Istio AuthorizationPolicies on the
-   gateway pod's SPIFFE principal.
+   gateway pod's SPIFFE principal (not on no-mesh dev clusters).
    The agent pod opts out of ambient mesh (`istio.io/dataplane-mode:
    none`) so the kernel sees real destinations rather than HBONE
    tunnelled to ztunnel; its only admitted intra-cluster destination
@@ -74,8 +76,7 @@ gateway pod only, and the agent pod has no admitted route to TCP 80/443
 other than its paired gateway. Enforcement is layered:
 
 - **Per-pair NetworkPolicies** gate the agent → paired gateway hop
-  at both ends. The agent pod opts out of ambient mesh, so the kernel
-  sees real destination IPs rather than HBONE tunnelled to ztunnel.
+  at both ends.
 - **vm Backend.** Its gates live with the per-owner [VM runner](vm-runner.md).
 - **Agent ingress NetworkPolicy** admits ingress to the agent port only
   from the api-server (ACP/tRPC relay) and the controller (idle-checker
@@ -229,7 +230,9 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   api-server's `/api/oauth/callback` writes the access + refresh token
   pair plus a structured **host list** describing every wire position
   the token should be injected on. The refresh-token loop re-mints
-  access tokens before expiry; the agent never sees the refresh token.
+  access tokens before expiry; the agent never sees the refresh token. A
+  narrowed GitHub sign-in keeps this pair at rest and injects a scoped token
+  made from it ([connections](connections.md)).
   Re-running login and consent against an existing connection replaces its
   tokens in place, keeping the connection's identity and grants. When the
   connection stores the OAuth app's *client* secret itself (rather than
@@ -277,16 +280,14 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   A Connection may additionally **narrow the authority of the token it mints**,
   below what the app installation itself holds — to a chosen set of repositories,
   to a chosen set of permissions, or both. An installation is an
-  organization-wide grant, typically far broader than any one agent's task, and
-  narrowing is how one broadly-installed app backs many least-privilege
+  organization-wide grant, and narrowing is how one broadly-installed app backs many least-privilege
   Connections without a second app per task. GitHub is the arbiter: it refuses
   any request exceeding the installation, so the narrowing can only ever reduce
   authority, never claim it. The chosen subset is **part of the credential's
   stored identity, not a one-time argument** — every renewal and every key
   rotation re-mints against the same subset, so a Connection cannot silently
   widen back to the whole installation between renewals. Narrowing is opt-in:
-  a Connection that names no subset carries the installation's full authority,
-  which is what every Connection made before the capability existed does. Once
+  a Connection that names no subset carries the installation's full authority. Once
   a subset stops being covered — the organization drops a repository from the
   installation, or revokes a permission — renewal is *rejected* rather than
   merely failing, so the Connection reads expired and waits for someone to
@@ -309,6 +310,16 @@ Each connected service produces one K8s Secret per `(owner, connection)`:
   replaces the live one; a subset the installation cannot cover fails the edit
   rather than parking the Connection at its next renewal. Nothing else moves,
   and because the token is read gateway-side the change needs no pod roll.
+- **HMAC key pairs** (S3-compatible storage) — the per-Connection Secret
+  stores the access key ID and secret access key, plus a credentials file
+  baked from them that the gateway's signing step reads. S3 authenticates
+  by signing each request with the secret key, so there is no value to
+  inject: the agent holds a placeholder key ID that names the Connection,
+  and the gateway re-signs its requests with the real pair
+  ([credential-gateway](credential-gateway.md#request-signing)). The pair
+  is proven against the endpoint before it is stored and again at every
+  rotation, and never reaches the agent pod: only the api-server, which
+  proves it, and the gateway, which signs with it, ever hold it.
 
 **Multi-host connections.** A single OAuth connection can inject the
 same token on more than one host with **different auth schemes per
@@ -318,14 +329,15 @@ filter chain per host, stacking entries that share a host, and mounts
 the Secret once. The same list drives the egress allowlist, one rule per
 host and connection, so there is no second source of truth.
 
-GitHub.com is the motivating case ([issue #219](https://github.com/dam-agents/dam/issues/219)):
+GitHub.com is the motivating case:
 the same OAuth token must reach the API host as a bearer token, the git
 host as basic auth carrying the token as a password (so `git clone` of
 private repos works without a credential helper), and the raw-content
 host as a bearer token again.
 
 The Secret also carries the SDS documents Envoy reads, one per injection
-step.
+step — or, for a storage Connection, the credentials file its signing
+step reads.
 
 ## Image pull credentials
 
@@ -393,153 +405,18 @@ must be treated as high-value. The statement audit is best-effort, not enforced
 
 ## Envoy credential injection
 
-The controller renders a per-Agent `Envoy bootstrap ConfigMap` and a
-cert-manager `Certificate` whose Secret holds the leaf TLS material the
-gateway uses to terminate agent egress TLS. The leaf is
-issued by a chart-managed MITM CA whose certificate is mounted into the
-agent — public half only, the key never leaves the gateway pod — so the
-agent's TLS clients trust Envoy's intercept cert.
-
-On the wire:
-
-1. Agent sets `HTTPS_PROXY=http://<agent>-gateway:<envoyPort>`; the
-   per-Agent gateway Service routes to the paired gateway pod. TLS
-   egress arrives as HTTP CONNECT, plain HTTP in absolute form,
-   forwarded without interception.
-2. Envoy's outer listener (bound on `0.0.0.0`, reach gated by
-   NetworkPolicy) stamps the trusted attribution header on every
-   request it forwards, or strips it where no telemetry backend is
-   configured; either way the agent cannot supply its own (see
-   [observability](observability.md)). CONNECT it terminates, routing
-   the inner stream into an internal listener that reads SNI.
-3. Per-host filter chains terminate TLS with the leaf cert, run the
-   credential injector(s) to add the configured header(s) (or rewrite
-   `?<param>=<value>` into the URL — see below), then forward to a
-   per-chain `STRICT_DNS` cluster pinned to the host (explicit upstream
-   SNI, SAN-bound TLS validation). The agent's inner `Host` header has
-   no influence on the upstream destination — the route-confusion
-   exfiltration path is structurally closed. Allow-only chains
-   (path-rule promoted, no
-   credential) keep using the dynamic forward proxy — they have no
-   credential to misroute.
-4. The default chain (SNI miss) does TCP passthrough — the request reaches
-   the upstream unchanged.
-
-**L7 promotion.** An egress rule that narrows a host by path, method, or
-port is invisible to the L4 catch-all (it sees only SNI), so the rule's
-host must be *promoted* onto a TLS-terminating chain to be enforceable
-over HTTPS. The promotion signal is the Agent resource's `l7Hosts` spec
-list — per-agent intent, exactly like connection grants: promoting a host
-on one agent rolls only that agent's gateway, never a sibling's. Promoted hosts get an uncredentialed L7 chain (gate sees
-method/path; nothing is injected) and extend the leaf certificate's SAN
-list.
-
-`l7Hosts` is a pure projection of the agent's active rules: the api-server
-recomputes it from the rule set after every create, edit, and revoke and
-writes it wholesale, so a host is demoted (dropped from interception) as
-soon as its last narrowing rule is gone. A roll follows any change to that
-set and nothing else, so the projection ships in the contract package:
-clients predict an interruption with the server's own rule, not the rule's
-shape. Connection-derived rules are excluded — their host is already
-TLS-terminated by the connection's own credential chain. Because each
-entry is interpolated into the gateway's Envoy bootstrap and cert SANs,
-the CRD constrains list items to DNS hostnames, so a rule host cannot
-inject config into the owner's gateway.
-That projection is a second write to the Agent CR that cannot share a
-transaction with the rule write, so a per-agent periodic reconcile
-re-derives it from the rules — converging a host whose patch failed, or
-whose api-server died between the rule commit and the patch, without
-operator action.
-
-A chain whose host is the telemetry collector's is dropped, logged as a
-warning — the collector's own stamping chain claims that server name, and
-two claiming one is a fatal Envoy config. That host keeps neither
-credential injection nor L7 gating (see
-[observability](observability.md)).
-
-A referenced SDS file missing from the mounted Secret is a fatal Envoy
-boot error, so the controller verifies each credential's SDS key against
-the Secret's data at render time and degrades that host to an allow-only
-chain (logged as a warning) rather than emit an unbootable bootstrap.
-Requests to the host then go out uncredentialed — failing upstream auth
-for that host only — instead of crash-looping the whole gateway. Stale
-Secrets written by since-replaced code paths are the known trigger.
-
-That check covers a credential already known to be bad when the gateway is
-rendered. A credential can also be revoked *after* it — disconnecting a
-connection deletes its Secret, and a gateway roll already in flight can
-carry the reference past the deletion. A Secret mount is mandatory, so
-that pod never starts, and Kubernetes will not replace a pod that is not
-ready with the corrected configuration that follows seconds later: the
-gateway would keep its Service and lose all egress until an operator
-deleted the pod. The controller therefore evicts gateway pods left
-running a configuration it has already superseded, whatever wedged them,
-and names that state on the gateway's readiness condition so it reads as
-a failure being repaired rather than a slow start. Recovery costs a
-normal gateway restart. The race itself is not closed — deletion is not
-atomic with the roll — so the eviction, not the ordering, is what bounds
-the harm.
-
-A host's L7 chain can opt into HTTP/2 so credential injection also covers
-gRPC request streams (e.g. Modal); hosts default to HTTP/1.1 unchanged.
-
-**Non-443 upstreams and streaming.** Per-host injection descriptors can
-carry three more chain-level attributes, motivating case being external
-Kubernetes/OpenShift clusters ([issue #2314](https://github.com/dam-agents/dam/issues/2314)):
-
-- **Upstream port** — the pinned cluster dials the declared port (default
-  443) and the upstream sees a `host:port` authority. Only L7 chains honor
-  ports: the SNI-miss L4 catch-all always dials 443, because a CONNECT's
-  authority port is not recoverable after the tunnel handoff (SNI carries
-  no port). Allow-only (uncredentialed) chains need no pinned port — they
-  forward via the dynamic forward proxy, which honors the inner request's
-  own `Host:port`.
-- **Upgrade tunneling** — chains that opt in tunnel HTTP Upgrade flows
-  (WebSocket, and SPDY/3.1 for older Kubernetes clients) instead of
-  rejecting them, so `kubectl exec` / `port-forward` / `logs -f` work
-  through the credential-injecting path. The credential rides the upgrade
-  request itself and ext_authz gates it once; after the 101 the gateway
-  splices bytes. Such chains also get a long tunnel idle timeout (matching
-  the kubelet's own streaming default) instead of the 5-minute stream
-  default. Upgrade chains stay HTTP/1.1 — upgrades don't survive an
-  HTTP/2 upstream leg.
-- **Private upstream CA** — a connection can carry the upstream's CA
-  bundle in its K8s Secret; the chain validates the upstream handshake
-  against it instead of the system trust store (self-signed cluster CAs),
-  with SAN pinning unchanged. Agent-side trust is unaffected: the agent
-  always trusts the platform MITM CA, never the upstream's.
-
-**Path rewriting.** An injection descriptor can declare path prefix
-rewrites for its host: the chain matches those prefixes ahead of its
-catch-all route and swaps the prefix on the way upstream, leaving every
-other path untouched. Rewriting is a routing-leg concern, after the
-ext_authz Check, so egress rules describe the paths the agent requests.
-Both ends of a rewrite are whole path segments and the gateway drops any
-that are not, so a rewrite cannot reach past what the host's chain
-admits. One prefix carries one replacement: conflicting Secrets keep the
-first and log the loser.
-
-**Multiple injection steps per host.** A single host can carry more than
-one credential — either two different credentials (e.g. an API key and a
-tenant ID on distinct headers) or the same credential injected into both
-a header and a URL query parameter, for upstreams that authenticate off
-the URL. The controller groups Secrets by host into one L7
-chain with an ordered list of credential injectors; a step that targets a
-query parameter has its value moved into the URL instead, percent-encoded,
-and the carrier header never reaches the upstream.
-
-**Two connections claiming one header.** Where two Connections inject one
-header on one host over paths that overlap, the header alone no longer
-says which account to act as. Chains are cut by path scope as well as
-host: a route per scope carries only the injectors whose own scope covers
-it, so one Connection per Google service composes untouched. Where a
-scope is claimed twice, the
-[per-Connection address](connections.md#addressing-a-connection) picks
-one — that Connection's prefix gets a route disabling its rivals on the
-headers it claims, and the prefix is stripped on the way upstream. A
-request naming no Connection is refused there, not served from whichever
-credential sorted first. The gate reads the path with the prefix removed,
-so egress rules and approvals keep naming real paths.
+Upstream credentials exist only gateway-side: the controller mounts the
+owner's Secrets into the paired gateway pod, and Envoy there adds each
+credential to the agent's outbound requests on the wire — injected into a
+header or query parameter, or, for S3-compatible storage, by re-signing
+the request with keys the agent never holds — so the agent pod holds
+placeholders and never Secret bytes. A credentialed host is pinned
+to its upstream, so a request cannot carry a credential to a destination
+of the agent's choosing — the route-confusion exfiltration path is
+structurally closed. The mechanics — L7 promotion, per-host chains,
+injection steps, request signing, path rewriting, addressing between
+Connections, and how a bad Secret degrades rather than wedges the
+gateway — live on [credential-gateway](credential-gateway.md).
 
 ## HITL ext_authz
 
@@ -631,17 +508,17 @@ on opposite sides of the credential boundary, so the threat models
 differ:
 
 - **`platform-migration` ServiceAccount** in the agent namespace — the
-  identity of the one-time storage-migration copy Job, one of three
-  that run as **uid 0** (VM runner, KVM device plugin). It needs root
-  only for the target side of the copy (owning a freshly provisioned
-  volume root, restoring exact file ownership); every read of the agent's
-  data drops to the agent's own uid, so a root-squashing source share
-  never sees uid 0. The SA carries no role bindings and its token is
-  never mounted (`automountServiceAccountToken: false` on both the SA and
-  the pod), so it cannot act against the API; its sole purpose is to
-  scope the OpenShift SCC grant that permits uid 0 to exactly this
-  workload — an ops-side, out-of-band binding. The pod joins no mesh and
-  mounts no credentials.
+  identity of the controller's copy Jobs, run as **uid 0** like
+  the VM runner and KVM device plugin. The storage-migration Job
+  needs root only for the target side of the copy (owning a freshly
+  provisioned volume root, restoring exact file ownership); every read of
+  the agent's data drops to the agent's own uid, so a root-squashing
+  source share never sees uid 0. The
+  [runtime-migration](vm-runner.md#runtime-migration) Job reads the
+  home read-only, as root on block storage, sending it with a one-use seed capability. The SA has no API roles and no mounted token, so it
+  cannot act against the API; it exists only to scope
+  OpenShift SCCs: `anyuid` and a chart SCC (uid 0, DAC_READ_SEARCH)
+  for it. Neither pod joins the mesh.
 - **Image cache ServiceAccount** — no token, no Role: it mounts the
   default pull secrets it preloads with
   ([persistence](vm-image-cache.md)).
@@ -658,7 +535,7 @@ differ:
   the paired gateway pod (`pair=<id>, role=gateway`) on the Envoy
   proxy port. The gateway injects credentials for any caller, so
   `<id>-gateway-ingress` admits that port only from the paired agent
-  pod and, for a vm Agent, the owner's VM runner.
+  pod and, for a machine, the owner's VM runner.
   DNS is not admitted — the agent addresses its gateway by ClusterIP,
   and name resolution for external hosts happens in the gateway, so
   anything in the pod that tries to resolve names directly fails
@@ -701,15 +578,17 @@ the agent runs untrusted code and is held at the kernel layer; the
 gateway is platform-controlled and its identity flows through the
 mesh.
 
-## Dev cluster: SVID rotation resilience
+## Dev cluster
 
-A dev-cluster constraint, not an architectural property. A lima VM that
-sleeps with the host can slip past the mesh's default certificate rotation
-window, expiring workload SVIDs (and cert-manager's webhook cert) and stalling
-every mesh hop — an expired waypoint cert stalls only the flows through that
-waypoint, so it can masquerade as an app-level bug. The local
-`cluster:install` lengthens the workload cert TTL and installs a watchdog that
-rolls affected mesh workloads; `cluster:status` reports the signature and
-`cluster:fix-certs` heals on demand. Symptoms and recovery live in the
-[`cluster-ops`](../../.claude/skills/cluster-ops/SKILL.md) skill. Production
-deployments configure mesh PKI separately and get none of these knobs.
+Dev-cluster constraints, not architectural properties; production gets none of
+these knobs. Recovery lives in the
+[`cluster-ops`](../../.agents/skills/cluster-ops/SKILL.md) skill.
+
+- **SVID rotation.** A lima VM sleeping with its host can outlast the mesh's
+  certificate rotation and stall every mesh hop. The local install lengthens
+  workload certificates and runs a watchdog that rolls stalled workloads.
+- **No mesh, local only.** A kernel without conntrack marks and zones cannot
+  run the ambient dataplane. The local install's no-mesh mode installs Istio's
+  CRDs but no dataplane: every AuthorizationPolicy exists, none is enforced,
+  and any pod can call the harness as any agent. The chart refuses this unless
+  the cluster carries a marker only that mode writes, and the mode refuses CI.

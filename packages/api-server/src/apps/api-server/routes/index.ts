@@ -1,9 +1,6 @@
 import type { Hono } from "hono";
 import type { AuthConfig } from "api-server-api";
-import {
-  composeArtifactLibraryForOwner,
-  createArtifactLibraryRoutes,
-} from "../../../modules/artifact-library/index.js";
+import { createArtifactLibraryRoutes } from "../../../modules/artifact-library/index.js";
 import { createSlackOAuthRoutes } from "../../../modules/channels/infrastructure/slack-oauth.js";
 import {
   createSlackInstallRoutes,
@@ -54,8 +51,9 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
     "/api/oauth",
     createOAuthRoutes({
       db: boot.db,
-      secretStore: boot.secretStores.default(),
+      secretStore: boot.secretStore,
       engine: boot.connectionsBoot.oauthEngine,
+      githubAppEngine: boot.connectionsBoot.githubAppEngine,
       templates: boot.connectionsBoot.templates,
       runtimeMutator: boot.runtimeMutator,
       uiBaseUrl: config.uiBaseUrl,
@@ -69,19 +67,12 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
   app.route(
     "/api/artifact-library",
     createArtifactLibraryRoutes({
-      artifactLibraryFor: (owner, surface) =>
-        composeArtifactLibraryForOwner({
-          db: boot.db,
-          artifacts: boot.artifacts,
-          owner,
-          surface,
-          shareBaseUrl: config.shareBaseUrl,
-        }).artifactLibrary,
+      artifactLibraryFor: boot.artifactLibraryFor,
       artifacts: boot.artifacts,
     }),
   );
 
-  if ((config.slackBotToken && config.slackAppToken) || config.e2eEnabled) {
+  if (config.slackAppToken || config.e2eEnabled) {
     app.route(
       "/api/slack",
       createSlackOAuthRoutes({

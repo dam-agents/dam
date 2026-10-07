@@ -1,4 +1,8 @@
-import type { SessionMode } from "api-server-api";
+import {
+  SESSION_CATEGORIES,
+  type SessionCategory,
+  type SessionMode,
+} from "api-server-api";
 import type { StateCreator } from "zustand";
 
 import {
@@ -12,15 +16,13 @@ import type { PlatformStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import type { SessionFailureKind } from "../../acp/errors.js";
 import { deleteAgentSession } from "../api/acp-session-ops.js";
-import { acpSessionsKeys, removeSessionFromCache } from "../api/queries.js";
+import { acpSessionsKeys } from "../api/keys.js";
+import { removeSessionFromCache } from "../api/queries.js";
 import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
 import { draftWriter, loadDraftSnapshot } from "../lib/draft-snapshot.js";
-import {
-  SESSION_CATEGORIES,
-  type SessionCategory,
-} from "../lib/session-category.js";
+import type { SessionModel } from "../lib/session-model.js";
 
-export const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
+const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
 
 export interface SessionError {
   sessionId: string;
@@ -32,6 +34,7 @@ export interface SessionsSlice {
   sessionMode: SessionMode | null;
   messages: Message[];
   runStarts: string[];
+  sessionModel: SessionModel | null;
   sessionError: SessionError | null;
   sessionFilter: SessionCategory[];
   drafts: Record<string, SessionDraft>;
@@ -52,6 +55,7 @@ export interface SessionsSlice {
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
   addRunStart: (at: string) => void;
+  setSessionModel: (model: SessionModel | null) => void;
   setSessionError: (e: SessionError | null) => void;
   toggleSessionFilter: (category: SessionCategory) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
@@ -112,6 +116,7 @@ export const createSessionsSlice: StateCreator<
   return {
     sessionId: null,
     runStarts: [],
+    sessionModel: null,
     sessionMode: null,
     messages: [],
     sessionError: null,
@@ -140,6 +145,7 @@ export const createSessionsSlice: StateCreator<
         messages: typeof updater === "function" ? updater(s.messages) : updater,
       })),
     setRunStarts: (list) => set({ runStarts: list }),
+    setSessionModel: (model) => set({ sessionModel: model }),
     addRunStart: (at) =>
       set((s) =>
         s.runStarts.includes(at) ? s : { runStarts: [...s.runStarts, at] },
@@ -224,10 +230,12 @@ export const createSessionsSlice: StateCreator<
         sessionMode: null,
         messages: [],
         runStarts: [],
+        sessionModel: null,
         sessionError: null,
         terminalPaused: false,
         openFilePath: null,
         openArtifactId: null,
+        openDelegation: null,
         openFileDirty: false,
         openArtifactDirty: false,
         openFileEdit: false,
@@ -245,12 +253,12 @@ export const createSessionsSlice: StateCreator<
       if (ok === ACTION_FAILED) return false;
       if (get().sessionId === sessionId) get().resetChatContext();
       await queryClient.cancelQueries({
-        queryKey: acpSessionsKeys.agentLists(agentId),
+        queryKey: acpSessionsKeys.agent(agentId),
       });
       removeSessionFromCache(agentId, sessionId);
       get().clearDraft(draftKey(agentId, sessionId));
       queryClient.invalidateQueries({
-        queryKey: acpSessionsKeys.agentLists(agentId),
+        queryKey: acpSessionsKeys.agent(agentId),
       });
       emitToast({ kind: "success", message: "Session deleted" });
       return true;

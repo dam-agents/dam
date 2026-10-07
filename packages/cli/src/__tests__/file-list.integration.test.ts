@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 const exec = promisify(execFile);
 const BIN_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  "../../dist/bin.js",
+  "../../dist/js/bin.js",
 );
 
 describe("dam file list (integration)", () => {

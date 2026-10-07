@@ -10,8 +10,10 @@ add it to the include list in `platform.validate`.
 
 {{- define "platform.validate" -}}
 {{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
+{{- include "platform.validate.harnessToolsScc" . -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
 {{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
+{{- include "platform.validate.vmRunnerReachesOnlyItsResolver" . -}}
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.oneBackingForTheRunnerImages" . -}}
 {{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
@@ -19,6 +21,30 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
+{{- include "platform.validate.unenforcedMeshOnlyOnALocalCluster" . -}}
+{{- end -}}
+
+{{/*
+istio.enforce=false leaves every AuthorizationPolicy rendered and none
+enforced: the api-server trusts the agent ID in a harness URL because the
+waypoint admitted only that agent's principal, so without the mesh any pod
+can act as any agent. That is acceptable on a developer's own cluster whose
+kernel cannot run the ambient dataplane, and nowhere else. The marker is a
+ConfigMap only `mise run cluster:install -- --no-mesh` creates, and that task
+refuses to run under CI. `lookup` finds nothing during an offline render, so
+helm template, a GitOps controller's render and a pipeline's render all fail
+here, and so does an install on any cluster nobody provisioned that way.
+*/}}
+{{- define "platform.validate.unenforcedMeshOnlyOnALocalCluster" -}}
+{{- $enforce := .Values.istio.enforce -}}
+{{- if not (kindIs "bool" $enforce) -}}
+{{- fail (printf "istio.enforce must be true or false, got the %s %q (--set-string and quoted YAML make a string)." (kindOf $enforce) (toString $enforce)) -}}
+{{- end -}}
+{{- if not $enforce -}}
+{{- if not (lookup "v1" "ConfigMap" "kube-system" "platform-local-no-mesh") -}}
+{{- fail "istio.enforce=false is local-only: it leaves every AuthorizationPolicy unenforced, so any pod can call the harness as any agent. The chart accepts it only on a cluster provisioned by `mise run cluster:install -- --no-mesh`, which marks the cluster with the kube-system ConfigMap platform-local-no-mesh. It is refused in an offline render (helm template, GitOps) and on every other cluster." -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -32,12 +58,12 @@ serve. Fail at render instead, where the operator is looking.
 {{- $ghe := dig "enterprise" dict (.Values.github | default dict) -}}
 {{- $named := $ghe.host | default "" | trim -}}
 {{- $fallback := dig "oauthAppDefaults" "githubEnterprise" "host" "" .Values.apiServer | trim -}}
-{{- $secret := ($ghe.tokenSecret | default dict).name | default "" | trim -}}
-{{- if and $named (not $secret) -}}
-{{- fail (printf "github.enterprise.host is %q but github.enterprise.tokenSecret.name is empty. The platform cannot read that host without a token, and the kits on it would be pruned rather than held. Name the secret, or clear the host." $named) -}}
+{{- $token := $ghe.token | default "" | trim -}}
+{{- if and $named (not $token) -}}
+{{- fail (printf "github.enterprise.host is %q but github.enterprise.token is empty. The platform cannot read that host without a token, and the kits on it would be pruned rather than held. Set the token, or clear the host." $named) -}}
 {{- end -}}
-{{- if and $secret (not $named) (not $fallback) -}}
-{{- fail "github.enterprise.tokenSecret.name is set but no enterprise host is. Set github.enterprise.host (or apiServer.oauthAppDefaults.githubEnterprise.host), or clear the secret — a token with no host to send it to reads nothing." -}}
+{{- if and $token (not $named) (not $fallback) -}}
+{{- fail "github.enterprise.token is set but no enterprise host is. Set github.enterprise.host (or apiServer.oauthAppDefaults.githubEnterprise.host), or clear the token — a token with no host to send it to reads nothing." -}}
 {{- end -}}
 {{- end -}}
 
@@ -46,8 +72,19 @@ The anyuid-cap-net RoleBinding is namespaced to `agentNamespace` and
 grants SCC access via the `system:serviceaccounts:<agentNamespace>`
 group. Both are meaningless if `agentNamespace` is empty.
 */}}
+{{- /*
+On OpenShift the harness tools installer runs as uid 0 and spc_t to label the
+node directory for the confined pods that read it, which no SCC the chart
+renders admits.
+*/ -}}
+{{- define "platform.validate.harnessToolsScc" -}}
+{{- if and .Values.openshift.scc.anyuidCapNet.enabled .Values.harnessTools.hostPath (not (.Values.harnessTools.scc | default .Values.virtualization.runner.scc)) -}}
+{{- fail "on OpenShift, harnessTools.hostPath needs harnessTools.scc (or virtualization.runner.scc): an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny), for the installer that runs as uid 0 and spc_t. Without the tools, the harness Templates' default image cannot run." -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "platform.validate.anyuidCapNetRequiresAgentNamespace" -}}
-{{- if and .Values.openshift .Values.openshift.scc .Values.openshift.scc.anyuidCapNet .Values.openshift.scc.anyuidCapNet.enabled -}}
+{{- if .Values.openshift.scc.anyuidCapNet.enabled -}}
 {{- if not (.Values.agentNamespace | default "" | trim) -}}
 {{- fail "openshift.scc.anyuidCapNet.enabled=true requires agentNamespace to be set. The RoleBinding is namespace-scoped and grants SCC access via the system:serviceaccounts:<agentNamespace> group; an empty value makes both meaningless." -}}
 {{- end -}}
@@ -112,6 +149,49 @@ by omission.
 {{- end -}}
 
 {{/*
+A confined runner reaches DNS only at the resolver it uses, because port 53
+open to every address is a two-way channel from an escaped guest to any host
+listening there. Only a runner that caches images on its own claim resolves
+anything, so only it needs one named: the node's resolver by address under
+`Default`, the cluster DNS pods by label under `ClusterFirst`. A resolver
+range of /0 would reopen exactly what this closes. The metadata endpoint is
+link-local on every cloud; the controller subtracts it from any wider entry,
+so an egress entry lying inside link-local can only mean the endpoint itself.
+*/}}
+{{- define "platform.validate.vmRunnerReachesOnlyItsResolver" -}}
+{{- if .Values.virtualization.enabled -}}
+{{- $v := .Values.virtualization -}}
+{{- $r := $v.runner -}}
+{{- $ownCache := and (not ($v.imageCache | default dict).hostPath) (not $r.imageArchiveHostPath) -}}
+{{- if and $r.egressCidrs $ownCache -}}
+{{- if eq ($r.dnsPolicy | default "Default") "ClusterFirst" -}}
+{{- $dns := $r.clusterDns | default dict -}}
+{{- if or (not $dns.namespace) (not $dns.podLabels) -}}
+{{- fail "virtualization.runner.dnsPolicy=ClusterFirst on a runner that caches images on its own claim needs virtualization.runner.clusterDns.namespace and .podLabels — the cluster DNS pods it may resolve through. Without them the runner cannot resolve its registry." -}}
+{{- end -}}
+{{- else if not $r.dnsCidrs -}}
+{{- fail "virtualization.runner.dnsCidrs is required when the runner caches images on its own claim (no imageCache.hostPath, no imageArchiveHostPath) — it resolves its registry through the node's resolver, and the runner may reach only the resolver named here. Set it to the nodes' nameserver (e.g. [169.254.169.253/32] on AWS), or set imageCache.hostPath so runners resolve nothing." -}}
+{{- end -}}
+{{- end -}}
+{{- range ($r.dnsCidrs | default list) -}}
+{{- if hasSuffix "/0" (toString .) -}}
+{{- fail (printf "virtualization.runner.dnsCidrs entry %q admits DNS to every address, which is the channel this list exists to close. Name the nodes' resolver instead." (toString .)) -}}
+{{- end -}}
+{{- end -}}
+{{- range ($r.egressCidrs | default list) -}}
+{{- $parts := splitList "/" (toString .) -}}
+{{- if eq (len $parts) 2 -}}
+{{- $addr := lower (first $parts) -}}
+{{- $bits := atoi (last $parts) -}}
+{{- if or (and (hasPrefix "169.254." $addr) (ge $bits 16)) (and (hasPrefix "fe80:" $addr) (ge $bits 10)) -}}
+{{- fail (printf "virtualization.runner.egressCidrs entry %q lies inside link-local, where every cloud serves the node's metadata endpoint and its credentials. The runner never reaches it; name the resolver there in dnsCidrs if that is what it is." (toString .)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 On OpenShift the chart's own SCC is the only one the runner and the device
 plugin get, and it admits neither a privileged container nor a hostPath
 volume. Without a built-in SCC bound as well, admission refuses the pod and
@@ -165,7 +245,7 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- if .Values.virtualization.enabled -}}
 {{- $v := .Values.virtualization -}}
 {{- $cidr := `^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$` -}}
-{{- range $field := list "egressCidrs" "egressExceptCidrs" -}}
+{{- range $field := list "egressCidrs" "egressExceptCidrs" "dnsCidrs" -}}
 {{- range (index $v.runner $field | default list) -}}
 {{- if not (regexMatch $cidr (toString .)) -}}
 {{- fail (printf "virtualization.runner.%s entry %q is not a CIDR (address/prefix, e.g. 10.128.0.0/14). The controller renders these into the runner's NetworkPolicy, which Kubernetes rejects outright — and an exception it cannot read is dropped, leaving open the range it was meant to close." $field (toString .)) -}}

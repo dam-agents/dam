@@ -1,18 +1,11 @@
 #!/usr/bin/env bash
-#MISE description="Delete the entire k3s cluster (destroys all data). Options: --vm-name=NAME --force"
+#MISE description="Delete the entire k3s cluster (destroys all data). Honors LIMA_INSTANCE."
 #MISE raw=true
+#USAGE flag "--force" help="Skip the confirmation prompt"
 set -eo pipefail
+. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
-LIMA_INSTANCE="platform-k3s"
-FORCE=false
-for arg in "$@"; do
-  case "$arg" in
-    --vm-name=*) LIMA_INSTANCE="${arg#--vm-name=}" ;;
-    --force) FORCE=true ;;
-  esac
-done
-
-if [ "$FORCE" != "true" ]; then
+if [ "${usage_force:-}" != true ]; then
   if [ -n "${IS_SANDBOX:-}" ]; then
     echo "This will stop k3s and delete all cluster data."
   else
@@ -29,11 +22,18 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   if [ -x /usr/local/bin/k3s-uninstall.sh ]; then
     /usr/local/bin/k3s-uninstall.sh
   else
-    sudo pkill -f 'k3s server' || true
-    sudo rm -rf /var/lib/rancher/k3s /etc/rancher/k3s
+    as_root pkill -f 'k3s server' || true
+    as_root rm -rf /var/lib/rancher/k3s /etc/rancher/k3s
   fi
   echo "k3s stopped and its cluster data removed."
 else
   limactl delete --force "$LIMA_INSTANCE" 2>/dev/null || true
+  # The host runner's machines belonged to this cluster's agents. Its smolvm
+  # release, disk templates and image volume are only caches, and stay.
+  . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
+  if [ "$(cat "$HOST_RUNNER_DIR/instance" 2>/dev/null)" = "$LIMA_INSTANCE" ]; then
+    host_runner_stop
+    rm -rf "$HOST_RUNNER_DIR/machines" "$HOST_RUNNER_DIR/Library" "$HOST_RUNNER_DIR/instance"
+  fi
   echo "k3s cluster ($LIMA_INSTANCE) deleted."
 fi

@@ -11,6 +11,13 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
       );
     case "over-budget":
       return `This agent can't start right now: ${c.message}.`;
+    case "migrating":
+      return "This agent is moving to the new runtime — try again in a few minutes.";
+    case "migration-failed":
+      return (
+        "This agent's move to the new runtime failed, and it stays stopped " +
+        "until its owner retries or aborts the move. Contact its owner."
+      );
     case "agent-pod-failed":
       switch (c.terminationReason) {
         case "ImagePullFailure":
@@ -34,6 +41,11 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
           return (
             "This agent failed to start: its sandbox VM didn't boot. " +
             "Check the agent's page or contact its owner."
+          );
+        case "MachineRunnerUnschedulable":
+          return (
+            "This agent failed to start: the cluster has no node that can " +
+            "run its sandbox VMs right now. Tell an admin."
           );
         default:
           return (

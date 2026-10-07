@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useStore } from "../../../store.js";
 import { useSetAgentConnections } from "../../agents/api/mutations.js";
 import { useAgentConnections } from "../../agents/api/queries.js";
+import { useSetPreferredConnection } from "../../connections/api/mutations.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js";
@@ -14,17 +15,13 @@ import { GrantedConnectionsPanel } from "./granted-connections-panel.js";
 interface Props {
   agentId: string;
   oauthReturnView: string;
-  inset?: boolean;
 }
 
-export function ConnectionsSection({
-  agentId,
-  oauthReturnView,
-  inset = false,
-}: Props) {
+export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
   const connectionsQ = useAppConnections();
   const agentConnectionsQ = useAgentConnections(agentId);
   const setConnections = useSetAgentConnections();
+  const setPreferred = useSetPreferredConnection();
   const [catalogOpen, setCatalogOpen] = useState(false);
   const navigateToSandboxHome = useStore((st) => st.navigateToSandboxHome);
   const satellites = useAgentSatellites(agentId);
@@ -33,6 +30,16 @@ export function ConnectionsSection({
     () =>
       new Set(
         agentConnectionsQ.data?.connections.map((c) => c.connectionId) ?? [],
+      ),
+    [agentConnectionsQ.data],
+  );
+  const grants = useMemo(
+    () =>
+      new Map(
+        (agentConnectionsQ.data?.connections ?? []).map((c) => [
+          c.connectionId,
+          { grantedAt: c.grantedAt, preferred: c.preferred },
+        ]),
       ),
     [agentConnectionsQ.data],
   );
@@ -60,7 +67,11 @@ export function ConnectionsSection({
         templateById={templateById}
         onToggleGrant={toggleGrant}
         onOpenCatalog={() => setCatalogOpen(true)}
-        inset={inset}
+        grants={grants}
+        onPreferConnection={(connectionId) =>
+          setPreferred.mutate({ agentId, connectionId })
+        }
+        preferPending={setPreferred.isPending}
         leading={
           satellites.granted.length > 0 && (
             <SatellitesGroupCard

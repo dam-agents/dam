@@ -27,7 +27,7 @@ smolvm = { path = ".smolvm" }
 platform-init = { path = "platform-init" }
 anyhow = "1"
 axum = "0.8"
-axum-server = { version = "0.7", features = ["tls-rustls"] }
+axum-server = { version = "0.8", features = ["tls-rustls"] }
 clap = { version = "4", features = ["derive"] }
 # kill(2) for a VMM that outlived its stop. Already in the lock by way of
 # smolvm, so this adds an edge and no crate.
@@ -40,9 +40,11 @@ tar = "0.4"
 # crypto backends, so rustls cannot choose one itself and the runner installs
 # ring explicitly. Already in the lock by way of smolvm.
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
-# Already in the lock by way of smolvm: a kept disk template is named by the
-# SHA-256 of the compressed one it was expanded from.
-sha2 = "0.10"
+# A kept disk template is named by the SHA-256 of the compressed one it was
+# expanded from. hex spells a digest, which sha2 0.11 no longer formats with
+# `{:x}`. Both are already in the lock by way of smolvm.
+sha2 = "0.11"
+hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "io-util", "time", "sync"] }
@@ -52,13 +54,25 @@ tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
+# Reads a seed upload's body frame by frame, so a home of many GiB is never
+# held in memory. Already in the lock by way of axum.
+http-body-util = "0.1"
+# The seed uploader's client: streamed request bodies over rustls, trusting
+# only the runner's CA. No provider of its own: vm-seed installs ring, as the
+# runner does. futures-util turns the uploader's channel into the body stream.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "stream"] }
+futures-util = { version = "0.3", default-features = false }
+
 [dev-dependencies]
 # Drives the router in-process, the way the controller's client reaches it,
-# without binding a socket. Both are already in the lock by way of axum.
-http-body-util = "0.1"
+# without binding a socket. Already in the lock by way of axum.
 tower = { version = "0.5", features = ["util"] }
 # Backdating a file is how eviction's oldest-write-first order is tested.
 filetime = "0.2"
+# The address a guest reaches its host at, read from smolvm's own network
+# defaults so the controller's copy in contract/guest.json cannot drift from it.
+# In the lock by way of smolvm, so this adds an edge and no crate.
+smolvm-network = { path = ".smolvm/crates/smolvm-network" }
 
 [lints.clippy]
 all = "deny"

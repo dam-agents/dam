@@ -3,6 +3,8 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,7 +28,6 @@ import (
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
-	"github.com/dam-agents/dam/packages/controller/pkg/types"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
@@ -35,38 +36,41 @@ type AgentReconciler struct {
 	dynamic dynamic.Interface
 	config  *config.Config
 
-	budgetMu       sync.Mutex
-	ownerLocks     map[string]*sync.Mutex
-	deniedWakes    map[string]string
-	parkedRetry    map[string]struct{}
-	busyProbe      func(ctx context.Context, agentName string) bool
-	runnerMu       sync.Mutex
-	runners        map[string]runnerConn
-	runnerEndpoint func(owner string) string
-	runnerRollMu   sync.Mutex
-	requeue        func(name string, after time.Duration)
-	lifetime       context.Context
-	podResize      atomic.Int32
-	agentCache     cache.GenericLister
-	vmRunning      sync.Map
-	resizeNotices  sync.Map
-	machineWatchMu sync.Mutex
-	machineWatches map[string]*machineWatch
-	preflightMu    sync.Mutex
-	preflight      vmPreflightResult
-	preflightDone  bool
+	budgetMu        sync.Mutex
+	ownerLocks      map[string]*sync.Mutex
+	deniedWakes     map[string]string
+	parkedRetry     map[string]struct{}
+	busyProbe       func(ctx context.Context, agentName string) bool
+	runnerMu        sync.Mutex
+	runners         map[string]runnerConn
+	runnerEndpoint  func(owner string) string
+	runnerRollMu    sync.Mutex
+	runnerRoll      runnerRollView
+	rollViewTTL     time.Duration
+	requeue         func(name string, after time.Duration)
+	lifetime        context.Context
+	podResize       atomic.Int32
+	agentCache      cache.GenericLister
+	vmRunning       sync.Map
+	vmUsedMiB       sync.Map
+	ownerDemandMiB  sync.Map
+	resizeNotices   sync.Map
+	notReadyPolls   sync.Map
+	claimCapNotices sync.Map
+	ownerless       sync.Map
+	machineWatchMu  sync.Mutex
+	machineWatches  map[string]*machineWatch
+	preflightMu     sync.Mutex
+	preflight       vmPreflightResult
+	preflightDone   bool
+	migrationCopyMu sync.Mutex
 }
 
-func NewAgentReconciler(client kubernetes.Interface, cfg *config.Config) *AgentReconciler {
-	r := &AgentReconciler{client: client, config: cfg}
+func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
+	r := &AgentReconciler{client: client, dynamic: dyn, config: cfg, rollViewTTL: runnerRollViewTTL}
 	r.busyProbe = func(ctx context.Context, name string) bool {
 		return agentPodIsBusy(ctx, r.config.Namespace, name)
 	}
-	return r
-}
-
-func (r *AgentReconciler) WithDynamicClient(d dynamic.Interface) *AgentReconciler {
-	r.dynamic = d
 	return r
 }
 
@@ -82,8 +86,14 @@ func (r *AgentReconciler) WithRequeue(lifetime context.Context, fn func(name str
 	return r
 }
 
-func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) error {
+func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (err error) {
 	name := agent.Name
+	var secretRefused string
+	defer func() {
+		if err == nil && secretRefused != "" {
+			err = r.setError(ctx, name, secretRefused)
+		}
+	}()
 	ownerRef := agentOwnerRef(agent)
 	agentSpec := &agent.Spec
 
@@ -103,7 +113,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("credentials")
 
-	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, agentSpec.TelemetryAttributionID, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
+	bootstrapCM, err := BuildEnvoyBootstrapConfigMap(name, agentSpec.TelemetryAttributionID, agentSpec.IsVM(), r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, agentSpec.RequireConnectionAddress)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
@@ -133,10 +143,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	}
 	timer.mark("extAuthzService")
 
-	if err := r.applyAuthorizationPolicy(ctx, BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
+	if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying harness authz policy: %v", err))
 	}
-	if err := r.applyAuthorizationPolicy(ctx, BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
+	if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz authz policy: %v", err))
 	}
 	timer.mark("authzPolicies")
@@ -145,17 +155,18 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		return r.setError(ctx, name, err.Error())
 	}
 	timer.mark("egressNetworkPolicy")
-	if err := applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, agentSpec.IsVM(), r.config, ownerRef)); err != nil {
+	migration := runtimeMigrationOf(agent.Annotations, agent.Status)
+	if err := applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, agentSpec.IsVM() || migration.vmSideRuns(), r.config, ownerRef)); err != nil {
 		return r.setError(ctx, name, err.Error())
 	}
 	timer.mark("gatewayIngressNetworkPolicy")
 
 	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, r.config.AgentBase.IdleTimeout.AsDuration())
-	running := shouldRun(agent.Annotations, idleTimeout, time.Now().UTC())
+	running := shouldRunMigrating(agent.Annotations, migration, idleTimeout, time.Now().UTC())
 
 	lastActivity := agent.Annotations[annLastActivity]
 	alwaysOn := idleTimeout <= 0
-	autoRetry := alwaysOn || agent.Annotations[annSweepable] == "true"
+	autoRetry := alwaysOn || agent.Annotations[annSweepable] == "true" || migration.keepsUp()
 	overBudget := ""
 	parked := false
 	if running {
@@ -167,7 +178,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 			if err != nil {
 				return fmt.Errorf("agent %s: budget check: %w", name, err)
 			}
-			if refusal != "" {
+			if refusal != "" && !migration.keepsUp() {
 				freed, err := r.reclaimIdleRoom(ctx, agent, owner)
 				if err != nil {
 					return fmt.Errorf("agent %s: reclaiming idle room: %w", name, err)
@@ -217,7 +228,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 
 	rollRev := agent.Annotations[annRollRev]
 
-	gatewaySvc := BuildGatewayService(name, r.config, ownerRef)
+	gatewaySvc := BuildGatewayService(name, agentSpec.IsVM(), r.config, ownerRef)
 	liveGatewaySvc, err := ensureGatewayService(ctx, r.client, gatewaySvc, "agent", name)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("ensuring gateway service: %v", err))
@@ -229,27 +240,61 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		return fmt.Errorf("agent %s: gateway Service ClusterIP not yet assigned, requeuing", name)
 	}
 
-	hardStop := agent.Annotations[annStopRequested] != "" || agent.Annotations[annStorageMigration] != ""
+	hardStop := migration.stopHolds(agent.Annotations) || agent.Annotations[annStorageMigration] != ""
 	var machine vmrunner.MachineStatus
 	var runnerReached bool
+	var migrationVMErr error
+	if migration.requested {
+		if err := r.beginRuntimeMigration(ctx, agent, &migration); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("starting runtime migration: %v", err))
+		}
+	}
 	if agentSpec.IsVM() {
 		if !r.config.VM.Enabled {
 			return r.setError(ctx, name, "vm backend requested but virtualization is disabled in this install (virtualization.enabled)")
 		}
-		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, running)
+		if err := r.prepareRuntimeMigration(ctx, agent, migration); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("preparing runtime migration: %v", err))
+		}
+		if _, refusal, err := r.renderedSpec(ctx, agent); err == nil {
+			secretRefused = refusal
+		}
+		machineRuns := running
+		if !running && !hardStop && !parked && !migration.holdsDown() {
+			if machineRuns, err = r.pairAwake(ctx, name); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("reading gateway statefulset: %v", err))
+			}
+		}
+		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, machineRuns && migration.machineMayRun(), true)
 		if stderrors.Is(err, errLeafSecretPending) || stderrors.Is(err, errRunnerTLSPending) {
+			r.publishCertificateWait(ctx, agent, err)
 			return fmt.Errorf("agent %s: %w, requeuing", name, err)
 		}
 		if err != nil {
-			return r.setError(ctx, name, fmt.Sprintf("reconciling vm machine: %v", err))
+			return r.setMachineError(ctx, agent, err)
 		}
+		r.noteMachineUse(name, machine)
 		timer.mark("vmMachine")
+		if migration.active() {
+			migration.held = runtimeMigrationBootHeld(migration, hardStop, overBudget)
+			if err := r.continueRuntimeMigration(ctx, agent, migration, machine, runnerReached, nil); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
+			}
+		}
 		if machine.Reason == vmrunner.ReasonOutOfCapacity {
 			running, parked, overBudget = false, true, machine.Message
 			r.recordParkedRetry(name)
+			if err := r.reclaimForRefusedStart(ctx, agent, owner); err != nil {
+				return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
+			}
 		}
 	} else {
-		agentSS := BuildAgentStatefulSet(name, agentSpec, r.config, ownerRef, gatewayIP)
+		podSpec, refusal, err := r.renderedSpec(ctx, agent)
+		if err != nil {
+			return r.setError(ctx, name, err.Error())
+		}
+		secretRefused = refusal
+		agentSS := BuildAgentStatefulSet(name, podSpec, r.config, ownerRef, gatewayIP)
 		claims, err := r.resolveWorkspaceClaims(ctx, agent, agentSpec)
 		if err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("resolving warm-pool claims: %v", err))
@@ -257,17 +302,43 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 		timer.mark("workspaceClaims")
 		applyPoolClaims(agentSS, claims)
 		stampRollRev(agentSS, rollRev)
-		if err := r.applyStatefulSet(ctx, agentSS, running); err != nil {
+		if err := r.applyStatefulSet(ctx, agentSS, running && !migration.containerDown()); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
+		}
+		if err := r.forceRollStuckPod(ctx, agentSS.Namespace, agentSS.Name); err != nil {
+			slog.Warn("force-rolling stuck agent pod failed; rollout may be deadlocked",
+				"namespace", agentSS.Namespace, "statefulset", agentSS.Name, "error", err)
+		}
+		if migration.containerDown() {
+			if err := r.stopContainerForRuntimeMigration(ctx, name); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("stopping the container for its runtime migration: %v", err))
+			}
 		}
 		timer.mark("agentStatefulSet")
 		if err := r.applyService(ctx, BuildAgentService(name, r.config, ownerRef)); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
 		}
 		timer.mark("agentService")
+		if migration.active() && migration.phase != apiv1.ReasonRuntimeMigrationFailed && r.requeue != nil {
+			r.requeue(name, runtimeMigrationPoll)
+		}
+		if migration.requested {
+			machine, runnerReached, migrationVMErr = r.reconcileMigrationMachine(ctx, agent, ownerRef, gatewayIP, running && migration.machineMayRun())
+			timer.mark("migrationMachine")
+		}
+		if migration.active() {
+			migration.held = runtimeMigrationBootHeld(migration, hardStop, overBudget)
+			if err := r.continueRuntimeMigration(ctx, agent, migration, machine, runnerReached, migrationVMErr); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
+			}
+		}
 	}
 
-	gatewaySS := BuildGatewayStatefulSet(name, owner, !running, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
+	machineGatewayIP := ""
+	if agentSpec.IsVM() {
+		machineGatewayIP = gatewayIP
+	}
+	gatewaySS := BuildGatewayStatefulSet(name, owner, !running, machineGatewayIP, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, agentSpec.RequireConnectionAddress)
 	stampRollRev(gatewaySS, rollRev)
 	if err := r.applyStatefulSet(ctx, gatewaySS, running); err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))
@@ -311,6 +382,18 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) err
 	return err
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether the idle checker has yet to hibernate the Agent, read off its gateway, which the checker scales to zero with the machine. A lapsed idle timeout alone must not stop a vm machine, as it never scales a container down: only the checker also asks agent-runtime whether it is busy. A gateway at zero whose machine did not stop, because the runner was unreachable, is stopped here on the next reconcile.
+func (r *AgentReconciler) pairAwake(ctx context.Context, name string) (bool, error) {
+	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, GatewayName(name), metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return ss.Spec.Replicas == nil || *ss.Spec.Replicas != 0, nil
+}
+
 func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Agent) error {
 	name := agent.Name
 	agentReady := r.podCurrentAndReady(ctx, name)
@@ -326,7 +409,7 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 	return r.publishReadinessOf(ctx, agent, agentReady, agentFailReason, agentFailMsg, podReadErr == nil, agentRestarts, agentRestartReason)
 }
 
-func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.Agent, agentReady bool, agentFailReason, agentFailMsg string, restartsObserved bool, agentRestarts int32, agentRestartReason string) error {
+func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.Agent, agentReady bool, agentFailReason, agentFailMsg string, restartsObserved bool, agentRestarts int32, agentRestartReason string, also ...func(*apiv1.AgentStatus)) error {
 	name := agent.Name
 	gen := agent.Generation
 	gatewayReady := r.podCurrentAndReady(ctx, GatewayName(name))
@@ -345,6 +428,9 @@ func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.A
 		if restartsObserved {
 			s.AgentPodRestarts = agentRestarts
 			s.AgentPodRestartReason = agentRestartReason
+		}
+		for _, mutate := range also {
+			mutate(s)
 		}
 		s.ObservedGeneration = gen
 	})
@@ -369,7 +455,7 @@ func podStuckOnSupersededRevision(ss *appsv1.StatefulSet, p *corev1.Pod) bool {
 }
 
 func (r *AgentReconciler) gatewayNotReadyCause(ctx context.Context, ssName string) (reason, message string) {
-	pod := r.getPod(ctx, ssName)
+	pod, _ := r.readPod(ctx, ssName)
 	if pod == nil {
 		return "PodNotReady", ""
 	}
@@ -393,17 +479,12 @@ func (r *AgentReconciler) podCurrentAndReady(ctx context.Context, ssName string)
 	if ss.Status.ObservedGeneration != ss.Generation {
 		return false
 	}
-	pod := r.getPod(ctx, ssName)
+	pod, _ := r.readPod(ctx, ssName)
 	if pod == nil {
 		return false
 	}
 	return isPodReady(*pod) &&
 		pod.Labels["controller-revision-hash"] == ss.Status.UpdateRevision
-}
-
-func (r *AgentReconciler) getPod(ctx context.Context, ssName string) *corev1.Pod {
-	pod, _ := r.readPod(ctx, ssName)
-	return pod
 }
 
 func (r *AgentReconciler) readPod(ctx context.Context, ssName string) (*corev1.Pod, error) {
@@ -427,10 +508,8 @@ func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secret
 		if err != nil {
 			return err
 		}
-		for _, ref := range sec.OwnerReferences {
-			if ref.UID == ownerRef.UID {
-				return nil
-			}
+		if slices.ContainsFunc(sec.OwnerReferences, func(ref metav1.OwnerReference) bool { return ref.UID == ownerRef.UID }) {
+			return nil
 		}
 		sec.OwnerReferences = append(sec.OwnerReferences, metav1.OwnerReference{
 			APIVersion: ownerRef.APIVersion,
@@ -443,26 +522,31 @@ func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secret
 	})
 }
 
-func (r *AgentReconciler) Delete(ctx context.Context, name string, labels map[string]string) {
-	// + ext-authz AuthorizationPolicies) cannot use a cross-namespace
+// UNIT_BOUNDARY_DESCRIPTION: cleans up after a deleted Agent. It runs on the controller's delete queue rather than in the informer's handler, because removing a vm agent's machine is a call to its owner's runner that can take seconds or fail outright; an error asks the queue to try again later, and every step is safe to repeat.
+func (r *AgentReconciler) Delete(ctx context.Context, name, owner string) error {
 	r.deleteReleaseNsAgentResources(ctx, name)
 
 	r.deletePVCs(ctx, name)
-	r.deleteMachine(ctx, name, labels[envoyOwnerLabel])
+	if err := r.deleteMachine(ctx, name, owner); err != nil {
+		return err
+	}
 	r.vmRunning.Delete(name)
+	r.notReadyPolls.Delete(name)
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)
 	unresolvedGrants.forget(name)
+	return nil
+}
+
+func AgentOwner(labels map[string]string) string {
+	return labels[envoyOwnerLabel]
 }
 
 func (r *AgentReconciler) deleteReleaseNsAgentResources(ctx context.Context, agentName string) {
 	svcName := r.config.ExtAuthzServiceName(agentName)
 	if err := r.client.CoreV1().Services(r.config.ReleaseNamespace).Delete(ctx, svcName, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 		slog.Warn("deleting per-agent ext-authz Service", "service", svcName, "agent", agentName, "error", err)
-	}
-	if r.dynamic == nil {
-		return
 	}
 	for _, name := range []string{agentName + "-harness-allow", agentName + "-extauthz-allow"} {
 		if err := r.dynamic.Resource(authzPolicyGVR).Namespace(r.config.ReleaseNamespace).
@@ -473,16 +557,18 @@ func (r *AgentReconciler) deleteReleaseNsAgentResources(ctx context.Context, age
 }
 
 func (r *AgentReconciler) deletePVCs(ctx context.Context, agentName string) {
-	pvcs, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx,
-		metav1.ListOptions{LabelSelector: LabelAgent + "=" + agentName},
-	)
-	if err != nil {
-		slog.Warn("listing PVCs for agent", "agent", agentName, "error", err)
-		return
-	}
-	for _, pvc := range pvcs.Items {
-		if err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Delete(ctx, pvc.Name, metav1.DeleteOptions{}); err != nil {
-			slog.Warn("deleting PVC", "pvc", pvc.Name, "agent", agentName, "error", err)
+	for _, selector := range []string{LabelAgent + "=" + agentName, LabelRetainedFor + "=" + agentName} {
+		pvcs, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).List(ctx,
+			metav1.ListOptions{LabelSelector: selector},
+		)
+		if err != nil {
+			slog.Warn("listing PVCs for agent", "agent", agentName, "selector", selector, "error", err)
+			continue
+		}
+		for _, pvc := range pvcs.Items {
+			if err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Delete(ctx, pvc.Name, metav1.DeleteOptions{}); err != nil {
+				slog.Warn("deleting PVC", "pvc", pvc.Name, "agent", agentName, "error", err)
+			}
 		}
 	}
 }
@@ -494,7 +580,7 @@ func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *api
 	persisted := map[string]bool{}
 	for _, mnt := range resolveSpecMounts(agentSpec, defaults) {
 		if mnt.Persist {
-			persisted[types.SanitizeMountName(mnt.Path)] = true
+			persisted[sanitizeMountName(mnt.Path)] = true
 		}
 	}
 
@@ -509,6 +595,9 @@ func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *api
 		return claims, nil
 	}
 	if !errors.IsNotFound(err) {
+		return nil, err
+	}
+	if err := r.refuseOverRetainedVolumes(ctx, name); err != nil {
 		return nil, err
 	}
 
@@ -534,7 +623,7 @@ func (r *AgentReconciler) resolveWorkspaceClaims(ctx context.Context, agent *api
 		if !mnt.Persist {
 			continue
 		}
-		volName := types.SanitizeMountName(mnt.Path)
+		volName := sanitizeMountName(mnt.Path)
 		if _, ok := claims[volName]; ok {
 			continue
 		}
@@ -674,14 +763,8 @@ func agentNameFromLeafSecret(sec corev1.Secret) (string, bool) {
 	if sec.Type != corev1.SecretTypeTLS {
 		return "", false
 	}
-	const suffix = envoyLeafSecretSuffix
-	if len(sec.Name) <= len(suffix) {
-		return "", false
-	}
-	if sec.Name[len(sec.Name)-len(suffix):] != suffix {
-		return "", false
-	}
-	return sec.Name[:len(sec.Name)-len(suffix)], true
+	name, ok := strings.CutSuffix(sec.Name, envoyLeafSecretSuffix)
+	return name, ok && name != ""
 }
 
 func (r *AgentReconciler) setError(ctx context.Context, name, msg string) error {
@@ -794,9 +877,6 @@ var certificateGVR = schema.GroupVersionResource{
 }
 
 func (r *AgentReconciler) applyCertificate(ctx context.Context, desired *cmv1.Certificate) error {
-	if r.dynamic == nil {
-		return fmt.Errorf("dynamic client not configured (cert-manager Certificate cannot be applied)")
-	}
 	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(desired)
 	if err != nil {
 		return fmt.Errorf("encoding Certificate: %w", err)
@@ -804,18 +884,22 @@ func (r *AgentReconciler) applyCertificate(ctx context.Context, desired *cmv1.Ce
 	desiredU := &unstructured.Unstructured{Object: raw}
 	desiredU.SetAPIVersion(cmv1.SchemeGroupVersion.String())
 	desiredU.SetKind("Certificate")
-	cli := r.dynamic.Resource(certificateGVR).Namespace(desired.Namespace)
+	return r.applyUnstructured(ctx, certificateGVR, desiredU)
+}
+
+func (r *AgentReconciler) applyUnstructured(ctx context.Context, gvr schema.GroupVersionResource, desired *unstructured.Unstructured) error {
+	cli := r.dynamic.Resource(gvr).Namespace(desired.GetNamespace())
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
+		existing, err := cli.Get(ctx, desired.GetName(), metav1.GetOptions{})
 		if errors.IsNotFound(err) {
-			_, err = cli.Create(ctx, desiredU, metav1.CreateOptions{})
+			_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
 			return err
 		}
 		if err != nil {
 			return err
 		}
-		desiredU.SetResourceVersion(existing.GetResourceVersion())
-		_, err = cli.Update(ctx, desiredU, metav1.UpdateOptions{})
+		desired.SetResourceVersion(existing.GetResourceVersion())
+		_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
 		return err
 	})
 }

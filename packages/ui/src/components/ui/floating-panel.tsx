@@ -3,6 +3,8 @@ import { cn } from "@/lib/utils";
 export const FLOATING_PANEL =
   "z-popover rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95";
 
+export const TAIL_CORNER_CLEARANCE = 24;
+
 export function FloatingPanelTail({ className }: { className?: string }) {
   return (
     <div

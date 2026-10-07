@@ -1,39 +1,63 @@
 import {
   and,
+  desc,
   eq,
-  isNotNull,
-  like,
-  lt,
   inArray,
+  isNotNull,
+  isNull,
+  lt,
   sql,
   type Db,
   invocations as invocationsTable,
 } from "db";
+import type { InvocationHarnessConfig } from "api-server-api";
 
 export type InvocationStatus = "running" | "done" | "failed";
 
-export interface InvocationRow {
+export type InvocationOrigin = "tool" | "script";
+
+export interface InvocationSpec {
+  label: string | null;
+  prompt: string;
+  templateId: string | null;
+  image: string | null;
+  connections: string[];
+  cpu: string | null;
+  memory: string | null;
+  ttlMs: number | null;
+}
+
+export interface InvocationRow extends InvocationSpec {
   id: string;
   driverAgentId: string;
+  rootDriverId: string;
   owner: string;
   resultSchema: unknown;
   result: unknown;
   status: InvocationStatus;
   errorReason: string | null;
+  createdAt: Date;
   expiresAt: Date;
   completedAt: Date | null;
-  experimentSpanId: string | null;
+  reapedAt: Date | null;
+  transcriptCaptured: boolean;
+  transcriptTruncated: boolean;
+  harnessConfig: InvocationHarnessConfig | null;
 }
 
 export interface InvocationsRepository {
-  insert(input: {
-    id: string;
-    driverAgentId: string;
-    owner: string;
-    resultSchema: unknown;
-    expiresAt: Date;
-    experimentSpanId: string | null;
-  }): Promise<void>;
+  insert(
+    input: InvocationSpec & {
+      id: string;
+      driverAgentId: string;
+      rootDriverId: string;
+      owner: string;
+      resultSchema: unknown;
+      expiresAt: Date;
+      harnessConfig: InvocationHarnessConfig | null;
+      origin?: InvocationOrigin;
+    },
+  ): Promise<void>;
   get(id: string): Promise<InvocationRow | null>;
   complete(id: string, result: unknown): Promise<boolean>;
   fail(id: string, reason: string): Promise<void>;
@@ -41,36 +65,44 @@ export interface InvocationsRepository {
   listRunning(limit: number): Promise<InvocationRow[]>;
   listRunningByDriver(driverAgentId: string): Promise<InvocationRow[]>;
   listRunningAgentIds(olderThan: Date): Promise<string[]>;
-  listAgedTerminal(before: Date, limit: number): Promise<InvocationRow[]>;
-  listByExperiment(
-    driverAgentId: string,
-    experimentId: string,
-    limit: number,
-  ): Promise<InvocationRow[]>;
-  countRunningByDriver(owner: string): Promise<Map<string, number>>;
+  listRootDriverIds(): Promise<string[]>;
+  listTerminalUnreaped(before: Date, limit: number): Promise<InvocationRow[]>;
+  markReaped(id: string): Promise<void>;
+  markTranscriptCaptured(id: string, truncated: boolean): Promise<void>;
+  listByRoot(rootDriverId: string, limit: number): Promise<InvocationRow[]>;
+  listUnreapedByRoot(rootDriverId: string): Promise<InvocationRow[]>;
   listTargetsByOwner(
     owner: string,
   ): Promise<{ driverAgentId: string; targetAgentId: string }[]>;
-  failAllRunningByExperiment(
-    driverAgentId: string,
-    experimentId: string,
-    reason: string,
-  ): Promise<string[]>;
   delete(id: string): Promise<void>;
+  deleteReapedByRoot(rootDriverId: string): Promise<number>;
 }
 
-function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
+export function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
   return {
     id: r.id,
     driverAgentId: r.driverAgentId,
+    rootDriverId: r.rootDriverId,
     owner: r.owner,
+    label: r.label,
+    prompt: r.prompt,
+    templateId: r.templateId,
+    image: r.image,
+    connections: r.connections,
+    cpu: r.cpu,
+    memory: r.memory,
+    ttlMs: r.ttlMs,
     resultSchema: r.resultSchema,
     result: r.result,
     status: r.status as InvocationStatus,
     errorReason: r.errorReason,
+    createdAt: r.createdAt,
     expiresAt: r.expiresAt,
     completedAt: r.completedAt,
-    experimentSpanId: r.experimentSpanId,
+    reapedAt: r.reapedAt,
+    transcriptCaptured: r.transcriptCaptured,
+    transcriptTruncated: r.transcriptTruncated,
+    harnessConfig: r.harnessConfig as InvocationHarnessConfig | null,
   };
 }
 
@@ -80,11 +112,21 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
       await db.insert(invocationsTable).values({
         id: input.id,
         driverAgentId: input.driverAgentId,
+        rootDriverId: input.rootDriverId,
         owner: input.owner,
+        label: input.label,
+        prompt: input.prompt,
+        templateId: input.templateId,
+        image: input.image,
+        connections: input.connections,
+        cpu: input.cpu,
+        memory: input.memory,
+        ttlMs: input.ttlMs,
         resultSchema: input.resultSchema,
         status: "running",
         expiresAt: input.expiresAt,
-        experimentSpanId: input.experimentSpanId,
+        harnessConfig: input.harnessConfig,
+        ...(input.origin ? { origin: input.origin } : {}),
       });
     },
 
@@ -180,13 +222,14 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
       return Array.from(ids);
     },
 
-    async listAgedTerminal(before, limit) {
+    async listTerminalUnreaped(before, limit) {
       const rows = await db
         .select()
         .from(invocationsTable)
         .where(
           and(
             inArray(invocationsTable.status, ["done", "failed"]),
+            isNull(invocationsTable.reapedAt),
             lt(invocationsTable.completedAt, before),
           ),
         )
@@ -194,33 +237,48 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
       return rows.map(toRow);
     },
 
-    async listByExperiment(driverAgentId, experimentId, limit) {
+    async markReaped(id) {
+      await db
+        .update(invocationsTable)
+        .set({ reapedAt: new Date() })
+        .where(eq(invocationsTable.id, id));
+    },
+
+    async markTranscriptCaptured(id, truncated) {
+      await db
+        .update(invocationsTable)
+        .set({ transcriptCaptured: true, transcriptTruncated: truncated })
+        .where(eq(invocationsTable.id, id));
+    },
+
+    async listRootDriverIds() {
+      const rows = await db
+        .selectDistinct({ rootDriverId: invocationsTable.rootDriverId })
+        .from(invocationsTable);
+      return rows.map((r) => r.rootDriverId);
+    },
+
+    async listByRoot(rootDriverId, limit) {
+      const rows = await db
+        .select()
+        .from(invocationsTable)
+        .where(eq(invocationsTable.rootDriverId, rootDriverId))
+        .orderBy(desc(invocationsTable.createdAt))
+        .limit(limit);
+      return rows.reverse().map(toRow);
+    },
+
+    async listUnreapedByRoot(rootDriverId) {
       const rows = await db
         .select()
         .from(invocationsTable)
         .where(
           and(
-            eq(invocationsTable.driverAgentId, driverAgentId),
-            like(invocationsTable.experimentSpanId, `${experimentId}/%`),
+            eq(invocationsTable.rootDriverId, rootDriverId),
+            isNull(invocationsTable.reapedAt),
           ),
-        )
-        .limit(limit);
+        );
       return rows.map(toRow);
-    },
-
-    async failAllRunningByExperiment(driverAgentId, experimentId, reason) {
-      const updated = await db
-        .update(invocationsTable)
-        .set({ status: "failed", errorReason: reason, completedAt: new Date() })
-        .where(
-          and(
-            eq(invocationsTable.driverAgentId, driverAgentId),
-            like(invocationsTable.experimentSpanId, `${experimentId}/%`),
-            eq(invocationsTable.status, "running"),
-          ),
-        )
-        .returning({ id: invocationsTable.id });
-      return updated.map((r) => r.id);
     },
 
     async listTargetsByOwner(owner) {
@@ -230,30 +288,30 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
           targetAgentId: invocationsTable.id,
         })
         .from(invocationsTable)
-        .where(eq(invocationsTable.owner, owner));
-      return rows;
-    },
-
-    async countRunningByDriver(owner) {
-      const rows = await db
-        .select({
-          driverAgentId: invocationsTable.driverAgentId,
-          count: sql<number>`count(*)::int`,
-        })
-        .from(invocationsTable)
         .where(
           and(
             eq(invocationsTable.owner, owner),
-            eq(invocationsTable.status, "running"),
-            isNotNull(invocationsTable.experimentSpanId),
+            isNull(invocationsTable.reapedAt),
           ),
-        )
-        .groupBy(invocationsTable.driverAgentId);
-      return new Map(rows.map((r) => [r.driverAgentId, r.count]));
+        );
+      return rows;
     },
 
     async delete(id) {
       await db.delete(invocationsTable).where(eq(invocationsTable.id, id));
+    },
+
+    async deleteReapedByRoot(rootDriverId) {
+      const deleted = await db
+        .delete(invocationsTable)
+        .where(
+          and(
+            eq(invocationsTable.rootDriverId, rootDriverId),
+            isNotNull(invocationsTable.reapedAt),
+          ),
+        )
+        .returning({ id: invocationsTable.id });
+      return deleted.length;
     },
   };
 }

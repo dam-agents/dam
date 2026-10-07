@@ -1,11 +1,7 @@
 import { Command } from "commander";
 import type { AgentService } from "../agent/index.js";
-import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
-import {
-  createTrpcClient,
-  type TrpcClient,
-} from "../shared/trpc/trpc-client.js";
+import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildCatalogCommand } from "./commands/catalog.js";
 import { buildInstallCommand } from "./commands/install.js";
 import { buildListCommand } from "./commands/list.js";
@@ -21,7 +17,7 @@ import {
 } from "./services/skills-service.js";
 
 export interface SkillModuleOptions {
-  tokenProvider: TokenProvider;
+  buildTrpc: (host: string) => TrpcClient;
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
@@ -33,11 +29,8 @@ export interface SkillModule {
 }
 
 export function composeSkillModule(opts: SkillModuleOptions): SkillModule {
-  const buildTrpc = (host: string): TrpcClient =>
-    createTrpcClient({ host, tokenProvider: opts.tokenProvider });
-
   const createService = (host: string): SkillsService =>
-    createSkillsService({ trpc: buildTrpc(host) });
+    createSkillsService({ trpc: opts.buildTrpc(host) });
 
   const shared = {
     compatService: opts.compatService,

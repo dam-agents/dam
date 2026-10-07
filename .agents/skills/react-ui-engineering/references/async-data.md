@@ -1,328 +1,239 @@
 # Async data (TanStack Query)
 
-**Read when:** fetching data, mutating server state, touching code that talks to the backend, setting up caching/invalidation, configuring the QueryClient.
+**Read when:** fetching or mutating server state, caching/invalidation, configuring the QueryClient.
 
 ## The rule
 
-**[CRITICAL] All server state goes through TanStack Query.** No `useEffect` + `fetch` in components. No manual `useState(loading)` / `useState(error)` / `useState(data)` trios. No Zustand slices holding server lists. If it came from the server or will be sent to the server, it's a `useQuery` or `useMutation`.
+**[CRITICAL] All server state goes through TanStack Query.** No `useEffect` + `fetch` in components, no `useState` loading/error/data trios, no Zustand slices holding server lists. Anything from or to the server is a `useQuery` or `useMutation`.
 
-Why: TQ gives you, for free, all the pieces a hand-rolled `useState`/`useEffect` fetch layer fails at — request deduplication, stale-while-revalidate, invalidation, cache GC, focus refetch, query cancellation, paginated & infinite queries, optimistic updates with rollback, and a single place for cross-cutting error handling.
+Why: TQ provides what hand-rolled fetch layers get wrong: deduplication, stale-while-revalidate, invalidation, cache GC, focus refetch, cancellation, paginated/infinite queries, optimistic updates with rollback, and one place for cross-cutting error handling.
 
-## Setup: `@trpc/react-query`
+## Setup: `@trpc/tanstack-react-query`
 
-**[HIGH]** When the backend is tRPC, integrate via `@trpc/react-query` so tRPC procs become typed TQ hooks directly. No separate fetcher wrapper needed for tRPC calls.
+**[HIGH]** For a tRPC backend, `createTRPCOptionsProxy` turns each procedure into typed `queryOptions` / `mutationOptions` / `queryKey` factories consumed by plain TQ hooks. No fetcher wrapper for tRPC calls.
 
 ```ts
-// src/api/trpc.ts
-import { createTRPCReact } from "@trpc/react-query";
-import type { AppRouter } from "../../server/router";
-export const trpc = createTRPCReact<AppRouter>();
+// src/trpc.ts
+import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
+import type { AppRouter } from "api-server-api";
+import { api } from "./api.js";
+import { queryClient } from "./query-client.js";
+
+export const trpc = createTRPCOptionsProxy<AppRouter>({ client: api, queryClient });
 ```
 
-```tsx
-// src/api/trpc-provider.tsx
-export function TrpcProvider({ children }: { children: ReactNode }) {
-  const [queryClient] = useState(() => buildQueryClient());
-  const [trpcClient] = useState(() =>
-    trpc.createClient({
-      links: [httpBatchLink({ url: "/api/trpc", fetch: authFetch })],
-    }),
-  );
-  return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </trpc.Provider>
-  );
-}
-```
+`api` (`src/api.ts`) is the vanilla `createTRPCClient<AppRouter>` over a `wsLink`; `queryClient` is the app singleton below. Call sites:
 
-Call sites:
 ```ts
-const agents = trpc.agents.list.useQuery();             // typed, cached, invalidatable
-const createAgent = trpc.agents.create.useMutation();   // typed mutation
+const agents = useQuery(trpc.agents.list.queryOptions());
+const createAgent = useMutation(trpc.agents.create.mutationOptions());
 ```
 
-For per-scope tRPC clients (e.g., one client per authenticated entity or per runtime instance), mirror the pattern with a scoped provider that wraps the subtree.
+For per-scope tRPC clients (one per authenticated entity or runtime instance), use a scoped provider around the subtree (`references/api-layer.md`).
 
 ## QueryClient config
 
-**[HIGH]** Centralize defaults in `src/api/query-client.ts`. Inherit from adk-ui:
+**[HIGH]** Centralize defaults in `src/query-client.ts`. That is where "every mutation toasts its error" and "every mutation invalidates its related queries" happen, exactly once:
 
 ```ts
-export function buildQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: {
-        staleTime: 60_000,        // 60s — avoid thrashing on remount
-        gcTime: 24 * 60 * 60_000, // 24h — large cache, cheap
-        retry: (failureCount, error) => {
-          if (isUnauthorized(error)) return false;  // don't retry 401s
-          return failureCount < 3;
-        },
-      },
+export const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error, query) => {
+      const toast = query.meta?.errorToast;
+      if (toast) emitToast({ kind: "warning", message: toast });
     },
-    queryCache: new QueryCache({ onError: handleQueryError }),
-    mutationCache: new MutationCache({
+  }),
+  defaultOptions: {
+    queries: { retry: 3, staleTime: 30_000 },
+    mutations: {
       onSuccess: (_data, _vars, _ctx, mutation) => {
-        const invalidates = mutation.meta?.invalidates;
-        if (Array.isArray(invalidates)) {
-          invalidates.forEach((key) => queryClient.invalidateQueries({ queryKey: key }));
-        }
+        mutation.meta?.invalidates?.forEach((key) =>
+          queryClient.invalidateQueries({ queryKey: key }),
+        );
       },
       onError: (error, _vars, _ctx, mutation) => {
-        handleMutationError(error, mutation.meta?.errorToast);
+        if (mutation.meta?.suppressErrorToast) return;
+        const title = mutation.meta?.errorToast;
+        const detail = getErrorMessage(error, "");
+        emitToast({ kind: "error", message: title && detail ? `${title}: ${detail}` : title || detail || "Action failed" });
       },
-    }),
-  });
-}
+    },
+  },
+});
 ```
 
-This is where "all mutations toast their errors" and "all mutations invalidate their related queries" happens exactly once.
+(The real file also suppresses toasts while the API is reconnecting or terms are stale, and dedupes outage toasts per query.)
 
 ### Typed `meta`
 
-**[HIGH]** Add module augmentation so `meta.invalidates` and `meta.errorToast` are typed:
+**[HIGH]** Module augmentation (in `src/query-client.ts`) types `meta`:
 
 ```ts
-// src/api/trpc-meta.d.ts
-import "@tanstack/react-query";
 declare module "@tanstack/react-query" {
   interface Register {
-    mutationMeta: {
-      invalidates?: readonly unknown[][];
-      errorToast?: { title?: string; includeErrorMessage?: boolean };
-    };
-    queryMeta: {
-      errorToast?: { title?: string; includeErrorMessage?: boolean };
-    };
+    mutationMeta: { invalidates?: QueryKey[]; errorToast?: string; suppressErrorToast?: boolean };
+    queryMeta: { errorToast?: string };
   }
 }
 ```
 
-## Query key factories
+## Query keys
 
-**[CRITICAL] One factory per domain.** No string-literal keys, no duplicated hierarchies. The factory is the single source of truth for every query shape in the domain.
+**[CRITICAL] One source of truth per query shape; no string-literal keys, no duplicated hierarchies.** For tRPC, use the procedure's own `trpc.x.y.queryKey()` / `pathFilter()`. For non-tRPC fetchers, one hierarchical factory per domain:
 
 ```ts
-// src/modules/agents/api/keys.ts
-export const agentKeys = {
-  all: () => ["agents"] as const,
-  list: () => [...agentKeys.all(), "list"] as const,
-  listWithFilter: (filter: string) => [...agentKeys.list(), { filter }] as const,
-  detail: (id: string) => [...agentKeys.all(), "detail", id] as const,
-  access: (id: string) => [...agentKeys.all(), "access", id] as const,
+// src/modules/files/api/keys.ts
+export const fileKeys = {
+  root: (agentId: string) => ["files", agentId] as const,
+  tree: (agentId: string) => [...fileKeys.root(agentId), "tree"] as const,
+  content: (agentId: string, path: string) => [...fileKeys.root(agentId), "content", path] as const,
 };
 ```
 
-Hierarchical keys let you invalidate wide (`agentKeys.all()` — all agent queries) or narrow (`agentKeys.detail(id)` — just this agent). With `@trpc/react-query`, the trpc client auto-generates keys for its procedures — use those for tRPC calls and the factory for non-tRPC fetchers.
+Hierarchy lets you invalidate wide (`fileKeys.root(id)`) or narrow (`fileKeys.content(id, path)`).
 
 ## Query hook pattern
 
-One query per file for discoverability. Name the file after the hook:
+Wrap each query in a named hook in the domain's `api/`:
 
 ```ts
-// src/modules/agents/api/queries/use-agents.ts
-export function useAgents(params?: { filter?: string }) {
-  return trpc.agents.list.useQuery(params ?? {}, {
-    // meta for custom error-toast if the default isn't right
-    meta: { errorToast: { title: "Couldn't load agents" } },
+export function useAgents() {
+  return useQuery({
+    ...trpc.agents.list.queryOptions(),
+    meta: { errorToast: "Couldn't load agents" },
   });
 }
 ```
 
-Component:
+**[HIGH] Use TQ's state directly**, never copied into `useState`:
+
 ```tsx
-const { data, isLoading, error } = useAgents({ filter });
+const { data, isLoading, error } = useAgents();
 if (isLoading) return <Spinner />;
 if (error) return <ErrorMessage error={error} />;
 return <AgentList agents={data ?? []} />;
 ```
 
-### Loading and error UI
-
-**[HIGH] Use TQ's state directly** — don't copy it into `useState`. The standard triad:
-
-```tsx
-if (isLoading) return <Spinner />;      // first-time load
-if (error) return <ErrorMessage ... />;  // failed
-return <List items={data ?? []} />;      // data (or empty)
-```
-
-For background refetches, check `isFetching` vs `isLoading`. `isLoading` is only true on the first fetch; `isFetching` is true for any in-flight refetch. Use `isFetching` for a subtle "refreshing…" indicator, `isLoading` for the big empty-state spinner.
+`isLoading` is true only on the first fetch (big empty-state spinner); `isFetching` on any in-flight refetch (subtle "refreshing…" indicator).
 
 ## Mutation hook pattern
 
 ```ts
-// src/modules/agents/api/mutations/use-create-agent.ts
-interface Options {
-  onSuccess?: (agent: Agent) => void;
-}
-export function useCreateAgent(options: Options = {}) {
-  return trpc.agents.create.useMutation({
+export function useCreateAgent(options: { onSuccess?: (agent: Agent) => void } = {}) {
+  return useMutation({
+    ...trpc.agents.create.mutationOptions(),
     onSuccess: options.onSuccess,
-    meta: {
-      invalidates: [agentKeys.list()],
-      errorToast: { title: "Couldn't create agent", includeErrorMessage: true },
-    },
+    meta: { invalidates: [trpc.agents.list.queryKey()], errorToast: "Couldn't create agent" },
   });
 }
 ```
 
-Component:
 ```tsx
-const createAgent = useCreateAgent({ onSuccess: () => closeDialog() });
-// ...
-<Button onClick={() => createAgent.mutate({ name, model })} disabled={createAgent.isPending}>
-  Create
-</Button>
+const createAgent = useCreateAgent({ onSuccess: closeDialog });
+<Button onClick={() => createAgent.mutate({ name, model })} disabled={createAgent.isPending}>Create</Button>
 ```
+
+Call `mutate` when `onSuccess` handles everything; `mutateAsync` when the submit handler must chain (toast, then close).
 
 ### Invalidation
 
-**[CRITICAL] Use `meta.invalidates`.** Do not call `queryClient.invalidateQueries()` by hand inside `onSuccess` — the MutationCache handler does it centrally for every mutation.
+**[CRITICAL] Use `meta.invalidates`.** Don't call `queryClient.invalidateQueries()` in `onSuccess`; the default mutation handler does it for every mutation. When the key depends on the *response* (a server-returned id), extend the handler to accept `invalidates: (data) => [...]`, or call `invalidateQueries` in the mutation's own `onSuccess`.
 
-If a mutation needs to invalidate something that depends on its *response* (e.g., an id returned by the server), the handler supports functions too — extend the MutationCache `onSuccess` to accept a function form (`invalidates: (data) => [...]`). Or call `queryClient.invalidateQueries` in the mutation's own `onSuccess` when truly dynamic — exception documented with a one-line comment.
+- **Invalidate narrowly.** After an agent create/update/delete, the list key is usually right; invalidate the domain root only when every query in it changed.
 
 ### Optimistic updates
 
-Use TQ's `onMutate`/`onError`/`onSettled` pattern — don't shadow-copy server data into Zustand for optimism.
+Use `onMutate`/`onError`/`onSettled`; never shadow-copy server data into Zustand or `useState`.
 
 ```ts
-return trpc.agents.update.useMutation({
+const detailKey = trpc.agents.get.queryKey({ id });
+return useMutation(trpc.agents.update.mutationOptions({
   onMutate: async (updated) => {
-    await queryClient.cancelQueries({ queryKey: agentKeys.detail(updated.id) });
-    const prev = queryClient.getQueryData(agentKeys.detail(updated.id));
-    queryClient.setQueryData(agentKeys.detail(updated.id), updated);
+    await queryClient.cancelQueries({ queryKey: detailKey });
+    const prev = queryClient.getQueryData(detailKey);
+    queryClient.setQueryData(detailKey, updated);
     return { prev };
   },
-  onError: (_err, updated, ctx) => {
-    if (ctx?.prev) queryClient.setQueryData(agentKeys.detail(updated.id), ctx.prev);
+  onError: (_err, _updated, ctx) => {
+    if (ctx?.prev) queryClient.setQueryData(detailKey, ctx.prev);
   },
-  meta: { invalidates: [agentKeys.detail], errorToast: { title: "Update failed" } },
-});
+  meta: { invalidates: [detailKey], errorToast: "Update failed" },
+}));
 ```
-
-### Mutations returning a mutation call
-
-Inside a form's submit handler, call `mutate` (fire-and-forget) or `mutateAsync` (awaitable). Use `mutateAsync` when the form needs to chain behavior (show toast then close). Use `mutate` when `onSuccess` can handle everything.
 
 ## Non-tRPC fetchers
 
-For endpoints not served by tRPC (e.g., OAuth redirect endpoints, file upload, legacy REST):
+For endpoints outside tRPC (OAuth redirects, uploads, plain REST), write a typed fetcher over `authFetch` (`src/auth.ts`) and wrap it:
 
 ```ts
-// src/modules/connections/api/index.ts
-import { z } from "zod";
-
 const oauthStartResponseSchema = z.object({ redirectUrl: z.string().url() });
 
 export async function startOauth(connectorId: string) {
-  const res = await authFetch(`/api/oauth/start?connector=${connectorId}`);
-  if (!res.ok) throw new ApiError(res);
+  const res = await authFetch(`/api/oauth/start?connector=${encodeURIComponent(connectorId)}`);
+  if (!res.ok) throw new Error(`OAuth start failed: ${res.status}`);
   return oauthStartResponseSchema.parse(await res.json());
 }
-```
 
-Wrap in a mutation hook:
-```ts
 export function useStartOauth() {
   return useMutation({
     mutationFn: startOauth,
-    meta: {
-      invalidates: [connectionKeys.list()],
-      errorToast: { title: "Couldn't start OAuth", includeErrorMessage: true },
-    },
+    meta: { invalidates: [connectionKeys.list()], errorToast: "Couldn't start OAuth" },
   });
 }
 ```
 
-**[HIGH] Zod-validate every non-tRPC response.** tRPC brings its own types end-to-end; raw `fetch` does not — the parser is the only thing standing between a server bug and a runtime crash.
+**[HIGH] Zod-validate every non-tRPC response.** tRPC types end to end; raw `fetch` doesn't, so the parser is the only guard between a server bug and a runtime crash.
 
 ## `useSuspenseQuery`
 
-**[MODERATE] Opt-in.** `useSuspenseQuery` removes the `isLoading` ladder but requires proper `<Suspense>` + `<ErrorBoundary>` wrapping. Default to `useQuery`; reach for suspense queries only in sub-trees already wrapped in the boundaries.
+**[MODERATE] Opt-in.** It removes the `isLoading` ladder but needs `<Suspense>` + `<ErrorBoundary>` around it. Default to `useQuery`; use suspense only in subtrees already wrapped, and pair each with a recoverable error boundary (`useQueryErrorResetBoundary`).
 
-If you use it, pair every suspense query with an error boundary that can recover (reset via `useQueryErrorResetBoundary`).
-
-## Query invalidation hygiene
-
-- **Invalidate narrowly.** `agentKeys.list()` is usually the right level after a create/update/delete of agents. Don't invalidate `agentKeys.all()` unless you actually changed something that affects every agent query.
-- **Don't overlap.** Two mutations invalidating the same key in the same tick still refetch once — TQ dedupes — but your mental model of what each mutation affects should be narrow and explicit.
-- **Tests for invalidation** (future): assert that the mutation's `meta.invalidates` matches the queries the user would see.
-
-## Migration pattern
-
-A fetch-in-component block converts cleanly to a TQ hook:
+## Migration
 
 ```tsx
-// BEFORE
+// before
 const [loading, setLoading] = useState(true);
 const [error, setError] = useState<string | null>(null);
 const [data, setData] = useState<Connection[]>([]);
 useEffect(() => {
   (async () => {
-    try { setData(await api.connections.list()); }
-    catch (e) { setError(toErrorMessage(e)); }
+    try { setData(await api.connections.list.query()); }
+    catch (e) { setError(getErrorMessage(e)); }
     finally { setLoading(false); }
   })();
 }, []);
-```
 
-```tsx
-// AFTER
+// after
 const { data, isLoading, error } = useConnections();
 if (isLoading) return <Spinner />;
 if (error) return <ErrorMessage error={error} />;
 return <ConnectionsList connections={data ?? []} />;
 ```
 
-Where `useConnections` is a `trpc.connections.list.useQuery()` wrapper (or a `useQuery` with a Zod-validated fetcher for non-tRPC endpoints).
+`useConnections` wraps `trpc.connections.list.queryOptions()` (or a `useQuery` over a Zod-validated fetcher).
 
 ## Consuming query and mutation hooks
 
-**[HIGH] Destructure queries. Keep mutations encapsulated.**
+**[HIGH] Destructure queries; keep mutations encapsulated.**
 
-The objects returned by `useQuery` / `useMutation` have a **new identity every render** — they're snapshots of the current state. Their callable fields (`refetch`, `mutate`, `mutateAsync`) are stable refs under the hood, but `react-hooks/exhaustive-deps` can't see that: it flags any access through the object as "you used `query`, put `query` in deps." Putting the object in deps re-invalidates every render and loops the effect.
-
-The rule that avoids both the runtime loop and the lint noise:
+Objects returned by `useQuery`/`useMutation` get a new identity every render. Their callables (`refetch`, `mutate`) are stable, but `react-hooks/exhaustive-deps` can't see that and demands the whole object, which re-fires the effect every render.
 
 ```tsx
-// Query — destructure up top. Deps arrays reference local variables.
-const { data = [], refetch, isFetching, isPending } = useSecrets();
+const { data = [], refetch, isFetching } = useSecrets();
+useEffect(() => { refetch(); }, [refetch]);
 
-useEffect(() => { refetch(); }, [refetch]);   // ✅ exhaustive-deps satisfied
-
-// Mutation — keep encapsulated. Fields are consumed at event handlers,
-// not deps arrays, so the object's per-render identity never bites.
 const updateSecret = useUpdateSecret();
 <button onClick={() => updateSecret.mutate(values)} disabled={updateSecret.isPending}>
 ```
 
-Why the asymmetry:
+Queries yield render values (`data`, `isPending`) and stable callables that belong in deps (`refetch`), so destructure. Mutations fire from event handlers and their state is read inline, so `mutate` rarely lands in deps; `createSecret.mutate(...)` keeps the "this is a mutation" signal.
 
-- Queries produce values the render consumes (`data`, `isPending`) and stable callables that genuinely land in deps (`refetch`). Destructuring makes both flow cleanly.
-- Mutations are almost always fired from event handlers and render state (`isPending`) read inline. Their `mutate` rarely needs to be in deps. Encapsulating them (`createSecret.mutate(...)`) keeps the name signal — you're calling a mutation — without forcing a destructure that most consumers don't benefit from.
-
-**[CRITICAL] Never `eslint-disable react-hooks/exhaustive-deps` to paper over the object-in-deps problem.** If the rule complains, you're putting something non-stable into deps. Destructure the stable field as a local variable and the warning disappears on its own.
+**[CRITICAL] Never `eslint-disable react-hooks/exhaustive-deps` to hide the object-in-deps problem.** Destructure the stable field and the warning disappears.
 
 ```tsx
-❌ // Disabling the rule because "we know refetch is stable":
-   }, [fetchX, fetchY, query.refetch]);
+❌ }, [fetchX, fetchY, query.refetch]);
    // eslint-disable-next-line react-hooks/exhaustive-deps
 
-✅ // Destructure so exhaustive-deps has nothing to complain about:
-   const { refetch } = useXxx();
-   …
+✅ const { refetch } = useXxx();
    }, [fetchX, fetchY, refetch]);
 ```
-
-## Anti-patterns
-
-- **`useEffect` + `fetch`/`tRPC` in a component** — convert to `useQuery`.
-- **`loading/error/saving` useState trio** — let TQ provide them.
-- **String-literal query keys** (`queryKey: ["agents"]`) — use the factory.
-- **Inline `queryClient.invalidateQueries` in `onSuccess`** — use `meta.invalidates`.
-- **Shadow-copying TQ data into local `useState` for optimism** — use `onMutate`.
-- **A Zustand slice holding a server list** — migrate to TQ.
-- **The whole query/mutation object in a deps array** — see "Consuming query and mutation hooks".
-- **`eslint-disable react-hooks/exhaustive-deps` to silence the loop warning** — destructure the stable field instead; the rule exists to catch real bugs.

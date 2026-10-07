@@ -20,7 +20,8 @@ export interface AgentSpecCR {
   /**
    * Backend selects the isolation substrate the agent workload runs on;
    * nil = container. Immutable after create (enforced by the api-server,
-   * the sole spec writer). `vm` runs the agent as a persistent microVM on
+   * the sole spec writer), except that a runtime migration moves a
+   * container agent to `vm`, never back. `vm` runs the agent as a persistent microVM on
    * its owner's VM runner instead of a StatefulSet: the controller
    * drives the runner's machine API, and the agent Service resolves to the
    * machine's published port; the paired gateway is unaffected.
@@ -30,7 +31,17 @@ export interface AgentSpecCR {
     /**
      * VM carries vm-backend props; present only when type == "vm".
      */
-    vm?: {};
+    vm?: {
+      /**
+       * NestedVirtualization asks for this agent's machine to get the node's
+       * virtualization extensions, so the guest can run KVM itself. It takes
+       * effect only on an install with virtualization.runner.nestedVirtualization
+       * and a node whose KVM allows nesting; the NestedVirtualization condition
+       * says whether it did. Other machines on the same runner are unaffected.
+       * Changing it restarts the agent's machine.
+       */
+      nestedVirtualization?: boolean;
+    };
   };
   /**
    * Description is an optional human-readable description.
@@ -56,6 +67,12 @@ export interface AgentSpecCR {
    * controller into the credential set mounted on the gateway.
    */
   grantedSecretIds?: string[];
+  /**
+   * Harness names the harness the agent image runs (claude-code, codex,
+   * pi, bob, mock). One image serves every harness, and the agent reads
+   * this as PLATFORM_HARNESS; empty leaves the image's own default.
+   */
+  harness?: string;
   /**
    * HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
    */
@@ -134,6 +151,15 @@ export interface AgentSpecCR {
   nodeSelector?: {
     [k: string]: string;
   };
+  /**
+   * RequireConnectionAddress makes the agent's gateway inject a Connection's
+   * credential only into a request that names that Connection, by its token
+   * placeholder or its path prefix. Every other request goes upstream with
+   * the credential it already carries. For an agent that runs a nested
+   * platform, whose own gateways send credentials the outer gateway must
+   * not replace.
+   */
+  requireConnectionAddress?: boolean;
   /**
    * Resources are the agent container's resource requests and limits.
    */

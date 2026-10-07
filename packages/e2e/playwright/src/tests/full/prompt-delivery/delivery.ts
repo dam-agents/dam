@@ -5,15 +5,16 @@ import {
   AGENT_UP,
   agentCardStatus,
   chatInput,
-  ensureAgentExists,
+  ensureAgentRunning,
   gotoAgentChat,
+  openAgentChat,
+  sendMessageToAgent,
   setMockAgentReply,
-  waitForAgentRunning,
 } from "../../../lib/agents.js";
 import type { ApiClient } from "../../../lib/api-client.js";
 import { acceptTerms, loginViaUi } from "../../../lib/auth.js";
 import { baseUrl } from "../../../config.js";
-import { harnessName } from "../../../lib/fixtures.js";
+import { mockDefaultReply } from "../../../lib/fixtures.js";
 
 const agentName = "e2e-delivery";
 
@@ -29,8 +30,6 @@ export const LONG_TURN_MS = DELIVERY_TIMEOUT_MS + 15_000;
  * deployed window would see prompts still parked and read as a regression.
  */
 export const QUEUE_PARK_MS = 8_000;
-
-const MOCK_DEFAULT_REPLY = "Hello from the mock agent.";
 
 export function queuedIndicator(page: Page): Locator {
   return page.getByTestId("prompt-queued-indicator");
@@ -79,13 +78,9 @@ export async function openMockAgentChat(
   api: ApiClient,
 ): Promise<string> {
   await acceptTerms(api);
-  await ensureAgentExists(api, agentName, harnessName);
-  const agentId = await waitForAgentRunning(api, agentName);
+  const agentId = await ensureAgentRunning(api, agentName);
   await loginViaUi(page);
-  await page.goto(baseUrl);
-  await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible();
-  await gotoAgentChat(page, agentName, agentId);
-  await expect(chatInput(page)).toBeVisible();
+  await openAgentChat(page, agentName, agentId);
   return agentId;
 }
 
@@ -93,15 +88,12 @@ export async function restoreMockDefaultReply(
   api: ApiClient,
   agentId: string,
 ): Promise<void> {
-  await setMockAgentReply(api, agentId, MOCK_DEFAULT_REPLY);
+  await setMockAgentReply(api, agentId, mockDefaultReply);
 }
 
 export async function sendPrompt(page: Page, text: string): Promise<void> {
-  const input = chatInput(page);
-  await expect(input).toBeVisible();
-  await input.fill(text);
-  await input.press("Enter");
-  await expect(input).toHaveValue("");
+  await sendMessageToAgent(page, text);
+  await expect(chatInput(page)).toHaveValue("");
 }
 
 const PNG_2X2_RED = Buffer.from(

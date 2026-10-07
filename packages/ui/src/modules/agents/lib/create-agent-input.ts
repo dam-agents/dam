@@ -46,9 +46,10 @@ export interface CodingAgentSetupDraft {
   registryCredential: RegistryCredential;
   hibernationTimeoutMin: number | null;
   vm: boolean;
+  requireConnectionAddress?: boolean;
 }
 
-export function setupUsesCustomImage(draft: CodingAgentSetupDraft): boolean {
+function setupUsesCustomImage(draft: CodingAgentSetupDraft): boolean {
   return draft.customImage.trim().length > 0;
 }
 
@@ -89,6 +90,9 @@ export function buildCodingAgentSetupInput(
     ...(draft.hibernationTimeoutMin === null
       ? {}
       : { hibernationTimeoutMin: draft.hibernationTimeoutMin }),
+    ...(draft.requireConnectionAddress
+      ? { requireConnectionAddress: true }
+      : {}),
     ...(image ? { image } : { templateId: draft.templateId! }),
     appConnectionIds: [
       ...new Set([...draft.connectionIds, draft.providerRef!.id]),

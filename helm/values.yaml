@@ -58,6 +58,10 @@ links:
   # form, or ticket queue. Complete URL. Empty string uses the UI's bundled
   # default, which is install-specific and slated for removal — set this.
   computeRequest: ""
+  # Where "Request it" on the Slack setup surfaces points — the form people
+  # use to ask for the Slack app in a workspace that does not have it yet.
+  # Complete URL. Empty string hides that line; there is no bundled default.
+  slackInstallRequest: ""
 
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
@@ -134,8 +138,9 @@ probes:
 # -- Istio ambient mesh settings. Istio is a hard prerequisite of
 # this chart — `validate-istio.yaml` fails install if the mesh is missing.
 # `mise run cluster:install` provisions Istio out-of-band (mirroring how
-# cert-manager is treated). There is no `enabled: false` mode; an
-# unauthenticated harness port is not a supported configuration.
+# cert-manager is treated). There is no `enabled: false` mode for a real
+# deployment; an unauthenticated harness port is not a supported
+# configuration. The one exception is the local-only `enforce` below.
 istio:
   # SPIFFE trust domain. Default for an istioctl ambient install.
   trustDomain: cluster.local
@@ -143,6 +148,14 @@ istio:
   # Service. Istio's mesh-controller synthesises the waypoint Deployment
   # + Pod from the Gateway resource declared in apiserver/waypoint.yaml.
   waypointName: apiserver-waypoint
+  # LOCAL-ONLY. `false` renders every AuthorizationPolicy but puts no
+  # workload in the mesh, so nothing enforces them: no mTLS, and any pod can
+  # call the harness and ext-authz ports as any agent. It exists for local
+  # clusters whose kernel cannot run the ambient dataplane. The chart refuses
+  # it unless the cluster carries the marker only `mise run cluster:install
+  # -- --no-mesh` creates, which that task refuses to do under CI — so an
+  # offline render (helm template, GitOps) and any real cluster fail.
+  enforce: true
 
 # -- The vm backend (`backend.type: vm`, chosen per agent at create): the agent runs as a
 # persistent microVM (smolvm) instead of as a pod, hosted by the **VM
@@ -192,8 +205,10 @@ virtualization:
     # runner needs and nothing else: uid 0, NET_ADMIN for the per-machine
     # NAT, DAC_OVERRIDE so its VMMs can read the image files a guest is
     # served even where the image keeps them from root, and — only when the
-    # runner caches images on its own claim — CHOWN + FOWNER so it can
-    # restore each file's owner and mode as it unpacks. Set this only where
+    # runner caches images on its own claim — CHOWN + FOWNER + FSETID so it
+    # can restore each file's owner and mode, setgid bits included, as it
+    # unpacks. The runner drops every other capability, cannot escalate, and
+    # runs under the runtime/default seccomp profile. Set this only where
     # that SCC is off, or where the runner needs a shape it refuses: the
     # hostPath that `imageCache.hostPath` or `imageArchiveHostPath` mounts.
     # With `imageCache.hostPath` the same SCC also admits the node image
@@ -230,12 +245,13 @@ virtualization:
     # REQUIRED when virtualization.enabled — the install fails without
     # limits.memory. Machines are processes of this pod, so that limit is also
     # what the runner admits them against (it refuses one that does not fit,
-    # keeping `reserveMiB` for itself). `requests.memory` is the floor: the
-    # controller raises the running pod's memory request, in place, to the
-    # memory of the owner's machines that should be running plus
-    # `reserveMiB`, up to the limit, and lowers it again as they stop — so
-    # the scheduler sees what the runner has committed and an idle owner's
-    # headroom stays the node's to lend. Set it below the limit for that to
+    # keeping `reserveMiB` for itself). A running machine counts at what its
+    # guest measurably uses plus `headroomMiB`, never above its size, so an
+    # owner can run more machines than their sizes add up to; near the limit
+    # the controller hibernates the owner's idle agents. `requests.memory` is
+    # the floor: the controller keeps the running pod's memory request, in
+    # place, at that count plus `reserveMiB`, up to the limit, so the
+    # scheduler reserves what guests use. Set it below the limit for that to
     # happen; with no request Kubernetes uses the limit and nothing moves.
     # It needs in-place pod resize (the `pods/resize` subresource,
     # Kubernetes 1.33+); on an older cluster the request stays where it is
@@ -245,6 +261,20 @@ virtualization:
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
+    # Memory each running machine is counted at beyond what it was last
+    # measured using, for its guest to grow into before the controller acts.
+    headroomMiB: 256
+    # true = runners may give the node's virtualization extensions to the
+    # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization),
+    # so that guest can run KVM itself — e.g. a vm agent that hosts its own
+    # vm-backend install. Every other machine boots without them. A runner
+    # nests only where the node's KVM allows it, which is the kernel default
+    # (kvm_intel and kvm_amd `nested=1`) and needs a module reload to change,
+    # so this value is the install's switch. A nesting guest reaches the host
+    # kernel's nested-virtualization code, which has had guest-to-host
+    # escapes. Changing this value rolls every runner, which reboots its
+    # owner's machines; an Agent changing its ask restarts only its own.
+    nestedVirtualization: false
     # Machines are processes of their runner, so any change to the runner pod
     # — a new `image`, or a controller release that renders the pod
     # differently — reboots every machine that owner has. The controller rolls
@@ -267,6 +297,14 @@ virtualization:
     # runners their agent image; empty means runners fetch images from the
     # registry.
     imageArchiveHostPath: ""
+    # Local dev on macOS only. Set, the controller creates no runner pods:
+    # every vm machine, whatever its owner, runs on one vm-runner process on
+    # the host, which uses the host's own hypervisor instead of one nested in
+    # the cluster's VM. This is the address pods reach that host at (lima:
+    # 192.168.5.2). The chart renders that runner's token Secret and serving
+    # certificate; `mise run cluster:install` starts it. There is no per-owner
+    # boundary: one owner's escaped guest reaches every owner's machines.
+    hostAddress: ""
     # How the runner resolves the registry it fetches agent images from.
     # `Default` is the node's resolver: the right answer whenever
     # egressExceptCidrs confines this pod away from Service and pod addresses,
@@ -276,6 +314,32 @@ virtualization:
     # lives inside the cluster and whose excepts leave that range reachable;
     # it resolves Service names and loses nothing, since nothing is blocked.
     dnsPolicy: Default
+    # Where the runner may send DNS once egressCidrs confines it. Only a
+    # runner that caches images on its own claim (no `imageCache.hostPath`,
+    # no `imageArchiveHostPath`) resolves anything — its registry — so only
+    # that runner gets DNS at all; one on the node cache or on staged images
+    # reaches no resolver whatsoever. DNS open to every address would be a
+    # two-way channel from an escaped guest to any host listening on 53, so
+    # the runner reaches only the resolver it uses, on UDP and TCP (TCP for
+    # answers too large for one datagram):
+    # - `dnsPolicy: Default` — the node's resolver, at the addresses listed
+    #   here: the first `nameserver` of the nodes' /etc/resolv.conf (e.g. the
+    #   VPC resolver, `169.254.169.253/32` on AWS). REQUIRED in that case —
+    #   the install fails without it, and /0 is refused.
+    # - `dnsPolicy: ClusterFirst` — the cluster DNS pods `clusterDns` selects,
+    #   on their own ports: policy is applied after the DNS Service address
+    #   is translated to a pod, so the pods are named, not the Service.
+    #   OpenShift: namespace `openshift-dns`, podLabels
+    #   `dns.operator.openshift.io/daemonset-dns: default`, ports [5353].
+    # A resolver still recurses for whatever name it is asked, so a runner
+    # that resolves at all keeps that one narrow channel; the node cache
+    # (`imageCache.hostPath`) closes it.
+    dnsCidrs: []
+    clusterDns:
+      namespace: kube-system
+      podLabels:
+        k8s-app: kube-dns
+      ports: [53]
     # Where the runner pod itself may send traffic. REQUIRED when
     # virtualization.enabled — the install fails without it, because leaving
     # it empty means no policy at all, and that is the weakest point of this
@@ -283,8 +347,9 @@ virtualization:
     # very process an escaped guest would own, so with no kernel gate behind
     # it such a guest reaches the platform's datastores (each gateway's own
     # ingress policy still keeps it off other owners' gateways). Set this and
-    # the runner is confined to DNS, its owner's gateways (on their proxy
-    # port), and these CIDRs.
+    # the runner is confined to its owner's gateways (on their proxy port),
+    # these CIDRs, and — only if it resolves names — its resolver
+    # (`dnsCidrs` above).
     # It cannot default to closed because the runner also pulls agent images,
     # so the registry has to be named.
     # A CIDR here matches in-cluster addresses too, so `0.0.0.0/0` on its own
@@ -294,6 +359,10 @@ virtualization:
     #   egressExceptCidrs: ["10.128.0.0/14", "172.30.0.0/16", "169.254.0.0/16"]
     # pods, Services, and link-local — the node's metadata endpoint lives there
     # on every cloud and is the classic way out of a sandbox with credentials.
+    # The controller subtracts the metadata ranges (169.254.0.0/16,
+    # 100.100.100.200/32, fe80::/10, fd00:ec2::254/128) from every entry that
+    # contains one even when they are left out here, and the chart refuses an
+    # entry inside link-local.
     # On OpenShift the internal registry is a Service address, so excepting the
     # Service range blocks pulls from it: name that registry in egressCidrs and
     # leave its range out of egressExceptCidrs, then set `dnsPolicy: ClusterFirst`
@@ -313,6 +382,23 @@ virtualization:
     # API server's Service address or its own pod address with no exception
     # covering it.
     egressExceptCidrs: []
+  # Moving a container agent onto a machine (the Migrate button). Once the
+  # machine has booted from the copy, the home volume the copy was read from is
+  # kept for `retention` (a Go duration) rather than deleted, so an operator can
+  # still recover the agent's pre-migration work. A kept volume carries the
+  # label `agent-platform.ai/retained-for=<agent>` and the annotations
+  # `agent-platform.ai/retained-until` (edit it to keep the volume longer) and
+  # `agent-platform.ai/retained-mount` (the path it held). Nothing mounts it;
+  # the controller deletes it when the window passes or the agent is deleted.
+  # The api-server reads the same value to name the window in the Migrate
+  # dialog.
+  # `concurrency` caps the copy Jobs running at once in the install and
+  # `ownerConcurrency` those of one owner, whose copies all land on the same
+  # runner claim; a migration past either cap waits, and says so on the Agent.
+  runtimeMigration:
+    retention: 168h
+    concurrency: 10
+    ownerConcurrency: 1
   # The CA the controller trusts a runner's serving certificate by. It is the
   # runners' own and signs nothing else: the envoyMitm CA signs gateway leaves
   # for hostnames taken from users' credential hosts, so a leaf naming a
@@ -362,10 +448,13 @@ virtualization:
   # Runners hold the trees their machines boot by naming them to the service
   # every minute; eviction never takes a held tree. An entry fetched with
   # credentials that an anonymous read cannot reach is served only to a runner
-  # whose forwarded credentials read the image's manifest, so naming a
-  # reference is not enough to borrow another owner's private image. The
-  # service keeps that knowledge in memory, so after it restarts each such
-  # entry is checked against the registry again.
+  # whose forwarded credentials read the image's manifest in a repository the
+  # entry was fetched from, so naming a digest, under any registry, is not
+  # enough to borrow another owner's private image. The service keeps what is
+  # public in memory, so after it restarts each such entry is checked against
+  # the registry again. The service runs with every capability dropped but
+  # the four an unpack needs — CHOWN, FOWNER, FSETID and DAC_OVERRIDE — so an
+  # SCC named in `runner.scc` must admit FSETID too.
   #
   # `budget` is what the cached images may occupy, evicting least-recently-
   # written first so a tag per deploy does not fill the disk. It is a byte
@@ -572,7 +661,7 @@ seaweedfs:
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
   podAnnotations: {}
-  image: docker.io/chrislusf/seaweedfs:4.39
+  image: mirror.gcr.io/chrislusf/seaweedfs:4.48
   # -- S3 identity of the api-server. Secret key auto-generated on first
   # install if null, persisted across upgrades in a Secret.
   accessKeyId: platform
@@ -590,8 +679,8 @@ seaweedfs:
       cpu: 500m
       memory: 1Gi
 
-# -- Agent-telemetry backend (ClickStack). Off by default. Requires the clickstack-operators
-# chart installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.
+# -- Agent-telemetry backend (ClickStack). Off by default. Requires the ClickHouse and MongoDB
+# operator charts installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.
 # Keys other than `enabled`/`collector` are forwarded to the clickstack subchart.
 clickstack:
   enabled: false
@@ -603,7 +692,7 @@ clickstack:
     podAnnotations: {}
     # Mirror of otel/opentelemetry-collector-contrib. Registered in
     # .mise/tasks/image/mirror, which CI runs on every main push.
-    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.160.0
+    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.161.0
     # Retention for the otel_* tables, matching the ClickStack bundled collector's
     # default. Only applied when the exporter creates the tables — changing it later
     # requires ALTER TABLE ... MODIFY TTL by hand.
@@ -634,9 +723,9 @@ clickstack:
     deployment:
       image:
         repository: quay.io/dam-agents/hyperdx
-        tag: "2.27.0"
+        tag: "2.39.1"
       waitForMongodb:
-        image: "quay.io/dam-agents/busybox:1.37.0"
+        image: "quay.io/dam-agents/busybox:1.38.0"
 
   clickhouse:
     # Without an explicit image the operator injects its built-in default
@@ -647,13 +736,13 @@ clickstack:
         containerTemplate:
           image:
             repository: quay.io/dam-agents/clickhouse-keeper
-            tag: "25.7-alpine"
+            tag: "26.8-alpine"
     cluster:
       spec:
         containerTemplate:
           image:
             repository: quay.io/dam-agents/clickhouse-server
-            tag: "25.7-alpine"
+            tag: "26.8-alpine"
         dataVolumeClaimSpec:
           resources:
             requests:
@@ -668,7 +757,7 @@ keycloak:
   podAnnotations: {}
   # The Keycloak image is a first-party build that bakes the
   # Keycloakify theme JAR on top of upstream Keycloak. The upstream
-  # version is pinned in `packages/keycloak-theme/Dockerfile`.
+  # version is pinned in the keycloak-theme package's `oci` task.
   # In published charts CI replaces the empty tag with the image's content
   # tag (the commit that last touched its inputs — see cd.yml `publish`),
   # so a release that doesn't change the image doesn't roll the pod.
@@ -677,7 +766,7 @@ keycloak:
     repository: quay.io/dam-agents/keycloak
     tag: "" # @ci-pin keycloak-image-tag
     pullPolicy: IfNotPresent
-  configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.4
+  configCliImage: quay.io/adorsys/keycloak-config-cli:latest-26.5.5
   port: 8080
 
   # -- Additional Keycloak server features. The chart always enables a required
@@ -685,6 +774,8 @@ keycloak:
   # `admin-fine-grained-authz:v1` — and appends these to it, rendered into the
   # single `--features=` arg (a second `--features` would override, not merge).
   # List only extras here, e.g. `opentelemetry-logs` to enable OTLP log export.
+  # The image is pre-built for the base alone, so with any extra Keycloak
+  # re-runs its build at every start, which takes about 25 seconds.
   extraFeatures: []
 
   # -- Admin credentials (for Keycloak admin console)
@@ -708,15 +799,14 @@ keycloak:
   # upstream group to the `inspectors` group. Set to empty string to disable
   # usage-data access entirely (the endpoint will not be mounted).
   inspectorRole: "platform-inspector"
-  # -- Realm role required to connect another Slack workspace. Connecting a
+  # -- Realm role required to connect a Slack workspace. Connecting a
   # workspace is install-wide, not per-Agent, so it is an operator action
   # rather than something any user may start. The chart auto-creates this role
   # plus a `slack-installers` group mapped to it; grant access by adding users
   # to the group via the Keycloak admin UI. Holders also see the Slack
   # workspaces tab in Settings — it is hidden from everyone else. Leave empty
-  # to disable the install surface entirely (neither route is mounted) — the
-  # workspace the operator's `slackBotToken` was issued for keeps working
-  # either way.
+  # to disable the install surface entirely (neither route is mounted);
+  # workspaces already connected keep working either way.
   slackInstallerRole: "platform-slack-installer"
   # -- Confidential client for API server
   apiClientId: platform-api
@@ -934,21 +1024,34 @@ apiServer:
   # call this port; the handler reads whichever attributes are populated.
   # Cluster-internal only; never routed via ingress.
   extAuthzPort: 4002
-  # -- Slack bot token (xoxb-...) for the platform-wide Slack app. Leave empty to disable Slack integration.
+  # -- Legacy: the bot token (xoxb-...) of the app's own workspace, from installs
+  # set up before workspaces connected through the install flow. Never served:
+  # at boot it is imported into that workspace's K8s Secret and the channel
+  # bindings made back then are moved onto that workspace. Remove it once it
+  # has been imported; leave empty on a new install.
   slackBotToken: ""
-  # -- Slack app-level token (xapp-...) for Socket Mode. Required alongside slackBotToken.
+  # -- Slack app-level token (xapp-...) for Socket Mode. Setting it enables
+  # Slack; every workspace, the app's own included, then connects through the
+  # install flow and keeps its bot token in a K8s Secret.
   slackAppToken: ""
-  # -- Slack app credentials (Basic Information -> App Credentials). Needed only
-  # to install the app into further workspaces: Slack hands the bot token over
-  # by copy-paste for the app's own workspace alone, and every other workspace
-  # must complete the OAuth exchange, which is what these sign. Leave empty to
-  # keep the install single-workspace — `slackBotToken` still serves it.
-  # The app must have public distribution activated and
-  # `<urls.ui>/api/slack/install/callback` registered as a redirect URL. That
-  # URL is only ever fetched by the installing admin's browser, so it does not
-  # need to be reachable from the internet.
+  # -- Slack app credentials (Basic Information -> App Credentials). The install
+  # flow signs its exchange with them, and token rotation its refreshes, so
+  # Slack needs them to connect any workspace. The app must have
+  # `<urls.ui>/api/slack/install/callback` registered as a redirect URL, and
+  # public distribution activated to connect workspaces other than its own.
+  # That URL is only ever fetched by the installing admin's browser, so it does
+  # not need to be reachable from the internet.
   slackClientId: ""
   slackClientSecret: ""
+  # -- Set once token rotation is turned on in the Slack app (OAuth &
+  # Permissions; it needs a redirect URL registered, and cannot be turned off
+  # again). Rotation is one switch on the app, but each workspace's existing
+  # token keeps not expiring until exchanged, so on boot the api-server
+  # exchanges every one of them for a rotating pair in its K8s Secret. Needs
+  # `slackClientId` and `slackClientSecret`. Refreshing rotating tokens does not
+  # depend on this flag, so setting it back to false changes nothing for tokens
+  # already exchanged.
+  slackTokenRotation: false
   # -- Slack enterprise (organization) id that a connecting workspace must
   # belong to, read from Slack's own install response. Empty means any
   # workspace an operator invites may connect, which is what a standalone
@@ -1239,6 +1342,10 @@ apiServer:
     # Kubernetes ecosystem tooling
     - get.helm.sh
     - dl.k8s.io
+    # Istio's release host, which redirects every download to its R2 bucket.
+    # The Google Cloud Storage bucket still serves releases up to 1.30.
+    - blob.istio.io
+    - istio-release.r2.istio.io
     - istio-release.storage.googleapis.com
     - mirror.openshift.com
     # Supply-chain signing (cosign's TUF root)
@@ -1251,10 +1358,11 @@ apiServer:
     - api.us-east.bob.ibm.com
     # arXiv API
     - export.arxiv.org
-    # Fedora packages: what the docker and containerd shims install at runtime.
-    # The image pins its repos to this one host precisely so it can be named
-    # here; the default metalink would resolve to a different mirror each time.
-    - dl.fedoraproject.org
+    # Debian packages: apt-get on a machine, where the agent is root.
+    - deb.debian.org
+    # Kernel sources and Alpine packages, for images built on them.
+    - "*.kernel.org"
+    - "*.alpinelinux.org"
 
   # -- Optional platform-wide defaults for OAuth app credentials. When a field
   # is set the connect form for the matching app collapses the corresponding
@@ -1413,7 +1521,7 @@ controller:
       # Relaxing them gives the agent container privileges that bypass the
       # paired-pod credential split and the L7 ext_authz gate.
       # Agent ConfigMaps cannot set these — chart-only by design.
-      # UID 65532 matches the `USER` directive in packages/*/Dockerfile.
+      # UID 65532 is the agent user every agent image is built with.
       podSecurityContext:
         runAsUser: 65532
         runAsGroup: 65532
@@ -1453,7 +1561,7 @@ controller:
         enabled: true
         # SIG Release distroless-iptables — same image kube-proxy uses.
         # Ships sh + iptables-wrapper; pinned by tag.
-        image: registry.k8s.io/build-image/distroless-iptables:v0.9.2
+        image: registry.k8s.io/build-image/distroless-iptables:v0.11.0
 
       # -- Userspace init container that blocks the agent's main
       # container until the egress NetworkPolicy is verifiably enforced.
@@ -1463,7 +1571,7 @@ controller:
         # Hardened curl image for the probe. The probe is a `sh` loop, so it
         # needs a shell — use the `-builder` variant (the distroless curl image
         # has no shell). Any image works as long as it provides /bin/sh + curl.
-        image: registry.access.redhat.com/hi/curl:8.20-builder
+        image: registry.access.redhat.com/hi/curl:8.22-builder
         # Hard deadline before the init container fails the pod. OVN-K
         # typically converges in well under a second; 30s is generous
         # for cold node churn / controller restart scenarios.
@@ -1671,7 +1779,19 @@ controller:
     # security objects:
     #   oc adm policy add-scc-to-user anyuid -z platform-migration -n <agents-ns>
     # Without it, the copy pod is rejected at admission, loudly, and the
-    # gated agent waits. The Job never mounts a token, joins no mesh, and
+    # gated agent waits.
+    #
+    # The runtime migration's copy Job (virtualization.runtimeMigration) runs
+    # under the same ServiceAccount. When the home volume it copies is a block
+    # (ReadWriteOnce) volume it runs as root holding DAC_READ_SEARCH alone,
+    # which `anyuid` does not permit. With `openshift.scc.anyuidCapNet` on,
+    # the chart renders a migration-only SCC for it — uid 0, DAC_READ_SEARCH,
+    # drop ALL, no escalation, runtime/default seccomp — bound to the
+    # `platform-migration` ServiceAccount alone; otherwise grant an SCC of
+    # that shape to it. The storage Job keeps its `anyuid` grant. A refused
+    # copy pod is reported on the Agent with the Job's FailedCreate event.
+    #
+    # The storage Job never mounts a token, joins no mesh, and
     # deliberately does not inherit the agents' runtimeClassName (Kata
     # virtiofs refuses guest chown regardless of uid).
     jobImage: mirror.gcr.io/library/debian:stable-slim
@@ -1679,8 +1799,22 @@ controller:
   # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
   # pull-through cache, higher anonymous rate limits) — byte-identical to
-  # envoyproxy/envoy:distroless-v1.37.2 (same manifest digest).
-  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.37.2
+  # envoyproxy/envoy:distroless-v1.39.1 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1
+  # -- PEM CA certificates every agent gateway trusts upstream, on top of the
+  # public roots, and every agent trusts beside its gateway's CA, for the hosts
+  # its gateway passes through untouched. Needed when something on the
+  # cluster's egress path intercepts TLS with its own CA: a corporate
+  # TLS-inspecting proxy, or the platform's own gateway when the platform runs
+  # inside one of its agents (`mise run cluster:install` sets it there). Empty
+  # leaves each gateway on its image's own roots. Set with --set-file, e.g.
+  # `--set-file controller.gatewayUpstreamExtraCAs=proxy-ca.crt`.
+  gatewayUpstreamExtraCAs: ""
+  # -- Image for a vm Agent's machine resolver, beside Envoy in its gateway
+  # pod: it answers every name with the gateway's address and resolves nothing
+  # upstream. CoreDNS publishes to Docker Hub; pulled via mirror.gcr.io like
+  # Envoy.
+  machineDNSImage: mirror.gcr.io/coredns/coredns:1.14.7
   # -- Port the Envoy sidecar listens on inside the agent pod (proxy on 127.0.0.1).
   envoyPort: 10000
   # -- TLS interception support for the credential injector. The chart
@@ -1691,10 +1825,10 @@ controller:
   # task does this).
   envoyMitm:
     enabled: true
-    # -- Names of the bootstrap and CA cluster issuers. Cluster-scoped, so consider
-    # collisions with other charts.
+    # -- Name of the bootstrap cluster issuer. Cluster-scoped, so consider
+    # collisions with other charts. The CA issuer is always
+    # `platform-mitm-ca-issuer`, the name the controller mints leaves from.
     bootstrapIssuerName: platform-selfsigned-bootstrap
-    caIssuerName: platform-mitm-ca-issuer
     # -- Where the CA Secret lives. Must equal cert-manager's
     # --cluster-resource-namespace flag (default `cert-manager`).
     caSecretNamespace: cert-manager
@@ -1702,9 +1836,6 @@ controller:
     # -- CA validity. cert-manager will renew before expiry automatically.
     caDuration: 87600h # 10y
     caRenewBefore: 720h # 30d
-    # -- Per-agent leaf cert validity.
-    leafDuration: 2160h # 90d
-    leafRenewBefore: 360h # 15d
   # Gateway Envoy OpenTelemetry has no knobs here on purpose. Envoy is a C++
   # data plane no SDK or zero-code instrumentation can reach, so the controller
   # configures it natively in the rendered bootstrap — the exporter target
@@ -1731,14 +1862,16 @@ controller:
 # offered exactly when the image changed. Pinning `tag` to a fixed value in an
 # override opts that template out of upgrade detection, and non-image drift
 # (mounts/env/resources) is never detected.
-# `$HOME` in mount paths is substituted at chart render time
-# using this entry's `agentHome` if set, else `templateDefaults.agentHome`.
-# Every entry is a harness image the platform delivers. Workload images
+# `$HOME` in mount paths is substituted at chart render time with the fixed
+# agent home, /home/agent.
+# Every entry is a harness the platform delivers. The four built-in ones share
+# one image, quay.io/dam-agents/default, which bakes no tools and runs on the
+# node's `harnessTools`; `harness` picks the one it runs. Workload images
 # (research frameworks and other pre-built agents) are starter kits in the
 # built-in catalog (`starterKits`), not templates.
 # `experimental: true` badges the image as alpha.
 # `providers` lists the model-provider connection types the image can run on
-# (any of anthropic, ibm-litellm, openai, bob) — which env the harness inside
+# (any of anthropic, ibm-litellm, curve-bender, openai, bob, bedrock) — which env the harness inside
 # reads. Create flows narrow the provider picker to it; omit it to offer every
 # provider. Validated when templates load.
 # `harness` names the harness family running inside the image — which CLI the
@@ -1778,7 +1911,7 @@ controller:
 harnessTemplates:
   claude-code:
     enabled: true
-    providers: [ibm-litellm, anthropic]
+    providers: [ibm-litellm, curve-bender, anthropic, bedrock]
     displayName: "Claude Code"
     description: "Default Claude Code agent"
     releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
@@ -1786,38 +1919,38 @@ harnessTemplates:
     harness: claude-code
     tags: ["Anthropic"]
     image:
-      repository: quay.io/dam-agents/claude-code
-      tag: "" # @ci-pin claude-code-image-tag
+      repository: quay.io/dam-agents/default
+      tag: "" # @ci-pin default-image-tag
     storageSize: "5Gi"
 
   codex:
     enabled: true
-    providers: [ibm-litellm, openai]
+    providers: [ibm-litellm, curve-bender, openai]
     displayName: "Codex"
     description: "OpenAI Codex coding agent"
     releaseNotesUrl: "https://github.com/openai/codex/releases"
     harness: codex
     tags: ["OpenAI"]
     image:
-      repository: quay.io/dam-agents/codex
-      tag: "" # @ci-pin codex-image-tag
+      repository: quay.io/dam-agents/default
+      tag: "" # @ci-pin default-image-tag
     storageSize: "5Gi"
 
   pi-agent:
     enabled: true
-    providers: [ibm-litellm, anthropic, openai]
+    providers: [ibm-litellm, curve-bender, anthropic, openai, bedrock]
     displayName: "PI Agent"
     description: "Pi coding agent with multi-LLM support"
     harness: pi
     tags: ["Any provider"]
     image:
-      repository: quay.io/dam-agents/pi-agent
-      tag: "" # @ci-pin pi-agent-image-tag
+      repository: quay.io/dam-agents/default
+      tag: "" # @ci-pin default-image-tag
     storageSize: "5Gi"
 
   bob:
     enabled: true
-    providers: [ibm-litellm, bob]
+    providers: [ibm-litellm, curve-bender, bob]
     displayName: "IBM Bob"
     description: "Bob shell agent"
     releaseNotesUrl: "https://bob.ibm.com/docs/shell/changelog"
@@ -1827,8 +1960,8 @@ harnessTemplates:
     telemetry: bob
     tags: ["Anthropic", "Mistral", "Granite"]
     image:
-      repository: quay.io/dam-agents/bob
-      tag: "" # @ci-pin bob-image-tag
+      repository: quay.io/dam-agents/default
+      tag: "" # @ci-pin default-image-tag
     # Bob recommends ≥4 GB RAM (8 GB nicer); storage only holds the home
     # dir + workspace (the bundle lives in the image), so the agent default
     # of 2 Gi is plenty.
@@ -1840,6 +1973,53 @@ harnessTemplates:
       limits:
         cpu: "2"
         memory: "4Gi"
+
+# -- The harnesses' tools for the image every harness Template boots
+# (quay.io/dam-agents/default), which bakes none: mise's system data dir with
+# the tools of every harness and the common ones, kept in a directory on each
+# node. Every container agent pod mounts it read-only, whatever its image, at a
+# path no other image uses; every VM runner mounts it read-only too and shares
+# it into each machine whose image asks for it. A DaemonSet fills it: its init
+# container runs that same image's installer, so the tools and the image agree
+# on every version, and then it idles. A deploy that changes the image rolls
+# the DaemonSet and installs the new versions beside the old ones, in place,
+# so an agent still on an older image keeps its own. Nothing is pruned: each
+# image's versions stay on the node until it is cleaned by hand. Empty
+# `hostPath` mounts nothing and renders no installer, which leaves the harness
+# Templates' image without its tools.
+#
+# It is in the boot path: an agent that starts on a node before the installer
+# has finished there has no harness until its next start. The installer
+# reaches the tools' download hosts (npm, GitHub, the language runtimes' and
+# Playwright's CDNs) from the node.
+#
+# The DaemonSet runs on `nodeSelector` with `tolerations`, plus the agents'
+# (`controller.agent.base.tolerations`) and, with virtualization, the runners'
+# tolerations: it must reach every node an agent or a runner may land on.
+#
+# OpenShift: the installer runs as uid 0 and as `spc_t`, to label the directory
+# `container_file_t` at `s0` for the confined agents and runners to read, so
+# `scc` must name an SCC that admits a hostPath and leaves the SELinux type to
+# the pod (seLinuxContext RunAsAny); empty falls back to
+# `virtualization.runner.scc`. The chart's own agent SCC then admits the
+# hostPath the agents mount.
+harnessTools:
+  hostPath: /var/lib/platform-harness-tools
+  image:
+    repository: quay.io/dam-agents/default
+    tag: "" # @ci-pin default-image-tag
+    pullPolicy: IfNotPresent
+  nodeSelector: {}
+  tolerations: []
+  scc: ""
+  # The installer's; the idling container that keeps the pod scheduled asks
+  # for almost nothing.
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
 
 # -- E2E test affordances. Gated test-only surface: the api-server
 # registers a control tRPC namespace that drives the mock Agent harness over
@@ -1863,7 +2043,9 @@ e2e:
 # clone rides the gateway with the `github-enterprise` connection its kit
 # requires, and never sees this token.
 #
-# Leave `enterprise.tokenSecret.name` empty to read no enterprise host at all.
+# Leave `enterprise.token` empty to read no enterprise host at all. It is meant
+# to arrive through a secret values layer rather than a values file in git; the
+# chart stores it in the api-server's Secret, not the pod spec.
 # An empty `enterprise.host` falls back to the enterprise host the connection
 # presets already name (apiServer.oauthAppDefaults.githubEnterprise.host), so a
 # single-host install spells it once; setting it here does not change what those
@@ -1874,9 +2056,7 @@ e2e:
 github:
   enterprise:
     host: ""
-    tokenSecret:
-      name: ""
-      key: token
+    token: ""
 
 # -- Starter kit catalogs. The api-server reads every catalog listed here, in
 # order, through one reader; kits are addressed as `<catalog>/<kit>`.
@@ -1908,6 +2088,7 @@ starterKits:
       evox: { enabled: false }
       k-search: { enabled: true }
       software-developer: { enabled: false }
+      micro-manager: { enabled: true }
   # External catalogs, read in order after the built-in one. Each names a
   # public repository holding catalog.yaml, with `ref` to pin a branch, tag or
   # commit and `dir` to read a subdirectory. A version is never written into
@@ -1921,6 +2102,10 @@ starterKits:
       url: https://github.com/dam-agents/dam-starter-kits
       # ref: v1.4.0          # pin a branch, tag or commit
       # dir: catalogs/public # read catalog.yaml from a subdirectory
+  # The kit that leads the All view of the Starter kits page as a large card,
+  # as `<catalog>/<kit>`. A pin naming a kit no catalog serves, or "", shows
+  # every card at the same size. Rendered as STARTER_KITS_PINNED.
+  pinned: curated/code-guardian
 
 # -- Platform-wide skill sources (shared catalog visible to all users).
 # Rendered into the api-server pod as SKILL_SOURCES_SEED. The same

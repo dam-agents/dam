@@ -2,32 +2,28 @@ import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { Db } from "db";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
-import type { Redis } from "ioredis";
 import type {
   E2eService,
   LiveEventsService,
   ReposService,
   TermsService,
-  UserIdentity,
 } from "api-server-api";
-import type { PeriodicJobs } from "../../core/periodic-jobs.js";
 import type { RedisBus } from "../../core/redis-bus.js";
 import type { TtlStore } from "../../core/ttl-store.js";
 import type {
+  AgentCleanupHook,
   AgentsRepository,
   ContributionsProgressPort,
   OnboardingChecklistReader,
-  KeycloakUserDirectory,
+  PresetSeeder,
 } from "../../modules/agents/index.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import type { AgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
 import type { PublicAgentPageService } from "../../modules/agents/index.js";
-import type {
-  AgentCleanupHook,
-  PresetSeeder,
-} from "../../modules/agents/compose.js";
 import type { composeApiKeysModule } from "../../modules/api-keys/index.js";
 import type { ArtifactService } from "../../modules/artifacts/services/artifact-service.js";
+import type { DelegationFramesPort } from "../../modules/invocations/index.js";
+import type { ArtifactLibraryFor } from "../../modules/artifact-library/index.js";
 import type {
   ApprovalsRelayService,
   WrapperFrameSender,
@@ -45,29 +41,27 @@ import type { SlackInstallService } from "../../modules/channels/services/slack-
 import type { ConnectionsBootCompose } from "../../modules/connections/compose.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 import type { SchedulesBoot } from "../../modules/schedules/index.js";
-import type { SecretStoreRegistry } from "../../modules/secret-store/index.js";
+import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
 import type { MetricsReader } from "../../modules/metrics/index.js";
 import type { TelemetryReader } from "../../modules/telemetry/index.js";
 import type { SessionDirectory } from "../../modules/session-directory/index.js";
 import type { TemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
-import type { StarterKitsRepository } from "../../modules/starter-kits/index.js";
+import type {
+  KitUpstream,
+  StarterKitsRepository,
+} from "../../modules/starter-kits/index.js";
 import type { IsAcceptedPort } from "../../modules/terms/index.js";
 import type { Config } from "../../config.js";
-import type {
-  createAuth,
-  startJwksWarmup,
-  SurfaceAttribution,
-} from "./admission/index.js";
-import type { SessionPresence } from "./agent-proxies/index.js";
+import type { createAuth, SurfaceAttribution } from "./admission/auth.js";
+import type { startJwksWarmup } from "./admission/jwks-warmup.js";
+import type { SessionPresence } from "./agent-proxies/session-presence.js";
 
 import type { ApiVariables } from "../../core/http-context.js";
 export type { ApiVariables };
 
 export interface ApiServerDeps {
   config: Config;
-  periodicJobs: PeriodicJobs;
-  sharedRedis: Redis;
   api: CoreV1Api;
   db: Db;
   channelManager: ChannelManager;
@@ -82,6 +76,7 @@ export interface ApiServerDeps {
     | { kind: "resolved"; teamId: string }
     | { kind: "unknown" }
     | { kind: "unreachable" }
+    | { kind: "none" }
   >;
   slackInstallCallbackUrl: string;
   telegramBindFlows?: TelegramBindFlowStore;
@@ -93,7 +88,7 @@ export interface ApiServerDeps {
   presetSeeder: PresetSeeder;
   trustedHosts: readonly string[];
   agentCleanupHooks: readonly AgentCleanupHook[];
-  secretStores: SecretStoreRegistry;
+  secretStore: SecretStore;
   runtimeMutator: RuntimeMutator;
   contributionsProgress: ContributionsProgressPort;
   onboardingChecklists: OnboardingChecklistReader;
@@ -110,6 +105,7 @@ export interface ApiServerDeps {
   isTermsAccepted: IsAcceptedPort;
   e2e: E2eService;
   artifacts: ArtifactService;
+  delegationFrames: DelegationFramesPort;
   liveEvents: LiveEventsService;
 
   k8sClient: K8sClient;
@@ -118,8 +114,8 @@ export interface ApiServerDeps {
   connectionsBoot: ConnectionsBootCompose;
   templatesRepo: TemplatesRepository;
   starterKitsRepo: StarterKitsRepository;
+  kitUpstream: KitUpstream;
   reposService: ReposService;
-  userDirectory: KeycloakUserDirectory;
   apiKeysModule: ReturnType<typeof composeApiKeysModule>;
   satellitesBoot: SatellitesComposition;
   auth: ReturnType<typeof createAuth>;
@@ -129,4 +125,6 @@ export interface ApiServerDeps {
   shareHostGate: MiddlewareHandler;
   publicAgentPageService: PublicAgentPageService;
   sessionPresence: SessionPresence;
+  wakeAgent: (agentId: string) => Promise<void>;
+  artifactLibraryFor: ArtifactLibraryFor;
 }

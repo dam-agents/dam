@@ -191,7 +191,7 @@ export function SessionRow({
                 <OverflowMenuVertical size={16} />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent>
+            <DropdownMenuContent onClick={(event) => event.stopPropagation()}>
               {onExportTimeline && (
                 <DropdownMenuItem
                   data-testid="session-export-timeline-button"

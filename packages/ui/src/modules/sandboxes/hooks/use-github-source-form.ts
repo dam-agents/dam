@@ -60,7 +60,7 @@ function buildSchema(sources: readonly SkillSource[]) {
     });
 }
 
-export type GithubSourceFormValues = {
+type GithubSourceFormValues = {
   name: string;
   gitUrl: string;
   path: string;

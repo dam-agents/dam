@@ -4,19 +4,27 @@ import type {
   InvocationView,
 } from "api-server-api";
 import { req, log, sleep } from "./http.js";
-import { s, type JsonSchema, type SchemaSpec } from "./schema.js";
+import { s, type SchemaSpec } from "./schema.js";
 
 export interface ImageInfo {
   id: string;
   name: string;
   image: string;
   description?: string;
+  harness?: string;
+  size?: { cpu: string; memory: string };
 }
 
 export interface ConnectionInfo {
   id: string;
   name: string;
   hosts: string[];
+}
+
+export interface Budget {
+  cpu: { reservedMilli: number; ceilingMilli: number };
+  memory: { reservedBytes: number; ceilingBytes: number };
+  defaultWorkerSize: { cpu: string; memory: string };
 }
 
 export async function listImages(): Promise<ImageInfo[]> {
@@ -28,24 +36,43 @@ export async function listConnections(): Promise<ConnectionInfo[]> {
     .connections;
 }
 
+export async function budget(): Promise<Budget> {
+  return req<Budget>("GET", "/budget");
+}
+
 export class InvocationFailed extends Error {
   readonly invocationId: string;
-  constructor(id: string, label: string) {
-    super(`invocation ${label} (${id}) failed`);
+  readonly reason: string | undefined;
+  constructor(id: string, label: string, reason?: string) {
+    super(`invocation ${label} (${id}) failed${reason ? `: ${reason}` : ""}`);
     this.name = "InvocationFailed";
     this.invocationId = id;
+    this.reason = reason;
   }
 }
 
-export interface SpawnOptions {
-  template?: string;
-  image?: string;
+type Setup = Pick<
+  SpawnInvocationRequest,
+  | "harness"
+  | "image"
+  | "seed"
+  | "install"
+  | "env"
+  | "resources"
+  | "backend"
+  | "skills"
+>;
+
+export interface SpawnOptions extends Setup {
   connections?: string[];
   prompt: string;
   schema: SchemaSpec;
   label?: string;
   memory?: string;
   cpu?: string;
+  model?: string;
+  mode?: string;
+  configOptions?: Record<string, string>;
   ttlMs?: number;
   pollMs?: number;
   timeoutMs?: number;
@@ -53,7 +80,7 @@ export interface SpawnOptions {
 
 export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
   const {
-    template,
+    harness,
     image,
     connections = [],
     prompt,
@@ -61,9 +88,18 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
     label,
     memory,
     cpu,
+    model,
+    mode,
+    configOptions,
     ttlMs,
     pollMs = 5000,
     timeoutMs = (ttlMs ?? 60 * 60 * 1000) + 5 * 60 * 1000,
+    seed,
+    install,
+    env,
+    resources,
+    backend,
+    skills,
   } = opts;
 
   if (!prompt) throw new Error("spawn: `prompt` is required");
@@ -72,29 +108,47 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
       "spawn: `schema` is required — the result shape the Invocation must return",
     );
   }
-  if (!template && !image) {
+  if (!harness && !image) {
     throw new Error(
-      "spawn: pass `template` (an id from listImages()) or `image` (a full ref). Prefer `template` — a bare image name fails to pull.",
+      "spawn: pass `harness` (a name from listImages(), such as claude-code), or an `image`",
     );
   }
 
   const body: SpawnInvocationRequest = {
     prompt,
     connections,
-    schema: s(schema) as JsonSchema,
+    schema: s(schema),
   };
-  if (template) body.templateId = template;
+  if (harness) body.harness = harness;
   if (image) body.image = image;
+  if (label !== undefined) body.label = label;
   if (ttlMs !== undefined) body.ttlMs = ttlMs;
   if (memory !== undefined) body.memory = memory;
   if (cpu !== undefined) body.cpu = cpu;
+  if (seed) body.seed = seed;
+  if (install) body.install = install;
+  if (env) body.env = env;
+  if (resources) body.resources = resources;
+  if (backend) body.backend = backend;
+  if (skills) body.skills = skills;
+  const options =
+    configOptions && Object.keys(configOptions).length > 0
+      ? configOptions
+      : undefined;
+  if (model !== undefined || mode !== undefined || options !== undefined) {
+    body.harnessConfig = {
+      ...(model !== undefined ? { model } : {}),
+      ...(mode !== undefined ? { mode } : {}),
+      ...(options !== undefined ? { configOptions: options } : {}),
+    };
+  }
 
   const { id } = await req<SpawnInvocationResponse>(
     "POST",
     "/invocations",
     body,
   );
-  const tag = label ?? template ?? image ?? id;
+  const tag = label ?? harness ?? image ?? id;
   log(`spawned ${tag} -> ${id}`);
 
   const deadline = Date.now() + timeoutMs;
@@ -117,8 +171,10 @@ export async function spawn<T = unknown>(opts: SpawnOptions): Promise<T> {
       return view.result as T;
     }
     if (view.status === "failed") {
-      log(`failed ${tag} (${id})`);
-      throw new InvocationFailed(id, tag);
+      log(
+        `failed ${tag} (${id})${view.errorReason ? `: ${view.errorReason}` : ""}`,
+      );
+      throw new InvocationFailed(id, tag, view.errorReason);
     }
     if (Date.now() > deadline) {
       throw new Error(

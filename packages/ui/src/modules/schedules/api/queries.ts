@@ -2,18 +2,11 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
-import { listAgentSessions } from "../../sessions/api/acp-session-ops.js";
-
-export function prefetchSchedules(agentId: string) {
-  return queryClient.prefetchQuery({
-    ...trpc.schedules.list.queryOptions({ agentId }),
-    staleTime: 5000,
-  });
-}
+import { listAgentSessionPage } from "../../sessions/api/acp-session-ops.js";
 
 export function fetchSchedulesForAgent(agentId: string) {
   return queryClient
-    .fetchQuery(trpc.schedules.list.queryOptions({ agentId }))
+    .query(trpc.schedules.list.queryOptions({ agentId }))
     .catch(() => []);
 }
 
@@ -43,10 +36,8 @@ export function useScheduleSessions(
     queryKey: ["schedule-sessions", agentId, scheduleId] as const,
     queryFn:
       agentId && scheduleId
-        ? async () => {
-            const sessions = await listAgentSessions(agentId);
-            return sessions.filter((s) => s.scheduleId === scheduleId);
-          }
+        ? async () =>
+            (await listAgentSessionPage(agentId, { scheduleId })).sessions
         : skipToken,
     retry: 0,
     staleTime: 30_000,

@@ -25,7 +25,6 @@ function session(sessionId: string, updatedAt: string | null): PodSession {
     updatedAt,
     title: null,
     scheduleId: null,
-    experimentId: null,
     threadTs: null,
     seenAt: null,
     runStartedAt: null,
@@ -79,7 +78,6 @@ function harness(): Harness {
 
   const repo: AttentionRepository = {
     listForAgent: async () => [...stored.values()],
-    getRecord: async () => null,
     listForOwner: async () => [],
     upsertRecord: async (row) => {
       if (failWrite) {
@@ -90,8 +88,6 @@ function harness(): Harness {
       state.upserted?.push(row.sessionId);
     },
     listDismissals: async () => [],
-    getDismissal: async () => null,
-    setDismissal: async () => {},
     ownedSessionKeys: async () => new Set<string>(),
     setDismissals: async () => {},
     deleteSessions: async (_agentId, sessionIds) => {

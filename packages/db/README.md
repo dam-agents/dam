@@ -17,7 +17,7 @@ Two kinds of migration, by what's changing (#739, [ADR-063](../../docs/adrs/063-
 ```sh
 # 1. edit src/schema.ts
 mise run //packages/db:generate     # writes drizzle/000N_<name>.sql + meta/000N_snapshot.json + journal entry
-# 2. add a top comment to the .sql explaining *why* (reference ADRs if relevant)
+# 2. add a top comment to the .sql explaining *why*
 mise run check           # type-check + db:check:generated
 ```
 

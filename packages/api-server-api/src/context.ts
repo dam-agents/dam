@@ -15,8 +15,10 @@ import type { E2eService } from "./modules/e2e/types.js";
 import type { FeaturesService } from "./modules/features/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
 import type { LiveEventsService } from "./modules/events/types.js";
-import type { ExperimentsService } from "./modules/experiments/types.js";
-import type { InvocationsQueryService } from "./modules/invocations/types.js";
+import type {
+  InvocationsControlService,
+  InvocationsQueryService,
+} from "./modules/invocations/types.js";
 import type { KbSharesService } from "./modules/kb-shares/types.js";
 import type { Links } from "./modules/links/types.js";
 import type { FilesService } from "./modules/files/router.js";
@@ -50,8 +52,8 @@ export interface ApiContext {
   approvals: ApprovalsService;
   attention: AttentionService;
   egressRules: EgressRulesService;
-  experiments: ExperimentsService;
   invocationsQuery: InvocationsQueryService;
+  invocationsControl: InvocationsControlService;
   starterKits: StarterKitsService;
   kbShares: KbSharesService;
   artifactLibrary: ArtifactLibraryService;

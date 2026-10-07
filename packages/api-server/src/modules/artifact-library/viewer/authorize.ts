@@ -4,8 +4,7 @@ import type { ArtifactRow } from "../infrastructure/artifact-library-repository.
 import type { SharedResolution } from "../services/share-viewer-service.js";
 
 export type Authorized =
-  | { ok: true; artifact: ArtifactRow }
-  | { ok: false; response: Response };
+  { ok: true; artifact: ArtifactRow } | { ok: false; response: Response };
 
 export type Authorize = (
   c: Context,
@@ -24,4 +23,18 @@ export function denied(response: Response): Authorized {
 
 export function isRestricted(artifact: ArtifactRow): boolean {
   return artifact.visibility === "restricted";
+}
+
+export function parseVersion(raw: string | undefined): number | undefined {
+  if (!raw) return undefined;
+  const v = Number.parseInt(raw, 10);
+  return Number.isInteger(v) && v >= 1 ? v : undefined;
+}
+
+export function namesCurrentVersion(
+  artifact: ArtifactRow,
+  raw: string | undefined,
+): boolean {
+  const requested = parseVersion(raw);
+  return requested === undefined || requested === artifact.version;
 }

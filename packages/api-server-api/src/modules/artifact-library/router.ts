@@ -3,9 +3,11 @@ import { t } from "../../trpc.js";
 import {
   checkAgentBinding,
   manageAgentsProcedure,
+  operateAgentsProcedure,
   readAgentProcedure,
 } from "../../auth-procedures.js";
 import {
+  artifactCallAgentApiInputSchema,
   artifactContentInputSchema,
   artifactCreateInputSchema,
   artifactIdInputSchema,
@@ -111,4 +113,10 @@ export const artifactLibraryRouter = t.router({
   folderShareUrl: readAgentProcedure
     .input(folderIdInputSchema)
     .query(({ ctx, input }) => ctx.artifactLibrary.folderShareUrl(input.id)),
+
+  callAgentApi: operateAgentsProcedure
+    .input(artifactCallAgentApiInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.artifactLibrary.callAgentApi(input, { agentIds: ctx.user.agentIds }),
+    ),
 });

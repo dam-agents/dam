@@ -1,0 +1,433 @@
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use anyhow::Context;
+use clap::Parser;
+use vm_runner::api::{SeedResult, SEED_EXIT_PERMANENT};
+use vm_runner::seed::{write_seed, Limits, Options, OwnerMap, Tally};
+
+// UNIT_BOUNDARY_DESCRIPTION: the flags the controller's migration Job sets: the mount of the agent's old home volume, the runner's seed URL for the agent's machine, the seed capability the controller minted for this one upload — never the runner's token — and the runner's CA. `--map-owner` names the install's agent uid and gid, which go to the machine's root, and defaults to the chart's 65532 for both; `--max-bytes`, when set, fails a home with more file data than that before the runner has to refuse it. `--result-file` is where the verified answer is written — the container's termination message, which is how the controller learns which seed the machine must boot from.
+#[derive(Parser, Debug)]
+#[command(
+    name = "vm-seed",
+    about = "Uploads a directory as the seed of a VM runner machine's home: archives it and streams the tar to the runner"
+)]
+struct Args {
+    #[arg(long)]
+    source: PathBuf,
+    #[arg(long)]
+    url: String,
+    #[arg(long = "token-file")]
+    token_file: PathBuf,
+    #[arg(long = "ca-file")]
+    ca_file: PathBuf,
+    #[arg(long = "result-file")]
+    result_file: Option<PathBuf>,
+    #[arg(long = "map-owner", value_parser = parse_owner_map, default_value = CONTAINER_TO_MACHINE)]
+    map_owner: OwnerMap,
+    #[arg(long = "max-bytes")]
+    max_bytes: Option<u64>,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the container ran the agent as uid and gid 65532, and a machine's harness runs as root.
+const CONTAINER_TO_MACHINE: &str = "65532:0";
+
+// UNIT_BOUNDARY_DESCRIPTION: an owner map is `UID:GID:TO`, or `FROM:TO` when the uid and gid are the same, all numeric ids; each entry owned by that uid, or by that gid, is stored as owned by TO.
+fn parse_owner_map(value: &str) -> Result<OwnerMap, String> {
+    let id = |part: &str| {
+        part.parse::<u32>()
+            .map_err(|e| format!("{part:?} in {value:?} is not a numeric id: {e}"))
+    };
+    match value.split(':').collect::<Vec<_>>()[..] {
+        [from, to] => Ok(OwnerMap {
+            uid: id(from)?,
+            gid: id(from)?,
+            to: id(to)?,
+        }),
+        [uid, gid, to] => Ok(OwnerMap {
+            uid: id(uid)?,
+            gid: id(gid)?,
+            to: id(to)?,
+        }),
+        _ => Err(format!("{value:?} is not UID:GID:TO or FROM:TO")),
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how much of the tar is gathered before it is handed to the connection, and how many such chunks may wait for it. Together they bound what the upload holds in memory, whatever the size of the home.
+const CHUNK: usize = 256 << 10;
+const CHUNKS: usize = 16;
+
+// UNIT_BOUNDARY_DESCRIPTION: the longest a partial chunk waits before it is sent anyway. The runner drops an upload that sends nothing for minutes, and a walk over many small entries on a slow volume can take that long to fill a chunk while it is still making progress.
+const CHUNK_WAIT: Duration = Duration::from_secs(10);
+
+type Chunks = tokio::sync::mpsc::Sender<io::Result<Vec<u8>>>;
+
+// UNIT_BOUNDARY_DESCRIPTION: the tar's writer: it hands the archive to the request body in chunks, from the blocking thread that walks the home. A connection that is gone is a write that fails, which stops the walk.
+struct Channel {
+    chunks: Chunks,
+    buf: Vec<u8>,
+    flushed: Instant,
+}
+
+impl Write for Channel {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        self.buf.extend_from_slice(data);
+        if self.buf.len() >= CHUNK || self.flushed.elapsed() >= CHUNK_WAIT {
+            self.flush()?;
+        }
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.flushed = Instant::now();
+        if self.buf.is_empty() {
+            return Ok(());
+        }
+        let chunk = std::mem::replace(&mut self.buf, Vec::with_capacity(CHUNK));
+        self.chunks
+            .blocking_send(Ok(chunk))
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "the upload ended"))
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: archives the source into the channel and answers with the tally of what it sent. An archive that fails part-way ends the body with an error rather than letting it end cleanly, so the runner sees a broken upload and stores nothing, instead of committing a tar that stops in the middle.
+fn archive(args: &Args, chunks: Chunks) -> io::Result<SeedResult> {
+    let abort = chunks.clone();
+    let options = Options {
+        owner: Some(args.map_owner),
+        limits: Limits {
+            bytes: args.max_bytes,
+            ..Limits::default()
+        },
+    };
+    let tarred = write_seed(
+        &args.source,
+        &options,
+        Tally::new(Channel {
+            chunks,
+            buf: Vec::with_capacity(CHUNK),
+            flushed: Instant::now(),
+        }),
+    )
+    .and_then(Tally::finish);
+    match tarred {
+        Ok((_, sent)) => Ok(sent),
+        Err(e) => {
+            let _ = abort.blocking_send(Err(io::Error::new(e.kind(), e.to_string())));
+            Err(e)
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a client that trusts the runner's CA and nothing else — not the public roots, and not a proxy the Job's environment may name — because the runner's CA signs runner certificates alone, and the capability this upload carries is good for seeding its one machine.
+fn client(ca_file: &Path) -> anyhow::Result<reqwest::Client> {
+    let pem = std::fs::read(ca_file).with_context(|| format!("reading {}", ca_file.display()))?;
+    let certs = reqwest::Certificate::from_pem_bundle(&pem)
+        .with_context(|| format!("parsing {}", ca_file.display()))?;
+    anyhow::ensure!(
+        !certs.is_empty(),
+        "{} holds no certificate",
+        ca_file.display()
+    );
+    Ok(reqwest::Client::builder()
+        .tls_certs_only(certs)
+        .https_only(true)
+        .no_proxy()
+        .connect_timeout(Duration::from_secs(30))
+        .build()?)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a Job's fresh pod waits for the runner to accept a connection before it gives up. The runner admits the Job by a NetworkPolicy that names its labels, and a policy engine adds a new pod to that rule only after the pod exists, so the first connections a pod makes can be refused though the rule allows it. Waiting here costs one attempt a few seconds; failing costs the whole Job a retry delay.
+const REACH_DEADLINE: Duration = Duration::from_secs(180);
+
+// UNIT_BOUNDARY_DESCRIPTION: waits until the runner's address accepts a TCP connection, retrying a refused or unreachable one with a growing pause, and fails with the last error once the deadline passes. The upload itself is not retried: its body is the archive being written, so it can be sent only once.
+async fn await_reachable(url: &str, deadline: Duration) -> anyhow::Result<()> {
+    let parsed = reqwest::Url::parse(url).with_context(|| format!("parsing {url}"))?;
+    let host = parsed
+        .host_str()
+        .with_context(|| format!("{url} names no host"))?
+        .to_string();
+    let port = parsed
+        .port_or_known_default()
+        .with_context(|| format!("{url} names no port"))?;
+    let started = Instant::now();
+    let mut pause = Duration::from_millis(500);
+    loop {
+        let err = match tokio::time::timeout(
+            Duration::from_secs(10),
+            tokio::net::TcpStream::connect((host.as_str(), port)),
+        )
+        .await
+        {
+            Ok(Ok(_)) => return Ok(()),
+            Ok(Err(e)) => anyhow::Error::new(e),
+            Err(_) => anyhow::anyhow!("connecting timed out"),
+        };
+        if started.elapsed() + pause > deadline {
+            return Err(err.context(format!(
+                "the runner at {host}:{port} accepted no connection in {}s",
+                deadline.as_secs()
+            )));
+        }
+        tracing::warn!(host = %host, port, error = %err, "the runner is not reachable yet; retrying");
+        tokio::time::sleep(pause).await;
+        pause = (pause * 2).min(Duration::from_secs(10));
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a failure that a fresh attempt at the same home meets again: the home is past a walk limit, or the runner refused it as larger than the machine's disk.
+#[derive(Debug)]
+struct Permanent(String);
+
+impl std::fmt::Display for Permanent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Permanent {}
+
+// UNIT_BOUNDARY_DESCRIPTION: the error goes to stderr as a Result returned from main would print it, because the controller reads it back from there as the pod's termination message.
+fn main() -> std::process::ExitCode {
+    let Err(e) = upload() else {
+        return std::process::ExitCode::SUCCESS;
+    };
+    eprintln!("Error: {e:?}");
+    if e.is::<Permanent>() {
+        std::process::ExitCode::from(SEED_EXIT_PERMANENT)
+    } else {
+        std::process::ExitCode::FAILURE
+    }
+}
+
+fn upload() -> anyhow::Result<()> {
+    tracing_subscriber::fmt().json().init();
+    let args = Args::parse();
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let token = std::fs::read_to_string(&args.token_file)
+        .with_context(|| format!("reading {}", args.token_file.display()))?
+        .trim()
+        .to_string();
+    anyhow::ensure!(!token.is_empty(), "{} is empty", args.token_file.display());
+    let client = client(&args.ca_file)?;
+    let result_file = args.result_file.clone();
+    let started = Instant::now();
+    tracing::info!(source = %args.source.display(), url = %args.url, "seed upload starting");
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(async move {
+            await_reachable(&args.url, REACH_DEADLINE).await?;
+            let (chunks, mut received) = tokio::sync::mpsc::channel(CHUNKS);
+            let url = args.url.clone();
+            let archiving = tokio::task::spawn_blocking(move || archive(&args, chunks));
+            let body = reqwest::Body::wrap_stream(futures_util::stream::poll_fn(move |cx| {
+                received.poll_recv(cx)
+            }));
+            let response = client
+                .put(&url)
+                .bearer_auth(token)
+                .header("content-type", "application/x-tar")
+                .body(body)
+                .send()
+                .await;
+            let archived = archiving.await?;
+            let response = match (response, &archived) {
+                (Ok(response), _) => response,
+                (Err(_), Err(e)) if e.kind() == io::ErrorKind::QuotaExceeded => {
+                    return Err(Permanent(format!("archiving the seed: {e}")).into())
+                }
+                (Err(_), Err(e)) if e.kind() != io::ErrorKind::BrokenPipe => {
+                    anyhow::bail!("archiving the seed: {e}")
+                }
+                (Err(e), _) => {
+                    return Err(anyhow::Error::new(e).context(format!("uploading the seed to {url}")))
+                }
+            };
+            let status = response.status();
+            let answer = response.text().await.unwrap_or_default();
+            if status == reqwest::StatusCode::PAYLOAD_TOO_LARGE {
+                return Err(Permanent(format!("the runner refused the seed: {status}: {}", answer.trim())).into());
+            }
+            anyhow::ensure!(
+                status.is_success(),
+                "the runner refused the seed: {status}: {}",
+                answer.trim()
+            );
+            let sent = archived.context("archiving the seed")?;
+            let stored: SeedResult = serde_json::from_str(&answer)
+                .with_context(|| format!("reading the runner's answer {answer:?}"))?;
+            anyhow::ensure!(
+                stored == sent,
+                "the runner stored {} bytes with SHA-256 {}, but {} bytes with SHA-256 {} were sent",
+                stored.bytes,
+                stored.sha256,
+                sent.bytes,
+                sent.sha256
+            );
+            if let Some(path) = &result_file {
+                write_result(path, &sent)?;
+            }
+            tracing::info!(
+                bytes = sent.bytes,
+                sha256 = %sent.sha256,
+                elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+                "seed upload finished"
+            );
+            anyhow::Ok(())
+        })
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: writes the seed both sides agreed on, as the machine API's seed answer, once the runner's answer matched what was sent. It is written only on success, so a Job that failed carries its error as its message instead.
+fn write_result(path: &Path, sent: &SeedResult) -> anyhow::Result<()> {
+    std::fs::write(path, serde_json::to_vec(sent)?)
+        .with_context(|| format!("writing the seed's digest to {}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // TEST_SCENARIO: a runner that starts accepting connections a moment after the pod starts is waited for, not failed on — the refusal a fresh pod meets while its NetworkPolicy catches up looks exactly like this.
+    #[tokio::test]
+    async fn a_runner_that_opens_late_is_waited_for() {
+        let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = probe.local_addr().unwrap().port();
+        drop(probe);
+        let opener = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(700)).await;
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+                .await
+                .unwrap();
+            let _ = listener.accept().await;
+        });
+        await_reachable(
+            &format!("https://127.0.0.1:{port}/machines/m1/seed"),
+            Duration::from_secs(20),
+        )
+        .await
+        .unwrap();
+        opener.abort();
+    }
+
+    // TEST_SCENARIO: a runner that never answers fails the wait once the deadline passes, and the error names the address, so the Job's message says where it could not reach.
+    #[tokio::test]
+    async fn a_runner_that_never_opens_fails_with_its_address() {
+        let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = probe.local_addr().unwrap().port();
+        drop(probe);
+        let err = await_reachable(
+            &format!("https://127.0.0.1:{port}/x"),
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains(&format!("127.0.0.1:{port}")),
+            "{err:#}"
+        );
+    }
+
+    // TEST_SCENARIO: the migration Job runs this binary with these four flags, and a flag it does not know is a Job that fails on every attempt without moving a byte.
+    #[test]
+    fn the_flags_the_migration_job_passes_are_accepted() {
+        let args = Args::try_parse_from([
+            "vm-seed",
+            "--source",
+            "/old-home",
+            "--url",
+            "https://runner:8443/machines/m1/seed",
+            "--token-file",
+            "/run/secrets/runner/token",
+            "--ca-file",
+            "/run/secrets/runner/ca.crt",
+        ])
+        .unwrap();
+        assert_eq!(args.source, PathBuf::from("/old-home"));
+        assert_eq!(args.url, "https://runner:8443/machines/m1/seed");
+        assert_eq!(args.result_file, None);
+        assert_eq!(
+            args.map_owner,
+            OwnerMap {
+                uid: 65532,
+                gid: 65532,
+                to: 0
+            }
+        );
+        assert_eq!(args.max_bytes, None);
+    }
+
+    // TEST_SCENARIO: the Job names its termination message as the result file, and the controller reads the seed the machine must boot from out of it. What is written there is exactly the machine API's seed answer, so the controller decodes it with the type it decodes the runner's answers with.
+    #[test]
+    fn the_result_is_written_as_the_seed_answer() {
+        let args = Args::try_parse_from([
+            "vm-seed",
+            "--source",
+            "/h",
+            "--url",
+            "u",
+            "--token-file",
+            "t",
+            "--ca-file",
+            "c",
+            "--result-file",
+            "/dev/termination-log",
+        ])
+        .unwrap();
+        assert_eq!(
+            args.result_file,
+            Some(PathBuf::from("/dev/termination-log"))
+        );
+
+        let dir = std::env::temp_dir().join(format!("vm-seed-result-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("result");
+        let sent = SeedResult {
+            bytes: 4,
+            sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+        };
+        write_result(&path, &sent).unwrap();
+        let read: SeedResult = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(read, sent);
+    }
+
+    // TEST_SCENARIO: without `--map-owner` every migration maps the container's agent to the machine's root, so the controller's Job needs no new flag. One that names another uid and gid is read as those, and one that is not two or three numeric ids is refused at the start rather than seeding a home with the wrong owner.
+    #[test]
+    fn the_owner_map_defaults_to_the_containers_agent_becoming_root() {
+        let base = [
+            "vm-seed",
+            "--source",
+            "/h",
+            "--url",
+            "u",
+            "--token-file",
+            "t",
+            "--ca-file",
+            "c",
+        ];
+        let args = Args::try_parse_from(base.iter().copied().chain([
+            "--map-owner",
+            "1000:2000:0",
+            "--max-bytes",
+            "4096",
+        ]))
+        .unwrap();
+        assert_eq!(
+            args.map_owner,
+            OwnerMap {
+                uid: 1000,
+                gid: 2000,
+                to: 0
+            }
+        );
+        assert_eq!(args.max_bytes, Some(4096));
+        for bad in ["65532", "a:0", "0:-1", "1:2:3:4", ""] {
+            assert!(
+                Args::try_parse_from(base.iter().copied().chain(["--map-owner", bad])).is_err(),
+                "{bad:?}"
+            );
+        }
+    }
+}

@@ -1,6 +1,5 @@
 import { Help } from "@carbon/icons-react";
 
-import { Card } from "@/components/ui/card";
 import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
@@ -83,21 +82,16 @@ function HeldSegmentCard({ segment }: { segment: ComputeSegment }) {
 interface Props {
   agents: readonly AgentView[];
   workingAgentIds: ReadonlySet<string>;
-  compact?: boolean;
 }
 
-export function ComputeUsage({ agents, workingAgentIds, compact }: Props) {
+export function ComputeUsage({ agents, workingAgentIds }: Props) {
   const { data: budget } = useBudgetReserved();
   const { data: links } = useLinks();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   if (!budget) return null;
 
   const unit = slotUnitOf(budget);
-  const view = computeView(
-    agents.filter((a) => a.state === "running"),
-    workingAgentIds,
-    budget,
-  );
+  const view = computeView(agents, workingAgentIds, budget);
 
   return (
     <>
@@ -119,14 +113,12 @@ export function ComputeUsage({ agents, workingAgentIds, compact }: Props) {
           Request more
         </a>
       </div>
-      {!compact && (
-        <div className="mb-3">
-          <p className="text-2xl font-semibold tabular-nums text-foreground">
-            {view.usedSlots}/{view.ceilingSlots}
-          </p>
-          <p className="text-sm text-muted-foreground">Slots</p>
-        </div>
-      )}
+      <div className="mb-3">
+        <p className="text-2xl font-semibold tabular-nums text-foreground">
+          {view.usedSlots}/{view.ceilingSlots}
+        </p>
+        <p className="text-sm text-muted-foreground">Slots</p>
+      </div>
       <div className="mb-3">
         <SlotBar
           segments={view.segments}
@@ -168,13 +160,5 @@ export function ComputeUsage({ agents, workingAgentIds, compact }: Props) {
         </div>
       )}
     </>
-  );
-}
-
-export function ComputeUsageCard(props: Props) {
-  return (
-    <Card className="mb-8 border border-border p-4">
-      <ComputeUsage {...props} />
-    </Card>
   );
 }

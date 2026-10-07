@@ -44,9 +44,9 @@ export function SidebarSection({
           open={open}
           onToggle={onToggle}
           chevronClassName="text-muted-foreground"
-          className="min-w-0 flex-1 text-sm font-medium text-foreground transition-colors"
+          className="flex-1 text-sm font-medium text-foreground transition-colors"
         >
-          <span className="truncate">{title}</span>
+          <span className="whitespace-nowrap">{title}</span>
         </DisclosureToggle>
         {headerRight}
       </div>

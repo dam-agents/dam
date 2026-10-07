@@ -1,6 +1,0 @@
-#!/bin/sh
-# Resolve a command ignoring both shim directories, so a shim can exec the real
-# binary without re-entering itself.
-PATH=$(printf '%s' "$PATH" | tr ':' '\n' \
-    | grep -vx -e /usr/local/share/lazy-tools -e /usr/local/share/tool-shims \
-    | paste -sd:) command -v "$1"

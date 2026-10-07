@@ -8,11 +8,14 @@ import {
   type AgentConnections,
   type Connection,
   type ConnectionCreateInput,
+  type ConnectionCredentialUpdate,
   type ConnectionsService,
   type ConnectionTemplateView,
   type ConnectionView,
   type Contribution,
   type SecretRef,
+  preferenceGroupOf,
+  signingTargetOf,
   unaddressableRivalHost,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
@@ -32,6 +35,11 @@ import {
 } from "../domain/build-connection.js";
 import { parseGitHubAppScope } from "../domain/github-app-scope.js";
 import {
+  gitHubUserTokenApiBase,
+  parseGitHubUserTokenScope,
+  supportsGitHubUserTokenScope,
+} from "../domain/github-user-token-scope.js";
+import {
   shareIdFromTokenHeader,
   tokenHeaderName,
 } from "../../kb-shares/index.js";
@@ -44,6 +52,17 @@ import {
   connectionSecretAnnotations,
   CONNECTION_TOKEN_PLACEHOLDER,
 } from "../domain/connection-sds.js";
+import {
+  awsCredentialsFile,
+  parseS3Endpoint,
+  s3EndpointOrigin,
+  type Sigv4KeyPair,
+  sigv4KeyPair,
+} from "../domain/s3-contributions.js";
+import type {
+  S3CredentialProbe,
+  S3CredentialProbeFailure,
+} from "../domain/s3-credential-probe.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
@@ -53,8 +72,15 @@ import type { OAuthFlowService } from "./oauth-flow.js";
 import { mintClientCredentialsToken } from "./client-credentials.js";
 import { gitHubAppMintLockKey, mintGitHubAppToken } from "./github-app.js";
 import type { XactLock } from "../../../core/xact-lock.js";
-import { refreshOAuthAccessToken } from "./oauth-token.js";
+import {
+  refreshOAuthAccessToken,
+  resolveOAuthClientSecret,
+  type OAuthAuth,
+} from "./oauth-token.js";
+import { scopeGitHubUserToken } from "./github-user-token.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
+import { recordAccountLabel } from "./account-label.js";
+import { accountLabelOf } from "../domain/account-label.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
@@ -92,6 +118,7 @@ export function createConnectionsService(deps: {
   oauthFlow: OAuthFlowService;
   oauthEngine: OAuthEngine;
   githubAppEngine: GitHubAppEngine;
+  s3CredentialProbe: S3CredentialProbe;
   oauthCallbackUrl: string;
   brandName: string;
   connectionLock: XactLock;
@@ -109,16 +136,18 @@ export function createConnectionsService(deps: {
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
   function toView(conn: Connection): ConnectionView {
     const template = deps.templates.get(conn.templateId);
-    const hosts = conn.contributions
-      .filter(
-        (
-          c,
-        ): c is Extract<
-          Connection["contributions"][number],
-          { kind: "egress-allow" | "egress-inject" }
-        > => c.kind === "egress-allow" || c.kind === "egress-inject",
-      )
-      .map((c) => c.host);
+    const accountLabel = accountLabelOf(conn);
+    const hosts = [
+      ...new Set(
+        conn.contributions.flatMap((c) =>
+          c.kind === "egress-allow" ||
+          c.kind === "egress-inject" ||
+          c.kind === "egress-sign"
+            ? [c.host]
+            : [],
+        ),
+      ),
+    ];
     const presetAppSlug =
       conn.auth.kind === "oauth" &&
       template?.authKind === "oauth" &&
@@ -150,6 +179,14 @@ export function createConnectionsService(deps: {
             ...(conn.auth.kind === "github-app"
               ? githubAppScopeView(conn.auth)
               : {}),
+            ...(conn.auth.kind === "oauth" &&
+            supportsGitHubUserTokenScope(conn.templateId)
+              ? {
+                  githubUserToken: conn.auth.githubUserTokenScope
+                    ? { scope: conn.auth.githubUserTokenScope }
+                    : {},
+                }
+              : {}),
           }
         : {};
     return {
@@ -162,6 +199,7 @@ export function createConnectionsService(deps: {
       authKind: conn.auth.kind,
       contributions: conn.contributions,
       hosts,
+      ...(accountLabel ? { accountLabel } : {}),
       ...oauthExtras,
     };
   }
@@ -222,6 +260,7 @@ export function createConnectionsService(deps: {
       value,
       ...buildConnectionSdsFields(conn.contributions, value),
     });
+    await recordAccountLabel(conn, value, deps);
   }
 
   async function rotateClientSecret(
@@ -307,6 +346,7 @@ export function createConnectionsService(deps: {
           conn: fresh,
           auth: fresh.auth,
           engine: deps.oauthEngine,
+          githubAppEngine: deps.githubAppEngine,
           templates: deps.templates,
           secretStore: deps.secretStore,
         });
@@ -341,6 +381,36 @@ export function createConnectionsService(deps: {
       });
     }
     return { conn, auth: conn.auth };
+  }
+
+  async function requireGitHubUserTokenConnection(id: string): Promise<{
+    conn: Connection;
+    auth: OAuthAuth;
+  }> {
+    const conn = await deps.repo.get(id, deps.ownerId);
+    if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
+    if (
+      conn.auth.kind !== "oauth" ||
+      !supportsGitHubUserTokenScope(conn.templateId)
+    ) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "This connection is not a GitHub sign-in.",
+      });
+    }
+    return { conn, auth: conn.auth };
+  }
+
+  async function readGitHubUserToken(auth: OAuthAuth): Promise<string> {
+    const token = await deps.secretStore.getField(auth.accessTokenRef);
+    if (!token) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "This connection has not signed in to GitHub yet. Authorize it first.",
+      });
+    }
+    return token;
   }
 
   async function readPrivateKey(
@@ -419,6 +489,64 @@ export function createConnectionsService(deps: {
     return true;
   }
 
+  async function assertS3KeysAccepted(
+    keys: Sigv4KeyPair,
+    target: { endpoint: string; region: string; bucket?: string },
+    connectionId: string,
+  ): Promise<void> {
+    const bucket = target.bucket?.trim();
+    const outcome = await deps.s3CredentialProbe.probe({
+      endpoint: target.endpoint,
+      region: target.region,
+      ...(bucket ? { bucket } : {}),
+      ...keys,
+    });
+    if (outcome.ok) return;
+    securityLog("warn", "connection.s3_probe_failed", {
+      category: "credential",
+      actor: deps.ownerId,
+      actorKind: "user",
+      target: connectionId,
+      result: "failure",
+      reason: outcome.reason,
+      detail: { probe: outcome.detail },
+    });
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: s3ProbeFailureMessage(outcome.reason, outcome.detail, bucket),
+    });
+  }
+
+  async function rotateSigv4Keys(
+    conn: Connection,
+    auth: Extract<Connection["auth"], { kind: "sigv4" }>,
+    rawKeys: Sigv4KeyPair,
+  ): Promise<void> {
+    const keys = await rejectIfInvalid(async () => sigv4KeyPair(rawKeys));
+    const signing = signingTargetOf(conn.contributions);
+    if (!signing) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: `connection ${conn.id} has no signing target`,
+      });
+    }
+    const bucket = rememberedInput(conn, "bucket");
+    await assertS3KeysAccepted(
+      keys,
+      {
+        endpoint: s3EndpointOrigin(signing),
+        region: auth.region,
+        ...(bucket ? { bucket } : {}),
+      },
+      conn.id,
+    );
+    await deps.secretStore.putFields(auth.accessKeyIdRef, {
+      [auth.accessKeyIdRef.field]: keys.accessKeyId,
+      [auth.secretAccessKeyRef.field]: keys.secretAccessKey,
+      [auth.credentialsFileRef.field]: awsCredentialsFile(keys),
+    });
+  }
+
   async function rejectIfInvalid<T>(mint: () => Promise<T>): Promise<T> {
     try {
       return await mint();
@@ -464,7 +592,7 @@ export function createConnectionsService(deps: {
           const conn = conns[i]!;
           if (conn.templateId !== SHARED_KB_TEMPLATE_ID) return;
           if (conn.auth.kind !== "header") return;
-          const remembered = rememberedShareName(conn);
+          const remembered = rememberedInput(conn, SHARE_NAME_INPUT_KEY);
           if (remembered) view.name = remembered;
           const shareId = shareIdFromTokenHeader(conn.auth.headerName);
           if (!shareId) {
@@ -528,22 +656,32 @@ export function createConnectionsService(deps: {
       return deps.oauthFlow.startOAuth(connectionId, opts);
     },
 
-    async update(id: string, value: string): Promise<void> {
+    async update(
+      id: string,
+      credential: ConnectionCredentialUpdate,
+    ): Promise<void> {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
 
       switch (conn.auth.kind) {
         case "header":
-          await rotateHeaderValue(conn, conn.auth, value);
+          await rotateHeaderValue(conn, conn.auth, singleValueOf(credential));
           break;
         case "client-credentials":
-          await rotateClientSecret(conn, conn.auth, value);
+          await rotateClientSecret(conn, conn.auth, singleValueOf(credential));
           break;
         case "github-app":
-          await rotatePrivateKey(conn, conn.auth, value);
+          await rotatePrivateKey(conn, conn.auth, singleValueOf(credential));
           break;
         case "oauth":
-          await rotateOAuthClientSecret(conn, conn.auth, value);
+          await rotateOAuthClientSecret(
+            conn,
+            conn.auth,
+            singleValueOf(credential),
+          );
+          break;
+        case "sigv4":
+          await rotateSigv4Keys(conn, conn.auth, keyPairOf(credential));
           break;
         case "none":
           throw new TRPCError({
@@ -586,6 +724,9 @@ export function createConnectionsService(deps: {
           break;
         case "header":
           paths.add(conn.auth.valueRef.path);
+          break;
+        case "sigv4":
+          paths.add(conn.auth.accessKeyIdRef.path);
           break;
         case "none":
           break;
@@ -663,6 +804,7 @@ export function createConnectionsService(deps: {
         connections: grants.map((g) => ({
           connectionId: g.connectionId,
           grantedAt: g.grantedAt.toISOString(),
+          preferred: g.preferred,
         })),
       };
     },
@@ -735,6 +877,54 @@ export function createConnectionsService(deps: {
       });
     },
 
+    async setPreferredConnection(
+      agentId: string,
+      connectionId: string,
+    ): Promise<void> {
+      const conn = await deps.repo.get(connectionId, deps.ownerId);
+      if (!conn) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "connection not found",
+        });
+      }
+      await deps.connectionLock(`agent:connections:${agentId}`, async () => {
+        const granted = await deps.repo.listConnectionsForAgent(agentId);
+        if (!granted.some((c) => c.id === connectionId)) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "connection is not granted to this agent",
+          });
+        }
+        const group = preferenceGroupOf(conn.contributions);
+        const siblings = granted
+          .filter(
+            (c) =>
+              c.id !== connectionId &&
+              group !== undefined &&
+              preferenceGroupOf(c.contributions) === group,
+          )
+          .map((c) => c.id);
+        await deps.repo.setPreferred(agentId, connectionId, siblings);
+        securityLog("info", "connection.preferred_set", {
+          category: "authz-list",
+          actor: deps.ownerId,
+          actorKind: "user",
+          agentId,
+          target: connectionId,
+          result: "success",
+          detail: { group, cleared: siblings },
+        });
+        const owned = await deps.repo.listByOwner(deps.ownerId);
+        await deps.fanOut.apply({
+          agentId,
+          ownerId: deps.ownerId,
+          grantedConnections: granted,
+          allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
+        });
+      });
+    },
+
     async createFromTemplate(input): Promise<string> {
       const template = deps.templates.get(input.templateId);
       if (!template) {
@@ -769,7 +959,7 @@ export function createConnectionsService(deps: {
           [SHARE_AGENT_INPUT_KEY]: share.agentId,
           ...(share.name ? { [SHARE_NAME_INPUT_KEY]: share.name } : {}),
         };
-        connectionName = sharedKbConnectionName(share.agentId);
+        connectionName = `kb-${share.agentId}`;
         const sharedKb = (await deps.repo.listByOwner(deps.ownerId)).filter(
           (c) => c.templateId === SHARED_KB_TEMPLATE_ID,
         );
@@ -800,10 +990,9 @@ export function createConnectionsService(deps: {
         deps.brandName,
       );
 
-      const id = input.id ?? newConnectionId();
-      const contributions = built.contributions.map(
-        (c): Contribution =>
-          c.kind === "mcp-entry" ? { ...c, name: connectionName } : c,
+      const id = input.id ?? `conn-${randomBytes(6).toString("hex")}`;
+      const contributions = built.contributions.map((c): Contribution =>
+        c.kind === "mcp-entry" ? { ...c, name: connectionName } : c,
       );
       const secretPath = connectionSecretPath(built.auth);
 
@@ -877,6 +1066,20 @@ export function createConnectionsService(deps: {
         });
       }
 
+      if (effectiveInput.authKind === "sigv4" && auth.kind === "sigv4") {
+        await assertS3KeysAccepted(
+          sigv4KeyPair(effectiveInput),
+          {
+            endpoint: s3EndpointOrigin(
+              parseS3Endpoint(effectiveInput.endpoint),
+            ),
+            region: auth.region,
+            ...(effectiveInput.bucket ? { bucket: effectiveInput.bucket } : {}),
+          },
+          id,
+        );
+      }
+
       if (secretPath) {
         const placeholderSds = buildConnectionSdsFields(
           contributions,
@@ -897,16 +1100,17 @@ export function createConnectionsService(deps: {
         );
       }
 
+      const record: Connection = {
+        id,
+        ownerId: deps.ownerId,
+        templateId: template.id,
+        name: connectionName,
+        inputs: { ...stripSecretsFromInputs(input), ...sharedKbInputs },
+        auth,
+        contributions,
+      };
       try {
-        await deps.repo.insert({
-          id,
-          ownerId: deps.ownerId,
-          templateId: template.id,
-          name: connectionName,
-          inputs: { ...stripSecretsFromInputs(input), ...sharedKbInputs },
-          auth,
-          contributions,
-        });
+        await deps.repo.insert(record);
       } catch (err) {
         if (secretPath) {
           await deps.secretStore.delete({ path: secretPath }).catch(() => {});
@@ -938,6 +1142,13 @@ export function createConnectionsService(deps: {
           templateId: template.id,
           kind: template.category === "mcp" ? "mcp" : "oauth_app",
         });
+      }
+      const headerValue =
+        auth.kind === "header" && secretPath
+          ? built.secrets.get(secretPath)?.["value"]
+          : undefined;
+      if (headerValue) {
+        await recordAccountLabel(record, headerValue, deps);
       }
       return id;
     },
@@ -1050,6 +1261,90 @@ export function createConnectionsService(deps: {
         },
       });
     },
+
+    async probeGitHubUserTokenForConnection(input) {
+      const { conn, auth } = await requireGitHubUserTokenConnection(
+        input.connectionId,
+      );
+      const accessToken = await readGitHubUserToken(auth);
+      return rejectIfInvalid(() =>
+        deps.githubAppEngine.readUserInstallations({
+          id: `connection:${conn.id}:${conn.templateId}`,
+          apiBaseUrl: gitHubUserTokenApiBase(auth.host),
+          accessToken,
+        }),
+      );
+    },
+
+    async updateGitHubUserTokenScope(input) {
+      const { conn } = await requireGitHubUserTokenConnection(input.id);
+      let scope: ReturnType<typeof parseGitHubUserTokenScope>;
+      try {
+        scope = parseGitHubUserTokenScope(input);
+      } catch (err) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: err instanceof Error ? err.message : "Invalid scope.",
+        });
+      }
+
+      await deps.connectionLock(connectionRefreshLockKey(conn.id), async () => {
+        const fresh = await deps.repo.get(conn.id, deps.ownerId);
+        if (!fresh || fresh.auth.kind !== "oauth") return;
+        const auth = fresh.auth;
+        const accessToken = await readGitHubUserToken(auth);
+        const scoped = scope
+          ? await rejectIfInvalid(async () =>
+              scopeGitHubUserToken(deps.githubAppEngine, {
+                connectionRef: `connection:${conn.id}:${conn.templateId}`,
+                auth,
+                scope,
+                clientSecret: await resolveOAuthClientSecret({
+                  conn: fresh,
+                  auth,
+                  templates: deps.templates,
+                  secretStore: deps.secretStore,
+                }),
+                accessToken,
+              }),
+            )
+          : undefined;
+
+        await deps.secretStore.putFields(
+          auth.accessTokenRef,
+          buildConnectionSdsFields(
+            fresh.contributions,
+            scoped?.accessToken ?? accessToken,
+          ),
+        );
+
+        const nextAuth: OAuthAuth = { ...withoutRefreshFailureMarker(auth) };
+        delete nextAuth.githubUserTokenScope;
+        if (scope) {
+          nextAuth.githubUserTokenScope = scoped?.accountLogin
+            ? { ...scope, targetLogin: scoped.accountLogin }
+            : scope;
+        }
+        if (scoped?.expiresAt !== undefined) {
+          nextAuth.expiresAt = scoped.expiresAt;
+        }
+        await deps.repo.updateAuth(conn.id, nextAuth);
+      });
+
+      securityLog("info", "connection.scope_update", {
+        category: "credential",
+        actor: deps.ownerId,
+        actorKind: "user",
+        target: conn.id,
+        result: "success",
+        detail: {
+          templateId: conn.templateId,
+          narrowed: scope !== undefined,
+          repositoryIds: scope?.repositoryIds?.length ?? 0,
+          permissions: Object.keys(scope?.permissions ?? {}).length,
+        },
+      });
+    },
   };
 }
 
@@ -1101,24 +1396,22 @@ function reviveFailureReason(err: unknown): string {
 const SHARE_NAME_INPUT_KEY = "sharedKbName";
 const SHARE_AGENT_INPUT_KEY = "sharedKbAgentId";
 
-function sharedKbConnectionName(agentId: string): string {
-  return `kb-${agentId}`;
-}
-
 function rememberedInput(conn: Connection, key: string): string | null {
   const value = conn.inputs[key];
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function rememberedShareName(conn: Connection): string | null {
-  return rememberedInput(conn, SHARE_NAME_INPUT_KEY);
 }
 
 function stripSecretsFromInputs(input: {
   authKind: ConnectionCreateInput["authKind"];
   [k: string]: unknown;
 }): Record<string, unknown> {
-  const SECRET_KEYS = ["value", "clientSecret", "privateKey"];
+  const SECRET_KEYS = [
+    "value",
+    "clientSecret",
+    "privateKey",
+    "accessKeyId",
+    "secretAccessKey",
+  ];
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) {
     if (SECRET_KEYS.includes(k)) continue;
@@ -1138,6 +1431,8 @@ function deriveStatus(conn: Connection): ConnectionView["status"] {
       return isExpiredAuth(conn.auth) ? "expired" : "active";
     case "header":
       return "active";
+    case "sigv4":
+      return "active";
     case "none":
       return "active";
   }
@@ -1154,10 +1449,6 @@ function isExpiredAuth(auth: {
   );
 }
 
-function newConnectionId(): string {
-  return `conn-${randomBytes(6).toString("hex")}`;
-}
-
 function connectionSecretPath(auth: Connection["auth"]): string | null {
   switch (auth.kind) {
     case "oauth":
@@ -1166,7 +1457,55 @@ function connectionSecretPath(auth: Connection["auth"]): string | null {
       return auth.accessTokenRef.path;
     case "header":
       return auth.valueRef.path;
+    case "sigv4":
+      return auth.accessKeyIdRef.path;
     case "none":
       return null;
+  }
+}
+
+function singleValueOf(credential: ConnectionCredentialUpdate): string {
+  if (!("value" in credential)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        "This connection stores a single credential value, not a key pair.",
+    });
+  }
+  return credential.value;
+}
+
+function keyPairOf(credential: ConnectionCredentialUpdate): Sigv4KeyPair {
+  if ("value" in credential) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        "An Object Storage connection takes an access key ID and a secret access key.",
+    });
+  }
+  return credential;
+}
+
+function s3ProbeFailureMessage(
+  reason: S3CredentialProbeFailure,
+  detail: string,
+  bucket: string | undefined,
+): string {
+  switch (reason) {
+    case "refused":
+      return (
+        `The endpoint refused these keys (${detail}). Check the access key ID and secret access key` +
+        (bucket
+          ? ` and that the key may reach bucket "${bucket}".`
+          : ", or name a bucket the key may reach.")
+      );
+    case "no-such-bucket":
+      return bucket
+        ? `The endpoint has no bucket named "${bucket}" that these keys can see (${detail}).`
+        : `The endpoint answered that nothing is there (${detail}) — check the endpoint URL.`;
+    case "unreachable":
+      return `Could not reach the endpoint (${detail}). Check the URL, and that the platform can reach it.`;
+    case "failed":
+      return `The endpoint did not accept the check request (${detail}).`;
   }
 }

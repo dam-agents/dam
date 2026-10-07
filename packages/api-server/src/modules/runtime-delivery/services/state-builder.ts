@@ -15,8 +15,11 @@ import {
   RESERVED_MCP_SERVER_NAMES,
   SHARED_KB_TEMPLATE_ID,
   applyConnectionEgressAddressing,
+  composeAwsProfiles,
+  composeGitHubAccounts,
   type Contribution,
   type ContributionKind,
+  type GitHubAccountSource,
   type RuntimeEvent as Event,
   type RuntimeEventKind,
 } from "api-server-api";
@@ -106,13 +109,11 @@ async function readUserEnvContributions(
     .from(agentEnv)
     .where(eq(agentEnv.agentId, agentId))
     .orderBy(asc(agentEnv.name));
-  return rows.map(
-    (r): Contribution => ({
-      kind: "env",
-      name: r.name,
-      placeholder: r.value,
-    }),
-  );
+  return rows.map((r): Contribution => ({
+    kind: "env",
+    name: r.name,
+    placeholder: r.value,
+  }));
 }
 
 async function readGrantedContributions(
@@ -122,8 +123,11 @@ async function readGrantedContributions(
   const rows = (await db
     .select({
       id: connectionsTable.id,
+      name: connectionsTable.name,
       contributions: connectionsTable.contributions,
       templateId: connectionsTable.templateId,
+      preferred: connectionGrants.preferred,
+      grantedAt: connectionGrants.grantedAt,
     })
     .from(connectionGrants)
     .innerJoin(
@@ -133,11 +137,14 @@ async function readGrantedContributions(
     .where(eq(connectionGrants.agentId, agentId))
     .orderBy(asc(connectionsTable.createdAt), asc(connectionsTable.id))) as {
     id: string;
+    name: string;
     contributions: unknown;
     templateId: string;
+    preferred: boolean;
+    grantedAt: Date;
   }[];
 
-  const out: Contribution[] = [];
+  const sources: GitHubAccountSource[] = [];
   const templateIds = new Set<string>();
   for (const row of rows) {
     templateIds.add(row.templateId);
@@ -147,9 +154,21 @@ async function readGrantedContributions(
       const result = contributionSchema.safeParse(raw);
       if (result.success) parsed.push(result.data);
     }
-    out.push(...applyConnectionEgressAddressing(row.id, parsed));
+    sources.push({
+      id: row.id,
+      name: row.name,
+      preferred: row.preferred,
+      grantedAt: row.grantedAt.toISOString(),
+      contributions: applyConnectionEgressAddressing(row.id, parsed),
+    });
   }
-  return { contributions: out, templateIds };
+  return {
+    contributions: [
+      ...composeGitHubAccounts(sources),
+      ...composeAwsProfiles(sources),
+    ],
+    templateIds,
+  };
 }
 
 async function readSkillRefContributions(
@@ -166,15 +185,13 @@ async function readSkillRefContributions(
     .from(agentSkills)
     .where(eq(agentSkills.agentId, agentId))
     .orderBy(asc(agentSkills.source), asc(agentSkills.name));
-  return rows.map(
-    (r): Contribution => ({
-      kind: "skill-ref",
-      sourceUrl: r.source,
-      name: r.name,
-      version: r.version,
-      ...(r.path !== null ? { path: r.path } : {}),
-    }),
-  );
+  return rows.map((r): Contribution => ({
+    kind: "skill-ref",
+    sourceUrl: r.source,
+    name: r.name,
+    version: r.version,
+    ...(r.path !== null ? { path: r.path } : {}),
+  }));
 }
 
 function toEvent(row: PendingEventRow): Event | null {

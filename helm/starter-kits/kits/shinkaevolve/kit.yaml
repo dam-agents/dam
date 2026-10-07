@@ -11,7 +11,7 @@ onboarding: false
 image:
   ref: quay.io/dam-agents/shinkaevolve # @ci-pin shinkaevolve-image-tag
   harness: claude-code
-  providers: [ibm-litellm, openai]
+  providers: [ibm-litellm, curve-bender, openai]
 resources:
   storage: 5Gi
 connections:

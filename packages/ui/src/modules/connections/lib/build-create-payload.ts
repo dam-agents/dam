@@ -3,9 +3,15 @@ import type {
   ConnectionTemplateView,
 } from "api-server-api";
 
-import { compact } from "@/lib/compact";
-
 import { validateConnectionName } from "./connection-name.js";
+
+function compact<T extends Record<string, unknown>>(
+  obj: T,
+): { [K in keyof T]: Exclude<T[K], undefined> } {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined),
+  ) as { [K in keyof T]: Exclude<T[K], undefined> };
+}
 
 export interface CreateFormValues {
   name: string;
@@ -101,6 +107,23 @@ export function buildCreatePayload(
         configInputs:
           Object.keys(configInputs).length > 0 ? configInputs : undefined,
         value,
+      });
+    }
+    case "sigv4": {
+      const endpoint = submitted("endpoint");
+      const accessKeyId = submitted("accessKeyId");
+      const secretAccessKey = submitted("secretAccessKey");
+      if (!endpoint) return { error: "Endpoint URL is required" };
+      if (!accessKeyId) return { error: "Access key ID is required" };
+      if (!secretAccessKey) return { error: "Secret access key is required" };
+      return compact({
+        ...common,
+        authKind: "sigv4" as const,
+        endpoint,
+        region: submitted("region"),
+        bucket: submitted("bucket"),
+        accessKeyId,
+        secretAccessKey,
       });
     }
     case "none":

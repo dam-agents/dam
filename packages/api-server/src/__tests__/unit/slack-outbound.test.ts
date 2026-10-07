@@ -10,10 +10,10 @@ import {
 } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import type { AcpClient } from "../../core/acp-client.js";
 import { configureLogger } from "../../core/logger.js";
-import type { StoredChannelConfig } from "../../modules/channels/stored-channel.js";
 
 const OWNER = "kc|owner-1";
 const BOUND = "C-BOUND";
+const OWNER_SLACK = "U-OWNER";
 configureLogger({ level: "error", write: () => {} });
 
 function harness(opts: {
@@ -22,6 +22,7 @@ function harness(opts: {
   channels?: FakeSlackChannel[];
   gatewayDown?: boolean;
   workspace?: string;
+  ownerSlackUsers?: string[];
 }) {
   const gw = createFakeSlackGateway();
   gw.setChannels(opts.channels ?? [], opts.workspace ?? "");
@@ -38,15 +39,19 @@ function harness(opts: {
     ensureReady: async () => {},
   } as unknown as AgentsService;
 
-  const worker = createSlackWorker(
-    () => acp,
-    () => gw,
-    () => agents,
-    { resolve: async () => null } as never,
-    { authUrl: "http://kc", clientId: "c" } as never,
-    createMemoryTtlStore(600_000),
-    async () => OWNER,
-    {
+  const worker = createSlackWorker({
+    makeAcpClient: () => acp,
+    createGateway: () => gw,
+    agents: () => agents,
+    identityLinks: {
+      resolve: async () => null,
+      externalUsersOf: async (_provider: string, sub: string) =>
+        sub === OWNER ? (opts.ownerSlackUsers ?? [OWNER_SLACK]) : [],
+    } as never,
+    oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
+    pendingOAuthFlows: createMemoryTtlStore(600_000),
+    getInstanceOwner: async () => OWNER,
+    channelRegistry: {
       resolveSlackBindings: async () => [],
       resolveSlackChannelsByInstance: async () =>
         opts.boundChannelId
@@ -55,17 +60,17 @@ function harness(opts: {
             )
           : [],
     },
-    async () => {},
-    async () => {},
-    async () => true,
-    { name: "DAM", short: "dam" },
-    async () => true,
-    "http://ui",
-    stubTurnAttendance(),
-    stubWorkspaceFiles(),
-    (teamId) => teamId,
-    () => {},
-  );
+    unbindSlackChannel: async () => {},
+    setSlackChannelAmbient: async () => {},
+    setSlackDefault: async () => true,
+    brand: { name: "DAM", short: "dam" },
+    isTermsAccepted: async () => true,
+    uiBaseUrl: "http://ui",
+    attendance: stubTurnAttendance(),
+    workspaceFiles: stubWorkspaceFiles(),
+    listWorkspaces: async () => [],
+    emit: () => {},
+  });
 
   return {
     gw,
@@ -74,11 +79,11 @@ function harness(opts: {
       text: string,
       options?: Parameters<typeof worker.postMessage>[2],
     ) {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.start("agent-1");
       return worker.postMessage("agent-1", text, options);
     },
     async list() {
-      await worker.start("agent-1", {} as StoredChannelConfig);
+      await worker.start("agent-1");
       return worker.listConversations("agent-1");
     },
     messages: () => gw.readOutbound().filter((r) => r.kind === "message"),
@@ -88,8 +93,13 @@ function harness(opts: {
 
 const workspace: FakeSlackChannel[] = [
   { id: BOUND, name: "agent-home", botIsMember: true },
-  { id: "C-GENERAL", name: "general", botIsMember: true },
-  { id: "C-ALERTS", name: "alerts", botIsMember: true },
+  {
+    id: "C-GENERAL",
+    name: "general",
+    botIsMember: true,
+    members: [OWNER_SLACK],
+  },
+  { id: "C-ALERTS", name: "alerts", botIsMember: true, members: [OWNER_SLACK] },
   { id: "C-STAFF", name: "staff", botIsMember: false },
 ];
 
@@ -251,7 +261,7 @@ describe("slack outbound — cross-workspace reach", () => {
 
   it("a reply's attachment is uploaded into the same thread", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
-    await h.worker.start("agent-1", {} as StoredChannelConfig);
+    await h.worker.start("agent-1");
     const result = await h.worker.reply("agent-1", {
       text: "lorem ipsum attached",
       threadTs: "1700000000.000100",
@@ -272,17 +282,25 @@ describe("slack outbound — cross-workspace reach", () => {
     ]);
   });
 
+  /**
+   * TEST_SCENARIO: The text is posted before the file is shared, so a failed
+   * upload leaves a delivered message behind. The send succeeded and only the
+   * attachment is missing, so the result says ok and names the upload failure
+   * beside it. Reporting it as a plain failure would read as nothing having
+   * been sent, and the agent would send the whole message a second time.
+   */
   it("a failed upload after a delivered text message says the text landed", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
-    h.gw.uploadFile = async () => {
+    h.gw.shareFile = async () => {
       throw new Error("upload_error");
     };
     const result = await h.post("report attached", {
       conversationId: "C-ALERTS",
       attachment: { filename: "report.md", data: Buffer.from("x") },
     });
-    expect(result).toMatchObject({
-      error: expect.stringContaining("message posted, but"),
+    expect(result).toEqual({
+      ok: true,
+      attachmentError: expect.stringContaining("upload_error"),
     });
     expect(h.messages()).toMatchObject([{ channel: "C-ALERTS" }]);
   });
@@ -419,5 +437,37 @@ describe("slack outbound — which workspace a post goes out under", () => {
     const listed = (await h.list()).map((c) => c.id);
     expect(listed).toContain(BOUND);
     expect(listed).not.toContain("C-ELSEWHERE");
+  });
+});
+
+describe("slack outbound — reach follows the owner (#4165)", () => {
+  const channels: FakeSlackChannel[] = [
+    ...workspace,
+    {
+      id: "C-THEIRS",
+      name: "their-team",
+      botIsMember: true,
+      members: ["U-SOMEONE"],
+    },
+  ];
+
+  /**
+   * TEST_SCENARIO: The shared bot sits in channels of many teams. An agent
+   * may list and post into only the channels its owner is a member of,
+   * whoever supplied the chatId.
+   */
+  it("lists and posts into a channel only when the owner is in it", async () => {
+    const h = harness({ boundChannelId: BOUND, channels });
+    const listed = (await h.list()).map((c) => c.id);
+    expect(listed).toContain("C-GENERAL");
+    expect(listed).not.toContain("C-THEIRS");
+
+    expect(await h.post("hi", { conversationId: "C-GENERAL" })).toEqual({
+      ok: true,
+    });
+    expect(await h.post("leak", { conversationId: "C-THEIRS" })).toMatchObject({
+      error: expect.stringContaining("owner is not a member"),
+    });
+    expect(h.messages()).toMatchObject([{ channel: "C-GENERAL" }]);
   });
 });

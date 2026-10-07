@@ -3,7 +3,7 @@ import type {
   ToolCall,
   ToolCallContent,
   ToolCallUpdate,
-} from "@agentclientprotocol/sdk/dist/schema/types.gen.js";
+} from "@agentclientprotocol/sdk";
 import type { PlatformUndeliveredPrompt } from "api-server-api";
 
 import type {
@@ -12,6 +12,7 @@ import type {
   ToolChip,
   ToolContent,
 } from "../../types.js";
+import { describeJsonRpcError } from "./errors.js";
 import type { AcpUpdate } from "./types.js";
 
 const PLUMBING_TAGS = [
@@ -128,7 +129,13 @@ function applyUpdateOf(
 ): Message[] {
   switch (update.sessionUpdate) {
     case "platform_turn_ended":
-      return closeActiveAssistant(messages, at, telemetryPromptId);
+      return closeActiveAssistant(
+        messages,
+        at,
+        telemetryPromptId,
+        update.error &&
+          describeJsonRpcError(update.error.message, update.error.details),
+      );
 
     case "platform_prompt_accepted":
       return update.queued && waitsBehindAnotherReply(messages, update.promptId)
@@ -219,8 +226,7 @@ export function finalizeAllStreaming(messages: Message[]): Message[] {
   return messages.map(finalizeStreaming);
 }
 
-export const UNDELIVERED_MESSAGE =
-  "Not delivered — this never reached the agent.";
+const UNDELIVERED_MESSAGE = "Not delivered — this never reached the agent.";
 
 function textOf(record: PlatformUndeliveredPrompt): string {
   return record.blocks
@@ -591,6 +597,7 @@ function closeActiveAssistant(
   messages: Message[],
   at?: string,
   telemetryPromptId?: string,
+  interruption?: string,
 ): Message[] {
   const i = activeReplyIndex(messages);
   if (i === -1) return messages;
@@ -600,6 +607,8 @@ function closeActiveAssistant(
           ...x,
           ...(at !== undefined && { at }),
           ...(telemetryPromptId !== undefined && { telemetryPromptId }),
+          ...(interruption !== undefined &&
+            hasAgentContent(x) && { error: { message: interruption } }),
           streaming: false,
         }
       : x,

@@ -2,15 +2,13 @@ import { z } from "zod";
 
 export const ruleVerdictSchema = z.enum(["allow", "deny"]);
 
-const HOSTNAME =
-  /^(\*\.)?[a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*$/;
+const EGRESS_HOST =
+  /^(?:\*|(?:\*\.)?[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*)$/;
 const egressHostSchema = z
   .string()
   .min(1)
   .max(253)
-  .refine((h) => h === "*" || HOSTNAME.test(h), {
-    message: "host must be a DNS hostname, a *.wildcard, or bare *",
-  });
+  .regex(EGRESS_HOST, "host must be a DNS hostname, a *.wildcard, or bare *");
 
 export const egressPresetSchema = z.enum(["none", "trusted", "all"]);
 

@@ -11,8 +11,7 @@ import { Input } from "@/components/ui/input";
 import { externalLinkProps } from "@/lib/external-link";
 
 import { BOB_CHAT_MODES, type BobModelPins } from "../../../../types.js";
-import { ProviderFormShell } from "../provider-form-shell.js";
-import { MODES, stripWhitespace } from "./modes.js";
+import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
 
 const bobCredentialSchema = z
   .object({
@@ -130,7 +129,7 @@ export function BobForm({
           data-1p-ignore
           data-lpignore="true"
           data-form-type="other"
-          placeholder={MODES["api-key"].placeholder}
+          placeholder="bob_prod_bob-apikey_…"
           {...register("value")}
         />
         <Button type="submit" disabled={submitDisabled} className="shrink-0">

@@ -20,8 +20,11 @@ import type {
   WorkspaceFailure,
   WorkspaceMutationKind,
 } from "api-server-api";
-import { runtimeFeaturesOf, type RuntimeFeatures } from "agent-runtime-api";
-import { WORKSPACE_MUTATION_EVENT_KINDS } from "../domain/workspace-mutation.js";
+import {
+  runtimeFeaturesOf,
+  workspaceMutationEventKinds,
+  type RuntimeFeatures,
+} from "agent-runtime-api";
 import { kindSetChanged } from "../domain/capability-filter.js";
 
 export interface OutboxRow {
@@ -46,7 +49,7 @@ export interface PendingEventRow {
   expiresAt: Date;
 }
 
-export const DEFAULT_MAX_APPLY_ATTEMPTS = 8;
+const MAX_APPLY_ATTEMPTS = 8;
 
 const pendingEventColumns = {
   id: runtimeEvents.id,
@@ -99,9 +102,8 @@ export interface OutboxRepo {
       deliveredEventIds: string[];
       droppedContributionKinds: ContributionKind[];
     },
-    maxAttempts?: number,
   ): Promise<ApplyTransitions>;
-  listRetryable(maxAttempts: number): Promise<OutboxRow[]>;
+  listRetryable(): Promise<OutboxRow[]>;
   preparingWorkspaceAgentIds(agentIds: string[]): Promise<Set<string>>;
   workspaceFailures(
     agentIds: string[],
@@ -244,7 +246,6 @@ export function createOutboxRepo(db: Db): OutboxRepo {
       agentId,
       settledVersion,
       result,
-      maxAttempts = DEFAULT_MAX_APPLY_ATTEMPTS,
     ): Promise<ApplyTransitions> {
       const clean = result.failures.length === 0 && result.appliedHash !== null;
       return db.transaction(async (tx) => {
@@ -296,9 +297,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
               and(
                 eq(runtimeEvents.agentId, agentId),
                 inArray(runtimeEvents.id, result.settledEventIds),
-                inArray(runtimeEvents.kind, [
-                  ...WORKSPACE_MUTATION_EVENT_KINDS,
-                ]),
+                inArray(runtimeEvents.kind, [...workspaceMutationEventKinds]),
               ),
             );
         }
@@ -316,9 +315,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
               and(
                 eq(runtimeEvents.agentId, agentId),
                 inArray(runtimeEvents.id, unsettledIds),
-                inArray(runtimeEvents.kind, [
-                  ...WORKSPACE_MUTATION_EVENT_KINDS,
-                ]),
+                inArray(runtimeEvents.kind, [...workspaceMutationEventKinds]),
                 isNull(runtimeEvents.dispatchedAt),
               ),
             )
@@ -327,13 +324,15 @@ export function createOutboxRepo(db: Db): OutboxRepo {
               kind: runtimeEvents.kind,
               attempts: runtimeEvents.attempts,
             })) as { id: string; kind: string; attempts: number }[];
-          const exhausted = bumped.filter((r) => r.attempts >= maxAttempts);
+          const exhausted = bumped.filter(
+            (r) => r.attempts >= MAX_APPLY_ATTEMPTS,
+          );
           if (exhausted.length > 0) {
             await tx
               .update(runtimeEvents)
               .set({
                 dispatchedAt: new Date(),
-                error: sql`coalesce(${runtimeEvents.error} || ' — ', '') || ${`gave up after ${maxAttempts} delivery attempts`}`,
+                error: sql`coalesce(${runtimeEvents.error} || ' — ', '') || ${`gave up after ${MAX_APPLY_ATTEMPTS} delivery attempts`}`,
               })
               .where(
                 and(
@@ -374,7 +373,8 @@ export function createOutboxRepo(db: Db): OutboxRepo {
             })
             .where(eq(runtimeStateOutbox.agentId, agentId));
           const gaveUp =
-            prev.applyAttempts < maxAttempts && nextAttempts >= maxAttempts
+            prev.applyAttempts < MAX_APPLY_ATTEMPTS &&
+            nextAttempts >= MAX_APPLY_ATTEMPTS
               ? result.failures
               : [];
           return {
@@ -410,7 +410,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
       });
     },
 
-    async listRetryable(maxAttempts): Promise<OutboxRow[]> {
+    async listRetryable(): Promise<OutboxRow[]> {
       const rows = (await db
         .select()
         .from(runtimeStateOutbox)
@@ -419,7 +419,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
             sql`${runtimeStateOutbox.lastSettledVersion} < ${runtimeStateOutbox.version}`,
             and(
               sql`${runtimeStateOutbox.applyFailures} <> '[]'::jsonb`,
-              lt(runtimeStateOutbox.applyAttempts, maxAttempts),
+              lt(runtimeStateOutbox.applyAttempts, MAX_APPLY_ATTEMPTS),
             ),
             sql`EXISTS (
               SELECT 1 FROM runtime_events re
@@ -440,7 +440,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         .where(
           and(
             inArray(runtimeEvents.agentId, agentIds),
-            inArray(runtimeEvents.kind, [...WORKSPACE_MUTATION_EVENT_KINDS]),
+            inArray(runtimeEvents.kind, [...workspaceMutationEventKinds]),
             isNull(runtimeEvents.dispatchedAt),
             sql`${runtimeEvents.expiresAt} > now()`,
           ),
@@ -465,7 +465,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
         .where(
           and(
             inArray(runtimeEvents.agentId, agentIds),
-            inArray(runtimeEvents.kind, [...WORKSPACE_MUTATION_EVENT_KINDS]),
+            inArray(runtimeEvents.kind, [...workspaceMutationEventKinds]),
           ),
         )
         .orderBy(desc(runtimeEvents.version))) as {
@@ -487,7 +487,7 @@ export function createOutboxRepo(db: Db): OutboxRepo {
           error: r.error,
           settled: r.dispatchedAt !== null,
           attempts: r.attempts,
-          maxAttempts: DEFAULT_MAX_APPLY_ATTEMPTS,
+          maxAttempts: MAX_APPLY_ATTEMPTS,
         });
         out.set(r.agentId, list);
       }

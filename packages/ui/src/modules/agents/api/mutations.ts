@@ -39,6 +39,7 @@ export interface CreateAgentInput {
   egressPreset?: EgressPreset;
   registryCredential?: { server: string; username: string; password: string };
   hibernationTimeoutMin?: number;
+  requireConnectionAddress?: boolean;
   gitRepo?: { url: string; ref?: string };
   importEntries?: BundleEntry[];
   importRawBundle?: File;
@@ -191,6 +192,36 @@ export function useUpgradeAgentMutation(opts?: { silent?: boolean }) {
   });
 }
 
+export function useMigrateRuntimeMutation() {
+  return useMutation({
+    ...trpc.agents.migrateRuntime.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsAndBudget,
+      errorToast: "Failed to move the agent to the new runtime",
+    },
+  });
+}
+
+export function useAbortRuntimeMigrationMutation() {
+  return useMutation({
+    ...trpc.agents.abortRuntimeMigration.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsAndBudget,
+      errorToast: "Failed to undo the move to the new runtime",
+    },
+  });
+}
+
+export function useRetryRuntimeMigrationMutation() {
+  return useMutation({
+    ...trpc.agents.retryRuntimeMigration.mutationOptions(),
+    meta: {
+      ...invalidatesAgentsAndBudget,
+      errorToast: "Failed to retry the move to the new runtime",
+    },
+  });
+}
+
 export function useConnectSlack() {
   return useMutation({
     ...trpc.agents.connectSlack.mutationOptions(),
@@ -242,6 +273,7 @@ export function useSetAgentConnections() {
               byId.get(id) ?? {
                 connectionId: id,
                 grantedAt: new Date().toISOString(),
+                preferred: false,
               },
           ),
         });

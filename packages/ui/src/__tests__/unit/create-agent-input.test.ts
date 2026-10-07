@@ -122,6 +122,16 @@ describe("coding-agent setup completeness", () => {
 });
 
 describe("buildCodingAgentSetupInput", () => {
+  // TEST_SCENARIO: the create page's addressed-injection switch reaches the create only when it is on, so an agent created without it carries nothing new.
+  it("asks for addressed injection only when the switch is on", () => {
+    expect(
+      buildCodingAgentSetupInput({ ...setup, requireConnectionAddress: true }),
+    ).toMatchObject({ requireConnectionAddress: true });
+    expect(
+      buildCodingAgentSetupInput({ ...setup, requireConnectionAddress: false }),
+    ).not.toHaveProperty("requireConnectionAddress");
+  });
+
   it("sends the template, the trusted preset, and the provider after the granted connections", () => {
     expect(
       buildCodingAgentSetupInput({ ...setup, name: " velvet-comet " }),

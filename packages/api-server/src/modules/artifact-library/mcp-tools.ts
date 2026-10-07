@@ -38,29 +38,9 @@ export function registerArtifactLibraryTools(
   deps: {
     artifactLibrary: ArtifactLibraryServiceImpl;
     agentId: string;
-    attachToExperiment?: (
-      artifactId: string,
-      experimentId?: string,
-    ) => Promise<{ experimentId: string } | null>;
   },
 ): void {
   const lib = deps.artifactLibrary;
-
-  async function experimentAttachment(
-    artifactId: string,
-    experimentId?: string,
-  ): Promise<Record<string, string>> {
-    if (!deps.attachToExperiment) return {};
-    try {
-      const attached = await deps.attachToExperiment(artifactId, experimentId);
-      return attached ? { attached_to_experiment: attached.experimentId } : {};
-    } catch (err) {
-      return {
-        experiment_attach_error:
-          err instanceof Error ? err.message : String(err),
-      };
-    }
-  }
 
   server.tool(
     "create_artifact",
@@ -85,7 +65,7 @@ export function registerArtifactLibraryTools(
         .boolean()
         .optional()
         .describe(
-          "Opt-in HTML prompt buttons. Use only when the user requests them and has enabled Interactive artifacts. The page stays private. Read the platform-artifacts skill first; omit this for ordinary artifacts.",
+          "Opt-in HTML prompt buttons and state shared with the agent through a server it runs. Use only when the user requests them and has enabled Interactive artifacts. The page stays private. Read the platform-artifacts skill first; omit this for ordinary artifacts.",
         ),
       expires_in_hours: z
         .number()
@@ -104,12 +84,6 @@ export function registerArtifactLibraryTools(
         .describe(
           "Workspace-relative path of the file this content came from (as shown in the file browser), so the artifact records its origin.",
         ),
-      experiment_id: z
-        .string()
-        .optional()
-        .describe(
-          "Attach the artifact to an experiment RUN you are driving (the id from PLATFORM_EXPERIMENT_ID in the launch instructions) so it shows among that run's artifacts. If you were yourself spawned BY an experiment, leave this unset — attribution to the spawning run is automatic.",
-        ),
     },
     ({
       title,
@@ -122,7 +96,6 @@ export function registerArtifactLibraryTools(
       interactive,
       expires_in_hours,
       source_path,
-      experiment_id,
     }) =>
       run(async () => {
         const artifact = await lib.create(
@@ -140,10 +113,7 @@ export function registerArtifactLibraryTools(
           },
           { author: "agent", agentId: deps.agentId },
         );
-        return json({
-          ...touched(toAgentArtifact(artifact)),
-          ...(await experimentAttachment(artifact.id, experiment_id)),
-        });
+        return json(touched(toAgentArtifact(artifact)));
       }),
   );
 
@@ -263,7 +233,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "update_artifact",
-    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same; viewers can flip versions). Other fields edit metadata in place. The artifact's TYPE is settled at creation and cannot change — not by renaming either — because the share link outlives every revision; publish a new artifact when the new content is a different kind of file.",
+    "Update an artifact. Passing content or upload_ref publishes a NEW VERSION (the share link stays the same and shows only the new version; earlier versions stay with the owner). Other fields edit metadata in place. The artifact's TYPE is settled at creation and cannot change — not by renaming either — because the share link outlives every revision; publish a new artifact when the new content is a different kind of file.",
     {
       id: z.string().min(1),
       title: z.string().trim().min(1).max(ARTIFACT_TITLE_MAX_LENGTH).optional(),

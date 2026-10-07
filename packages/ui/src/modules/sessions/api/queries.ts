@@ -1,27 +1,49 @@
-import { skipToken, useQuery } from "@tanstack/react-query";
 import {
+  type InfiniteData,
+  skipToken,
+  useInfiniteQuery,
+  useQuery,
+} from "@tanstack/react-query";
+import type { SessionListCursor, SessionListQuery } from "agent-runtime-api";
+import {
+  SESSION_CATEGORIES,
+  type SessionCategory,
   type SessionMode,
   SessionType,
   type SessionView,
 } from "api-server-api";
+import { useMemo } from "react";
 
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
-import { listAgentSessions } from "./acp-session-ops.js";
+import {
+  findAgentSession,
+  listAgentSessionPage,
+  type SessionViewPage,
+} from "./acp-session-ops.js";
+import { acpSessionsKeys } from "./keys.js";
 
-export interface SessionListInclude {
-  channels: boolean;
-  scheduled: boolean;
+const SESSION_PAGE_SIZE = 50;
+
+type SessionPages = InfiniteData<SessionViewPage, SessionListCursor | null>;
+
+function updateListedSessions(
+  agentId: string,
+  update: (sessions: SessionView[], pageIndex: number) => SessionView[],
+): void {
+  queryClient.setQueriesData<SessionPages>(
+    { queryKey: acpSessionsKeys.pages(agentId) },
+    (prev) =>
+      prev && {
+        ...prev,
+        pages: prev.pages.map((page, i) => ({
+          ...page,
+          sessions: update(page.sessions, i),
+        })),
+      },
+  );
 }
-
-export const acpSessionsKeys = {
-  all: ["acp-sessions"] as const,
-  agentLists: (agentId: string | null) =>
-    [...acpSessionsKeys.all, agentId] as const,
-  list: (agentId: string | null, include: SessionListInclude) =>
-    [...acpSessionsKeys.agentLists(agentId), include] as const,
-};
 
 export function optimisticInsertSession(
   agentId: string,
@@ -36,17 +58,27 @@ export function optimisticInsertSession(
     mode,
     createdAt: new Date().toISOString(),
     scheduleId: null,
-    experimentId: null,
     title: null,
     updatedAt: null,
     running,
   };
-  queryClient.setQueriesData<SessionView[]>(
-    { queryKey: acpSessionsKeys.agentLists(agentId) },
-    (prev) =>
-      prev?.some((s) => s.sessionId === sessionId)
-        ? prev
-        : [stub, ...(prev ?? [])],
+  queryClient.setQueriesData<SessionPages>(
+    { queryKey: acpSessionsKeys.pages(agentId) },
+    (prev) => {
+      if (!prev) return prev;
+      if (
+        prev.pages.some((p) =>
+          p.sessions.some((s) => s.sessionId === sessionId),
+        )
+      )
+        return prev;
+      const [first, ...rest] = prev.pages;
+      if (!first) return prev;
+      return {
+        ...prev,
+        pages: [{ ...first, sessions: [stub, ...first.sessions] }, ...rest],
+      };
+    },
   );
 }
 
@@ -54,21 +86,18 @@ export function removeSessionFromCache(
   agentId: string,
   sessionId: string,
 ): void {
-  queryClient.setQueriesData<SessionView[]>(
-    { queryKey: acpSessionsKeys.agentLists(agentId) },
-    (prev) => prev?.filter((s) => s.sessionId !== sessionId),
+  updateListedSessions(agentId, (sessions) =>
+    sessions.filter((s) => s.sessionId !== sessionId),
   );
 }
 
 export function setSessionSeen(agentId: string, sessionId: string): void {
-  queryClient.setQueriesData<SessionView[]>(
-    { queryKey: acpSessionsKeys.agentLists(agentId) },
-    (prev) =>
-      prev?.map((s) =>
-        s.sessionId === sessionId
-          ? { ...s, seenAt: s.updatedAt ?? s.createdAt }
-          : s,
-      ),
+  updateListedSessions(agentId, (sessions) =>
+    sessions.map((s) =>
+      s.sessionId === sessionId
+        ? { ...s, seenAt: s.updatedAt ?? s.createdAt }
+        : s,
+    ),
   );
 }
 
@@ -77,16 +106,38 @@ export function setSessionRunning(
   sessionId: string,
   running: boolean,
 ): void {
-  queryClient.setQueriesData<SessionView[]>(
-    { queryKey: acpSessionsKeys.agentLists(agentId) },
-    (prev) =>
-      prev?.map((s) => (s.sessionId === sessionId ? { ...s, running } : s)),
+  updateListedSessions(agentId, (sessions) =>
+    sessions.map((s) => (s.sessionId === sessionId ? { ...s, running } : s)),
   );
 }
 
-export function useAcpSessions(
+function withActiveStub(
+  fresh: SessionViewPage,
+  prev: SessionPages | undefined,
+  activeId: string | null | undefined,
+): SessionViewPage {
+  if (!activeId || fresh.sessions.some((s) => s.sessionId === activeId))
+    return fresh;
+  const stub = prev?.pages[0]?.sessions.find((s) => s.sessionId === activeId);
+  return stub ? { ...fresh, sessions: [stub, ...fresh.sessions] } : fresh;
+}
+
+function uniqueSessions(pages: readonly SessionViewPage[]): SessionView[] {
+  const seen = new Set<string>();
+  const out: SessionView[] = [];
+  for (const page of pages) {
+    for (const session of page.sessions) {
+      if (seen.has(session.sessionId)) continue;
+      seen.add(session.sessionId);
+      out.push(session);
+    }
+  }
+  return out;
+}
+
+export function useSessionPages(
   agentId: string | null,
-  include: SessionListInclude,
+  categories: readonly SessionCategory[],
   options?: {
     enabled?: boolean;
     activeSessionId?: string | null;
@@ -94,41 +145,75 @@ export function useAcpSessions(
 ) {
   const compat = useAgentLacksLiveUpdates(agentId);
   const live = !!agentId && (options?.enabled ?? true);
-  return useQuery({
-    queryKey: acpSessionsKeys.list(agentId, include),
+  const queryKey = acpSessionsKeys.pagesOf(agentId, categories);
+  const query = useInfiniteQuery({
+    queryKey,
     queryFn: live
-      ? async () => {
-          const sessions = await listAgentSessions(agentId);
+      ? async ({ pageParam }) => {
+          const page = await listAgentSessionPage(agentId, {
+            categories: [...categories],
+            ...(pageParam && { after: pageParam }),
+            limit: SESSION_PAGE_SIZE,
+          });
+          if (pageParam) return page;
+          const coversAll =
+            categories.length === SESSION_CATEGORIES.length &&
+            page.nextCursor === null;
           const store = useStore.getState();
-          if (store.selectedAgent === agentId) {
+          if (coversAll && store.selectedAgent === agentId) {
             store.pruneDrafts(
               agentId,
-              sessions.map((s) => s.sessionId),
+              page.sessions.map((s) => s.sessionId),
             );
           }
-          const allowed: string[] = [
-            SessionType.Regular,
-            SessionType.ExperimentExecute,
-            SessionType.CliRun,
-          ];
-          if (include.channels)
-            allowed.push(SessionType.ChannelSlack, SessionType.ChannelTelegram);
-          if (include.scheduled)
-            allowed.push(SessionType.ScheduleCron, SessionType.ScheduleOnce);
-          const fresh = sessions.filter((s) => allowed.includes(s.type));
-          const activeId = options?.activeSessionId;
-          if (!activeId || fresh.some((s) => s.sessionId === activeId))
-            return fresh;
-          const prev = queryClient.getQueryData<SessionView[]>(
-            acpSessionsKeys.list(agentId, include),
+          return withActiveStub(
+            page,
+            queryClient.getQueryData<SessionPages>(queryKey),
+            options?.activeSessionId,
           );
-          const stub = prev?.find((s) => s.sessionId === activeId);
-          return stub ? [stub, ...fresh] : fresh;
         }
       : skipToken,
+    initialPageParam: null as SessionListCursor | null,
+    getNextPageParam: (last) => last.nextCursor,
     refetchOnMount: "always",
     refetchInterval: live && compat ? 5_000 : false,
     staleTime: 5_000,
     meta: { errorToast: "Couldn't refresh session list" },
+  });
+  const sessions = useMemo(
+    () => (query.data ? uniqueSessions(query.data.pages) : undefined),
+    [query.data],
+  );
+  return { ...query, sessions };
+}
+
+export function useAgentSessionQuery(
+  agentId: string | null,
+  query: SessionListQuery,
+  options?: { enabled?: boolean },
+) {
+  const live = !!agentId && (options?.enabled ?? true);
+  return useQuery({
+    queryKey: acpSessionsKeys.query(agentId, query),
+    queryFn: live
+      ? async () => (await listAgentSessionPage(agentId, query)).sessions
+      : skipToken,
+    staleTime: 5_000,
+  });
+}
+
+export function useAgentSession(
+  agentId: string | null,
+  sessionId: string | null,
+  options?: { enabled?: boolean },
+) {
+  const live = !!agentId && !!sessionId && (options?.enabled ?? true);
+  return useQuery({
+    queryKey: acpSessionsKeys.session(agentId, sessionId),
+    queryFn:
+      live && sessionId
+        ? () => findAgentSession(agentId, sessionId)
+        : skipToken,
+    staleTime: 5_000,
   });
 }

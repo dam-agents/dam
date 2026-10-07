@@ -99,8 +99,20 @@ export function useSandboxSettingsSave({
     ) {
       return;
     }
+    if (
+      dirtyFields.requireConnectionAddress &&
+      agent &&
+      !(await showConfirm(
+        "Saving restarts this agent's gateway to change how it injects credentials — requests in flight through it fail.",
+        "Restart gateway?",
+        { confirmLabel: "Save & restart" },
+      ))
+    ) {
+      return;
+    }
     try {
       if (
+        dirtyFields.requireConnectionAddress ||
         dirtyFields.envVars ||
         dirtyFields.name ||
         dirtyFields.hibernationTimeoutMin ||
@@ -112,6 +124,9 @@ export function useSandboxSettingsSave({
             ? { env: sanitizeEnvVars(values.envVars) }
             : {}),
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
+          ...(dirtyFields.requireConnectionAddress
+            ? { requireConnectionAddress: values.requireConnectionAddress }
+            : {}),
           ...(dirtyFields.hibernationTimeoutMin
             ? { hibernationTimeoutMin: values.hibernationTimeoutMin }
             : {}),
@@ -167,6 +182,7 @@ export function useSandboxSettingsSave({
         hibernationTimeoutMin: values.hibernationTimeoutMin,
         sizeCpuMilli: values.sizeCpuMilli,
         sizeMemoryMi: values.sizeMemoryMi,
+        requireConnectionAddress: values.requireConnectionAddress,
       });
     } catch {}
   });

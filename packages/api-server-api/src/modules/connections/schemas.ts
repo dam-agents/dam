@@ -6,11 +6,27 @@ export const connectionIdInputSchema = z.object({
   id: z.string().min(1),
 });
 
-export const connectionUpdateInputSchema = z.object({
-  id: z.string().min(1),
+const connectionCredentialValue = z.object({
   value: z.string().min(1),
 });
-export type ConnectionUpdateInput = z.infer<typeof connectionUpdateInputSchema>;
+
+const connectionCredentialKeyPair = z.object({
+  accessKeyId: z.string().min(1),
+  secretAccessKey: z.string().min(1),
+});
+
+export const connectionCredentialUpdateSchema = z.union([
+  connectionCredentialValue,
+  connectionCredentialKeyPair,
+]);
+export type ConnectionCredentialUpdate = z.infer<
+  typeof connectionCredentialUpdateSchema
+>;
+
+export const connectionUpdateInputSchema = z.union([
+  connectionIdInputSchema.merge(connectionCredentialValue),
+  connectionIdInputSchema.merge(connectionCredentialKeyPair),
+]);
 
 export const connectionStartOAuthInputSchema = z.object({
   connectionId: z.string().min(1),
@@ -39,6 +55,11 @@ export const connectionGetAgentConnectionsInputSchema = z.object({
 export const connectionSetAgentConnectionsInputSchema = z.object({
   agentId: z.string().min(1),
   connectionIds: z.array(z.string().min(1)),
+});
+
+export const connectionSetPreferredConnectionInputSchema = z.object({
+  agentId: z.string().min(1),
+  connectionId: z.string().min(1),
 });
 
 export const connectionNameSchema = resourceNameSchema("my-mcp-server").refine(
@@ -79,6 +100,16 @@ const headerCreateInput = z.object({
   configInputs: z.record(z.string(), z.string()).optional(),
   value: z.string().min(1),
   caData: z.string().optional(),
+});
+
+const sigv4CreateInput = z.object({
+  ...commonFields,
+  authKind: z.literal("sigv4"),
+  endpoint: z.string().min(1),
+  region: z.string().min(1).optional(),
+  bucket: z.string().min(1).optional(),
+  accessKeyId: z.string().min(1),
+  secretAccessKey: z.string().min(1),
 });
 
 const clientCredentialsCreateInput = z.object({
@@ -132,6 +163,17 @@ export const connectionUpdateGitHubAppScopeInputSchema = z.object({
   permissions: z.string().optional(),
 });
 
+export const connectionProbeGitHubUserTokenInputSchema = z.object({
+  connectionId: z.string().min(1),
+});
+
+export const connectionUpdateGitHubUserTokenScopeInputSchema = z.object({
+  id: z.string().min(1),
+  targetId: z.number().int().positive().optional(),
+  repositoryIds: z.string().optional(),
+  permissions: z.string().optional(),
+});
+
 const noneCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("none"),
@@ -145,6 +187,7 @@ export const connectionCreateInputSchema = z.discriminatedUnion("authKind", [
   clientCredentialsCreateInput,
   githubAppCreateInput,
   headerCreateInput,
+  sigv4CreateInput,
   noneCreateInput,
 ]);
 export type ConnectionCreateInput = z.infer<typeof connectionCreateInputSchema>;

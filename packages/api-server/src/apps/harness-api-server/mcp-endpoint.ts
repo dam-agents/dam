@@ -1,4 +1,3 @@
-import { SESSION_REF_HEADER } from "agent-runtime-api";
 import { match } from "ts-pattern";
 import { basename } from "node:path";
 import type { Hono } from "hono";
@@ -8,9 +7,10 @@ import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import {
   AGENT_HOME_DIR,
   AGENT_WORK_DIR,
+  SESSION_REF_HEADER,
   type AppRouter,
 } from "agent-runtime-api";
-import type { ExperimentsService, SatelliteView } from "api-server-api";
+import type { SatelliteView } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
@@ -27,12 +27,26 @@ import type {
 } from "./../../modules/channels/services/channel-manager.js";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { podBaseUrl } from "../../modules/agents/infrastructure/k8s.js";
-import type { InvocationsService } from "../../modules/invocations/index.js";
+import type {
+  SubAgentAwaitMarks,
+  InvocationsService,
+} from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
+import type { DriverOps, DriverOpsFor } from "./driver-ops.js";
+import { registerSubAgentTools } from "./sub-agent-tools.js";
 import { securityLog } from "../../core/security-log.js";
+import { emit, EventType } from "../../events.js";
+import {
+  errorResult,
+  json,
+  run,
+  textResult,
+  type ToolContent,
+} from "../../core/mcp-tool-result.js";
 import { registerArtifactLibraryTools } from "../../modules/artifact-library/mcp-tools.js";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
 import type { OnboardingChecklistOps } from "../../modules/starter-kits/services/onboarding-checklist.js";
+import type { KitUpdateReporter } from "../../modules/starter-kits/services/kit-update-reporter.js";
 import type { OnboardingStep } from "api-server-api";
 import type { ArtifactLibraryServiceImpl } from "../../modules/artifact-library/index.js";
 import {
@@ -55,14 +69,12 @@ import {
 import type { SatelliteAgentOpsImpl } from "../../modules/satellites/index.js";
 
 function resolveWorkspacePath(input: string): string {
-  const agentHome = AGENT_HOME_DIR;
-  const workDir = AGENT_WORK_DIR;
   if (input.startsWith("/")) {
-    return input.startsWith(`${agentHome}/`)
-      ? input.slice(agentHome.length + 1)
+    return input.startsWith(`${AGENT_HOME_DIR}/`)
+      ? input.slice(AGENT_HOME_DIR.length + 1)
       : input;
   }
-  const workRel = workDir.slice(agentHome.length + 1);
+  const workRel = AGENT_WORK_DIR.slice(AGENT_HOME_DIR.length + 1);
   return `${workRel}/${input}`;
 }
 
@@ -70,13 +82,6 @@ interface McpSession {
   transport: WebStandardStreamableHTTPServerTransport;
   server: McpServer;
 }
-
-import {
-  errorResult,
-  textResult,
-  type ToolContent,
-} from "../../core/mcp-tool-result.js";
-export type { ToolContent } from "../../core/mcp-tool-result.js";
 
 function errMessage(err: unknown, fallback: string): string {
   if (err instanceof TRPCError) {
@@ -102,6 +107,18 @@ export async function textTool<T>(
   }
 }
 
+function renderAttachmentFailure(
+  sent: string,
+  repost: string,
+  attachmentError: string,
+): ToolContent {
+  return textResult(
+    `${sent}, but the attachment failed to upload: ${attachmentError}. ` +
+      `The text itself landed, so do not ${repost}. If the file matters, ` +
+      `say so in a short follow-up.`,
+  );
+}
+
 function renderChecklist(steps: OnboardingStep[]): string {
   const done = steps.filter((s) => s.done).length;
   return [
@@ -111,6 +128,7 @@ function renderChecklist(steps: OnboardingStep[]): string {
 }
 
 export interface McpSessionDeps {
+  owner: string;
   channelManager: ChannelManager;
   k8s: K8sClient;
   skills: SkillsService;
@@ -123,9 +141,14 @@ export interface McpSessionDeps {
     ) => Promise<OnboardingStep[]>;
     complete: (agentId: string, id: string) => Promise<OnboardingStep[]>;
   } | null;
+  kitUpdate: {
+    report: (agentId: string, commit: string) => Promise<void>;
+    cancel: (agentId: string) => Promise<void>;
+  } | null;
   artifactLibrary: ArtifactLibraryServiceImpl;
   invocations: InvocationsService;
-  experiments: ExperimentsService;
+  driverOps: DriverOps;
+  subAgentAwaits: SubAgentAwaitMarks;
   kbShares: KbShareAgentOps | null;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -165,6 +188,15 @@ export function createMcpSession(
       }),
     ],
   });
+
+  const channelAudit = (surface: ChannelType) =>
+    ({
+      category: "channel",
+      actor: agentId,
+      actorKind: "agent",
+      surface,
+      agentId,
+    }) as const;
 
   const attachmentInput = z
     .object({
@@ -237,7 +269,7 @@ export function createMcpSession(
 
   server.tool(
     "describe_channel",
-    "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing reachable chats — on Slack the agent's bound channel first, then every other workspace channel the bot is a member of; on Telegram the bound conversations. Use the id as chatId in send_channel_message.",
+    "Describe a channel on this agent. Returns { chats: [{ id, title }] } listing reachable chats — on Slack the agent's bound channel first, then every other channel both the bot and the agent's owner are members of; on Telegram the bound conversations. Use the id as chatId in send_channel_message.",
     { channel: z.enum([ChannelType.Slack, ChannelType.Telegram]) },
     async ({ channel }) => {
       const chats = await deps.channelManager.listConversations(
@@ -250,7 +282,7 @@ export function createMcpSession(
 
   server.tool(
     "send_channel_message",
-    `Post a NEW top-level message to a connected channel (slack or telegram) — for announcements, cross-posting to another channel, or starting a new thread. On Slack this is NOT how you answer a message you are currently handling: use reply for that, so the answer stays in the thread it arrived in. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on. Pass chatId to address a specific chat: an id from describe_channel, or on Slack a user id (U…) to send that person a direct message. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards; omit both for Slack's default previews. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 50 MB cap.`,
+    `Post a NEW top-level message to a connected channel (slack or telegram) — for announcements, cross-posting to another channel, or starting a new thread. On Slack this is NOT how you answer a message you are currently handling: use reply for that, so the answer stays in the thread it arrived in. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file by setting attachment.path. 50 MB cap.`,
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z.string(),
@@ -291,23 +323,38 @@ export function createMcpSession(
         },
       );
       const failed = "error" in result;
-      securityLog(failed ? "warn" : "info", "channel.outbound", {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: channel,
+      const attachmentError =
+        "ok" in result ? result.attachmentError : undefined;
+      const logLevel = failed || attachmentError ? "warn" : "info";
+      emit({
+        type: EventType.ChannelMessageSent,
+        channel,
         agentId,
+        ownerSub: deps.owner,
+        action: "post",
+        outcome: failed ? "failure" : "success",
+        hasAttachment: resolved !== undefined,
+      });
+      securityLog(logLevel, "channel.outbound", {
+        ...channelAudit(channel),
         result: failed ? "failure" : "success",
         detail: {
           ...(chatId ? { conversationId: chatId } : {}),
           hasAttachment: attachmentAudit !== undefined,
           ...(attachmentAudit ? { attachment: attachmentAudit } : {}),
+          ...(attachmentError ? { attachmentError } : {}),
           textLength: text.length,
           ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
           ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
         },
       });
       if ("error" in result) return errorResult(result.error);
+      if (attachmentError)
+        return renderAttachmentFailure(
+          "Message sent",
+          "send the message again",
+          attachmentError,
+        );
       return textResult("Message sent");
     },
   );
@@ -324,20 +371,21 @@ export function createMcpSession(
         .describe(
           'User ids to resolve, e.g. ["U024BE7LH"]. The <@U024BE7LH> form is accepted too.',
         ),
+      chatId: z
+        .string()
+        .optional()
+        .describe(
+          "A conversation in the people's workspace: one this agent is connected to, or one you are answering. Omit to use the conversation you're answering.",
+        ),
     },
-    async ({ channel, userIds }) => {
+    async ({ channel, userIds, chatId }) => {
       const result = await deps.channelManager.describeUsers(
         agentId,
         channel,
         userIds,
+        chatId,
       );
-      const audit = {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: channel,
-        agentId,
-      } as const;
+      const audit = channelAudit(channel);
       if ("error" in result) {
         securityLog("warn", "channel.user_lookup", {
           ...audit,
@@ -361,7 +409,7 @@ export function createMcpSession(
 
   server.tool(
     "describe_message_reactions",
-    "Look up who reacted to a message and with what emoji — reactions are otherwise invisible to you; nothing in the message text or conversation history reveals them. Returns { reactions: [{ name, count, users }], conversationId, messageTs }, one reaction entry per emoji used (name is the Slack short name, users the ids who used it) plus the chat and message actually inspected (useful when you omitted one or both), or an error if the message can't be found. Defaults to the message you're currently answering, in the channel you're bound to; pass chatId for another chat the bot can reach (see describe_channel) and messageTs for a specific message — e.g. one you posted earlier and want to check on later, like a weekly signup thread. Slack only.",
+    "Look up who reacted to a message and with what emoji — reactions are otherwise invisible to you; nothing in the message text or conversation history reveals them. Returns { reactions: [{ name, count, users }], conversationId, messageTs }, one reaction entry per emoji used (name is the Slack short name, users the ids who used it) plus the chat and message actually inspected (useful when you omitted one or both), or an error if the message can't be found. Pass chatId for another chat the bot can reach (see describe_channel) and messageTs for a specific message — e.g. one you posted earlier and want to check on later, like a weekly signup thread. Slack only.",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       chatId: z
@@ -383,13 +431,7 @@ export function createMcpSession(
         channel,
         { conversationId: chatId, messageTs },
       );
-      const audit = {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: channel,
-        agentId,
-      } as const;
+      const audit = channelAudit(channel);
       if ("error" in result) {
         securityLog("warn", "channel.reaction_lookup", {
           ...audit,
@@ -426,7 +468,7 @@ export function createMcpSession(
 
   server.tool(
     "read_thread",
-    "Read the replies inside a Slack thread you were shown. The conversation history you are handed covers only messages posted outside a thread — a line there ending in a [thread: ...] tag has replies you were not given, and this is how you read them. Only threads from such tags are readable: pass the tag's ts as threadTs, and the platform already knows which conversation it belongs to. A ts from anywhere else is refused, as is one whose tag has aged out. Returns { messages, conversationId, threadTs, hasMore, cursor }, messages being the thread in the same labelled form as your conversation history, oldest first, and always opening with the message that started the thread. A long thread comes back as its end rather than its whole, and hasMore is then true. What you do next depends on the cursor. A cursor means the rest of the thread sits before what you were handed: call again with it to read the window immediately before this one, as far back as you need, passing back only a cursor this same thread gave you — one from another thread or naming a point this thread does not reach is refused rather than answered. No cursor alongside hasMore means the opposite and is the one to watch: the thread is longer than a read can walk, the replies missing are the newest ones, nothing reaches them, and what you hold is a slice from the middle however much it looks like the end, so say so rather than answering as though you had read the conclusion. Use it before treating a tagged message as unanswered, or when you need what a thread concluded. Slack only.",
+    "Read the replies inside a Slack thread you were shown. The conversation history you are handed covers only messages posted outside a thread — a line there ending in a [thread: ...] tag has replies you were not given, and this is how you read them. Only threads from such tags are readable: pass the tag's ts as threadTs, and the platform already knows which conversation it belongs to. A ts from anywhere else is refused, as is one whose tag has aged out. Returns { messages, conversationId, threadTs, hasMore, cursor }, messages being the thread in the same labelled form as your conversation history, oldest first, and always opening with the message that started the thread. A long thread comes back as its newest replies rather than its whole, with hasMore true and a cursor: call again with that cursor to read the window immediately before this one, as far back as you need, passing back only a cursor this same thread gave you; one from another thread or naming a point this thread does not reach is refused rather than answered. In a thread longer than one read, a line in square brackets after the opening message numbers the replies shown, counted from the thread's first reply, and names the replies left out; the numbers stay the same however much the thread grows, so two windows line up by them. Use it before treating a tagged message as unanswered, or when you need what a thread concluded. Slack only.",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       threadTs: z
@@ -446,13 +488,7 @@ export function createMcpSession(
         threadTs,
         ...(cursor !== undefined ? { cursor } : {}),
       });
-      const audit = {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: channel,
-        agentId,
-      } as const;
+      const audit = channelAudit(channel);
       if ("error" in result) {
         securityLog("warn", "channel.thread_read", {
           ...audit,
@@ -479,7 +515,7 @@ export function createMcpSession(
 
   server.tool(
     "reply",
-    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread; the thread is where the answer belongs, so leave alsoSendToChannel off unless you were asked to surface the answer to the whole channel. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards; omit both for Slack's default previews. Optionally attach a single file to the reply by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
+    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
     {
       text: z.string(),
       attachment: attachmentInput,
@@ -531,12 +567,20 @@ export function createMcpSession(
         },
       );
       const failed = "error" in result;
-      securityLog(failed ? "warn" : "info", "channel.outbound", {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: ChannelType.Slack,
+      const attachmentError =
+        "ok" in result ? result.attachmentError : undefined;
+      const logLevel = failed || attachmentError ? "warn" : "info";
+      emit({
+        type: EventType.ChannelMessageSent,
+        channel: ChannelType.Slack,
         agentId,
+        ownerSub: deps.owner,
+        action: "reply",
+        outcome: failed ? "failure" : "success",
+        hasAttachment: loaded !== undefined,
+      });
+      securityLog(logLevel, "channel.outbound", {
+        ...channelAudit(ChannelType.Slack),
         result: failed ? "failure" : "success",
         detail: {
           action: "reply",
@@ -546,16 +590,23 @@ export function createMcpSession(
           ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
           hasAttachment: loaded !== undefined,
           ...(loaded ? { attachment: loaded.audit } : {}),
+          ...(attachmentError ? { attachmentError } : {}),
         },
       });
       if ("error" in result) return errorResult(result.error);
+      if (attachmentError)
+        return renderAttachmentFailure(
+          "Reply posted",
+          "post the reply again",
+          attachmentError,
+        );
       return textResult("Reply posted");
     },
   );
 
   server.tool(
     "react",
-    "React in Slack: add an emoji reaction to a message in the Slack conversation you are answering — a quiet acknowledgement that notifies no one (e.g. eyes on a reported bug, white_check_mark when a task is done). Omit messageTs to react to the message you're currently answering.",
+    "React in Slack: add an emoji reaction to a message in the Slack conversation you are answering — a quiet acknowledgement that notifies no one (e.g. eyes on a reported bug, white_check_mark when a task is done).",
     {
       emoji: z
         .string()
@@ -578,11 +629,7 @@ export function createMcpSession(
       );
       const failed = "error" in result;
       securityLog(failed ? "warn" : "info", "channel.outbound", {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: ChannelType.Slack,
-        agentId,
+        ...channelAudit(ChannelType.Slack),
         result: failed ? "failure" : "success",
         detail: {
           action: "react",
@@ -609,21 +656,23 @@ export function createMcpSession(
         .describe(
           "Short note to the receiving agent on why you are handing it over. Shown to that agent, not posted in the channel.",
         ),
+      threadTs: z
+        .string()
+        .describe(
+          "The thread this turn is answering, as shown in its turn instructions: the same threadTs you would reply with.",
+        ),
     },
-    async ({ agent, note }) => {
+    async ({ agent, note, threadTs }) => {
       const result = await deps.channelManager.handOffTurn(
         agentId,
         ChannelType.Slack,
+        threadTs,
         agent,
         note,
       );
       const failed = "error" in result;
       securityLog(failed ? "warn" : "info", "channel.outbound", {
-        category: "channel",
-        actor: agentId,
-        actorKind: "agent",
-        surface: ChannelType.Slack,
-        agentId,
+        ...channelAudit(ChannelType.Slack),
         result: failed ? "failure" : "success",
         detail: {
           action: "hand_off_to_agent",
@@ -640,17 +689,26 @@ export function createMcpSession(
 
   server.tool(
     "no_reply_needed",
-    "End your turn without sending anything to the channel. Call this when the message doesn't need a response from you — routine chatter that isn't aimed at you, or something another person already handled. Nothing is posted; it just records that you deliberately stayed silent.",
+    "End your turn without sending anything to the channel. Call this when the message doesn't need a response from you — routine chatter that isn't aimed at you, or something another person already handled. It just records that you deliberately stayed silent.",
     {
       reason: z
         .string()
         .optional()
+        .describe("Short note on why no reply was needed (not posted)."),
+      threadTs: z
+        .string()
+        .optional()
         .describe(
-          "Optional short note on why no reply was needed (not posted).",
+          "On a Slack turn, always pass the thread it is answering, as shown in its turn instructions: the same threadTs you would reply with. Omit it on a Telegram turn.",
         ),
     },
-    async () => {
-      await deps.channelManager.declineTurn(agentId, ChannelType.Slack);
+    async ({ threadTs }) => {
+      const result = await deps.channelManager.declineTurn(
+        agentId,
+        ChannelType.Slack,
+        threadTs,
+      );
+      if ("error" in result) return errorResult(result.error);
       return textResult("No reply sent.");
     },
   );
@@ -714,7 +772,7 @@ export function createMcpSession(
 
   server.tool(
     "publish_skill",
-    "Open a pull request that adds an existing on-disk skill from THIS agent to a connected source. PRECONDITION: the skill directory (SKILL.md + supporting files) must already exist under one of your configured skill paths — author the files first using your normal file-writing tools, then call this. This tool only ships an already-authored skill upstream; it does not create or scaffold one. Requires the source to have a publish credential configured. Returns the PR URL on success.",
+    "Open a pull request that adds an existing on-disk skill from THIS agent to a connected source. PRECONDITION: the skill directory (SKILL.md + supporting files) must already exist under one of your configured skill paths — author the files first using your normal file-writing tools, then call this. Requires the source to have a publish credential configured. Returns the PR URL on success.",
     {
       sourceId: z.string().min(1),
       name: z.string().min(1),
@@ -737,14 +795,9 @@ export function createMcpSession(
       {},
       async () => {
         await markOnboardingComplete(agentId);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: "Onboarding marked complete. Schedules on this agent are now live.",
-            },
-          ],
-        };
+        return textResult(
+          "Onboarding marked complete. Schedules on this agent are now live.",
+        );
       },
     );
   }
@@ -785,20 +838,42 @@ export function createMcpSession(
     );
   }
 
+  if (deps.kitUpdate) {
+    const kitUpdate = deps.kitUpdate;
+    server.tool(
+      "report_kit_updated",
+      "Call this once a Kit Update the user started is finished: the definition checkout is at the commit the update targets and the user is done deciding. Call it even when the user declined every change. Pass the full target commit from the update briefing.",
+      { commit: z.string().regex(/^[0-9a-f]{40}$/i) },
+      ({ commit }) =>
+        textTool(
+          "Failed to report the kit update",
+          () => kitUpdate.report(agentId, commit),
+          () => `Kit update to ${commit} recorded.`,
+        ),
+    );
+    server.tool(
+      "cancel_kit_update",
+      "Call this when the user wants to stop a Kit Update without finishing it. The agent stays on the commit it was on and the user can start the update again later.",
+      {},
+      () =>
+        textTool(
+          "Failed to cancel the kit update",
+          () => kitUpdate.cancel(agentId),
+          () => "Kit update cancelled.",
+        ),
+    );
+  }
+
   server.tool(
     "list_schedules",
     'List all platform schedules registered for this agent. These are persistent schedules visible in the host UI (not in-session or in-process cron tools). A one-time schedule (`spec.type` "once") also carries its `state`: pending, delivering, completed, missed or failed.',
     {},
-    async () => {
-      const list = (await schedules.list(agentId)).map((s) =>
-        s.spec.type === "once" ? { ...s, state: onceState(s.status) } : s,
-      );
-      return {
-        content: [
-          { type: "text" as const, text: JSON.stringify(list, null, 2) },
-        ],
-      };
-    },
+    async () =>
+      json(
+        (await schedules.list(agentId)).map((s) =>
+          s.spec.type === "once" ? { ...s, state: onceState(s.status) } : s,
+        ),
+      ),
   );
 
   server.tool(
@@ -827,14 +902,12 @@ export function createMcpSession(
         .string()
         .min(1)
         .optional()
-        .describe(
-          "IANA timezone the rrule fires in, e.g. 'Europe/Prague'. Required with rrule.",
-        ),
+        .describe("IANA timezone the rrule fires in, e.g. 'Europe/Prague'."),
       quietHours: z
         .array(quietWindowSchema)
         .optional()
         .describe(
-          "Optional windows (in `timezone`) during which an rrule occurrence is skipped rather than fired, e.g. to avoid a night-time run.",
+          "Windows (in `timezone`) during which an rrule occurrence is skipped rather than fired, e.g. to avoid a night-time run.",
         ),
       task: z
         .string()
@@ -849,7 +922,7 @@ export function createMcpSession(
       precheck: precheckSchema
         .optional()
         .describe(
-          "Optional shell command run before each fire, deciding whether the run happens at all. Runs under `bash -lc` from the workspace root (/home/agent/work) in this pod's environment, so relative paths resolve there — a script in a repo cloned into the workspace is ./<repo>/scripts/check.sh, and a path that does not resolve exits 127, which counts as the check breaking. Exit 0 runs the task, exit 1 skips this occurrence without any model call, and any other exit (or a two-minute timeout) means the check itself broke and the task runs anyway. Whatever it prints on stdout is appended to the task prompt. Use it for a cheap deterministic 'did anything change?' test so a frequent schedule only costs a turn when there is work: PLATFORM_LAST_RUN_AT (ISO timestamp of the last fire that actually ran, empty if never), PLATFORM_FIRE_AT and PLATFORM_SCHEDULE_ID are in the environment.",
+          "Shell command run before each fire, deciding whether the run happens at all. Runs under `bash -lc` from the workspace root (/home/agent/work) in this pod's environment, so relative paths resolve there — a script in a repo cloned into the workspace is ./<repo>/scripts/check.sh, and a path that does not resolve exits 127, which counts as the check breaking. Exit 0 runs the task, exit 1 skips this occurrence without any model call, and any other exit (or a two-minute timeout) means the check itself broke and the task runs anyway. Whatever it prints on stdout is appended to the task prompt. Use it for a cheap deterministic 'did anything change?' test so a frequent schedule only costs a turn when there is work: PLATFORM_LAST_RUN_AT (ISO timestamp of the last fire that actually ran, empty if never), PLATFORM_FIRE_AT and PLATFORM_SCHEDULE_ID are in the environment.",
         ),
     },
     async ({
@@ -875,7 +948,7 @@ export function createMcpSession(
           "`cron` is UTC-only and ignores `timezone`/`quietHours` — use `rrule` with `timezone` to schedule in a local zone.",
         );
       }
-      try {
+      return run(async () => {
         const sched =
           rrule !== undefined
             ? await schedules.createRRule(
@@ -895,44 +968,23 @@ export function createMcpSession(
                 { name, agentId, cron: cron!, task, sessionMode, precheck },
                 "agent",
               );
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(
-                {
-                  id: sched.id,
-                  name: sched.name,
-                  ...match(sched.spec)
-                    .with({ type: "rrule" }, (spec) => ({
-                      rrule: spec.rrule,
-                      timezone: spec.timezone,
-                    }))
-                    .with({ type: "cron" }, (spec) => ({ cron: spec.cron }))
-                    .with({ type: "once" }, (spec) => ({
-                      at: spec.at,
-                      timezone: spec.timezone,
-                    }))
-                    .exhaustive(),
-                  enabled: sched.spec.enabled,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
-      } catch (err) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: err instanceof Error ? err.message : String(err),
-            },
-          ],
-          isError: true,
-        };
-      }
+        return json({
+          id: sched.id,
+          name: sched.name,
+          ...match(sched.spec)
+            .with({ type: "rrule" }, (spec) => ({
+              rrule: spec.rrule,
+              timezone: spec.timezone,
+            }))
+            .with({ type: "cron" }, (spec) => ({ cron: spec.cron }))
+            .with({ type: "once" }, (spec) => ({
+              at: spec.at,
+              timezone: spec.timezone,
+            }))
+            .exhaustive(),
+          enabled: sched.spec.enabled,
+        });
+      });
     },
   );
 
@@ -985,7 +1037,7 @@ export function createMcpSession(
         return errorResult(
           `inSession "${mode}" needs to know which session is calling, and this harness does not identify it; use "fresh".`,
         );
-      try {
+      return run(async () => {
         const sched = await schedules.createOnce(
           {
             name,
@@ -1002,29 +1054,16 @@ export function createMcpSession(
         );
         const fireAt =
           sched.spec.type === "once" ? sched.spec.at : sched.status?.nextRun;
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(
-                {
-                  id: sched.id,
-                  name: sched.name,
-                  fireAt,
-                  fireAtLocal: fireAt ? localTime(fireAt, zone) : null,
-                  timezone: zone,
-                  inSession: mode,
-                  model: model ?? null,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
-      } catch (err) {
-        return errorResult(err instanceof Error ? err.message : String(err));
-      }
+        return json({
+          id: sched.id,
+          name: sched.name,
+          fireAt,
+          fireAtLocal: fireAt ? localTime(fireAt, zone) : null,
+          timezone: zone,
+          inSession: mode,
+          model: model ?? null,
+        });
+      });
     },
   );
 
@@ -1035,37 +1074,11 @@ export function createMcpSession(
     async ({ id }) => {
       const existing = await schedules.get(id);
       if (!existing || existing.agentId !== agentId) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `schedule ${id} not found on this agent`,
-            },
-          ],
-          isError: true,
-        };
+        return errorResult(`schedule ${id} not found on this agent`);
       }
       const updated = await schedules.toggle(id);
-      if (!updated) {
-        return {
-          content: [
-            { type: "text" as const, text: `schedule ${id} not found` },
-          ],
-          isError: true,
-        };
-      }
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              { id: updated.id, enabled: updated.spec.enabled },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
+      if (!updated) return errorResult(`schedule ${id} not found`);
+      return json({ id: updated.id, enabled: updated.spec.enabled });
     },
   );
 
@@ -1076,26 +1089,16 @@ export function createMcpSession(
     async ({ id }) => {
       const existing = await schedules.get(id);
       if (!existing || existing.agentId !== agentId) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `schedule ${id} not found on this agent`,
-            },
-          ],
-          isError: true,
-        };
+        return errorResult(`schedule ${id} not found on this agent`);
       }
       await schedules.delete(id);
-      return { content: [{ type: "text" as const, text: `deleted ${id}` }] };
+      return textResult(`deleted ${id}`);
     },
   );
 
   registerArtifactLibraryTools(server, {
     artifactLibrary: deps.artifactLibrary,
     agentId,
-    attachToExperiment: (artifactId, experimentId) =>
-      deps.experiments.attachArtifact(agentId, artifactId, experimentId),
   });
 
   if (deps.kbShares) {
@@ -1121,7 +1124,7 @@ export function createMcpSession(
 
   server.tool(
     "report_result",
-    "Report this invocation's final result. Pass a single `result` argument: a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
+    "Report this invocation's final result. Pass a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
     {
       result: z
         .unknown()
@@ -1136,11 +1139,14 @@ export function createMcpSession(
           `report_result rejected: ${outcome.errors ?? "result did not validate"}. Fix the result and call report_result again.`,
         );
       }
-      return {
-        content: [{ type: "text", text: JSON.stringify({ accepted: true }) }],
-      };
+      return textResult(JSON.stringify({ accepted: true }));
     },
   );
+
+  registerSubAgentTools(server, {
+    ops: deps.driverOps,
+    awaits: deps.subAgentAwaits,
+  });
 
   if (deps.satellites)
     registerSatelliteTools(server, {
@@ -1178,9 +1184,11 @@ export interface MountMcpDeps {
   schedulesServiceFor: (owner: string) => SchedulesService;
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
+  kitUpdateReporter: KitUpdateReporter;
   artifactLibraryFor: (owner: string) => ArtifactLibraryServiceImpl;
   invocationsServiceFor: (owner: string) => InvocationsService;
-  experimentsServiceFor: (owner: string) => ExperimentsService;
+  driverOpsFor: DriverOpsFor;
+  subAgentAwaitsFor: (driverAgentId: string) => SubAgentAwaitMarks;
   kbShareOpsFor: (owner: string) => KbShareAgentOps;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -1213,7 +1221,6 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const schedules = deps.schedulesServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
-    const experiments = deps.experimentsServiceFor(verified.owner);
     const [ownerIsInspector, grantedSatellites] = await Promise.all([
       deps.carriesInspectorRole(verified.owner),
       Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
@@ -1228,6 +1235,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     ]);
     const sessionRef = c.req.header(SESSION_REF_HEADER);
     const session = createMcpSession(agentId, {
+      owner: verified.owner,
       ...(sessionRef ? { sessionRef } : {}),
       channelManager: deps.channelManager,
       k8s: deps.k8s,
@@ -1244,9 +1252,17 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
               deps.onboardingChecklist.complete(id, verified.owner, stepId),
           }
         : null,
+      kitUpdate: verified.kitUpdatePending
+        ? {
+            report: (id, commit) =>
+              deps.kitUpdateReporter.report(id, verified.owner, commit),
+            cancel: (id) => deps.kitUpdateReporter.cancel(id, verified.owner),
+          }
+        : null,
       artifactLibrary,
       invocations,
-      experiments,
+      driverOps: deps.driverOpsFor({ id: agentId, owner: verified.owner }),
+      subAgentAwaits: deps.subAgentAwaitsFor(agentId),
       kbShares: verified.kbShareRoots
         ? deps.kbShareOpsFor(verified.owner)
         : null,

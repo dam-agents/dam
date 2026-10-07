@@ -50,6 +50,18 @@ describe("assembleSpecFromTemplate", () => {
     expect(spec.nodeSelector).toBeUndefined();
   });
 
+  // TEST_SCENARIO: every harness template points at one image, so the agent must carry its template's harness for the controller to tell the machine or pod which one to run.
+  it("names the template's harness on the agent spec", () => {
+    const spec = assembleSpecFromTemplate(
+      "codex-1",
+      { ...baseTemplate, harness: "codex" },
+      {},
+      defaultLimits,
+    );
+    expect(spec.harness).toBe("codex");
+    expect(spec.backend).toBeUndefined();
+  });
+
   // TEST_SCENARIO: a machine keeps HOME and discards the rest of its root at every stop, which is exactly what the default mounts already say — so the vm backend carries no storage block of its own and the mounts travel unchanged. The controller reads them, and refuses an Agent whose mounts ask to persist anything a machine could not keep.
   it("carries the template's mounts unchanged and invents no vm storage block", () => {
     const spec = assembleSpecFromTemplate(

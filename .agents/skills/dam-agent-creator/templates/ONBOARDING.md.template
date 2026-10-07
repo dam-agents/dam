@@ -1,5 +1,4 @@
-<!-- TODO(creator): fill every TODO from the approved design, delete inapplicable steps
-     (renumber if needed), delete all TODO comments. Keep every step idempotent — a failed
+<!-- TODO(creator): delete inapplicable steps (renumber if needed). Keep every step idempotent — a failed
      run must be safe to re-run from the top. This file must fully bootstrap a fresh agent
      on an empty volume: every config key, state seed, schedule, and sentinel the runtime
      needs is created here. -->
@@ -250,8 +249,9 @@ pattern from CLAUDE.md's run-types table:
 
 > <Run name>. Run `bash "$HOME/scripts/preflight.sh" <mode>` first. If its JSON says
 > nothing_to_do, report its logs in one line and end the run. Otherwise follow
-> CLAUDE.md → "<run section>": read docs/<file>.md, <the run's action summary>, and
-> commit & push work/ at the end when $GITHUB_REPO_WORK is set.
+> CLAUDE.md → "<run section>": read exactly the worklist's read_set, <the run's action
+> summary>, and back up work/ at the end with
+> `bash "$HOME/scripts/work-backup.sh" persist` when $GITHUB_REPO_WORK is set.
 
 ## Step 6 — Record the version, write the sentinel, verify, release, report
 

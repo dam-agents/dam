@@ -3,6 +3,7 @@ package reconciler
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -41,14 +42,12 @@ type bootstrapParams struct {
 	InstanceID             string
 	AttributionID          string
 	AnyUpgrades            bool
+	Transparent            bool
 	OTel                   envoyOTelView
+	UpstreamTrustedCA      string
 }
 
-func (p bootstrapParams) attributionOverridden() bool {
-	return p.AttributionID != "" && p.AttributionID != p.InstanceID
-}
-
-func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, chains []envoyHostChain) (string, error) {
+func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, chains []envoyHostChain, transparent bool) (string, error) {
 	extAuthzTimeoutSeconds := cfg.ExtAuthzHoldSeconds + 60
 	harnessAuthority := fmt.Sprintf("%s:%d", cfg.HarnessHost(), cfg.HarnessServerPort)
 	objectStoreAuthority := ""
@@ -67,6 +66,7 @@ func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, 
 		}
 	}
 	p := bootstrapParams{
+		UpstreamTrustedCA:      gatewayUpstreamTrustedCA(cfg),
 		ListenAddress:          envoyListenAddress,
 		Port:                   cfg.EnvoyPort,
 		Chains:                 chains,
@@ -89,6 +89,7 @@ func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, 
 		InstanceID:             instanceID,
 		AttributionID:          attributionID,
 		AnyUpgrades:            anyUpgrades,
+		Transparent:            transparent,
 		OTel:                   newEnvoyOTelView(instanceID, cfg),
 	}
 	doc := buildEnvoyBootstrap(p)
@@ -116,6 +117,7 @@ func chainsWithoutHost(instanceID string, chains []envoyHostChain, host string) 
 }
 
 func buildEnvoyBootstrap(p bootstrapParams) ev {
+	listeners := []any{buildOuterListener(p), buildInternalListener(p)}
 	doc := ev{
 		"node": ev{
 			"id":      "platform-credential-injector",
@@ -128,11 +130,8 @@ func buildEnvoyBootstrap(p bootstrapParams) ev {
 			},
 		},
 		"static_resources": ev{
-			"listeners": []any{
-				buildOuterListener(p),
-				buildInternalListener(p),
-			},
-			"clusters": buildClusters(p),
+			"listeners": listeners,
+			"clusters":  buildClusters(p),
 		},
 	}
 	if p.OTel.Metrics {
@@ -181,13 +180,17 @@ func buildOuterListener(p bootstrapParams) ev {
 	if p.OTel.AccessLogs {
 		hcm["access_log"] = hcmAccessLog(p, "", "agent_egress", "egress")
 	}
-	return ev{
+	listener := ev{
 		"name":    "agent_egress",
 		"address": ev{"socket_address": ev{"address": p.ListenAddress, "port_value": p.Port}},
 		"filter_chains": []any{
 			ev{"filters": []any{ev{"name": "envoy.filters.network.http_connection_manager", "typed_config": hcm}}},
 		},
 	}
+	if p.Transparent {
+		acceptTransparentTLS(listener)
+	}
+	return listener
 }
 
 func buildOuterRouteConfig(p bootstrapParams) ev {
@@ -307,14 +310,19 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 		"route_config": ev{
 			"name": "forward_" + c.ChainID,
 			"virtual_hosts": []any{
-				ev{"name": "default", "domains": []any{"*"}, "routes": buildChainForwardRoutes(c)},
+				ev{
+					"name":                      "default",
+					"domains":                   []any{"*"},
+					"routes":                    buildChainForwardRoutes(c),
+					"request_headers_to_remove": []any{connectionAddressHeader},
+				},
 			},
 		},
 	}
 	if c.Upgrades {
 		hcm["upgrade_configs"] = []any{ev{"upgrade_type": "websocket"}, ev{"upgrade_type": "spdy/3.1"}}
 	}
-	if p.OTel.Traces && !c.HasQueryParamCredential() {
+	if p.OTel.Traces && !slices.ContainsFunc(c.Credentials, func(cred envoyCredential) bool { return cred.QueryParamName != "" }) {
 		hcm["tracing"] = otelTracing(p, 1)
 	}
 	if p.OTel.AccessLogs {
@@ -336,9 +344,20 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 }
 
 func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
-	filters := []any{extAuthzHTTPFilter(p)}
+	var filters []any
+	if len(c.ConnectionIDs()) > 0 {
+		filters = append(filters, connectionAddressHTTPFilter(c))
+	}
+	filters = append(filters, extAuthzHTTPFilter(p))
 	for _, cred := range c.Credentials {
-		filters = append(filters, ev{
+		rivals := c.RivalsOf(cred)
+		gate := func(filter ev, innerName string) ev { return skippedForRivals(filter, innerName, rivals) }
+		if c.RequireAddress && cred.ConnectionID != "" {
+			gate = func(filter ev, innerName string) ev {
+				return skippedUnlessAddressed(filter, innerName, cred.ConnectionID)
+			}
+		}
+		filters = append(filters, gate(ev{
 			"name": cred.FilterName(),
 			"typed_config": ev{
 				"@type":     "type.googleapis.com/envoy.extensions.filters.http.credential_injector.v3.CredentialInjector",
@@ -360,31 +379,147 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 					},
 				},
 			},
-		})
+		}, "envoy.filters.http.credential_injector"))
 		if cred.QueryParamName != "" {
-			filters = append(filters, ev{
+			filters = append(filters, gate(ev{
 				"name": cred.QueryParamFilterName(),
 				"typed_config": ev{
 					"@type":               "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
 					"default_source_code": ev{"inline_string": luaQueryParamScript(cred.HeaderName, cred.QueryParamName)},
 				},
-			})
+			}, "envoy.filters.http.lua"))
 		}
+	}
+	for _, signer := range c.Signers {
+		filters = append(filters,
+			skippedUnlessAddressed(signingGuardHTTPFilter(c, signer), "envoy.filters.http.lua", signer.ConnectionID),
+			skippedUnlessAddressed(requestSigningHTTPFilter(p, c, signer), "envoy.filters.http.aws_request_signing", signer.ConnectionID),
+		)
 	}
 	filters = append(filters, dynamicForwardProxyHTTPFilter(), routerHTTPFilter())
 	return filters
 }
 
-func buildChainForwardRoutes(c envoyHostChain) []any {
-	var routes []any
-	for _, connectionID := range c.ConnectionIDs() {
-		routes = append(routes, buildConnectionRoutes(c, connectionID)...)
+func signingGuardHTTPFilter(c envoyHostChain, signer envoySigner) ev {
+	return ev{
+		"name": signer.GuardFilterName(),
+		"typed_config": ev{
+			"@type":               "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
+			"default_source_code": ev{"inline_string": luaSigningGuardScript(c, signer)},
+		},
 	}
-	return append(routes, buildUnaddressedRoutes(c)...)
 }
 
-func connectionPathPrefix(connectionID string) string {
-	return "/" + connectionEgressPathSegment + "/" + connectionID + "/"
+func requestSigningHTTPFilter(p bootstrapParams, c envoyHostChain, signer envoySigner) ev {
+	volume := p.CredentialsRoot + "/" + signer.VolumeName
+	return ev{
+		"name": signer.FilterName(),
+		"typed_config": ev{
+			"@type":                  "type.googleapis.com/envoy.extensions.filters.http.aws_request_signing.v3.AwsRequestSigning",
+			"service_name":           signer.Service,
+			"region":                 signer.Region,
+			"host_rewrite":           c.HostRewrite(),
+			"use_unsigned_payload":   true,
+			"match_excluded_headers": []any{ev{"exact": connectionAddressHeader}},
+			"credential_provider": ev{
+				"custom_credential_provider_chain": true,
+				"credentials_file_provider": ev{
+					"credentials_data_source": ev{
+						"filename":          volume + "/" + signer.CredentialsKey,
+						"watched_directory": ev{"path": volume},
+					},
+					"profile": awsCredentialsProfile,
+				},
+			},
+		},
+	}
+}
+
+const streamingPayloadPrefix = "STREAMING-"
+
+const streamingRefusedBody = "This request was refused by the egress gateway, not by the storage service.\n" +
+	"The gateway re-signs requests to this storage account with the account's own keys, and it cannot re-sign a streaming (aws-chunked) upload: the signature must cover a plain body.\n" +
+	"Set request_checksum_calculation = when_required in the client's AWS profile (or AWS_REQUEST_CHECKSUM_CALCULATION=when_required in its environment) and retry.\n"
+
+func outOfScopeRefusedBody(c envoyHostChain, signer envoySigner) string {
+	if signer.HostWide() {
+		return ""
+	}
+	return fmt.Sprintf(
+		"This request was refused by the egress gateway, not by the storage service.\n"+
+			"The storage connection %s is limited to %s on %s, and this request's path is outside that, so the gateway did not sign it with the connection's keys.\n"+
+			"Use the bucket this connection was created for, or send the request through the profile of a connection that covers this path.\n",
+		signer.ConnectionID, strings.Join(signer.PathPatterns, ", "), c.Host)
+}
+
+func luaPatternEscape(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if strings.ContainsRune("^$()%.[]*+-?", r) {
+			b.WriteByte('%')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func luaGlobPattern(glob string) string {
+	pieces := strings.Split(glob, "*")
+	for i, piece := range pieces {
+		pieces[i] = luaPatternEscape(piece)
+	}
+	return "^" + strings.Join(pieces, ".*") + "$"
+}
+
+func luaAddressedPathPattern() string {
+	return "^" + luaPatternEscape("/"+connectionEgressPathSegment+"/") + "[%w%._~%-]+(/.*)$"
+}
+
+func luaSigningGuardScript(c envoyHostChain, signer envoySigner) string {
+	patterns := make([]string, 0, len(signer.PathPatterns))
+	for _, p := range signer.PathPatterns {
+		patterns = append(patterns, luaGlobPattern(p))
+	}
+	return "local PATTERNS = " + luaStringList(patterns) + "\n" +
+		"local SCOPE_BODY = " + strconv.Quote(outOfScopeRefusedBody(c, signer)) + "\n" +
+		"local ADDRESSED_PATH = " + strconv.Quote(luaAddressedPathPattern()) + "\n" +
+		"local PREFIX = " + strconv.Quote(streamingPayloadPrefix) + "\n" +
+		"local BODY = " + strconv.Quote(streamingRefusedBody) + "\n" +
+		luaSigningGuardBody
+}
+
+const luaSigningGuardBody = `local function path_in_scope(path)
+  if #PATTERNS == 0 then return true end
+  local rest = string.match(path, ADDRESSED_PATH)
+  if rest ~= nil then path = rest end
+  for _, pattern in ipairs(PATTERNS) do
+    if string.find(path, pattern) ~= nil then return true end
+  end
+  return false
+end
+function envoy_on_request(rh)
+  local h = rh:headers()
+  if not path_in_scope(h:get(":path") or "/") then
+    rh:respond({[":status"] = "403", ["content-type"] = "text/plain"}, SCOPE_BODY)
+    return
+  end
+  local sha = h:get("x-amz-content-sha256")
+  if sha ~= nil and string.sub(sha, 1, #PREFIX) == PREFIX then
+    rh:respond({[":status"] = "400", ["content-type"] = "text/plain"}, BODY)
+  end
+end
+`
+
+func buildChainForwardRoutes(c envoyHostChain) []any {
+	var routes []any
+	ids := c.ConnectionIDs()
+	for _, connectionID := range ids {
+		routes = append(routes, buildConnectionRoutes(c, connectionID)...)
+	}
+	for _, connectionID := range ids {
+		routes = append(routes, buildConnectionAddressRoutes(c, connectionID)...)
+	}
+	return append(routes, buildUnaddressedRoutes(c)...)
 }
 
 func scopedRoute(c envoyHostChain, connectionID, scope, match, rewrite string) ev {
@@ -400,7 +535,7 @@ func scopedRoute(c envoyHostChain, connectionID, scope, match, rewrite string) e
 }
 
 func buildConnectionRoutes(c envoyHostChain, connectionID string) []any {
-	prefix := connectionPathPrefix(connectionID)
+	prefix := "/" + connectionEgressPathSegment + "/" + connectionID + "/"
 	emitted := map[string]bool{}
 	var routes []any
 	add := func(scope, match, rewrite string) {
@@ -474,7 +609,6 @@ func buildRefusedRoute(c envoyHostChain, scope string) ev {
 			"status": 403,
 			"body":   ev{"inline_string": refusedBody(c, scope)},
 		},
-		"typed_per_filter_config": extAuthzDisabledPerRoute(),
 	}
 }
 
@@ -490,8 +624,9 @@ func refusedBody(c envoyHostChain, scope string) string {
 	}
 	return fmt.Sprintf(
 		"More than one connection injects the same credential header on %s%s, so this request names no account. "+
-			"Prefix the request path with /%s/<connection-id>/ to choose one. Connections here: %s.\n",
-		c.Host, scope, connectionEgressPathSegment, strings.Join(ids, ", "))
+			"Prefix the request path with /%s/<connection-id>/, or send the connection's token placeholder %s<connection-id> where the credential goes, to choose one. "+
+			"Connections here: %s.\n",
+		c.Host, scope, connectionEgressPathSegment, connectionEgressPlaceholderPrefix, strings.Join(ids, ", "))
 }
 
 func buildChainRouteAction(c envoyHostChain) ev {
@@ -519,7 +654,7 @@ func attributionHeaderMutations(p bootstrapParams) (add []any, remove []any) {
 			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
 		},
 	}
-	if !p.attributionOverridden() {
+	if p.AttributionID == "" || p.AttributionID == p.InstanceID {
 		return add, []any{attributionInvocationHeader}
 	}
 	return append(add, ev{
@@ -638,9 +773,9 @@ func buildClusters(p bootstrapParams) []any {
 				},
 			},
 		},
-		dynamicForwardProxyCluster("dynamic_forward_proxy_https", true),
-		dynamicForwardProxyCluster("dynamic_forward_proxy_tcp", false),
-		dynamicForwardProxyCluster("dynamic_forward_proxy_http", false),
+		dynamicForwardProxyCluster("dynamic_forward_proxy_https", true, p.UpstreamTrustedCA),
+		dynamicForwardProxyCluster("dynamic_forward_proxy_tcp", false, ""),
+		dynamicForwardProxyCluster("dynamic_forward_proxy_http", false, ""),
 		pinnedTCPCluster("harness_passthrough", p.HarnessHost, p.HarnessPort),
 	}
 	if p.ObjectStoreAuthority != "" {
@@ -648,7 +783,7 @@ func buildClusters(p bootstrapParams) []any {
 	}
 	for _, c := range p.Chains {
 		if c.Credentialed() {
-			clusters = append(clusters, buildUpstreamCluster(c))
+			clusters = append(clusters, buildUpstreamCluster(c, p.UpstreamTrustedCA))
 		}
 	}
 	if p.Telemetry {
@@ -673,7 +808,7 @@ func buildClusters(p bootstrapParams) []any {
 	return clusters
 }
 
-func dynamicForwardProxyCluster(name string, withTLS bool) ev {
+func dynamicForwardProxyCluster(name string, withTLS bool, trustedCA string) ev {
 	c := ev{
 		"name":            name,
 		"connect_timeout": "5s",
@@ -692,7 +827,7 @@ func dynamicForwardProxyCluster(name string, withTLS bool) ev {
 			"typed_config": ev{
 				"@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext",
 				"common_tls_context": ev{
-					"validation_context": ev{"trusted_ca": ev{"filename": "/etc/ssl/certs/ca-certificates.crt"}},
+					"validation_context": ev{"trusted_ca": ev{"filename": trustedCA}},
 				},
 			},
 		}
@@ -711,8 +846,7 @@ func pinnedTCPCluster(name, host string, port int) ev {
 	}
 }
 
-func buildUpstreamCluster(c envoyHostChain) ev {
-	trustedCA := "/etc/ssl/certs/ca-certificates.crt"
+func buildUpstreamCluster(c envoyHostChain, trustedCA string) ev {
 	if c.UpstreamCAFile != "" {
 		trustedCA = c.UpstreamCAFile
 	}
@@ -776,7 +910,7 @@ func buildOTelExportCluster(p bootstrapParams) ev {
 				"@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext",
 				"sni":   p.OTel.CollectorHost,
 				"common_tls_context": ev{
-					"validation_context": ev{"trusted_ca": ev{"filename": "/etc/ssl/certs/ca-certificates.crt"}},
+					"validation_context": ev{"trusted_ca": ev{"filename": p.UpstreamTrustedCA}},
 				},
 			},
 		}

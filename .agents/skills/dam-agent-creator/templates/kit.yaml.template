@@ -1,8 +1,7 @@
 # kit.yaml — the platform's Starter Kit for {{AGENT_NAME}}.
 #
-# TODO(creator): fill every TODO from the approved design and delete the fields the
-# design does not need (all of them are optional except schemaVersion/id/name/
-# description/category). Delete every TODO comment. Keep this file in step with
+# TODO(creator): delete the fields the design does not need (all of them are
+# optional except schemaVersion/id/name/description/category). Keep this file in step with
 # README and ONBOARDING — the schedules here and the ones ONBOARDING checks for are
 # the same schedules, by the same names.
 #
@@ -80,6 +79,13 @@ resources:
   memory: 2Gi
   storage: 5Gi
   note: TODO(creator) — why this size.
+
+# TODO(creator): keep only when the job needs other web access than the platform
+# default (trusted sites): none | trusted | all.
+egressPreset: trusted
+# TODO(creator): keep only for hosts the job always needs beyond the preset.
+egressRules:
+  - host: TODO(creator).example.com
 
 # TODO(creator): keep only when a heartbeat fires finer than the install's idle
 # timeout — otherwise the agent is paid for a wake-up round trip every tick.

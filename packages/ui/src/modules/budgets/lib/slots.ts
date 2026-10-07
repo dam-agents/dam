@@ -39,7 +39,7 @@ export function sizeForMultiplier(unit: SlotUnit, multiplier: number): SizeMi {
   };
 }
 
-export function sizeMultiplier(size: SizeMi, unit: SlotUnit): number {
+function sizeMultiplier(size: SizeMi, unit: SlotUnit): number {
   const ratio = Math.max(
     size.cpuMilli / unit.cpuMilli,
     size.memoryMi / unit.memoryMi,
@@ -85,7 +85,7 @@ export function freeSlots(
   );
 }
 
-export function formatMultiplier(size: SizeMi, unit: SlotUnit): string {
+function formatMultiplier(size: SizeMi, unit: SlotUnit): string {
   return `${String(Number(sizeMultiplier(size, unit).toFixed(2)))}x`;
 }
 
@@ -111,13 +111,13 @@ export interface ComputeSegment {
   alwaysOn: boolean;
 }
 
-export interface ComputeGroup {
+interface ComputeGroup {
   state: Exclude<ComputeCellState, "available">;
   agents: number;
   slots: number;
 }
 
-export interface ComputeView {
+interface ComputeView {
   segments: ComputeSegment[];
   usedSlots: number;
   ceilingSlots: number;
@@ -126,12 +126,15 @@ export interface ComputeView {
 }
 
 export function computeView(
-  runningAgents: readonly AgentView[],
+  agents: readonly AgentView[],
   workingAgentIds: ReadonlySet<string>,
   budget: BudgetReserved,
 ): ComputeView {
   const unit = slotUnitOf(budget);
-  const held = runningAgents.map((agent) => {
+  const scaledUp = agents.filter(
+    (agent) => agent.state !== "hibernated" && !agent.overBudget,
+  );
+  const held = scaledUp.map((agent) => {
     const size = sizeInMi(agent.size);
     return {
       agent,

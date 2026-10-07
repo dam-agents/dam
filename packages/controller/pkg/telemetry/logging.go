@@ -2,7 +2,6 @@ package telemetry
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"os"
 
@@ -15,10 +14,10 @@ func NewHandler(level slog.Level, enabled bool) slog.Handler {
 	if !enabled {
 		return stderr
 	}
-	return fanoutHandler{handlers: []slog.Handler{
+	return slog.NewMultiHandler(
 		traceContextHandler{inner: stderr},
 		leveledHandler{min: level, inner: otelslog.NewHandler(ScopeName)},
-	}}
+	)
 }
 
 type traceContextHandler struct {
@@ -66,45 +65,4 @@ func (h leveledHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (h leveledHandler) WithGroup(name string) slog.Handler {
 	return leveledHandler{min: h.min, inner: h.inner.WithGroup(name)}
-}
-
-type fanoutHandler struct {
-	handlers []slog.Handler
-}
-
-func (h fanoutHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	for _, c := range h.handlers {
-		if c.Enabled(ctx, level) {
-			return true
-		}
-	}
-	return false
-}
-
-func (h fanoutHandler) Handle(ctx context.Context, rec slog.Record) error {
-	var errs []error
-	for _, c := range h.handlers {
-		if c.Enabled(ctx, rec.Level) {
-			if err := c.Handle(ctx, rec.Clone()); err != nil {
-				errs = append(errs, err)
-			}
-		}
-	}
-	return errors.Join(errs...)
-}
-
-func (h fanoutHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	children := make([]slog.Handler, len(h.handlers))
-	for i, c := range h.handlers {
-		children[i] = c.WithAttrs(attrs)
-	}
-	return fanoutHandler{handlers: children}
-}
-
-func (h fanoutHandler) WithGroup(name string) slog.Handler {
-	children := make([]slog.Handler, len(h.handlers))
-	for i, c := range h.handlers {
-		children[i] = c.WithGroup(name)
-	}
-	return fanoutHandler{handlers: children}
 }

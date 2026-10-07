@@ -8,10 +8,11 @@ import type { AppRouter } from "agent-runtime-api";
 
 import { getAccessToken } from "../../auth.js";
 import { useStore } from "../../store.js";
+import { relayBackoff } from "./lib/relay-backoff.js";
 
 const IDLE_CLOSE_MS = 30_000;
 
-export type AgentTrpcClient = ReturnType<typeof createTRPCClient<AppRouter>>;
+type AgentTrpcClient = ReturnType<typeof createTRPCClient<AppRouter>>;
 
 function isAbnormalClose(code: number | undefined): boolean {
   return code !== undefined && code !== 1000 && code !== 1005;
@@ -27,13 +28,19 @@ async function agentTrpcUrl(agentId: string): Promise<string> {
 }
 
 function createAgentTrpc(agentId: string): AgentTrpcClient {
+  const backoff = relayBackoff();
   const wsClient = createWSClient({
     url: () => agentTrpcUrl(agentId),
     lazy: { enabled: true, closeMs: IDLE_CLOSE_MS },
     keepAlive: { enabled: true },
-    onOpen: () => useStore.getState().clearAgentUnreachable(agentId),
+    retryDelayMs: backoff.retryDelayMs,
+    onOpen: () => {
+      backoff.onOpen();
+      useStore.getState().clearAgentUnreachable(agentId);
+    },
     onError: () => useStore.getState().markAgentUnreachable(agentId),
     onClose: (cause) => {
+      backoff.onClose();
       if (isAbnormalClose(cause?.code))
         useStore.getState().markAgentUnreachable(agentId);
     },

@@ -10,8 +10,7 @@ export interface BusRpc<Req, Res> {
 
 type Envelope<T> = { id: string; replyTo: string; body: T };
 type Reply<T> =
-  | { id: string; ok: true; body: T }
-  | { id: string; ok: false; error: string };
+  { id: string; ok: true; body: T } | { id: string; ok: false; error: string };
 
 const envelopeSchema = z.object({
   id: z.string(),

@@ -1,9 +1,16 @@
 import type { Contribution } from "agent-runtime-api";
+import { githubHostOf } from "./github-host.js";
+import { DEFAULT_ENV_PLACEHOLDER } from "./providers.js";
 
 export const CONNECTION_EGRESS_PATH_SEGMENT = "__platform_conn";
+export const CONNECTION_EGRESS_PLACEHOLDER_PREFIX = "platform:conn:";
 
 export function connectionEgressPathPrefix(connectionId: string): string {
   return `/${CONNECTION_EGRESS_PATH_SEGMENT}/${connectionId}`;
+}
+
+export function connectionEgressPlaceholder(connectionId: string): string {
+  return `${CONNECTION_EGRESS_PLACEHOLDER_PREFIX}${connectionId}`;
 }
 
 const addressedPath = new RegExp(
@@ -17,7 +24,7 @@ export function stripConnectionEgressPrefix(path: string): string {
 type EgressInject = Extract<Contribution, { kind: "egress-inject" }>;
 type McpEntry = Extract<Contribution, { kind: "mcp-entry" }>;
 
-function injectedHosts(contributions: Contribution[]): Set<string> {
+function injectedHosts(contributions: readonly Contribution[]): Set<string> {
   const hosts = new Set<string>();
   for (const c of contributions) {
     if (c.kind !== "egress-inject") continue;
@@ -52,15 +59,122 @@ function addressedMcpEntry(
   return { ...entry, url: url.toString() };
 }
 
+const VENDOR_PREFIXED_PLACEHOLDER = new RegExp(
+  `^([a-z]{1,8}-)${DEFAULT_ENV_PLACEHOLDER}$`,
+);
+
+const LEGACY_PLACEHOLDERS: Readonly<Record<string, string>> = {
+  "injected-by-gateway": "",
+  "sk-dummy": "sk-",
+};
+
+function addressedValue(
+  value: string,
+  placeholder: string,
+): string | undefined {
+  if (value === DEFAULT_ENV_PLACEHOLDER) return placeholder;
+  const legacy = LEGACY_PLACEHOLDERS[value];
+  if (legacy !== undefined) return `${legacy}${placeholder}`;
+  const vendor = VENDOR_PREFIXED_PLACEHOLDER.exec(value)?.[1];
+  return vendor === undefined ? undefined : `${vendor}${placeholder}`;
+}
+
+function isCredentialPlaceholder(value: unknown): boolean {
+  return typeof value === "string" && addressedValue(value, "") !== undefined;
+}
+
+function withPlaceholder(value: unknown, placeholder: string): unknown {
+  if (typeof value === "string") {
+    return addressedValue(value, placeholder) ?? value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => withPlaceholder(item, placeholder));
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        withPlaceholder(item, placeholder),
+      ]),
+    );
+  }
+  return value;
+}
+
+function containsPlaceholder(value: unknown): boolean {
+  if (isCredentialPlaceholder(value)) return true;
+  if (Array.isArray(value)) return value.some(containsPlaceholder);
+  if (value !== null && typeof value === "object") {
+    return Object.values(value).some(containsPlaceholder);
+  }
+  return false;
+}
+
+function mentionsPlaceholder(headers: Record<string, string> | undefined) {
+  return Object.values(headers ?? {}).some((value) =>
+    value.includes(DEFAULT_ENV_PLACEHOLDER),
+  );
+}
+
+function headersWithPlaceholder(
+  headers: Record<string, string>,
+  placeholder: string,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers).map(([name, value]) => [
+      name,
+      value.split(DEFAULT_ENV_PLACEHOLDER).join(placeholder),
+    ]),
+  );
+}
+
+export function carriesCredentialPlaceholder(
+  contributions: readonly Contribution[],
+): boolean {
+  return contributions.some(
+    (c) =>
+      (c.kind === "env" && isCredentialPlaceholder(c.placeholder)) ||
+      (c.kind === "file" && containsPlaceholder(c.content)) ||
+      (c.kind === "mcp-entry" && mentionsPlaceholder(c.headers)),
+  );
+}
+
 export function applyConnectionEgressAddressing(
   connectionId: string,
   contributions: Contribution[],
 ): Contribution[] {
+  if (
+    !contributions.some(
+      (c) => c.kind === "egress-inject" || c.kind === "egress-sign",
+    )
+  ) {
+    return contributions;
+  }
   const hosts = injectedHosts(contributions);
-  if (hosts.size === 0) return contributions;
-  return contributions.map((c) =>
-    c.kind === "mcp-entry" ? addressedMcpEntry(c, connectionId, hosts) : c,
-  );
+  const placeholder = connectionEgressPlaceholder(connectionId);
+  return contributions.map((c) => {
+    switch (c.kind) {
+      case "mcp-entry": {
+        const entry = addressedMcpEntry(c, connectionId, hosts);
+        return entry.headers
+          ? {
+              ...entry,
+              headers: headersWithPlaceholder(entry.headers, placeholder),
+            }
+          : entry;
+      }
+      case "env": {
+        const addressed = addressedValue(c.placeholder, placeholder);
+        return addressed === undefined ? c : { ...c, placeholder: addressed };
+      }
+      case "file":
+        return c.content === undefined
+          ? c
+          : { ...c, content: withPlaceholder(c.content, placeholder) };
+      default:
+        return c;
+    }
+  });
 }
 
 interface InjectionClaim {
@@ -81,7 +195,7 @@ function injectionScope(pathPattern: string | undefined): string {
   return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
 }
 
-function addressedHosts(contributions: Contribution[]): Set<string> {
+function pathAddressedHosts(contributions: Contribution[]): Set<string> {
   const injected = injectedHosts(contributions);
   const hosts = new Set<string>();
   for (const c of contributions) {
@@ -92,8 +206,41 @@ function addressedHosts(contributions: Contribution[]): Set<string> {
   return hosts;
 }
 
-function injectionClaims(contributions: Contribution[]): InjectionClaim[] {
-  const addressed = addressedHosts(contributions);
+function credentialEnvNames(contributions: Contribution[]): Set<string> {
+  const names = new Set<string>();
+  for (const c of contributions) {
+    if (c.kind === "env" && isCredentialPlaceholder(c.placeholder)) {
+      names.add(c.name);
+    }
+  }
+  return names;
+}
+
+function placeholdersReachTheAgent(
+  a: ClaimingConnection,
+  b: ClaimingConnection,
+): boolean {
+  if (
+    !carriesCredentialPlaceholder(a.contributions) ||
+    !carriesCredentialPlaceholder(b.contributions)
+  ) {
+    return false;
+  }
+  const github = githubHostOf(a.contributions);
+  if (github !== undefined && github === githubHostOf(b.contributions)) {
+    return true;
+  }
+  const taken = credentialEnvNames(a.contributions);
+  return [...credentialEnvNames(b.contributions)].every(
+    (name) => !taken.has(name),
+  );
+}
+
+function injectionClaims(
+  contributions: Contribution[],
+  byValue: boolean,
+): InjectionClaim[] {
+  const byPath = pathAddressedHosts(contributions);
   return contributions.flatMap((c) => {
     if (c.kind !== "egress-inject") return [];
     const host = hostnameOf(c.host);
@@ -102,7 +249,7 @@ function injectionClaims(contributions: Contribution[]): InjectionClaim[] {
         host,
         header: c.headerName.toLowerCase(),
         scope: injectionScope(c.pathPattern),
-        addressed: !c.pathPattern && addressed.has(host),
+        addressed: byValue || (!c.pathPattern && byPath.has(host)),
       },
     ];
   });
@@ -122,8 +269,9 @@ export function unaddressableRivalHost(
   b: ClaimingConnection,
 ): string | undefined {
   if (a.id === b.id) return undefined;
-  const rivalClaims = injectionClaims(b.contributions);
-  return injectionClaims(a.contributions).find((claim) =>
+  const byValue = placeholdersReachTheAgent(a, b);
+  const rivalClaims = injectionClaims(b.contributions, byValue);
+  return injectionClaims(a.contributions, byValue).find((claim) =>
     rivalClaims.some((rival) => claimsCollide(claim, rival)),
   )?.host;
 }

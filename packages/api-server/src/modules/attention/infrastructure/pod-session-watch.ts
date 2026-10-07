@@ -7,17 +7,14 @@ import {
 
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
 
-export interface PodSessionWatch {
-  close(): void;
-}
-
 /**
  * UNIT_BOUNDARY_DESCRIPTION: One connection to one pod, carrying both halves of
  * the pull design — the watch that says "re-read" and the read it triggers.
  * They share a socket because a notice is always followed by a read, and a
  * connection per read costs a handshake on every turn of every awake agent.
  */
-export interface PodSessionSubscription extends PodSessionWatch {
+export interface PodSessionSubscription {
+  close(): void;
   listSessions(): Promise<PodSession[]>;
 }
 

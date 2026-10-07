@@ -21,8 +21,8 @@ async function readBundle(tarGzPath: string): Promise<Entry[]> {
   const extract = tarExtract();
   extract.on("entry", (header, stream, next) => {
     let body = "";
-    stream.on("data", (chunk: Buffer) => {
-      body += chunk.toString("utf-8");
+    stream.on("data", (chunk) => {
+      body += String(chunk);
     });
     stream.on("end", () => {
       entries.push({

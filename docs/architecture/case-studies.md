@@ -1,6 +1,6 @@
 # Case studies
 
-Last verified: 2026-09-09
+Last verified: 2026-09-25
 
 ## Overview
 
@@ -14,11 +14,11 @@ The subsystem is deliberately split across three concerns:
 
 ## The skill
 
-The skill directory ships in the platform-base image under the staged-skills dir ([skills](skills.md)), so every harness image carries it, and it is consumed in place rather than copied onto any agent's PVC. It is deliberately **off every skill path**: no harness ambient-discovers it, so it costs no context on unrelated turns and can never self-trigger. Invocation is always an explicit reference to that path — the canonical weekly schedule task, which the contract package owns, and the Claude Code `/agent-case-study` command shim both point at it. The schedule task text is frozen into each schedule row at opt-in, so it stays a thin pointer plus a refusal clause; every behavior worth iterating on lives in the image-shipped `SKILL.md`, which is always current in a running pod.
+The skill directory ships in every agent image under the staged-skills dir ([skills](skills.md)), and it is consumed in place rather than copied onto any agent's PVC. It is deliberately **off every skill path**: no harness ambient-discovers it, so it costs no context on unrelated turns and can never self-trigger. Invocation is always an explicit reference to that path — the canonical weekly schedule task, which the contract package owns, and the Claude Code `/agent-case-study` command shim both point at it. The schedule task text is frozen into each schedule row at opt-in, so it stays a thin pointer plus a refusal clause; every behavior worth iterating on lives in the image-shipped `SKILL.md`, which is always current in a running pod.
 
 The skill's evidence sources are harness-aware:
 
-- **The platform session index** ([agent-lifecycle](agent-lifecycle.md)) is the harness-agnostic session inventory — ids, timestamps, and the scheduled / channel-driven / experiment classification that transcript paths cannot provide.
+- **The platform session index** ([agent-lifecycle](agent-lifecycle.md)) is the harness-agnostic session inventory — ids, timestamps, and the scheduled / channel-driven classification that transcript paths cannot provide.
 - **A per-harness locator** the skill directory carries probes the filesystem for the harness's own transcript store — claude-code-family JSONL, bob's SQLite, pi's session files and memory dir, codex by runtime probe — and a companion reference alongside it says how to read each. No env var identifies the harness in-pod; probing is the only signal.
 
 ## Editions and their states
@@ -59,7 +59,7 @@ One Postgres table, `agent_case_studies` ([`packages/db/src/schema.ts`](../../pa
 
 ## Where the code lives
 
-- Skill: [`packages/platform-base/dam-skills/agent-case-study/`](../../packages/platform-base/dam-skills/agent-case-study/)
+- Skill: [`packages/agents/base/rootfs/usr/local/share/dam-skills/agent-case-study/`](../../packages/agents/base/rootfs/usr/local/share/dam-skills/agent-case-study/)
 - Contract (types, schemas, router, canonical schedule task): [`packages/api-server-api/src/modules/case-studies/`](../../packages/api-server-api/src/modules/case-studies/)
 - Implementation (repository, services, routes, MCP tools, sweeper): [`packages/api-server/src/modules/case-studies/`](../../packages/api-server/src/modules/case-studies/)
 - Agent-facing usage read: [`packages/api-server/src/modules/metrics/`](../../packages/api-server/src/modules/metrics/)

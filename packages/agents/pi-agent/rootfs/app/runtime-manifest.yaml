@@ -1,0 +1,78 @@
+# Pi-agent manifest. Built-in drivers are on by default; this declares only the
+# Pi-specific mcp-entry and harness-config bindings. Other drivers keep the
+# defaults of the base manifest.
+manifestVersion: 1
+
+drivers:
+  # Pi reads MCP servers only from its own ~/.pi/agent/mcp.json, never from the
+  # $HOME/.mcp.json the built-in binding writes. The default `type` / `url` /
+  # `headers` shape is Pi's own. Pi's default exposure (`codemode`) hides MCP
+  # tools behind its scripting tool, so a sub-agent could not call
+  # report_result directly; `direct` declares them to the model like a built-in
+  # tool. Every entry gets it, user Connections included. The cost is context
+  # size, and Pi's first prompt waits up to 10 s for a `direct` server to
+  # connect.
+  mcp-entry:
+    path: "$HOME/.pi/agent/mcp.json"
+    keyPath: mcpServers
+    extraFields:
+      exposure: direct
+
+  # Model -> defaultModel, thinking level -> the ACP "mode"
+  # (defaultThinkingLevel). Pi's models are connection-dependent, so they're
+  # discovered at runtime (modelDiscovery) rather than listed statically.
+  harness-config:
+    file: "$HOME/.pi/agent/settings.json"
+    keys:
+      model: "defaultModel"
+      mode: "defaultThinkingLevel"
+    catalog:
+      options:
+        - id: model
+          name: Model
+          description: AI model to use
+          category: model
+          choices: []
+        - id: mode
+          name: Thinking
+          description: Reasoning effort level
+          category: thought_level
+          choices:
+            - value: "off"
+              name: "Off"
+              description: "No extended thinking"
+            - value: minimal
+              name: "Minimal"
+            - value: low
+              name: "Low"
+            - value: medium
+              name: "Medium"
+            - value: high
+              name: "High"
+            - value: xhigh
+              name: "Extra High"
+    # Sources in priority order; the first whose variable is set answers.
+    # A Bedrock connection names the region's control-plane endpoint, which
+    # lists the inference profiles invocable from that region; it comes first
+    # because pi-dynamic-providers makes Bedrock the default provider whenever
+    # a Bedrock connection is present. The OpenAI-compatible variables name an
+    # endpoint the agent was pointed at — it fronts no provider of its own, so
+    # either justifies a seeded model.
+    modelDiscovery:
+      - urlEnv:
+          - AWS_ENDPOINT_URL_BEDROCK
+        redirectEnv:
+          - AWS_ENDPOINT_URL_BEDROCK
+        pinEnv:
+          - AWS_BEDROCK_MODEL
+        path: "/inference-profiles?maxResults=1000"
+        shape: bedrock-inference-profiles
+      - urlEnv:
+          - OPENAI_PROXY_URL
+          - OPENAI_BASE_URL
+        redirectEnv:
+          - OPENAI_PROXY_URL
+          - OPENAI_BASE_URL
+        pinEnv:
+          - OPENAI_PROXY_MODEL
+          - OPENAI_MODEL

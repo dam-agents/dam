@@ -1,11 +1,12 @@
 import type { Db } from "db";
 
-import { SESSION_DIRECTORY_RETENTION_DAYS } from "./domain/types.js";
 import { createSessionDirectoryRepository } from "./infrastructure/session-directory-repository.js";
 import {
   createSessionDirectoryService,
   type SessionDirectory,
 } from "./services/session-directory-service.js";
+
+const SESSION_DIRECTORY_RETENTION_DAYS = 180;
 
 export function composeSessionDirectory(db: Db): {
   sessionDirectory: SessionDirectory;

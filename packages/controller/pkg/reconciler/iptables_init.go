@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
@@ -56,9 +57,9 @@ echo "egress-lockdown: gateway-only IPv4 + IPv6 drop applied"
 		},
 		SecurityContext: &corev1.SecurityContext{
 			RunAsUser:                &runAsRoot,
-			RunAsNonRoot:             ptrBool(false),
-			AllowPrivilegeEscalation: ptrBool(false),
-			ReadOnlyRootFilesystem:   ptrBool(true),
+			RunAsNonRoot:             new(false),
+			AllowPrivilegeEscalation: new(false),
+			ReadOnlyRootFilesystem:   new(true),
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},
 				Add:  []corev1.Capability{"NET_ADMIN", "NET_RAW"},
@@ -76,7 +77,7 @@ func ensureGatewayService(ctx context.Context, client kubernetes.Interface, desi
 	case err != nil:
 		return nil, fmt.Errorf("getting gateway Service: %w", err)
 	case existing.Spec.ClusterIP != corev1.ClusterIPNone:
-		return existing, nil
+		return syncGatewayServicePorts(ctx, cli, existing, desired)
 	default:
 		slog.Info("migrating legacy headless gateway Service to ClusterIP",
 			"service", desired.Name, kind, name)
@@ -93,6 +94,43 @@ func ensureGatewayService(ctx context.Context, client kubernetes.Interface, desi
 		return nil, fmt.Errorf("creating gateway Service: %w", err)
 	}
 	return created, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an existing gateway Service keeps its ClusterIP, which a machine's allowlist and resolver both name, so only its ports are brought to what is desired — an Agent that moves to the vm Backend, or a gateway created before machines reached it transparently, gains the transparent ports in place.
+func syncGatewayServicePorts(ctx context.Context, cli typedcorev1.ServiceInterface, existing, desired *corev1.Service) (*corev1.Service, error) {
+	if sameServicePorts(existing.Spec.Ports, desired.Spec.Ports) {
+		return existing, nil
+	}
+	updated := existing.DeepCopy()
+	updated.Spec.Ports = desired.Spec.Ports
+	out, err := cli.Update(ctx, updated, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("updating gateway Service ports: %w", err)
+	}
+	return out, nil
+}
+
+func sameServicePorts(have, want []corev1.ServicePort) bool {
+	if len(have) != len(want) {
+		return false
+	}
+	key := func(p corev1.ServicePort) string {
+		proto := p.Protocol
+		if proto == "" {
+			proto = corev1.ProtocolTCP
+		}
+		return fmt.Sprintf("%s/%s/%d/%s", p.Name, proto, p.Port, p.TargetPort.String())
+	}
+	seen := map[string]bool{}
+	for _, p := range have {
+		seen[key(p)] = true
+	}
+	for _, p := range want {
+		if !seen[key(p)] {
+			return false
+		}
+	}
+	return true
 }
 
 func waitForServiceDeleted(ctx context.Context, cli corev1ServiceClient, serviceName string, timeout time.Duration) error {

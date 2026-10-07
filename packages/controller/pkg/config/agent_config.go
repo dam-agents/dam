@@ -55,6 +55,8 @@ type AgentBase struct {
 	IptablesInit *AgentIptablesInit `json:"iptablesInit,omitempty"`
 
 	NPGateInit *AgentNPGateInit `json:"npGateInit,omitempty"`
+
+	ToolsHostPath string `json:"toolsHostPath,omitempty"`
 }
 
 type AgentIptablesInit struct {
@@ -69,8 +71,16 @@ type AgentNPGateInit struct {
 }
 
 type VMConfig struct {
-	Enabled bool         `json:"enabled,omitempty"`
-	Runner  VMRunnerSpec `json:"runner,omitempty"`
+	Enabled          bool               `json:"enabled,omitempty"`
+	Runner           VMRunnerSpec       `json:"runner,omitempty"`
+	RuntimeMigration VMRuntimeMigration `json:"runtimeMigration,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long the volumes a runtime migration copied from are kept once the machine has booted from the copy, and how many copy Jobs may run at once in the install and for one owner. Zero means the controller's default for each.
+type VMRuntimeMigration struct {
+	Retention        Duration `json:"retention,omitempty"`
+	Concurrency      int      `json:"concurrency,omitempty"`
+	OwnerConcurrency int      `json:"ownerConcurrency,omitempty"`
 }
 
 type VMRunnerSpec struct {
@@ -82,16 +92,28 @@ type VMRunnerSpec struct {
 	StorageClass         string                        `json:"storageClass,omitempty"`
 	Devices              map[string]string             `json:"devices,omitempty"`
 	ReserveMiB           int                           `json:"reserveMiB,omitempty"`
+	HeadroomMiB          int                           `json:"headroomMiB,omitempty"`
+	NestedVirtualization bool                          `json:"nestedVirtualization,omitempty"`
 	EgressCIDRs          []string                      `json:"egressCidrs,omitempty"`
 	EgressExceptCIDRs    []string                      `json:"egressExceptCidrs,omitempty"`
 	ImageArchiveHostPath string                        `json:"imageArchiveHostPath,omitempty"`
 	ImageCacheHostPath   string                        `json:"imageCacheHostPath,omitempty"`
 	ImageCacheBudget     string                        `json:"imageCacheBudget,omitempty"`
 	DNSPolicy            string                        `json:"dnsPolicy,omitempty"`
+	DNSCIDRs             []string                      `json:"dnsCidrs,omitempty"`
+	ClusterDNS           VMRunnerClusterDNS            `json:"clusterDns,omitempty"`
 	NodeSelector         map[string]string             `json:"nodeSelector,omitempty"`
 	Tolerations          []corev1.Toleration           `json:"tolerations,omitempty"`
 	Resources            *corev1.ResourceRequirements  `json:"resources,omitempty"`
 	Rollout              VMRunnerRollout               `json:"rollout,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: set, every vm machine runs on one runner outside the cluster, reached at this address, instead of on per-owner runner pods. It is for a local cluster on a laptop, whose hypervisor the runner uses directly rather than nesting one inside the cluster's VM; the chart renders that runner's token and certificate, and the install starts it.
+	HostAddress string `json:"hostAddress,omitempty"`
+}
+
+type VMRunnerClusterDNS struct {
+	Namespace string            `json:"namespace,omitempty"`
+	PodLabels map[string]string `json:"podLabels,omitempty"`
+	Ports     []int32           `json:"ports,omitempty"`
 }
 
 type VMRunnerRollout struct {
