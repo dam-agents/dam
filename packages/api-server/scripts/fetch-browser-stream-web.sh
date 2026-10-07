@@ -18,7 +18,11 @@ if [ ! -f "$cache/index.html" ]; then
   curl -fsSL --retry 3 -o "$work/selkies.whl" "$url"
   sum="$(sha256sum "$work/selkies.whl" | cut -c1-64)"
   grep -qx "$sum" <<<"$hashes" || { echo "fetch-browser-stream-web: $url does not match $lock" >&2; exit 1; }
-  unzip -q "$work/selkies.whl" 'selkies/selkies_web/*' -x 'selkies/selkies_web/__init__.py' -d "$work/wheel"
+  unzip -q "$work/selkies.whl" 'selkies/selkies_web/*' "selkies-$version.dist-info/licenses/LICENSE" \
+    -x 'selkies/selkies_web/__init__.py' -d "$work/wheel"
+  mv "$work/wheel/selkies-$version.dist-info/licenses/LICENSE" "$work/wheel/selkies/selkies_web/LICENSE"
+  printf 'Selkies %s web client, MPL-2.0 (LICENSE), served unmodified from its published wheel.\nSource: https://github.com/selkies-project/selkies/tree/%s\n' \
+    "$version" "$version" >"$work/wheel/selkies/selkies_web/NOTICE"
   rm -rf "$cache"
   mkdir -p "$(dirname "$cache")"
   mv "$work/wheel/selkies/selkies_web" "$cache"

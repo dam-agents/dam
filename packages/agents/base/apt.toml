@@ -8,8 +8,8 @@
 # kiosk window manager and the xrandr Selkies resizes it with), pipewire,
 # pipewire-pulse and wireplumber (its sound, which Selkies captures through the
 # PulseAudio protocol), and the VA-API and pixman libraries pixelflux's wheel
-# takes from the system (base/selkies), and from libasound2t64 on, what Playwright lists for its
-# Chromium on trixie.
+# takes from the system (base/selkies), and from libasound2t64 on, what
+# Playwright lists for its Chromium on trixie.
 [bootstrap.packages]
 "apt:ca-certificates" = "latest"
 "apt:catatonit" = "latest"

@@ -6,7 +6,7 @@ dest="$1"
 here="$(cd "$(dirname "$0")" && pwd)"
 cache="${PLATFORM_SELKIES_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/platform-selkies}"
 python="${PLATFORM_SELKIES_PYTHON:-$(command -v python3)}"
-key="$({ cat "$0" "$here/requirements.txt"; "$python" -c 'import sys; print(sys.version_info[:2])'; uname -m; } |
+key="$({ cat "$0" "$here/requirements.txt" "$here/NOTICE.md"; "$python" -c 'import sys; print(sys.version_info[:2])'; uname -m; } |
   sha256sum | cut -c1-16)"
 out="$cache/out-$key"
 
@@ -22,6 +22,7 @@ export PYTHONPATH="/opt/selkies/site${PYTHONPATH:+:$PYTHONPATH}"
 exec python3 -c 'import sys; from selkies.__main__ import main; sys.argv[0] = "selkies"; sys.exit(main())' "$@"
 WRAPPER
   chmod +x "$work/out/opt/selkies/bin/selkies"
+  cp "$here/NOTICE.md" "$work/out/opt/selkies/NOTICE.md"
   rm -rf "$out"
   mkdir -p "$cache"
   mv "$work/out" "$out"
