@@ -29,12 +29,6 @@ fi
 # the zig .mise/config.toml's [env] selects for checks and tests.
 t="$(uname -m)_unknown_linux_gnu"
 unset "CC_$t" "AR_$t" "CARGO_TARGET_$(printf '%s' "$t" | tr '[:lower:]' '[:upper:]')_LINKER"
-# The compiler is mise.lock's, never whatever `latest` resolves to: CI's mise
-# has resolved it past the lock, and a binary built by another rustc is a new
-# image with nothing in it changed, which reboots every machine on a roll.
-RUSTUP_TOOLCHAIN="$(sed -n '/^\[\[tools\.rust\]\]$/{n;s/^version = "\(.*\)"$/\1/p;}' "$repo/mise.lock")"
-[ -n "$RUSTUP_TOOLCHAIN" ] || { echo "mise.lock names no rust version" >&2; exit 1; }
-export RUSTUP_TOOLCHAIN
 
 sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
 work="$(mktemp -d)"
