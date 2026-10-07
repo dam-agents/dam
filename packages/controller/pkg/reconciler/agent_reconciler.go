@@ -52,6 +52,8 @@ type AgentReconciler struct {
 	podResize       atomic.Int32
 	agentCache      cache.GenericLister
 	vmRunning       sync.Map
+	vmUsedMiB       sync.Map
+	ownerDemandMiB  sync.Map
 	resizeNotices   sync.Map
 	notReadyPolls   sync.Map
 	claimCapNotices sync.Map
@@ -271,6 +273,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		if err != nil {
 			return r.setMachineError(ctx, agent, err)
 		}
+		r.noteMachineUse(name, machine)
 		timer.mark("vmMachine")
 		if migration.active() {
 			migration.held = runtimeMigrationBootHeld(migration, hardStop, overBudget)
@@ -281,6 +284,9 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		if machine.Reason == vmrunner.ReasonOutOfCapacity {
 			running, parked, overBudget = false, true, machine.Message
 			r.recordParkedRetry(name)
+			if err := r.reclaimForRefusedStart(ctx, agent, owner); err != nil {
+				return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
+			}
 		}
 	} else {
 		podSpec, refusal, err := r.renderedSpec(ctx, agent)
@@ -298,6 +304,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		stampRollRev(agentSS, rollRev)
 		if err := r.applyStatefulSet(ctx, agentSS, running && !migration.containerDown()); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
+		}
+		if err := r.forceRollStuckPod(ctx, agentSS.Namespace, agentSS.Name); err != nil {
+			slog.Warn("force-rolling stuck agent pod failed; rollout may be deadlocked",
+				"namespace", agentSS.Namespace, "statefulset", agentSS.Name, "error", err)
 		}
 		if migration.containerDown() {
 			if err := r.stopContainerForRuntimeMigration(ctx, name); err != nil {

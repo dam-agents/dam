@@ -1,124 +1,59 @@
 # Modules and Bounded Contexts
 
-The server is organized into **modules**. Each module is a vertical slice that represents a single bounded context from the domain.
+The server is organized into **modules**, each a vertical slice for one bounded context.
 
-## Core Concepts
+## Bounded contexts
 
-### Bounded Contexts
+A bounded context is a boundary within which one domain model and language apply. The same real-world concept is modeled differently per context: in **Identity** a User has credentials, sessions and login history; in **Billing** a Customer has a payment method, invoices and a plan; in **Shipping** a Recipient has an address and delivery preferences. Each context owns its model and models only what it needs; there is no unified model.
 
-A bounded context is a boundary where a specific domain model and language applies. The same real-world concept (e.g., "User") can have different representations in different contexts:
+Bounded context (strategic DDD: where is the model's boundary?), vertical slice (architecture: how does code reflect it?) and module (codebase: what's the folder called?) are three views of one thing; module ↔ bounded context is 1:1. **Modules follow business boundaries, not technical concerns**: `identity/`, `billing/`, `orders/`, never `database/`, `middleware/`, `utils/`.
 
-- In **Identity**, a User has credentials, sessions, and login history.
-- In **Billing**, a Customer has a payment method, invoices, and a subscription plan.
-- In **Shipping**, a Recipient has an address and delivery preferences.
+## Definition vs implementation
 
-Each bounded context owns its own domain model. There is no single unified model — each context models only what it needs.
-
-### Modules as Vertical Slices
-
-A module is the code-level expression of a bounded context. It is a vertical slice that contains the architectural layers:
-
-| Lens | What it answers |
-|------|----------------|
-| **Bounded context** (strategic DDD) | What are the boundaries of this domain model? |
-| **Vertical slice** (architecture) | How do we structure the code to reflect that boundary? |
-| **Module** (codebase) | What is the folder called? |
-
-These are three views of the same thing. A module maps 1:1 to a bounded context.
-
-**Modules are defined by business boundaries, not technical concerns.** `identity/`, `billing/`, `orders/` are valid modules. `database/`, `middleware/`, `utils/` are not.
-
-## Module Definition vs Module Implementation
-
-A module exists in two forms depending on the package:
-
-- **Module definition** (contract package) — Defines *what* the module exposes: types, service interface, and a tRPC router that delegates to the service interface. Flat structure, no layers.
-- **Module implementation** (server package) — Implements *how* the module works: business logic organized into the three architectural layers (services/domain/infrastructure).
-
-### Contract Package — Module Definition
-
-Each module in the contract package is flat:
-
-```
-packages/api-contract/src/
-  modules/
+- **Definition** (contract package): *what* the module exposes. Flat, no layers.
+  ```
+  packages/api-contract/src/modules/
     identity/
-      types.ts          # Zod schemas, input/output types, service interface
-      router.ts         # tRPC router accepting a service implementation
-    billing/
-      types.ts
-      router.ts
-```
+      types.ts    Zod schemas, input/output types, service interface
+      router.ts   tRPC router accepting a service implementation
+    billing/ ...
+  ```
+  The router delegates every call to the service implementation (no business logic); the service interface is the method contract the server implements. Interface naming (`*Service`, `*Context`, …) is free, but file, interface and variable names agree within a project.
 
-The router accepts a service implementation and delegates all calls to it — no business logic. The service interface defines the contract: method signatures the server must implement.
-
-The naming convention for service interfaces is flexible (e.g., `*Service`, `*Context`, or any other pattern). What matters is consistency within the project — file names, interface names, and variable names should all agree.
-
-### Server Package — Module Implementation
-
-Each module in the server package contains the three-layer stack:
-
-```
-packages/server/src/
-  modules/
+- **Implementation** (server package): *how* it works, in the three layers ([slice-composition.md](slice-composition.md)). Validation stays in the contract package.
+  ```
+  packages/server/src/modules/
     identity/
-      services/           # Application layer — business services
-      domain/             # Domain layer — pure TypeScript
-        events/           # Domain events owned by this module
-      infrastructure/     # Infrastructure layer — repositories, mappers, adapters
-      sagas/              # Process managers — event-driven side effects (optional)
-      compose.ts          # Composition root — wires infrastructure to services
-      index.ts            # Public API — the module boundary
-    billing/
-      services/
-      domain/
-        events/
-      infrastructure/
-      compose.ts
-      index.ts
-```
+      services/         application layer
+      domain/           pure TypeScript
+        events/         domain events owned by this module
+      infrastructure/   repositories, mappers, adapters
+      sagas/            event-driven side effects (optional)
+      compose.ts        composition root
+      index.ts          public API, the module boundary
+    billing/ ...
+  ```
 
-The server package implements the service interfaces defined in the contract package. Validation (tRPC routers + Zod) lives in the contract package, not here. The three-layer structure (see [slice-composition.md](slice-composition.md)) applies here, where actual business logic lives.
+Within a module the layer rule holds, `services → domain ← infrastructure`: contract routers delegate to the service interface; services coordinate domain objects and receive repositories/adapters by injection; domain has zero external deps; infrastructure implements inner-layer ports.
 
-### Intra-Module Rules
+## Composition root (`compose.ts`)
 
-Within a module, the standard layer rules apply (see [slice-composition.md](slice-composition.md)):
-
-```
-services → domain ← infrastructure
-```
-
-- Contract routers delegate to the service interface (validation lives in the contract package).
-- Services coordinate domain objects. They receive infrastructure (repositories, adapters) via dependency injection.
-- Domain has zero external dependencies.
-- Infrastructure implements port interfaces defined by inner layers.
-
-### Module Composition Root (`compose.ts`)
-
-Each module has a `compose.ts` that wires concrete infrastructure implementations to services. This is the **only place** where infrastructure implementations are directly referenced:
+The **only place** concrete infrastructure is referenced: takes raw dependencies (DB connections, API clients), returns wired services. Factory pattern: [infrastructure.md](infrastructure.md).
 
 ```typescript
 // modules/orders/compose.ts
 export function composeOrdersModule(db: Database, owner: string) {
   const repo = createOrdersRepository(db);
-
-  const orders = createOrdersService({ repo, owner });
-  const tracking = createTrackingService({ repo, owner });
-
-  return { orders, tracking };
+  return {
+    orders: createOrdersService({ repo, owner }),
+    tracking: createTrackingService({ repo, owner }),
+  };
 }
 ```
 
-The composition root receives raw infrastructure dependencies (database connections, API clients) and returns fully wired services. See [infrastructure.md](infrastructure.md) for the factory pattern.
+## Public API (`index.ts`)
 
-### Module Public API (`index.ts`)
-
-Every module has an `index.ts` at its root. This is the **only** entry point other modules may import from. It exports:
-
-- **Domain event types** (as TypeScript types)
-- **Domain event type guards** (for narrowing events in subscribers)
-
-Nothing else leaks out. The module's services, entities, value objects, aggregates, and infrastructure are private.
+The **only** entry point other modules may import. It exports domain event types and their type guards; nothing else. Services, entities, value objects, aggregates and infrastructure stay private.
 
 ```typescript
 // modules/orders/index.ts
@@ -126,16 +61,12 @@ export { type OrderPlaced, isOrderPlaced } from './domain/events/OrderPlaced.js'
 export { type OrderCancelled, isOrderCancelled } from './domain/events/OrderCancelled.js';
 ```
 
-## Topics
+Inter-module communication (domain events, event bus, sagas, dependency direction, forbidden imports): [module-boundaries.md](module-boundaries.md).
 
-- **[Module Boundaries](module-boundaries.md)** — How bounded contexts stay loosely coupled. Domain events as the sole inter-module communication mechanism, event bus, sagas, event ownership, subscribing, dependency direction, and what cross-module imports are forbidden.
+## Identifying bounded contexts
 
-## Identifying Bounded Contexts
+1. **Own language?** Different words, or the same words meaning different things, suggest a separate context.
+2. **Changes independently?** If billing changes shouldn't require shipping changes, separate modules.
+3. **Own invariants?** A cohesive, self-contained set of business rules likely forms a context.
 
-When designing modules, ask:
-
-1. **Does this area have its own language?** If the team uses different words or the same words with different meanings, it is likely a separate bounded context.
-2. **Can this area change independently?** If changes to billing logic should not require changes to shipping logic, they belong in separate modules.
-3. **Does this area have its own invariants?** If a set of business rules are cohesive and self-contained, they likely form a bounded context.
-
-Start with fewer, larger modules and split when the language or invariants diverge. Premature splitting creates unnecessary event plumbing.
+Start with fewer, larger modules and split when language or invariants diverge; premature splitting adds needless event plumbing.

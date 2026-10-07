@@ -1,6 +1,6 @@
 <!-- TODO(creator): adjust the state-repo env var name and the allowlisted paths to the
      design; delete the backup section for local-only designs (keep the version and
-     evolution sections always); delete TODO comments. -->
+     evolution sections always). -->
 
 # Persisting `work/` & evolving the definition
 

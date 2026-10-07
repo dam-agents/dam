@@ -196,7 +196,7 @@ export function LifecycleSetupSection({
 }) {
   return (
     <section className="mb-8">
-      <SectionLabel spaced>Lifecycle</SectionLabel>
+      <SectionLabel spaced>Availability</SectionLabel>
       <Inset>
         <LifecycleField
           value={value ?? DEFAULT_HIBERNATE_MIN}

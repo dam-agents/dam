@@ -275,6 +275,12 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		}
 	})
 
+	go every(ctx, 30*time.Second, func() {
+		for _, name := range agentReconciler.MemoryPass(ctx) {
+			agentQueue.Add(name)
+		}
+	})
+
 	runAgentWorker(ctx, agentReconciler, agentInformer.Lister().ByNamespace(cfg.Namespace), agentQueue)
 }
 

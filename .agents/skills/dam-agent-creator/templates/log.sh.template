@@ -13,7 +13,7 @@
 # Logging must never break a run: every failure path is swallowed. Retention
 # (delete files older than ~14 days) belongs to the audit-mode pre-flight.
 # TODO(creator): extend MASKS with any credential shapes the design's
-# integrations use, then delete the TODO comments.
+# integrations use.
 
 LOG_WORK="${WORK_DIR:-${HOME:-/home/agent}/work}"
 LOG_DIR="$LOG_WORK/logs"

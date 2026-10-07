@@ -1,14 +1,15 @@
-# The system packages every agent image shares, built once into the base the
-# images build on (//packages/agents:oci): mise oci installs them afresh in
-# every build otherwise. They go onto the root config's base_image_debian.
+# The system packages every agent image shares, installed once by the base's
+# own apt-get into the root config's base_image_debian, the layer every image is
+# packed onto (//packages/agents:oci). The task reads the "apt:<name>" keys.
 
 # libatomic1 for node 26, libnss-extrausers for the agent account,
-# libnss3-tools for Chromium's trust store, xvfb, i3-wm and x11-xserver-utils
-# (the browser panel's display, its kiosk window manager and the xrandr
-# Selkies resizes it with), pipewire, pipewire-pulse and wireplumber (its
-# sound, which Selkies captures through the PulseAudio protocol) and the codec libraries of the GPL-free pixelflux
-# built in base/selkies, and from
-# libasound2t64 on, what Playwright lists for its Chromium on trixie.
+# libnss3-tools for Chromium's trust store, sqlite3 for shinkaevolve's run
+# progress, xvfb, i3-wm and x11-xserver-utils (the browser panel's display, its
+# kiosk window manager and the xrandr Selkies resizes it with), pipewire,
+# pipewire-pulse and wireplumber (its sound, which Selkies captures through the
+# PulseAudio protocol) and the codec libraries of the GPL-free pixelflux built
+# in base/selkies, and from libasound2t64 on, what Playwright lists for its
+# Chromium on trixie.
 [bootstrap.packages]
 "apt:ca-certificates" = "latest"
 "apt:catatonit" = "latest"
@@ -24,6 +25,7 @@
 "apt:openssl" = "latest"
 "apt:patch" = "latest"
 "apt:procps" = "latest"
+"apt:sqlite3" = "latest"
 "apt:unzip" = "latest"
 "apt:xz-utils" = "latest"
 "apt:xvfb" = "latest"

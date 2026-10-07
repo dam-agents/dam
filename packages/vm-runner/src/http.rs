@@ -504,6 +504,7 @@ mod tests {
                 ports: 31000..=31099,
                 memory_mib: 1 << 20,
                 reserve_mib: 0,
+                headroom_mib: 0,
                 listen: Some(Arc::new(|_| std::net::TcpListener::bind("127.0.0.1:0"))),
             },
             runtime,
@@ -724,7 +725,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "{answer}");
         let result: crate::api::SeedResult = serde_json::from_str(&answer).unwrap();
         assert_eq!(result.bytes, body.len() as u64);
-        assert_eq!(result.sha256, format!("{:x}", Sha256::digest(&body)));
+        assert_eq!(result.sha256, hex::encode(Sha256::digest(&body)));
         let stored = share.join(crate::share::SEED_FILE);
         assert_eq!(std::fs::read(&stored).unwrap(), body);
         assert_eq!(

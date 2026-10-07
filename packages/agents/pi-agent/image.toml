@@ -1,6 +1,6 @@
 [tools]
 "npm:@earendil-works/pi-coding-agent" = "1.0.2"
-"npm:pi-acp" = "0.0.33"
+"npm:pi-acp" = "0.0.34"
 
 [oci.env]
 PLATFORM_HARNESS = "pi"

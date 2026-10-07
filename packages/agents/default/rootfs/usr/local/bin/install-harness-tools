@@ -1,0 +1,15 @@
+#!/bin/sh
+# Installs this image's tools into the node directory the vm runner mounts at
+# mise's system data dir. Each version lands beside the ones earlier images
+# installed there, so a machine still booting an older image keeps its own.
+# $1, when set, is the SELinux label the directory gets first; what is installed
+# into it inherits that label.
+set -eu
+tools=$PLATFORM_TOOLS_VOLUME
+[ -z "${1:-}" ] || chcon "$1" "$tools"
+# mise marks a version mid-install only in its cache dir, so the cache lives
+# beside the installs: in the container it would vanish with a killed install
+# and leave its dir passing as installed. Dirs left empty before that are swept.
+[ ! -d "$tools/installs" ] || find "$tools/installs" -mindepth 2 -maxdepth 2 -type d -empty -delete
+MISE_CACHE_DIR="$tools/cache" MISE_LOCKFILE=1 MISE_NPM_PACKAGE_MANAGER=aube MISE_GITHUB_SLSA=false mise install --system
+PLAYWRIGHT_BROWSERS_PATH="$tools/ms-playwright" playwright install chromium

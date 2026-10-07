@@ -16,9 +16,10 @@
 #   mise run image:resolve -- resolve <component>        -> "BUILD" | "REUSE <full-ref>"
 #   mise run image:resolve -- source-sha <component>     -> the commit that last touched its effective source
 #   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
-#   mise run image:resolve -- list-workloads            -> the claude-code-derived workload components
+#   mise run image:resolve -- list-workloads            -> the workload components, each packed onto the default image
 #   mise run image:resolve -- list-pinned-tags           -> every component whose chart/kit tag pin-tags rewrites
 #   mise run image:resolve -- list-components            -> every published image (security.yml scans them all)
+#   mise run image:resolve -- list-third-party           -> every third-party image ref the chart runs (security.yml scans them too)
 #   mise run image:resolve -- paths <component>          -> effective source paths (debug)
 #   mise run image:resolve -- tar-path <component>       -> where its :oci task writes its image tar
 #   mise run image:resolve -- --self-check               -> run assertions (no registry/network; git optional)
@@ -40,15 +41,18 @@ IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
 # content is identical.
 UNSHIPPED=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*_test.go :(exclude)*vitest.config.ts :(exclude)packages/agents/*/README.md'
 
-# Source of the images `mise oci` builds (//packages/agents:oci), besides
-# their own directory. The root config names their Debian base; a bump of
+# Source of the agent images (//packages/agents:oci), besides their own
+# directory: the task, image:pack and image:name-layout that put them
+# together, and the base. The root config names their Debian base; a bump of
 # another tool there re-tags them too, which errs toward rebuilds.
-MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
+MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci .mise/tasks/image/pack .mise/tasks/image/name-layout packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
-# harness agents; CI's `agents` build/merge matrix
-AGENTS="claude-code codex pi-agent bob"
-# claude-code-derived workloads; single registration point, also emitted as
-# CI's `workloads` build/merge matrix
+# agent images; CI's `agents` build/merge matrix. The default image carries
+# every harness, whose directories stay its sources.
+AGENTS="default"
+HARNESSES="claude-code codex pi-agent bob"
+# workloads, each packed onto the default image; single registration point,
+# also emitted as CI's `workloads` build/merge matrix
 WORKLOADS="nous openevolve shinkaevolve gepa skydiscover k-search"
 # Components image:pack builds on the host, plus the task that packs them, the
 # base and toolchain pins in the root config and the tools' exact versions in
@@ -61,10 +65,24 @@ PNPM_ROOT="package.json pnpm-workspace.yaml pnpm-lock.yaml packages/dev-config"
 IMAGES="controller ui api-server keycloak vm-runner"
 
 # Components whose chart or kit tag is rewritten from a source sha by pin-tags:
-# the harnesses, keycloak, the vm-runner and every workload, since a starter kit
+# the default image, keycloak, the vm-runner and every workload, since a starter kit
 # names its image directly and its tag has to be pinned the same way a
 # Template's is.
 PINNED_TAGS="keycloak vm-runner $AGENTS $WORKLOADS"
+
+# Every non-empty `image`/`*Image` string and repository+tag/digest pair in the
+# chart values, plus the mirror's copies. Our own images have no tag there.
+# Ceiling: images only cluster:install deploys (the dev cluster's add-ons) are
+# not listed.
+third_party() {
+  {
+    yq -r '.. | select(tag == "!!map") | (
+      (to_entries[] | select((.key | test("(^i|I)mage$")) and (.value | tag) == "!!str" and .value != "") | .value),
+      (select((.repository // "") != "" and (.tag // "") != "") | .repository + ":" + .tag),
+      (select((.repository // "") != "" and (.digest // "") != "") | .repository + "@" + .digest))' helm/values.yaml
+    sed -n '/^MIRRORS="/,/^"$/{/:/s|.*/|'"$IMAGE_PREFIX"'/|p;}' .mise/tasks/image/mirror
+  } | sort -u
+}
 
 is_workload() { case " $WORKLOADS " in *" $1 "*) ;; *) return 1 ;; esac; }
 
@@ -76,10 +94,10 @@ tar_path() {
 }
 
 own_paths() {
-  if is_workload "$1"; then echo "packages/agents/$1"; return; fi
+  if is_workload "$1"; then echo "$MISE_IMAGE_PATHS packages/agents/$1"; return; fi
   case "$1" in
     # The mock's harness bundles the mock control API client.
-    mock) echo "$MISE_IMAGE_PATHS packages/e2e/agents/mock packages/e2e/agents/mock-api" ;;
+    mock) echo "packages/e2e/agents/mock packages/e2e/agents/mock-api" ;;
     # The runner is the Rust workspace, whole: the runner and platform-init,
     # their lockfile, the pin naming the smolvm tree they build against, the
     # script that fetches it, image.toml and the task that builds the image
@@ -99,15 +117,17 @@ own_paths() {
     # pins as the image tag, so a release that doesn't touch these paths
     # doesn't roll the Keycloak pod.
     keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack .mise/config.toml" ;;
+    default) echo "$MISE_IMAGE_PATHS packages/agents/default $(for h in $HARNESSES; do printf ' packages/agents/%s' "$h"; done)" ;;
     claude-code|codex|pi-agent|bob) echo "$MISE_IMAGE_PATHS packages/agents/$1" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
 
 base_of() {
-  if is_workload "$1"; then echo "claude-code"; return; fi
+  if is_workload "$1"; then echo "default"; return; fi
   case "$1" in
-    controller|ui|api-server|keycloak|vm-runner|claude-code|codex|pi-agent|bob|mock) echo "" ;;
+    mock) echo "default" ;;
+    controller|ui|api-server|keycloak|vm-runner|default|claude-code|codex|pi-agent|bob) echo "" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
@@ -156,8 +176,8 @@ gha_outputs() {
   done | jq -cRn '[inputs | split("=") | {(.[0]): .[1]}] | add')"
   agents_json="$(stale_json $AGENTS)"
   # A PR builds its images and the mock in e2e, which resolves them itself,
-  # and never builds workloads: slow, rarely-changing builds on the
-  # claude-code base.
+  # and never builds workloads: slow, rarely-changing builds on the default
+  # image.
   if [ "${EVENT:-}" != pull_request ]; then
     workloads_json="$(stale_json $WORKLOADS)"
     images_json="$(stale_json $IMAGES)"
@@ -171,18 +191,22 @@ self_check() {
   local f=0
   chk() { if [ "$1" != "$2" ]; then echo "FAIL: expected [$2] got [$1]" >&2; f=1; fi; }
   has() { case "$1" in *"$2"*) ;; *) echo "FAIL: [$1] missing [$2]" >&2; f=1 ;; esac; }
-  chk "$(base_of nous)" claude-code
-  chk "$(base_of shinkaevolve)" claude-code
-  chk "$(base_of gepa)" claude-code
-  chk "$(base_of skydiscover)" claude-code
+  chk "$(base_of nous)" default
+  chk "$(base_of shinkaevolve)" default
+  chk "$(base_of gepa)" default
+  chk "$(base_of skydiscover)" default
   chk "$(base_of claude-code)" ""
-  chk "$(base_of k-search)" claude-code
-  chk "$(base_of mock)" ""
+  chk "$(base_of k-search)" default
+  chk "$(base_of mock)" default
   has "$(effective_paths claude-code)" packages/agents/claude-code
   has "$(effective_paths claude-code)" packages/agents/base
   has "$(effective_paths claude-code)" packages/agent-runtime
   has "$(effective_paths claude-code)" .mise/config.toml
   has "$(effective_paths bob)" packages/agents/bob
+  chk "$(base_of default)" ""
+  has "$(effective_paths default)" packages/agents/default
+  has "$(effective_paths default)" packages/agents/pi-agent
+  has "$(effective_paths default)" packages/agents/base
   chk "$(base_of keycloak)" ""
   chk "$(base_of controller)" ""
   chk "$(base_of ui)" ""
@@ -198,6 +222,10 @@ self_check() {
   has "$(effective_paths vm-runner)" packages/vm-runner
   has "$(effective_paths vm-runner)" mise.lock
   has "$PINNED_TAGS" vm-runner
+  has "$(third_party)" mirror.gcr.io/envoyproxy/envoy:
+  has "$(third_party)" ghcr.io/squat/generic-device-plugin@sha256:
+  has "$(third_party)" "$IMAGE_PREFIX/clickhouse-operator:"
+  case "$(third_party)" in *"$IMAGE_PREFIX/controller"*) echo "FAIL: own image in third_party" >&2; f=1 ;; esac
   has "$(effective_paths nous)" packages/agents/base
   has "$(effective_paths mock)" packages/e2e/agents/mock-api
   has "$(effective_paths k-search)" packages/agents/claude-code
@@ -212,7 +240,7 @@ self_check() {
   # NO_REUSE reproduces the full-build (tag/schedule/dispatch) output without
   # git or a registry.
   local out; out="$(EVENT=push GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
-  has "$out" 'agents=["claude-code","codex","pi-agent","bob"]'
+  has "$out" 'agents=["default"]'
   has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa","skydiscover","k-search"]'
   has "$out" 'archs=["amd64","arm64"]'
   has "$out" 'source_shas={"controller":"'
@@ -241,8 +269,9 @@ case "${1:-}" in
   list-workloads) echo $WORKLOADS ;;
   list-pinned-tags) echo $PINNED_TAGS ;;
   list-components) echo $IMAGES $AGENTS $WORKLOADS ;;
+  list-third-party) third_party ;;
   paths)          effective_paths "$2" ;;
   tar-path)       tar_path "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: image:resolve {resolve|source-sha|gha-outputs|list-workloads|list-pinned-tags|list-components|paths|tar-path|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: image:resolve {resolve|source-sha|gha-outputs|list-workloads|list-pinned-tags|list-components|list-third-party|paths|tar-path|--self-check}" >&2; exit 2 ;;
 esac

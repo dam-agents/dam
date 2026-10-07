@@ -2,7 +2,7 @@
 
 Platform agent running [pi coding agent](https://github.com/badlogic/pi-mono) with persistent cross-session memory.
 
-The image is built with [`mise oci`](https://mise.jdx.dev/dev-tools/mise-oci.html) from the shared base in [`packages/agents/base`](../base/) (see [agent images](../../../docs/architecture/agent-images.md)), as its `pi-agent` config environment ([`image.toml`](image.toml)). Its files live at their image paths under [`rootfs/`](rootfs/).
+The harness ships in the default image every harness Template boots, built by `//packages/agents:oci` from the shared base in [`packages/agents/base`](../base/) (see [agent images](../../../docs/architecture/agent-images.md)): its tools, declared in [`image.toml`](image.toml), come from the node's harness tools, and its files live at their image paths under [`rootfs/`](rootfs/).
 
 ## Stack
 
@@ -23,7 +23,7 @@ usr/local/bin/
 usr/local/share/pi-platform/extensions/pi-dynamic-providers/
   index.ts               ← loaded with -e on every start; registers any of {rits, openai-proxy, amazon-bedrock} whose env vars are set
 app/
-  runtime-manifest.yaml  ← runtime driver config
+  runtime-manifest.yaml  ← runtime driver config; the platform writes ~/.pi/agent/mcp.json at runtime (not seeded)
   working-dir/           ← seeds /home/agent/ on first boot
     .pi/agent/
       settings.json      ← pi config (→ ~/.pi/agent/)
@@ -32,6 +32,10 @@ app/
       .pi/
         APPEND_SYSTEM.md ← appended to the system prompt (project-scoped)
 ```
+
+## MCP servers
+
+MCP servers arrive the platform way, as runtime-channel contributions written to `~/.pi/agent/mcp.json` (see [`runtime-manifest.yaml`](rootfs/app/runtime-manifest.yaml)), not through `session/new.mcpServers`: pi-acp advertises no MCP capabilities, so the file is the only path. Every entry carries `"exposure": "direct"`, so Pi declares its tools to the model like a built-in tool instead of hiding them behind codemode. Pi names them `mcp__<server>__<tool>` with `-` replaced by `_`, e.g. `mcp__platform_outbound__report_result`. `pi mcp list` in the terminal connects to each server and lists its tools.
 
 ## Providers and models
 

@@ -40,7 +40,11 @@ metadata:
   name: {{ include "platform.fullname" . }}-anyuid-cap-net
   labels:
     {{- include "platform.labels" . | nindent 4 }}
-allowHostDirVolumePlugin: false
+{{- /*
+The node's harness tools are the one host directory an agent pod mounts,
+read-only, and only the controller writes agent pod specs.
+*/}}
+allowHostDirVolumePlugin: {{ if .Values.harnessTools.hostPath }}true{{ else }}false{{ end }}
 allowHostIPC: false
 allowHostNetwork: false
 allowHostPID: false
@@ -80,6 +84,9 @@ volumes:
   - persistentVolumeClaim
   - projected
   - secret
+  {{- if .Values.harnessTools.hostPath }}
+  - hostPath
+  {{- end }}
 ---
 {{/*
 Grant `use` on the custom SCC. OpenShift auto-generates

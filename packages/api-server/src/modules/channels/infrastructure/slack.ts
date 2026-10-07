@@ -129,6 +129,7 @@ import {
   labelHistoryMessage,
   marksThread,
   footerSessionId,
+  threadWindowMarker,
   parseAgentFooter,
   type AgentFooter,
 } from "./agent-footer.js";
@@ -613,21 +614,176 @@ const CHANNEL_CATCH_UP_CAP = 500;
 
 const CATCH_UP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A window of a thread as an Agent reads it, shared by
+ * the history a first turn in a thread is handed and by `read_thread`, so the
+ * two cannot disagree about which window a long thread shows. With no `before`
+ * the window is the thread's newest replies, which Slack serves in one read;
+ * with one it is the replies just before that ts. The message that opened the
+ * thread comes first whatever the window holds. `offsets` places each message
+ * inside the window, the opener being 0, and `repliesBefore` counts the replies
+ * older than the window; together they give a reply its position counted from
+ * the thread's first reply, which does not change as the thread grows, unlike a
+ * total. The count is the reply count Slack puts on the opener, less what sits
+ * at or after the window, both taken from one Slack response so a reply posted
+ * between two reads cannot shift it. Where it disagrees with Slack's own paging signal it
+ * is dropped, because a reply number shown wrong misleads more than none. The
+ * cursor reads the window just before this one.
+ */
+interface ThreadWindow {
+  messages: SlackMessage[];
+  offsets: Map<SlackMessage, number>;
+  repliesBefore: number | null;
+  hasEarlier: boolean;
+  cursor: string | null;
+}
+
+const THREAD_COUNT_LIMIT = 1000;
+
+async function countRepliesFrom(
+  gateway: SlackGateway,
+  args: {
+    channel: string;
+    threadTs: string;
+    teamId: SlackWorkspace;
+    from: string;
+  },
+): Promise<{ newer: number; total: number | undefined } | null> {
+  const read = await gateway.getThreadReplies({
+    channel: args.channel,
+    threadTs: args.threadTs,
+    teamId: args.teamId,
+    limit: THREAD_COUNT_LIMIT,
+    oldest: args.from,
+    inclusive: true,
+  });
+  if (read.hasMore) return null;
+  const opener = read.messages.find((message) => message.ts === args.threadTs);
+  return {
+    newer: read.messages.filter((message) => message !== opener).length,
+    total: opener?.replyCount,
+  };
+}
+
+async function readThreadWindow(
+  gateway: SlackGateway,
+  args: {
+    channel: string;
+    threadTs: string;
+    teamId: SlackWorkspace;
+    before?: string;
+  },
+): Promise<ThreadWindow> {
+  const page = await gateway.getThreadReplies({
+    channel: args.channel,
+    threadTs: args.threadTs,
+    teamId: args.teamId,
+    limit: THREAD_LOOKBACK,
+    ...(args.before !== undefined ? { latest: args.before } : {}),
+  });
+  const opener =
+    page.messages.find((message) => message.ts === args.threadTs) ?? null;
+  const replies = page.messages.filter((message) => message !== opener);
+  const offsets = new Map<SlackMessage, number>(
+    replies.map((message, i) => [message, i + 1]),
+  );
+  if (opener !== null) offsets.set(opener, 0);
+  const after =
+    args.before === undefined
+      ? { newer: 0, total: opener?.replyCount }
+      : await countRepliesFrom(gateway, { ...args, from: args.before });
+  const counted =
+    after !== null && after.total !== undefined
+      ? after.total - after.newer - replies.length
+      : null;
+  const earliest = replies[0]?.ts;
+  return {
+    messages: opener !== null ? [opener, ...replies] : replies,
+    offsets,
+    repliesBefore:
+      counted !== null && counted >= 0 && counted > 0 === page.hasMore
+        ? counted
+        : null,
+    hasEarlier: page.hasMore,
+    cursor:
+      page.hasMore && earliest !== undefined
+        ? formatThreadCursor({ threadTs: args.threadTs, before: earliest })
+        : null,
+  };
+}
+
+function markThreadWindow(
+  lines: readonly string[],
+  offsets: readonly number[],
+  window: {
+    threadTs: string;
+    repliesBefore: number | null;
+    hasEarlier: boolean;
+    cursor: string | null;
+    alwaysLabel: boolean;
+  },
+): { lines: string[]; windowed: boolean } {
+  const plain = { lines: [...lines], windowed: false };
+  const placed = lines.map((line, i) => ({ line, offset: offsets[i] ?? 0 }));
+  const opening = placed.filter((p) => p.offset === 0);
+  const replies = placed.filter((p) => p.offset > 0);
+  const first = replies[0];
+  const last = replies[replies.length - 1];
+  if (first === undefined || last === undefined) return plain;
+  if (!window.hasEarlier && !window.alwaysLabel) return plain;
+  const { repliesBefore } = window;
+  const marker = threadWindowMarker({
+    threadTs: window.threadTs,
+    hasEarlier: window.hasEarlier,
+    cursor: window.cursor,
+    shown:
+      repliesBefore === null
+        ? null
+        : {
+            repliesBefore,
+            first: repliesBefore + first.offset,
+            last: repliesBefore + last.offset,
+          },
+  });
+  if (marker === null) return plain;
+  return {
+    lines: [
+      ...opening.map((p) => p.line),
+      marker,
+      ...replies.map((p) => p.line),
+    ],
+    windowed: window.hasEarlier,
+  };
+}
+
+interface ConversationRead extends SlackThreadRead {
+  thread: ThreadWindow | null;
+}
+
 async function readConversation(
   gateway: SlackGateway,
   channel: string,
   threadTs: string | undefined,
   since: string | undefined,
   teamId: SlackWorkspace,
-): Promise<SlackThreadRead> {
+): Promise<ConversationRead> {
+  if (threadTs !== undefined && since === undefined) {
+    const thread = await readThreadWindow(gateway, {
+      channel,
+      threadTs,
+      teamId,
+    });
+    return { messages: thread.messages, hasMore: false, thread };
+  }
   if (threadTs !== undefined) {
-    return gateway.getThreadReplies({
+    const read = await gateway.getThreadReplies({
       channel,
       threadTs,
       limit: THREAD_LOOKBACK,
       teamId,
       ...(since ? { oldest: since } : {}),
     });
+    return { ...read, thread: null };
   }
   const read = await gateway.getChannelHistory({
     channel,
@@ -635,7 +791,11 @@ async function readConversation(
     teamId,
     ...(since ? { oldest: since } : {}),
   });
-  return { messages: read.messages.slice().reverse(), hasMore: read.hasMore };
+  return {
+    messages: read.messages.slice().reverse(),
+    hasMore: read.hasMore,
+    thread: null,
+  };
 }
 
 const NO_COMMIT = (): void => {};
@@ -715,6 +875,7 @@ async function getContextMessages(read: {
   hasUnattributedBot: boolean;
   readNewestTs: string | null;
   readHasMore: boolean;
+  threadWindow: { windowed: boolean; cursor: string | null };
 }> {
   const { bot, catchUp, threadTs } = read;
   const conversation = await readConversation(
@@ -742,9 +903,24 @@ async function getContextMessages(read: {
   const names = await resolveAuthorNames(entries, read.resolveAgentName);
 
   const showThreadMarkers = threadTs === undefined;
-  const lines = labelMessages(entries, names, read.readingAgentId, bot, {
+  const labelled = labelMessages(entries, names, read.readingAgentId, bot, {
     showThreadMarkers,
   });
+  const { thread } = conversation;
+  const marked =
+    thread !== null && threadTs !== undefined
+      ? markThreadWindow(
+          labelled,
+          entries.map((e) => thread.offsets.get(e.message) ?? 0),
+          {
+            threadTs,
+            repliesBefore: thread.repliesBefore,
+            hasEarlier: thread.hasEarlier,
+            cursor: thread.cursor,
+            alwaysLabel: false,
+          },
+        )
+      : { lines: labelled, windowed: false };
   const offered = showThreadMarkers
     ? entries.flatMap((e) =>
         marksThread(e.message) && e.message.ts !== undefined
@@ -753,7 +929,7 @@ async function getContextMessages(read: {
       )
     : [];
   return {
-    lines,
+    lines: marked.lines,
     offeredThreads: offered,
     hasThreadMarker: offered.length > 0,
     hasAgentAuthored: entries.some((e) => e.footer !== null),
@@ -762,6 +938,10 @@ async function getContextMessages(read: {
     ),
     readNewestTs: newestTs(all),
     readHasMore: conversation.hasMore,
+    threadWindow: {
+      windowed: marked.windowed,
+      cursor: marked.windowed ? (thread?.cursor ?? null) : null,
+    },
   };
 }
 
@@ -2698,6 +2878,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       offeredThreads: offeredHere,
       readNewestTs,
       readHasMore,
+      threadWindow,
     } = await getContextMessages({
       gateway: gw,
       channel: ctx.channel,
@@ -2709,14 +2890,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       resolveAgentName,
       catchUp: null,
     });
-    noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
+    noteOfferedThreads(
+      ctx.instanceName,
+      ctx.channel,
+      threadWindow.cursor !== null
+        ? [...offeredHere, ctx.threadTs]
+        : offeredHere,
+    );
     const preamble = historyPreamble(
       ctx.hasThread
         ? "thread"
         : isDirectMessageId(ctx.channel)
           ? "direct-message"
           : "channel",
-      { hasThreadMarker },
+      { hasThreadMarker, windowed: threadWindow.windowed },
     );
     const attribution =
       hasAgentAuthored || hasUnattributedBot
@@ -2768,7 +2955,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const tail =
       ctx.conversationTs !== undefined
         ? (
-            await gw.getThreadTail({
+            await gw.getThreadReplies({
               channel: ctx.channel,
               teamId: ctx.teamId,
               threadTs: ctx.conversationTs,
@@ -3988,7 +4175,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const one = batch.length === 1;
     return [
       "<new-messages>",
-      `${one ? "Another message" : `${batch.length} more messages`} arrived in this conversation while you were working. Read ${one ? "it" : "them"} before you reply, and answer everything in one reply rather than replying more than once.`,
+      `${one ? "Another message" : `${batch.length} more messages`} arrived in this conversation while you were working. Answer everything in one reply rather than replying more than once.`,
       ...(conversation.oneThread
         ? []
         : [
@@ -5366,18 +5553,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return { error: STALE_THREAD_CURSOR };
 
       try {
-        const read = await gw.getThreadTail({
+        const end = await readThreadWindow(gw, {
           channel: target.id,
           threadTs: query.threadTs,
-          limit: THREAD_LOOKBACK,
           teamId: target.teamId,
           ...(asked !== null ? { before: asked.before } : {}),
         });
-        const opened =
-          read.opener !== null && read.messages[0]?.ts !== read.opener.ts
-            ? [read.opener, ...read.messages]
-            : read.messages;
-        if (opened.length === 0) {
+        if (end.messages.length === 0) {
           return {
             error:
               "no messages came back for that thread — it may not exist in " +
@@ -5385,37 +5567,35 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               "no longer be valid",
           };
         }
-        const reached = read.messages.filter(
-          (message) => message.ts !== read.opener?.ts,
+        const offsets = end.messages.map(
+          (message) => end.offsets.get(message) ?? 0,
         );
-        if (asked !== null && (read.hasMore || reached.length === 0))
-          return { error: STALE_THREAD_CURSOR };
+        const reached = offsets.some((offset) => offset > 0);
+        if (asked !== null && !reached) return { error: STALE_THREAD_CURSOR };
         const bot = {
           userId: await gw.getBotUserId(target.teamId).catch(() => null),
           label: botHistoryLabel(brand),
         };
-        const entries = opened.map((message) => ({
+        const entries = end.messages.map((message) => ({
           message,
           footer: parseAgentFooter(message),
         }));
         const names = await resolveAuthorNames(entries, resolveAgentName);
-        const earlier =
-          read.hasEarlier && !read.hasMore ? read.messages[0]?.ts : undefined;
+        const labelled = labelMessages(entries, names, instanceName, bot, {
+          showThreadMarkers: false,
+        });
         return {
-          messages: labelMessages(entries, names, instanceName, bot, {
-            showThreadMarkers: false,
-          }),
+          messages: markThreadWindow(labelled, offsets, {
+            threadTs: query.threadTs,
+            repliesBefore: end.repliesBefore,
+            hasEarlier: end.hasEarlier,
+            cursor: end.cursor,
+            alwaysLabel: asked !== null,
+          }).lines,
           conversationId: target.id,
           threadTs: query.threadTs,
-          hasMore: read.hasEarlier || read.hasMore,
-          ...(earlier !== undefined
-            ? {
-                cursor: formatThreadCursor({
-                  threadTs: query.threadTs,
-                  before: earlier,
-                }),
-              }
-            : {}),
+          hasMore: end.hasEarlier,
+          ...(end.cursor !== null ? { cursor: end.cursor } : {}),
         };
       } catch (err) {
         return { error: formatError(err) };

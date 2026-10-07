@@ -144,6 +144,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     deps.harnessLoadTimeoutMs ?? DEFAULT_HARNESS_LOAD_TIMEOUT_MS;
   let sessionCloseSupported = true;
   let sessionResumeSupported = false;
+  let initializeAnswer: { result?: unknown; error?: unknown } | null = null;
+  let initializeWaiters: { channel: ClientChannel; id: unknown }[] | null =
+    null;
   const engagedSessions = new Map<ClientChannel, Set<string>>();
   const nonViewerChannels = new Set<ClientChannel>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
@@ -351,6 +354,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (orphanedHarnessLoads.get(sessionId) !== outboundId) return false;
     orphanedHarnessLoads.delete(sessionId);
     deps.log?.(`orphaned session/load for ${sessionId} answered late; dropped`);
+    if (orphanedHarnessLoads.size === 0) lease.cancelRecycleRequest();
     return true;
   }
 
@@ -450,6 +454,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydratingSessions.clear();
     sessionCloseSupported = true;
     sessionResumeSupported = false;
+    initializeAnswer = null;
+    initializeWaiters = null;
     deps.backgroundWork?.clear();
   }
 
@@ -683,6 +689,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (mapping.method === "initialize") {
           sessionCloseSupported = hasSessionCapability(frame, "close");
           sessionResumeSupported = hasSessionCapability(frame, "resume");
+          const { result, error } = frame as {
+            result?: unknown;
+            error?: unknown;
+          };
+          for (const w of initializeWaiters ?? [])
+            sendToChannel(
+              w.channel,
+              JSON.stringify({ jsonrpc: "2.0", id: w.id, result, error }),
+            );
+          initializeWaiters = null;
+          if (result !== undefined) initializeAnswer = { result };
         }
 
         const sidFromResult = extractResultSessionId(frame);
@@ -927,6 +944,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         }
         return;
       }
+
+      if (method === "initialize" && initializeAnswer !== null) {
+        sendToChannel(
+          channel,
+          JSON.stringify({ jsonrpc: "2.0", id: frame.id, ...initializeAnswer }),
+        );
+        return;
+      }
+      if (method === "initialize" && initializeWaiters !== null) {
+        initializeWaiters.push({ channel, id: frame.id });
+        return;
+      }
+      if (method === "initialize") initializeWaiters = [];
 
       if (
         method === "session/prompt" &&

@@ -20,14 +20,21 @@ const extensionImpl = z.object({
 });
 export type ExtensionImpl = z.infer<typeof extensionImpl>;
 
-export const modelDiscoverySpec = z.object({
-  urlEnv: z.array(z.string().min(1)).nonempty(),
-  redirectEnv: z.array(z.string().min(1)).optional(),
-  pinEnv: z.array(z.string().min(1)).optional(),
+const modelListing = z.object({
   path: z.string().startsWith("/").optional(),
   shape: z
     .enum(["openai-models", "litellm-model-info", "bedrock-inference-profiles"])
     .optional(),
+});
+
+export const modelDiscoverySpec = modelListing.extend({
+  urlEnv: z.array(z.string().min(1)).nonempty(),
+  redirectEnv: z.array(z.string().min(1)).optional(),
+  pinEnv: z.array(z.string().min(1)).optional(),
+  namePrefix: z.string().min(1).optional(),
+  lowercaseNames: z.boolean().optional(),
+  extendsCatalog: z.boolean().optional(),
+  fallback: modelListing.optional(),
 });
 export type ModelDiscoverySpec = z.infer<typeof modelDiscoverySpec>;
 
@@ -44,7 +51,12 @@ export const harnessConfigBinding = z.object({
     .object({
       model: z.string().min(1).optional(),
       mode: z.string().min(1).optional(),
-      configOptions: z.record(z.string().min(1), z.string().min(1)).optional(),
+      configOptions: z
+        .record(
+          z.string().min(1),
+          z.union([z.string().min(1), z.array(z.string().min(1)).nonempty()]),
+        )
+        .optional(),
     })
     .refine(
       (k) =>

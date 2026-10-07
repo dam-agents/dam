@@ -31,6 +31,9 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy; 0 evicts nothing, and the controller refuses to start a runner without a positive budget.
     #[arg(long = "image-budget-bytes", default_value_t = 0)]
     image_budget_bytes: i64,
+    // UNIT_BOUNDARY_DESCRIPTION: the node's harness tools — mise's system data dir that a per-node installer fills — mounted read-only; every machine whose image asks for them gets them read-only at the path it names. Empty shares none.
+    #[arg(long = "tools-dir", default_value = "")]
+    tools_dir: String,
     // UNIT_BOUNDARY_DESCRIPTION: the smolvm release's launcher. The runner drives smolvm as a library and forks no CLI, but the release is still where the libraries the VMM loads, the guest agent's root filesystem and the disk templates live — all beside this path, as the release's own launcher script finds them.
     #[arg(long, default_value = "/opt/smolvm/smolvm")]
     smolvm: PathBuf,
@@ -62,6 +65,8 @@ struct Args {
     memory_mib: i64,
     #[arg(long = "reserve-mib", default_value_t = 512)]
     reserve_mib: i64,
+    #[arg(long = "headroom-mib", default_value_t = 256)]
+    headroom_mib: i64,
     // UNIT_BOUNDARY_DESCRIPTION: whether the install lets machines run KVM themselves. The runner nests a guest only when this is set and the node's KVM allows it. Nesting is the kernel's default on Intel and AMD, and turning it off on a node takes a module reload, so the node alone is no choice at all: the install makes it, and only one that sets `virtualization.runner.nestedVirtualization` passes this flag.
     #[arg(long = "nested-virtualization")]
     nested_virtualization: bool,
@@ -243,7 +248,10 @@ fn prepare_host(args: &Args) -> anyhow::Result<()> {
 
 async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     let nested = args.nested_virtualization;
-    let runtime = Arc::new(tokio::task::spawn_blocking(move || Smolvm::open(nested)).await??);
+    let tools = (!args.tools_dir.is_empty()).then(|| PathBuf::from(&args.tools_dir));
+    let runtime = Arc::new(
+        tokio::task::spawn_blocking(move || Smolvm::open(nested, tools.as_deref())).await??,
+    );
     let server = Server::start(
         Config {
             state_dir: args.state_dir.clone(),
@@ -257,6 +265,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             ports: args.port_min..=args.port_max,
             memory_mib: i32::try_from(args.memory_mib)?,
             reserve_mib: i32::try_from(args.reserve_mib)?,
+            headroom_mib: i32::try_from(args.headroom_mib)?,
             listen: publisher(&args.publish_address)?,
         },
         runtime,
@@ -290,7 +299,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     } else {
         let listener = bind(&args.metrics_listen)?;
         let handle = axum_server::Handle::new();
-        let serving = axum_server::from_tcp(listener)
+        let serving = axum_server::from_tcp(listener)?
             .handle(handle.clone())
             .serve(http::metrics_router(server.clone()).into_make_service());
         Some((handle, tokio::spawn(serving)))
@@ -299,6 +308,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         listen = %args.listen,
         state_dir = %args.state_dir.display(),
         image_dir = %args.image_dir.display(),
+        tools_dir = %args.tools_dir,
         platform_init = %args.platform_init.display(),
         platform_runc = %args.platform_runc.display(),
         metrics = %args.metrics_listen,
@@ -312,7 +322,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
                 axum_server::tls_rustls::RustlsConfig::from_pem_file(&args.tls_cert, &args.tls_key)
                     .await?;
             reload_tls(tls.clone(), args.tls_cert.clone(), args.tls_key.clone());
-            axum_server::from_tcp_rustls(listener, tls)
+            axum_server::from_tcp_rustls(listener, tls)?
                 .handle(handle)
                 .serve(app)
                 .await
@@ -506,6 +516,24 @@ mod tests {
         let args = Args::try_parse_from(&argv)
             .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
         assert!(!args.nested_virtualization);
+    }
+
+    // TEST_SCENARIO: an install that sets no harness tools directory renders `--tools-dir=` with nothing after it, as it renders an empty `--image-cache-socket=`. The runner must start from that argv and share no tools, or every runner of such an install exits on start.
+    #[test]
+    fn a_runner_without_harness_tools_starts_and_shares_none() {
+        let argv: Vec<String> = base_argv()
+            .into_iter()
+            .map(|arg| {
+                if arg.starts_with("--tools-dir=") {
+                    "--tools-dir=".to_string()
+                } else {
+                    arg
+                }
+            })
+            .collect();
+        let args = Args::try_parse_from(&argv)
+            .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
+        assert!(args.tools_dir.is_empty());
     }
 
     // TEST_SCENARIO: a flag nobody passes runs on its default, and a default is a second copy of a value its owner already holds — the port range the controller opens in the runner's NetworkPolicy, the path the image installs platform-init at. So every flag is set by the image or by the controller, and a new flag fails here until one of them sets it.

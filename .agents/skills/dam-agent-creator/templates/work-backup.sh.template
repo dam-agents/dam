@@ -20,7 +20,7 @@
 # Never fails the run: all error paths exit 0 (a missed backup is retried next
 # run). Requires: git, tar. Sources scripts/log.sh when present.
 # TODO(creator): rename the env var / identity if the design chose different
-# names, then delete the TODO comments.
+# names.
 set -u
 
 MODE="${1:-persist}"

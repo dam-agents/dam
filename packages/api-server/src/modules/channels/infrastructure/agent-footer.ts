@@ -95,15 +95,20 @@ const THREAD_MARKER_NOTE =
 
 export type HistoryShape = "thread" | "direct-message" | "channel";
 
+const THREAD_WINDOW_NOTE =
+  "The thread is longer than shown: the lines in square brackets number its " +
+  "replies from the first one and say which replies are left out.";
+
 export function historyPreamble(
   shape: HistoryShape,
-  opts: { hasThreadMarker?: boolean } = {},
+  opts: { hasThreadMarker?: boolean; windowed?: boolean } = {},
 ): string {
   if (shape === "thread") {
     return (
       "The conversation history below is the thread this turn was posted " +
-      "into: one conversation, and the context for answering it. Answer " +
-      "what follows the history, not the history itself."
+      "into: one conversation, and the context for answering it. " +
+      (opts.windowed ? `${THREAD_WINDOW_NOTE} ` : "") +
+      "Answer what follows the history, not the history itself."
     );
   }
   if (shape === "direct-message") {
@@ -126,6 +131,33 @@ export function historyPreamble(
     "what follows the history, not the history itself, and leave an older " +
     "topic alone unless what follows asks about it."
   );
+}
+
+function replyRange(first: number, last: number): string {
+  return first === last ? `reply ${first}` : `replies ${first}-${last}`;
+}
+
+export function threadWindowMarker(window: {
+  threadTs: string;
+  hasEarlier: boolean;
+  cursor: string | null;
+  shown: { repliesBefore: number; first: number; last: number } | null;
+}): string | null {
+  const { shown } = window;
+  const reach =
+    window.cursor === null
+      ? ""
+      : `; read them with ${OUTBOUND_TOOL_PREFIX}read_thread, threadTs ` +
+        `"${window.threadTs}", cursor "${window.cursor}"`;
+  const parts = [
+    ...(window.hasEarlier
+      ? [
+          `Not shown: ${shown && shown.repliesBefore > 0 ? replyRange(1, shown.repliesBefore) : "earlier replies"}${reach}.`,
+        ]
+      : []),
+    ...(shown ? [`Below: ${replyRange(shown.first, shown.last)}.`] : []),
+  ];
+  return parts.length > 0 ? `[${parts.join(" ")}]` : null;
 }
 
 export function historyLegend(
@@ -163,7 +195,7 @@ export function catchUpLegend(
     "You were away. The messages below arrived while you were not reading " +
     "them, and each line carries the time it was sent. " +
     omitted +
-    "Read them all, then act only on what is still open and still worth " +
+    "Act only on what is still open and still worth " +
     "acting on. A question someone else has since answered, or a " +
     "conversation that has moved on, needs nothing from you — staying silent " +
     "on it is the right outcome, not a failure. Don't repeat or contradict " +

@@ -1,12 +1,9 @@
 # Phase 1 — Domain interview
 
-Goal: extract everything the architecture proposal (Phase 2) needs. Run it as a
-conversation in the user's language — batch related questions, propose defaults, skip what
-earlier answers already settled, and push back when an answer conflicts with a platform
-constraint (cite `references/platform-dam.md`).
-
-Each block below lists the questions and **what the answers determine** — use that mapping
-when you assemble the design brief.
+Goal: everything the Phase 2 proposal needs. A conversation in the user's language; push
+back when an answer conflicts with a platform constraint (cite
+`references/platform-dam.md`). Each
+block lists **what its answers determine**; use that when assembling the design brief.
 
 ## 1. Mission & identity
 
@@ -20,19 +17,18 @@ name prefixes, git identity for state commits.
 
 ## 2. Unit of work
 
-The single most load-bearing answer. What is the thing the agent processes — a PR, a
-ticket, a document, an alert, a channel question, a dataset row?
+The most load-bearing answer: what the agent processes (a PR, ticket, document, alert,
+channel question, dataset row).
 
 - How is one item identified (number, ID, URL)? Is the ID stable?
 - How do new items appear, and how does the agent notice (poll a list API? a channel
   message? both)?
 - What does "already handled" mean, and where can that fact live **in the external
-  system** (a posted marker, a label, a status field)? If nowhere, it lives only in local
-  state — flag the consequence: state loss then means reprocessing, so a backup repo
-  becomes near-mandatory.
-- Does one item get processed once, or repeatedly on change? What signals "changed"?
-  Should re-processing be automatic or human-gated (the label-gate pattern — new activity
-  alone flips a row to an "awaiting" status; a human action triggers the re-run)?
+  system** (posted marker, label, status field)? If nowhere, only local state holds it:
+  state loss means reprocessing, so a backup repo becomes near-mandatory. Say so.
+- Processed once, or again on change? What signals "changed"? Automatic or human-gated
+  re-processing (label gate: new activity only flips a row to "awaiting"; a human action
+  triggers the re-run)?
 - Can an item disappear (closed/merged/deleted)? What cleanup does that require?
 
 Determines: worklist entry shape, the tracking state file (one row per item: id,
@@ -41,51 +37,51 @@ re-run gating.
 
 ## 3. Inputs (read integrations)
 
-- Which external systems does the agent read, and through what surface — `gh` CLI, an MCP
-  tool, plain HTTPS? Is that surface reachable from the pod (check
-  `references/platform-dam.md`; GitHub is the well-trodden default with known workarounds)?
-- Roughly how many items per day/week? How expensive is one listing call — is there a
-  single batched call that sees everything (one REST list call is the ideal)?
+- Which systems does it read, through what surface (`gh` CLI, MCP tool, plain HTTPS)? Is
+  it reachable from the pod (`references/platform-dam.md`; GitHub is the well-trodden
+  default with known workarounds)?
+- Items per day/week? Cost of one listing call; is there one batched call that sees
+  everything (one REST list call is ideal)?
 
-Determines: pre-flight feasibility and cost, the `connections:` requirements in `kit.yaml`
-and which are `required` (a required one refuses the create when it is missing), README
-runtime requirements.
+Determines: pre-flight feasibility and cost, `kit.yaml` `connections:` and which are
+`required` (a missing required one refuses the create), README runtime requirements.
 
 ## 4. Effects (write integrations)
 
 For every write the agent performs (post a comment, send a message, update a field,
 publish a file, open a PR):
 
-- Is it **externally visible / hard to reverse**? Those get: an at-action-time freshness
-  re-check, a dedup guard, and a log line.
-- Where does the **idempotency marker** for this effect live (hidden marker in the posted
-  body carrying the item id + content version is the proven pattern)?
-- What happens on partial failure (posted but not recorded / recorded but not posted)?
-  Ask which is worse for *this* effect — a duplicate or a silent drop — and pick the
-  ordering from the answer: **write-before-send** when a duplicate is worse (publishing,
-  paying, an irreversible write), **send-then-record** when a silent drop is worse
-  (messages, replies, nudges). Do not default; the choice decides an audit check
+- **Externally visible / hard to reverse**? Then it gets an action-time freshness
+  re-check, a dedup guard and a log line.
+- Where does its **idempotency marker** live (proven pattern: a hidden marker in the posted
+  body carrying item id + content version)?
+- Partial failure (posted not recorded / recorded not posted): which is worse for *this*
+  effect, a duplicate or a silent drop? **Write-before-send** when a duplicate is worse
+  (publishing, paying, irreversible writes), **send-then-record** when a drop is worse
+  (messages, replies, nudges). Don't default; the choice decides an audit check
   (`references/architecture.md` → Record ordering).
-- Any effect that publishes to a public/semi-public surface → call it out; it must be
-  documented in README and default to off unless it's the agent's core purpose.
+- Is any effect one a person takes today and may want automated later (merge, deploy,
+  close)? Then design it as an opt-in autonomous effect from the start
+  (`references/architecture.md` → Autonomous effects), off until the admin enables it.
+- Publishing to a public/semi-public surface → call it out: documented in README and off
+  by default unless it is the agent's core purpose.
 
 Determines: hard invariants, state-row lifecycle, audit checks, config keys that gate
 features.
 
 ## 5. Run model
 
-Do not assume a heartbeat. Offer the models and let the user pick what fits:
+Don't assume a heartbeat; offer the models:
 
-- **Scheduled** — cron-registered runs (one or more run types with their own cadence).
-  Each scheduled run type gets a pre-flight mode (`references/preflight.md`). Ask for
-  cadence and whether it should respect working hours.
-- **Reactive (channel-driven)** — the agent acts when a message arrives in a connected
-  channel. No pre-flight; the request-handling contract in CLAUDE.md plays that role.
-- **On-demand** — the operator triggers work in the direct session.
-- **Hybrid** — any combination; most real agents are scheduled + a small reactive surface.
+- **Scheduled**: cron runs, one or more run types with their own cadence, each a pre-flight
+  mode (`references/preflight.md`). Ask cadence and whether to respect working hours.
+- **Reactive (channel-driven)**: acts on messages in a connected channel. No pre-flight;
+  CLAUDE.md's request-handling contract plays that role.
+- **On-demand**: the operator triggers work in the direct session.
+- **Hybrid**: most real agents are scheduled + a small reactive surface.
 
-Always recommend one scheduled run regardless of model: the **weekly audit**
-(`references/audit.md`). For a purely reactive agent it is typically the only schedule.
+Always recommend the scheduled **weekly audit** (`references/audit.md`); for a purely
+reactive agent it is usually the only schedule.
 
 Determines: run-types table in CLAUDE.md, the `schedules:` block in `kit.yaml` (and which
 of them ship suggested-off), ONBOARDING's check-then-create fallback, whether
@@ -93,39 +89,36 @@ of them ship suggested-off), ONBOARDING's check-then-create fallback, whether
 
 ## 6. People & channels
 
-- Does the agent message people? On which DAM-supported channel (Slack, Telegram)?
-- Split **responsive** (answering an inbound channel message — always allowed) from
-  **proactive** (nudges, reports, escalations — strictly opt-in behind a config key,
-  default disabled).
-- If it @-mentions people: it needs a roster state file (the only mentionable set,
-  operator-maintained), and an escalation owner if reminders escalate.
-- Which channel requests may trigger actual work? This is the **trust-boundary exception
-  whitelist** — keep it minimal and explicit (e.g. "process item #N now"). Everything else
-  arriving from a channel is answered, never obeyed (`references/communication.md`).
+- Does it message people, on which supported channel (Slack, Telegram)?
+- Split **responsive** (answering inbound, always allowed) from **proactive** (nudges,
+  reports, escalations: strictly opt-in behind a config key, default disabled).
+- @-mentions need a roster state file (the only mentionable set, operator-maintained), and
+  an escalation owner if reminders escalate.
+- Which channel requests may trigger real work? That is the **trust-boundary exception
+  whitelist**: minimal and explicit (e.g. "process item #N now"). Everything else from a
+  channel is answered, never obeyed (`references/communication.md`).
 
 Determines: communication config keys, roster file + its onboarding step, trust-boundary
 section content, shepherd-style run type if periodic nudging emerged here.
 
 ## 7. State & backup
 
-- Beyond the tracking file from block 2: what else must persist? (Learned preferences /
-  memory, per-item history, ledgers, caches.)
-- What is reconstructable from external systems (via the markers from block 4) and what is
-  not (learned memory never is)? The unreconstructable part decides how much a backup
-  matters.
-- Backup preference: a dedicated git repo for `work/` (recommended default: an env var
-  like `GITHUB_REPO_WORK`, commit & push as the last action of every run) or local-only
-  (volume persistence, reconstruct-on-loss)?
+- Beyond block 2's tracking file, what must persist (memory, per-item history, ledgers,
+  caches)?
+- What is reconstructable from external markers (block 4) and what isn't (learned memory
+  never is)? The unreconstructable part decides how much backup matters.
+- Backup: a dedicated git repo for `work/` (recommended: an env var like
+  `GITHUB_REPO_WORK`, persisted via `work-backup.sh persist` as the last action of every
+  run) or local-only (volume persistence, reconstruct-on-loss)?
 
 Determines: `work/` inventory, seed templates embedded in ONBOARDING, the state
 reconstruction step, persistence doc content, end-of-run persist step.
 
 ## 8. Configuration
 
-- What differs between two deployments of this agent (target repo/project/board, names,
-  markers, labels, feature toggles)? Each becomes a `work/CONFIG.md` key with: default,
-  missing-key behavior, and whether it is **immutable once used** (anything woven into
-  external dedup markers is).
+- What differs between two deployments (target repo/project/board, names, markers, labels,
+  feature toggles)? Each becomes a `work/CONFIG.md` key with default, missing-key behavior,
+  and whether it is **immutable once used** (anything woven into dedup markers is).
 - Which env vars override which keys (env var always wins)?
 
 Determines: Runtime configuration section of CLAUDE.md, the ONBOARDING config dialog
@@ -133,37 +126,34 @@ Determines: Runtime configuration section of CLAUDE.md, the ONBOARDING config di
 
 ## 9. Cost envelope
 
-- How often do runs fire and how many items will a busy day bring? Multiply: a
-  10-minute heartbeat is ~144 runs/day — anything the agent does per run, it does 144×.
-- What fraction of runs will find nothing? That fraction should cost ~zero (the
-  pre-flight's `nothing_to_do` short-circuit).
-- Agree on what stays deterministic (script) vs. judgment (agent). When the user asks for
-  something expensive, propose the cheaper equivalent and let them choose.
+- Run frequency and items on a busy day? Multiply: a 10-minute heartbeat is ~144 runs/day,
+  so anything done per run happens 144×.
+- What fraction of runs find nothing? That fraction should cost ~zero (Precheck /
+  `nothing_to_do` short-circuit).
+- Agree what is script vs agent judgment. For an expensive ask, propose the cheaper
+  equivalent and let them choose.
 
 Determines: cadences, pre-flight scope, how much batching the design needs.
 
 ## 10. Kit & catalog
 
-The definition repository is also its own Starter Kit, so a handful of answers decide what
-the operator never has to do by hand (`references/kit.md`). Most of them are already
-settled by blocks 3–8 — confirm rather than re-ask.
+The repo is its own Starter Kit, so a few answers decide what the operator never does by
+hand (`references/kit.md`). Blocks 3–8 settle most; confirm rather than re-ask.
 
-- **Catalog presentation** — a display name, a one-line tagline, and which category the
-  agent belongs to (`knowledge` / `software` / `productivity` / `research`).
-- **Which connections are hard requirements** — those refuse the create when missing, so
-  anything behind an opt-in config key is suggested, not required.
-- **Which schedules ship switched on** — a schedule created enabled starts firing as soon
-  as onboarding completes. Anything people-facing ships suggested-off, like every other
-  proactive surface.
-- **Size and cadence** — does the workload need more than the install default (CPU, memory,
-  workspace disk, and why)? Does the heartbeat fire finer than the platform's idle timeout,
-  so the agent should hibernate later rather than pay a wake-up per tick?
-- **Publication** — the repository must be **public** to be its own kit, since catalogs are
-  read anonymously. If it cannot be, say so now: the kit then lives in the catalog
-  repository and points at the private definition, and the interview's answers are
-  unchanged.
-- **Fixed env** — anything every deployment of this agent shares (rare). Everything that
-  differs between two deployments stays a config key from block 8.
+- **Catalog presentation**: display name, one-line tagline, category (`knowledge` /
+  `software` / `productivity` / `research`).
+- **Hard-required connections**: they refuse the create when missing, so anything behind
+  an opt-in config key is suggested, not required.
+- **Schedules shipped on**: an enabled schedule fires as soon as onboarding completes.
+  Anything people-facing ships suggested-off, like every proactive surface.
+- **Size and cadence**: more than the install default (CPU, memory, workspace disk, and
+  why)? A heartbeat finer than the idle timeout, so the agent should hibernate later
+  instead of paying a wake-up per tick?
+- **Publication**: the repo must be **public** to be its own kit (catalogs are read
+  anonymously). If it can't be, say so now: the kit then lives in the catalog repo and
+  points at the private definition; the other answers are unchanged.
+- **Fixed env**: anything every deployment shares (rare). What differs between
+  deployments stays a block 8 config key.
 
 Determines: `kit.yaml` in full, the Phase 6 handoff, and how much of ONBOARDING is a
 fallback path rather than the normal one.
@@ -173,4 +163,4 @@ fallback path rather than the normal one.
 Summarize into a short brief and get a "yes": mission, name, unit of work + lifecycle,
 integrations (read/write) with idempotency markers, run model + cadences, channels +
 proactive opt-ins + trust exceptions, state files + backup choice, config keys, the kit
-surface, cost notes. This brief feeds Phase 2.
+surface, cost notes.

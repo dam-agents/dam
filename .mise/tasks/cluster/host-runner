@@ -24,16 +24,15 @@ if [ ! -x "$release/smolvm-bin" ]; then
   rm "$tarball"
   mv "$release.new" "$release"
 fi
-# The runner expands its disk templates with zstd and gives the storage one a
-# journal with tune2fs, and smolvm formats a disk it has no template for with
-# mkfs.ext4; a Mac has none of them. The k3s VM does, so they are expanded
-# there and carried back as a sparse tar, which keeps their holes: each is a
-# few MiB on disk for tens of GiB of size. An expanded template beside its
-# packed one is what the runner links as it is.
+# The runner expands its disk templates with zstd, and smolvm formats a disk
+# it has no template for with mkfs.ext4; a Mac has neither. The k3s VM does,
+# so they are expanded there and carried back as a sparse tar, which keeps
+# their holes: each is a few MiB on disk for tens of GiB of size. An expanded
+# template beside its packed one is what the runner links as it is.
 if [ ! -f "$release/storage-template.ext4" ]; then
   echo "Expanding the disk templates in $LIMA_INSTANCE..."
   limactl copy "$release/storage-template.ext4.zst" "$release/overlay-template.ext4.zst" "$LIMA_INSTANCE:/tmp/"
-  limactl shell "$LIMA_INSTANCE" sh -c 'cd /tmp && for t in storage overlay; do zstd -d -q -f --sparse $t-template.ext4.zst -o $t-template.ext4 && rm $t-template.ext4.zst; done && tune2fs -O has_journal storage-template.ext4 >/dev/null'
+  limactl shell "$LIMA_INSTANCE" sh -c 'cd /tmp && for t in storage overlay; do zstd -d -q -f --sparse $t-template.ext4.zst -o $t-template.ext4 && rm $t-template.ext4.zst; done'
   limactl shell "$LIMA_INSTANCE" sh -c 'cd /tmp && tar -cSf - storage-template.ext4 overlay-template.ext4 && rm storage-template.ext4 overlay-template.ext4' | tar -xf - -C "$release"
 fi
 
@@ -69,6 +68,16 @@ for _ in $(seq 1 60); do kubectl -n platform-agents get secret "$secret-tls" >/d
 )
 images="$(host_runner_images)"
 
+# The harness tools the default image boots with are installed on the k3s
+# node, which this runner does not see, so they are copied onto a volume of its
+# own once the node's installer is done. New versions land beside the old ones,
+# as on the node.
+tools="$(host_runner_volume tools)"
+echo "Waiting for the harness tools on the k3s node (the first install takes minutes)..."
+kubectl -n platform-agents rollout status daemonset/platform-harness-tools --timeout=30m
+rsync -rlpt --rsync-path="sudo rsync" -e "ssh -F $HOME/.lima/$LIMA_INSTANCE/ssh.config" \
+  "lima-$LIMA_INSTANCE:/var/lib/platform-harness-tools/" "$tools/"
+
 host_runner_stop
 mv "$R/vm-runner.new" "$R/vm-runner"
 mv "$R/platform-init.new" "$R/platform-init"
@@ -80,7 +89,7 @@ mem_mib="${PLATFORM_VM_RUNNER_MEMORY_MIB:-$(( $(sysctl -n hw.memsize) / 1048576 
     --listen=127.0.0.1:4600 --publish-address=127.0.0.1 \
     --port-min="$HOST_RUNNER_PORT_MIN" --port-max="$HOST_RUNNER_PORT_MAX" \
     --token-file="$R/token" --tls-cert="$R/tls.crt" --tls-key="$R/tls.key" \
-    --state-dir="$R/machines" --image-dir="$images" --image-budget-bytes=$((50 << 30)) \
+    --state-dir="$R/machines" --image-dir="$images" --image-budget-bytes=$((50 << 30)) --tools-dir="$tools" \
     --memory-mib="$mem_mib" --reserve-mib=256 \
     --smolvm="$release/smolvm" --platform-init="$R/platform-init" --platform-runc="$R/platform-runc" --crane="$(command -v crane)" \
     >> "$R/runner.log" 2>&1 &

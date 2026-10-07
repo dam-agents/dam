@@ -1,5 +1,6 @@
 # A self-contained tarball outside the npm registry; dist/bob.js needs no
-# dependencies.
+# dependencies. 2.0.5 breaks that: it imports its optional @officecli/officecli
+# at startup and dies without it, so stay on 2.0.4 until a release fixes it.
 [tools."http:bob"]
 version = "2.0.4"
 url = "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-{{version}}.tgz"

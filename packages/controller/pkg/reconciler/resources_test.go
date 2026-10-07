@@ -504,3 +504,45 @@ func TestBuildAgentStatefulSet_TrustsTheInstallsExtraCAs(t *testing.T) {
 	require.NotNil(t, extras.Optional)
 	assert.True(t, *extras.Optional)
 }
+
+// TEST_SCENARIO: the default image bakes no tools and reads them from the node directory a DaemonSet fills, at a path no baked image uses. Once the install sets that directory, every agent pod mounts it read-only into the agent container alone, since the DaemonSet is its only writer and the init containers need no tools. With no directory set the pod gets no host mount.
+func TestBuildAgentStatefulSet_MountsTheNodesHarnessToolsReadOnly(t *testing.T) {
+	cfg := *testConfig
+	cfg.AgentBase.ToolsHostPath = "/var/lib/platform-tools"
+	cfg.AgentBase.IptablesInit = &config.AgentIptablesInit{Enabled: true, Image: "iptables:1"}
+	pod := BuildAgentStatefulSet("my-instance", testAgent, &cfg, configMapOwnerRef(testOwnerCM), "10.0.0.1").Spec.Template.Spec
+
+	dir := corev1.HostPathDirectoryOrCreate
+	assert.Contains(t, pod.Volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
+		HostPath: &corev1.HostPathVolumeSource{Path: "/var/lib/platform-tools", Type: &dir},
+	}})
+	assert.Contains(t, pod.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "harness-tools", MountPath: "/usr/share/mise", ReadOnly: true})
+	require.NotEmpty(t, pod.InitContainers)
+	for _, c := range pod.InitContainers {
+		for _, m := range c.VolumeMounts {
+			assert.NotEqual(t, "harness-tools", m.Name, c.Name)
+		}
+	}
+
+	pod = BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "").Spec.Template.Spec
+	for _, v := range pod.Volumes {
+		assert.NotEqual(t, "harness-tools", v.Name)
+	}
+	for _, m := range pod.Containers[0].VolumeMounts {
+		assert.NotEqual(t, "harness-tools", m.Name)
+	}
+}
+
+// TEST_SCENARIO: the default image carries every harness and picks one from PLATFORM_HARNESS, so a container agent's spec.harness reaches the agent container as that env, as it reaches a vm guest. The secretRef stays envFrom beside it, where Kubernetes lets the explicit env win. An Agent with no harness sets nothing, leaving the image's default.
+func TestBuildAgentStatefulSet_HarnessReachesTheAgentAsPlatformHarness(t *testing.T) {
+	agent := *testAgent
+	agent.Harness = "codex"
+	agent.SecretRef = "my-secrets"
+	c := BuildAgentStatefulSet("my-instance", &agent, testConfig, configMapOwnerRef(testOwnerCM), "").Spec.Template.Spec.Containers[0]
+	assert.Equal(t, "codex", envToMap(c.Env)["PLATFORM_HARNESS"])
+	require.Len(t, c.EnvFrom, 1)
+	assert.Equal(t, "my-secrets", c.EnvFrom[0].SecretRef.Name)
+
+	c = BuildAgentStatefulSet("my-instance", testAgent, testConfig, configMapOwnerRef(testOwnerCM), "").Spec.Template.Spec.Containers[0]
+	assert.NotContains(t, envToMap(c.Env), "PLATFORM_HARNESS")
+}

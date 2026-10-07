@@ -245,12 +245,13 @@ virtualization:
     # REQUIRED when virtualization.enabled — the install fails without
     # limits.memory. Machines are processes of this pod, so that limit is also
     # what the runner admits them against (it refuses one that does not fit,
-    # keeping `reserveMiB` for itself). `requests.memory` is the floor: the
-    # controller raises the running pod's memory request, in place, to the
-    # memory of the owner's machines that should be running plus
-    # `reserveMiB`, up to the limit, and lowers it again as they stop — so
-    # the scheduler sees what the runner has committed and an idle owner's
-    # headroom stays the node's to lend. Set it below the limit for that to
+    # keeping `reserveMiB` for itself). A running machine counts at what its
+    # guest measurably uses plus `headroomMiB`, never above its size, so an
+    # owner can run more machines than their sizes add up to; near the limit
+    # the controller hibernates the owner's idle agents. `requests.memory` is
+    # the floor: the controller keeps the running pod's memory request, in
+    # place, at that count plus `reserveMiB`, up to the limit, so the
+    # scheduler reserves what guests use. Set it below the limit for that to
     # happen; with no request Kubernetes uses the limit and nothing moves.
     # It needs in-place pod resize (the `pods/resize` subresource,
     # Kubernetes 1.33+); on an older cluster the request stays where it is
@@ -260,6 +261,9 @@ virtualization:
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
+    # Memory each running machine is counted at beyond what it was last
+    # measured using, for its guest to grow into before the controller acts.
+    headroomMiB: 256
     # true = runners may give the node's virtualization extensions to the
     # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization),
     # so that guest can run KVM itself — e.g. a vm agent that hosts its own
@@ -657,7 +661,7 @@ seaweedfs:
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
   podAnnotations: {}
-  image: docker.io/chrislusf/seaweedfs:4.47
+  image: mirror.gcr.io/chrislusf/seaweedfs:4.48
   # -- S3 identity of the api-server. Secret key auto-generated on first
   # install if null, persisted across upgrades in a Secret.
   accessKeyId: platform
@@ -675,8 +679,8 @@ seaweedfs:
       cpu: 500m
       memory: 1Gi
 
-# -- Agent-telemetry backend (ClickStack). Off by default. Requires the clickstack-operators
-# chart installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.
+# -- Agent-telemetry backend (ClickStack). Off by default. Requires the ClickHouse and MongoDB
+# operator charts installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.
 # Keys other than `enabled`/`collector` are forwarded to the clickstack subchart.
 clickstack:
   enabled: false
@@ -1851,12 +1855,14 @@ controller:
 # (mounts/env/resources) is never detected.
 # `$HOME` in mount paths is substituted at chart render time with the fixed
 # agent home, /home/agent.
-# Every entry is a harness image the platform delivers. Workload images
+# Every entry is a harness the platform delivers. The four built-in ones share
+# one image, quay.io/dam-agents/default, which bakes no tools and runs on the
+# node's `harnessTools`; `harness` picks the one it runs. Workload images
 # (research frameworks and other pre-built agents) are starter kits in the
 # built-in catalog (`starterKits`), not templates.
 # `experimental: true` badges the image as alpha.
 # `providers` lists the model-provider connection types the image can run on
-# (any of anthropic, ibm-litellm, openai, bob, bedrock) — which env the harness inside
+# (any of anthropic, ibm-litellm, curve-bender, openai, bob, bedrock) — which env the harness inside
 # reads. Create flows narrow the provider picker to it; omit it to offer every
 # provider. Validated when templates load.
 # `harness` names the harness family running inside the image — which CLI the
@@ -1896,7 +1902,7 @@ controller:
 harnessTemplates:
   claude-code:
     enabled: true
-    providers: [ibm-litellm, anthropic, bedrock]
+    providers: [ibm-litellm, curve-bender, anthropic, bedrock]
     displayName: "Claude Code"
     description: "Default Claude Code agent"
     releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
@@ -1904,38 +1910,38 @@ harnessTemplates:
     harness: claude-code
     tags: ["Anthropic"]
     image:
-      repository: quay.io/dam-agents/claude-code
-      tag: "" # @ci-pin claude-code-image-tag
+      repository: quay.io/dam-agents/default
+      tag: "" # @ci-pin default-image-tag
     storageSize: "5Gi"
 
   codex:
     enabled: true
-    providers: [ibm-litellm, openai]
+    providers: [ibm-litellm, curve-bender, openai]
     displayName: "Codex"
     description: "OpenAI Codex coding agent"
     releaseNotesUrl: "https://github.com/openai/codex/releases"
     harness: codex
     tags: ["OpenAI"]
     image:
-      repository: quay.io/dam-agents/codex
-      tag: "" # @ci-pin codex-image-tag
+      repository: quay.io/dam-agents/default
+      tag: "" # @ci-pin default-image-tag
     storageSize: "5Gi"
 
   pi-agent:
     enabled: true
-    providers: [ibm-litellm, anthropic, openai, bedrock]
+    providers: [ibm-litellm, curve-bender, anthropic, openai, bedrock]
     displayName: "PI Agent"
     description: "Pi coding agent with multi-LLM support"
     harness: pi
     tags: ["Any provider"]
     image:
-      repository: quay.io/dam-agents/pi-agent
-      tag: "" # @ci-pin pi-agent-image-tag
+      repository: quay.io/dam-agents/default
+      tag: "" # @ci-pin default-image-tag
     storageSize: "5Gi"
 
   bob:
     enabled: true
-    providers: [ibm-litellm, bob]
+    providers: [ibm-litellm, curve-bender, bob]
     displayName: "IBM Bob"
     description: "Bob shell agent"
     releaseNotesUrl: "https://bob.ibm.com/docs/shell/changelog"
@@ -1945,8 +1951,8 @@ harnessTemplates:
     telemetry: bob
     tags: ["Anthropic", "Mistral", "Granite"]
     image:
-      repository: quay.io/dam-agents/bob
-      tag: "" # @ci-pin bob-image-tag
+      repository: quay.io/dam-agents/default
+      tag: "" # @ci-pin default-image-tag
     # Bob recommends ≥4 GB RAM (8 GB nicer); storage only holds the home
     # dir + workspace (the bundle lives in the image), so the agent default
     # of 2 Gi is plenty.
@@ -1958,6 +1964,53 @@ harnessTemplates:
       limits:
         cpu: "2"
         memory: "4Gi"
+
+# -- The harnesses' tools for the image every harness Template boots
+# (quay.io/dam-agents/default), which bakes none: mise's system data dir with
+# the tools of every harness and the common ones, kept in a directory on each
+# node. Every container agent pod mounts it read-only, whatever its image, at a
+# path no other image uses; every VM runner mounts it read-only too and shares
+# it into each machine whose image asks for it. A DaemonSet fills it: its init
+# container runs that same image's installer, so the tools and the image agree
+# on every version, and then it idles. A deploy that changes the image rolls
+# the DaemonSet and installs the new versions beside the old ones, in place,
+# so an agent still on an older image keeps its own. Nothing is pruned: each
+# image's versions stay on the node until it is cleaned by hand. Empty
+# `hostPath` mounts nothing and renders no installer, which leaves the harness
+# Templates' image without its tools.
+#
+# It is in the boot path: an agent that starts on a node before the installer
+# has finished there has no harness until its next start. The installer
+# reaches the tools' download hosts (npm, GitHub, the language runtimes' and
+# Playwright's CDNs) from the node.
+#
+# The DaemonSet runs on `nodeSelector` with `tolerations`, plus the agents'
+# (`controller.agent.base.tolerations`) and, with virtualization, the runners'
+# tolerations: it must reach every node an agent or a runner may land on.
+#
+# OpenShift: the installer runs as uid 0 and as `spc_t`, to label the directory
+# `container_file_t` at `s0` for the confined agents and runners to read, so
+# `scc` must name an SCC that admits a hostPath and leaves the SELinux type to
+# the pod (seLinuxContext RunAsAny); empty falls back to
+# `virtualization.runner.scc`. The chart's own agent SCC then admits the
+# hostPath the agents mount.
+harnessTools:
+  hostPath: /var/lib/platform-harness-tools
+  image:
+    repository: quay.io/dam-agents/default
+    tag: "" # @ci-pin default-image-tag
+    pullPolicy: IfNotPresent
+  nodeSelector: {}
+  tolerations: []
+  scc: ""
+  # The installer's; the idling container that keeps the pod scheduled asks
+  # for almost nothing.
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
 
 # -- E2E test affordances. Gated test-only surface: the api-server
 # registers a control tRPC namespace that drives the mock Agent harness over
@@ -2040,6 +2093,10 @@ starterKits:
       url: https://github.com/dam-agents/dam-starter-kits
       # ref: v1.4.0          # pin a branch, tag or commit
       # dir: catalogs/public # read catalog.yaml from a subdirectory
+  # The kit that leads the All view of the Starter kits page as a large card,
+  # as `<catalog>/<kit>`. A pin naming a kit no catalog serves, or "", shows
+  # every card at the same size. Rendered as STARTER_KITS_PINNED.
+  pinned: curated/code-guardian
 
 # -- Platform-wide skill sources (shared catalog visible to all users).
 # Rendered into the api-server pod as SKILL_SOURCES_SEED. The same

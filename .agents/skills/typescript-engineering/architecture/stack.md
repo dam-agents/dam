@@ -1,59 +1,27 @@
 # Technology Stack
 
-The opinionated stack for TypeScript client-server projects.
+| Layer | Technology |
+|-------|-----------|
+| API | [tRPC](https://trpc.io/) |
+| Validation | [Zod](https://zod.dev/) |
+| Language | TypeScript (strict) |
+| Packages | pnpm (default) |
+| Events | [RxJS](https://rxjs.dev/) (recommended) |
 
-## Core Technologies
+## Why
 
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| API | [tRPC](https://trpc.io/) | End-to-end typesafe APIs without code generation |
-| Validation | [Zod](https://zod.dev/) | Schema declaration and input validation |
-| Language | TypeScript (strict mode) | Type safety across the entire stack |
-| Package management | pnpm (default) | Fast, disk-efficient package manager with native workspace support |
-| Events | [RxJS](https://rxjs.dev/) (recommended) | Reactive event bus for domain events and sagas |
-
-## Why These Choices
-
-### tRPC over REST/GraphQL
-
-- Full type inference from server to client — no codegen step.
-- Router definitions double as API documentation.
-- Pairs naturally with Zod for input validation.
-
-### Zod for Validation
-
-- Runtime validation that produces TypeScript types via `z.infer`.
-- Composable schemas — build complex validations from simple pieces.
-- First-class tRPC integration as input validators.
-
-### Strict TypeScript
-
-The base `tsconfig.json` enables strict mode and additional checks:
-
-- `strict: true` (enables `strictNullChecks`, `noImplicitAny`, etc.)
-- `noEmit: true` (type-checking only; bundler handles emit)
-- Path aliases via `paths` for clean imports between layers
-
-### RxJS for Domain Events
-
-- Subject-based event bus with typed `emit()` and `events$()` streams.
-- `ofType<T>()` operator for type-safe event filtering in subscribers and sagas.
-- `mergeMap` / `switchMap` for async side effects in sagas.
-- Subscriptions provide clean teardown on shutdown.
-- Any reactive or EventEmitter-based approach works — RxJS is the recommended default.
+- **tRPC over REST/GraphQL**: full server-to-client type inference with no codegen; router definitions double as API docs; pairs with Zod.
+- **Strict TypeScript**: the base config sets `strict: true` (`strictNullChecks`, `noImplicitAny`, …), `noEmit: true` (type-check only; the bundler emits), and `paths` aliases for clean cross-layer imports.
+- **RxJS events**: Subject-based bus with typed `emit()` and `events$()`; `ofType<T>()` for type-safe filtering in subscribers and sagas; `mergeMap`/`switchMap` for async saga effects; subscriptions give clean teardown. Any reactive or EventEmitter approach works; RxJS is the default.
 
 ## Server Runtime
 
-The server runtime is pluggable. Supported options:
+Pluggable; the router mounts at `/trpc` by default. Another mount path or several root routers are fine as long as the modularization below holds.
 
 | Runtime | Adapter | Default |
 |---------|---------|---------|
 | [Hono](https://hono.dev/) | `@hono/trpc-server` | Yes |
 | [Express](https://expressjs.com/) | `@trpc/server/adapters/express` | No |
-
-The tRPC router is mounted at `/trpc` by default. Projects may use a different mount path or multiple root routers as long as the modularization approach described later is followed.
-
-### Hono (default)
 
 ```ts
 import { Hono } from "hono";
@@ -61,19 +29,11 @@ import { trpcServer } from "@hono/trpc-server";
 import { appRouter } from "./routers/index.js";
 
 const app = new Hono();
-
 app.use("/trpc/*", trpcServer({ router: appRouter }));
-
-export default {
-  port: 3000,
-  fetch: app.fetch,
-};
+export default { port: 3000, fetch: app.fetch };
 ```
 
-**Required dependencies:** `hono`, `@hono/trpc-server`, `@trpc/server`
-**Required dev dependencies:** `@types/node`
-
-### Express
+Requires `hono`, `@hono/trpc-server`, `@trpc/server`; dev `@types/node`.
 
 ```ts
 import express from "express";
@@ -81,43 +41,27 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "./routers/index.js";
 
 const app = express();
-
 app.use("/trpc", createExpressMiddleware({ router: appRouter }));
-
-app.listen(3000, () => {
-  console.log("Server listening on http://localhost:3000");
-});
+app.listen(3000, () => console.log("Server listening on http://localhost:3000"));
 ```
 
-**Required dependencies:** `express`, `@trpc/server`
-**Required dev dependencies:** `@types/express`, `@types/node`
+Requires `express`, `@trpc/server`; dev `@types/express`, `@types/node`.
 
 ## Client
 
-The client connects to the server via a tRPC client. The specific UI framework is flexible (React, Vue, Solid, etc.), but the tRPC client setup is always present to guarantee end-to-end type safety.
-
-When React is used, prefer `@trpc/react-query` for data fetching.
+Any UI framework (React, Vue, Solid…), but always a tRPC client for end-to-end types. With React, use `@trpc/tanstack-react-query` for data fetching.
 
 ## CORS / Dev Proxy
 
-By default in development, the client dev server (e.g., Vite) proxies tRPC requests to the backend. This avoids CORS entirely — no CORS headers on the server. The proxy path should match the mount path.
+By default the client dev server (e.g. Vite) proxies tRPC to the backend, so the server sends no CORS headers; the proxy path matches the mount path and the client URL is relative (`/trpc`).
 
 ```ts
 // vite.config.ts
-server: {
-  proxy: {
-    "/trpc": {
-      target: "http://localhost:3000",
-      changeOrigin: true,
-    },
-  },
-}
+server: { proxy: { "/trpc": { target: "http://localhost:3000", changeOrigin: true } } }
 ```
 
-When using a dev proxy, the tRPC client URL should be relative (e.g., `/trpc`), not an absolute URL.
-
-Alternatively, projects may handle CORS directly on the server (e.g., via middleware). This works for both development and production and removes the need for a dev proxy. In that case the tRPC client URL will be absolute.
+Alternatively handle CORS on the server (middleware), which works in dev and prod without a proxy; the client URL is then absolute.
 
 ## Shared Types
 
-The `AppRouter` type is consumed by the client through an API contract package — a workspace package that exports API type definitions. This is the single source of truth for the API contract — no manual type duplication. The naming and scope of this package is flexible.
+Clients consume `AppRouter` from the API contract package (flexible name and scope), the single source of truth for the contract; no hand-duplicated types.

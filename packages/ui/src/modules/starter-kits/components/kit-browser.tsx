@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
-import { cn } from "@/lib/utils";
 
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import {
@@ -16,7 +15,7 @@ import {
   matchesSearch,
   sortKits,
 } from "../lib/catalog-cards.js";
-import { kitIcon } from "../lib/kit-icon.js";
+import { KitCategoryTag } from "./kit-category-tag.js";
 
 export type Filter = StarterKitView["category"] | "all";
 
@@ -45,29 +44,6 @@ export function KitBadges({
   );
 }
 
-export function KitIllustration({
-  kit,
-  size = 32,
-  className,
-}: {
-  kit: StarterKitView;
-  size?: number;
-  className?: string;
-}) {
-  const Icon = kitIcon(kit);
-  return (
-    <div
-      className={cn(
-        "flex items-center justify-center bg-gradient-to-br from-kit-tint to-kit-surface text-kit",
-        className,
-      )}
-      aria-hidden
-    >
-      <Icon size={size} />
-    </div>
-  );
-}
-
 export function KitCard({
   kit,
   templates,
@@ -86,12 +62,13 @@ export function KitCard({
       data-testid={`starter-kit-card-${kit.id}`}
       className="flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left transition-colors hover:border-foreground/20"
     >
-      <KitIllustration
-        kit={kit}
-        className="h-[160px] border-b border-kit-line"
-      />
       <div className="flex flex-1 flex-col gap-2 p-4">
-        <h3 className="text-base font-semibold text-foreground">{kit.name}</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-base font-semibold text-foreground">
+            {kit.name}
+          </h3>
+          <KitCategoryTag category={kit.category} />
+        </div>
         <p className="flex-1 text-sm text-muted-foreground">
           {kit.tagline ?? kit.description}
         </p>

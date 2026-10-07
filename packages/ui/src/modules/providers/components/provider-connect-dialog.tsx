@@ -15,7 +15,7 @@ import { AnthropicForm } from "./anthropic/form.js";
 import { type Mode, MODES } from "./anthropic/modes.js";
 import { BedrockForm } from "./bedrock/form.js";
 import { BobForm } from "./bob/form.js";
-import { IbmLitellmForm } from "./ibm-litellm/form.js";
+import { LiteLlmProxyForm } from "./litellm-proxy/form.js";
 import { OpenAIForm } from "./openai/form.js";
 import {
   bobPinsFromConnection,
@@ -140,16 +140,17 @@ export function ProviderConnectDialog({
             }
           />
         )}
-        {provider === "ibm-litellm" && (
-          <IbmLitellmForm
+        {(provider === "ibm-litellm" || provider === "curve-bender") && (
+          <LiteLlmProxyForm
+            provider={provider}
             variant={variant}
             onCancel={onClose}
             onSave={({ value }) =>
               persist({
                 value,
                 createInput: {
-                  templateId: "ibm-litellm",
-                  name: "ibm-litellm",
+                  templateId: provider,
+                  name: provider,
                   authKind: "header",
                   value,
                 },

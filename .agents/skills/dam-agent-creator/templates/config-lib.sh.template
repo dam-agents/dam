@@ -12,7 +12,7 @@
 # change it here and there in the same PR, never in one alone.
 #
 # TODO(creator): add a reader only when the design needs a shape these two do not
-# cover, and give it the same treatment. Then delete the TODO comments.
+# cover, and give it the same treatment.
 
 # A scalar key: `- <key>: <value>`. The first match wins; a trailing `#` comment,
 # surrounding whitespace and one layer of surrounding quotes/backticks are stripped.

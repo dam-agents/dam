@@ -32,13 +32,40 @@ describe("createModelDiscovery", () => {
     expect(urls).toEqual([]);
   });
 
-  it("reports unavailable when no candidate env var is set (no fetch)", async () => {
+  // TEST_SCENARIO: no granted connection names the endpoint, so there is no list to keep; reporting not-configured clears the one a previous provider left behind.
+  it("reports not-configured when no candidate env var is set (no fetch)", async () => {
     const { fetchImpl, urls } = stubFetch({ body: { data: [{ id: "m" }] } });
     const discover = createModelDiscovery({ log: noop, fetchImpl });
     expect(
       await discover({ urlEnv: ["OPENAI_PROXY_URL", "RITS_URL"] }, {}),
-    ).toEqual({ status: "unavailable" });
+    ).toEqual({ status: "not-configured" });
     expect(urls).toEqual([]);
+  });
+
+  // TEST_SCENARIO: Claude Code's in-pod model gateway publishes lowercased, claude/-prefixed names; discovered choices must carry the same names so a pick in the panel and one in the TUI agree.
+  it("publishes names with the declared prefix and case", async () => {
+    const { fetchImpl } = stubFetch({
+      body: {
+        data: [{ id: "rits/nvidia/NVIDIA-Nemotron" }, { id: "claude/glm" }],
+      },
+    });
+    const discover = createModelDiscovery({ log: noop, fetchImpl });
+    expect(
+      await discover(
+        { urlEnv: ["U"], namePrefix: "claude/", lowercaseNames: true },
+        { U: "https://proxy" },
+      ),
+    ).toEqual({
+      status: "observed",
+      via: "U",
+      models: [
+        { value: "claude/glm", name: "claude/glm" },
+        {
+          value: "claude/rits/nvidia/nvidia-nemotron",
+          name: "claude/rits/nvidia/nvidia-nemotron",
+        },
+      ],
+    });
   });
 
   it("uses the first set candidate and normalizes the base to /v1/models", async () => {
@@ -173,6 +200,46 @@ describe("createModelDiscovery", () => {
     expect(await discover({ urlEnv: ["U"] }, { U: "https://p" })).toEqual({
       status: "unavailable",
     });
+  });
+
+  // TEST_SCENARIO: a LiteLLM key can be refused the model-information route while still allowed the OpenAI listing, so a refused primary listing must fall back to the declared one on the same endpoint.
+  it("asks the fallback listing when the primary one is refused", async () => {
+    const urls: string[] = [];
+    const fetchImpl = (async (url: string | URL | Request) => {
+      urls.push(String(url));
+      return String(url).endsWith("/model/info")
+        ? ({ ok: false, status: 403, json: async () => ({}) } as Response)
+        : ({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [{ id: "gcp/gemini" }, { id: "aws/claude" }],
+            }),
+          } as Response);
+    }) as unknown as typeof globalThis.fetch;
+    const discover = createModelDiscovery({ log: noop, fetchImpl });
+    expect(
+      await discover(
+        {
+          urlEnv: ["BOB_GATEWAY_URL"],
+          path: "/inference/v1/model/info",
+          shape: "litellm-model-info",
+          fallback: { path: "/inference/v1/models" },
+        },
+        { BOB_GATEWAY_URL: "https://gateway.example.com" },
+      ),
+    ).toEqual({
+      status: "observed",
+      via: "BOB_GATEWAY_URL",
+      models: [
+        { value: "aws/claude", name: "aws/claude" },
+        { value: "gcp/gemini", name: "gcp/gemini" },
+      ],
+    });
+    expect(urls).toEqual([
+      "https://gateway.example.com/inference/v1/model/info",
+      "https://gateway.example.com/inference/v1/models",
+    ]);
   });
 
   it("reports unavailable (never throws) when fetch fails", async () => {

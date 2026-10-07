@@ -582,7 +582,7 @@ mesh.
 
 Dev-cluster constraints, not architectural properties; production gets none of
 these knobs. Recovery lives in the
-[`cluster-ops`](../../.claude/skills/cluster-ops/SKILL.md) skill.
+[`cluster-ops`](../../.agents/skills/cluster-ops/SKILL.md) skill.
 
 - **SVID rotation.** A lima VM sleeping with its host can outlast the mesh's
   certificate rotation and stall every mesh hop. The local install lengthens

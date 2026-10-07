@@ -2,8 +2,7 @@
 # sweep (docs/self-modification.md §9) so a definition PR cannot merge broken:
 # script syntax, the structural validator (repo shape, VERSION↔CHANGELOG
 # agreement, dead links, leftover placeholders), and the offline test suite.
-# TODO(creator): drop the tests step if the design has no scripts/tests/, then
-# delete the TODO comments.
+# TODO(creator): drop the tests step if the design has no scripts/tests/.
 name: ci
 on:
   pull_request:

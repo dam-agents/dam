@@ -6,108 +6,86 @@ description: >
   docs/plan/<feature>/ plan or a planned GitHub issue.
 ---
 
-This skill implements a feature that `plan-feature` has already planned. It consumes the plan
-committed under `docs/plan/<NNN-slug>/` (README + one file per sub-issue) and turns it into
-code: one atomic commit per sub-issue on the branch `plan-feature` created, a cleanup commit
-that deletes the plan, and the draft PR flipped to ready. The whole feature lands as one PR.
+Implements a feature `plan-feature` already planned under `docs/plan/<NNN-slug>/` (README + one
+file per sub-issue): one atomic commit per sub-issue on the branch `plan-feature` created, a
+cleanup commit deleting the plan, and the draft PR flipped to ready. The whole feature lands as
+one PR.
 
-**Core rhythm:** read everything first and clear up confusion *before* writing code; implement
-one sub-issue at a time; after each, **pause for the user to smoke-test and review** before
-committing and moving on. The whole feature lands as one PR.
+**Input:** a GitHub issue number/URL (find the plan folder by its issue-number prefix) or a
+`docs/plan/<NNN-slug>/` path.
 
-## Input
+## 1. Read everything
 
-Accept either a GitHub issue number/URL or a `docs/plan/<NNN-slug>/` path. Given an issue,
-locate the plan folder by its issue-number prefix.
+The issue (via `gh`); the plan's `README.md` **and every** sub-issue file; the linked ADR, if
+the README or issue references one; the architecture pages the README points at (the source of
+truth for *why*).
 
-## Steps
+## 2. Resume check
 
-### 1. Read everything
+On the feature branch (step 4):
 
-Before touching code, read the full context:
+- **Commits beyond the plan commit** → resumed run. Verify the README's sub-issue checkmarks
+  against `git log` to find what's done. **Uncommitted changes** from an implemented but
+  unapproved sub-issue → offer to continue *that* sub-issue rather than restart it.
+- **Only the plan commit** → fresh start.
 
-- The issue, via `gh`.
-- The plan: `README.md` **and every** sub-issue file in the folder.
-- The linked ADR, if the README/issue references one.
-- The architecture page(s) the README points at (the docs are the source of truth for *why*).
+## 3. Blocking questions
 
-### 2. Resume check
+In one consolidated pass, surface every contradiction, ambiguity or gap across issue, plan, ADR
+and architecture. **Write no code until the user clears them**, or state that there are none and
+proceed.
 
-Derive the feature branch name deterministically (see step 4) and check its state:
+## 4. Check out the feature branch
 
-- **Sub-issue commits on the branch** (anything beyond the plan commit) — this is a resumed
-  run. Read the README's sub-issue checkmarks and verify them against the branch's `git log` to
-  find which sub-issues are already done. If the working tree has **uncommitted changes** from a
-  sub-issue that was implemented but not yet approved/committed, offer to continue *that*
-  sub-issue rather than restart it.
-- **Only the plan commit** — fresh start.
+`plan-feature` created it (plan as first commit, draft PR open) as `<type>/<NNN-slug>`: slug =
+plan folder name, type per the issue's nature and the branch convention (plan
+`docs/plan/344-egress-cli/` → `feat/344-egress-cli`). Check it out in the **main working tree**,
+not a git worktree, so smoke-testing happens in the normal checkout.
 
-### 3. Upfront blocking-questions pass
+## 5. Per sub-issue, in dependency order
 
-In one consolidated pass, surface every contradiction, ambiguity, or gap you found across the
-issue, plan, ADR, and architecture. **Write no code until the user clears the blockers** — or
-state explicitly that there are none and proceed.
+Topological order per the README's dependency graph. For each:
 
-### 4. Check out the feature branch
+1. **Read** the sub-issue (context, plan, acceptance criteria, smoke test) against the README.
+2. **Implement** it with the `/typescript-engineering` skill for server-side TS or
+   `/react-ui-engineering` for UI (`packages/ui`); the sub-issue says which. **Don't author new
+   tests**, even when the plan lists them: verification is the manual smoke test plus the
+   existing suite. Write one only when the user asks or the behavior has no manual smoke path
+   (e.g. a pure algorithm with tricky edges); a plan that calls for tests is a divergence (below)
+   needing the user's go-ahead.
+3. **Self-validate:** each acceptance criterion met; scoped tests for touched packages
+   (`mise run //packages/<pkg>:test`) to confirm the **existing** suite didn't regress; run the
+   sub-issue's smoke test yourself.
+4. **Hand off:** brief summary of changes plus the sub-issue's manual smoke-test guide. **Wait**
+   for the user's smoke test and review.
+5. **Incorporate** feedback, then **one clean atomic commit**: `type(scope): summary`,
+   `git commit -s`, body line `Refs #NNN`. The pre-commit hook (`mise generate git-pre-commit
+   --write --task=check`) runs the full `mise run check`; **never** bypass it with `--no-verify`,
+   and never add the attribution trailer by hand (the `attribution` setting in
+   `.claude/settings.json` does it).
+6. **Mark progress:** check the sub-issue off in the README's table (the plan folder is the
+   resume state).
 
-`plan-feature` already created the branch, with the plan as its first commit and a draft PR
-open. It is named `<type>/<NNN-slug>`, where the slug matches the plan folder name (e.g. plan
-`docs/plan/344-egress-cli/` → branch `feat/344-egress-cli`) and `<type>` follows the issue's
-nature (`feat`, `fix`, …) per the branch convention. Check it out in the **main working tree** —
-not a git worktree — so manual smoke-testing happens in the normal checkout.
+> **If the plan proves wrong while coding** (any time in 1–5): *stop and ask* when the deviation
+> is structural (changes scope, breaks an acceptance criterion, contradicts README/ADR, or
+> invalidates an assumption a *later* sub-issue depends on); once agreed, update the affected
+> README/sub-issues so remaining slices stay consistent. *Adapt and note* purely local, in-intent
+> details.
 
-### 5. Per sub-issue, in dependency order
+## 6. Whole-feature gate
 
-Process sub-issues in a topological order consistent with the README's dependency graph. For
-each one:
+Once every sub-issue is committed: run the **full** `mise run test` for cross-slice regressions,
+then `/code-review` on the whole branch diff. Fix blocking findings by **amending the relevant
+sub-issue's commit** (safe: those commits aren't pushed yet).
 
-1. **Read** the sub-issue (context, implementation plan, acceptance criteria, smoke test)
-   against the shared README context.
-2. **Implement** the slice. Apply the `/typescript-engineering` skill for server-side TS and the
-   `/react-ui-engineering` skill for UI (`packages/ui`) work — the sub-issue names which.
-   **Don't author new tests**, even when the sub-issue's plan lists them — verification leans on
-   the manual smoke test plus the existing suite. Write one only when the user asks or the
-   behavior is otherwise unverifiable (no manual smoke path, e.g. a pure algorithm with tricky
-   edges); if the plan calls for tests, treat it as a divergence (see below) and get the user's
-   go-ahead first.
-3. **Self-validate:** confirm each acceptance criterion is met; run the **scoped tests** for the
-   touched package(s) (`mise run <pkg>:test`) to confirm you haven't regressed the **existing**
-   suite; run the sub-issue's **smoke test yourself**.
-4. **Hand off to the user:** present a brief summary of what changed and the manual smoke-test
-   guide from the sub-issue. **Wait** for the user to smoke-test and give review feedback.
-5. **Incorporate** the user's feedback, then make **one clean atomic commit** — conventional
-   `type(scope): summary`, `git commit -s`, body line `Refs #NNN`. The pre-commit hook (`mise generate git-pre-commit --write --task=check`) runs the
-   full `mise run check`; **never** bypass it with `--no-verify`, and never add the attribution
-   trailer by hand (the `attribution` setting in `.claude/settings.json` does it).
-6. **Mark progress:** check the sub-issue off in the README's sub-issue table (the plan folder
-   is the resume state).
+## 7. Delete the plan
 
-> **If the plan turns out wrong while coding** (can fire any time during 1–5): *stop and ask*
-> when the deviation is structural — it changes scope, breaks a stated acceptance criterion,
-> contradicts the README/ADR, or invalidates an assumption a *later* sub-issue depends on; once
-> agreed, update the affected README/sub-issue so not-yet-done slices stay consistent. *Adapt and
-> note* for purely local, in-intent details.
->
-> The commit lands **after** the user's sign-off, never before — so history stays one clean
-> commit per reviewed slice, with no amend churn.
+After the user confirms the last sub-issue is done, delete `docs/plan/<NNN-slug>/` in one
+final commit (`chore(plan): drop <NNN-slug> plan`). Mandatory: the `Plan check` CI job keeps the
+PR unmergeable while the folder exists.
 
-### 6. Whole-feature gate
+## 8. Mark the PR ready
 
-Once every sub-issue is approved and committed:
-
-- Run the **full** `mise run test` to catch cross-slice regressions.
-- Run a final review pass on the whole branch diff with `/code-review`. Fix blocking findings by
-  **amending the relevant sub-issue's commit** — safe because the sub-issue commits aren't
-  pushed yet, so the one-commit-per-sub-issue history stays intact.
-
-### 7. Clean up the plan
-
-Only after the user confirms the final sub-issue is done: delete the `docs/plan/<NNN-slug>/`
-folder in one final commit (`chore(plan): drop <NNN-slug> plan`). This is **mandatory**, not
-optional — the `Plan check` CI job keeps the PR unmergeable while the folder exists.
-
-### 8. Mark the PR ready
-
-Push the branch and flip the draft PR that `plan-feature` opened to ready (`gh pr ready`).
-Verify the body still reads **brief and product-level** (like the issue, not the plan), tick
-every sub-issue checkbox, and confirm `Closes #NNN` is present so the issue closes on merge.
+Push and `gh pr ready` the draft PR. Check the body still reads **brief and product-level**
+(like the issue, not the plan), tick every sub-issue checkbox, and confirm `Closes #NNN` is
+present.

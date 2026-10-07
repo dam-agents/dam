@@ -27,14 +27,12 @@ to disk.
 Nous runs the scientific method on software systems: it forms a falsifiable
 hypothesis about a target system, designs a controlled experiment, executes it,
 and extracts reusable principles. A deterministic Python orchestrator (the
-`nous` CLI) drives two Claude agent roles through a structured loop. You drive
-`nous`; Nous drives the experiment.
+`nous` CLI) drives two Claude agent roles through a structured loop.
 
 **The `nous` skill is your reference** for the full CLI surface and campaign
 authoring (`locked_parameters`, `ground_truth`, the five hypothesis arms,
 rehearsal-vs-real iterations, `nous schema campaign`). Consult it whenever you
-author a campaign or reach for a subcommand. This file is the *how-to-operate-in-
-this-pod* layer.
+author a campaign or reach for a subcommand.
 
 ## Tools
 
@@ -53,8 +51,7 @@ classify each as:
 
 - **running** — its `run.pid` (located in the campaign's subdirectory under `$NOUS_CAMPAIGN_PARENT`) names a live process (e.g. `kill -0 "$(cat "$NOUS_CAMPAIGN_PARENT/<run_id>/run.pid")"`).
 - **not running** — no live process (finished, stopped, or interrupted by a pod
-  restart — see below; this pod does not idle-hibernate, so this is rarer than it
-  used to be).
+  restart — see below).
 
 Present the grouped list, then ask whether they want a status pull on one or to
 resume one. When you pull detail, run `nous status <run_id> --line` and say
@@ -170,20 +167,20 @@ curl --noproxy '*' -fsS 'http://127.0.0.1:24180/v1/models?limit=1000' | jq -r '.
 ```
 
 Map by tier, then drop straight into `campaign.yaml` (use the IDs verbatim — they
-may be namespaced, e.g. `claude/aws/claude-opus-4-8`):
+may be namespaced, e.g. `claude/aws/claude-opus-5-5`):
 
 - `design` → the newest **opus** id,
 - `execute_analyze` and `report` → the newest **sonnet** id.
 
 If a tier is missing, fall back to another available model (prefer the most
 capable: opus → sonnet → whatever the catalog lists). Example for a gateway
-serving `claude/aws/claude-opus-4-8` + `claude/aws/claude-sonnet-4-6`:
+serving `claude/aws/claude-opus-5-5` + `claude/aws/claude-sonnet-5-5`:
 
 ```yaml
 models:
-  design: "claude/aws/claude-opus-4-8"
-  execute_analyze: "claude/aws/claude-sonnet-4-6"
-  report: "claude/aws/claude-sonnet-4-6"
+  design: "claude/aws/claude-opus-5-5"
+  execute_analyze: "claude/aws/claude-sonnet-5-5"
+  report: "claude/aws/claude-sonnet-5-5"
 ```
 
 ## Launching a campaign
@@ -194,9 +191,6 @@ completion. Launch with `--auto-approve` (`NOUS_ALLOW_AUTO_APPROVE=1` is already
 set in this image, so the flag alone is enough). If a channel is bound, gate
 summaries still post to it as progress (see "Reporting progress to
 Slack/Telegram").
-
-**Front-load `locked_parameters`** — auto-approve outright refuses a campaign
-with no locks. That inventory is what keeps a run defensible.
 
 **Always launch the campaign as a background process** so you stay responsive and
 can query state with `nous` while it runs. Keep the PID and the log in the
@@ -216,10 +210,11 @@ cleanly.
 ## Long runs & recovery
 
 This agent is configured to **never hibernate** (the nous template sets its idle
-timeout to `0`), so an idle session no longer scales the pod to zero. A
+timeout to `0`), so an idle interactive session does not scale the pod to zero
+(an autonomous session is the exception: see "Autonomous sessions"). A
 backgrounded `nous run` therefore **progresses to completion on its own** — the
 user does not need to keep a terminal or SSH session open, and there are no idle
-"gaps" to resume across. Long overnight campaigns just run.
+"gaps" to resume across.
 
 The pod can still go away for reasons *other* than idle hibernation — an image
 upgrade, a node drain/eviction, an OOM, or a plain crash. Campaign artifacts live
@@ -235,28 +230,19 @@ nohup nous resume campaign.yaml --auto-approve >> campaign.log 2>&1 &
 echo $! > run.pid
 ```
 
-There is no keep-awake step any more: because the pod doesn't idle-hibernate,
-you never need a terminal or SSH session held open to finish a run. Resume is
-only for the rarer non-idle restart above.
-
 ## Handling "approve" responses from the user
 
-Because gate notifications are posted automatically to Slack/Telegram from the background campaign (even under `--auto-approve`), the user might see a message like "Waiting for approval" and respond with "approve" out of habit or context.
-
-If the user sends "approve", "approve once", "yes", "confirm", or any similar validation, **do NOT start a new campaign or resume a campaign if it is already running**.
-
-1. First, check if the campaign is already running. Note that the campaign directory is at `$NOUS_CAMPAIGN_PARENT/<run_id>`. Do NOT look for `run.pid` in the current directory; instead, check the path `$NOUS_CAMPAIGN_PARENT/<run_id>/run.pid` (e.g. run `kill -0 "$(cat "$NOUS_CAMPAIGN_PARENT/<run_id>/run.pid")"` and `nous status <run_id> --line` to verify).
-2. If it is already running:
-   - Do NOT run `nous run` or `nous resume` again.
-   - Reply to the user explaining that the campaign is running with `--auto-approve` enabled and is proceeding automatically, so no manual approval is needed.
-   - Show the current status of the campaign using `nous status <run_id> --line`.
-3. If it is NOT running and is stopped at a checkpoint (e.g., after a pod restart):
-   - Resume it in the background by running `cd "$NOUS_CAMPAIGN_PARENT/<run_id>" && nohup nous resume campaign.yaml --auto-approve >> campaign.log 2>&1 &` and record the PID: `echo $! > run.pid` (per the "Long runs & recovery" section).
+Gate summaries post to Slack/Telegram even under `--auto-approve`, so a user
+may reply "approve" (or "yes", "confirm") to one. That reply never launches
+anything by itself: check the campaign first (its `run.pid` liveness and
+`nous status <run_id> --line`). If it is running, tell the user it proceeds
+on its own and show the status line; a second `nous run` or `nous resume`
+would race the live one. If it stopped at a checkpoint, resume it as in
+"Long runs & recovery".
 
 ## Monitoring a running campaign
 
-A campaign doesn't advance faster because you look at it more, and phases are
-long (DESIGN alone can be ~10–15 min). Poll **infrequently, with wide spacing**,
+Phases are long (DESIGN alone can be ~10–15 min). Poll **infrequently, with wide spacing**,
 and read the right signals:
 
 - **Use `nous status <run_id> --line`** for phase/iteration. For finer liveness,
@@ -325,8 +311,8 @@ When a campaign reaches `DONE`, offer to index it into the cross-campaign
 cross-campaign knowledge graph and `/suggest-next <repo> "<question>"` to
 recommend high-value next experiments. When the user is scoping a *new*
 campaign on a repo that already has indexed history, consider `/suggest-next`
-first. These slash commands ship with the agent (`~/.claude/commands/`); the
-`nous` skill documents them.
+first. These ship as skills with the agent (`~/.agents/skills/`); the `nous`
+skill documents them.
 
 ## Where things live
 
@@ -344,6 +330,3 @@ first. These slash commands ship with the agent (`~/.claude/commands/`); the
   rather than a repo, set `target_system.live_target: true` so arms are probes
   and no worktree is created. The target must be reachable from this pod's
   egress rules.
-- Long campaigns can run for hours. Because this pod doesn't hibernate, a
-  backgrounded run finishes on its own — you only resume (above) if the pod
-  restarted for some other reason (upgrade, eviction, crash).

@@ -86,7 +86,7 @@ export function SandboxSetupSection({ f }: Props) {
       </section>
 
       <section className="mb-8">
-        <SectionLabel spaced>Lifecycle</SectionLabel>
+        <SectionLabel spaced>Availability</SectionLabel>
         <Inset>
           <Controller
             control={f.control}

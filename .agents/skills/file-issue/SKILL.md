@@ -8,64 +8,58 @@ argument-hint: "[what the issue is about]"
 
 # File an Issue
 
-Draft a GitHub issue and file it after the user approves. For the content shape, follow [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md) — the whole document, every section. This skill layers the workflow (understand → decide type → research → dedupe → draft → attribute → approve → file) on top of those guidelines.
+Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md).
 
 ## Workflow
 
-1. **Understand the request thoroughly.** Read the user's prompt carefully — multiple times if it's long or ambiguous. Identify what problem they're describing, who it affects, and what outcome they want. Restate it back in one or two sentences to confirm shared understanding. Ask follow-ups for anything that would change the shape of the issue (scope, who it affects, dependencies on other work). Do not start drafting until you genuinely understand the ask.
+1. **Understand the request.** Identify the problem, who it affects, and the outcome wanted. Restate it in one or two sentences, and ask follow-ups for anything that would change the issue's shape (scope, who it affects, dependencies) before drafting. **Context leads every template** (why this matters, what led here): if the ask doesn't convey it, ask for it.
 
-   Because **Context leads every template** — why this matters, what led here — make sure you actually have it. If the user's ask doesn't convey that context, ask them for it before drafting. A ticket without real context is the main thing this step exists to prevent.
+   **Came from user feedback in Slack?** Get the permalink to the thread where it was raised (ask if you don't have it) — it goes in the **Follow up** section at the end of the body (see **Follow up** in the guidelines).
 
-   Then let the user decide the type: every issue is an **epic**, **feature**, **task**, **bug**, or **research task** (see the guidelines doc). State which type you read the ask as and why, and let the user confirm or override — the type picks the template and how the issue is filed. Skip the question only when the type is unmistakable.
+   Then let the user decide the type: epic, feature, task, bug, or research task (see the guidelines). Say which you read the ask as and why; the user confirms or overrides, and the type picks the template and how the issue is filed. Skip the question only when the type is unmistakable.
 
-2. **Research the codebase thoroughly.** Do real investigation of the current state — read relevant files, trace how the feature works today, understand the user-visible behavior end-to-end. The goal is to describe the status quo *accurately*, not superficially. A shallow understanding produces a vague ticket.
+2. **Research the codebase.** Trace how the feature works today and its user-visible behavior end-to-end, so the issue describes the status quo accurately. **Keep the research out of the issue**: no file paths, function names, line numbers, data structures or architectural detail. A sentence that only makes sense to someone who has read the code gets rewritten.
 
-   **But keep the research out of the issue itself.** Do not pull file paths, function names, line numbers, data structures, or architectural detail into the draft. The research informs your writing; it does not appear in it. If a sentence only makes sense to someone who's read the code, rewrite it.
-
-3. **Check for duplicates.** Before drafting (or at latest, before filing), search existing issues on the target repo:
+3. **Check for duplicates** before drafting, or at the latest before filing, with several keyword variations from the request:
 
    ```sh
    gh issue list --repo owner/repo --search "keywords" --state all
    ```
 
-   Use multiple keyword variations drawn from the user's request. If you find a plausible duplicate or closely-related issue, surface it to the user with a one-line summary and ask how to proceed — options include: add a comment to the existing issue, file a new one anyway with a cross-link, or close the request as already-tracked. Do not silently file a duplicate.
+   On a plausible duplicate or close relative, show it with a one-line summary and ask: comment on it, file anyway with a cross-link, or drop the request as already tracked.
 
-4. **For any non-epic type: consider an epic.** Fetch the epics from the project board and check whether one clearly fits:
+4. **Non-epic types: consider an epic.** List the board's epics:
 
    ```sh
    gh project item-list 1 --owner dam-agents --limit 3000 --format json \
      | jq -r '.items[] | select(.status=="Epics") | "#\(.content.number)  \(.title)"'
    ```
 
-   If one does, put it on the draft's **Epic** line with a one-line justification. If nothing fits, leave the line out — placement can be decided later in triage. Epics themselves have no parent; skip this step.
+   If one clearly fits, put it on the draft's **Epic** line with a one-line justification. Otherwise omit the line; triage can place it later. Epics have no parent.
 
-5. **Draft inline.** Produce the draft following [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md), using the decided type's template. Present the full draft (title + body, plus the Epic line if one was suggested) in the chat. Do not file yet.
+5. **Draft inline** with the type's template: full title + body (+ Epic line) in the chat.
 
-6. **Decide whether the body needs a Filed by footer.** You file under a credential you don't own, so check whether that credential's owner is the person who asked — see **Attribution** in the guidelines doc for the rule, the format, and the fallback order.
+6. **Filed by footer?** You file under a credential you don't own; compare its owner with the requester (rule, format and fallback order: **Attribution** in the guidelines).
 
    ```sh
-   gh api user --jq .login                                   # the account you file as
+   gh api user --jq .login                                         # the account you file as
    gh api "search/users?q=<name-or-email>" --jq '.items[].login'   # the requester
    ```
 
-   Same person: no footer — GitHub already credits them. Different person: append the footer at the end of the body you present in step 5, so the approved body already carries it. Never credit the account you file as instead of the requester.
+   Same person: no footer, GitHub credits them. Different: append the footer to the body presented in step 5, so the approved body carries it. Never credit the filing account instead of the requester.
 
-7. **Get explicit approval.** Ask whether to file as-is or revise. NEVER file without explicit approval. Approval covers the type and any epic suggestion too — if the user changes either, that's a revision.
+7. **Get explicit approval** to file as-is or revise. Never file without it. Approval covers the type and epic too; changing either is a revision. **Every revision voids the previous approval**: present the revised draft and get a fresh, explicit "file it".
 
-   **Every revision invalidates the previous approval.** If the user requests any change after approving — even a small one — you must present the revised draft and get a fresh, explicit "file it" before sending to GitHub. Do not assume the original approval carries over.
-
-8. **File via `gh` CLI.** Use `gh issue create`. Infer the repo from context (current working directory's git remote, or a repo mentioned earlier in the session). If unclear, ask. Then apply the relationships (below) and return the issue URL.
+8. **File** (below) and apply the relationships.
 
 ## Filing
 
-After approval, file with `gh issue create`. Do not use the GitHub MCP tools (`mcp__github__*`) for this — always use `gh`.
+Use `gh issue create`, never the GitHub MCP tools (`mcp__github__*`):
 
-- `--repo owner/repo` — infer from git remote or prior context; ask if ambiguous
-- `--title "..."` — exactly as approved
-- `--body "..."` — exactly as approved, including the **Filed by** footer if step 6 called for one, minus the **Epic** line (it's draft metadata, applied as the parent relationship below, not body text); pass via a HEREDOC so markdown formatting survives
-- `--label foo --label bar` — only if the user specified labels
-
-Example:
+- `--repo owner/repo`: from the git remote or earlier context; ask if ambiguous
+- `--title`: exactly as approved
+- `--body`: exactly as approved, Filed by footer included, **Epic** line removed (it's draft metadata, applied as the parent below); pass via HEREDOC so markdown survives
+- `--label`: only labels the user specified
 
 ```sh
 gh issue create --repo owner/repo --title "Short declarative title" --body "$(cat <<'EOF'
@@ -84,23 +78,21 @@ EOF
 )"
 ```
 
-### After filing: attach to the epic, if one was approved
+### Approved Epic line → attach as parent
 
-If the approved draft carries an **Epic** line, set that epic as the issue's parent via the sub-issues API. It takes the child's numeric database `id` (not the issue number, not the node ID):
+The sub-issues API takes the child's numeric database `id` (not the issue number, not the node ID):
 
 ```sh
 CHILD_ID="$(gh api repos/owner/repo/issues/<issue-number> --jq .id)"
 gh api repos/owner/repo/issues/<epic-number>/sub_issues -F sub_issue_id="$CHILD_ID"
 ```
 
-If there's no Epic line, skip this.
-
-### After filing an epic
-
-Add the issue to the project board and tell the user it still needs its board Status set to `Epics` and a Focus (Now / Next / Later) — those are set on the board, usually by the Product Owner:
+### Filed an epic → add to the board
 
 ```sh
 gh project item-add 1 --owner dam-agents --url <issue-url>
 ```
 
-Return the resulting issue URL to the user in one line (mention the epic it was attached to, if any). Do not add commentary about what was filed — the draft already conveyed that.
+Tell the user it still needs board Status `Epics` and a Focus (Now / Next / Later), usually set by the Product Owner.
+
+Return the issue URL in one line (plus the epic it was attached to, if any), with no commentary on what was filed.

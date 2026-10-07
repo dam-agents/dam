@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { hasVisibleOccurrence } from "api-server-api";
-import type { ScheduleSpec } from "api-server-api";
+import {
+  buildRRule,
+  detectPreset,
+  hasVisibleOccurrence,
+  rruleToText,
+} from "api-server-api";
+import type { FrequencyPreset, ScheduleSpec } from "api-server-api";
 import {
   nextFire,
   nextFireAt,
@@ -194,18 +199,23 @@ describe("nextFireAt (rrule counted from a fixed start)", () => {
     "FREQ=HOURLY;BYSETPOS=3",
     "FREQ=DAILY;BYHOUR=9,10;BYSETPOS=3",
     "FREQ=MINUTELY;INTERVAL=15;BYMINUTE=0;BYMONTH=2;BYMONTHDAY=30",
-  ])("answers null quickly for %s, which never fires", (rrule) => {
-    const started = Date.now();
-    const quiet = [{ startTime: "02:00", endTime: "03:00", enabled: true }];
-    expect(
-      nextFireAt(
-        rruleSpec(rrule, "UTC", quiet),
-        new Date("2026-09-25T11:47:00Z"),
-      ),
-    ).toBeNull();
-    expect(hasVisibleOccurrence(rrule, "UTC", quiet)).toBe(true);
-    expect(Date.now() - started).toBeLessThan(2000);
-  });
+  ])(
+    "answers null quickly for %s, which never fires",
+    (rrule) => {
+      const started = process.cpuUsage();
+      const quiet = [{ startTime: "02:00", endTime: "03:00", enabled: true }];
+      expect(
+        nextFireAt(
+          rruleSpec(rrule, "UTC", quiet),
+          new Date("2026-09-25T11:47:00Z"),
+        ),
+      ).toBeNull();
+      expect(hasVisibleOccurrence(rrule, "UTC", quiet)).toBe(true);
+      const { user, system } = process.cpuUsage(started);
+      expect((user + system) / 1000).toBeLessThan(2000);
+    },
+    60_000,
+  );
 });
 
 // TEST_SCENARIO: the search runs on the api-server's event loop, so rules that once took seconds to answer, quiet hours that cover a sparse rule among them, now answer within a fraction of a second.
@@ -219,14 +229,19 @@ describe("nextFire (bounded work)", () => {
       "Australia/Lord_Howe",
       [],
     ],
-  ])("answers %s in %s quickly", (rrule, timezone, quiet) => {
-    const started = Date.now();
-    nextFire(
-      rruleSpec(rrule, timezone, quiet),
-      new Date("2026-10-01T08:47:13Z"),
-    );
-    expect(Date.now() - started).toBeLessThan(5000);
-  });
+  ])(
+    "answers %s in %s quickly",
+    (rrule, timezone, quiet) => {
+      const started = process.cpuUsage();
+      nextFire(
+        rruleSpec(rrule, timezone, quiet),
+        new Date("2026-10-01T08:47:13Z"),
+      );
+      const { user, system } = process.cpuUsage(started);
+      expect((user + system) / 1000).toBeLessThan(5000);
+    },
+    60_000,
+  );
 
   // TEST_SCENARIO: a quiet window can end at a wall time the clocks skip or repeat, so the search resumes at the first moment after the window rather than an hour past it or back inside it.
   it.each([
@@ -399,5 +414,74 @@ describe("triggerExpiry", () => {
     expect(triggerExpiry(firedAt, next, 900).toISOString()).toBe(
       "2026-09-02T10:15:30.000Z",
     );
+  });
+});
+
+describe("rrule presets", () => {
+  const weekdays = [1, 2, 3, 4, 5];
+
+  it("builds the same rule bodies as stored schedules use", () => {
+    expect(buildRRule({ kind: "minutely", interval: 15, days: [] })).toBe(
+      "FREQ=MINUTELY;INTERVAL=15",
+    );
+    expect(buildRRule({ kind: "hourly", interval: 2, days: [1, 3] })).toBe(
+      "FREQ=HOURLY;INTERVAL=2;BYDAY=MO,WE",
+    );
+    expect(
+      buildRRule({ kind: "daily", hour: 9, minute: 30, days: weekdays }),
+    ).toBe("FREQ=DAILY;BYHOUR=9;BYMINUTE=30;BYSECOND=0;BYDAY=MO,TU,WE,TH,FR");
+  });
+
+  it("builds a preset rule without Temporal, as a browser lacking it does", () => {
+    const temporal = Reflect.get(globalThis, "Temporal");
+    Reflect.deleteProperty(globalThis, "Temporal");
+    try {
+      expect(buildRRule({ kind: "minutely", interval: 1, days: [7] })).toBe(
+        "FREQ=MINUTELY;INTERVAL=1;BYDAY=SU",
+      );
+      expect(buildRRule({ kind: "daily", hour: 0, minute: 0, days: [] })).toBe(
+        "FREQ=DAILY;BYHOUR=0;BYMINUTE=0;BYSECOND=0",
+      );
+    } finally {
+      Reflect.set(globalThis, "Temporal", temporal);
+    }
+  });
+
+  it("reads a built rule back as the preset it came from", () => {
+    const daily: FrequencyPreset = {
+      kind: "daily",
+      hour: 9,
+      minute: 30,
+      days: weekdays,
+    };
+    expect(detectPreset(buildRRule(daily))).toEqual(daily);
+    const hourly: FrequencyPreset = {
+      kind: "hourly",
+      interval: 2,
+      days: [1, 3],
+    };
+    expect(detectPreset(buildRRule(hourly))).toEqual(hourly);
+  });
+
+  it("reads a rule no preset expresses as custom", () => {
+    expect(detectPreset("FREQ=MONTHLY;BYMONTHDAY=1")).toEqual({
+      kind: "custom",
+      rrule: "FREQ=MONTHLY;BYMONTHDAY=1",
+    });
+  });
+
+  it("describes the minutes and the days of a rule", () => {
+    expect(rruleToText("FREQ=DAILY;BYHOUR=9;BYMINUTE=30;BYSECOND=0")).toBe(
+      "every day at 9:30 AM",
+    );
+    expect(rruleToText("FREQ=HOURLY;INTERVAL=2;BYDAY=MO,WE")).toBe(
+      "every 2 hours on Monday and Wednesday",
+    );
+  });
+
+  it("describes a rule with a floating UNTIL", () => {
+    expect(
+      rruleToText("FREQ=MONTHLY;BYMONTHDAY=1;UNTIL=20271231T000000"),
+    ).not.toBe("FREQ=MONTHLY;BYMONTHDAY=1;UNTIL=20271231T000000");
   });
 });

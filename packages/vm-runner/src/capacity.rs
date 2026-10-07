@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::state::{machine_ids, read_spec};
 
-// UNIT_BOUNDARY_DESCRIPTION: whether one more machine fits in the memory this runner was given. A microVM's memory is taken from the runner's own container at boot, so a machine admitted over the limit is not slow — it is the runner being killed for going over its limit, taking every machine on the node with it. Admission is therefore decided before the machine is created, and against what the other machines are actually using: their specs on disk for the ones already running, and the size each in-flight create asked for, which is not on disk yet and would otherwise be counted as nothing right when two creates race.
+// UNIT_BOUNDARY_DESCRIPTION: whether one more machine fits in the memory this runner was given. A guest takes host memory only as it touches it and hands freed memory back, so a running machine is counted at what its VMM was last measured holding plus a headroom for it to grow into, never above its size, and an owner can run more machines than their sizes add up to. A machine not yet measured, and each in-flight create, which is not on disk yet and would otherwise be counted as nothing right when two creates race, count at their full size. Guests that grow together past the headroom can still take the runner over its limit, and the kernel then kills it with every machine of its owner; the controller hibernates idle agents before that, from the use the runner reports.
 
 // UNIT_BOUNDARY_DESCRIPTION: what the runner has to hand out. A limit of zero is a runner told nothing about its memory, which admits everything — the controller sets this from the pod's own limit, and a runner that invented one would refuse machines its node had room for.
 pub struct Capacity<'a> {
@@ -11,6 +11,8 @@ pub struct Capacity<'a> {
     pub limit_mib: i32,
     // UNIT_BOUNDARY_DESCRIPTION: what is kept back from the machines, for the runner process itself and the VMM threads it runs them on. It is subtracted from the limit rather than added to each machine, because it is paid once however many machines there are.
     pub reserve_mib: i32,
+    // UNIT_BOUNDARY_DESCRIPTION: what a measured machine is counted at beyond its measurement, for the guest to grow into between two probes and before the controller acts on pressure.
+    pub headroom_mib: i32,
 }
 
 impl Capacity<'_> {
@@ -20,11 +22,12 @@ impl Capacity<'_> {
         want_mib: i32,
         committing: &BTreeMap<String, i32>,
         running: &dyn Fn(&str) -> bool,
+        resident: &dyn Fn(&str) -> Option<i32>,
     ) -> anyhow::Result<()> {
         if self.limit_mib == 0 {
             return Ok(());
         }
-        let used = self.committed(Some(id), committing, running)?;
+        let used = self.committed(Some(id), committing, running, resident)?;
         if used + i64::from(want_mib) + i64::from(self.reserve_mib) > i64::from(self.limit_mib) {
             anyhow::bail!(
                 "this machine's {want_mib} MiB does not fit: the VM runner has {} MiB for machines and {used} MiB is already committed; stop another agent or give the runner more memory",
@@ -34,12 +37,13 @@ impl Capacity<'_> {
         Ok(())
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the memory the other machines hold, as admission counts it — what each in-flight operation asked for, and the applied size of each machine that is running.
+    // UNIT_BOUNDARY_DESCRIPTION: the memory the other machines hold, as admission counts it — what each in-flight operation asked for, and each running machine at its measured use plus headroom, or its applied size when unmeasured, whichever is smaller.
     pub fn committed(
         &self,
         except: Option<&str>,
         committing: &BTreeMap<String, i32>,
         running: &dyn Fn(&str) -> bool,
+        resident: &dyn Fn(&str) -> Option<i32>,
     ) -> anyhow::Result<i64> {
         let mut ids = machine_ids(self.state_dir)?;
         ids.extend(committing.keys().cloned());
@@ -53,7 +57,11 @@ impl Capacity<'_> {
                 continue;
             }
             if let Some(applied) = read_spec(self.state_dir, other) {
-                used += i64::from(applied.memory_mib);
+                let size = applied.memory_mib;
+                used += i64::from(
+                    resident(other)
+                        .map_or(size, |mib| size.min(mib.saturating_add(self.headroom_mib))),
+                );
             }
         }
         Ok(used)
@@ -78,8 +86,15 @@ mod tests {
             state_dir: state,
             limit_mib: 8192,
             reserve_mib: 1024,
+            headroom_mib: 0,
         }
-        .room_for("agent-a", 2048, &committing(&[("agent-b", 6000)]), &never)
+        .room_for(
+            "agent-a",
+            2048,
+            &committing(&[("agent-b", 6000)]),
+            &never,
+            &unmeasured,
+        )
         .unwrap_err()
         .to_string();
 
@@ -97,8 +112,9 @@ mod tests {
             state_dir: dir.path(),
             limit_mib: 0,
             reserve_mib: 512,
+            headroom_mib: 0,
         }
-        .room_for("agent-a", 64_000, &BTreeMap::new(), &never)
+        .room_for("agent-a", 64_000, &BTreeMap::new(), &never, &unmeasured)
         .is_ok());
     }
 
@@ -114,20 +130,81 @@ mod tests {
             state_dir: state,
             limit_mib: 8192,
             reserve_mib: 0,
+            headroom_mib: 0,
         };
         let running_b = |id: &str| id == "agent-b";
 
         assert!(
             capacity
-                .room_for("agent-a", 4096, &BTreeMap::new(), &running_b)
+                .room_for("agent-a", 4096, &BTreeMap::new(), &running_b, &unmeasured)
                 .is_ok(),
             "the stopped machine was counted, and a machine that fits was refused"
         );
         assert!(
             capacity
-                .room_for("agent-a", 4097, &BTreeMap::new(), &|_: &str| true)
+                .room_for(
+                    "agent-a",
+                    4097,
+                    &BTreeMap::new(),
+                    &|_: &str| true,
+                    &unmeasured
+                )
                 .is_err(),
             "both were counted and there is no room"
+        );
+    }
+
+    // TEST_SCENARIO: guests hold only what they touch, so a running machine counts at its measured use plus headroom, which is what lets an owner run more machines than their sizes add up to. It never counts above its size, so a guest measured near its cap is held to it, and one not yet measured counts at its size until the prober has looked.
+    #[test]
+    fn a_running_machine_counts_at_its_measured_use_plus_headroom() {
+        let dir = TempDir::new("measured");
+        let state = dir.path();
+        created(state, "agent-b", 4096);
+        created(state, "agent-c", 4096);
+        let capacity = Capacity {
+            state_dir: state,
+            limit_mib: 8192,
+            reserve_mib: 0,
+            headroom_mib: 256,
+        };
+        let all = |_: &str| true;
+        let used = |mib: i32| move |id: &str| (id == "agent-b").then_some(mib);
+
+        assert!(
+            capacity
+                .room_for(
+                    "agent-a",
+                    8192 - 4096 - 768,
+                    &BTreeMap::new(),
+                    &all,
+                    &used(512)
+                )
+                .is_ok(),
+            "agent-b was counted at more than its 512 MiB plus 256 MiB of headroom"
+        );
+        assert!(
+            capacity
+                .room_for(
+                    "agent-a",
+                    8192 - 4096 - 767,
+                    &BTreeMap::new(),
+                    &all,
+                    &used(512)
+                )
+                .is_err(),
+            "agent-b was counted at less than its use plus headroom"
+        );
+        assert!(
+            capacity
+                .room_for("agent-a", 1, &BTreeMap::new(), &all, &used(4000))
+                .is_err(),
+            "a machine near its size was counted above it, or the unmeasured one below its size"
+        );
+        assert!(
+            capacity
+                .room_for("agent-a", 1, &BTreeMap::new(), &all, &unmeasured)
+                .is_err(),
+            "an unmeasured machine was counted below its size"
         );
     }
 
@@ -141,16 +218,29 @@ mod tests {
             state_dir: state,
             limit_mib: 8192,
             reserve_mib: 0,
+            headroom_mib: 0,
         };
         assert!(
             capacity
-                .room_for("agent-a", 4096, &committing(&[("agent-b", 4096)]), &never)
+                .room_for(
+                    "agent-a",
+                    4096,
+                    &committing(&[("agent-b", 4096)]),
+                    &never,
+                    &unmeasured
+                )
                 .is_ok(),
             "the two exactly fill the runner"
         );
         assert!(
             capacity
-                .room_for("agent-a", 4097, &committing(&[("agent-b", 4096)]), &never)
+                .room_for(
+                    "agent-a",
+                    4097,
+                    &committing(&[("agent-b", 4096)]),
+                    &never,
+                    &unmeasured
+                )
                 .is_err(),
             "a machine in flight was counted as nothing"
         );
@@ -168,12 +258,14 @@ mod tests {
                 state_dir: state,
                 limit_mib: 8192,
                 reserve_mib: 0,
+                headroom_mib: 0,
             }
             .room_for(
                 "agent-a",
                 4097,
                 &committing(&[("agent-b", 4096)]),
-                &|_: &str| true
+                &|_: &str| true,
+                &unmeasured
             )
             .is_err(),
             "the old 512 MiB spec was counted instead of the 4096 MiB being committed"
@@ -192,12 +284,14 @@ mod tests {
                 state_dir: state,
                 limit_mib: 8192,
                 reserve_mib: 0,
+                headroom_mib: 0,
             }
             .room_for(
                 "agent-a",
                 6000,
                 &committing(&[("agent-a", 6000)]),
-                &|_: &str| true
+                &|_: &str| true,
+                &unmeasured
             )
             .is_ok(),
             "a machine was refused the memory it is already running on"
@@ -212,17 +306,30 @@ mod tests {
             state_dir: dir.path(),
             limit_mib: 8192,
             reserve_mib: 1024,
+            headroom_mib: 0,
         };
 
         assert!(
             capacity
-                .room_for("agent-a", 8192 - 1024, &BTreeMap::new(), &never)
+                .room_for(
+                    "agent-a",
+                    8192 - 1024,
+                    &BTreeMap::new(),
+                    &never,
+                    &unmeasured
+                )
                 .is_ok(),
             "an empty runner cannot fill what it has left"
         );
         assert!(
             capacity
-                .room_for("agent-a", 8192 - 1023, &BTreeMap::new(), &never)
+                .room_for(
+                    "agent-a",
+                    8192 - 1023,
+                    &BTreeMap::new(),
+                    &never,
+                    &unmeasured
+                )
                 .is_err(),
             "a machine was given a byte of the runner's own memory"
         );
@@ -230,6 +337,10 @@ mod tests {
 
     fn never(_: &str) -> bool {
         false
+    }
+
+    fn unmeasured(_: &str) -> Option<i32> {
+        None
     }
 
     fn committing(entries: &[(&str, i32)]) -> BTreeMap<String, i32> {

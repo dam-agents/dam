@@ -60,6 +60,9 @@ pub struct MachineStatus {
     pub cpus: i32,
     #[serde(rename = "memoryMiB", skip_serializing_if = "is_zero")]
     pub memory_mib: i32,
+    // UNIT_BOUNDARY_DESCRIPTION: the host memory the running machine's VMM holds, as the prober last measured it. The guest hands freed memory back, so this is what the machine uses, and what the controller sizes the runner's memory request by. Zero while nothing has been measured, which the controller reads as the machine's full size.
+    #[serde(rename = "usedMiB", skip_serializing_if = "is_zero")]
+    pub used_mib: i32,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub message: String,
     // UNIT_BOUNDARY_DESCRIPTION: changes whenever anything else in this status changes. A status read given `since` with this value waits until it changes, which is how the controller learns that a booting guest answered without polling for it.
@@ -218,6 +221,7 @@ mod tests {
                 ready: true,
                 cpus: 2,
                 memory_mib: 2048,
+                used_mib: 640,
                 message: "up".into(),
                 version: 1,
                 home_seeded_from:

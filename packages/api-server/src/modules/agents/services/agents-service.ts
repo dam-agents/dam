@@ -452,7 +452,10 @@ export function executeTemplateUpgrade(deps: {
   owner: string | undefined;
   getAgent: (id: string) => Promise<InfraAgent | null>;
   readTemplateSpec: ReadTemplateSpec;
-  patchImage: (id: string, image: string) => Promise<InfraAgent | null>;
+  patchSpec: (
+    id: string,
+    patch: { image: string; harness?: string },
+  ) => Promise<InfraAgent | null>;
 }) {
   return async (
     id: string,
@@ -472,7 +475,10 @@ export function executeTemplateUpgrade(deps: {
     const update = templateImageUpdate(infra.spec.image, tmpl.spec.image);
     if (!update) return ok(infra);
 
-    const patched = await deps.patchImage(id, update.toImage);
+    const patched = await deps.patchSpec(id, {
+      image: update.toImage,
+      ...(tmpl.spec.harness ? { harness: tmpl.spec.harness } : {}),
+    });
     if (!patched) return err({ type: "AgentNotFound" as const });
     securityLog("info", "agent.upgrade", {
       category: "resource",
@@ -1364,8 +1370,8 @@ export function createAgentsService(deps: {
         owner: deps.owner,
         getAgent: (agentId) => deps.repo.get(agentId, deps.owner),
         readTemplateSpec: deps.readTemplateSpec,
-        patchImage: (agentId, image) =>
-          deps.repo.updateSpec(agentId, deps.owner, { image }),
+        patchSpec: (agentId, patch) =>
+          deps.repo.updateSpec(agentId, deps.owner, patch),
       })(id, expectedToImage);
       if (!result.ok) return result;
       emit({

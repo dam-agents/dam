@@ -37,13 +37,6 @@ so it inherits the `claude` CLI, the model gateway, and CA trust. On top it adds
 - The `nous` package in a venv at `$NOUS_VENV`, a mise `pipx:` tool installed
   **straight from the public GitHub repo** at a pinned tag, with the `nous`
   CLI on `PATH`. No source vendoring.
-- A build-time patch ([`patch-campaign-schema.py`](./patch-campaign-schema.py))
-  that adds the `channels:` property to the installed `campaign.schema.yaml`.
-  Nous's runtime reads `campaign.channels` at every gate, but the v0.4.0 schema
-  omits the property while forbidding unknown top-level keys, so any campaign
-  using channels is rejected at pre-flight ([Nous issue #296](https://github.com/AI-native-Systems-Research/agentic-strategy-evolution/issues/296))
-  — which would break the channel bridge below. The patch is idempotent and
-  self-verifying; it no-ops once a Nous release ships the property.
 - `NOUS_ALLOW_AUTO_APPROVE=1` so `--auto-approve` runs are unconditional in this
   pod (the design/findings human gates auto-pass) — the only approval mode this
   pod runs in (see `AGENTS.md`).
@@ -53,9 +46,9 @@ so it inherits the `claude` CLI, the model gateway, and CA trust. On top it adds
 - A Nous-oriented [`AGENTS.md`](./rootfs/etc/AGENTS.md) as the chat-mode system context,
   plus the [`nous` skill](./rootfs/app/working-dir/.agents/skills/nous/SKILL.md) (CLI +
   campaign-authoring reference) shipped into the workspace.
-- The Nous **wiki** slash commands (`post-campaign`, `index-wiki`,
-  `visualize-campaign`, `visualize-registry`, `suggest-next`) vendored verbatim
-  from the upstream repo into `~/.claude/commands/`, with their render scripts in
+- The Nous **wiki** commands (`post-campaign`, `index-wiki`,
+  `visualize-campaign`, `visualize-registry`, `suggest-next`) vendored from the
+  upstream repo as skills into `~/.agents/skills/` (`mise run :sync-commands`), with their render scripts in
   `~/scripts/`. They turn finished campaigns' `ledger.json`/`principles.json`
   into a cross-campaign knowledge graph under `~/.nous/wiki/` so findings
   compound across runs.

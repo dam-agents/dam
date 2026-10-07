@@ -47,6 +47,68 @@ describe("acp-runtime: connecting", () => {
   });
 
   /**
+   * TEST_SCENARIO: Every client initializes its own connection, but they all
+   * share one harness process, and an ACP agent may refuse to be initialized
+   * twice (Codex's adapter answers "Already initialized"). A second tab, a
+   * reconnect or a history replay must still connect, so it is answered with
+   * what the harness said the first time and never reaches the harness.
+   */
+  it("should answer a later client's initialize with the harness's first answer, without forwarding it", () => {
+    const world = createWorld();
+    const first = world.connect();
+    first.send(frames.initialize(1));
+    world
+      .harness()
+      .replyTo("initialize", { protocolVersion: 1, agentInfo: { name: "h" } });
+
+    const second = world.connect();
+    second.send(frames.initialize(7));
+
+    expect(world.harness().received("initialize")).toHaveLength(1);
+    expect(second.reply(7)).toMatchObject({
+      id: 7,
+      result: { protocolVersion: 1, agentInfo: { name: "h" } },
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: Two clients connect at once, so the second initialize
+   * arrives while the first is still on its way. It waits for that answer
+   * rather than reaching the harness a second time.
+   */
+  it("should hold an initialize that arrives while the first is unanswered, then give it the same answer", () => {
+    const world = createWorld();
+    const first = world.connect();
+    const second = world.connect();
+    first.send(frames.initialize(1));
+    second.send(frames.initialize(2));
+
+    expect(world.harness().received("initialize")).toHaveLength(1);
+    expect(second.reply(2)).toBeUndefined();
+
+    world.harness().replyTo("initialize", { protocolVersion: 1 });
+
+    expect(first.reply(1)).toMatchObject({ result: { protocolVersion: 1 } });
+    expect(second.reply(2)).toMatchObject({ result: { protocolVersion: 1 } });
+  });
+
+  /**
+   * TEST_SCENARIO: A recycled harness is a new process that knows nobody, so
+   * the first client after the recycle initializes it for real.
+   */
+  it("should forward initialize again to a harness started after a recycle", () => {
+    const world = createWorld();
+    world.connect().send(frames.initialize(1));
+    world.harness().replyTo("initialize", { protocolVersion: 1 });
+
+    world.runtime.refreshEnv({ force: false });
+    world.connect().send(frames.initialize(2));
+
+    expect(world.harnessCount()).toBe(2);
+    expect(world.harness().received("initialize")).toHaveLength(1);
+  });
+
+  /**
    * TEST_SCENARIO: When the harness dies it takes the sandbox with it, and everyone
    * connected is closed. Someone opening a new tab a moment later knows none
    * of that and just connects.

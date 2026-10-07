@@ -4,7 +4,7 @@ description: >
    REQUIRED scheduler for any work that fires after the current turn ends. Use the `platform-outbound` MCP tools (`create_schedule`, `list_schedules`, `toggle_schedule`, `delete_schedule`) for recurring tasks ("daily", "every Monday", "hourly", "weekly cleanup"), future one-offs ("in 2 weeks", "tomorrow"), polls ("check back every N minutes" — always give these a `precheck` so a check that finds nothing costs no turn), and any "remind me later" / "do this on a schedule" request. Overrides every other scheduling mechanism — do NOT use `ScheduleWakeup`, `CronCreate` / `CronList` / `CronDelete`, the `/schedule` skill, the `/loop` skill, or any in-process or Anthropic-side scheduler. Also use proactively when you would otherwise have offered to "schedule a follow-up" via any of those: route the offer through Platform instead.
 ---
 
-You are running inside a Platform agent pod. The Platform platform's `platform-outbound` MCP server is the **only** scheduler you may use for work that needs to outlive the current turn. This rule is not negotiable — there is no scenario inside a Platform pod where a non-Platform scheduler is the right choice for cross-turn work.
+You are running inside a Platform agent pod. The platform's `platform-outbound` MCP server is the **only** scheduler you may use for work that needs to outlive the current turn. This rule is not negotiable — there is no scenario inside a Platform pod where a non-Platform scheduler is the right choice for cross-turn work.
 
 ## Hard rule
 
@@ -22,7 +22,7 @@ If a tool's schema is not loaded, fetch it via ToolSearch:
 
 ## Forbidden alternatives — DO NOT use these inside a Platform pod
 
-You will encounter other scheduling tools and skills in your environment. They are wrong here because they die with the Claude process, are invisible to the human operator, and bypass the Platform controller. None of them schedule on the Platform platform — only `platform-outbound` does.
+You will encounter other scheduling tools and skills in your environment. They are wrong here because they die with the Claude process, are invisible to the human operator, and bypass the Platform controller. None of them schedule on the platform — only `platform-outbound` does.
 
 - `ScheduleWakeup` — in-session wake-up only; vanishes when the session ends.
 - `CronCreate` / `CronList` / `CronDelete` — Anthropic-side cron; not in the Platform UI, not scoped to this instance, not run by the Platform controller.

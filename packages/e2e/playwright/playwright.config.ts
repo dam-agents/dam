@@ -124,6 +124,16 @@ const suite: NamedProject[] = [
     dependencies: ["connection-regrant"],
     use: { ...devices["Desktop Chrome"] },
   },
+  ...(laneBackend === "vm"
+    ? [
+        {
+          name: "harness-tools",
+          testMatch: /22-.*\.spec\.ts$/,
+          dependencies: ["auth"],
+          use: { ...devices["Desktop Chrome"] },
+        },
+      ]
+    : []),
   ...(full
     ? [
         {

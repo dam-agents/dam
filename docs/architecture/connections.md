@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-05
+Last verified: 2026-10-06
 
 ## Overview
 
@@ -224,8 +224,34 @@ per-agent override supplies one, and when neither does, nobody has to
 step in: because this Connection redirects Bob, the platform seeds one
 before the harness starts, taking the first of the names the endpoint
 lists once they are ordered ([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
+A key the endpoint refuses the model-information route still gets one:
+the platform then takes the names from the OpenAI model list, which such
+a key may call.
 The seed yields to a pin rather than overriding it — it fills an empty
 slot only, so a chosen model is never swapped for one nobody picked.
+
+### App preset: Curve Bender
+
+A second LiteLLM proxy, fronting open models hosted on RITS rather than
+Claude and GPT. It is a provider of its own, offered next to the IBM
+LiteLLM proxy so an agent can hold either or both, and contributes the
+same env, the same Bob prefix rewrite and the same inert key placeholder,
+aimed at its own host. What differs is what it tells the harnesses about its
+models, which the endpoint's model list names but does not describe. Codex and Pi start on GLM, since the
+models the IBM LiteLLM proxy pins do not exist here. Pi gives every model the
+endpoint lists one shared description, so the Connection tells it they are
+reasoning models — without that Pi drops their thinking — and names the
+smallest context window among them, so Pi compacts before the endpoint
+refuses a request. Their thinking is steered with the OpenAI-style
+reasoning effort; the endpoint ignores the switch GLM's own vendor API uses,
+so Pi's built-in description of GLM would be the wrong one here. Claude Code
+takes its models from the endpoint's list
+([harness configuration](harness-config.md#model-discovery-and-the-seeded-model))
+but knows nothing of their size, so the Connection names the same window to
+it too; otherwise it assumes one of its own and compacts too late. Pi's
+stream from this endpoint can carry the end of the thinking and the start of
+the answer in one piece, which Pi alone would show as answer first, so the
+image's Pi extension hands it the thinking first.
 
 ### App preset: AWS Bedrock
 

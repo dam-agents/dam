@@ -90,10 +90,16 @@ function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
     .map((p) => expandHome(p, home));
 }
 
+const harnessManifest = join(
+  __dir,
+  `../runtime-manifests/${process.env.PLATFORM_HARNESS}.yaml`,
+);
 const runtimeManifest = loadManifest(
   config.PLATFORM_DEV
     ? join(__dir, "../../agents/base/rootfs/app/runtime-manifest.yaml")
-    : join(__dir, "../runtime-manifest.yaml"),
+    : existsSync(harnessManifest)
+      ? harnessManifest
+      : join(__dir, "../runtime-manifest.yaml"),
 );
 
 const platformAgentId =

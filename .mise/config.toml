@@ -1,4 +1,4 @@
-min_version = "2026.9.13"
+min_version = "2026.9.16"
 monorepo_root = true
 
 [monorepo]
@@ -17,7 +17,7 @@ CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "{{config_root}}/.mise/zig/cc"
 repo_root = "{{config_root}}"
 base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:cecbac9ab52b9670ef05a40b61bda09ba2119bcafdfe621e420d3d171175057d"
 base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:ea4830e9673b85d60f5a47a3390bb58a4a261b949b0a563f74538bb321737561"
-base_image_keycloak = "quay.io/keycloak/keycloak:26.7.5@sha256:37dbaf6f0722c9ec246335f36e1ef8b2e6cb960f7c27e0d8c615121a3d475a85"
+base_image_keycloak = "quay.io/keycloak/keycloak:26.8.0@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc"
 base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:e793ca0c2be85e5113b8732248b8100a795f412374434af36fd4cf665e32764b"
 base_image_debian = "mirror.gcr.io/library/debian:trixie-slim"
 
@@ -30,11 +30,13 @@ auto = true
 "conda:coreutils" = "latest"
 "conda:bash" = "latest"
 "conda:pigz" = "latest"
+"github:Boshen/cargo-shear" = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
 "go:sigs.k8s.io/crdify" = "latest"
 "npm:json-schema-to-typescript" = "latest"
+"npm:knip" = "latest"
 crane = "latest"
 fd = "latest"
 gh = "latest"
@@ -124,7 +126,7 @@ deny_net = true
 deny_write = true
 
 [tasks."check:comment-types"]
-description = "Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"
+description = "Every code comment must carry a registered type prefix (see Code comments in AGENTS.md)"
 run = { task = "strip-comments", args = ["--check"] }
 
 [tasks."check:skill-manifest"]

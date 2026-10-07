@@ -6,23 +6,17 @@ description: |
 
 # Align Repo Conventions
 
-Audit the current repo's `.claude/settings.json` and `CLAUDE.md` against team standards.
-
 ## Execution Rules
 
-- **Execute the checklist strictly step by step.**
 - Present ONE item per message. Show its status, and if action is needed, ask and **STOP**.
-- Do not present the next item until the user has responded.
 - If an item is already aligned, say so and immediately proceed to the next item in the same message.
 - If an item needs action, show current vs expected and ask: _"Want me to align this?"_
-- Never batch multiple action items into one message.
 - Never auto-apply changes — every modification requires explicit user confirmation.
 - **Merge, don't overwrite** — add missing keys without clobbering existing ones.
 - **Preserve existing content** in CLAUDE.md — don't remove or reorder existing sections.
 
 ## Checklist
 
-- [ ] **0. Self-update** — Run: `npx skills add https://github.com/apocohq/skills --skill align-repo -a claude-code -y`. If updated, tell the user: _"align-repo was updated. Please start a new session and re-run `/align-repo` to use the latest version."_ **Stop — do not continue with outdated instructions.**
 - [ ] **1. Gather state** — Read `.claude/settings.json`, `CLAUDE.md`, and check for `.claude/settings.local.json` (note existence, don't modify). If `.claude/settings.json` doesn't exist, ask if you should create it. If `CLAUDE.md` doesn't exist, ask if you should create it.
 - [ ] **2. Attribution config** — Check `.claude/settings.json` for the expected `attribution` block (see Reference A).
 - [ ] **3. Allowed tools** — Check `allowedTools` as a set (see Reference B). Report missing entries and flag extra entries (don't remove extras — they may be project-specific).

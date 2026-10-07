@@ -46,7 +46,7 @@ pub const STATUS_WAIT_CAP: Duration = Duration::from_secs(30);
 // UNIT_BOUNDARY_DESCRIPTION: how long closing the runner waits for the actions already running. They are cancelled first, so the wait covers only work that does not answer cancellation — a VMM call cannot be interrupted part-way.
 pub const CLOSE_GRACE: Duration = Duration::from_secs(30);
 
-// UNIT_BOUNDARY_DESCRIPTION: how long closing the runner gives its running machines to stop, all at once, after the actions have ended. A machine is a VMM process of this pod: left running, it is killed with the pod, its guest page cache unwritten on a disk with no journal to replay. A stop signals the workload, has the guest quiesce its disks and then powers it off, which takes seconds; the rest of this window is for a guest slow to confirm. CLOSE_GRACE and this together must fit inside the termination grace the controller gives the runner pod.
+// UNIT_BOUNDARY_DESCRIPTION: how long closing the runner gives its running machines to stop, all at once, after the actions have ended. A machine is a VMM process of this pod: left running, it is killed with the pod, its guest page cache unwritten. A stop signals the workload, has the guest quiesce its disks and then powers it off, which takes seconds; the rest of this window is for a guest slow to confirm. CLOSE_GRACE and this together must fit inside the termination grace the controller gives the runner pod.
 pub const STOP_ON_CLOSE: Duration = Duration::from_secs(40);
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a delete waits for the action in flight on its machine. The delete cancels that action's fetch first, so the wait covers only a VMM call. It stays under the controller's twenty-second request timeout: a delete still waiting then answers 503, and the controller asks again on its next reconcile.
@@ -70,6 +70,7 @@ pub struct Config {
     pub ports: RangeInclusive<u16>,
     pub memory_mib: i32,
     pub reserve_mib: i32,
+    pub headroom_mib: i32,
     pub listen: Option<Arc<Listen>>,
 }
 
@@ -95,7 +96,7 @@ struct Seen {
     error: Option<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, so the worker still takes no further action.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, so the worker still takes no further action.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -115,6 +116,7 @@ struct MachineEntry {
     probing: bool,
     version: u64,
     acting_mib: i32,
+    resident_mib: Option<i32>,
     cancel: Option<CancellationToken>,
     deletes: u32,
 }
@@ -1113,7 +1115,12 @@ impl Server {
     pub fn metrics_text(&self) -> String {
         let committed = self
             .capacity()
-            .committed(None, &self.committing(), &|other| self.known_running(other))
+            .committed(
+                None,
+                &self.committing(),
+                &|other| self.known_running(other),
+                &|other| self.resident(other),
+            )
             .ok();
         self.metrics.render(&Gauges {
             budget_bytes: self.config.image_budget,
@@ -1187,7 +1194,15 @@ impl Server {
             state_dir: &self.config.state_dir,
             limit_mib: self.config.memory_mib,
             reserve_mib: self.config.reserve_mib,
+            headroom_mib: self.config.headroom_mib,
         }
+    }
+
+    fn resident(&self, id: &str) -> Option<i32> {
+        locked(&self.machines)
+            .entries
+            .get(id)
+            .and_then(|e| e.resident_mib)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the memory each machine a worker is converging holds or is about to. A machine being created has no spec on disk yet, so without this two creates racing each other would both fit into the room for one. What counts is the action in flight as well as the spec stored behind it: a machine still booting holds its memory even when the spec behind the boot is a stop, and a restart may be moving between the applied size and the desired one, so it is counted at the larger of the two.
@@ -1224,10 +1239,13 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine fits the runner's memory, counting the machines running and the ones being brought up. Running is what the prober last recorded, so admitting one machine costs no probe per machine.
     fn room_for(&self, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
-        self.capacity()
-            .room_for(id, spec.memory_mib, &self.committing(), &|other| {
-                self.known_running(other)
-            })
+        self.capacity().room_for(
+            id,
+            spec.memory_mib,
+            &self.committing(),
+            &|other| self.known_running(other),
+            &|other| self.resident(other),
+        )
     }
 
     fn dead_for_long(&self, id: &str) -> bool {
@@ -1332,7 +1350,13 @@ impl Server {
             },
             None => self.look(id),
         };
+        let resident = (seen.state == State::Running)
+            .then(|| self.runtime.resident_mib(id))
+            .flatten();
         self.record(id, seen, Some(looked));
+        if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
+            entry.resident_mib = resident;
+        }
         self.note_slow_boot(id);
     }
 
@@ -1439,6 +1463,10 @@ impl Server {
         if let Some(spec) = applied {
             status.cpus = spec.cpus;
             status.memory_mib = spec.memory_mib;
+            status.used_mib = entry
+                .and_then(|e| e.resident_mib)
+                .filter(|_| state == State::Running)
+                .unwrap_or(0);
             status.nested = spec.nested_virtualization && self.runtime.nests();
         }
         if state == State::Unknown && status.message.is_empty() {
