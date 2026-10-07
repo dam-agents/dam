@@ -180,6 +180,7 @@ const {
   sessionChanges,
   activeTurns,
   subAgentSessions,
+  platformMcpEntry,
 } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
@@ -235,6 +236,7 @@ const runtimeChannel = await composeRuntimeChannel({
   stateBackend,
   harnessClient,
   triggerDriver,
+  findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
   readSessions: () =>
     sessionDirectoryEntries(sessionMetadata.all(), (sessionId) =>
       sessionMetadata.isTombstoned(sessionId),
@@ -250,7 +252,9 @@ const runtimeChannel = await composeRuntimeChannel({
       },
     }),
     createFilePlugin(),
-    createMcpEntryPlugin(),
+    createMcpEntryPlugin({
+      onPlatformEntry: (entry) => platformMcpEntry.set(entry),
+    }),
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
   onSnapshotProcessed: (contributions) => {

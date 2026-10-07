@@ -33,9 +33,11 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
   const nextRun =
     enabled && status?.nextRun
       ? timeUntil(status.nextRun)
-      : stopReason
-        ? "Stopped"
-        : "Paused";
+      : schedule.type === "once"
+        ? "—"
+        : stopReason
+          ? "Stopped"
+          : "Paused";
   const lastStatus = lastRunStatus(status?.lastResult);
   const declined = precheck ? declinedSummary(status ?? undefined) : null;
 
@@ -100,9 +102,15 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
           </div>
         </DetailCard>
         <DetailCard label="Timezone">{timezone ?? "—"}</DetailCard>
-        <DetailCard label="Session mode">
-          <span className="capitalize">{sessionMode ?? "fresh"}</span>
-        </DetailCard>
+        {schedule.type === "once" ? (
+          <DetailCard label="Model">
+            {schedule.model ?? "Agent default"}
+          </DetailCard>
+        ) : (
+          <DetailCard label="Session mode">
+            <span className="capitalize">{sessionMode ?? "fresh"}</span>
+          </DetailCard>
+        )}
       </div>
     </div>
   );

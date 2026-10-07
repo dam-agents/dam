@@ -11,6 +11,7 @@ import {
   type HarnessConfigCurrent,
 } from "agent-runtime-api";
 import { emit, EventType } from "../../../events.js";
+import type { EventLifecycleNotifier } from "./event-lifecycle.js";
 
 export interface IsAgentRunning {
   isRunning(agentId: string): Promise<boolean>;
@@ -24,6 +25,7 @@ export interface WorkerHandlerDeps {
   snapshotWriter: HarnessConfigSnapshotWriter;
   clientFor(agentId: string): AgentRuntimeClient;
   resolveOwner: (agentId: string) => Promise<string | null>;
+  notifyLifecycle?: EventLifecycleNotifier;
   log: (msg: string) => void;
 }
 
@@ -172,6 +174,7 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
       recovered,
       gaveUp,
       eventsGaveUp,
+      settledEvents,
       droppedKindsChanged,
     } = await deps.outboxRepo.recordOutcome(agentId, row.version, {
       ...settle,
@@ -181,6 +184,8 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
       ),
       droppedContributionKinds: payload.droppedContributionKinds,
     });
+
+    await deps.notifyLifecycle?.(settledEvents, "settled");
 
     if (droppedKindsChanged) {
       await emitContributionGapChanged(agentId);

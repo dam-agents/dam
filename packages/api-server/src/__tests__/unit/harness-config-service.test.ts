@@ -3,7 +3,10 @@ import type {
   HarnessConfigSnapshot,
   HarnessConfigSnapshotPatch,
 } from "api-server-api";
-import { createHarnessConfigService } from "../../modules/harness-config/services/harness-config-service.js";
+import {
+  createHarnessConfigService,
+  sessionModelChoices,
+} from "../../modules/harness-config/services/harness-config-service.js";
 import { harnessConfigSupported } from "../../modules/harness-config/index.js";
 
 type BumpCall = { agentId: string; events: unknown[] };
@@ -88,15 +91,15 @@ describe("harness-config service", () => {
       await makeService({
         capabilities: { harnessConfig: true },
       }).service.status("a1"),
-    ).toEqual({ supported: true, catalog: null });
+    ).toEqual({ supported: true, catalog: null, sessionModel: false });
     expect(
       await makeService({
         capabilities: { harnessConfig: false },
       }).service.status("a1"),
-    ).toEqual({ supported: false, catalog: null });
+    ).toEqual({ supported: false, catalog: null, sessionModel: false });
     expect(
       await makeService({ capabilities: null }).service.status("a1"),
-    ).toEqual({ supported: true, catalog: null });
+    ).toEqual({ supported: true, catalog: null, sessionModel: false });
   });
 
   it("status returns the option catalog advertised on hello", async () => {
@@ -114,7 +117,7 @@ describe("harness-config service", () => {
       await makeService({
         capabilities: { harnessConfig: true, harnessConfigCatalog: catalog },
       }).service.status("a1"),
-    ).toEqual({ supported: true, catalog });
+    ).toEqual({ supported: true, catalog, sessionModel: false });
   });
 
   it("rejects status for an agent the caller doesn't own", async () => {
@@ -137,5 +140,29 @@ describe("harnessConfigSupported", () => {
     expect(harnessConfigSupported({ contributions: [], events: [] })).toBe(
       false,
     );
+  });
+});
+
+describe("sessionModelChoices", () => {
+  const capabilities = {
+    sessionModel: true,
+    harnessConfigCatalog: {
+      options: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          choices: [{ value: "sonnet", name: "Sonnet" }],
+        },
+      ],
+    },
+  };
+
+  // TEST_SCENARIO: an agent on a gateway such as LiteLLM lists its real models only through discovery, so a one-time task must accept what the Config panel offers rather than the static tiers alone.
+  it("offers the discovered models when the provider listed any", () => {
+    expect(
+      sessionModelChoices(capabilities, [{ value: "claude/haiku-x" }]),
+    ).toEqual(["claude/haiku-x"]);
+    expect(sessionModelChoices(capabilities, null)).toEqual(["sonnet"]);
   });
 });

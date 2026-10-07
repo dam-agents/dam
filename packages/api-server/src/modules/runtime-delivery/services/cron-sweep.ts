@@ -1,6 +1,7 @@
 import type { OutboxRepo } from "../infrastructure/outbox-repo.js";
 import type { StateQueue } from "../infrastructure/state-queue.js";
 import type { IsAgentRunning } from "./worker-handler.js";
+import type { EventLifecycleNotifier } from "./event-lifecycle.js";
 
 export interface CronSweep {
   tick(): Promise<void>;
@@ -10,6 +11,7 @@ interface CronSweepDeps {
   outboxRepo: OutboxRepo;
   queue: StateQueue;
   agentRunningPort: IsAgentRunning;
+  notifyLifecycle?: EventLifecycleNotifier;
   log: (msg: string) => void;
   runningCheckConcurrency?: number;
   runningCheckTimeoutMs?: number;
@@ -127,8 +129,9 @@ export function createCronSweep(deps: CronSweepDeps): CronSweep {
       }
 
       const dropped = await deps.outboxRepo.deleteExpiredEvents();
-      if (dropped > 0) {
-        deps.log(`[runtime-sweep] dropped-expired ${dropped} events`);
+      if (dropped.length > 0) {
+        deps.log(`[runtime-sweep] dropped-expired ${dropped.length} events`);
+        await deps.notifyLifecycle?.(dropped, "expired");
       }
     } catch (err) {
       const e = err as Error & { cause?: unknown };
