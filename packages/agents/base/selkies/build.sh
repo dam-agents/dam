@@ -8,7 +8,7 @@ KVAZAAR_TAG=v2.3.2
 REQUIRES="cmake nasm pkg-config libclang-dev libvpx-dev libsvtav1enc-dev libdav1d-dev libde265-dev libgbm-dev libdrm-dev libwayland-dev libinput-dev libudev-dev libxkbcommon-dev libpixman-1-dev"
 
 dest="$1"
-cache="${PLATFORM_SELKIES_CACHE:-$HOME/.cache/platform-selkies}"
+cache="${PLATFORM_SELKIES_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/platform-selkies}"
 key="$(cat "$0" | sha256sum | cut -c1-16)"
 out="$cache/$key"
 python="${PLATFORM_SELKIES_PYTHON:-$(command -v python3)}"

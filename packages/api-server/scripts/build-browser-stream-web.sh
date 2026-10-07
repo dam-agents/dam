@@ -5,7 +5,7 @@ set -euo pipefail
 SELKIES_REV=f0b02a13a267c85cc54425ed12b2b9cfb568315a
 
 dest="$1"
-cache="${PLATFORM_SELKIES_WEB_CACHE:-$HOME/.cache/platform-selkies-web}"
+cache="${PLATFORM_SELKIES_WEB_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/platform-selkies-web}"
 here="$(cd "$(dirname "$0")" && pwd)"
 key="$(cat "$0" "$here/selkies-web-framed-pointer.patch" | sha256sum | cut -c1-16)"
 out="$cache/$key"
