@@ -7,8 +7,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Close,
-  Cube,
   Filter,
+  Gift,
   Folders,
   Help,
   Home,
@@ -95,7 +95,7 @@ export function IconRail({
   };
   const starterKits: Destination = {
     label: "Starter Kits",
-    icon: Cube,
+    icon: Gift,
     active: view === "presets",
     badge: 0,
     navigate: () => setView("presets"),
