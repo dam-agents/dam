@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# UNIT_BOUNDARY_DESCRIPTION: builds the browser panel's stream server — Selkies with a GPL-free pixelflux — into <dest>/opt/selkies. pixelflux's published wheels link x264 and x265 (GPL); built from source with PIXELFLUX_ENABLE_GPL=0 it encodes H.264 with Cisco's OpenH264 and H.265 with kvazaar, both BSD-licensed. pixelflux is pinned past 2.1.0, the release that still linked FFmpeg; kvazaar is built here because pixelflux needs 2.3.2 and Debian trixie has 2.3.1. Needs the -dev packages in REQUIRES, cmake, nasm and a Rust toolchain through mise on the build host; the result is cached by this script's content.
+# UNIT_BOUNDARY_DESCRIPTION: builds the browser panel's stream server — Selkies with a GPL-free pixelflux — into <dest>/opt/selkies. pixelflux's published wheels link x264 and x265 (GPL); built from source with PIXELFLUX_ENABLE_GPL=0 it encodes H.264 with Cisco's OpenH264 and H.265 with kvazaar, both BSD-licensed. pixelflux is pinned past 2.1.0, the release that still linked FFmpeg; kvazaar is built here because pixelflux needs 2.3.2 and Debian trixie has 2.3.1. Needs the -dev packages in REQUIRES, cmake, nasm, a C compiler and a Rust toolchain through mise on the build host; the repository's zig cross-linker is kept out of the pixelflux build, which links against the host's libraries; the result is cached by this script's content.
 set -euo pipefail
 
 SELKIES_REV=f0b02a13a267c85cc54425ed12b2b9cfb568315a
@@ -39,7 +39,9 @@ if [ ! -x "$out/opt/selkies/bin/selkies" ]; then
   "$src/venv/bin/pip" install -q --upgrade pip setuptools wheel setuptools-rust
   PIXELFLUX_ENABLE_GPL=0 CARGO_BUILD_JOBS="${PLATFORM_SELKIES_JOBS:-2}" PKG_CONFIG_PATH="$src/prefix/lib/pkgconfig" \
     LD_LIBRARY_PATH="$src/prefix/lib" \
-    mise exec rust@stable -- "$src/venv/bin/pip" install -q --target "$out/opt/selkies/site" "$src/pixelflux"
+    env -u CC_x86_64_unknown_linux_gnu -u CC_aarch64_unknown_linux_gnu -u AR_x86_64_unknown_linux_gnu -u AR_aarch64_unknown_linux_gnu \
+      -u CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER -u CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER \
+      mise -C "$src" exec rust@stable -- "$src/venv/bin/pip" install -q --target "$out/opt/selkies/site" "$src/pixelflux"
   "$src/venv/bin/pip" install -q --target "$out/opt/selkies/site" --no-deps "$src/selkies"
   "$src/venv/bin/python" -c 'import tomllib,sys; print("\n".join(d for d in tomllib.load(open(sys.argv[1],"rb"))["project"]["dependencies"] if not d.startswith("pixelflux")))' \
     "$src/selkies/pyproject.toml" >"$src/requirements.txt"
