@@ -196,7 +196,10 @@ export function startNewBoot(
 
 export function trackedSignature(rows: TrackedRow[]): string {
   return rows
-    .map((row) => `${row.identity}=${row.key}`)
+    .map(
+      (row) =>
+        `${row.identity}=${row.key}:${row.outputPath}:${row.keepsAwake}:${row.keepSource}`,
+    )
     .sort()
     .join("\n");
 }

@@ -16,7 +16,7 @@ function toTrpcError(
 }
 
 const noOutput = (key: string) => `no output for process ${key}`;
-const notRunning = (key: string) => `no running process ${key}`;
+const notRunning = () => "This process is no longer running.";
 
 export const processesRouter = t.router({
   list: t.procedure.query(({ ctx }) => ctx.processes.list()),

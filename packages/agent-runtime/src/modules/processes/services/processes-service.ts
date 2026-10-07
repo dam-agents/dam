@@ -142,7 +142,8 @@ function withDescendants(
  * hibernation, and the marks and overrides are dropped, since nothing outlives
  * one. The agent marks work with `platform-keep`; the user overrides any
  * decision and is never overruled by a later mark. Stop ends a row's whole
- * tree: SIGTERM first, SIGKILL after a grace period to what is left. Each scan
+ * tree: SIGTERM first, SIGKILL after a grace period to what is left, never to
+ * a process or group that took over a pid of the tree meanwhile. Each scan
  * publishes how many Detached Processes keep the agent awake, which makes the
  * runtime busy. It also reports a harness restart that waits for kept
  * Harness Tasks, and applies it on request. Watchers get a data-less notice
@@ -349,8 +350,11 @@ export function createProcessesService(
     group: number | null,
   ): Promise<void> {
     const { processes } = await deps.table.scan();
+    const leader = processes.find((p) => p.pid === group);
+    const sameGroup =
+      group !== null && (leader === undefined || keys.has(procKey(leader)));
     const survivors = processes.filter(
-      (p) => keys.has(procKey(p)) || (group !== null && p.pgrp === group),
+      (p) => keys.has(procKey(p)) || (sameGroup && p.pgrp === group),
     );
     const own = platformOwnPids(processes, deps.runtimePid);
     for (const p of withDescendants(survivors, processes)) {
