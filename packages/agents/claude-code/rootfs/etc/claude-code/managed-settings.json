@@ -1,4 +1,5 @@
 {
+  "skipDangerousModePermissionPrompt": true,
   "permissions": {
     "allow": [
       "mcp__platform-outbound",
