@@ -1,11 +1,10 @@
 import type { ProcessList as ProcessListData } from "agent-runtime-api";
 import type { CSSProperties, Ref } from "react";
 
-import { useStore } from "../../../store.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useProcesses } from "../api/queries.js";
-import { useProcessesWatch } from "../hooks/use-processes-watch.js";
+import { PROCESSES_SECTION_ID } from "../hooks/use-open-processes-section.js";
 import { ProcessList } from "./process-list.js";
 
 interface Props {
@@ -28,16 +27,14 @@ export function ProcessesPanel({
   ref,
 }: Props) {
   const operable = useIsAgentOperable(agentId);
-  const outputOpen = useStore((s) => s.openProcessOutputKey !== null);
-  const live = open || outputOpen;
   const { data, isPending, isError } = useProcesses(agentId, {
-    enabled: live,
+    enabled: true,
     poll: open,
   });
-  useProcessesWatch(agentId, live && data !== undefined);
 
   return (
     <SidebarSection
+      id={PROCESSES_SECTION_ID}
       title="Processes"
       open={open}
       onToggle={onToggle}
@@ -48,6 +45,7 @@ export function ProcessesPanel({
     >
       {open && (
         <ProcessesSectionBody
+          agentId={agentId}
           operable={operable}
           data={data}
           isPending={isPending}
@@ -60,12 +58,14 @@ export function ProcessesPanel({
 }
 
 function ProcessesSectionBody({
+  agentId,
   operable,
   data,
   isPending,
   isError,
   alwaysOn,
 }: {
+  agentId: string | null;
   operable: boolean;
   data: ProcessListData | undefined;
   isPending: boolean;
@@ -74,7 +74,8 @@ function ProcessesSectionBody({
 }) {
   if (!operable)
     return <PanelNotice text="Processes show once the agent is running." />;
-  if (data) return <ProcessList list={data} alwaysOn={alwaysOn} />;
+  if (data && agentId)
+    return <ProcessList agentId={agentId} list={data} alwaysOn={alwaysOn} />;
   if (isError)
     return <PanelNotice text="Couldn't read the agent's processes." />;
   if (isPending) return <PanelNotice text="Loading…" />;

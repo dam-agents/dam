@@ -10,8 +10,9 @@ features" settings tab (revealed by five taps on the version string). The
 current features are advanced connection types, the new sandbox runtime,
 interactive artifacts, addressed credential injection (a create-page and agent-settings switch for an agent whose gateway injects only requests that name a connection; a starter kit sets the same field whatever the flag says; the flag also shows the [browser panel](browser-panel.md) on such agents), agent telemetry (a per-reply timeline
 in the conversation), and the processes panel (a chat-view section listing what
-runs in the agent, what keeps it awake and what finished, with each process's output;
-see [agent-processes](agent-processes.md)). Graduating a feature to always-on is deletion: drop its
+runs in the agent, what keeps it awake and what finished, with each process's output,
+a Stop and a keep switch per process, and a header indicator that replaces the
+background-task one; see [agent-processes](agent-processes.md)). Graduating a feature to always-on is deletion: drop its
 id from the enum and its gates from the UI — stored rows for a dropped id are
 simply never read again (Knowledge Bases, the
 [starter kit](starter-kits.md) catalog, session costs and

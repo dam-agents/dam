@@ -26,3 +26,25 @@ export function keepStatusLabel(
   if (row.keepsAwake) return "Keeps the agent awake";
   return alwaysOn ? "Runs until stopped" : "Stops at hibernation";
 }
+
+export function keepSourceCaption(
+  row: Pick<ProcessRow, "kind" | "keepSource">,
+): string | null {
+  switch (row.keepSource) {
+    case "agent":
+      return "Agent's choice";
+    case "user":
+      return "Your choice";
+    case "default":
+      return row.kind === "harness-task" ? "Background task" : null;
+  }
+}
+
+export const ALWAYS_ON_KEEP_HINT =
+  "This agent is Always on. Nothing here stops at hibernation.";
+
+export const NO_PID_STOP_HINT = "Can't find this task's process";
+
+export function countTasks(count: number): string {
+  return count === 1 ? "1 task" : `${count} tasks`;
+}

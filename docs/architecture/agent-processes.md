@@ -24,8 +24,9 @@ set is non-empty the runtime will not close the session and, while the work is k
 reports itself busy, so the idle checker cannot hibernate the pod underneath the work. An
 empty report ends both.
 Reporting is optional: a harness that never reports behaves exactly as it did before the
-contract. What is held is published on the runtime's status surface, so an agent that
-stays awake can be explained by the work holding it.
+contract. What is held is published on the runtime's status surface, and the user sees
+it in the [process inventory](#process-inventory), so an agent that stays awake can be
+explained by the work holding it.
 
 Holding the session and keeping the agent awake are **two separate holds**. Every
 reported task holds its session open, because closing the session would kill it. Only a
@@ -101,6 +102,11 @@ work is recorded even when nobody looks. The user's decisions — the keep switc
 inventory as a Processes section beside Sessions, Files and Artifacts, behind the
 `processes` [experimental feature](features.md); a row's output opens in the panel docked
 beside the conversation, the way a file does, and follows the file while the process runs.
+Each row says whether it keeps the agent awake and who decided, with a switch to change it
+and a Stop that asks first; a change [waiting for kept tasks](#reported-background-work)
+shows above the rows with its Apply now. A header indicator counts the running Harness
+Tasks and Detached Processes and those keeping the agent awake, and opens the section —
+so a user who wonders why the agent stays awake finds the answer one click away.
 
 ## Keeping work
 
@@ -108,7 +114,8 @@ Only **kept** work keeps the agent awake; everything else survives the user leav
 dies at hibernation. Each row resolves who decided, in this order:
 
 1. **The user**, through the keep switch in the panel, in either direction. The choice
-   lasts for that process (for a Harness Task, that task) and wins over everything else.
+   lasts for that process (for a Harness Task, that task) and wins over everything else,
+   the agent's Keep Mark included.
 2. **The agent**, with a **Keep Mark** on a Detached Process. `platform-keep`, a command
    in every agent image, starts a job in its own session with its output in a log file and
    marks it, or marks a process that already runs. A launch passes an id down the job's

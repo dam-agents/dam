@@ -9,10 +9,13 @@ import {
   formatRunTime,
 } from "../lib/format-process.js";
 import { keepStatusLabel, PROCESS_KIND_LABEL } from "../lib/process-copy.js";
+import { KeepSwitch } from "./keep-switch.js";
 import { OutputButton } from "./output-button.js";
 import { ProcessCommand } from "./process-command.js";
+import { StopProcessButton } from "./stop-process-button.js";
 
 interface Props {
+  agentId: string;
   row: ProcessRowData;
   alwaysOn: boolean;
   now: Date;
@@ -21,6 +24,7 @@ interface Props {
 }
 
 export function ProcessRow({
+  agentId,
   row,
   alwaysOn,
   now,
@@ -52,17 +56,18 @@ export function ProcessRow({
             onClick={() => onOpenOutput(row.key)}
           />
         )}
+        <StopProcessButton agentId={agentId} row={row} />
       </div>
       <span className="text-muted-foreground tabular-nums">
         {stats.join(" · ")}
       </span>
-      <span
-        className={cn(
-          row.keepsAwake ? "text-foreground" : "text-muted-foreground",
-        )}
-      >
-        {keepStatusLabel(row, alwaysOn)}
-      </span>
+      {row.kind === "turn" ? (
+        <span className="text-muted-foreground">
+          {keepStatusLabel(row, alwaysOn)}
+        </span>
+      ) : (
+        <KeepSwitch agentId={agentId} row={row} alwaysOn={alwaysOn} />
+      )}
     </li>
   );
 }

@@ -93,8 +93,10 @@ import {
 import { DockedDelegationPanel } from "../../invocations/components/docked-delegation-panel.js";
 import { LiveDelegationBlock } from "../../invocations/components/live-delegation-block.js";
 import { DockedProcessOutputPanel } from "../../processes/components/docked-process-output-panel.js";
+import { ProcessesIndicator } from "../../processes/components/processes-indicator.js";
 import { ProcessesPanel } from "../../processes/components/processes-panel.js";
 import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
+import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
@@ -230,6 +232,7 @@ export function ChatView() {
   const setProcessesSectionOpen = useStore((s) => s.setProcessesSectionOpen);
   const storedProcessOutputKey = useStore((s) => s.openProcessOutputKey);
   const openProcessOutputKey = processesEnabled ? storedProcessOutputKey : null;
+  useProcessesLiveUpdates(selectedAgent, processesEnabled);
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const setView = useStore((s) => s.setView);
@@ -753,6 +756,7 @@ export function ChatView() {
             busy={busy}
             connectionState={connectionState}
             sessionId={sessionId}
+            processesEnabled={processesEnabled}
           />
         </div>
       </header>
@@ -1137,12 +1141,14 @@ function ChatHeaderStatus({
   busy,
   connectionState,
   sessionId,
+  processesEnabled,
 }: {
   selectedAgent: string | null;
   agents: AgentView[];
   busy: boolean;
   connectionState: ConnectionState;
   sessionId: string | null;
+  processesEnabled: boolean;
 }) {
   const agent = agents.find((a) => a.id === selectedAgent);
   const backgroundWork = useSessionBackgroundWork(selectedAgent, sessionId);
@@ -1150,7 +1156,11 @@ function ChatHeaderStatus({
     connectionState === "reconnecting" || connectionState === "reloading";
   return (
     <>
-      <BackgroundWorkIndicator items={backgroundWork} />
+      {processesEnabled ? (
+        <ProcessesIndicator agentId={selectedAgent} />
+      ) : (
+        <BackgroundWorkIndicator items={backgroundWork} />
+      )}
       {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
       {agent && <GatewayFailureBadge agent={agent} />}

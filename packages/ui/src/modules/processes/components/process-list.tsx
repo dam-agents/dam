@@ -6,14 +6,16 @@ import { useStore } from "../../../store.js";
 import { useToggleProcessOutput } from "../hooks/use-toggle-process-output.js";
 import { PROCESS_KIND_ORDER } from "../lib/process-copy.js";
 import { FinishedList } from "./finished-list.js";
+import { PendingRestartBanner } from "./pending-restart-banner.js";
 import { ProcessRow } from "./process-row.js";
 
 interface Props {
+  agentId: string;
   list: ProcessListData;
   alwaysOn: boolean;
 }
 
-export function ProcessList({ list, alwaysOn }: Props) {
+export function ProcessList({ agentId, list, alwaysOn }: Props) {
   const now = useNow(1_000);
   const openOutputKey = useStore((s) => s.openProcessOutputKey);
   const toggleOutput = useToggleProcessOutput();
@@ -31,6 +33,12 @@ export function ProcessList({ list, alwaysOn }: Props) {
 
   return (
     <div className="flex-1 overflow-y-auto">
+      {list.pendingRestart && (
+        <PendingRestartBanner
+          agentId={agentId}
+          pendingRestart={list.pendingRestart}
+        />
+      )}
       {running.length === 0 ? (
         <p className="px-4 py-5 text-xs text-muted-foreground">
           Nothing is running
@@ -40,6 +48,7 @@ export function ProcessList({ list, alwaysOn }: Props) {
           {running.map((row) => (
             <ProcessRow
               key={row.key}
+              agentId={agentId}
               row={row}
               alwaysOn={alwaysOn}
               now={now}
