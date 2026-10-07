@@ -24,7 +24,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { HOVER_ACTION, HOVER_YIELD } from "@/components/ui/hover-action";
+import {
+  HOVER_ACTION,
+  HOVER_ROOM,
+  HOVER_YIELD,
+} from "@/components/ui/hover-action";
 import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
@@ -132,15 +136,14 @@ export function SessionRow({
       : s.type === SessionType.ChannelTelegram
         ? ChannelType.Telegram
         : null;
-  const indicators: Indicators = {
-    scheduled,
-    terminal,
-    messenger,
-    needsApproval,
-    working,
-    draft,
-    backgroundWork,
-  };
+  const hasIndicators =
+    scheduled ||
+    terminal ||
+    !!messenger ||
+    needsApproval ||
+    working ||
+    draft ||
+    backgroundWork.length > 0;
 
   return (
     <div
@@ -164,9 +167,7 @@ export function SessionRow({
         <div
           className={cn(
             "relative flex items-center gap-1.5",
-            onboarding &&
-              !hasIndicators(indicators) &&
-              "pr-6 hover-capable:pr-0 hover-capable:group-hover:pr-6 hover-capable:group-focus-within:pr-6 hover-capable:group-has-[[data-state=open]]:pr-6",
+            onboarding && !hasIndicators && HOVER_ROOM,
           )}
         >
           {}
@@ -178,7 +179,15 @@ export function SessionRow({
               {onboarding.label}
             </Badge>
           )}
-          <SessionIndicators {...indicators} />
+          <SessionIndicators
+            scheduled={scheduled}
+            terminal={terminal}
+            messenger={messenger}
+            needsApproval={needsApproval}
+            working={working}
+            draft={draft}
+            backgroundWork={backgroundWork}
+          />
           {}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -262,7 +271,15 @@ export function SessionRow({
   );
 }
 
-interface Indicators {
+function SessionIndicators({
+  scheduled,
+  terminal,
+  messenger,
+  needsApproval,
+  working,
+  draft,
+  backgroundWork,
+}: {
   scheduled: boolean;
   terminal: boolean;
   messenger: ChannelType | null;
@@ -270,32 +287,18 @@ interface Indicators {
   working: boolean;
   draft: boolean;
   backgroundWork: readonly BackgroundWorkItemView[];
-}
-
-function hasIndicators(i: Indicators): boolean {
-  return (
-    i.scheduled ||
-    i.terminal ||
-    i.messenger !== null ||
-    i.needsApproval ||
-    i.working ||
-    i.draft ||
-    i.backgroundWork.length > 0
-  );
-}
-
-function SessionIndicators(indicators: Indicators) {
-  const {
-    scheduled,
-    terminal,
-    messenger,
-    needsApproval,
-    working,
-    draft,
-    backgroundWork,
-  } = indicators;
-  if (!hasIndicators(indicators)) return null;
+}) {
   const hasBackgroundWork = backgroundWork.length > 0;
+  if (
+    !scheduled &&
+    !terminal &&
+    !messenger &&
+    !needsApproval &&
+    !working &&
+    !hasBackgroundWork &&
+    !draft
+  )
+    return null;
   return (
     <span
       className={cn(
