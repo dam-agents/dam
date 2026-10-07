@@ -126,6 +126,15 @@ func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr stri
 	}
 }
 
+const requireConnectionAddressEnv = "PLATFORM_REQUIRE_CONNECTION_ADDRESS"
+
+func requireConnectionAddressValue(spec *apiv1.AgentSpec) string {
+	if spec.RequireConnectionAddress {
+		return "true"
+	}
+	return "false"
+}
+
 func BuildAgentStatefulSet(name string, agentSpec *apiv1.AgentSpec, cfg *config.Config, ownerRef metav1.OwnerReference, gatewayClusterIP string) *appsv1.StatefulSet {
 	base := cfg.AgentBase
 	defaults := cfg.AgentTemplateDefaults
@@ -157,6 +166,7 @@ func BuildAgentStatefulSet(name string, agentSpec *apiv1.AgentSpec, cfg *config.
 	for _, e := range defaults.Env {
 		env = append(env, corev1.EnvVar{Name: e.Name, Value: e.Value})
 	}
+	env = append(env, corev1.EnvVar{Name: requireConnectionAddressEnv, Value: requireConnectionAddressValue(agentSpec)})
 	if agentSpec.Harness != "" {
 		env = append(env, corev1.EnvVar{Name: "PLATFORM_HARNESS", Value: agentSpec.Harness})
 	}

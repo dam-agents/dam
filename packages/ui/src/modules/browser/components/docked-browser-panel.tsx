@@ -28,7 +28,7 @@ import {
 } from "../../../lib/persisted-prefs.js";
 import { useStore } from "../../../store.js";
 import { useBrowserControl } from "../hooks/use-browser-control.js";
-import { addressUrl } from "../lib/control.js";
+import { addressUrl } from "../lib/address.js";
 import { StreamView } from "./stream-view.js";
 
 const SIGN_IN_NOTICE_KEY = "platform.browserPanel.signInNoticeSeen";

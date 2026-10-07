@@ -8,6 +8,17 @@ import {
 } from "node:fs";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import {
+  type BrowserAction,
+  type BrowserDomainError,
+  type BrowserService,
+  type BrowserSnapshot,
+  type BrowserState,
+  err,
+  ok,
+  type PageState,
+  type Result,
+} from "agent-runtime-api";
 import { WebSocket } from "ws";
 import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
 import { type PageWatch, type WatchPages, watchPages } from "./browser-cdp.js";
@@ -38,24 +49,13 @@ export function displayAvailable(
   return DISPLAY_TOOLS.every((path) => exists(path));
 }
 
-export const DISPLAY_UNAVAILABLE =
-  "This agent's image cannot show its browser: it has no virtual display or stream server.";
-
-export type PreviewControl =
-  | { type: "navigate"; url: string }
-  | { type: "reload" }
-  | { type: "back" }
-  | { type: "forward" }
-  | { type: "stop" }
-  | { type: "clear_data" }
-  | { type: "restart_browser" };
-
-export type BrowserState = "starting" | "ready" | "failed";
+export function browserOffered(env = process.env): boolean {
+  return env.PLATFORM_REQUIRE_CONNECTION_ADDRESS === "true";
+}
 
 export type BrowserCommand = (args: string[]) => Promise<string>;
 
-export interface BrowserPreview {
-  attach(client: WebSocket): void;
+export interface BrowserPreview extends BrowserService {
   attachDisplay(client: WebSocket): void;
   viewers(): number;
   close(): void;
@@ -71,28 +71,6 @@ export function previewUrl(raw: string): string | null {
   return url.protocol === "http:" || url.protocol === "https:"
     ? url.href
     : null;
-}
-
-export function parseControl(data: string): PreviewControl | null {
-  let msg: unknown;
-  try {
-    msg = JSON.parse(data);
-  } catch {
-    return null;
-  }
-  if (typeof msg !== "object" || msg === null) return null;
-  const { type, url } = msg as Record<string, unknown>;
-  if (
-    type === "reload" ||
-    type === "back" ||
-    type === "forward" ||
-    type === "stop" ||
-    type === "clear_data" ||
-    type === "restart_browser"
-  )
-    return { type };
-  if (type === "navigate" && typeof url === "string") return { type, url };
-  return null;
 }
 
 export function fileLog(
@@ -229,11 +207,11 @@ export function createCommandQueue(run: BrowserCommand): {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: one supervisor keeps the agent's browser — the
  * one plain agent-browser commands drive, by the image's AGENT_BROWSER_*
- * defaults — up for every open panel. A panel's control socket (attach)
- * keeps it launched (`get url` starts agent-browser's daemon and browser when
+ * defaults — up for every open panel. A panel's watch (its subscription over
+ * the runtime's tRPC) keeps it launched (`get url` starts agent-browser's daemon and browser when
  * none runs) and watches its pages over CDP (browser-cdp), so the page's
  * address, title, loading and history reach the panel as they change and the
- * toolbar's navigation runs without queueing behind the agent; a CDP
+ * toolbar's actions run without queueing behind the agent; a CDP
  * connection that drops is a browser gone. Its display socket (attachDisplay)
  * is relayed to the display's stream server, held with what its client sent
  * until that server answers. A check or launch that times out finds the
@@ -241,13 +219,17 @@ export function createCommandQueue(run: BrowserCommand): {
  * agent-browser's queue — not gone, and is left alone: only an outright
  * failure, or a minute without an answer, stops it (its daemon, its Chromium
  * and the profile's singleton locks) and launches it again, since killing a
- * busy browser loses the user's page.
+ * busy browser loses the user's page. Everything is refused, before anything
+ * starts, on an agent that does not require named connections — the panel's
+ * user would otherwise browse with the agent's injected credentials — and on
+ * an image without the display stack.
  */
 export function createBrowserPreview(deps: {
   run: BrowserCommand;
   profileDir: string;
   socketDir: string;
   available?: () => boolean;
+  offered?: () => boolean;
   healthCheckMs?: number;
   unresponsiveRestartMs?: number;
   retryDelaysMs?: number[];
@@ -267,15 +249,17 @@ export function createBrowserPreview(deps: {
       await killPreviewProcesses(deps.profileDir, deps.socketDir);
     });
   const available = deps.available ?? (() => displayAvailable());
+  const offered = deps.offered ?? (() => browserOffered());
   const unresponsiveRestartMs =
     deps.unresponsiveRestartMs ?? UNRESPONSIVE_RESTART_MS;
   const retryDelays = deps.retryDelaysMs ?? RETRY_DELAYS_MS;
   const displayStreamUrl = deps.displayStreamUrl ?? DISPLAY_STREAM_URL;
   const watch = deps.watch ?? watchPages;
 
-  const viewers = new Set<WebSocket>();
+  const viewers = new Set<(snapshot: BrowserSnapshot) => void>();
   let state: BrowserState = "starting";
   let failure: string | null = null;
+  let shown: PageState | null = null;
   let browserUp = false;
   let failedLaunches = 0;
   let failedChecks = 0;
@@ -300,20 +284,15 @@ export function createBrowserPreview(deps: {
     }
   };
 
-  function sendJson(client: WebSocket, msg: object) {
-    if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(msg));
-  }
+  const snapshot = (): BrowserSnapshot => ({
+    state,
+    message: failure,
+    page: shown,
+  });
 
-  function broadcast(msg: object) {
-    for (const client of viewers) sendJson(client, msg);
-  }
-
-  function stateMessage() {
-    return {
-      type: "browser_state",
-      state,
-      ...(failure ? { message: failure } : {}),
-    };
+  function notify() {
+    const current = snapshot();
+    for (const viewer of viewers) viewer(current);
   }
 
   function setState(next: BrowserState, message: string | null = null) {
@@ -321,7 +300,13 @@ export function createBrowserPreview(deps: {
     state = next;
     failure = message;
     deps.log(`browser ${next}${message ? `: ${message}` : ""}`);
-    broadcast(stateMessage());
+    notify();
+  }
+
+  function showPage(next: PageState | null) {
+    if (!next) return;
+    shown = next;
+    notify();
   }
 
   function browserGone(reason: string) {
@@ -339,7 +324,7 @@ export function createBrowserPreview(deps: {
     opened = await watch({
       url,
       onState: (s) => {
-        if (opened && page === opened) broadcast({ type: "page", ...s });
+        if (opened && page === opened) showPage(s);
       },
       onClose: () => {
         if (!opened || page !== opened || gen !== generation) return;
@@ -383,8 +368,7 @@ export function createBrowserPreview(deps: {
       page?.close();
       page = opened;
       browserUp = true;
-      const current = opened.state();
-      if (current) broadcast({ type: "page", ...current });
+      showPage(opened.state());
       failedLaunches = 0;
       return true;
     } catch (err) {
@@ -477,29 +461,103 @@ export function createBrowserPreview(deps: {
     schedule();
   }
 
-  async function control(client: WebSocket, msg: PreviewControl) {
-    if (msg.type === "navigate") {
-      const url = previewUrl(msg.url);
-      if (!url)
-        return sendJson(client, {
-          type: "preview_error",
-          message: "Only http and https addresses open",
-        });
-      if (!browserUp || !page) {
-        pendingNavigation = url;
-        return schedule();
-      }
-      await page.navigate(url);
-    } else if (
-      msg.type === "reload" ||
-      msg.type === "back" ||
-      msg.type === "forward" ||
-      msg.type === "stop"
-    ) {
-      if (browserUp && page) await page[msg.type]();
-    } else {
-      await restart(msg.type === "clear_data");
+  const refusal = (): BrowserDomainError | null =>
+    !offered()
+      ? { kind: "NotOffered" }
+      : !available()
+        ? { kind: "NoDisplay" }
+        : null;
+
+  const attempt = async (
+    label: string,
+    step: () => Promise<unknown>,
+  ): Promise<Result<void, BrowserDomainError>> => {
+    try {
+      await timed(label, step);
+      return ok(undefined);
+    } catch (e) {
+      return err({ kind: "Failed", detail: (e as Error).message });
     }
+  };
+
+  async function navigate(
+    raw: string,
+  ): Promise<Result<void, BrowserDomainError>> {
+    const refused = refusal();
+    if (refused) return err(refused);
+    const url = previewUrl(raw);
+    if (!url) return err({ kind: "NotWebAddress" });
+    if (!browserUp || !page) {
+      pendingNavigation = url;
+      schedule();
+      return ok(undefined);
+    }
+    const target = page;
+    return attempt("navigate", () => target.navigate(url));
+  }
+
+  async function act(
+    action: BrowserAction,
+  ): Promise<Result<void, BrowserDomainError>> {
+    const refused = refusal();
+    if (refused) return err(refused);
+    if (action === "restart" || action === "clearData")
+      return attempt(action, () => restart(action === "clearData"));
+    if (!browserUp || !page) return ok(undefined);
+    const target = page;
+    return attempt(action, () => target[action]());
+  }
+
+  function addViewer(viewer: (snapshot: BrowserSnapshot) => void) {
+    viewers.add(viewer);
+    if (viewers.size === 1) lastAnswerAt = Date.now();
+    startTimers();
+    schedule();
+  }
+
+  function removeViewer(viewer: (snapshot: BrowserSnapshot) => void) {
+    viewers.delete(viewer);
+    if (viewers.size > 0) return;
+    stopTimers();
+    browserUp = false;
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+
+  function watchBrowser(
+    signal?: AbortSignal,
+  ): Result<AsyncIterable<BrowserSnapshot>, BrowserDomainError> {
+    const refused = refusal();
+    if (refused) return err(refused);
+    async function* stream(): AsyncGenerator<BrowserSnapshot> {
+      let latest: BrowserSnapshot | null = snapshot();
+      let wake: (() => void) | null = null;
+      const viewer = (next: BrowserSnapshot) => {
+        latest = next;
+        wake?.();
+      };
+      const onAbort = () => wake?.();
+      signal?.addEventListener("abort", onAbort);
+      addViewer(viewer);
+      try {
+        while (!signal?.aborted && !closed) {
+          if (!latest) {
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+            });
+            wake = null;
+            continue;
+          }
+          const next: BrowserSnapshot = latest;
+          latest = null;
+          yield next;
+        }
+      } finally {
+        signal?.removeEventListener("abort", onAbort);
+        removeViewer(viewer);
+      }
+    }
+    return ok(stream());
   }
 
   function startTimers() {
@@ -516,9 +574,14 @@ export function createBrowserPreview(deps: {
   }
 
   function refuseUnavailable(client: WebSocket): boolean {
-    if (available()) return false;
-    sendJson(client, { type: "preview_error", message: DISPLAY_UNAVAILABLE });
-    client.close(1011, "display unavailable");
+    const refused = refusal();
+    if (!refused) return false;
+    client.close(
+      1011,
+      refused.kind === "NotOffered"
+        ? "browser not offered"
+        : "display unavailable",
+    );
     return true;
   }
 
@@ -575,35 +638,10 @@ export function createBrowserPreview(deps: {
     dial();
   }
 
-  function attach(client: WebSocket) {
-    if (refuseUnavailable(client)) return;
-    viewers.add(client);
-    if (viewers.size === 1) lastAnswerAt = Date.now();
-    startTimers();
-    sendJson(client, stateMessage());
-    const current = page?.state();
-    if (current) sendJson(client, { type: "page", ...current });
-    schedule();
-
-    client.on("message", (data: Buffer, isBinary: boolean) => {
-      const msg = isBinary ? null : parseControl(data.toString());
-      if (msg)
-        timed(msg.type, () => control(client, msg)).catch((err: Error) =>
-          sendJson(client, { type: "preview_error", message: err.message }),
-        );
-    });
-    client.on("close", () => {
-      viewers.delete(client);
-      if (viewers.size > 0) return;
-      stopTimers();
-      browserUp = false;
-      if (retryTimer) clearTimeout(retryTimer);
-      retryTimer = null;
-    });
-  }
-
   return {
-    attach,
+    watch: watchBrowser,
+    navigate,
+    act,
     attachDisplay,
     viewers: () => viewers.size,
     close() {
@@ -611,7 +649,7 @@ export function createBrowserPreview(deps: {
       if (retryTimer) clearTimeout(retryTimer);
       stopTimers();
       page?.close();
-      for (const c of viewers) c.close(1001, "runtime shutting down");
+      notify();
     },
   };
 }

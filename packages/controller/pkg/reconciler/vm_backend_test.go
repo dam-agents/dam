@@ -446,6 +446,26 @@ func TestAVMAgentsHarnessReachesTheGuest(t *testing.T) {
 	assert.NotContains(t, node.spec("my-agent").Env, "PLATFORM_HARNESS")
 }
 
+// TEST_SCENARIO: the guest's runtime offers the browser panel only on an Agent that requires named connections, so the machine is told which with PLATFORM_REQUIRE_CONNECTION_ADDRESS. It is set after the owner's secretRef is applied, unlike PLATFORM_HARNESS, so the owner's own secret cannot claim the panel for an Agent that does not require named connections.
+func TestAVMAgentIsToldWhetherItRequiresNamedConnections(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.SecretRef = "mine"
+	r, node, _ := setupVMReconciler(t, agent)
+	_, err := r.client.CoreV1().Secrets("test-agents").Create(context.Background(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "mine", Namespace: "test-agents", Labels: map[string]string{envoyOwnerLabel: testOwner}},
+		Data:       map[string][]byte{"PLATFORM_REQUIRE_CONNECTION_ADDRESS": []byte("true")},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.Equal(t, "false", node.spec("my-agent").Env["PLATFORM_REQUIRE_CONNECTION_ADDRESS"])
+
+	addressed := vmAgentCR()
+	addressed.Spec.RequireConnectionAddress = true
+	r, node, _ = setupVMReconciler(t, addressed)
+	require.NoError(t, r.Reconcile(context.Background(), addressed))
+	assert.Equal(t, "true", node.spec("my-agent").Env["PLATFORM_REQUIRE_CONNECTION_ADDRESS"])
+}
+
 // TEST_SCENARIO: on a laptop the runner runs on the host, outside the cluster, and serves every owner. The guest reaches its gateway through a NodePort the cluster's VM forwards to the host's loopback, at the address smolvm gives the host, and at nothing else — so the machine carries that port instead of an allowlist, since allowing the host address would open every loopback port. The agent's Service has no runner pod to select and names the host and the machine's published port in its own EndpointSlice, and a delete reaches the host runner with no runner Deployment to look for.
 func TestAHostRunnerReachesTheGatewayOnItsOwnLoopback(t *testing.T) {
 	agent := vmAgentCR()

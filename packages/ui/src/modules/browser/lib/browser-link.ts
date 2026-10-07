@@ -1,4 +1,4 @@
-import { withScheme } from "./control.js";
+import { withScheme } from "./address.js";
 
 export const BROWSER_LINK_PREFIX = "platform://browser?url=";
 export const FRESH_LINK_MS = 2 * 60_000;

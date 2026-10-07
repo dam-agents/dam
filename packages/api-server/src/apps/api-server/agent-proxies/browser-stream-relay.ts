@@ -1,23 +1,17 @@
-import {
-  addUpgradeSecurityHeaders,
-  relayRoute,
-  type RelayAdmission,
-  type UpgradeRouteHandler,
-} from "./upgrade.js";
+import { addUpgradeSecurityHeaders } from "./upgrade.js";
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
-import { createActivityStamper } from "./activity-stamper.js";
 import type { SessionPresence } from "./session-presence.js";
 import { sanitizeCloseCode } from "./acp-relay.js";
 
 const PENDING_BUFFER_MAX_BYTES = 256 * 1024;
 const PING_INTERVAL_MS = 30_000;
 
-export interface BrowserRelay {
+export interface BrowserStreamRelay {
   handleUpgrade(
     req: IncomingMessage,
     socket: Duplex,
@@ -35,53 +29,25 @@ export async function requiresConnectionAddress(
   return agent?.spec.requireConnectionAddress === true;
 }
 
-const STREAM_SOCKET_PATH =
-  /^\/api\/public\/browser-stream\/[^/]+\/api\/websockets$/;
-
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the browser panel's two socket routes — the
- * panel's control socket and its stream page's socket. Each takes the agent
- * from its own path, and that one id is what admission checks the caller owns
- * and the relay dials, so a caller reaches only the browser of an agent they
- * own; an agent without addressed injection is refused even to its owner.
+ * UNIT_BOUNDARY_DESCRIPTION: relays the browser panel's stream socket — the
+ * one Selkies' web client opens beside its page — to `upstreamPath` on the
+ * agent the route named, untouched in both directions. It wakes a hibernated
+ * agent and holds the agent awake while open, like any panel; the stream's
+ * own traffic, which acknowledges frames many times a second, never counts
+ * as activity. What the client sends before the agent answers is held, up to
+ * a cap.
  */
-export function browserRelayRoutes(
-  admission: RelayAdmission,
-  relay: BrowserRelay,
-  agentAllows: (agentId: string) => Promise<boolean>,
-): Record<string, UpgradeRouteHandler> {
-  return {
-    "/api/public/browser-stream/:id/api/websockets": relayRoute(
-      admission,
-      relay,
-      "browser",
-      agentAllows,
-    ),
-    "/api/agents/:id/browser": relayRoute(
-      admission,
-      relay,
-      "browser",
-      agentAllows,
-    ),
-  };
-}
-
-export function browserUpstreamPath(requestUrl: URL): string {
-  return STREAM_SOCKET_PATH.test(requestUrl.pathname)
-    ? "/api/browser/display"
-    : "/api/browser";
-}
-
-export function createBrowserRelay(
+export function createBrowserStreamRelay(
   namespace: string,
-  repo: Pick<AgentsRepository, "ensureReady" | "patchAnnotation">,
+  repo: Pick<AgentsRepository, "ensureReady">,
   presence: SessionPresence,
+  upstreamPath: string,
   upstreamBase: (agentId: string) => string = (agentId) =>
     `ws://${podBaseUrl(agentId, namespace)}`,
-): BrowserRelay {
+): BrowserStreamRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   addUpgradeSecurityHeaders(wss);
-  const stamper = createActivityStamper(repo);
   const closeWs = (ws?: WebSocket, code?: number, reason?: string) => {
     try {
       ws?.close(code, reason);
@@ -96,8 +62,6 @@ export function createBrowserRelay(
     head: Buffer,
     agentId: string,
   ) {
-    const url = new URL(req.url!, `http://${req.headers.host}`);
-    const display = STREAM_SOCKET_PATH.test(url.pathname);
     wss.handleUpgrade(req, socket, head, async (client) => {
       client.on("error", () => client.terminate());
       const release = presence.acquire(agentId);
@@ -152,18 +116,15 @@ export function createBrowserRelay(
       }
       if (clientGone || overflow) return;
 
-      upstream = new WebSocket(
-        `${upstreamBase(agentId)}${browserUpstreamPath(url)}`,
-      );
+      upstream = new WebSocket(`${upstreamBase(agentId)}${upstreamPath}`);
       const us = upstream;
       us.on("open", () => {
         if (clientGone || overflow) return closeWs(us);
         client.off("message", buffer);
         for (const [d, b] of pending) us.send(d, { binary: b });
         client.on("message", (d, isBinary) => {
-          if (us.readyState !== WebSocket.OPEN) return;
-          us.send(d, { binary: isBinary });
-          if (!display) stamper.bump(agentId);
+          if (us.readyState === WebSocket.OPEN)
+            us.send(d, { binary: isBinary });
         });
         us.on("message", (d, isBinary) => {
           if (client.readyState === WebSocket.OPEN)
@@ -173,7 +134,7 @@ export function createBrowserRelay(
           closeWs(
             client,
             sanitizeCloseCode(code),
-            reason.toString() || "browser closed",
+            reason.toString() || "browser stream closed",
           ),
         );
       });

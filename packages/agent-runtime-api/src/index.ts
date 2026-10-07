@@ -178,3 +178,15 @@ export {
   type ArtifactApiRequestResult,
 } from "./modules/artifact-api/schemas.js";
 export type { ArtifactApiService } from "./modules/artifact-api/types.js";
+export {
+  browserSnapshotSchema,
+  pageStateSchema,
+} from "./modules/browser/schemas.js";
+export type {
+  BrowserAction,
+  BrowserDomainError,
+  BrowserService,
+  BrowserSnapshot,
+  BrowserState,
+  PageState,
+} from "./modules/browser/types.js";

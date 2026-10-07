@@ -1,5 +1,6 @@
 import { t } from "./trpc.js";
 import { artifactApiRouter } from "./modules/artifact-api/router.js";
+import { browserRouter } from "./modules/browser/router.js";
 import { filesRouter } from "./modules/files/router.js";
 import { kbPublishRouter } from "./modules/kb-publish/router.js";
 import { sessionsRouter } from "./modules/sessions/router.js";
@@ -10,6 +11,7 @@ import { harnessConfigRouter } from "./modules/harness-config/router.js";
 
 export const appRouter = t.router({
   artifactApi: artifactApiRouter,
+  browser: browserRouter,
   files: filesRouter,
   kbPublish: kbPublishRouter,
   sessions: sessionsRouter,

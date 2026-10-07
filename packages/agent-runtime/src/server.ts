@@ -302,6 +302,7 @@ const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
 const createTrpcContext = (): AgentRuntimeContext => ({
   artifactApi,
+  browser: browserPreview,
   files: filesService,
   kbPublish: kbPublish.service,
   sessions: sessionsService,
@@ -745,10 +746,6 @@ server.on("upgrade", (req, socket, head) => {
     const reset = url.searchParams.get("reset") === "1";
     termWss.handleUpgrade(req, socket, head, (ws) =>
       attachPty(sessionId, ws, { reset }),
-    );
-  } else if (url.pathname === "/api/browser") {
-    browserWss.handleUpgrade(req, socket, head, (ws) =>
-      browserPreview.attach(ws),
     );
   } else if (url.pathname === "/api/browser/display") {
     browserWss.handleUpgrade(req, socket, head, (ws) =>
