@@ -203,6 +203,25 @@ describe("watchPages", () => {
     });
   });
 
+  // TEST_SCENARIO: a listener that throws must not escape the watcher: its events arrive on a socket handler, where a throw or a rejected promise takes the whole runtime down.
+  it("keeps a throwing listener inside the watcher", async () => {
+    const t = tab("A", "http://a/", true);
+    const chrome = await fakeChrome([t]);
+    const logged: string[] = [];
+    const page = await watchPages({
+      url: chrome.url,
+      onState: () => {
+        throw new Error("listener broke");
+      },
+      onClose: () => {},
+      log: (m) => logged.push(m),
+    });
+    cleanups.push(() => page.close());
+    chrome.event("Page.frameStartedLoading", { frameId: "A" }, t);
+    await until(() => page.state()?.loading === true);
+    expect(logged.some((m) => m.includes("listener broke"))).toBe(true);
+  });
+
   // TEST_SCENARIO: the browser went away — crashed, closed by the agent — and its CDP connection dropped; the supervisor is told at once, which is how it relaunches a dead browser without waiting on health checks.
   it("reports a dropped connection", async () => {
     const chrome = await fakeChrome([tab("A", "http://a/", true)]);

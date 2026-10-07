@@ -335,13 +335,14 @@ export function createBrowserPreview(deps: {
 
   async function openPage(gen: number): Promise<PageWatch> {
     const url = (await exec(CDP_URL)).trim();
-    const opened = await watch({
+    let opened: PageWatch | null = null;
+    opened = await watch({
       url,
       onState: (s) => {
-        if (page === opened) broadcast({ type: "page", ...s });
+        if (opened && page === opened) broadcast({ type: "page", ...s });
       },
       onClose: () => {
-        if (page !== opened || gen !== generation) return;
+        if (!opened || page !== opened || gen !== generation) return;
         browserGone("browser closed");
         schedule();
       },

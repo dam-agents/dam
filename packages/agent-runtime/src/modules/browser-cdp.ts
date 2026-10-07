@@ -105,6 +105,16 @@ export const watchPages: WatchPages = ({ url, onState, onClose, log }) =>
       });
     }
 
+    const settle = (step: Promise<unknown>) =>
+      step.catch((err: Error) => log(`cdp: ${err.message}`));
+    const report = (fn: () => void) => {
+      try {
+        fn();
+      } catch (err) {
+        log(`cdp: ${(err as Error).message}`);
+      }
+    };
+
     const current = (): Page | null => (active && pages.get(active)) || null;
 
     function emit() {
@@ -120,7 +130,7 @@ export const watchPages: WatchPages = ({ url, onState, onClose, log }) =>
       const key = JSON.stringify(state);
       if (key === last) return;
       last = key;
-      onState(state);
+      report(() => onState(state));
     }
 
     async function refreshHistory(targetId: string, withTitle = false) {
@@ -213,13 +223,14 @@ export const watchPages: WatchPages = ({ url, onState, onClose, log }) =>
       const p = msg.params ?? {};
       if (msg.method === "Target.targetCreated") {
         const info = p.targetInfo as Record<string, unknown>;
-        if (info?.type === "page") void attach(String(info.targetId), info);
+        if (info?.type === "page")
+          void settle(attach(String(info.targetId), info));
         return;
       }
       if (msg.method === "Target.targetDestroyed") {
         pages.delete(String(p.targetId));
         attaching.delete(String(p.targetId));
-        void pickActive();
+        void settle(pickActive());
         return;
       }
       if (msg.method === "Target.targetInfoChanged") {
@@ -243,16 +254,16 @@ export const watchPages: WatchPages = ({ url, onState, onClose, log }) =>
         if (targetId === active) emit();
       } else if (msg.method === "Page.frameStoppedLoading") {
         page.loading = false;
-        void refreshHistory(targetId, true);
-        void pickActive();
+        void settle(refreshHistory(targetId, true));
+        void settle(pickActive());
       } else if (msg.method === "Page.frameNavigated") {
         const frame = p.frame as { url?: string; parentId?: string };
         if (frame.parentId) return;
         page.url = String(frame.url ?? page.url);
-        void refreshHistory(targetId);
+        void settle(refreshHistory(targetId));
       } else if (msg.method === "Page.navigatedWithinDocument") {
         page.url = String(p.url ?? page.url);
-        void refreshHistory(targetId);
+        void settle(refreshHistory(targetId));
       }
     }
 
@@ -270,7 +281,7 @@ export const watchPages: WatchPages = ({ url, onState, onClose, log }) =>
         else waiter?.resolve(msg.result ?? {});
         return;
       }
-      onEvent(msg);
+      report(() => onEvent(msg));
     });
 
     ws.on("error", (err) => log(`cdp: ${err.message}`));
@@ -281,7 +292,7 @@ export const watchPages: WatchPages = ({ url, onState, onClose, log }) =>
       pending.clear();
       if (closed) return;
       closed = true;
-      onClose();
+      report(onClose);
     });
 
     const onActive = async (

@@ -237,6 +237,21 @@ describe("browser preview", () => {
     ]);
   });
 
+  // TEST_SCENARIO: the CDP watcher reports the page's state as soon as it attaches, before it has returned to the supervisor. That early report must not break the launch: reading the watcher before it was assigned threw, failed every launch and, from the watcher's event handlers, crashed the runtime.
+  it("launches when the watcher reports state before it returns", async () => {
+    const fake = fakeBrowser();
+    const eager: WatchPages = async (opts) => {
+      const watcher = await fake.watch(opts);
+      opts.onState(watcher.state()!);
+      return watcher;
+    };
+    const connect = await host(preview(fake, { watch: eager }));
+    const { states, json } = await connect();
+    await until(() => states().includes("ready"));
+    expect(json().some((m) => m.type === "page")).toBe(true);
+    expect(json().filter((m) => m.state === "failed")).toEqual([]);
+  });
+
   // TEST_SCENARIO: an agent whose image lacks the display stack cannot show its browser; both of the panel's sockets are told so in words and closed, rather than showing a blank panel, and no browser is started.
   it("refuses a panel when the image has no display stack", async () => {
     const fake = fakeBrowser();
