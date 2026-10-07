@@ -20,8 +20,10 @@ usr/local/bin/
   harness-chat           ← chat-mode entrypoint (pi-acp, which runs pi through pi-platform)
   harness-terminal       ← terminal-mode entrypoint (pi-platform)
   pi-platform            ← runs pi with the platform's extensions loaded from the image
-usr/local/share/pi-platform/extensions/pi-dynamic-providers/
-  index.ts               ← loaded with -e on every start; registers any of {rits, openai-proxy, amazon-bedrock} whose env vars are set
+usr/local/share/pi-platform/
+  pi-acp-patch.mjs       ← temporary pi-acp fix, loaded by harness-chat (see "pi-acp concurrent sessions")
+  extensions/pi-dynamic-providers/
+    index.ts             ← loaded with -e on every start; registers any of {rits, openai-proxy, amazon-bedrock} whose env vars are set
 app/
   runtime-manifest.yaml  ← runtime driver config; the platform writes ~/.pi/agent/mcp.json at runtime (not seeded)
   working-dir/           ← seeds /home/agent/ on first boot
@@ -173,6 +175,19 @@ Pi system prompt conventions:
 > **`app/working-dir/`** seeds `/home/agent/` on first boot.  
 > **`app/working-dir/work/`** seeds `/home/agent/work/` — the cwd where pi-acp spawns.  
 > **`app/working-dir/.pi/agent/`** seeds `~/.pi/agent/` — pi's global config directory.
+
+## pi-acp concurrent sessions
+
+pi-acp 0.0.34 keeps one live pi process per connection: every `session/new` and `session/load` kills the pi of every other session, and a turn already running there never gets its `session/prompt` answer, because pi-acp ends a turn only on pi's `agent_settled` event (upstream [svkozak/pi-acp#152](https://github.com/svkozak/pi-acp/issues/152)). The agent-runtime runs every session of an Agent through one pi-acp, so a schedule firing, a new chat, a Slack turn, a sub-agent or opening an old session froze whatever turn was running, and the platform kept showing it as running. Stop did not help: pi-acp had already forgotten the session.
+
+Until upstream fixes it, [`pi-acp-patch.mjs`](rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs) edits pi-acp's bundle in memory as it loads. `harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so pi and its tools do not inherit it. It patches four things:
+
+- `session/new` and `session/load` no longer close other sessions.
+- pi-acp advertises `session/close`, so the agent-runtime closes idle sessions and their pi processes instead of letting them pile up.
+- A pi process that exits fails its running and queued turns with an error instead of leaving them unanswered.
+- The next prompt to a session whose pi died starts a new pi on the same session file.
+
+The hook patches only pi-acp 0.0.34 and only when every edit matches the bundle exactly. Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` to the pod log. **To remove it** once a pi-acp release fixes #152: bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`. That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
 
 ## Memory scopes
 

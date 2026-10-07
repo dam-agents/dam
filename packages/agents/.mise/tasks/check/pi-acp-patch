@@ -1,0 +1,23 @@
+#!/usr/bin/env -S node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
+//MISE description="The in-memory pi-acp patch targets the pi-acp version the image pins, so a bump revisits it"
+//MISE sources=["pi-agent/image.toml", "pi-agent/rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs", ".mise/tasks/check/pi-acp-patch"]
+//MISE outputs=[]
+//MISE cache.enabled=true
+import { readFileSync } from "node:fs";
+
+const read = (path) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
+const pinned = read("pi-agent/image.toml").match(/^"npm:pi-acp" = "([^"]+)"$/m)?.[1];
+const patched = read("pi-agent/rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs").match(
+  /^const PATCHED_VERSION = "([^"]+)";$/m,
+)?.[1];
+
+if (pinned === undefined || pinned !== patched) {
+  console.error(
+    `pi-acp-patch: the image pins pi-acp ${pinned} but the patch targets ${patched}. ` +
+      "If that release fixes https://github.com/svkozak/pi-acp/issues/152, remove the patch " +
+      "(packages/agents/pi-agent/README.md, \"pi-acp concurrent sessions\"); " +
+      "otherwise confirm its edits still apply and update PATCHED_VERSION.",
+  );
+  process.exit(1);
+}
+console.log("pi-acp-patch: ok");
