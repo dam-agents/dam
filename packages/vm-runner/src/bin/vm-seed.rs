@@ -213,14 +213,18 @@ impl Progress {
                 return None;
             }
             let waited = ANSWER_WAIT.as_secs();
-            return Some(format!("the runner sent no answer {waited}s after the seed was sent"));
+            return Some(format!(
+                "the runner sent no answer {waited}s after the seed was sent"
+            ));
         }
         let waiting = self.waiting?;
         if now.duration_since(waiting) <= STALL {
             return None;
         }
         let stalled = STALL.as_secs();
-        Some(format!("the runner took nothing of the seed for {stalled}s"))
+        Some(format!(
+            "the runner took nothing of the seed for {stalled}s"
+        ))
     }
 }
 
