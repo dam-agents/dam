@@ -928,7 +928,7 @@ export function createMcpSession(
       model: scheduleModelSchema
         .optional()
         .describe(
-          "Optional model this schedule's sessions run on, instead of the default, e.g. a cheap model for a frequent routine check. Use a name from this agent's model settings (for Claude Code: fable, opus, sonnet or haiku). Omit it to run on the harness's own default, what the agent's Default model setting gives, not on whatever model the agent is currently set to. A model the harness cannot switch to fails the run with the reason rather than running on the default.",
+          "Optional model this schedule's sessions run on, instead of the default, e.g. a cheap model for a frequent routine check. Use a name from this agent's model settings (for Claude Code: fable, opus, sonnet or haiku). Omit it to run on the harness's own default, what the agent's Default model setting gives, not on whatever model the agent is currently set to. On a harness with no such default (no provider pin and none declared by the harness), a schedule without a model follows the agent's current model instead. A model the harness cannot switch to fails the run with the reason rather than running on the default.",
         ),
     },
     async ({

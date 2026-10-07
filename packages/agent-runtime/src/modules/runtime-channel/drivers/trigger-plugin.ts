@@ -137,6 +137,19 @@ export function createTriggerPlugin(deps: {
     }
   };
 
+  const runOrFail = async (
+    payload: TriggerEventPayload,
+    task: string,
+  ): Promise<string | null> => {
+    try {
+      return await runOrRefuse(payload, task);
+    } catch (err) {
+      const detail = `the run could not start: ${(err as Error).message}`;
+      deps.log(`[trigger] ${payload.scheduleId} ${detail}`);
+      return detail.slice(0, DETAIL_MAX);
+    }
+  };
+
   const decideAndRun = async (
     payload: TriggerEventPayload,
     precheck: string,
@@ -154,10 +167,7 @@ export function createTriggerPlugin(deps: {
     const refused =
       outcome.verdict === "declined"
         ? null
-        : await runOrRefuse(
-            payload,
-            withContext(payload.task, outcome.context),
-          );
+        : await runOrFail(payload, withContext(payload.task, outcome.context));
     await report(
       refused
         ? refusedReport(eventId, refused)
