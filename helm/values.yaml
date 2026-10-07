@@ -267,7 +267,8 @@ virtualization:
     # measured using, for its guest to grow into before the controller acts.
     headroomMiB: 256
     # true = runners may give the node's virtualization extensions to the
-    # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization),
+    # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization,
+    # or every vm agent with controller.agent.templateDefaults.nestedVirtualization),
     # so that guest can run KVM itself — e.g. a vm agent that hosts its own
     # vm-backend install. Every other machine boots without them. A runner
     # nests only where the node's KVM allows it, which is the kernel default

@@ -205,8 +205,10 @@ const (
 	// False with ReasonRuntimeMigrationFailed once it gave up. The api-server
 	// switches the Backend when the reason is ReasonRuntimeMigrationVerified.
 	ConditionRuntimeMigrating = "RuntimeMigrating"
-	// ConditionNestedVirtualization is present only on an Agent that asks for
-	// spec.backend.vm.nestedVirtualization, and says whether its machine got it.
+	// ConditionNestedVirtualization is present only on a vm Agent that asks for
+	// nesting — through spec.backend.vm.nestedVirtualization, or through the
+	// install's controller.agent.templateDefaults.nestedVirtualization — and
+	// says whether its machine got it.
 	ConditionNestedVirtualization = "NestedVirtualization"
 )
 
