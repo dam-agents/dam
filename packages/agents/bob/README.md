@@ -9,7 +9,7 @@ The harness ships in the default image every harness Template boots, built by `/
 | Component | Source | Purpose |
 |---|---|---|
 | Harness | `bobshell` 2.0.3 (the `bob-shell` COS bucket release tarball, as a mise `http:` tool) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions |
-| Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs) | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json` and re-asserts the platform instructions rules link; runs before either surface starts |
+| Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs) | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json` re-asserts the platform instructions rules link and the terminal-session pin hook; runs before either surface starts |
 | Storage | `/home/agent` PVC | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives pod restarts |
 
 ## ACP
@@ -147,11 +147,16 @@ The settings bootstrap also pins `bobShell.autoUpdate: false`: the image pins th
 | Script | Behavior |
 |---|---|
 | [`harness-chat`](rootfs/usr/local/bin/harness-chat) | Runs `bob-settings.mjs`, turns the approval mode it printed into `--auto-approve` or nothing, then `exec`s `bob acp`. A failed bootstrap fails the harness — without the posture Bob refuses every tool that touches `$HOME`. |
-| [`harness-terminal`](rootfs/usr/local/bin/harness-terminal) | Same bootstrap and approval translation, plus the tenant-scoping env as `bob chat` flags, then `exec`s the TUI. Each terminal open starts a **fresh** Bob task — Bob's task index can't be mapped onto `$HARNESS_SESSION_ID`; users can resume prior tasks from inside the TUI with `bob -r`. |
+| [`harness-terminal`](rootfs/usr/local/bin/harness-terminal) | Same bootstrap and approval translation, plus the tenant-scoping env as `bob chat` flags, then `exec`s the TUI — with `--resume <task>` when the session has a pinned Bob task (see [Terminal sessions](#terminal-sessions)). |
+| [`bob-pin-session`](rootfs/usr/local/bin/bob-pin-session) | The `SessionStart` hook that pins a terminal session's Bob task. A no-op outside a terminal session. |
 
 ## Session history
 
 Bob persists every task to SQLite on the PVC (`~/.bob/db/bob.db`) and serves ACP history from it, so the platform's sidebar, replay and resume are all native reads — see [ACP](#acp) above. Terminal-mode tasks land in the same store and therefore also appear in the session list.
+
+### Terminal sessions
+
+Bob mints its task id on the first turn, so the platform session id cannot be passed in. The settings bootstrap therefore registers a global `SessionStart` hook (matcher `startup`) in `~/.bob/settings/settings.json`, re-asserted on every start next to whatever hooks are already there. It records the new task's id under `~/.bob/platform-sessions/$HARNESS_SESSION_ID`, and `harness-terminal` resumes that task whenever the file exists, so reopening a terminal session after its idle shutdown or a hibernation brings the conversation back. A terminal closed before its first turn leaves no pin and starts fresh next time. A pin whose task was deleted makes Bob report the missing task and open a fresh one, which pins itself in turn. Setting `disableGlobalHooks` in the settings file turns the pin off too.
 
 Chat sessions created before 2.0.2 are not reachable: their ids were minted by the old translation shim (`bob-<uuid>`) and mean nothing to Bob, so `session/load` answers `resourceNotFound`. Their Bob-side tasks survive and can still be resumed from the terminal with `bob -r`.
 

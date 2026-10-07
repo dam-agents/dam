@@ -9,6 +9,8 @@ set --
 [ -n "$BOB_TEAM_ID" ]     && set -- "$@" --team-id     "$BOB_TEAM_ID"
 # "ask" leaves the TUI to prompt in the terminal, which is its own native flow.
 [ "$approvals" = "ask" ] || set -- "$@" --auto-approve
-# Each terminal open starts a fresh TUI task; Bob's task index can't map onto
-# $HARNESS_SESSION_ID. Users can resume prior tasks with `bob -r`.
+# Pinned by the SessionStart hook bob-settings.mjs registers. A pin whose task
+# is gone makes Bob report it and open a fresh task, which then re-pins.
+TASK_FILE="$HOME/.bob/platform-sessions/$HARNESS_SESSION_ID"
+[ -s "$TASK_FILE" ] && set -- "$@" --resume "$(cat "$TASK_FILE")"
 exec bob chat --trust --accept-license "$@"

@@ -20,6 +20,7 @@ const PLATFORM_INSTRUCTIONS = "/etc/AGENTS.md";
 const MODES = ["agent", "plan", "ask"];
 const LEGACY_MODES = { code: "agent", advanced: "agent" };
 const APPROVALS = ["auto", "ask"];
+const PIN_SESSION_HOOK = "/usr/local/bin/bob-pin-session";
 const RETIRED_APPROVAL_KEYS = [
   "autoApprovalEnabled",
   "allowed_permissions",
@@ -63,6 +64,29 @@ function firstNonBlank(...values) {
   return null;
 }
 
+function isPinSessionEntry(entry) {
+  return (
+    Array.isArray(entry?.hooks) &&
+    entry.hooks.some((hook) => hook?.command === PIN_SESSION_HOOK)
+  );
+}
+
+function withPinSessionHook(hooks) {
+  const sessionStart = Array.isArray(hooks.SessionStart)
+    ? hooks.SessionStart
+    : [];
+  return {
+    ...hooks,
+    SessionStart: [
+      ...sessionStart.filter((entry) => !isPinSessionEntry(entry)),
+      {
+        matcher: "startup",
+        hooks: [{ type: "command", command: PIN_SESSION_HOOK }],
+      },
+    ],
+  };
+}
+
 function resolveApprovals(panel) {
   const chosen = firstNonBlank(panel.approvals);
   if (chosen && APPROVALS.includes(chosen)) return chosen;
@@ -96,6 +120,7 @@ function writeSettings() {
     approval: { ...approval, outsideWorkspaceAllowed: true },
     bobShell: { ...section(existing, "bobShell"), autoUpdate: false },
     telemetry: { ...section(existing, "telemetry"), excludePayload: true },
+    hooks: withPinSessionHook(section(existing, "hooks")),
   };
   mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
