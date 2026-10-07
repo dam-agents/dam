@@ -1711,7 +1711,7 @@ controller:
   # (content- and metadata-verified), re-points the StatefulSet, deletes the
   # old volume, and restores the agent's prior run state. Interrupt-safe and
   # resumable; a no-op once no RWX workspace volume remains. Keep the old
-  # storage backend (e.g. nfsProvisioner, or your managed shared filesystem)
+  # storage backend (e.g. your managed shared filesystem)
   # available until the controller stops logging migrations, then decommission
   # it.
   #
@@ -2151,43 +2151,3 @@ gitRepos:
     url: https://github.com/willallstet/arxiv-scanner.git
     description: "Onboards a GitHub repo and scans arXiv for related work"
     compatibleTemplates: [claude-code]
-
-# -- DEPRECATED in-cluster NFS server + external provisioner (#2988). Nothing
-# needs shared-writable storage any more: workspace volumes are ReadWriteOnce
-# and the storage migration (controller.storageMigration) drains existing RWX
-# volumes. Keep this enabled on an install whose agent volumes still live on
-# it, ONLY until the migration completes (no RWX PVC left in the agent
-# namespace) — then disable it. The whole block is removed in a future
-# release. The bundled nfs-ganesha image is archived upstream and breaks on
-# btrfs-backed exports.
-nfsProvisioner:
-  enabled: false
-  # Break-glass annotations for admission controllers (e.g. StackRox) since
-  # the upstream image is old and needs elevated capabilities.
-  annotations: {}
-  podAnnotations: {}
-  image: registry.k8s.io/sig-storage/nfs-provisioner:v4.0.8
-  # Name of the RWX StorageClass created here. Reference it from
-  # `controller.agent.base.storageClass`.
-  storageClassName: platform-rwx
-  # Immediate-binding RWX StorageClass for the warm PVC pool (#692). The default
-  # platform-rwx class binds WaitForFirstConsumer (correct for agent PVCs, which
-  # provision when their pod schedules) but useless for pre-warming, since a
-  # spare would sit Pending until mounted. This variant binds Immediate so
-  # spares provision the moment they're created. Reference its name from
-  # `controller.warmPool.storageClass`.
-  warmPoolClass:
-    enabled: false
-    name: platform-rwx-immediate
-  # Single backing volume that hosts all NFS exports; individual agent PVCs
-  # are carved out as subdirectories.
-  size: 20Gi
-  # StorageClass for the NFS server's own PVC. Empty = cluster default (RWO is fine).
-  storageClass: ""
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
