@@ -534,7 +534,7 @@ func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 	return corev1.DNSDefault
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner's env also has smolvm hold every VMM to the syscalls a running microVM needs (SMOLVM_SECCOMP=enforce), applied after the VMM's device setup and before it enters the guest: a call outside the allowlist kills that VMM. smolvm applies the filter under its own serve by default, and an embedder only when asked.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's env also has smolvm audit every VMM against the syscalls a running microVM needs (SMOLVM_SECCOMP=audit), from after the VMM's device setup: a call outside the allowlist is logged, not refused. Enforced, the vm lane's runtime migration lost a migrated machine's sessions intermittently, so the filter only reports until the logs show which call it would have refused; the runtime's default profile still bounds every VMM. smolvm applies the filter under its own serve by default, and an embedder only when asked.
 // UNIT_BOUNDARY_DESCRIPTION: the runner's env also confines every VMM's filesystem with Landlock (SMOLVM_LANDLOCK=enforce), applied before the VMM loads libkrun: the shared guest rootfs and the image tree are read-only to it, and it may write only its own machine's disks, sockets and logs and its own readiness marker. Without it a guest's root virtiofs export writes through to the agent rootfs every machine of the owner boots from. smolvm refuses to boot a VMM it fails to confine.
 // UNIT_BOUNDARY_DESCRIPTION: smolvm can give each machine's VMM its own unprivileged uid, and the runner's env turns that off (SMOLVM_VM_UID_DROP=off). A VMM with its own uid reaches the image tree through an idmapped mount that maps on-disk uid 0 to it, so every file the image gives another uid reaches the guest as nobody, and the workload exits as it starts.
 // UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. None is for the network: smolvm runs each machine's network in user space, over a socket pair to its VMM, with no tun device, route or NAT of its own. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. CHOWN, FOWNER and FSETID are only for a runner that unpacks images into its own claim: tar restores each file's owner, then sets a mode on a file it no longer owns, and a setgid bit on a file whose group root is not in survives that mode only with FSETID. A runner on the node cache or on staged archives unpacks nothing, so it does not get them.
@@ -680,7 +680,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						Env: []corev1.EnvVar{{
 							Name: "SMOLVM_VM_UID_DROP", Value: "off",
 						}, {
-							Name: "SMOLVM_SECCOMP", Value: "enforce",
+							Name: "SMOLVM_SECCOMP", Value: "audit",
 						}, {
 							Name: "SMOLVM_LANDLOCK", Value: "enforce",
 						}, {
