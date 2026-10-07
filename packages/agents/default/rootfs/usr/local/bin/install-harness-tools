@@ -11,7 +11,8 @@ tools=$PLATFORM_TOOLS_VOLUME
 # beside the installs: in the container it would vanish with a killed install
 # and leave its dir passing as installed. Dirs left empty before that are swept.
 [ ! -d "$tools/installs" ] || find "$tools/installs" -mindepth 2 -maxdepth 2 -type d -empty -delete
-MISE_CACHE_DIR="$tools/cache" MISE_LOCKFILE=1 MISE_NPM_PACKAGE_MANAGER=aube MISE_GITHUB_SLSA=false mise install --system
+export MISE_CACHE_DIR="$tools/cache" MISE_LOCKFILE=1 MISE_NPM_PACKAGE_MANAGER=aube MISE_GITHUB_SLSA=false
+mise install --system
 # mise does not count the npm tools aube installed as installed, so their bin
 # directories never reach PATH; Playwright is run from its own install, under
 # mise exec for the node it runs on.
