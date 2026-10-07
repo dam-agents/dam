@@ -8,13 +8,23 @@
 #
 # Env: IMAGE_PREFIX, GITHUB_SHA, GITHUB_REF, GITHUB_REF_NAME,
 #   COMPOSITE (the app version), SOURCE_SHAS (image:resolve's JSON map) and
-#   SOURCE_SHA_TAGGED (the components that also get their source-sha tag).
+#   SOURCE_SHA_TAGGED (the components that also get their source-sha tag),
+#   CONTENT_REUSED (the components a rebuild of unchanged content does not
+#   replace).
 #   CI_MERGE_DEBUG names components whose merge logs every registry request,
 #   timestamped.
 #
 # A component this run did not build, because image:resolve found its source
 # published, has no digests: its source-sha image gets this run's tags. That is
 # one manifest write per tag, where a merge copies inside the registry.
+#
+# A CONTENT_REUSED component the chart pins by digest, so a new digest rolls
+# its pods. A rebuild whose every arch's config equals that of the image it
+# would replace, but for what it says about the build — the creation date
+# each build takes from its own commit, the version of mise that built it — is
+# that image: it gets this run's tags and keeps its digest. The image it would
+# replace is this commit's own, on a rerun or a release, else the last one main
+# published, which such a component is also tagged `main` for.
 #
 # The tags are what docker/metadata-action gave each image: the commit sha,
 # the composite version, and on a v* tag its semver version, major.minor
@@ -37,11 +47,25 @@ case "$GITHUB_REF" in
     ;;
 esac
 
+# <ref> <component> <per-arch digest>...: whether those builds are ref's.
+same_content() {
+  local ref=$1 c=$2 d cfg
+  shift 2
+  [ "$(crane manifest "$ref" | jq '.manifests | length')" = $# ] || return 1
+  for d; do
+    cfg="$(crane config "$IMAGE_PREFIX/$c@sha256:$d")" || return 1
+    [ "$(undated <<< "$cfg")" = "$(crane config --platform "linux/$(jq -r .architecture <<< "$cfg")" "$ref" | undated)" ] || return 1
+  done
+}
+undated() { jq -cS 'walk(if type == "object" then del(.created) else . end) | del(.config.Labels["org.opencontainers.image.created", "dev.mise.version"])'; }
+
 # The images merge side by side, so the job takes as long as its slowest
 # image (keycloak's copy inside the registry takes minutes) rather than the
 # sum of them all.
 merge_one() {
-  local c=$1 s t seen=" " uniq=() args=() tags=("$GITHUB_SHA" "$COMPOSITE" "${release[@]}")
+  local c=$1 s t r from="" seen=" " uniq=() args=() digests=() tags=("$GITHUB_SHA" "$COMPOSITE" "${release[@]}") reused=false
+  [[ " ${CONTENT_REUSED:-} " == *" $c "* ]] && reused=true
+  [ "$reused" = true ] && [ "$GITHUB_REF" = refs/heads/main ] && tags+=(main)
   if [[ " ${SOURCE_SHA_TAGGED:-} " == *" $c "* ]]; then
     s="$(jq -r --arg c "$c" '.[$c] // empty' <<< "${SOURCE_SHAS:?}")"
     [ -n "$s" ] && tags+=("$s")
@@ -50,18 +74,27 @@ merge_one() {
     [[ "$seen" == *" $t "* ]] && continue
     seen+="$t " uniq+=("$t")
   done
-  for d in "$dir/$c"/*; do [ -e "$d" ] && args+=(-m "$IMAGE_PREFIX/$c@sha256:$(basename "$d")"); done
-  if [ "${#args[@]}" -eq 0 ]; then
+  for d in "$dir/$c"/*; do [ -e "$d" ] && digests+=("$(basename "$d")"); done
+  if [ "${#digests[@]}" -eq 0 ]; then
     s="$(jq -r --arg c "$c" '.[$c] // empty' <<< "${SOURCE_SHAS:?}")"
     if [ -z "$s" ] || ! crane digest "$IMAGE_PREFIX/$c:$s" >/dev/null 2>&1; then
       echo "::error::no digests for $c, and no image at its source sha"; return 1
     fi
-    echo "$c: reused $IMAGE_PREFIX/$c:$s <-$seen"
+    from="$IMAGE_PREFIX/$c:$s"
+  elif [ "$reused" = true ]; then
+    for t in "$GITHUB_SHA" main; do
+      r="$(crane digest "$IMAGE_PREFIX/$c:$t" 2>/dev/null)" || continue
+      same_content "$IMAGE_PREFIX/$c@$r" "$c" "${digests[@]}" && { from="$IMAGE_PREFIX/$c@$r"; break; }
+    done
+  fi
+  if [ -n "$from" ]; then
+    echo "$c: reused $from <-$seen"
     for t in "${uniq[@]}"; do
-      [ "$t" = "$s" ] || crane tag "$IMAGE_PREFIX/$c:$s" "$t" || return 1
+      [ "$from" = "$IMAGE_PREFIX/$c:$t" ] || crane tag "$from" "$t" || return 1
     done
     return 0
   fi
+  for d in "${digests[@]}"; do args+=(-m "$IMAGE_PREFIX/$c@sha256:$d"); done
   echo "$c:$seen<- ${args[*]}"
   if [[ " ${CI_MERGE_DEBUG:-} " == *" $c "* ]]; then
     crane -v index append "${args[@]}" -t "$IMAGE_PREFIX/$c:${uniq[0]}" 2>&1 |

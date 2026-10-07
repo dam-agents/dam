@@ -355,6 +355,9 @@ jobs:
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
           # Every image carries its source-sha tag: image:resolve reuses by it.
           SOURCE_SHA_TAGGED: controller vm-runner api-server ui keycloak
+          # The chart pins the runner by digest: a rebuild of the same content
+          # keeps it, so no runner rolls.
+          CONTENT_REUSED: vm-runner
           # keycloak's merge takes minutes of copying inside the registry; its
           # registry requests are logged to find where the time goes.
           CI_MERGE_DEBUG: keycloak
@@ -835,6 +838,8 @@ jobs:
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
         with:
           cache: "false"
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
       - name: Log in to Helm OCI registry
         env:
           QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
@@ -853,7 +858,7 @@ jobs:
       - name: Build Helm chart dependencies
         run: helm/.mise/deps
 
-      - name: Pin content-tagged image tags
+      - name: Pin content-tagged image tags and digests
         env:
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
         run: .mise/tasks/image/pin-tags "$SOURCE_SHAS"
@@ -892,13 +897,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # mise's pinned helm alone. The chart's dependencies and the tag pins
-      # run by path: `mise -C helm deps` and `mise run` install every tool
-      # first, which took this job a minute and a half.
+      # mise's pinned helm alone, and crane for the digest pins. The chart's
+      # dependencies and the tag pins run by path: `mise -C helm deps` and
+      # `mise run` install every tool first, which took this job a minute and
+      # a half.
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
         with:
-          install_args: helm
+          install_args: helm crane
           cache: "false"
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
       - name: Log in to Helm OCI registry
         env:
           QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
@@ -908,7 +916,7 @@ jobs:
       - name: Build Helm chart dependencies
         run: helm/.mise/deps
 
-      - name: Pin content-tagged image tags
+      - name: Pin content-tagged image tags and digests
         env:
           SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
         run: .mise/tasks/image/pin-tags "$SOURCE_SHAS"
