@@ -7,8 +7,8 @@
 # progress, xvfb, i3-wm and x11-xserver-utils (the browser panel's display, its
 # kiosk window manager and the xrandr Selkies resizes it with), pipewire,
 # pipewire-pulse and wireplumber (its sound, which Selkies captures through the
-# PulseAudio protocol) and the codec libraries of the GPL-free pixelflux built
-# in base/selkies, and from libasound2t64 on, what Playwright lists for its
+# PulseAudio protocol), and the VA-API and pixman libraries pixelflux's wheel
+# takes from the system (base/selkies), and from libasound2t64 on, what Playwright lists for its
 # Chromium on trixie.
 [bootstrap.packages]
 "apt:ca-certificates" = "latest"
@@ -34,10 +34,9 @@
 "apt:pipewire-pulse" = "latest"
 "apt:wireplumber" = "latest"
 "apt:x11-xserver-utils" = "latest"
-"apt:libvpx9" = "latest"
-"apt:libsvtav1enc2" = "latest"
-"apt:libdav1d7" = "latest"
-"apt:libde265-0" = "latest"
+"apt:libva2" = "latest"
+"apt:libva-drm2" = "latest"
+"apt:libva-x11-2" = "latest"
 "apt:libpixman-1-0" = "latest"
 "apt:zip" = "latest"
 "apt:libasound2t64" = "latest"

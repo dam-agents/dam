@@ -62,7 +62,10 @@ export const watchPages: WatchPages = ({ url, onState, onClose, log }) =>
     let nextId = 1;
     const pending = new Map<
       number,
-      { resolve: (r: Record<string, unknown>) => void; reject: (e: Error) => void }
+      {
+        resolve: (r: Record<string, unknown>) => void;
+        reject: (e: Error) => void;
+      }
     >();
     const pages = new Map<string, Page>();
     let active: string | null = null;
@@ -102,8 +105,7 @@ export const watchPages: WatchPages = ({ url, onState, onClose, log }) =>
       });
     }
 
-    const current = (): Page | null =>
-      (active && pages.get(active)) || null;
+    const current = (): Page | null => (active && pages.get(active)) || null;
 
     function emit() {
       const page = current();
@@ -125,9 +127,7 @@ export const watchPages: WatchPages = ({ url, onState, onClose, log }) =>
       const page = pages.get(targetId);
       if (!page) return;
       const [h, title] = await Promise.all([
-        call("Page.getNavigationHistory", {}, page.sessionId).catch(
-          () => null,
-        ),
+        call("Page.getNavigationHistory", {}, page.sessionId).catch(() => null),
         withTitle
           ? call(
               "Runtime.evaluate",
@@ -204,7 +204,8 @@ export const watchPages: WatchPages = ({ url, onState, onClose, log }) =>
     }
 
     const pageOf = (sessionId: string | undefined): [string, Page] | null => {
-      for (const entry of pages) if (entry[1].sessionId === sessionId) return entry;
+      for (const entry of pages)
+        if (entry[1].sessionId === sessionId) return entry;
       return null;
     };
 
@@ -212,8 +213,7 @@ export const watchPages: WatchPages = ({ url, onState, onClose, log }) =>
       const p = msg.params ?? {};
       if (msg.method === "Target.targetCreated") {
         const info = p.targetInfo as Record<string, unknown>;
-        if (info?.type === "page")
-          void attach(String(info.targetId), info);
+        if (info?.type === "page") void attach(String(info.targetId), info);
         return;
       }
       if (msg.method === "Target.targetDestroyed") {

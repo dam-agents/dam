@@ -377,23 +377,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The default image's stream server, Selkies, is compiled from source
-      # (packages/agents/base/selkies); its output is kept between runs, keyed
-      # by what decides it, so a run compiles it only when one of those
-      # changes. Its Debian base is read from the root config, like the Rust
-      # version above, so a bump of another tool there keeps the entry. Before
-      # setup-mise, for the reason check-test gives.
-      - id: selkies-key
-        run: |
-          set -euo pipefail
-          base="$(sed -n 's/^base_image_debian = "\(.*\)"$/\1/p' .mise/config.toml)"
-          [ -n "$base" ] || { echo "::error::.mise/config.toml names no base_image_debian"; exit 1; }
-          echo "base=$base" >> "$GITHUB_OUTPUT"
-      - id: selkies
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: &selkies-paths ~/.cache/platform-selkies/out-*
-          key: &selkies-key selkies-${{ runner.os }}-${{ runner.arch }}-${{ steps.selkies-key.outputs.base }}-${{ hashFiles('packages/agents/base/selkies/build.sh', 'packages/agents/base/apt.toml', 'packages/agents/base/base.toml') }}
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
         with:
           install_args: nodejs pnpm crane usage uv conda:pigz
@@ -405,29 +388,12 @@ jobs:
           ARCH: ${{ matrix.arch }}
           AGENTS: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
           PR: ${{ github.event_name == 'pull_request' }}
-          # The stream server's build is cached in the registry by its inputs
-          # (packages/agents/base/selkies), so each is built once, PRs included.
-          PLATFORM_SELKIES_PUSH: "1"
         run: |
           set -euo pipefail
           # A PR only proves its agents build.
           read -r -a agents <<< "$AGENTS"
           [ "$PR" != true ] || agents=("${agents[@]/%/:cacheonly}")
           .mise/tasks/image/ci-build --serial "$ARCH" "${agents[@]}"
-      # Written on a miss once a build has compiled it. A PR's entry is its
-      # own, so a rerun of a PR that changes Selkies does not compile it again;
-      # main's serves every PR.
-      - id: selkies-built
-        if: ${{ !cancelled() && steps.selkies.outputs.cache-hit != 'true' }}
-        run: |
-          if compgen -G "$HOME/.cache/platform-selkies/out-*/opt/selkies/bin/selkies" >/dev/null; then
-            echo "built=true" >> "$GITHUB_OUTPUT"
-          fi
-      - if: ${{ !cancelled() && steps.selkies-built.outputs.built == 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: *selkies-paths
-          key: *selkies-key
       - if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

@@ -60,7 +60,12 @@ async function fakeChrome(tabs: FakeTab[]) {
           send({
             method: "Target.targetCreated",
             params: {
-              targetInfo: { targetId: t.id, type: "page", url: t.url, title: t.title },
+              targetInfo: {
+                targetId: t.id,
+                type: "page",
+                url: t.url,
+                title: t.title,
+              },
             },
           });
       else if (method === "Target.attachToTarget")

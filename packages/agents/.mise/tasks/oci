@@ -258,8 +258,8 @@ build_default() (
   set -- "$work"/ms-playwright/chromium-*/chrome-linux*/chrome
   [ $# -eq 1 ] || { echo "want one Playwright Chromium, found: $*" >&2; exit 1; }
   ln -s "${1#"$work"/ms-playwright/}" build/opt/ms-playwright/chromium
-  # The browser panel's stream server, Selkies with a pixelflux built without
-  # its GPL encoders.
+  # The browser panel's stream server, Selkies, with its Python packages
+  # installed for the image's Python.
   PLATFORM_SELKIES_PYTHON="$(mise -E "$envs" which python3)" "$root/$agents/base/selkies/build.sh" build
   # docker finds a CLI plugin in its plugin directory, not on PATH.
   for p in buildx compose; do

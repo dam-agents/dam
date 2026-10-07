@@ -47,7 +47,9 @@ wireplumber &
 pipewire-pulse &
 wait_for "$pulse_socket" "PipeWire's PulseAudio server"
 
-# Audio is queued 250 ms deep (backpressure-queue-size counts 10 ms chunks of
+# Only royalty-free codecs are offered, VP8 first as the lightest to encode
+# on a small CPU share; a browser that decodes none of the video codecs falls
+# back to JPEG. Audio is queued 250 ms deep (backpressure-queue-size counts 10 ms chunks of
 # it) so a stall does not drop sound; the page's jitter buffer drops past
 # 80 ms itself, so the depth adds no steady lag.
 /opt/selkies/bin/selkies \
@@ -57,7 +59,8 @@ wait_for "$pulse_socket" "PipeWire's PulseAudio server"
   --use-css-scaling=true \
   --backpressure-queue-size=25 \
   --video-streaming-mode=false \
-  --framerate=30,8-60 &
+  --framerate=30,8-60 \
+  --encoder=vp8enc,vp9enc,av1enc,jpeg &
 
 wait -n
 echo "platform-display: a part of the display stack exited" >&2

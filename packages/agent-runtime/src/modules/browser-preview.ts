@@ -588,8 +588,8 @@ export function createBrowserPreview(deps: {
       const msg = isBinary ? null : parseControl(data.toString());
       if (msg)
         timed(msg.type, () => control(client, msg)).catch((err: Error) =>
-            sendJson(client, { type: "preview_error", message: err.message }),
-          );
+          sendJson(client, { type: "preview_error", message: err.message }),
+        );
     });
     client.on("close", () => {
       viewers.delete(client);
