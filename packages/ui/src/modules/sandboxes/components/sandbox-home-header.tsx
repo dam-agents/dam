@@ -24,14 +24,13 @@ import {
 } from "../../agents/components/avatar/agent-avatar.js";
 import { FreeUpComputeItems } from "../../agents/components/power-menu-items.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
+import { useConfirmStopAgent } from "../../agents/hooks/use-confirm-stop-agent.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
 import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
 import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { useFeed } from "../../home/api/queries.js";
-import { fetchSchedulesForAgent } from "../../schedules/api/queries.js";
-import { isUpcoming } from "../../schedules/lib/once-schedule.js";
 
 interface Props {
   agent: AgentView;
@@ -48,29 +47,13 @@ export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
   const suspend = useSuspendAgent();
+  const confirmStop = useConfirmStopAgent();
   const { updateOne, updatingId, updatingAll } = useUpdateSandbox();
 
   const openChat = () => selectAgent(agent.id);
 
   const onStop = async () => {
-    const schedules = (await fetchSchedulesForAgent(agent.id)).filter(
-      isUpcoming,
-    );
-    const scheduleNote =
-      schedules.length > 0 ? (
-        <>
-          {" "}
-          This agent has <strong>{schedules.length} schedule(s)</strong> — the
-          next fire will start it again.
-        </>
-      ) : null;
-    const msg = (
-      <>
-        Stop agent <strong className="text-foreground">"{agent.name}"</strong>?
-        It stays stopped until you start it.{scheduleNote}
-      </>
-    );
-    if (!(await showConfirm(msg, "Stop Agent"))) return;
+    if (!(await confirmStop(agent))) return;
     suspend.stop(agent.id);
   };
 
