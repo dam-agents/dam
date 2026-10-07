@@ -13,6 +13,9 @@ onboarding: false
 image:
   ref: quay.io/dam-agents/nous # @ci-pin nous-image-tag
   harness: claude-code
+  # No bedrock: Nous's gate summaries are OpenAI-format calls, served by the
+  # in-pod gateway only when Claude Code uses it; on Bedrock it does not, and
+  # a Bedrock connection injects no OpenAI endpoint.
   providers: [ibm-litellm, curve-bender, anthropic]
 resources:
   cpu: "2"

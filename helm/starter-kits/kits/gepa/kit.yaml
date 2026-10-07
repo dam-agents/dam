@@ -11,6 +11,8 @@ onboarding: false
 image:
   ref: quay.io/dam-agents/gepa # @ci-pin gepa-image-tag
   harness: claude-code
+  # No bedrock yet: LiteLLM, GEPA's loop client, can call Bedrock, but this
+  # image has not been tested on it. List it once it has.
   providers: [ibm-litellm, curve-bender, anthropic]
 resources:
   storage: 5Gi

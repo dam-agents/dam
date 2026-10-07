@@ -11,6 +11,8 @@ onboarding: false
 image:
   ref: quay.io/dam-agents/skydiscover # @ci-pin skydiscover-image-tag
   harness: claude-code
+  # No bedrock: the SkyDiscover loop calls an OpenAI-compatible endpoint
+  # (OPENAI_BASE_URL), and a Bedrock connection injects none.
   providers: [ibm-litellm, curve-bender, openai]
 resources:
   storage: 5Gi

@@ -11,6 +11,8 @@ docsUrl: https://github.com/dam-agents/dam/blob/main/packages/agents/k-search/RE
 onboarding: false
 image:
   ref: quay.io/dam-agents/k-search # @ci-pin k-search-image-tag
+  # No bedrock: the kernel search calls an OpenAI-compatible endpoint
+  # (OPENAI_BASE_URL), and a Bedrock connection injects none.
   providers: [ibm-litellm, curve-bender, openai]
 resources:
   cpu: "2"
