@@ -52,6 +52,7 @@ export function ProcessRow({
         <ProcessCommand command={row.command} />
         {row.outputPath !== null && (
           <OutputButton
+            command={row.command}
             active={outputOpen}
             onClick={() => onOpenOutput(row.key)}
           />

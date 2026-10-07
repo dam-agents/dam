@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 
+import { isMobile } from "../../../lib/breakpoints.js";
 import { useStore } from "../../../store.js";
 
 export const PROCESSES_SECTION_ID = "processes-section";
@@ -10,7 +11,7 @@ export function useOpenProcessesSection() {
 
   return useCallback(() => {
     setSectionOpen(true);
-    setMobileScreen("sessions");
+    if (isMobile()) setMobileScreen("sessions");
     requestAnimationFrame(() =>
       document
         .getElementById(PROCESSES_SECTION_ID)

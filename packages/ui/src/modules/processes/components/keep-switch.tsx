@@ -33,7 +33,7 @@ export function KeepSwitch({ agentId, row, alwaysOn }: Props) {
         setKeep.mutate({ key: row.key, keepsAwake: next })
       }
       disabled={alwaysOn || setKeep.isPending}
-      label="Keeps the agent awake"
+      label={`${row.command} keeps the agent awake`}
       testId="process-keep-switch"
       className={cn(alwaysOn && "pointer-events-none")}
     />

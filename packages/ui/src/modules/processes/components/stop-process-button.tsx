@@ -30,6 +30,7 @@ export function StopProcessButton({ agentId, row }: Props) {
       tone="danger"
       size="xs"
       className="shrink-0 font-normal"
+      aria-label={`Stop ${row.command}`}
       data-testid="process-stop"
       disabled={row.pid === null || stop.isPending}
       tooltip={row.pid === null ? NO_PID_STOP_HINT : undefined}

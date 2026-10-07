@@ -27,6 +27,7 @@ export function FinishedRow({ row, now, outputOpen, onOpenOutput }: Props) {
         <ProcessCommand command={row.command} />
         {row.outputPath !== null && (
           <OutputButton
+            command={row.command}
             active={outputOpen}
             onClick={() => onOpenOutput(row.key)}
           />
