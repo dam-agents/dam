@@ -29,6 +29,10 @@ drivers:
       configOptions:
         effort: "effortLevel"
         cacheTtl: ["promptCacheTtl", "subagentPromptCacheTtl"]
+    # The model value that switches one session to what the agent's own
+    # Default gives (Claude Code's built-in default), which a schedule with no
+    # model runs on.
+    defaultModel: default
     catalog:
       options:
         - id: model

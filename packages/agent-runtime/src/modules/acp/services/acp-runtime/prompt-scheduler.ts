@@ -29,6 +29,7 @@ export interface PromptSubmission {
 
 export interface PromptScheduler {
   submit(submission: PromptSubmission): PromptFate;
+  submitSetting(submission: PromptSubmission): PromptFate;
   onPromptResponse(
     sessionId: string,
     outboundId: number,
@@ -92,6 +93,11 @@ export interface PromptSchedulerDeps {
  * outside this module ever removes a queue itself. refuseQueue is the one
  * exception and answers each sender with an error instead, so the loss is
  * reported to the client that is still there to hear it rather than recorded.
+ * A setting change for a session (its model or mode) waits on the same gate
+ * but is not a turn: it waits only for the session to be loaded back into
+ * the harness, never for a turn in flight, goes out ahead of the queued
+ * prompts once it can, and on every route a queue leaves by is answered with
+ * an error rather than written down, since nothing replays a setting.
  */
 export function createPromptScheduler(
   deps: PromptSchedulerDeps,
@@ -101,6 +107,7 @@ export function createPromptScheduler(
     { outboundId: number; promptId: string | null; runPrompt: boolean }
   >();
   const queues = new Map<string, PromptSubmission[]>();
+  const pendingSettings = new Map<string, PromptSubmission[]>();
   const parkTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const queueParkMs = deps.queueParkMs ?? DEFAULT_QUEUE_PARK_MS;
 
@@ -110,7 +117,29 @@ export function createPromptScheduler(
     parkTimers.delete(sessionId);
   }
 
+  function refuseSettings(sessionId: string, message: string): void {
+    const settings = pendingSettings.get(sessionId);
+    pendingSettings.delete(sessionId);
+    for (const entry of settings ?? []) refuse(entry, message);
+  }
+
+  function flushSettings(sessionId: string): void {
+    const settings = pendingSettings.get(sessionId);
+    const head = settings?.[0];
+    if (settings === undefined || head === undefined) return;
+    if (!deps.canStart(head)) return;
+    for (const entry of [...settings]) {
+      if (!deps.sendToAgent(entry.frame)) break;
+      settings.shift();
+    }
+    if (settings.length === 0) pendingSettings.delete(sessionId);
+  }
+
   function dropQueue(sessionId: string, cause: QueueDropCause): void {
+    refuseSettings(
+      sessionId,
+      `the setting was not applied: the session's queue was dropped (${cause})`,
+    );
     clearParkTimer(sessionId);
     const dropped = queues.get(sessionId);
     queues.delete(sessionId);
@@ -160,6 +189,8 @@ export function createPromptScheduler(
   }
 
   function maybeStartNext(sessionId: string): void {
+    flushSettings(sessionId);
+    if (pendingSettings.has(sessionId)) return;
     if (activeTurns.has(sessionId)) return;
     const queue = queues.get(sessionId);
     const next = queue?.[0];
@@ -208,6 +239,21 @@ export function createPromptScheduler(
       return "queued";
     },
 
+    submitSetting(submission) {
+      const sessionId = submission.sessionId;
+      if (
+        !pendingSettings.has(sessionId) &&
+        deps.canStart(submission) &&
+        deps.sendToAgent(submission.frame)
+      )
+        return "started";
+      pendingSettings.set(sessionId, [
+        ...(pendingSettings.get(sessionId) ?? []),
+        submission,
+      ]);
+      return "queued";
+    },
+
     onPromptResponse(sessionId, outboundId) {
       const active = activeTurns.get(sessionId);
       if (active === undefined || active.outboundId !== outboundId) {
@@ -233,11 +279,17 @@ export function createPromptScheduler(
     },
 
     hasWork(sessionId) {
-      return activeTurns.has(sessionId) || queues.has(sessionId);
+      return (
+        activeTurns.has(sessionId) ||
+        queues.has(sessionId) ||
+        pendingSettings.has(sessionId)
+      );
     },
 
     anyWork() {
-      return activeTurns.size > 0 || queues.size > 0;
+      return (
+        activeTurns.size > 0 || queues.size > 0 || pendingSettings.size > 0
+      );
     },
 
     activeTurnCount() {
@@ -254,6 +306,7 @@ export function createPromptScheduler(
     },
 
     refuseQueue(sessionId, message) {
+      refuseSettings(sessionId, message);
       const queue = queues.get(sessionId);
       if (queue === undefined) return;
       queues.delete(sessionId);
@@ -287,6 +340,11 @@ export function createPromptScheduler(
     clear() {
       for (const timer of parkTimers.values()) clearTimeout(timer);
       parkTimers.clear();
+      for (const sessionId of [...pendingSettings.keys()])
+        refuseSettings(
+          sessionId,
+          "the setting was not applied: the harness went down",
+        );
       const active = [...activeTurns.entries()];
       activeTurns.clear();
       for (const sessionId of [...queues.keys()])

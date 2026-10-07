@@ -394,7 +394,7 @@ export function SchedulePrecheckField({
 }
 
 const MODEL_HINT =
-  "The model this schedule's runs use, without changing the agent's own model. A cheap model suits a frequent routine check. If the agent can't switch to it, the run fails with the reason instead of using the default.";
+  "The model this schedule's runs use, without changing the agent's own model. Default is the harness's own default, as in the agent's model settings. If the agent can't switch to the chosen model, the run fails with the reason instead of using another.";
 
 export function ScheduleModelField({
   agentId,
@@ -403,15 +403,12 @@ export function ScheduleModelField({
   agentId: string;
   control: Control<ScheduleFormValues>;
 }) {
-  const { choices, agentDefault } = useModelChoices(agentId);
+  const { choices, hasDefault } = useModelChoices(agentId);
   const options: Choice[] = choices.map((c) => ({
     id: c.value,
     name: c.name,
     description: c.description,
   }));
-  const defaultName = agentDefault
-    ? (options.find((c) => c.id === agentDefault)?.name ?? agentDefault)
-    : null;
 
   return (
     <FormField label="Model" hint={MODEL_HINT} disableInset>
@@ -427,12 +424,8 @@ export function ScheduleModelField({
                 : options
             }
             value={field.value || null}
-            clearedLabel="Agent default"
-            clearedDescription={
-              defaultName
-                ? `The agent's own model, currently ${defaultName}`
-                : "The agent's own model"
-            }
+            clearable={hasDefault}
+            {...(hasDefault ? {} : { placeholder: "Choose a model" })}
             onSelect={(id) => field.onChange(id ?? "")}
           />
         )}

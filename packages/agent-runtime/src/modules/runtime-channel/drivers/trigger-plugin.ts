@@ -42,7 +42,7 @@ function withContext(task: string, context: string | undefined): string {
 export function createTriggerPlugin(deps: {
   driver: TriggerSessionDriver;
   stateStore: TriggerStateStore;
-  configuredModel: () => Promise<string | null>;
+  harnessDefault: () => Promise<string | null>;
   runPrecheck: PrecheckRunner;
   log: (msg: string) => void;
   reporter: EventReporter;
@@ -73,6 +73,7 @@ export function createTriggerPlugin(deps: {
         `[trigger] ${payload.scheduleId}: the session that scheduled it is gone; running in a fresh session`,
       );
     }
+    const model = payload.model ?? (await deps.harnessDefault()) ?? undefined;
     if (origin?.mode === "report") {
       await deps.driver.start({
         task,
@@ -82,21 +83,12 @@ export function createTriggerPlugin(deps: {
           reportTo: origin.sessionRef,
           reportName: origin.name,
         },
-        ...(payload.model ? { model: payload.model } : {}),
+        model,
       });
       return;
     }
     if (!payload.once && (payload.sessionMode ?? "fresh") === "continuous") {
-      const { scheduleId } = payload;
-      const prior = deps.stateStore.getSessionForSchedule(scheduleId);
-      const beforeSwitch = prior
-        ? deps.stateStore.getModelBeforeSwitch(scheduleId)
-        : undefined;
-      const model =
-        payload.model ??
-        (beforeSwitch
-          ? ((await deps.configuredModel()) ?? beforeSwitch)
-          : undefined);
+      const prior = deps.stateStore.getSessionForSchedule(payload.scheduleId);
       const res = await deps.driver.start({
         task,
         mcpServers: payload.mcpServers,
@@ -104,17 +96,17 @@ export function createTriggerPlugin(deps: {
         model,
       });
       if (!prior)
-        deps.stateStore.setSessionForSchedule(scheduleId, res.sessionId);
-      if (!payload.model) deps.stateStore.clearModelBeforeSwitch(scheduleId);
-      else if (!beforeSwitch && res.openedOn)
-        deps.stateStore.setModelBeforeSwitch(scheduleId, res.openedOn);
+        deps.stateStore.setSessionForSchedule(
+          payload.scheduleId,
+          res.sessionId,
+        );
       return;
     }
     await deps.driver.start({
       task,
       mcpServers: payload.mcpServers,
       platformMeta,
-      ...(payload.model ? { model: payload.model } : {}),
+      model,
     });
   };
 

@@ -88,7 +88,8 @@ export function createTriggerSessionDriver(deps: {
           openedOn = openedModel(res);
         }
 
-        if (model) await setSessionModel(caller, sessionId, model);
+        if (model && model !== openedOn)
+          await setSessionModel(caller, sessionId, model);
 
         caller.notify("session/prompt", {
           sessionId,
@@ -121,8 +122,11 @@ async function setSessionModel(
         configId: "model",
         value: model,
       });
-    } catch {
-      throw new SessionModelError(model, (first as Error).message);
+    } catch (second) {
+      throw new SessionModelError(
+        model,
+        `${(second as Error).message} (and ${(first as Error).message})`,
+      );
     }
   }
 }

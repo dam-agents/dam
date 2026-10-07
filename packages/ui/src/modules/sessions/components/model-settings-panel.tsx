@@ -172,15 +172,15 @@ export function OptionPicker({
   title,
   choices,
   value,
-  clearedLabel = CLEARED_LABEL,
-  clearedDescription = CLEARED_DESCRIPTION,
+  clearable = true,
+  placeholder = CLEARED_LABEL,
   onSelect,
 }: {
   title: string;
   choices: Choice[];
   value: string | null;
-  clearedLabel?: string;
-  clearedDescription?: string;
+  clearable?: boolean;
+  placeholder?: string;
   onSelect: (id: string | null) => void;
 }) {
   const selected = value === null ? null : choices.find((c) => c.id === value);
@@ -192,7 +192,7 @@ export function OptionPicker({
           aria-label={title}
           className="flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-4 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="truncate">{selected?.name ?? clearedLabel}</span>
+          <span className="truncate">{selected?.name ?? placeholder}</span>
           <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
@@ -200,12 +200,14 @@ export function OptionPicker({
         align="start"
         className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
       >
-        <OptionItem
-          label={clearedLabel}
-          description={clearedDescription}
-          active={value === null}
-          onSelect={() => onSelect(null)}
-        />
+        {clearable && (
+          <OptionItem
+            label={CLEARED_LABEL}
+            description={CLEARED_DESCRIPTION}
+            active={value === null}
+            onSelect={() => onSelect(null)}
+          />
+        )}
         {choices.map((c) => (
           <OptionItem
             key={c.id}

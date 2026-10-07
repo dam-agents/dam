@@ -75,6 +75,12 @@ const DEFAULT_REPLAY_TAIL_EVENTS = 200;
 
 const DEFAULT_HARNESS_LOAD_TIMEOUT_MS = 30 * 1000;
 
+const SESSION_SETTING_METHODS = new Set([
+  "session/set_config_option",
+  "session/set_mode",
+  "session/set_model",
+]);
+
 const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
 
 const RUN_TEXT_BYTES_CAP = 1024 * 1024;
@@ -1020,8 +1026,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
       if (method === "initialize") initializeWaiters = [];
 
+      const settingSessionId =
+        SESSION_SETTING_METHODS.has(method) && paramsSid ? paramsSid : null;
+
       if (
-        method === "session/prompt" &&
+        (method === "session/prompt" || settingSessionId !== null) &&
         paramsSid &&
         harnessColdSessions.has(paramsSid) &&
         orphanedHarnessLoads.has(paramsSid)
@@ -1132,6 +1141,27 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         ) {
           startHarnessRehydrate(promptSessionId);
         }
+        return;
+      }
+
+      if (settingSessionId !== null) {
+        const fate = promptScheduler.submitSetting({
+          sessionId: settingSessionId,
+          channel,
+          outboundId,
+          originalId: frame.id,
+          frame: rewritten,
+          promptId: null,
+          unattended:
+            nonViewerChannels.has(channel) &&
+            isMachineSession(settingSessionId),
+        });
+        if (
+          fate === "queued" &&
+          harnessColdSessions.has(settingSessionId) &&
+          !rehydratingSessions.has(settingSessionId)
+        )
+          startHarnessRehydrate(settingSessionId);
         return;
       }
 

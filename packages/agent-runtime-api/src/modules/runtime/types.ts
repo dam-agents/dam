@@ -335,6 +335,7 @@ export const harnessConfigCurrent = z.object({
   mode: z.string().nullable(),
   configOptions: z.record(z.string().min(1), z.string()),
   availableModels: z.array(harnessConfigChoice).nullable().optional(),
+  defaultModel: z.string().nullable().optional(),
 });
 export type HarnessConfigCurrent = z.infer<typeof harnessConfigCurrent>;
 

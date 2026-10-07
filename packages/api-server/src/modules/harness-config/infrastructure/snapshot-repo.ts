@@ -70,6 +70,7 @@ function sameSnapshot(
   return (
     a.model === b.model &&
     a.mode === b.mode &&
+    a.defaultModel === b.defaultModel &&
     a.confirmed === b.confirmed &&
     sameOptions(a.configOptions, b.configOptions) &&
     sameModels(a.availableModels, b.availableModels)

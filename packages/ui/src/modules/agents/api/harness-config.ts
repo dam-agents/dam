@@ -113,7 +113,7 @@ export function useResolvedHarnessConfig(
 
 export function useModelChoices(agentId: string | null): {
   choices: HarnessConfigChoice[];
-  agentDefault: string | null;
+  hasDefault: boolean;
 } {
   const { data: status } = useHarnessConfigStatus(agentId);
   const { values } = useResolvedHarnessConfig(agentId);
@@ -121,7 +121,7 @@ export function useModelChoices(agentId: string | null): {
   const choices = discovered?.length
     ? discovered
     : (status?.catalog?.options.find((o) => o.id === "model")?.choices ?? []);
-  return { choices, agentDefault: values?.model ?? null };
+  return { choices, hasDefault: !!values?.defaultModel };
 }
 
 export function useStaleModel(agentId: string | null): {

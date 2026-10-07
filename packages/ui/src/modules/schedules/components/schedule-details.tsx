@@ -125,7 +125,7 @@ function ScheduleModel({
   model: string | null;
 }) {
   const { choices } = useModelChoices(agentId);
-  if (!model) return <>Agent default</>;
+  if (!model) return <>Default</>;
   const choice = choices.find((c) => c.value === model);
   return (
     <>
