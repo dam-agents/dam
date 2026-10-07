@@ -192,20 +192,18 @@ virtualization:
       tag: ""
       digest: "" # @ci-pin vm-runner-image-digest
       pullPolicy: IfNotPresent
-    # KVM (and the tun device smolvm's per-machine network needs) arrive as
-    # device-plugin resources, which is the only way the runner gets them —
-    # it is never a privileged pod. Empty = the chart's own plugin below when
-    # enabled, else KubeVirt's (`devices.kubevirt.io/kvm|tun`, present on
-    # every node virt-handler runs on). Any plugin exposing /dev/kvm and
-    # /dev/net/tun works; a cluster with none cannot host vm agents, and the
+    # KVM arrives as a device-plugin resource, which is the only way the
+    # runner gets it — it is never a privileged pod. Empty = the chart's own
+    # plugin below when enabled, else KubeVirt's (`devices.kubevirt.io/kvm`,
+    # present on every node virt-handler runs on). Any plugin exposing
+    # /dev/kvm works; a cluster with none cannot host vm agents, and the
     # controller says so at startup when no schedulable node matching
-    # `nodeSelector` advertises these.
+    # `nodeSelector` advertises it.
     devices: {}
     # OpenShift: name of a *built-in* SCC to bind to the runner's
     # ServiceAccount. Usually unnecessary — when `openshift.scc.anyuidCapNet`
     # is on, the chart binds its own SCC, which grants exactly what the
-    # runner needs and nothing else: uid 0, NET_ADMIN for the per-machine
-    # NAT, DAC_OVERRIDE so its VMMs can read the image files a guest is
+    # runner needs and nothing else: uid 0, DAC_OVERRIDE so its VMMs can read the image files a guest is
     # served even where the image keeps them from root, and — only when the
     # runner caches images on its own claim — CHOWN + FOWNER + FSETID so it
     # can restore each file's owner and mode, setgid bits included, as it
@@ -384,6 +382,9 @@ virtualization:
     # Instead the controller warns at startup when an entry above reaches the
     # API server's Service address or its own pod address with no exception
     # covering it.
+    # Except the nodes' own network too: the kubelet, the API server on its
+    # node addresses, NodePorts and node exporters listen there, an escaped
+    # guest is root in the runner pod, and nothing warns about that range.
     egressExceptCidrs: []
   # Moving a container agent onto a machine (the Migrate button). Once the
   # machine has booted from the copy, the home volume the copy was read from is
@@ -489,7 +490,7 @@ virtualization:
       limits:
         memory: 1Gi
   # A device plugin of our own (squat's generic-device-plugin) advertising
-  # /dev/kvm and /dev/net/tun as `<domain>/kvm` and `<domain>/tun` on the
+  # /dev/kvm as `<domain>/kvm` on the
   # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
   # privileged (kubelet socket dir + /dev from the host), so keep it on the
   # KVM-capable pool via nodeSelector/tolerations.
@@ -505,7 +506,7 @@ virtualization:
     domain: squat.ai
     # How many grants of each device the plugin advertises, which is the cap
     # on VM runners per node — and runners are per owner, so it is really a
-    # cap on owners per node. Neither /dev/kvm nor /dev/net/tun is consumed by
+    # cap on owners per node. /dev/kvm is not consumed by
     # opening it, so this is an accounting number the device-plugin API
     # requires rather than a real resource; raise it rather than let a runner
     # pend for want of a grant.

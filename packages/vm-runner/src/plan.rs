@@ -142,6 +142,10 @@ pub const OPEN_EGRESS: &str = "a running machine needs allowCidrs, none of them 
 // UNIT_BOUNDARY_DESCRIPTION: a gateway on the host's loopback is the machine's whole egress, so an allowlist beside it would widen what the guest reaches rather than narrow it.
 pub const MIXED_EGRESS: &str = "gatewayHostPort replaces allowCidrs; send one of them";
 
+// UNIT_BOUNDARY_DESCRIPTION: smolvm's gateway hands a guest connection to the gateway's own address on to the runner's loopback, and its floor keeps out only link-local and loopback ranges, so the allowlist alone keeps a guest off the runner: off its machine API, its metrics and every sibling machine's published agent port. The paired gateway is one remote host, so an entry naming more than one address, or a loopback, unspecified, link-local, shared (100.64/10, where smolvm's gateway lives) or multicast one, or an address of the runner's own pod, is refused.
+pub const LOCAL_EGRESS: &str =
+    "each allowCidrs entry must name one remote host, not a range, a local or link-local address, or this runner";
+
 pub fn admissible(spec: &MachineSpec) -> Result<(), &'static str> {
     if spec.running && !shaped(spec) {
         return Err(REQUIRED);
@@ -154,6 +158,9 @@ pub fn admissible(spec: &MachineSpec) -> Result<(), &'static str> {
         && (spec.allow_cidrs.is_empty() || spec.allow_cidrs.iter().any(|c| opens_everything(c)))
     {
         return Err(OPEN_EGRESS);
+    }
+    if !spec.allow_cidrs.iter().all(|c| one_remote_host(c)) {
+        return Err(LOCAL_EGRESS);
     }
     if !spec.image.is_empty() && (!is_image_ref(&spec.image) || spec.image.contains("..")) {
         return Err(BAD_IMAGE);
@@ -180,6 +187,36 @@ pub fn gateway_port_admissible(
         return Err(GATEWAY_ON_A_MACHINE);
     }
     Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an address the runner can bind is one of its pod's own, which is how its pod IP is told apart without listing interfaces.
+fn one_remote_host(cidr: &str) -> bool {
+    let (addr, bits) = cidr.split_once('/').unwrap_or((cidr, ""));
+    let Ok(ip) = addr.trim().parse::<std::net::IpAddr>() else {
+        return false;
+    };
+    let ip = ip.to_canonical();
+    let host_bits = if ip.is_ipv4() { "32" } else { "128" };
+    let local = match ip {
+        std::net::IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            a == 0
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_multicast()
+                || v4.is_broadcast()
+                || (a == 100 && b & 0xc0 == 64)
+        }
+        std::net::IpAddr::V6(v6) => {
+            v6.is_unspecified()
+                || v6.is_loopback()
+                || v6.is_multicast()
+                || v6.segments()[0] & 0xffc0 == 0xfe80
+        }
+    };
+    (bits.is_empty() || bits.trim() == host_bits)
+        && !local
+        && std::net::UdpSocket::bind((ip, 0)).is_err()
 }
 
 fn opens_everything(cidr: &str) -> bool {
@@ -567,6 +604,32 @@ mod tests {
                 ..running_spec()
             };
             assert_eq!(admissible(&spec), Err(OPEN_EGRESS), "{what} was admitted");
+        }
+        for local in [
+            "10.0.0.0/24",
+            "127.0.0.1/32",
+            "127.0.0.1",
+            "0.0.0.0/32",
+            "169.254.169.254/32",
+            "100.96.0.1/32",
+            "224.0.0.1/32",
+            "::1/128",
+            "fe80::1/128",
+            "::ffff:127.0.0.1/128",
+            "not-an-address/32",
+        ] {
+            let spec = MachineSpec {
+                allow_cidrs: vec!["10.96.0.7/32".into(), local.into()],
+                ..running_spec()
+            };
+            assert_eq!(admissible(&spec), Err(LOCAL_EGRESS), "{local} was admitted");
+        }
+        for remote in ["10.96.0.7", "172.30.4.1/32", "fd00:10:96::a/128"] {
+            let spec = MachineSpec {
+                allow_cidrs: vec![remote.into()],
+                ..running_spec()
+            };
+            assert_eq!(admissible(&spec), Ok(()), "{remote} was refused");
         }
         let loopback_gateway = MachineSpec {
             allow_cidrs: vec![],

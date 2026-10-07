@@ -534,18 +534,19 @@ func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 	return corev1.DNSDefault
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner's env also has smolvm check every VMM against the syscalls a running microVM needs (SMOLVM_SECCOMP=audit), applied after the VMM's device setup and before it enters the guest. Audit logs a call outside the allowlist and lets it through, until the runner's VMMs are shown to stay inside it; enforce kills the VMM instead. smolvm applies the filter under its own serve by default, and an embedder only when asked.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's env also has smolvm hold every VMM to the syscalls a running microVM needs (SMOLVM_SECCOMP=enforce), applied after the VMM's device setup and before it enters the guest: a call outside the allowlist kills that VMM. smolvm applies the filter under its own serve by default, and an embedder only when asked.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's env also confines every VMM's filesystem with Landlock (SMOLVM_LANDLOCK=enforce), applied before the VMM loads libkrun: the shared guest rootfs and the image tree are read-only to it, and it may write only its own machine's disks, sockets and logs and its own readiness marker. Without it a guest's root virtiofs export writes through to the agent rootfs every machine of the owner boots from. smolvm refuses to boot a VMM it fails to confine.
 // UNIT_BOUNDARY_DESCRIPTION: smolvm can give each machine's VMM its own unprivileged uid, and the runner's env turns that off (SMOLVM_VM_UID_DROP=off). A VMM with its own uid reaches the image tree through an idmapped mount that maps on-disk uid 0 to it, so every file the image gives another uid reaches the guest as nobody, and the workload exits as it starts.
-// UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. NET_ADMIN is for the per-machine NAT. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. CHOWN, FOWNER and FSETID are only for a runner that unpacks images into its own claim: tar restores each file's owner, then sets a mode on a file it no longer owns, and a setgid bit on a file whose group root is not in survives that mode only with FSETID. A runner on the node cache or on staged archives unpacks nothing, so it does not get them.
+// UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. None is for the network: smolvm runs each machine's network in user space, over a socket pair to its VMM, with no tun device, route or NAT of its own. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. CHOWN, FOWNER and FSETID are only for a runner that unpacks images into its own claim: tar restores each file's owner, then sets a mode on a file it no longer owns, and a setgid bit on a file whose group root is not in survives that mode only with FSETID. A runner on the node cache or on staged archives unpacks nothing, so it does not get them.
 func runnerCapabilities(spec config.VMRunnerSpec) []corev1.Capability {
-	caps := []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE"}
+	caps := []corev1.Capability{"DAC_OVERRIDE"}
 	if runnerOwnsImageCache(spec) {
 		caps = append(caps, "CHOWN", "FOWNER", "FSETID")
 	}
 	return caps
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner holds exactly the capabilities above and none of the runtime's defaults, cannot gain more through exec, and runs under the runtime's default seccomp profile — the shape the chart's OpenShift SCC already forces on it. None of the dropped defaults is used: every VMM runs as the runner's own uid, so signalling one needs no KILL, and smolvm's own default runs each VMM on a uid with no capabilities at all, so virtiofs needs no SETUID. The default seccomp profile allows every ioctl, so KVM and the tun device work; what it refuses without CAP_SYS_ADMIN is new namespaces, mounts and keyrings, which smolvm only reaches for when it gives each VMM a uid of its own, and the runner turns that off. AppArmor alone stays unconfined: the container runtime's default profile denies mount and more, and under it no guest boots.
+// UNIT_BOUNDARY_DESCRIPTION: the runner holds exactly the capabilities above and none of the runtime's defaults, cannot gain more through exec, and runs under the runtime's default seccomp profile — the shape the chart's OpenShift SCC already forces on it. None of the dropped defaults is used: every VMM runs as the runner's own uid, so signalling one needs no KILL, and smolvm's own default runs each VMM on a uid with no capabilities at all, so virtiofs needs no SETUID. The default seccomp profile allows every ioctl, so KVM works; what it refuses without CAP_SYS_ADMIN is new namespaces, mounts and keyrings, which smolvm only reaches for when it gives each VMM a uid of its own, and the runner turns that off. AppArmor alone stays unconfined: the container runtime's default profile denies mount and more, and under it no guest boots.
 func runnerSecurityContext(spec config.VMRunnerSpec) *corev1.SecurityContext {
 	root := int64(0)
 	return &corev1.SecurityContext{
@@ -679,7 +680,9 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						Env: []corev1.EnvVar{{
 							Name: "SMOLVM_VM_UID_DROP", Value: "off",
 						}, {
-							Name: "SMOLVM_SECCOMP", Value: "audit",
+							Name: "SMOLVM_SECCOMP", Value: "enforce",
+						}, {
+							Name: "SMOLVM_LANDLOCK", Value: "enforce",
 						}, {
 							Name: "RUST_LOG", Value: "info",
 						}, {

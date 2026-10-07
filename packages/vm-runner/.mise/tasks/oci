@@ -106,6 +106,39 @@ tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${
   "${release}/smolvm" "${release}/smolvm-bin" "${release}/lib" "${release}/agent-rootfs" \
   "${release}/storage-template.ext4.zst" "${release}/overlay-template.ext4.zst"
 
+# libkrun is the release's own, rebuilt from the commit smolvm.pin names with
+# libkrun.patch applied: fixes for guest-reachable bugs in its virtio devices
+# that the release does not have yet. Built as smolvm's release workflow builds
+# it (make BLK=1 NET=1 INPUT=1 GPU=1, partial RELRO, virglrenderer dropped from
+# NEEDED) but with mise.lock's compiler, on this host, like the runner. A build
+# that exports a different set of krun_* symbols than the release lib is
+# refused, since smolvm resolves them at runtime and a missing one fails a boot.
+# Drop this once a smolvm release ships these fixes.
+lk_deps="clang libclang-dev patchelf pkg-config libvirglrenderer-dev libepoxy-dev libdrm-dev libgbm-dev"
+lk_missing=$(for p in $lk_deps; do dpkg -s "$p" >/dev/null 2>&1 || echo "$p"; done)
+[ -z "$lk_missing" ] || { ${sudo[@]+"${sudo[@]}"} apt-get update -qq && ${sudo[@]+"${sudo[@]}"} apt-get install -y -qq $lk_missing; }
+rustup target add "$(uname -m)-unknown-linux-musl" >/dev/null
+lk_commit="$(sed -n 's/^libkrun-commit=//p' smolvm.pin)"
+[ -n "$lk_commit" ] || { echo "smolvm.pin names no libkrun-commit" >&2; exit 1; }
+lk="$cache/libkrun"
+if [ "$(git -C "$lk" rev-parse HEAD 2>/dev/null)" != "$lk_commit" ]; then
+  rm -rf "$lk"
+  git init -q "$lk"
+  git -C "$lk" fetch -q --depth 1 https://github.com/smol-machines/libkrun "$lk_commit"
+  git -C "$lk" checkout -q FETCH_HEAD
+fi
+# Its target stays between builds; only the sources are reset.
+git -C "$lk" checkout -q -- .
+git -C "$lk" apply "$pkg/libkrun.patch"
+env -u CARGO_TARGET_DIR LIBCLANG_PATH="$(dirname "$(find /usr/lib -name 'libclang.so*' | head -1)")" RUSTFLAGS="-C relro-level=partial" \
+  make -C "$lk" --no-print-directory BLK=1 NET=1 INPUT=1 GPU=1 >/dev/null
+lk_so="$lk/target/release/libkrun.so.2.0.0"
+patchelf --remove-needed libvirglrenderer.so.1 "$lk_so"
+krun_symbols() { nm -D --defined-only "$1" | awk '$3 ~ /^krun_/ {print $3}' | sort; }
+[ "$(krun_symbols "$lk_so")" = "$(krun_symbols "$b/opt/smolvm/lib/libkrun.so")" ] ||
+  { echo "patched libkrun exports other krun_* symbols than the release's" >&2; diff <(krun_symbols "$lk_so") <(krun_symbols "$b/opt/smolvm/lib/libkrun.so") >&2; exit 1; }
+install -m 755 "$lk_so" "$b/opt/smolvm/lib/libkrun.so"
+
 # smolvm's guest rootfs ships a crane built with Go 1.21.6 and go-containerregistry
 # v0.19-era deps (docker/docker v24, x/sys v0.8.0) — 3 critical + 54 lesser CVEs, all
 # from this one file. Upstream has not rebuilt it as of 1.23.4, so replace it here.
