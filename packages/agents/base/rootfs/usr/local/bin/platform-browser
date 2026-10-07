@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+// platform-browser open <address>: points the browser the user sees in the
+// browser panel at a page, and prints a button for the agent's reply that
+// opens the panel on it. agent-browser runs on that same browser through the
+// image's AGENT_BROWSER_* defaults, so this only adds the button.
+
+import { spawnSync } from "node:child_process";
+
+const LINK_PREFIX = "platform://browser?url=";
+
+const fail = (message, code = 1) => {
+  process.stderr.write(`platform-browser: ${message}\n`);
+  process.exit(code);
+};
+
+const [command, address, ...rest] = process.argv.slice(2);
+if (command !== "open" || !address || rest.length > 0)
+  fail(
+    "usage: platform-browser open <address>   show the user a page; prints a button for your reply",
+    2,
+  );
+
+const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(address)
+  ? address
+  : `http://${address}`;
+let url;
+try {
+  url = new URL(withScheme);
+} catch {
+  fail(`not a web address: ${address}`, 2);
+}
+if (url.protocol !== "http:" && url.protocol !== "https:")
+  fail("only http and https addresses open", 2);
+
+const agentBrowser = (args) =>
+  spawnSync("agent-browser", args, { encoding: "utf8" });
+
+const opened = agentBrowser(["open", url.href]);
+if (opened.error) fail(opened.error.message, 127);
+if (opened.status !== 0) {
+  // A heavy page can outlast open's deadline; it is still loading in the
+  // browser the user sees, so the button is still worth giving.
+  let host = null;
+  try {
+    host = new URL(agentBrowser(["get", "url"]).stdout.trim()).host;
+  } catch {}
+  if (!/timed out/i.test(opened.stderr ?? "") || host !== url.host) {
+    process.stderr.write(opened.stderr ?? "");
+    fail(`the browser did not open ${url.href}`);
+  }
+  process.stderr.write(
+    "platform-browser: the page is open but still loading; wait before you snapshot it (agent-browser wait --load domcontentloaded)\n",
+  );
+}
+
+const label = `${url.host}${url.pathname === "/" ? "" : url.pathname}`;
+process.stdout.write(
+  `[Open ${label}](${LINK_PREFIX}${encodeURIComponent(url.href)}&at=${Date.now()})\n`,
+);

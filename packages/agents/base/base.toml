@@ -54,10 +54,23 @@ PYTHONPATH = "/usr/local/lib/platform-python"
 PORT = "8080"
 # apt-get on a machine never waits on a prompt nobody can answer.
 DEBIAN_FRONTEND = "noninteractive"
-# The one Chromium both use; containers have no user namespaces for its sandbox.
 PLAYWRIGHT_BROWSERS_PATH = "/opt/ms-playwright"
-AGENT_BROWSER_ARGS = "--no-sandbox"
-AGENT_BROWSER_EXECUTABLE_PATH = "/opt/ms-playwright/headless-shell"
+# agent-browser's defaults make every command run on the one browser the user
+# sees in the browser panel: Playwright's Chromium, headed on the virtual
+# display platform-display runs and streams to the panel, a kiosk window with
+# sound, on a profile that keeps the user's sign-ins. A flag still overrides
+# its variable. Containers have no user namespaces for Chromium's sandbox, and
+# a container's 64 MB /dev/shm crashes a heavy page's renderer, so Chromium
+# keeps its shared memory in /tmp.
+AGENT_BROWSER_EXECUTABLE_PATH = "/opt/ms-playwright/chromium"
+AGENT_BROWSER_HEADED = "1"
+AGENT_BROWSER_NO_XVFB = "1"
+AGENT_BROWSER_PROFILE = "/home/agent/.local/share/platform/browser"
+AGENT_BROWSER_SOCKET_DIR = "/tmp/agent-browser"
+AGENT_BROWSER_ARGS = "--no-sandbox,--disable-dev-shm-usage,--kiosk,--hide-scrollbars,--no-first-run,--test-type,--disable-infobars,--autoplay-policy=no-user-gesture-required,--ozone-platform=x11"
+DISPLAY = ":99"
+XDG_RUNTIME_DIR = "/tmp/platform-display"
+PULSE_SERVER = "unix:/tmp/platform-display/pulse/native"
 # A vm machine keeps its whole root while it boots images of one generation,
 # so a deploy keeps what the agent installed outside HOME. Bump it only for a
 # change that breaks a root an older image left: a new Debian release, or a

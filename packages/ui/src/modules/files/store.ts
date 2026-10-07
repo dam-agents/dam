@@ -70,6 +70,7 @@ export const createFilesSlice: StateCreator<
             openArtifactId: null,
             openArtifactDirty: false,
             openDelegation: null,
+            openBrowserAgentId: null,
           }
         : {}),
     }),
