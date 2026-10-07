@@ -33,9 +33,6 @@ export async function requiresConnectionAddress(
 const STREAM_SOCKET_PATH =
   /^\/api\/public\/browser-stream\/[^/]+\/api\/websockets$/;
 
-// The panel's control socket goes to the runtime's browser supervisor, and the
-// stream page's socket to the display's stream server, through the runtime.
-// Nothing of the client's query (its token) is passed on.
 export function browserUpstreamPath(requestUrl: URL): string {
   return STREAM_SOCKET_PATH.test(requestUrl.pathname)
     ? "/api/browser/display"

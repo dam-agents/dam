@@ -10,12 +10,12 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { WebSocket } from "ws";
 import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
+import { type PageWatch, type WatchPages, watchPages } from "./browser-cdp.js";
 
-// The session agent-browser runs when it is given none, which the image's
-// AGENT_BROWSER_* defaults make the browser the panel shows.
 export const BROWSER_SESSION = "default";
 
 const HEALTH_CHECK_MS = 3_000;
+const CHECK_TIMEOUT_MS = 15_000;
 const UNRESPONSIVE_RESTART_MS = 60_000;
 const RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 20_000];
 const BROWSER_GONE_AFTER_CHECKS = 2;
@@ -24,9 +24,6 @@ const DISPLAY_RETRY_MS = 500;
 const DISPLAY_WAIT_MS = 60_000;
 const DISPLAY_PENDING_MAX_BYTES = 256 * 1024;
 
-// The display stack the shared browser runs on, which platform-display starts:
-// the virtual display, the stream server that sends it to the panel, and the
-// headed Chromium.
 export const DISPLAY_COMMAND = "/usr/local/bin/platform-display";
 export const DISPLAY_TOOLS = [
   DISPLAY_COMMAND,
@@ -44,24 +41,14 @@ export function displayAvailable(
 export const DISPLAY_UNAVAILABLE =
   "This agent's image cannot show its browser: it has no virtual display or stream server.";
 
-export function pageHref(out: string): string | null {
-  const href = out.trim().replace(/^"(.*)"$/, "$1");
-  return /^[a-z][a-z0-9+.-]*:\S*$/i.test(href) ? href : null;
-}
-
 export type PreviewControl =
   | { type: "navigate"; url: string }
   | { type: "reload" }
   | { type: "back" }
   | { type: "forward" }
+  | { type: "stop" }
   | { type: "clear_data" }
   | { type: "restart_browser" };
-
-const PAGE_NAVIGATION = {
-  reload: "location.reload()",
-  back: "history.back()",
-  forward: "history.forward()",
-} as const;
 
 export type BrowserState = "starting" | "ready" | "failed";
 
@@ -99,6 +86,7 @@ export function parseControl(data: string): PreviewControl | null {
     type === "reload" ||
     type === "back" ||
     type === "forward" ||
+    type === "stop" ||
     type === "clear_data" ||
     type === "restart_browser"
   )
@@ -122,9 +110,8 @@ export function fileLog(
   };
 }
 
-// `get url` is how the browser is launched: agent-browser starts its daemon
-// and browser for the first command that finds none.
 export const LAUNCH = ["get", "url"];
+export const CDP_URL = ["get", "cdp-url"];
 
 export const timedOut = (err: Error) => /timed out/i.test(err.message);
 
@@ -187,8 +174,6 @@ export function killablePreviewPids(
     .map(({ pid }) => pid);
 }
 
-// What a browser that would not close leaves: its daemon, its Chromium, and
-// the profile's singleton locks, which keep the next Chromium from starting.
 export async function killPreviewProcesses(
   profileDir: string,
   socketDir: string,
@@ -241,11 +226,23 @@ export function createCommandQueue(run: BrowserCommand): {
   };
 }
 
-// One supervisor keeps the agent's shared browser up for every open panel. A
-// panel's control socket (attach) keeps the browser launched, healthy and on
-// the address the panel asks for, and is told the browser's state and address;
-// its display socket (attachDisplay) is relayed to the stream server of the
-// display the browser runs on.
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: one supervisor keeps the agent's browser — the
+ * one plain agent-browser commands drive, by the image's AGENT_BROWSER_*
+ * defaults — up for every open panel. A panel's control socket (attach)
+ * keeps it launched (`get url` starts agent-browser's daemon and browser when
+ * none runs) and watches its pages over CDP (browser-cdp), so the page's
+ * address, title, loading and history reach the panel as they change and the
+ * toolbar's navigation runs without queueing behind the agent; a CDP
+ * connection that drops is a browser gone. Its display socket (attachDisplay)
+ * is relayed to the display's stream server, held with what its client sent
+ * until that server answers. A check or launch that times out finds the
+ * browser busy — a heavy page, or the agent's own commands ahead in
+ * agent-browser's queue — not gone, and is left alone: only an outright
+ * failure, or a minute without an answer, stops it (its daemon, its Chromium
+ * and the profile's singleton locks) and launches it again, since killing a
+ * busy browser loses the user's page.
+ */
 export function createBrowserPreview(deps: {
   run: BrowserCommand;
   profileDir: string;
@@ -256,6 +253,7 @@ export function createBrowserPreview(deps: {
   retryDelaysMs?: number[];
   stopBrowser?: () => Promise<void>;
   displayStreamUrl?: string;
+  watch?: WatchPages;
   log: (msg: string) => void;
 }): BrowserPreview {
   const commands = createCommandQueue(deps.run);
@@ -273,6 +271,7 @@ export function createBrowserPreview(deps: {
     deps.unresponsiveRestartMs ?? UNRESPONSIVE_RESTART_MS;
   const retryDelays = deps.retryDelaysMs ?? RETRY_DELAYS_MS;
   const displayStreamUrl = deps.displayStreamUrl ?? DISPLAY_STREAM_URL;
+  const watch = deps.watch ?? watchPages;
 
   const viewers = new Set<WebSocket>();
   let state: BrowserState = "starting";
@@ -280,13 +279,14 @@ export function createBrowserPreview(deps: {
   let browserUp = false;
   let failedLaunches = 0;
   let failedChecks = 0;
-  let pageUrl: string | null = null;
+  let page: PageWatch | null = null;
   let pendingNavigation: string | null = null;
   let lastAnswerAt = Date.now();
   let generation = 0;
 
   let dirty = false;
   let reconciling = false;
+  let checking = false;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let healthTimer: ReturnType<typeof setInterval> | null = null;
   let closed = false;
@@ -325,10 +325,29 @@ export function createBrowserPreview(deps: {
   }
 
   function browserGone(reason: string) {
+    page?.close();
+    page = null;
     if (!browserUp) return;
     deps.log(`browser lost: ${reason}`);
     browserUp = false;
     generation++;
+  }
+
+  async function openPage(gen: number): Promise<PageWatch> {
+    const url = (await exec(CDP_URL)).trim();
+    const opened = await watch({
+      url,
+      onState: (s) => {
+        if (page === opened) broadcast({ type: "page", ...s });
+      },
+      onClose: () => {
+        if (page !== opened || gen !== generation) return;
+        browserGone("browser closed");
+        schedule();
+      },
+      log: deps.log,
+    });
+    return opened;
   }
 
   function schedule() {
@@ -354,11 +373,17 @@ export function createBrowserPreview(deps: {
     const gen = generation;
     try {
       await timed("launch", () => exec(LAUNCH));
+      const opened = await timed("watch", () => openPage(gen));
       if (gen !== generation) {
+        opened.close();
         dirty = true;
         return false;
       }
+      page?.close();
+      page = opened;
       browserUp = true;
+      const current = opened.state();
+      if (current) broadcast({ type: "page", ...current });
       failedLaunches = 0;
       return true;
     } catch (err) {
@@ -369,9 +394,6 @@ export function createBrowserPreview(deps: {
       failedLaunches++;
       const message = (err as Error).message.split("\n")[0] ?? "";
       deps.log(`launch failed (${failedLaunches}): ${message}`);
-      // A launch that failed outright may have left a daemon or a Chromium
-      // half up, which the next one would trip on; one that timed out is
-      // left to finish.
       if (failedLaunches % 2 === 0 && !timedOut(err as Error))
         await stopBrowser();
       if (failedLaunches >= 3)
@@ -391,12 +413,12 @@ export function createBrowserPreview(deps: {
           continue;
         }
         if (!(await ensureBrowser())) continue;
-        if (pendingNavigation) {
+        if (pendingNavigation && page) {
           const url = pendingNavigation;
           pendingNavigation = null;
-          await exec(["eval", `location.href = ${JSON.stringify(url)}`]).catch(
-            (err: Error) => deps.log(`navigate: ${err.message}`),
-          );
+          await page
+            .navigate(url)
+            .catch((err: Error) => deps.log(`navigate: ${err.message}`));
         }
         setState("ready");
       }
@@ -406,20 +428,23 @@ export function createBrowserPreview(deps: {
   }
 
   async function healthCheck() {
-    if (!browserUp || reconciling || !commands.idle() || viewers.size === 0)
+    if (!browserUp || !page || reconciling || checking || viewers.size === 0)
       return;
     let busy = false;
-    const href = pageHref(
-      await exec(["eval", "location.href"]).catch((err: Error) => {
-        busy = timedOut(err);
-        return "";
-      }),
-    );
-    if (!href) {
-      // A check that timed out found the browser busy — a heavy page, or the
-      // agent's own commands ahead of it in agent-browser's queue — not gone:
-      // it only counts towards the silence that restarts a hung browser.
-      // Killing a busy one loses the user's page.
+    checking = true;
+    const answered = await page
+      .ping(CHECK_TIMEOUT_MS)
+      .then(
+        () => true,
+        (err: Error) => {
+          busy = timedOut(err);
+          return false;
+        },
+      )
+      .finally(() => {
+        checking = false;
+      });
+    if (!answered) {
       const silentFor = Date.now() - lastAnswerAt;
       if (silentFor >= unresponsiveRestartMs) {
         deps.log(`browser unresponsive for ${silentFor}ms, restarting it`);
@@ -434,10 +459,6 @@ export function createBrowserPreview(deps: {
     }
     failedChecks = 0;
     lastAnswerAt = Date.now();
-    if (href !== pageUrl) {
-      pageUrl = href;
-      broadcast({ type: "url", url: href });
-    }
   }
 
   async function restart(clearData = false) {
@@ -463,17 +484,18 @@ export function createBrowserPreview(deps: {
           type: "preview_error",
           message: "Only http and https addresses open",
         });
-      if (!browserUp) {
+      if (!browserUp || !page) {
         pendingNavigation = url;
         return schedule();
       }
-      await exec(["eval", `location.href = ${JSON.stringify(url)}`]);
+      await page.navigate(url);
     } else if (
       msg.type === "reload" ||
       msg.type === "back" ||
-      msg.type === "forward"
+      msg.type === "forward" ||
+      msg.type === "stop"
     ) {
-      if (browserUp) await exec(["eval", PAGE_NAVIGATION[msg.type]]);
+      if (browserUp && page) await page[msg.type]();
     } else {
       await restart(msg.type === "clear_data");
     }
@@ -499,9 +521,6 @@ export function createBrowserPreview(deps: {
     return true;
   }
 
-  // The stream server comes up with the browser, so a display socket that
-  // arrives first is held, with what its client sent, until the server
-  // answers.
   function attachDisplay(client: WebSocket) {
     if (refuseUnavailable(client)) return;
     let stream: WebSocket | null = null;
@@ -561,15 +580,14 @@ export function createBrowserPreview(deps: {
     if (viewers.size === 1) lastAnswerAt = Date.now();
     startTimers();
     sendJson(client, stateMessage());
-    if (pageUrl) sendJson(client, { type: "url", url: pageUrl });
+    const current = page?.state();
+    if (current) sendJson(client, { type: "page", ...current });
     schedule();
 
     client.on("message", (data: Buffer, isBinary: boolean) => {
       const msg = isBinary ? null : parseControl(data.toString());
       if (msg)
-        timed(msg.type, () => control(client, msg))
-          .then(() => healthCheck())
-          .catch((err: Error) =>
+        timed(msg.type, () => control(client, msg)).catch((err: Error) =>
             sendJson(client, { type: "preview_error", message: err.message }),
           );
     });
@@ -591,6 +609,7 @@ export function createBrowserPreview(deps: {
       closed = true;
       if (retryTimer) clearTimeout(retryTimer);
       stopTimers();
+      page?.close();
       for (const c of viewers) c.close(1001, "runtime shutting down");
     },
   };

@@ -10,9 +10,6 @@ interface Props {
   ref?: Ref<HTMLIFrameElement>;
 }
 
-// The agent's screen, as Selkies' stream client draws it: the api-server
-// serves the client from a pinned build, and its socket reaches the display's
-// stream server through the agent's runtime.
 export function StreamView({ agentId, agentName, ref }: Props) {
   const [src, setSrc] = useState<string | null>(null);
 

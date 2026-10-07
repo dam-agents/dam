@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getAccessToken } from "../../../auth.js";
-import { type BrowserState, parseControlMessage } from "../lib/control.js";
+import {
+  type BrowserState,
+  type PageState,
+  parseControlMessage,
+} from "../lib/control.js";
 
 const RECONNECT_DELAYS_MS = [500, 1_000, 2_000, 5_000, 10_000];
 const GIVE_UP_NOTICE_AFTER = 3;
@@ -10,14 +14,16 @@ const ERROR_SHOWN_MS = 6_000;
 export type BrowserConnection =
   "connecting" | "live" | "disconnected" | "unavailable";
 
-// The panel's control socket to the agent's browser: it keeps the browser
-// running while the panel is open, carries the toolbar's navigation, and
-// reports the page's address and the browser's state. The picture comes over
-// the stream page's own socket.
 export function useBrowserControl(agentId: string) {
   const wsRef = useRef<WebSocket | null>(null);
   const [connection, setConnection] = useState<BrowserConnection>("connecting");
-  const [pageUrl, setPageUrl] = useState("");
+  const [page, setPage] = useState<PageState>({
+    url: "",
+    title: "",
+    loading: false,
+    canGoBack: false,
+    canGoForward: false,
+  });
   const [error, setError] = useState<string | null>(null);
   const [browser, setBrowser] = useState<{
     state: BrowserState;
@@ -42,6 +48,7 @@ export function useBrowserControl(agentId: string) {
   const navigate = useCallback(
     (url: string) => {
       setError(null);
+      setPage((p) => ({ ...p, url, loading: true }));
       if (wsRef.current?.readyState === WebSocket.OPEN)
         send({ type: "navigate", url });
       else pendingUrlRef.current = url;
@@ -76,7 +83,14 @@ export function useBrowserControl(agentId: string) {
         if (typeof e.data !== "string") return;
         const msg = parseControlMessage(e.data);
         if (!msg) return;
-        if (msg.type === "url") setPageUrl(msg.url);
+        if (msg.type === "page")
+          setPage({
+            url: msg.url,
+            title: msg.title,
+            loading: msg.loading,
+            canGoBack: msg.canGoBack,
+            canGoForward: msg.canGoForward,
+          });
         else if (msg.type === "browser_state")
           setBrowser({ state: msg.state, message: msg.message });
         else setError(msg.message);
@@ -112,10 +126,11 @@ export function useBrowserControl(agentId: string) {
   return {
     connection,
     browser,
-    pageUrl,
+    page,
     error,
     navigate,
     reload: () => send({ type: "reload" }),
+    stop: () => send({ type: "stop" }),
     back: () => send({ type: "back" }),
     forward: () => send({ type: "forward" }),
     clearData: () => send({ type: "clear_data" }),

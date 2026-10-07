@@ -5,8 +5,9 @@ set -euo pipefail
 SELKIES_REV=f0b02a13a267c85cc54425ed12b2b9cfb568315a
 PIXELFLUX_REV=84d47c6a7a080dc6ece9dfc7442b3c2bceada098
 KVAZAAR_TAG=v2.3.2
-# What the build needs in the chroot; the -dev packages bring the runtime
-# libraries base/apt.toml installs in the image.
+# What the build needs in the chroot, beside the image's own packages
+# (base/apt.toml), which make a library the build finds missing one the image
+# lacks too.
 BUILD_PACKAGES="build-essential cmake nasm pkg-config git ca-certificates libclang-dev libvpx-dev libsvtav1enc-dev libdav1d-dev libde265-dev libgbm-dev libdrm-dev libwayland-dev libinput-dev libudev-dev libxkbcommon-dev libpixman-1-dev"
 
 dest="$1"
@@ -14,7 +15,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../../../.." && pwd)"
 base="$(mise config get -f "$repo/.mise/config.toml" vars.base_image_debian)"
 cache="${PLATFORM_SELKIES_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/platform-selkies}"
-key="$({ cat "$0"; echo "$base"; } | sha256sum | cut -c1-16)"
+image_packages="$(sed -n 's/^"apt:\([^"]*\)".*/\1/p' "$here/../apt.toml" | paste -sd' ' -)"
+key="$({ cat "$0"; echo "$base $image_packages"; } | sha256sum | cut -c1-16)"
 out="$cache/$key"
 python="$(realpath "${PLATFORM_SELKIES_PYTHON:-$(command -v python3)}")"
 python_home="$(dirname "$(dirname "$python")")"
@@ -36,7 +38,7 @@ export DEBIAN_FRONTEND=noninteractive HOME=/tmp
 export SSL_CERT_FILE=/etc/ssl/certs/build-host-ca.crt
 export GIT_SSL_CAINFO=\$SSL_CERT_FILE PIP_CERT=\$SSL_CERT_FILE REQUESTS_CA_BUNDLE=\$SSL_CERT_FILE CARGO_HTTP_CAINFO=\$SSL_CERT_FILE
 apt-get update -q
-apt-get install -qy --no-install-recommends $BUILD_PACKAGES >/dev/null
+apt-get install -qy --no-install-recommends $BUILD_PACKAGES $image_packages >/dev/null
 src=/tmp/selkies-src out=/out
 mkdir -p "\$src" "\$out/opt/selkies/lib" "\$out/opt/selkies/site" "\$out/opt/selkies/bin"
 

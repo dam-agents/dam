@@ -53,10 +53,10 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     readPersistedFlag(SIGN_IN_NOTICE_KEY, false),
   );
 
+  const shownUrl = stream.page.url === "about:blank" ? "" : stream.page.url;
   useEffect(() => {
-    if (!editing)
-      setAddress(stream.pageUrl === "about:blank" ? "" : stream.pageUrl);
-  }, [stream.pageUrl, editing]);
+    if (!editing) setAddress(shownUrl);
+  }, [shownUrl, editing]);
 
   const { navigate } = stream;
   useEffect(() => {
@@ -89,12 +89,13 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           aria-hidden
           className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-accent-light text-accent"
         >
-          <Globe size={13} />
+          {stream.page.loading ? <Spinner size={13} /> : <Globe size={13} />}
         </span>
         <Button
           variant="ghost"
           size="icon-sm"
           aria-label="Back"
+          disabled={!stream.page.canGoBack}
           onClick={stream.back}
         >
           <ArrowLeft size={16} />
@@ -103,6 +104,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           variant="ghost"
           size="icon-sm"
           aria-label="Forward"
+          disabled={!stream.page.canGoForward}
           onClick={stream.forward}
         >
           <ArrowRight size={16} />
@@ -111,12 +113,20 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           <Input
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            onFocus={() => setEditing(true)}
+            onFocus={(e) => {
+              setEditing(true);
+              e.currentTarget.select();
+            }}
             onBlur={() => setEditing(false)}
-            placeholder="localhost:3000"
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              setAddress(shownUrl);
+              e.currentTarget.blur();
+            }}
+            placeholder="Search or enter address"
+            title={stream.page.title || undefined}
             type="text"
             name="browser-address"
-            inputMode="url"
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
@@ -128,14 +138,25 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             className="h-8 font-mono text-xs"
           />
         </form>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Reload"
-          onClick={stream.reload}
-        >
-          <Renew size={16} />
-        </Button>
+        {stream.page.loading ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Stop loading"
+            onClick={stream.stop}
+          >
+            <Close size={16} />
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Reload"
+            onClick={stream.reload}
+          >
+            <Renew size={16} />
+          </Button>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon-sm" aria-label="Browser actions">
@@ -170,10 +191,21 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         </Button>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-1.5 text-xs text-muted-foreground">
+      <div className="relative flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-1.5 text-xs text-muted-foreground">
+        {stream.page.title && (
+          <span className="min-w-0 max-w-[50%] truncate font-medium text-foreground">
+            {stream.page.title}
+          </span>
+        )}
         <span className="min-w-0 flex-1 truncate">
           Runs in {agentName}'s sandbox — not a page from this site
         </span>
+        {stream.page.loading && (
+          <span
+            aria-hidden
+            className="absolute inset-x-0 -bottom-px h-0.5 animate-pulse bg-accent"
+          />
+        )}
       </div>
 
       {!noticeSeen && (

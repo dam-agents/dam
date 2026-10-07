@@ -1,4 +1,4 @@
-import { addressUrl } from "./control.js";
+import { withScheme } from "./control.js";
 
 export const BROWSER_LINK_PREFIX = "platform://browser?url=";
 export const FRESH_LINK_MS = 2 * 60_000;
@@ -16,7 +16,7 @@ export function parseBrowserLink(href: string | undefined): BrowserLink | null {
   } catch {
     return null;
   }
-  const candidate = addressUrl(query.get("url") ?? "");
+  const candidate = withScheme(query.get("url") ?? "");
   if (!candidate) return null;
   let url: URL;
   try {

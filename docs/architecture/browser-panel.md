@@ -42,8 +42,9 @@ sequenceDiagram
   UI->>API: WebSocket /api/agents/:id/browser (token)
   API->>API: admission (token, owner, scope, terms) + agent requires named connections
   API->>RT: WebSocket /api/browser
-  RT->>AB: launch if not running, check health, navigate
-  RT-->>UI: browser state, page address
+  RT->>AB: launch if not running, read its DevTools address
+  RT->>RT: DevTools connection to Chromium: page events, navigation
+  RT-->>UI: browser state; page address, title, loading, history
   UI->>API: stream client's WebSocket /api/public/browser-stream/:id/api/websockets
   API->>RT: WebSocket /api/browser/display
   RT->>S: relayed to 127.0.0.1:5999
@@ -51,7 +52,7 @@ sequenceDiagram
 ```
 
 - **The relay** is one more agent relay beside chat, terminal and SSH, with the same admission ([cli](cli.md)) and one more gate: an agent whose gateway injects credentials into unnamed requests is refused. The user may open any web address — a loopback dev server, or an external page to sign in — so with ambient injection the user would be browsing as the agent's accounts. With named connections only, unaddressed browser traffic carries no credential of the agent's. The token in the client's query is not passed on.
-- **The control socket** keeps the browser up while a panel is open. One supervisor in agent-runtime serves every panel and runs its agent-browser commands one at a time. It launches the browser if it is not running, and checks every few seconds that it answers, reporting the page's address to the panels. A check that times out finds the browser busy — a heavy page, or the agent's own commands ahead of it in agent-browser's queue — not gone, so it is left alone. When the browser fails to start, is gone, or answers nothing for a minute, the supervisor stops it — its daemon, the Chromium on its profile, and the profile's lock files, which would keep the next Chromium from starting — and launches it again, retrying with a growing delay; the panels stay connected and show the browser starting, or the failure with a Restart button. The address bar's navigation runs inside the page rather than with `open`, which holds agent-browser's command queue until the page has loaded. Only http and https addresses open.
+- **The control socket** keeps the browser up while a panel is open, and is the toolbar's. One supervisor in agent-runtime serves every panel. It launches the browser through agent-browser if it is not running, then opens a DevTools Protocol connection of its own to that Chromium and follows the tab on screen: its address, title, whether it is loading, and whether Back and Forward can go anywhere reach the panel the moment Chromium reports them, and the toolbar's navigate, reload, stop, back and forward run on that tab directly, never queued behind the agent's commands in agent-browser's one-at-a-time queue. Words typed into the address bar that are not an address search DuckDuckGo. A dropped DevTools connection means the browser is gone, and the supervisor launches it again. A health check that times out finds the browser busy — a heavy page, or the agent keeping it busy — not gone, so it is left alone; when the browser fails to start, or answers nothing for a minute, the supervisor stops it — its daemon, the Chromium on its profile, and the profile's lock files, which would keep the next Chromium from starting — and launches it again, retrying with a growing delay. The panels stay connected through all of it and show the browser starting, or the failure with a Restart button. Only http and https addresses open.
 - **The display socket** is relayed as it is. A socket that arrives before Selkies answers is held, with what its client sent up to a cap, until it does.
 
 ## The agent opens a page

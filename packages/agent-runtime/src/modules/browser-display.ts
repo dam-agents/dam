@@ -9,10 +9,14 @@ export interface DisplaySupervisor {
   stop(): void;
 }
 
-// Runs platform-display, the browser panel's display stack, for the life of
-// the runtime: it exits as soon as any part of the stack dies, and is started
-// again, with a backoff while it keeps failing. It runs in a process group of
-// its own, which is killed whole.
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: runs platform-display, the browser panel's
+ * display stack, for the life of the runtime. It exits as soon as any part of
+ * the stack dies and is started again, with a backoff while it keeps failing.
+ * It runs in a process group of its own, killed whole when it exits or stops,
+ * since what it started would otherwise outlive it and hold the display the
+ * next one needs.
+ */
 export function startDisplaySupervisor(opts: {
   command: string;
   envReader?: RuntimeEnvReader;
@@ -51,8 +55,6 @@ export function startDisplaySupervisor(opts: {
     const onExit = (code: number | null, signal: string | null) => {
       if (child !== proc) return;
       child = null;
-      // What it started may outlive it, a killed one most of all, and would
-      // hold the display the next one starts.
       killGroup(proc.pid);
       if (stopped) return;
       if (Date.now() - startedAt >= HEALTHY_RUN_MS) backoffMs = initial;
