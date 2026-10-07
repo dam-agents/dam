@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Assert image:pack's ownership and mode flags on a tiny image: --own, --own-dir and --umask"
+#MISE description="image:pack sets the ownership and modes that --own, --own-dir and --umask ask for"
 #MISE sources=[".mise/tasks/image/pack", ".mise/tasks/image/name-layout", ".mise/tasks/check/pack-image"]
 #MISE outputs=[]
 #MISE cache.enabled=true

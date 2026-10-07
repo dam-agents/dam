@@ -1,11 +1,23 @@
 #!/usr/bin/env bash
-#MISE description="Create k3s cluster, build images, install cert-manager + Platform chart. With --set=virtualization.enabled=true vm-backend agents run as microVMs: on a Mac on one VM runner on the Mac's own hypervisor (cluster:host-runner), elsewhere on the chart's VM runner pods, which on a lima VM needs nested virtualization (Apple silicon M3+; PLATFORM_NESTED_VIRT=1 picks that on a Mac too). In a sandbox (IS_SANDBOX) that can open /dev/kvm it is on unless the values or --set=virtualization.enabled=false say otherwise. Honors LIMA_INSTANCE; SKIP_IMAGE_BUILD reuses the image tars already in dist/oci, SKIP_IMAGE_LOAD also skips importing them. --no-mesh (local-only, refused under CI) installs no Istio dataplane, so AuthorizationPolicies exist but nothing enforces them — for a kernel that cannot run ambient. PLATFORM_SANDBOX (set in the platform's own agent sandboxes, whose kernel is such a kernel) implies --no-mesh and warns about it."
+#MISE description="Create the k3s cluster, build the images, and install cert-manager and the Platform chart"
 #MISE raw=true
 #USAGE flag "--lima-template <path>" default="etc/lima/k3s.yaml"
 #USAGE flag "--helm-values <path>"
 #USAGE flag "--set <key=val>" var=#true
 #USAGE flag "--no-restart"
 #USAGE flag "--no-mesh"
+# With --set=virtualization.enabled=true vm-backend agents run as microVMs: on
+# a Mac on one VM runner on the Mac's own hypervisor (cluster:host-runner),
+# elsewhere on the chart's VM runner pods, which on a lima VM needs nested
+# virtualization (Apple silicon M3+; PLATFORM_NESTED_VIRT=1 picks that on a
+# Mac too). In a sandbox (IS_SANDBOX) that can open /dev/kvm it is on unless
+# the values or --set=virtualization.enabled=false say otherwise.
+# SKIP_IMAGE_BUILD reuses the image tars already in dist/oci, SKIP_IMAGE_LOAD
+# also skips importing them. --no-mesh (local-only, refused under CI) installs
+# no Istio dataplane, so AuthorizationPolicies exist but nothing enforces
+# them: for a kernel that cannot run ambient. PLATFORM_SANDBOX (set in the
+# platform's own agent sandboxes, whose kernel is such a kernel) implies --no-
+# mesh and warns about it.
 #
 # When IS_SANDBOX is set, it is assumed we are already _inside_ a VM.
 #

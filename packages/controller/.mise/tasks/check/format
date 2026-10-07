@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Go sources are gofmt -s formatted"
 #MISE sources=["**/*.go"]
 #MISE outputs=[]
 #MISE cache.enabled=true

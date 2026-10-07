@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Decide whether a component image must be built or can be reused from the registry; see the usage block below"
+#MISE description="Decide whether a component image is built or reused from the registry"
 # Decide whether a container image must be built or can be reused from the
 # registry. Single source of truth shared by `//packages/agents:oci` and
 # CI (the `changes` job) so the dependency graph and skip logic never drift.

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-//MISE description="Untyped code comments: `-- --check` reports them (the check:comment-types gate); default is a dry run of stripping them, `-- --write` rewrites, `-- --verbose` lists each removal, [paths...] narrow the scan"
+//MISE description="Strip code comments without a registered type prefix; `-- --check` only reports them, `-- --dry-run` lists what would go"
 
 /* UNIT_BOUNDARY_DESCRIPTION: The comment gate for TS/JS/Go/Rust sources.
  * `-- --check` reports every comment without a registered type prefix
- * (check:comment-types); the default dry run lists what stripping would remove
- * and `-- --write` rewrites the files. Only typed comments and tool directives
+ * (check:comment-types); by default the files are rewritten, and `-- --dry-run`
+ * only lists what stripping would remove. Only typed comments and tool directives
  * (PRESERVE_TS, PRESERVE_GO, PRESERVE_RUST) survive. Exempt: files whose header
  * marks them generated, cgo preambles, and packages/controller/api/ (its doc
  * comments compile into the CRD descriptions). Files come from `git ls-files`,
@@ -24,7 +24,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const require = createRequire(import.meta.url);
 
 const ts = loadTypescript();
@@ -482,7 +482,7 @@ console.log(`OK: all comments carry a registered type prefix (${COMMENT_TYPES.jo
 }
 
 function strip(argv) {
-const write = argv.includes('--write');
+const write = !argv.includes('--dry-run');
 const verbose = argv.includes('--verbose');
 const scopes = argv.filter((a) => !a.startsWith('--'));
 

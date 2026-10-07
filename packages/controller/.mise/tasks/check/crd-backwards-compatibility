@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="CRD schema changes stay backwards compatible with the latest release"
 #MISE sources=["helm/crds/*.yaml"]
 #MISE dir="{{vars.repo_root}}"
 #USAGE flag "--baseline <ref>" help="Git ref to compare against (default: latest v* tag)"

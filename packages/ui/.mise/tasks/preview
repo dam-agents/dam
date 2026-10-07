@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
+#MISE description="Serve the built UI with vite preview"
 set -euo pipefail
 pnpm exec vite preview "$@"

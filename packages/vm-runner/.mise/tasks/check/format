@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Rust sources are rustfmt-formatted"
 #MISE sources=["src/**/*.rs", "platform-init/src/**/*.rs", "Cargo.toml", "platform-init/Cargo.toml", "rustfmt.toml"]
 #MISE outputs=[]
 #MISE cache.enabled=true

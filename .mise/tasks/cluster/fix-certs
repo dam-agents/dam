@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-#MISE description="Recover from expired dev-cluster certs (issue #283): roll ztunnel + waypoint deployments + cert-manager webhook. Honors LIMA_INSTANCE."
+#MISE description="Recover from expired dev-cluster certs: roll ztunnel, the waypoints and the cert-manager webhook"
+# Background: issue #283.
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 

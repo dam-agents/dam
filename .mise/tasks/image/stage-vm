@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-#MISE description="Stage an image tar for the VM runners on the node as a pre-flattened tree plus its launch record, under the read-only image directory the runners mount, by the name the tar carries. Honors LIMA_INSTANCE and IS_SANDBOX like cluster:install."
+#MISE description="Stage an image tar on the node for the VM runners, as a flattened tree plus its launch record"
 #USAGE arg "<tar>" help="An image tar, as the :oci tasks write"
+# It lands under the read-only image directory the runners mount, by the name
+# the tar carries.
 # The runner boots a staged tree as a shared read-only lower layer, so a
 # machine starts in seconds. A `docker save` archive staged instead is
 # flattened inside every guest on first boot under smolvm's fixed 600 s pull

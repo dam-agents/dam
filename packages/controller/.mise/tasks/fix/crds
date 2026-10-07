@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Regenerate deepcopy methods and the chart's CRDs from the api/ types"
 # Regenerate deepcopy methods and CRD manifests from the api/ Go types
 # (controller-gen). Run after editing any type under api/. CRDs land in the
 # Helm chart's crds/ directory.

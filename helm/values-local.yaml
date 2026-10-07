@@ -174,7 +174,7 @@ keycloak:
     - "*"
   extraWebOrigins:
     - "*"
-  # Human-readable Keycloak logs for `mise run cluster:logs` during dev.
+  # Human-readable Keycloak logs during dev.
   log:
     consoleOutput: "default"
 

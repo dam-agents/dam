@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Wait until the e2e cluster stably serves UI + Keycloak on :5555. Shared by `e2e` (via e2e:install) and `e2e:loop`'s warm path."
+#MISE description="Wait until the e2e cluster stably serves the UI and Keycloak on :5555"
 #MISE hide=true
 #MISE raw=true
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test" }

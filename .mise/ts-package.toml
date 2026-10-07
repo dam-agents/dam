@@ -2,9 +2,11 @@
 # with `[task_config] includes`. A task the package defines itself replaces
 # the one here.
 [check]
+description = "Run this package's checks"
 depends = [":check:*"]
 
 [fix]
+description = "Apply this package's fixes"
 depends = [":fix:*"]
 
 ["check:tsc"]

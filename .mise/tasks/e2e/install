@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Provision/upgrade the e2e test cluster (mock-only agents, e2e control API on). Shared by `e2e` and `e2e:loop`."
+#MISE description="Provision or upgrade the e2e test cluster: mock agents only, e2e control API on"
 #MISE hide=true
 #MISE raw=true
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test" }

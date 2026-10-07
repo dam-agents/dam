@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Python sources are ruff-formatted"
 #MISE sources=["{src,tests}/**/*.py", "pyproject.toml", "uv.lock"]
 #MISE outputs=[]
 #MISE cache.enabled=true

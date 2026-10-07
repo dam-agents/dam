@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-#MISE description="Wipe e2e cluster data without reinstalling: drop+recreate the platform DB, delete agents (CRs/StatefulSets/pods/PVCs), clear stored Playwright auth. Leaves the cluster running."
+#MISE description="Wipe the e2e cluster's data without reinstalling it"
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test" }
+# Drops and recreates the platform DB, deletes agents (CRs, StatefulSets,
+# pods, PVCs) and clears stored Playwright auth; the cluster keeps running.
 set -eo pipefail
 
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"

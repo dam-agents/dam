@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-#MISE description="Build the VM runner image to dist/oci/vm-runner.tar with mise oci: the runner, the image cache service, the seed uploader, platform-init and platform-runc, compiled from this crate, on Debian with the smolvm release smolvm.pin names. Off Linux it builds in the dev cluster's Lima VM."
+#MISE description="Build the VM runner image to dist/oci/vm-runner.tar"
+# With mise oci: the runner, the image cache service, the seed uploader,
+# platform-init and platform-runc, compiled from this crate, on Debian with
+# the smolvm release smolvm.pin names. Off Linux it builds in the dev
+# cluster's Lima VM.
 # By path too: the Lima VM runs it with only the tools it names.
 set -euo pipefail
 pkg="$(cd "$(dirname "$0")/../.." && pwd)"

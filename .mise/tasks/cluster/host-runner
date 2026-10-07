@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-#MISE description="Build and (re)start the VM runner on this Mac's own hypervisor: cluster:install runs vm agents on it here, instead of on a runner pod nested inside the k3s VM. It serves every owner from ~/.local/state/platform-vm-runner, listening on loopback, where the k3s VM's pods reach it. Honors LIMA_INSTANCE."
+#MISE description="Build and (re)start the VM runner on this Mac's own hypervisor"
+# cluster:install runs vm agents on it here, instead of on a runner pod nested
+# inside the k3s VM. It serves every owner from ~/.local/state/platform-vm-
+# runner, listening on loopback, where the k3s VM's pods reach it.
 set -euo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"

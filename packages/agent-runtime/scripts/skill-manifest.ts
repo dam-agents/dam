@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -52,13 +51,6 @@ function baselineManifest(baseRev: string): ShippedSkillManifest | undefined {
     process.exit(1);
   }
   return parsed.value;
-}
-
-function gitBuffer(args: string[]): Buffer {
-  return execFileSync("git", args, {
-    cwd: repoRoot,
-    maxBuffer: 64 * 1024 * 1024,
-  });
 }
 
 function skillSourceParents(): string[] {
@@ -145,7 +137,7 @@ async function check(): Promise<void> {
     const hash = await hashSkillDir(absDir);
     if (!manifest.skills[name]?.includes(hash)) {
       problems.push(
-        `${name}: current content is not in ${MANIFEST_REL} — run \`mise run skills:manifest:generate\``,
+        `${name}: current content is not in ${MANIFEST_REL} — run \`mise run fix:skill-manifest\``,
       );
     }
   }
@@ -168,78 +160,10 @@ async function check(): Promise<void> {
   console.log(`${MANIFEST_REL}: ok`);
 }
 
-function historicalSkillDirs(): string[] {
-  const dirs = new Set<string>();
-  for (const parent of skillSourceParents()) {
-    const listing = git([
-      "log",
-      "--format=",
-      "--name-only",
-      "--",
-      `${parent}/`,
-    ]);
-    for (const line of listing.split("\n")) {
-      const file = line.trim();
-      if (!file.startsWith(`${parent}/`)) continue;
-      const rest = file.slice(parent.length + 1);
-      const child = rest.split("/")[0];
-      if (child && !child.startsWith(".") && rest.includes("/")) {
-        dirs.add(`${parent}/${child}`);
-      }
-    }
-  }
-  return [...dirs].sort();
-}
-
-async function hashDirAtCommit(
-  commit: string,
-  dir: string,
-): Promise<string | undefined> {
-  const files = git(["ls-tree", "-r", "--name-only", commit, "--", `${dir}/`])
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-  if (!files.includes(`${dir}/SKILL.md`)) return undefined;
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "skill-manifest-"));
-  try {
-    for (const file of files) {
-      const rel = file.slice(dir.length + 1);
-      const target = path.join(tmp, rel);
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, gitBuffer(["show", `${commit}:${file}`]));
-    }
-    return await hashSkillDir(tmp);
-  } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-}
-
-async function backfill(): Promise<void> {
-  const manifest = loadManifest();
-  let appended = 0;
-  for (const dir of historicalSkillDirs()) {
-    const name = path.posix.basename(dir);
-    const commits = git(["log", "--format=%H", "--", `${dir}/`])
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-    for (const commit of commits) {
-      const hash = await hashDirAtCommit(commit, dir);
-      if (hash !== undefined && appendHash(manifest, name, hash)) {
-        appended += 1;
-        console.log(`appended ${name} @ ${commit.slice(0, 12)}`);
-      }
-    }
-  }
-  saveManifest(manifest);
-  console.log(`${MANIFEST_REL}: ${appended} historical hash(es) appended`);
-}
-
 const command = process.argv[2];
 if (command === "generate") await generate();
 else if (command === "check") await check();
-else if (command === "backfill") await backfill();
 else {
-  console.error("usage: skill-manifest.ts <generate|check|backfill>");
+  console.error("usage: skill-manifest.ts <generate|check>");
   process.exit(1);
 }

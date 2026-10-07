@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-#MISE description="CI only: build or fetch this run's amd64 images as the dist/oci tars the e2e cluster loads. Writes ok|fail to the file named by its argument."
+#MISE description="CI only: build or fetch this run's amd64 images as the dist/oci tars the e2e cluster loads"
 #MISE hide=true
+# Writes ok|fail to the file named by its argument.
 # cd.yml's e2e job starts with the run instead of after the builds, because
 # bringing the cluster up (k3s, cert-manager, Istio) needs no image. It runs
 # this in the background, and cluster:install waits on the status file
