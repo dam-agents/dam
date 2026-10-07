@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { parseFrame } from "../../domain/frames.js";
 import { rewriteAuthError } from "../../domain/mappers.js";
+import { tailStart } from "../../domain/replay-tail.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 
 interface LogEntry {
@@ -115,85 +115,6 @@ function withPlatformMeta(
       _meta: { ...meta, platform: { ...platform, ...patch } },
     },
   });
-}
-
-type FrameShape =
-  | { kind: "chunk"; run: string }
-  | { kind: "tool_call" | "tool_call_update"; toolCallId: string }
-  | { kind: "other" };
-
-const CHUNK_UPDATES = new Set([
-  "user_message_chunk",
-  "agent_message_chunk",
-  "agent_thought_chunk",
-]);
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function shapeOf(line: string): FrameShape {
-  const frame = asRecord(parseFrame(line));
-  const update =
-    frame?.method === "session/update"
-      ? asRecord(asRecord(frame.params)?.update)
-      : null;
-  const kind = update?.sessionUpdate;
-  if (!update || typeof kind !== "string") return { kind: "other" };
-  if (CHUNK_UPDATES.has(kind)) {
-    const messageId =
-      typeof update.messageId === "string" ? update.messageId : "";
-    return { kind: "chunk", run: `${kind}:${messageId}` };
-  }
-  if (
-    (kind === "tool_call" || kind === "tool_call_update") &&
-    typeof update.toolCallId === "string"
-  ) {
-    return { kind, toolCallId: update.toolCallId };
-  }
-  return { kind: "other" };
-}
-
-function tailStart(entries: readonly LogEntry[], size: number): number {
-  if (entries.length <= size) return 0;
-  const cut = entries.length - size;
-  const shapes: FrameShape[] = [];
-  const shapeAt = (i: number): FrameShape =>
-    (shapes[i] ??= shapeOf(entries[i]!.line));
-  const continuesRun = (i: number): boolean => {
-    const here = shapeAt(i);
-    const before = shapeAt(i - 1);
-    return (
-      here.kind === "chunk" &&
-      before.kind === "chunk" &&
-      here.run === before.run
-    );
-  };
-  const walkBack = (ignored: ReadonlySet<string>) => {
-    const unopened = new Set<string>();
-    const include = (i: number): void => {
-      const shape = shapeAt(i);
-      if (shape.kind === "tool_call") unopened.delete(shape.toolCallId);
-      else if (
-        shape.kind === "tool_call_update" &&
-        !ignored.has(shape.toolCallId)
-      )
-        unopened.add(shape.toolCallId);
-    };
-    for (let i = entries.length - 1; i >= cut; i--) include(i);
-    let start = cut;
-    while (start > 0 && (unopened.size > 0 || continuesRun(start))) {
-      start -= 1;
-      include(start);
-    }
-    return { start, unopened };
-  };
-  const first = walkBack(new Set());
-  return first.unopened.size === 0
-    ? first.start
-    : walkBack(first.unopened).start;
 }
 
 /**
