@@ -92,6 +92,9 @@ import {
 } from "../../invocations/components/delegation-owners.js";
 import { DockedDelegationPanel } from "../../invocations/components/docked-delegation-panel.js";
 import { LiveDelegationBlock } from "../../invocations/components/live-delegation-block.js";
+import { DockedProcessOutputPanel } from "../../processes/components/docked-process-output-panel.js";
+import { ProcessesPanel } from "../../processes/components/processes-panel.js";
+import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
@@ -222,6 +225,11 @@ export function ChatView() {
   );
   const artifactsSectionOpen = useStore((s) => s.artifactsSectionOpen);
   const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
+  const processesEnabled = useProcessesEnabled();
+  const processesSectionOpen = useStore((s) => s.processesSectionOpen);
+  const setProcessesSectionOpen = useStore((s) => s.setProcessesSectionOpen);
+  const storedProcessOutputKey = useStore((s) => s.openProcessOutputKey);
+  const openProcessOutputKey = processesEnabled ? storedProcessOutputKey : null;
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const setView = useStore((s) => s.setView);
@@ -258,6 +266,9 @@ export function ChatView() {
     { id: "sessions", open: sessionsSectionOpen },
     { id: "files", open: filesSectionOpen },
     { id: "artifacts", open: artifactsSectionOpen },
+    ...(processesEnabled
+      ? [{ id: "processes" as const, open: processesSectionOpen }]
+      : []),
   ]);
   const terminalFreshRef = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -573,6 +584,7 @@ export function ChatView() {
     openDelegation !== null ||
     openFilePath !== null ||
     openArtifactId !== null ||
+    openProcessOutputKey !== null ||
     (openBrowserAgentId !== null && canOpenBrowser);
   const columnsDoNotFit =
     columnsW !== null && columnsW < leftW + CHAT_MIN_W + SIDE_PANEL_MIN_W;
@@ -780,6 +792,18 @@ export function ChatView() {
             onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
             {...panelStack.panelProps("artifacts")}
           />
+          {processesEnabled && (
+            <>
+              <PanelDivider stack={panelStack} below="processes" />
+              <ProcessesPanel
+                agentId={selectedAgent}
+                alwaysOn={agentView?.hibernationTimeoutMin === 0}
+                open={processesSectionOpen}
+                onToggle={() => setProcessesSectionOpen(!processesSectionOpen)}
+                {...panelStack.panelProps("processes")}
+              />
+            </>
+          )}
         </div>
         {!browserFills && (
           <ResizeHandle
@@ -1080,6 +1104,12 @@ export function ChatView() {
                   key={openArtifactId}
                   agentId={selectedAgent}
                   onSendPrompt={sendArtifactPrompt}
+                />
+              ) : openProcessOutputKey && selectedAgent ? (
+                <DockedProcessOutputPanel
+                  key={openProcessOutputKey}
+                  agentId={selectedAgent}
+                  outputKey={openProcessOutputKey}
                 />
               ) : null}
             </div>

@@ -48,8 +48,11 @@ Apply `/react-ui-engineering` throughout.
      `pendingRestart` is set.
    - Click opens the Processes section (`setProcessesSectionOpen(true)`) and scrolls it into
      view.
-   - It reads `useProcesses`, so it shares 04's query and watch. Run the watch while the
-     indicator is mounted, not only while the section is open.
+   - It reads `useProcesses(agentId, { enabled: true, poll: false })`, so it shares 04's
+     query cache. Run the watch while the indicator is mounted, not only while the section
+     is open. (04 runs `useProcessesWatch(agentId, enabled)` inside `ProcessesPanel`, while
+     the section or an output view is open; move it to one owner in the chat view that
+     covers the indicator too, so two subscriptions never run side by side.)
 6. **Docs.** In [features](../../architecture/features.md), describe what the flag shows, in
    one sentence next to 04's entry. In
    [agent-processes](../../architecture/agent-processes.md), state that the user's choice

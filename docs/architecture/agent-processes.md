@@ -97,7 +97,10 @@ polled. The runtime scans every few seconds while someone watches, every quarter
 while a Keep Mark or kept Detached Process lives, and twice a minute otherwise, so finished
 work is recorded even when nobody looks. The user's decisions — the keep switch and Stop
 — go through the same surface. Field-level contract:
-[`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
+[`packages/agent-runtime-api/`](../../packages/agent-runtime-api/). The chat view shows the
+inventory as a Processes section beside Sessions, Files and Artifacts, behind the
+`processes` [experimental feature](features.md); a row's output opens in the panel docked
+beside the conversation, the way a file does, and follows the file while the process runs.
 
 ## Keeping work
 
