@@ -286,12 +286,63 @@ describe("ext-authz gate", () => {
     await flushMicrotasks();
 
     expect(repo.inserts).toBe(1);
-    expect(bus.publishes).toHaveLength(1);
+    expect(bus.publishes).toHaveLength(2);
+    expect(bus.publishes[1].payload).toBe(bus.publishes[0].payload);
 
     repo.resolve(id, "allow");
     bus.fire(`approval:${id}`, "");
     expect(await first).toBe("allow");
     expect(await retry).toBe("allow");
+  });
+
+  it("raises the prompt of a hold opened before the current session attached (#4327)", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    repo.setInitial({
+      id: "held-earlier",
+      type: "ext_authz",
+      agentId: "agent-1",
+      ownerSub: "user-1",
+      sessionId: null,
+      payload: { kind: "ext_authz", host: "h", method: "GET", path: "/p" },
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 1_800_000),
+      resolvedAt: null,
+      verdict: null,
+      decidedBy: null,
+      status: "pending",
+      deliveredAt: null,
+    });
+    const gate = createExtAuthzGate({
+      repo: repo.repo,
+      bus: bus.bus,
+      attendance: attended,
+      identityResolver,
+      ruleMatcher: noMatchRules,
+      holdSeconds: 1800,
+      platformAllowedHosts: [],
+    });
+
+    const inflight = gate.gateRequest({
+      agentId: "inst-1",
+      host: "h",
+      method: "GET",
+      path: "/p",
+    });
+    await flushMicrotasks();
+
+    expect(repo.inserts).toBe(0);
+    expect(bus.publishes).toHaveLength(1);
+    expect(bus.publishes[0].channel).toBe("inject:agent-1");
+    expect(JSON.parse(bus.publishes[0].payload)).toMatchObject({
+      id: "held-earlier",
+      method: "session/request_permission",
+      params: { toolCall: { rawInput: { approvalId: "held-earlier" } } },
+    });
+
+    repo.resolve("held-earlier", "allow");
+    bus.fire("approval:held-earlier", "");
+    expect(await inflight).toBe("allow");
   });
 
   it("allows a platform-provided host without consulting rules or holding", async () => {

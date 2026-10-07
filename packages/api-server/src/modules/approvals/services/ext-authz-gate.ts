@@ -141,26 +141,27 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
         });
-        if (!unattended) {
-          const frame = buildExtAuthzSynthFrame({
-            approvalId: pendingId,
-            host,
-            method,
-            path,
-          });
-          void deps.bus.publish(injectChannelOf(identity.agentId), frame);
-          securityLog("warn", "egress.hold", {
-            category: "egress",
-            actor: identity.ownerSub,
-            actorKind: "agent",
-            surface: "ext-authz",
-            agentId: identity.agentId,
-            target: host,
-            decision: "hold",
-            correlationId: pendingId,
-            detail: { method, path, via },
-          });
-        }
+      }
+
+      if (!unattended) {
+        const frame = buildExtAuthzSynthFrame({
+          approvalId: pendingId,
+          host,
+          method,
+          path,
+        });
+        void deps.bus.publish(injectChannelOf(identity.agentId), frame);
+        securityLog("warn", "egress.hold", {
+          category: "egress",
+          actor: identity.ownerSub,
+          actorKind: "agent",
+          surface: "ext-authz",
+          agentId: identity.agentId,
+          target: host,
+          decision: "hold",
+          correlationId: pendingId,
+          detail: { method, path, via, joined: existing !== null },
+        });
       }
 
       if (unattended) {
