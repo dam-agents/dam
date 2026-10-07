@@ -45,23 +45,8 @@ Spawn one Agent per confirmed issue with `isolation: "worktree"`, giving each en
 
 ## 3. Review, then push
 
-For each worktree with changes: show `git diff main...HEAD`, summarize what changed and why, and get explicit approval for that item. Only then push and open its PR:
-
-```sh
-gh pr create --title "<type>(scope): <summary>" --body "$(cat <<'EOF'
-## Summary
-
-<what and why>
-
-Closes #<issue-number>
-
-## Test plan
-
-- [ ] `mise run check` passes
-- [ ] `mise run test` passes
-EOF
-)"
-```
+For each worktree with changes: show `git diff main...HEAD`, summarize what changed and why, and get explicit approval for that item. Only then push and open its PR with the `pr-open` skill, titled
+`<type>(scope): <summary>`, with `Closes #<issue-number>` in the body.
 
 On rejection, ask what to change, or skip the item.
 

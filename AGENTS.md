@@ -52,6 +52,8 @@ Proposed ideal flow for new features — see [`docs/guidelines/work-process.md`]
 - **Trailer**: Configured via `.claude/settings.json` `attribution` — do not add manually.
 - **DCO**: Always use `git commit -s` to add `Signed-off-by` trailer.
 - **Branch naming**: `type/short-description` (e.g., `feat/session-history`, `fix/stale-timer`). Same type prefixes as commits.
+- **Pull requests**: open them with the [`pr-open`](.agents/skills/pr-open/SKILL.md) skill (self-review, checks, body with the `author-decisions` block). A Claude Code hook denies opening a PR until the skill is loaded.
+- **Upstream skills**: `pr-open` and `review-remediation` are vendored from code-guardian and pinned in `.agents/upstream-skills.json`. Never edit them here: change them upstream, then `mise run skills:update`. Put dam-specific behavior in the skills that call them (`babysit`, …).
 
 ## Branding
 

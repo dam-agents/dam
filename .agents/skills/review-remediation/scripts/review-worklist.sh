@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # review-worklist.sh — the work list one automated review leaves on one pull
-# request, as one JSON object (babysit SKILL.md → "1. Read the review").
+# request, as one JSON object (SKILL.md → "1. Read the review").
 #
 #   review-worklist.sh <owner/repo> <pr-number> [--reviewer <login>]
 #   review-worklist.sh <owner/repo> <pr-number> --verify [--worklist <file>]
