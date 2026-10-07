@@ -306,14 +306,24 @@ async fn remove(State(server): State<Arc<Server>>, Path(id): Path<String>) -> Re
 // UNIT_BOUNDARY_DESCRIPTION: how many body chunks may wait between the connection and the thread writing the seed. The body is streamed and never held whole, because a seed is an agent's whole home and can be many GiB; this bound is what makes a slow disk slow the uploader down instead of filling the runner's memory.
 const SEED_CHUNKS: usize = 16;
 
-// UNIT_BOUNDARY_DESCRIPTION: stores the tar of a migrated agent's old home in its machine's share, for platform-init to seed the home from on the first boot. The body goes chunk by chunk to a blocking thread that writes and hashes it, and the seed is committed only once the whole body arrived and every byte is on the disk. Any failure — the body refused as too large, the connection cut, the disk full — drops the upload, which removes what was staged. A seed refused as too large is answered before the body is read to its end.
+// UNIT_BOUNDARY_DESCRIPTION: stores the tar of a migrated agent's old home in its machine's share, for platform-init to seed the home from on the first boot. The upload is logged when it arrives and when it is answered, so an upload that hangs shows which side it hangs on. The body goes chunk by chunk to a blocking thread that writes and hashes it, and the seed is committed only once the whole body arrived and every byte is on the disk. Any failure — the body refused as too large, the connection cut, the disk full — drops the upload, which removes what was staged. A seed refused as too large is answered before the body is read to its end.
 async fn seed(
     State(server): State<Arc<Server>>,
     Path(id): Path<String>,
     Extension(authority): Extension<Authority>,
     body: Body,
 ) -> Response {
-    receive_seed(server, id, authority, body, SEED_IDLE).await
+    let started = std::time::Instant::now();
+    tracing::info!(machine = %id, "seed upload received");
+    let machine = id.clone();
+    let response = receive_seed(server, id, authority, body, SEED_IDLE).await;
+    tracing::info!(
+        machine = %machine,
+        status = response.status().as_u16(),
+        elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        "seed upload answered"
+    );
+    response
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a seed upload may send nothing before it is dropped. The upload holds the machine's seed claim, and no worker starts the machine while it does, so an uploader that stalls without closing its connection would otherwise keep the machine down for as long as the connection lasts. The uploader sends at least every few seconds while it makes progress.
@@ -333,12 +343,14 @@ async fn receive_seed(
         Authority::Token => None,
         Authority::Capability(verified) => Some(verified),
     };
+    let machine = id.clone();
     let claimed = tokio::task::spawn_blocking(move || server.claim_seed(&id, capability)).await;
     let mut seeding = match claimed {
         Ok(Ok(seeding)) => seeding,
         Ok(Err(e)) => return rejected(e),
         Err(e) => return plain(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     };
+    tracing::info!(machine = %machine, "seed claim taken; reading the upload");
     let (chunks, mut received) = tokio::sync::mpsc::channel::<Bytes>(SEED_CHUNKS);
     let writer = tokio::task::spawn_blocking(move || {
         while let Some(chunk) = received.blocking_recv() {
