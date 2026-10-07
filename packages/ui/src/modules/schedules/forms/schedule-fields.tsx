@@ -432,7 +432,7 @@ export function ScheduleModelField({
         title="Model"
         choices={options}
         value={value || null}
-        clearable={hasDefault || !supported}
+        clearable
         {...(hasDefault
           ? {}
           : {
