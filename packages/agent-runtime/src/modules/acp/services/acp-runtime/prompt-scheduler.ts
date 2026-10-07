@@ -50,6 +50,7 @@ export interface PromptScheduler {
 export interface PromptSchedulerDeps {
   sendToAgent: (frame: unknown) => boolean;
   canStart: (entry: PromptSubmission) => boolean;
+  sessionLoaded?: (sessionId: string) => boolean;
   onQueueDropped: (
     sessionId: string,
     dropped: PromptSubmission[],
@@ -93,11 +94,12 @@ export interface PromptSchedulerDeps {
  * outside this module ever removes a queue itself. refuseQueue is the one
  * exception and answers each sender with an error instead, so the loss is
  * reported to the client that is still there to hear it rather than recorded.
- * A setting change for a session (its model or mode) waits on the same gate
+ * A setting change for a session (its model or mode) waits in the same place
  * but is not a turn: it waits only for the session to be loaded back into
- * the harness, never for a turn in flight, goes out ahead of the queued
- * prompts once it can, and on every route a queue leaves by is answered with
- * an error rather than written down, since nothing replays a setting.
+ * the harness, never for a turn in flight or an engaged reader, goes out
+ * ahead of the queued prompts once it can, is dropped unsent once its sender
+ * has gone, and on every route a queue leaves by is answered with an error
+ * rather than written down, since nothing replays a setting.
  */
 export function createPromptScheduler(
   deps: PromptSchedulerDeps,
@@ -123,11 +125,25 @@ export function createPromptScheduler(
     for (const entry of settings ?? []) refuse(entry, message);
   }
 
+  const sessionLoaded = (entry: PromptSubmission): boolean =>
+    deps.sessionLoaded
+      ? deps.sessionLoaded(entry.sessionId)
+      : deps.canStart(entry);
+
+  function dropAbandonedSettings(sessionId: string): void {
+    const settings = pendingSettings.get(sessionId);
+    if (settings === undefined) return;
+    const live = settings.filter((entry) => entry.channel.isOpen());
+    if (live.length === 0) pendingSettings.delete(sessionId);
+    else pendingSettings.set(sessionId, live);
+  }
+
   function flushSettings(sessionId: string): void {
+    dropAbandonedSettings(sessionId);
     const settings = pendingSettings.get(sessionId);
     const head = settings?.[0];
     if (settings === undefined || head === undefined) return;
-    if (!deps.canStart(head)) return;
+    if (!sessionLoaded(head)) return;
     for (const entry of [...settings]) {
       if (!deps.sendToAgent(entry.frame)) break;
       settings.shift();
@@ -243,7 +259,7 @@ export function createPromptScheduler(
       const sessionId = submission.sessionId;
       if (
         !pendingSettings.has(sessionId) &&
-        deps.canStart(submission) &&
+        sessionLoaded(submission) &&
         deps.sendToAgent(submission.frame)
       )
         return "started";
@@ -315,6 +331,7 @@ export function createPromptScheduler(
     },
 
     onDetached(sessionId) {
+      dropAbandonedSettings(sessionId);
       const queue = queues.get(sessionId) ?? [];
       const head = queue[0];
       if (head === undefined) return;

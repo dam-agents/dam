@@ -89,12 +89,21 @@ export function createTriggerPlugin(deps: {
     }
     if (!payload.once && (payload.sessionMode ?? "fresh") === "continuous") {
       const prior = deps.stateStore.getSessionForSchedule(payload.scheduleId);
-      const res = await deps.driver.start({
-        task,
-        mcpServers: payload.mcpServers,
-        ...(prior ? { resumeSessionId: prior } : { platformMeta }),
-        model,
-      });
+      const res = await deps.driver
+        .start({
+          task,
+          mcpServers: payload.mcpServers,
+          ...(prior ? { resumeSessionId: prior } : { platformMeta }),
+          model,
+        })
+        .catch((err: unknown) => {
+          if (!prior && err instanceof SessionModelError && err.sessionId)
+            deps.stateStore.setSessionForSchedule(
+              payload.scheduleId,
+              err.sessionId,
+            );
+          throw err;
+        });
       if (!prior)
         deps.stateStore.setSessionForSchedule(
           payload.scheduleId,

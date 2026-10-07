@@ -220,6 +220,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     canStart: ({ sessionId, unattended }) =>
       (unattended === true || hasEngagedChannel(sessionId)) &&
       !harnessColdSessions.has(sessionId),
+    sessionLoaded: (sessionId) => !harnessColdSessions.has(sessionId),
     onQueueDropped(sessionId, dropped, cause) {
       const recordedAt = new Date().toISOString();
       deps.undeliveredPrompts.remember(

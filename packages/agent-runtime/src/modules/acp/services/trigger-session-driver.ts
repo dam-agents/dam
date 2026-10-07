@@ -31,6 +31,7 @@ export class SessionModelError extends Error {
   constructor(
     readonly model: string,
     cause: string,
+    readonly sessionId?: string,
   ) {
     super(
       `the harness would not run this session on model "${model}": ${cause}`,
@@ -126,6 +127,7 @@ async function setSessionModel(
       throw new SessionModelError(
         model,
         `${(second as Error).message} (and ${(first as Error).message})`,
+        sessionId,
       );
     }
   }
