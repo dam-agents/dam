@@ -15,12 +15,11 @@ export function SkillSetActions({
 }) {
   return (
     <>
-      <Button variant="outline" size="sm" onClick={onAddSets}>
-        <Add size={16} /> Add skill sets…
+      <Button variant="outline" onClick={onAddSets}>
+        <Add size={16} /> Add skill sets
       </Button>
       <Button
         variant="outline"
-        size="sm"
         disabled={!canSave || !previewReady}
         tooltip={
           !previewReady
@@ -31,7 +30,7 @@ export function SkillSetActions({
         }
         onClick={onSaveSet}
       >
-        <Save size={16} /> Save as skill set…
+        <Save size={16} /> Save as skill set
       </Button>
     </>
   );

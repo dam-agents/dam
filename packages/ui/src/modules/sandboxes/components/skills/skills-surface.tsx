@@ -85,7 +85,6 @@ export function SkillsSurface({
   const addSourceButton = (
     <Button
       variant="outline"
-      size="sm"
       onClick={() =>
         setOpenModal({ kind: "add-source", tab: "github", files: [] })
       }

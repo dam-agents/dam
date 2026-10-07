@@ -74,8 +74,8 @@ export function SkillSourcesSection({
             <div className="flex items-center gap-2">
               {action}
               {!readOnly && sets.length > 0 && (
-                <Button variant="outline" size="sm" onClick={onAddSets}>
-                  <Add size={16} /> Add skill sets…
+                <Button variant="outline" onClick={onAddSets}>
+                  <Add size={16} /> Add skill sets
                 </Button>
               )}
             </div>

@@ -106,8 +106,8 @@ export function SkillSourceCard({
   stateLoaded: boolean;
   readOnly: boolean;
   onToggle: (skill: Skill) => void;
-  onRescan: () => void;
-  onRemove: () => void;
+  onRescan?: () => void;
+  onRemove?: () => void;
   onUpdate: (skill: Skill) => void;
   onOpenSkill: (skill: Skill) => void;
   suppressedNames?: ReadonlySet<string>;
@@ -150,7 +150,7 @@ export function SkillSourceCard({
     bulkList.length > 0 &&
     bulkList.every((s) => installedRef(s.source, s.name) !== undefined);
 
-  const canRemove = !source.system && !source.fromTemplate;
+  const canRemove = onRemove && !source.system && !source.fromTemplate;
 
   return (
     <Card className={cn(readOnly && "bg-muted")}>
@@ -182,7 +182,7 @@ export function SkillSourceCard({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {}
-          {!error && scannedAt && (
+          {!error && scannedAt && onRescan && (
             <ScanFreshness
               scannedAt={scannedAt}
               scanning={loading}
@@ -221,7 +221,9 @@ export function SkillSourceCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>
+              {onRescan && (
+                <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 onSelect={() =>
                   window.open(source.gitUrl, "_blank", "noopener,noreferrer")

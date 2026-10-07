@@ -1,4 +1,9 @@
-import { Add, Close, Document, SendAltFilled, Stop } from "@carbon/icons-react";
+import {
+  Close,
+  Document,
+  SendAltFilled,
+  Stop,
+} from "@carbon/icons-react";
 import {
   type KeyboardEvent,
   type RefObject,
@@ -22,9 +27,11 @@ import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
 import { draftKey, EMPTY_DRAFT } from "../lib/draft-key.js";
 import { ChatColumn } from "./chat-column.js";
+import { PlusMenuPopover } from "./plus-menu-popover.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
+import type { SandboxSection } from "../../platform/lib/routes.js";
 import type { RotatingPlaceholder } from "../../schedules/components/schedule-chat-discovery.js";
 
 export interface ChatInputProps {
@@ -34,6 +41,7 @@ export interface ChatInputProps {
   onSend: (text: string, attachments?: Attachment[]) => void;
   onStop: () => void;
   rotatingPlaceholder?: RotatingPlaceholder | null;
+  onConfigureSection?: (section: SandboxSection) => void;
 }
 
 export function ChatInput({
@@ -43,6 +51,7 @@ export function ChatInput({
   onSend,
   onStop,
   rotatingPlaceholder,
+  onConfigureSection,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -216,17 +225,12 @@ export function ChatInput({
             </div>
           )}
           <div className="flex items-end gap-1 px-2 min-h-[56px]">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="shrink-0 mb-[9px] h-10 w-10 text-muted-foreground hover:text-primary disabled:opacity-40"
-              onClick={() => fileInputRef.current?.click()}
+            <PlusMenuPopover
+              agentId={agentId}
               disabled={loadingSession || !key}
-              aria-label="Attach file"
-              tooltip="Attach file"
-            >
-              <Add size={16} />
-            </Button>
+              onAttachFile={() => fileInputRef.current?.click()}
+              onConfigureSection={onConfigureSection}
+            />
             <div className="relative flex-1">
               {showRotating && (
                 <span
