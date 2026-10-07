@@ -117,7 +117,8 @@ depends = ["check:*", "//...:check"]
 
 [tasks.fix]
 description = "Apply every fix: formatters, linters, generators"
-depends = ["fix:*", "//...:fix"]
+depends = ["fix:comment-types"]
+run = [{ tasks = ["fix:skill-manifest", "//docs:fix", "//packages/...:fix"] }]
 
 [tasks.test]
 description = "Run every test suite"
