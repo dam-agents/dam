@@ -82,7 +82,11 @@ lockfile="$agents/base/image.lock" deplocks="$agents/base/image-locks"
 isolate_mise() {
   unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT "${!MISE_TASK_@}"
   mkdir -p "$work"/{data,cache,config,state}
+  # MISE_SYSTEM_DATA_DIR too: tools the build host has installed system-wide
+  # would otherwise resolve there, and the default image's PATH would name them
+  # where its tools volume does not put them.
   export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$work/state" \
+    MISE_SYSTEM_DATA_DIR="$work/system" \
     MISE_CONFIG_DIR="$work/config" MISE_GLOBAL_CONFIG_FILE="$work/config/none.toml" \
     MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" \
     MISE_TRUSTED_CONFIG_PATHS="$stage" MISE_EXPERIMENTAL=1 MISE_LOCKFILE=1 \
