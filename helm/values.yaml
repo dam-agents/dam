@@ -267,7 +267,8 @@ virtualization:
     # measured using, for its guest to grow into before the controller acts.
     headroomMiB: 256
     # true = runners may give the node's virtualization extensions to the
-    # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization),
+    # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization,
+    # or controller.agent.templateDefaults.nestedVirtualization for all),
     # so that guest can run KVM itself — e.g. a vm agent that hosts its own
     # vm-backend install. Every other machine boots without them. A runner
     # nests only where the node's KVM allows it, which is the kernel default
@@ -1628,6 +1629,13 @@ controller:
       # it shares. Set `MEM_REAPER=off` to disable.
       env: []
       skillSources: []
+      # true = every vm agent asks for nested virtualization, as if its Agent
+      # set spec.backend.vm.nestedVirtualization. It is only an ask: a machine
+      # nests only when `virtualization.runner.nestedVirtualization` lets the
+      # runners nest and the node's KVM allows it. Applied at reconcile, so
+      # turning it on or off also changes existing vm agents and restarts
+      # their machines. While it is on, an Agent cannot opt out.
+      nestedVirtualization: false
 
     # -- Size the controller materializes into any Agent spec that lacks a
     # limits dimension (#1900): fill-if-absent on reconcile, never touching

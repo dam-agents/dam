@@ -138,6 +138,8 @@ type AgentTemplateDefaults struct {
 	Env          []EnvVar      `json:"env,omitempty"`
 	SkillSources []SkillSource `json:"skillSources,omitempty"`
 	Init         string        `json:"init,omitempty"`
+
+	NestedVirtualization bool `json:"nestedVirtualization,omitempty"`
 }
 
 type WarmPool struct {
