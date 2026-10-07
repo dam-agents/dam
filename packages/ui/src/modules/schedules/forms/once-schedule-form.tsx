@@ -26,7 +26,7 @@ import {
   type OnceFormValues,
   onceLocalMoment,
 } from "./once-form-schema.js";
-import { OnceModelField } from "./once-model-field.js";
+import { ScheduleModelField } from "./schedule-fields.js";
 import type { ScheduleDraft } from "./schedule-kind-field.js";
 
 interface Props {
@@ -195,7 +195,17 @@ export function OnceScheduleForm({
         )}
 
         {existing?.inSession !== "continue" && (
-          <OnceModelField agentId={agentId} register={register} />
+          <Controller
+            control={control}
+            name="model"
+            render={({ field }) => (
+              <ScheduleModelField
+                agentId={agentId}
+                value={field.value}
+                onChange={field.onChange}
+              />
+            )}
+          />
         )}
 
         <FormField label="Prompt" error={errors.task?.message} disableInset>

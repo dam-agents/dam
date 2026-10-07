@@ -150,6 +150,7 @@ export function createSchedulesService(deps: {
     async createCron(input: ScheduleCreateCronInput, createdBy = "user") {
       asBadRequest(() => validateCron(input.cron));
       await ensureAgent(input.agentId);
+      await ensureSessionModel(input.agentId, input.model, undefined);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
         type: "cron",
@@ -199,6 +200,7 @@ export function createSchedulesService(deps: {
         validateRRule(input.rrule, input.timezone, input.quietHours ?? []),
       );
       await ensureAgent(input.agentId);
+      await ensureSessionModel(input.agentId, input.model, undefined);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
         type: "rrule",
@@ -305,11 +307,12 @@ export function createSchedulesService(deps: {
       if (current.status?.lastRun)
         throw badRequest("a one-time schedule cannot be edited once it fired");
       const at = resolveMoment(input.at, input.timezone, now());
-      await ensureSessionModel(
-        current.agentId,
-        input.model,
-        current.spec.origin,
-      );
+      if (input.model !== current.spec.model)
+        await ensureSessionModel(
+          current.agentId,
+          input.model,
+          current.spec.origin,
+        );
       const { model: _previous, ...unchanged } = current.spec;
       const spec: ScheduleSpec = {
         ...unchanged,
@@ -338,6 +341,8 @@ export function createSchedulesService(deps: {
       );
       const current = await deps.repo.get(input.id, deps.owner);
       if (!current) return null;
+      if (input.model && input.model !== current.spec.model)
+        await ensureSessionModel(current.agentId, input.model, undefined);
       if (current.spec.type === "once")
         throw badRequest("a one-time schedule is edited with updateOnce");
       const spec: ScheduleSpec = {

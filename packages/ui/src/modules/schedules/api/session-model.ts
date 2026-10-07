@@ -6,6 +6,7 @@ import {
 export interface SessionModelChoice {
   value: string;
   name: string;
+  description?: string;
 }
 
 export function useSessionModelChoices(
@@ -17,4 +18,9 @@ export function useSessionModelChoices(
   if (values?.availableModels?.length) return values.availableModels;
   const models = data.catalog?.options.find((o) => o.category === "model");
   return models?.choices ?? [];
+}
+
+export function useHasHarnessDefault(agentId: string | null): boolean {
+  const { values } = useResolvedHarnessConfig(agentId);
+  return !!values?.defaultModel;
 }

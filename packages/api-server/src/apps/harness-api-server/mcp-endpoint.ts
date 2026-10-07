@@ -1041,7 +1041,7 @@ export function createMcpSession(
         .min(1)
         .optional()
         .describe(
-          "Model the new session runs on, e.g. 'haiku' for a routine check or 'opus' for a hard one; omit for the agent's default. Not with inSession continue, which keeps this session's model. An unknown value is refused with the list of choices.",
+          "Model the new session runs on, e.g. 'haiku' for a routine check or 'opus' for a hard one; omit to run on the harness's own default (what the agent's Default model setting gives), not on whatever model the agent is currently set to. Not with inSession continue, which keeps this session's model. An unknown value is refused with the list of choices.",
         ),
     },
     async ({ name, task, at, timezone, inSession, model }) => {

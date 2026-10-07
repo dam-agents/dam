@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { type ReactNode, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
 import { DialogActions, DialogBody, DialogHeader } from "@/components/modal";
@@ -179,7 +179,17 @@ export function RecurringScheduleForm({
 
         <ScheduleSessionTypeField layout="stacked" control={control} />
 
-        <ScheduleModelField agentId={agentId} control={control} />
+        <Controller
+          control={control}
+          name="model"
+          render={({ field }) => (
+            <ScheduleModelField
+              agentId={agentId}
+              value={field.value}
+              onChange={field.onChange}
+            />
+          )}
+        />
       </DialogBody>
 
       <DialogActions

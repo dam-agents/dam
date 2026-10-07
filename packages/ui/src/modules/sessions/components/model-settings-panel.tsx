@@ -174,6 +174,8 @@ export function OptionPicker({
   value,
   clearable = true,
   placeholder = CLEARED_LABEL,
+  clearedLabel = CLEARED_LABEL,
+  clearedDescription = CLEARED_DESCRIPTION,
   onSelect,
 }: {
   title: string;
@@ -181,6 +183,8 @@ export function OptionPicker({
   value: string | null;
   clearable?: boolean;
   placeholder?: string;
+  clearedLabel?: string;
+  clearedDescription?: string;
   onSelect: (id: string | null) => void;
 }) {
   const selected = value === null ? null : choices.find((c) => c.id === value);
@@ -202,8 +206,8 @@ export function OptionPicker({
       >
         {clearable && (
           <OptionItem
-            label={CLEARED_LABEL}
-            description={CLEARED_DESCRIPTION}
+            label={clearedLabel}
+            description={clearedDescription}
             active={value === null}
             onSelect={() => onSelect(null)}
           />

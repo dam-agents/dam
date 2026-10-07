@@ -159,7 +159,6 @@ export const triggerEventPayload = z.object({
   model: z.string().min(1).optional(),
   mcpServers: z.array(z.unknown()).optional(),
   precheck: z.string().min(1).optional(),
-  model: z.string().min(1).optional(),
   fireAt: z.string().datetime({ offset: true }).optional(),
   lastRunAt: z.string().datetime({ offset: true }).optional(),
 });

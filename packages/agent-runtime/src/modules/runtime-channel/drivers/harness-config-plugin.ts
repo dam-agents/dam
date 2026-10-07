@@ -108,7 +108,7 @@ export function createHarnessConfigPlugin(deps: {
   };
 
   const harnessDefault = (): string | null => {
-    if (!binding) return null;
+    if (binding?.sessionModel !== true) return null;
     const env = envReader.current();
     const pinned = selectDiscoverySource(binding.modelDiscovery, env)
       ?.spec.pinEnv?.map((name) => env[name]?.trim())

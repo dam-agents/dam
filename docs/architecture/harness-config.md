@@ -8,7 +8,7 @@ How an owner's model, mode, and config-defaults choices — or a driver's, for a
 
 The choices travel as a `harness-config` Event over the [runtime channel](runtime-delivery.md) — that page owns delivery and capability gating; this one owns what the event means and everything built on it.
 
-These are the agent's defaults: writing them restarts the one harness process every session shares. A single session can run on another model without that — a harness that can switch a live session's model over ACP says so in its manifest, the runtime advertises it with its capabilities, and a [one-time schedule](schedules.md#one-time-schedules) uses it to pick the model its fresh session runs on, from the same model list the Config panel offers — the discovered one where the provider lists its own.
+These are the agent's defaults: writing them restarts the one harness process every session shares. A single session can run on another model without that — a harness that can switch a live session's model over ACP says so in its manifest, the runtime advertises it with its capabilities, and a [schedule](schedules.md#session-model), recurring or one-time, uses it to pick the model its sessions run on, from the same model list the Config panel offers — the discovered one where the provider lists its own.
 
 ## The event
 

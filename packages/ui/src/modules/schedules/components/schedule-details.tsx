@@ -5,7 +5,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
 
 import type { Schedule } from "../../../types.js";
-import { useModelChoices } from "../../agents/api/harness-config.js";
+import { useSessionModelChoices } from "../api/session-model.js";
 import {
   clampText,
   declinedSummary,
@@ -124,7 +124,7 @@ function ScheduleModel({
   agentId: string;
   model: string | null;
 }) {
-  const { choices } = useModelChoices(agentId);
+  const choices = useSessionModelChoices(agentId);
   if (!model) return <>Default</>;
   const choice = choices.find((c) => c.value === model);
   return (

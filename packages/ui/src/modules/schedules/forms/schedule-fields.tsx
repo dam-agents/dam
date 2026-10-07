@@ -13,11 +13,14 @@ import { cn } from "@/lib/utils";
 
 import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
-import { useModelChoices } from "../../agents/api/harness-config.js";
 import {
   type Choice,
   OptionPicker,
 } from "../../sessions/components/model-settings-panel.js";
+import {
+  useHasHarnessDefault,
+  useSessionModelChoices,
+} from "../api/session-model.js";
 import {
   DAYS_ISO,
   formatTime12,
@@ -398,37 +401,46 @@ const MODEL_HINT =
 
 export function ScheduleModelField({
   agentId,
-  control,
+  value,
+  onChange,
 }: {
   agentId: string;
-  control: Control<ScheduleFormValues>;
+  value: string;
+  onChange: (model: string) => void;
 }) {
-  const { choices, hasDefault } = useModelChoices(agentId);
+  const choices = useSessionModelChoices(agentId || null);
+  const hasDefault = useHasHarnessDefault(agentId || null);
+  const supported = choices.length > 0;
+  if (!supported && !value) return null;
   const options: Choice[] = choices.map((c) => ({
     id: c.value,
     name: c.name,
     description: c.description,
   }));
+  if (value && !options.some((c) => c.id === value))
+    options.push({
+      id: value,
+      name: value,
+      description: supported
+        ? "Not in this agent's model list"
+        : "This agent can't switch a session's model; clear it so runs follow the agent",
+    });
 
   return (
     <FormField label="Model" hint={MODEL_HINT} disableInset>
-      <Controller
-        control={control}
-        name="model"
-        render={({ field }) => (
-          <OptionPicker
-            title="Model"
-            choices={
-              field.value && !options.some((c) => c.id === field.value)
-                ? [...options, { id: field.value, name: field.value }]
-                : options
-            }
-            value={field.value || null}
-            clearable={hasDefault}
-            {...(hasDefault ? {} : { placeholder: "Same as agent" })}
-            onSelect={(id) => field.onChange(id ?? "")}
-          />
-        )}
+      <OptionPicker
+        title="Model"
+        choices={options}
+        value={value || null}
+        clearable={hasDefault || !supported}
+        {...(hasDefault
+          ? {}
+          : {
+              placeholder: "Same as agent",
+              clearedLabel: "Same as agent",
+              clearedDescription: "Follows the model the agent is set to",
+            })}
+        onSelect={(id) => onChange(id ?? "")}
       />
     </FormField>
   );
