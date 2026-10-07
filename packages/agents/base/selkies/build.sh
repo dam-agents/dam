@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# UNIT_BOUNDARY_DESCRIPTION: builds the browser panel's stream server — Selkies with a GPL-free pixelflux — into <dest>/opt/selkies. pixelflux's published wheels link x264 and x265 (GPL); built from source with PIXELFLUX_ENABLE_GPL=0 it encodes H.264 with Cisco's OpenH264 and H.265 with kvazaar, both BSD-licensed. pixelflux is pinned past 2.1.0, the release that still linked FFmpeg; kvazaar is built here because pixelflux needs 2.3.2 and Debian trixie has 2.3.1. pixelflux links the system's codec libraries, so it is built in a chroot of the image's own Debian base, whatever distribution the build host runs, with the host's mise Rust (trixie's is older than pixelflux needs) and the image's Python bind-mounted in. Needs root (or sudo), crane and mise. The result is keyed by what decides it — RECIPE, the pinned revisions, the base image, both package lists, the Python version and the architecture — and looked for in the local cache, then in the registry ($PLATFORM_SELKIES_REGISTRY, an image per key), and only then built; with PLATFORM_SELKIES_PUSH=1, as CI sets it, a build is pushed there, so each key is built once. Bump RECIPE for a change to how it is built that the key does not see. Cargo's build directory is kept per architecture, so a build cut short resumes.
+# UNIT_BOUNDARY_DESCRIPTION: builds the browser panel's stream server — Selkies with a GPL-free pixelflux — into <dest>/opt/selkies. pixelflux's published wheels link x264 and x265 (GPL); built from source with PIXELFLUX_ENABLE_GPL=0 it encodes H.264 with Cisco's OpenH264 and H.265 with kvazaar, both BSD-licensed. pixelflux is pinned past 2.1.0, the release that still linked FFmpeg; kvazaar is built here because pixelflux needs 2.3.2 and Debian trixie has 2.3.1. pixelflux links the system's codec libraries, so it is built in a chroot of the image's own Debian base, whatever distribution the build host runs, with the host's mise Rust (trixie's is older than pixelflux needs) and the image's Python bind-mounted in. Needs root (or sudo), crane and mise. The result is cached under $XDG_CACHE_HOME/platform-selkies, keyed by this script, the base image, the image's packages, the Python version and the architecture — the directory CI keeps between runs with actions/cache — and Cargo's build directory beside it, so a build cut short resumes.
 set -euo pipefail
 
-RECIPE=1
 SELKIES_REV=f0b02a13a267c85cc54425ed12b2b9cfb568315a
 PIXELFLUX_REV=84d47c6a7a080dc6ece9dfc7442b3c2bceada098
 KVAZAAR_TAG=v2.3.2
@@ -19,25 +18,13 @@ cache="${PLATFORM_SELKIES_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/platform-selkie
 image_packages="$(sed -n 's/^"apt:\([^"]*\)".*/\1/p' "$here/../apt.toml" | paste -sd' ' -)"
 python="$(realpath "${PLATFORM_SELKIES_PYTHON:-$(command -v python3)}")"
 arch="$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')"
-key="$(printf '%s\n' "$RECIPE" "$SELKIES_REV" "$PIXELFLUX_REV" "$KVAZAAR_TAG" "$base" \
-  "$BUILD_PACKAGES" "$image_packages" "$("$python" -c 'import sys; print(sys.version_info[:2])')" |
+key="$({ cat "$0"; echo "$base $image_packages"; "$python" -c 'import sys; print(sys.version_info[:2])'; } |
   sha256sum | cut -c1-16)-$arch"
-out="$cache/$key"
-registry="${PLATFORM_SELKIES_REGISTRY:-quay.io/dam-agents/selkies-build}"
+out="$cache/out-$key"
 python_home="$(dirname "$(dirname "$python")")"
 sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
 
 if [ ! -x "$out/opt/selkies/bin/selkies" ]; then
-  rm -rf "$out" && mkdir -p "$out"
-  if crane export "$registry:$key" - 2>/dev/null | tar -xf - -C "$out" && [ -x "$out/opt/selkies/bin/selkies" ]; then
-    echo "platform-selkies: $key from $registry"
-  else
-    rm -rf "$out"
-    built=1
-  fi
-fi
-
-if [ -n "${built:-}" ]; then
   eval "$(cd "$here" && mise exec rust@stable -- sh -c 'echo "rustup_home=$RUSTUP_HOME cargo_home=$CARGO_HOME"')"
   [ -n "$rustup_home" ] && [ -n "$cargo_home" ] || { echo "platform-selkies: mise's rust@stable sets no RUSTUP_HOME or CARGO_HOME" >&2; exit 1; }
   target="$cache/cargo-target-$(uname -m)"
@@ -129,12 +116,6 @@ export LD_LIBRARY_PATH="/opt/selkies/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec python3 -c 'import sys; from selkies.__main__ import main; sys.argv[0] = "selkies"; sys.exit(main())' "$@"
 WRAPPER
   chmod +x "$out/opt/selkies/bin/selkies"
-  if [ "${PLATFORM_SELKIES_PUSH:-}" = 1 ]; then
-    tar -C "$out" --sort=name --numeric-owner -cf "$cache/push-$key.tar" opt
-    crane append --platform "linux/$arch" -f "$cache/push-$key.tar" -t "$registry:$key" ||
-      echo "platform-selkies: could not push $registry:$key; the next build builds it again" >&2
-    rm -f "$cache/push-$key.tar"
-  fi
 fi
 
 mkdir -p "$dest/opt"
