@@ -43,6 +43,15 @@ spec:
     matchLabels:
       {{- include "platform.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: harness-tools
+  {{- /*
+  Every node at once: what agents use is the directory, which a pod being
+  replaced leaves in place, and each node's installer writes only its own.
+  One node at a time outlasts the Helm release's wait.
+  */}}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 100%
   template:
     metadata:
       labels:
@@ -51,6 +60,8 @@ spec:
         istio.io/dataplane-mode: none
     spec:
       enableServiceLinks: false
+      {{- /* The idler is PID 1, which ignores SIGTERM; nothing is lost by killing it. */}}
+      terminationGracePeriodSeconds: 0
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ $name }}
       automountServiceAccountToken: false
