@@ -60,6 +60,8 @@ build_runtime() {
   rm -rf "$runtime"
   npm_config_inject_workspace_packages=true \
     pnpm --filter agent-runtime deploy --frozen-lockfile --prod --node-linker=hoisted "$runtime"
+  # pnpm 12 leaves files it staged under random names; they vary every build.
+  find "$runtime/node_modules" -name '*_pacquet-stage_*' -delete
   cp packages/agent-runtime/package.json "$runtime/package.json"
   (cd "$runtime" && pnpm pkg delete devDependencies)
 }
