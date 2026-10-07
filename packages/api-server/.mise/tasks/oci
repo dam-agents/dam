@@ -10,8 +10,12 @@ trap 'rm -rf "$root" "$npm"' EXIT
 # The image's native modules, for Linux of the host's arch, whatever the host.
 pnpm --filter api-server deploy --frozen-lockfile --prod --node-linker=hoisted \
   --os=linux --cpu="$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')" --libc=glibc "$root/app"
-# pnpm 12 leaves files it staged under random names; they vary every build.
+# What pnpm writes for itself, which nothing reads at run time, varies every
+# build: its records, settings and lockfile, and pnpm 12's leftover staging
+# files under random names. So does the order of package.json's keys.
+rm -f "$root"/app/pnpm-{workspace,lock}.yaml "$root"/app/node_modules/.{modules.yaml,pnpm-workspace-state-v1.json}
 find "$root/app/node_modules" -name '*_pacquet-stage_*' -delete
+jq -S . "$root/app/package.json" > "$npm/package.json" && mv "$npm/package.json" "$root/app/package.json"
 mkdir -p "$root/app/packages/db"
 cp -R ../db/drizzle "$root/app/packages/db/"
 # The server runs on node alone. The base's bundled npm is the one scanners
