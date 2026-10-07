@@ -153,7 +153,7 @@ install up front rather than chasing failures.
 With the launch discipline above, a running evolution **holds the pod awake**
 (reported background work) and hibernation mid-run is the exception, not the
 rule. It can still happen — a pod restart or eviction, a crash, or a run
-launched the legacy detached way — and then the pod scales to zero once the
+launched outside the background-work contract — and then the pod scales to zero once the
 session goes idle. The output dir lives on persistent `$HOME`, so the run is
 recoverable but **does not progress while the pod is down**.
 
@@ -169,11 +169,9 @@ that checkpoint), not the original `-i`, or it overshoots. A run that's reached
 its budget is done; going further is a new, re-gated decision, not a resume.
 (Lower `checkpoint_interval` if a short run needs to leave a resumable checkpoint.)
 
-**Keep-awake escape hatch (legacy fallback):** if a run somehow lives outside
-the background-work contract (launched detached, or the report was refused),
-an open **terminal or SSH session** pins the pod awake until it finishes —
-but the primary mechanism is launching as a reported harness task in the
-first place.
+If a run lives outside the background-work contract (launched detached, or
+the report was refused), an open terminal or SSH session pins the pod awake
+until it finishes.
 
 ## Hard guardrails
 

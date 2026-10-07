@@ -160,7 +160,7 @@ uv cache is on persistent `$HOME`, so reinstall after a restart — it's fast.
 With the launch discipline above, a running evolution **holds the pod awake**
 (reported background work) and hibernation mid-run is the exception, not the
 rule. It can still happen — a pod restart or eviction, a crash, or a run
-launched the legacy detached way — and then the pod scales to zero once the
+launched outside the background-work contract — and then the pod scales to zero once the
 session goes idle. The results dir lives on persistent `$HOME`, so the run is
 recoverable but **does not progress while the pod is down**.
 
@@ -176,11 +176,9 @@ is a **total**, not a per-invocation count, so never inflate it on resume. A
 run that's reached its budget is done; raising the budget is a new, re-gated
 decision, not a resume.
 
-**Keep-awake escape hatch (legacy fallback):** if a run somehow lives outside
-the background-work contract (launched detached, or the report was refused),
-an open **terminal or SSH session** pins the pod awake until it finishes —
-but the primary mechanism is launching as a reported harness task in the
-first place.
+If a run lives outside the background-work contract (launched detached, or
+the report was refused), an open terminal or SSH session pins the pod awake
+until it finishes.
 
 ## Hard guardrails
 

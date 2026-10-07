@@ -53,8 +53,7 @@ classify each as:
 
 - **running** — its `run.pid` (located in the campaign's subdirectory under `$NOUS_CAMPAIGN_PARENT`) names a live process (e.g. `kill -0 "$(cat "$NOUS_CAMPAIGN_PARENT/<run_id>/run.pid")"`).
 - **not running** — no live process (finished, stopped, or interrupted by a pod
-  restart — see below; this pod does not idle-hibernate, so this is rarer than it
-  used to be).
+  restart — see below).
 
 Present the grouped list, then ask whether they want a status pull on one or to
 resume one. When you pull detail, run `nous status <run_id> --line` and say
@@ -170,20 +169,20 @@ curl --noproxy '*' -fsS 'http://127.0.0.1:24180/v1/models?limit=1000' | jq -r '.
 ```
 
 Map by tier, then drop straight into `campaign.yaml` (use the IDs verbatim — they
-may be namespaced, e.g. `claude/aws/claude-opus-4-8`):
+may be namespaced, e.g. `claude/aws/claude-opus-5-5`):
 
 - `design` → the newest **opus** id,
 - `execute_analyze` and `report` → the newest **sonnet** id.
 
 If a tier is missing, fall back to another available model (prefer the most
 capable: opus → sonnet → whatever the catalog lists). Example for a gateway
-serving `claude/aws/claude-opus-4-8` + `claude/aws/claude-sonnet-4-6`:
+serving `claude/aws/claude-opus-5-5` + `claude/aws/claude-sonnet-5-5`:
 
 ```yaml
 models:
-  design: "claude/aws/claude-opus-4-8"
-  execute_analyze: "claude/aws/claude-sonnet-4-6"
-  report: "claude/aws/claude-sonnet-4-6"
+  design: "claude/aws/claude-opus-5-5"
+  execute_analyze: "claude/aws/claude-sonnet-5-5"
+  report: "claude/aws/claude-sonnet-5-5"
 ```
 
 ## Launching a campaign
@@ -216,7 +215,8 @@ cleanly.
 ## Long runs & recovery
 
 This agent is configured to **never hibernate** (the nous template sets its idle
-timeout to `0`), so an idle session no longer scales the pod to zero. A
+timeout to `0`), so an idle interactive session does not scale the pod to zero
+(an autonomous session is the exception: see "Autonomous sessions"). A
 backgrounded `nous run` therefore **progresses to completion on its own** — the
 user does not need to keep a terminal or SSH session open, and there are no idle
 "gaps" to resume across. Long overnight campaigns just run.
@@ -235,23 +235,15 @@ nohup nous resume campaign.yaml --auto-approve >> campaign.log 2>&1 &
 echo $! > run.pid
 ```
 
-There is no keep-awake step any more: because the pod doesn't idle-hibernate,
-you never need a terminal or SSH session held open to finish a run. Resume is
-only for the rarer non-idle restart above.
-
 ## Handling "approve" responses from the user
 
-Because gate notifications are posted automatically to Slack/Telegram from the background campaign (even under `--auto-approve`), the user might see a message like "Waiting for approval" and respond with "approve" out of habit or context.
-
-If the user sends "approve", "approve once", "yes", "confirm", or any similar validation, **do NOT start a new campaign or resume a campaign if it is already running**.
-
-1. First, check if the campaign is already running. Note that the campaign directory is at `$NOUS_CAMPAIGN_PARENT/<run_id>`. Do NOT look for `run.pid` in the current directory; instead, check the path `$NOUS_CAMPAIGN_PARENT/<run_id>/run.pid` (e.g. run `kill -0 "$(cat "$NOUS_CAMPAIGN_PARENT/<run_id>/run.pid")"` and `nous status <run_id> --line` to verify).
-2. If it is already running:
-   - Do NOT run `nous run` or `nous resume` again.
-   - Reply to the user explaining that the campaign is running with `--auto-approve` enabled and is proceeding automatically, so no manual approval is needed.
-   - Show the current status of the campaign using `nous status <run_id> --line`.
-3. If it is NOT running and is stopped at a checkpoint (e.g., after a pod restart):
-   - Resume it in the background by running `cd "$NOUS_CAMPAIGN_PARENT/<run_id>" && nohup nous resume campaign.yaml --auto-approve >> campaign.log 2>&1 &` and record the PID: `echo $! > run.pid` (per the "Long runs & recovery" section).
+Gate summaries post to Slack/Telegram even under `--auto-approve`, so a user
+may reply "approve" (or "yes", "confirm") to one. That reply never launches
+anything by itself: check the campaign first (its `run.pid` liveness and
+`nous status <run_id> --line`). If it is running, tell the user it proceeds
+on its own and show the status line; a second `nous run` or `nous resume`
+would race the live one. If it stopped at a checkpoint, resume it as in
+"Long runs & recovery".
 
 ## Monitoring a running campaign
 
