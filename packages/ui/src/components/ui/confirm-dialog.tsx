@@ -4,7 +4,7 @@ import {
   Warning,
   WarningAlt,
 } from "@carbon/icons-react";
-import type { ReactNode } from "react";
+import type { AnimationEvent, ReactNode } from "react";
 
 import {
   AlertDialog,
@@ -30,6 +30,7 @@ const KIND_ICON = {
 export interface ConfirmDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onCloseAnimationEnd?: () => void;
   kind?: ConfirmDialogKind;
   icon?: typeof Warning;
   title: ReactNode;
@@ -44,6 +45,7 @@ export interface ConfirmDialogProps {
 export function ConfirmDialog({
   open,
   onOpenChange,
+  onCloseAnimationEnd,
   kind = "default",
   icon,
   title,
@@ -59,6 +61,10 @@ export function ConfirmDialog({
   const resolvedConfirmLabel =
     confirmLabel ?? (showCancel ? (destructive ? "Remove" : "Confirm") : "OK");
 
+  function handleAnimationEnd(event: AnimationEvent<HTMLDivElement>) {
+    if (!open && event.currentTarget === event.target) onCloseAnimationEnd?.();
+  }
+
   return (
     <AlertDialog
       open={open}
@@ -67,7 +73,7 @@ export function ConfirmDialog({
         onOpenChange(o);
       }}
     >
-      <AlertDialogContent>
+      <AlertDialogContent onAnimationEnd={handleAnimationEnd}>
         <AlertDialogHeader>
           <div className="flex items-center gap-3">
             <div
