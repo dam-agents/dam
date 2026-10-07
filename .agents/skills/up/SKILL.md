@@ -34,7 +34,7 @@ Ask with AskUserQuestion only if the word fits neither. Never ask which dependen
 ## Rules
 
 - **Direct dependencies only.** Transitives move when their lockfile refreshes. Never override or resolve a transitive to bump it, except for a known vulnerability: bump the direct dependency pulling it in, and add a `pnpm-workspace.yaml` override only when no release of it fixes it. Remove an override once the direct deps resolve at or above its target without it.
-- **7-day release age.** Every ecosystem refuses releases younger than 7 days: pnpm `minimumReleaseAge` (`pnpm-workspace.yaml`), pinact `min_age` (`.pinact.yaml`), the agent images' `minimum_release_age` (`packages/agents/base/rootfs/etc/mise/conf.d/settings.toml`), and `--minimum-release-age 7d` on `mise lock` / `mise upgrade`. Exclude a release only when it fixes a known vulnerability and is too young, with a comment naming the date the exclusion can go; other young releases wait for the next run. Remove exclusions `git blame` shows are older than 7 days. Exception: smolvm (`packages/vm-runner/smolvm.pin`) always moves to its newest release, however young, because the runner tracks it closely.
+- **7-day release age.** Every ecosystem refuses releases younger than 7 days: pnpm `minimumReleaseAge` (`pnpm-workspace.yaml`), pinact `min_age` (`.pinact.yaml`), the agent images' `minimum_release_age` (`packages/agents/base/rootfs/etc/mise/conf.d/settings.toml`), and `--minimum-release-age 7d` on `mise lock` / `mise upgrade`. Exclude a release only when it fixes a known vulnerability and is too young, with a comment naming the date the exclusion can go; other young releases wait for the next run. Remove exclusions `git blame` shows are older than 7 days. Exceptions: smolvm (`packages/vm-runner/smolvm.pin`) always moves to its newest release, however young, because the runner tracks it closely; the upstream skills track their repo's branch head, which is ours.
 - **Keep the pin style.** An exact pin stays exact. `latest` stays `latest` and is re-locked. A release-line pin (`node = "26"`, `go = "1.27"`, `nodejs:26` in a base tag) moves to a new line only as a major bump.
 - **Move coupled pins together.** Change one only with its partners:
   - Node: mise `nodejs`, the api-server base `hi/nodejs:<n>`, and the `node_modules_<n>` whiteout in `packages/api-server/.mise/tasks/oci`.
@@ -63,6 +63,7 @@ Ask with AskUserQuestion only if the word fits neither. Never ask which dependen
 | Runtime images | `helm/values.yaml` (`image:`, `repository:`/`tag:`, `jobImage`, `envoyImage`, `configCliImage`); `.mise/tasks/cluster/install`; `.mise/tasks/image/mirror` | each image's registry or releases | Trivy | Edit the tag. A digest pin (the device plugin) moves with its tag. A mirrored image lands on quay once `image:mirror` runs in CI. |
 | Helm chart deps | `helm/Chart.yaml` `dependencies`; `helm/Chart.lock` | the chart repo's index | upstream advisories | Edit the version, then `mise x -- helm dependency update helm` to re-lock it. The `helm/` deps provider only builds from `Chart.lock`. |
 | Cluster add-ons | `ISTIO_VERSION`, `CERT_MANAGER_VERSION`, `GATEWAY_API_VERSION` and the ClickStack operator chart in `.mise/tasks/cluster/install`; `INSTALL_K3S_VERSION` in `etc/lima/k3s.yaml` and `etc/lima/k3s-test.yaml` | upstream releases | upstream advisories | Edit the version |
+| Upstream skills | `.agents/upstream-skills.json` (repo, tracked `ref`, `commit`, file hashes) | `git ls-remote <repo> <ref>` differs from `commit` | — | `mise run skills:update`. Never edit the vendored skill directories by hand: `check:upstream-skills` fails on any local change. |
 | GitHub Actions | `uses:` in `.github/workflows/*.yml` and `.github/actions/*/action.yml`; `.pinact.yaml` | `mise x -- pinact run --check -u` | Dependabot, the nightly security issue | `mise x -- pinact run -u` |
 
 ## Workflow
@@ -207,4 +208,4 @@ plus the blocked list with reasons. Wait for approval, then commit on a `chore/u
 - one commit per adopted feature;
 - one `refactor(deps): drop <dependency>` commit per removed dependency.
 
-Open one PR whose body is the table and the blocked list, referencing the scan issues with `Refs #N`, not `Closes`: CI closes them once a scan of `main` is clean.
+Open one PR with the `pr-open` skill, its body the table and the blocked list, referencing the scan issues with `Refs #N`, not `Closes`: CI closes them once a scan of `main` is clean.

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+#MISE description="Replace the skills vendored from upstream with their upstream copies and record the commit and file hashes"
+#USAGE flag "--ref <ref>" help="Upstream branch, tag or commit to take; defaults to the lock's ref"
+set -euo pipefail
+source .mise/lib/upstream-skills.sh
+
+repo=$(jq -r .repo "$UPSTREAM_SKILLS_LOCK")
+ref=${usage_ref:-$(jq -r .ref "$UPSTREAM_SKILLS_LOCK")}
+mapfile -t skills < <(jq -r '.skills | keys[]' "$UPSTREAM_SKILLS_LOCK")
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+git -C "$tmp" init -q
+git -C "$tmp" fetch -q --depth 1 "$repo" "$ref"
+commit=$(git -C "$tmp" rev-parse FETCH_HEAD)
+
+lock=$(jq --arg commit "$commit" '.commit = $commit | .skills = {}' "$UPSTREAM_SKILLS_LOCK")
+for s in "${skills[@]}"; do
+  rm -rf ".agents/skills/$s"
+  git -C "$tmp" archive FETCH_HEAD ".agents/skills/$s" | tar -x -f -
+  lock=$(jq --arg s "$s" --argjson files "$(skill_hashes "$s")" '.skills[$s] = $files' <<<"$lock")
+done
+jq . <<<"$lock" >"$UPSTREAM_SKILLS_LOCK"
+echo "OK: ${skills[*]} at $repo@$commit"

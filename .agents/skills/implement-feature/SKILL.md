@@ -86,6 +86,7 @@ PR unmergeable while the folder exists.
 
 ## 8. Mark the PR ready
 
-Push and `gh pr ready` the draft PR. Check the body still reads **brief and product-level**
-(like the issue, not the plan), tick every sub-issue checkbox, and confirm `Closes #NNN` is
-present.
+Refresh the body with the `pr-open` skill: its self-review covers the whole range, and its
+`author-decisions` block keeps the plan's entries and adds what the user decided during
+implementation. Keep the body **brief and product-level** (like the issue, not the plan), tick
+every sub-issue checkbox, and confirm `Closes #NNN` is present. Then push and `gh pr ready`.
