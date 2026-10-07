@@ -1,4 +1,5 @@
 import {
+  type QueuedPrompt,
   SESSION_CATEGORIES,
   type SessionCategory,
   type SessionMode,
@@ -34,6 +35,7 @@ export interface SessionsSlice {
   sessionMode: SessionMode | null;
   messages: Message[];
   runStarts: string[];
+  queuedPrompts: QueuedPrompt[];
   sessionModel: SessionModel | null;
   sessionError: SessionError | null;
   sessionFilter: SessionCategory[];
@@ -54,6 +56,7 @@ export interface SessionsSlice {
   setSessionsSectionOpen: (open: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
+  setQueuedPrompts: (items: QueuedPrompt[]) => void;
   addRunStart: (at: string) => void;
   setSessionModel: (model: SessionModel | null) => void;
   setSessionError: (e: SessionError | null) => void;
@@ -116,6 +119,7 @@ export const createSessionsSlice: StateCreator<
   return {
     sessionId: null,
     runStarts: [],
+    queuedPrompts: [],
     sessionModel: null,
     sessionMode: null,
     messages: [],
@@ -145,6 +149,7 @@ export const createSessionsSlice: StateCreator<
         messages: typeof updater === "function" ? updater(s.messages) : updater,
       })),
     setRunStarts: (list) => set({ runStarts: list }),
+    setQueuedPrompts: (items) => set({ queuedPrompts: items }),
     setSessionModel: (model) => set({ sessionModel: model }),
     addRunStart: (at) =>
       set((s) =>
@@ -230,6 +235,7 @@ export const createSessionsSlice: StateCreator<
         sessionMode: null,
         messages: [],
         runStarts: [],
+        queuedPrompts: [],
         sessionModel: null,
         sessionError: null,
         terminalPaused: false,

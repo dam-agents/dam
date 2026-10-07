@@ -167,12 +167,12 @@ export const ChatMessage = memo(function ChatMessage({
               onFileClick={readOnly ? undefined : onFileClick}
             />
           ))}
-          {streaming && queued && parts.length === 0 && (
+          {((streaming && parts.length === 0) || !isAssistant) && queued && (
             <span
               data-testid="prompt-queued-indicator"
               className="text-xs text-muted-foreground italic"
             >
-              Waiting for previous prompt…
+              {isAssistant ? "Waiting for previous prompt…" : "Queued"}
             </span>
           )}
           {isAssistant && isLast && !readOnly && <PermissionStatusLine />}

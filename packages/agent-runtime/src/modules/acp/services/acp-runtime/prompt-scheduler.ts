@@ -4,6 +4,7 @@ import {
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
+import type { PromptBlock, QueuedPrompt } from "api-server-api";
 
 import type { JsonRpcId } from "../../domain/frames.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
@@ -25,6 +26,10 @@ export interface PromptSubmission {
   promptId: string | null;
   runPrompt?: boolean;
   unattended?: boolean;
+  typed?: unknown;
+  blocks?: PromptBlock[];
+  editable?: boolean;
+  queuedAt?: string;
 }
 
 export interface PromptScheduler {
@@ -42,6 +47,7 @@ export interface PromptScheduler {
   onSessionReady(sessionId: string): void;
   onDetached(sessionId: string): void;
   refuseQueue(sessionId: string, message: string): void;
+  snapshot(sessionId: string): QueuedPrompt[];
   forget(sessionId: string): void;
   clear(): void;
 }
@@ -55,6 +61,7 @@ export interface PromptSchedulerDeps {
     cause: QueueDropCause,
   ) => void;
   onTurnStarted?: (submission: PromptSubmission) => void;
+  onQueueChanged?: (sessionId: string) => void;
   onTurnEnded?: (sessionId: string) => void;
   onTurnInterrupted?: (
     sessionId: string,
@@ -69,7 +76,9 @@ export interface PromptSchedulerDeps {
  * with a structured error) and promoted when the turn ahead of it ends. The
  * scheduler tells the sender each prompt's fate itself — accepted, queued,
  * started — over the sender's own channel, and answers the runtime's
- * busy/idle questions about turn state.
+ * busy/idle questions about turn state. Every change to a queue is announced
+ * over onQueueChanged and snapshot lists it, so every viewer sees the same
+ * queue the scheduler holds.
  * A turn becomes active only when the harness actually took the frame:
  * sendToAgent reports delivery, and on failure the prompt stays queued and
  * no promptStarted is sent. The turn-started and turn-ended callbacks fire on
@@ -115,6 +124,7 @@ export function createPromptScheduler(
     const dropped = queues.get(sessionId);
     queues.delete(sessionId);
     if (dropped === undefined || dropped.length === 0) return;
+    deps.onQueueChanged?.(sessionId);
     deps.onQueueDropped(sessionId, dropped, cause);
   }
 
@@ -165,9 +175,13 @@ export function createPromptScheduler(
     const next = queue?.[0];
     if (queue === undefined || next === undefined) return;
     if (!deps.canStart(next)) return;
-    if (!start(next)) return;
     queue.shift();
+    if (!start(next)) {
+      queue.unshift(next);
+      return;
+    }
     if (queue.length === 0) queues.delete(sessionId);
+    deps.onQueueChanged?.(sessionId);
   }
 
   function refuse(entry: PromptSubmission, message?: string): void {
@@ -197,14 +211,18 @@ export function createPromptScheduler(
           refuse(submission);
           return "refused";
         }
+        submission.queuedAt = new Date().toISOString();
         queue.push(submission);
         queues.set(sessionId, queue);
         notifyAccepted(submission, true);
+        deps.onQueueChanged?.(sessionId);
         return "queued";
       }
       notifyAccepted(submission, false);
       if (start(submission)) return "started";
+      submission.queuedAt = new Date().toISOString();
       queues.set(sessionId, [submission]);
+      deps.onQueueChanged?.(sessionId);
       return "queued";
     },
 
@@ -258,7 +276,17 @@ export function createPromptScheduler(
       if (queue === undefined) return;
       queues.delete(sessionId);
       clearParkTimer(sessionId);
+      deps.onQueueChanged?.(sessionId);
       for (const entry of queue) refuse(entry, message);
+    },
+
+    snapshot(sessionId) {
+      return (queues.get(sessionId) ?? []).map((entry) => ({
+        promptId: entry.promptId,
+        blocks: entry.blocks ?? [],
+        queuedAt: entry.queuedAt ?? "",
+        editable: entry.editable === true && entry.promptId !== null,
+      }));
     },
 
     onDetached(sessionId) {

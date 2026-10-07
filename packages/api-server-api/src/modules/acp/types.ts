@@ -224,3 +224,40 @@ export function buildPlatformPromptStartedNotification(
     params,
   });
 }
+
+export const queuedPromptSchema = z.object({
+  promptId: z.string().nullable(),
+  blocks: z.array(promptBlockSchema),
+  queuedAt: z.string(),
+  editable: z.boolean(),
+});
+export type QueuedPrompt = z.infer<typeof queuedPromptSchema>;
+
+export const platformQueueMetaSchema = z.array(queuedPromptSchema);
+
+export const platformQueueChangedParamsSchema = z.object({
+  sessionId: z.string().min(1),
+  items: platformQueueMetaSchema,
+});
+export type PlatformQueueChangedParams = z.infer<
+  typeof platformQueueChangedParamsSchema
+>;
+
+const platformQueueChangedNotificationSchema = z.object({
+  jsonrpc: z.literal("2.0"),
+  method: z.literal("platform/queueChanged"),
+  params: platformQueueChangedParamsSchema,
+});
+type PlatformQueueChangedNotification = z.infer<
+  typeof platformQueueChangedNotificationSchema
+>;
+
+export function buildPlatformQueueChangedNotification(
+  params: PlatformQueueChangedParams,
+): PlatformQueueChangedNotification {
+  return platformQueueChangedNotificationSchema.parse({
+    jsonrpc: "2.0",
+    method: "platform/queueChanged",
+    params,
+  });
+}

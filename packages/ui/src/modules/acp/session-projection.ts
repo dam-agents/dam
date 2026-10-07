@@ -4,7 +4,11 @@ import type {
   ToolCallContent,
   ToolCallUpdate,
 } from "@agentclientprotocol/sdk";
-import type { PlatformUndeliveredPrompt } from "api-server-api";
+import type {
+  PlatformUndeliveredPrompt,
+  PromptBlock,
+  QueuedPrompt,
+} from "api-server-api";
 
 import type {
   Message,
@@ -143,7 +147,10 @@ function applyUpdateOf(
         : messages;
 
     case "platform_prompt_started":
-      return setQueuedByPromptId(messages, update.promptId, false);
+      return withReplyPlaceholder(
+        setQueuedByPromptId(messages, update.promptId, false),
+        update.promptId,
+      );
 
     case "platform_clipped_replay":
       return appendClippedMarker(messages, update.older);
@@ -189,6 +196,47 @@ function setQueuedByPromptId(
   );
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The sender's own bubbles for a prompt the runtime
+ * queued give way to the queue, which renders it for every viewer alike.
+ */
+export function withoutQueuedSends(
+  messages: Message[],
+  items: QueuedPrompt[],
+): Message[] {
+  const queued = new Set(
+    items.flatMap((item) => (item.promptId === null ? [] : [item.promptId])),
+  );
+  if (queued.size === 0) return messages;
+  return messages.filter(
+    (m) =>
+      !(m.role === "user" && queued.has(m.id)) &&
+      !(
+        m.role === "assistant" &&
+        m.promptId !== undefined &&
+        queued.has(m.promptId) &&
+        m.parts.length === 0
+      ),
+  );
+}
+
+function withReplyPlaceholder(
+  messages: Message[],
+  promptId: string,
+): Message[] {
+  if (messages.some((m) => m.promptId === promptId)) return messages;
+  return [
+    ...messages,
+    {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      parts: [],
+      streaming: true,
+      promptId,
+    },
+  ];
+}
+
 function appendNotice(messages: Message[], text: string): Message[] {
   return [
     ...messages,
@@ -226,15 +274,19 @@ export function finalizeAllStreaming(messages: Message[]): Message[] {
   return messages.map(finalizeStreaming);
 }
 
+export function finalizeRunningReply(messages: Message[]): Message[] {
+  return messages.map((m) => (m.queued ? m : finalizeStreaming(m)));
+}
+
 const UNDELIVERED_MESSAGE = "Not delivered — this never reached the agent.";
 
-function textOf(record: PlatformUndeliveredPrompt): string {
-  return record.blocks
+function textOf({ blocks }: { blocks: PromptBlock[] }): string {
+  return blocks
     .flatMap((b) => (b.type === "text" ? [b.text] : []))
     .join("\n\n");
 }
 
-function partsOf(record: PlatformUndeliveredPrompt): MessagePart[] {
+export function partsOf(record: { blocks: PromptBlock[] }): MessagePart[] {
   const parts: MessagePart[] = [];
   for (const block of record.blocks) {
     if (block.type === "image")

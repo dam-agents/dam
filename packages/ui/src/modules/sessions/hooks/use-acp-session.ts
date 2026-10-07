@@ -58,13 +58,15 @@ export function useAcpSession(
   const sessionId = useStore((s) => s.sessionId);
   const sessionMode = useStore((s) => s.sessionMode);
   const messages = useStore((s) => s.messages);
+  const queueWaiting = useStore((s) => s.queuedPrompts.length > 0);
   const setSessionId = useStore((s) => s.setSessionId);
   const setMessages = useStore((s) => s.setMessages);
   const setBusy = useStore((s) => s.setBusy);
   const [loadingSession, setLoadingSession] = useState(false);
 
   const busy =
-    sessionMode !== SessionMode.Terminal && hasStreamingAssistant(messages);
+    sessionMode !== SessionMode.Terminal &&
+    (hasStreamingAssistant(messages) || queueWaiting);
   useEffect(() => {
     setBusy(busy);
   }, [busy, setBusy]);

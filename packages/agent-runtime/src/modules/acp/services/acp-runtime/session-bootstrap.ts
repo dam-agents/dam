@@ -5,7 +5,7 @@ import type { JsonRpcId } from "../../domain/frames.js";
 import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";
-import type { PlatformUndeliveredPrompt } from "api-server-api";
+import type { PlatformUndeliveredPrompt, QueuedPrompt } from "api-server-api";
 import type { ReplayClip, SessionTranscript } from "./session-transcript.js";
 
 type WaiterKind = "load" | "resume";
@@ -63,6 +63,7 @@ export interface SessionBootstrapDeps {
   turnInFlight(sessionId: string): boolean;
   interruptedAt(sessionId: string): string | undefined;
   undeliveredFor(sessionId: string): PlatformUndeliveredPrompt[];
+  queueOf(sessionId: string): QueuedPrompt[];
   supersededFor(sessionId: string): string[];
   runStartsOf(sessionId: string): string[];
   onLoadOrphaned(sessionId: string, outboundId: number): void;
@@ -111,6 +112,7 @@ export function createSessionBootstrap(
     undelivered: PlatformUndeliveredPrompt[],
     superseded: string[],
     runStarts: string[],
+    queue: QueuedPrompt[],
   ): unknown {
     const extras: Record<string, unknown> = {};
     if (clip.clipped)
@@ -119,6 +121,7 @@ export function createSessionBootstrap(
     if (undelivered.length > 0) extras.undelivered = undelivered;
     if (superseded.length > 0) extras.superseded = superseded;
     if (runStarts.length > 0) extras.runStarts = runStarts;
+    if (queue.length > 0) extras.queue = queue;
     if (Object.keys(extras).length === 0) return value;
     const base =
       typeof value === "object" && value !== null
@@ -188,6 +191,7 @@ export function createSessionBootstrap(
         kind === "load" ? deps.undeliveredFor(sessionId) : [],
         kind === "load" ? deps.supersededFor(sessionId) : [],
         kind === "load" ? deps.runStartsOf(sessionId) : [],
+        kind === "load" ? deps.queueOf(sessionId) : [],
       ),
     });
     if (channel.isOpen()) channel.send(rewriteAuthError(response));
@@ -332,7 +336,15 @@ export function createSessionBootstrap(
           const response = JSON.stringify({
             jsonrpc: "2.0",
             id: originalId,
-            result: withReplayMeta(metadata.value, page.clip, null, [], [], []),
+            result: withReplayMeta(
+              metadata.value,
+              page.clip,
+              null,
+              [],
+              [],
+              [],
+              [],
+            ),
           });
           if (channel.isOpen()) channel.send(rewriteAuthError(response));
           return;

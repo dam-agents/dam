@@ -3,11 +3,15 @@ import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import type { PodSession } from "agent-runtime-api";
 import {
+  buildPlatformQueueChangedNotification,
   buildPlatformRunStartedNotification,
+  capInlineImages,
   buildPlatformTurnEndedNotification,
   jsonRpcErrorDetails,
   platformUndeliveredPromptSchema,
+  promptBlockSchema,
   SessionType,
+  type PromptBlock,
   type PlatformTurnEndedParams,
   type PlatformUndeliveredPrompt,
 } from "api-server-api";
@@ -168,13 +172,27 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
-    onTurnStarted: ({ sessionId, unattended }) => {
+    onTurnStarted: ({
+      sessionId,
+      unattended,
+      typed,
+      channel,
+      promptId,
+      queuedAt,
+    }) => {
+      appendUserPromptToLog(
+        sessionId,
+        typed,
+        queuedAt === undefined ? channel : null,
+        promptId ?? randomUUID(),
+      );
       deps.activeTurns.record(sessionId);
       if (unattended === true) {
         const at = deps.sessionMetadata?.startRun(sessionId);
         if (at) announceRunStart(sessionId, at);
       }
     },
+    onQueueChanged: (sessionId) => announceQueue(sessionId),
     onTurnEnded: (sessionId) => {
       if (shuttingDown) return;
       deps.sessionMetadata?.finishRun(sessionId);
@@ -256,6 +274,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
     undeliveredFor(sessionId) {
       return deps.undeliveredPrompts.readFor(sessionId);
+    },
+    queueOf(sessionId) {
+      return promptScheduler.snapshot(sessionId);
     },
     supersededFor(sessionId) {
       return [...(supersededEchoes.get(sessionId) ?? [])];
@@ -532,6 +553,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const channel of engagedViewersOf(sessionId)) channel.send(line);
   }
 
+  function announceQueue(sessionId: string): void {
+    const line = JSON.stringify(
+      buildPlatformQueueChangedNotification({
+        sessionId,
+        items: promptScheduler.snapshot(sessionId),
+      }),
+    );
+    for (const channel of engagedViewersOf(sessionId)) channel.send(line);
+  }
+
   function hasEngagedViewer(sessionId: string): boolean {
     for (const _ of engagedViewersOf(sessionId)) return true;
     return false;
@@ -540,8 +571,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function appendUserPromptToLog(
     sessionId: string,
     prompt: unknown,
-    originator: ClientChannel,
-    queued: boolean,
+    originator: ClientChannel | null,
     messageId: string,
   ): void {
     if (!Array.isArray(prompt)) return;
@@ -552,7 +582,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         content: block,
         messageId,
       };
-      if (queued) update._meta = { queued: true };
       const line = JSON.stringify({
         jsonrpc: "2.0",
         method: "session/update",
@@ -1021,17 +1050,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         deps.sessionMetadata?.recordActivity(promptSessionId);
         if (hasEngagedViewer(promptSessionId))
           deps.sessionMetadata?.recordSeen(promptSessionId);
-        const promptBlocks = (frame as { params?: { prompt?: unknown } }).params
+        const surface = platformString(frame, "surface");
+        const typedPrompt = (frame as { params?: { prompt?: unknown } }).params
           ?.prompt;
-        const willQueue = promptScheduler.hasTurnInFlight(promptSessionId);
-        appendUserPromptToLog(
-          promptSessionId,
-          promptBlocks,
-          channel,
-          willQueue,
-          promptId ?? randomUUID(),
-        );
-
         const fate = promptScheduler.submit({
           sessionId: promptSessionId,
           channel,
@@ -1039,7 +1060,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           originalId: frame.id,
           frame: rewritten,
           promptId,
-          runPrompt: platformString(frame, "surface") === "cli",
+          runPrompt: surface === "cli",
+          typed: typedPrompt,
+          blocks: queueableBlocks(typedPrompt),
+          editable: surface === "ui",
           unattended:
             nonViewerChannels.has(channel) && isMachineSession(promptSessionId),
         });
@@ -1268,6 +1292,15 @@ function hasSessionCapability(
   const session = caps.sessionCapabilities;
   if (!isNonNullObject(session)) return false;
   return isNonNullObject(session[name]);
+}
+
+function queueableBlocks(prompt: unknown): PromptBlock[] {
+  if (!Array.isArray(prompt)) return [];
+  const blocks = prompt.flatMap((block) => {
+    const parsed = promptBlockSchema.safeParse(block);
+    return parsed.success ? [parsed.data] : [];
+  });
+  return capInlineImages(blocks).blocks;
 }
 
 function extractStopReason(frame: unknown): string | null {

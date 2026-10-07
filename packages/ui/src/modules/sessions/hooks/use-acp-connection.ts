@@ -4,6 +4,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import {
   platformClippedReplayMetaSchema,
+  platformQueueMetaSchema,
   platformReplayTurnMetaSchema,
   platformRunStartsMetaSchema,
   platformSupersededMetaSchema,
@@ -352,6 +353,7 @@ export function useAcpConnection(
               undelivered?: unknown;
               superseded?: unknown;
               runStarts?: unknown;
+              queue?: unknown;
             };
           };
         } | null
@@ -370,6 +372,9 @@ export function useAcpConnection(
               platformRunStartsMetaSchema.element.safeParse(at).success,
           )
         : [];
+      const queue = platformQueueMetaSchema.safeParse(
+        platformMeta?.queue ?? [],
+      );
       const clipped =
         clippedRaw === undefined
           ? null
@@ -436,6 +441,7 @@ export function useAcpConnection(
           .setRunStarts([
             ...new Set([...useStore.getState().runStarts, ...runStarts]),
           ]);
+        useStore.getState().setQueuedPrompts(queue.success ? queue.data : []);
         if (turn.success && !turn.data.inFlight)
           idleSessionsRef.current.set(sid, Date.now());
         else idleSessionsRef.current.delete(sid);

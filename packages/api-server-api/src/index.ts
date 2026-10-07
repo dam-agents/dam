@@ -524,6 +524,10 @@ export {
   platformUndeliveredMetaSchema,
   platformSupersededMetaSchema,
   capInlineImages,
+  queuedPromptSchema,
+  platformQueueMetaSchema,
+  platformQueueChangedParamsSchema,
+  buildPlatformQueueChangedNotification,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "./modules/acp/types.js";
@@ -536,6 +540,8 @@ export type {
   PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,
   PromptBlock,
+  QueuedPrompt,
+  PlatformQueueChangedParams,
 } from "./modules/acp/types.js";
 
 export { brandSchema } from "./modules/brand/types.js";

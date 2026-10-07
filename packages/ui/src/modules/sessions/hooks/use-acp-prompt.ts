@@ -13,7 +13,7 @@ import {
 } from "../../acp/close-race.js";
 import { extractErrorMessage, isQueueFullError } from "../../acp/errors.js";
 import {
-  finalizeAllStreaming,
+  finalizeRunningReply,
   hasAgentContent,
   hasStreamingAssistant,
 } from "../../acp/session-projection.js";
@@ -152,7 +152,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
 
       const aId = crypto.randomUUID();
       const promptId = crypto.randomUUID();
-      const uId = retryOf ?? promptId;
+      const uId = promptId;
       let reported = false;
       const dropBubble = () =>
         setMessages((p) => p.filter((m) => m.id !== aId));
@@ -176,12 +176,18 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         if (reported) return;
         reported = true;
         recordUndeliveredLocally(message);
+        const failed: Message = {
+          ...uMsg,
+          error: { message, retryWith: retryPayload },
+        };
         setMessages((p) =>
-          p.flatMap<Message>((m) => {
-            if (m.id === aId) return [];
-            if (m.id !== uId) return [m];
-            return [{ ...m, error: { message, retryWith: retryPayload } }];
-          }),
+          p.some((m) => m.id === uId)
+            ? p.flatMap<Message>((m) => {
+                if (m.id === aId) return [];
+                if (m.id !== uId) return [m];
+                return [failed];
+              })
+            : [...p.filter((m) => m.id !== aId), failed],
         );
       };
       const interruptTurn = (message: string) => {
@@ -198,7 +204,9 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       const finalizeBubble = () =>
         setMessages((p) =>
           p.map((m) =>
-            m.id === aId ? { ...m, streaming: false, queued: false } : m,
+            m.id === aId || (m.role === "assistant" && m.promptId === promptId)
+              ? { ...m, streaming: false, queued: false }
+              : m,
           ),
         );
       let delivered = false;
@@ -357,7 +365,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
     const started = startedRef.current;
     const conn = connectionRef.current?.connection ?? started?.connection;
     const sid = engagedSessionIdRef.current ?? started?.sessionId;
-    setMessages((p) => finalizeAllStreaming(p));
+    setMessages((p) => finalizeRunningReply(p));
     if (!conn || !sid) return;
     try {
       await conn.agent.notify("session/cancel", { sessionId: sid });
