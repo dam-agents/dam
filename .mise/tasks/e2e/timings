@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-#MISE description="CI only: print an e2e run's per-phase timings as Markdown, from the marks in E2E_TIMINGS and the Playwright JSON report in E2E_REPORT_JSON"
+#MISE description="CI only: print an e2e run's per-phase timings as Markdown"
 #MISE hide=true
+# Reads the marks in E2E_TIMINGS and the Playwright JSON report in
+# E2E_REPORT_JSON.
 # cd.yml's vm lane appends this to the job summary, so a change to the lane
 # can be judged by where its time went. The marks are "<epoch seconds>\t<phase>" lines: e2e_mark in
 # .mise/lib/cluster.sh writes them from cluster:install, e2e:install and

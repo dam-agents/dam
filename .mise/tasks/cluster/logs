@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-#MISE description="Show api-server pod logs"
-set -eo pipefail
-. "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
-kubectl logs -l app.kubernetes.io/component=apiserver --all-containers --tail=50

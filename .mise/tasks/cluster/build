@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Rebuild images, load them into k3s and restart what runs them. Honors LIMA_INSTANCE and IS_SANDBOX."
+#MISE description="Rebuild images, load them into k3s and restart what runs them"
 #USAGE arg "<component>..." var=#true help="controller, api-server, ui, keycloak, or agents: every agent image the cluster has deployed"
 set -eo pipefail
 eval "components=($usage_component)"

@@ -1,10 +1,10 @@
 # Comment Guidelines
 
-Rules for comments in TS/JS/Go/Rust source. Enforced twice: `mise run strip-comments -- --write` deletes every comment that carries no registered type, and `mise run check:comment-types` fails when one slips in.
+Rules for comments in TS/JS/Go/Rust source. Enforced twice: `mise run fix:comment-types` deletes every comment that carries no registered type, and `mise run check:comment-types` fails when one slips in.
 
 ## The rule
 
-Code carries no prose comments. What a comment would say, the code says instead — a better name, a narrower type, a smaller function. The one exception is a **typed comment**: prose prefixed with a type from the `COMMENT_TYPES` registry in [`.mise/tasks/strip-comments`](../../.mise/tasks/strip-comments).
+Code carries no prose comments. What a comment would say, the code says instead — a better name, a narrower type, a smaller function. The one exception is a **typed comment**: prose prefixed with a type from the `COMMENT_TYPES` registry in [`.mise/tasks/fix/comment-types`](../../.mise/tasks/fix/comment-types).
 
 ## Typed comments
 
@@ -24,7 +24,7 @@ A new kind of comment starts by registering its type in `COMMENT_TYPES` — an u
 
 ## Tool directives
 
-`@ts-expect-error`, `eslint-disable`, `prettier-ignore`, `//go:build`, `// +kubebuilder:...` and similar are instructions to tools, not comments — the stripper keeps them. The pattern lists (`PRESERVE_TS`, `PRESERVE_GO`, `PRESERVE_RUST`) live in [`.mise/tasks/strip-comments`](../../.mise/tasks/strip-comments); a new directive pattern is added there.
+`@ts-expect-error`, `eslint-disable`, `prettier-ignore`, `//go:build`, `// +kubebuilder:...` and similar are instructions to tools, not comments — the stripper keeps them. The pattern lists (`PRESERVE_TS`, `PRESERVE_GO`, `PRESERVE_RUST`) live in [`.mise/tasks/fix/comment-types`](../../.mise/tasks/fix/comment-types); a new directive pattern is added there.
 
 In Rust the one directive is a `// SAFETY:` comment (or `/* SAFETY: … */`) justifying an `unsafe` block or impl — clippy's `undocumented_unsafe_blocks` reads it. Upper case, and one comment: a continuation line is its own comment and needs a type. Attributes (`#[allow(…)]`, `#[rustfmt::skip]`) are code, not comments, so they need nothing.
 

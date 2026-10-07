@@ -66,6 +66,7 @@ lockfile_platforms = ["linux-arm64", "linux-x64", "macos-arm64"]
 task.disable_spec_from_run_scripts = true
 
 [task_templates."ts:check:tsc"]
+description = "TypeScript type-checks"
 depends = ["^check:tsc"]
 run = "pnpm exec tsc --noEmit"
 sources = ["src/**/*.{ts,tsx}", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
@@ -75,6 +76,7 @@ deny_net = true
 deny_write = true
 
 [task_templates."ts:check:lint"]
+description = "ESLint passes"
 run = "pnpm exec eslint ."
 sources = ["src/**/*.{ts,tsx}", "eslint.config.js", "{{vars.repo_root}}/packages/dev-config/eslint.base.js", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
@@ -83,6 +85,7 @@ deny_net = true
 deny_write = true
 
 [task_templates."ts:check:format"]
+description = "Sources are Prettier-formatted"
 run = "pnpm exec prettier --check 'src/**/*.{ts,tsx,css}'"
 sources = ["src/**/*.{ts,tsx,css}", "{{vars.repo_root}}/.prettierrc", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
@@ -91,10 +94,12 @@ deny_net = true
 deny_write = true
 
 [task_templates."ts:fix:lint"]
+description = "Apply ESLint fixes"
 run = "pnpm exec eslint --fix ."
 deny_net = true
 
 [task_templates."ts:fix:format"]
+description = "Format sources with Prettier"
 run = "pnpm exec prettier --write 'src/**/*.{ts,tsx,css}'"
 deny_net = true
 
@@ -107,12 +112,15 @@ outputs = []
 cache.enabled = true
 
 [tasks.check]
+description = "Run every check"
 depends = ["check:*", "//...:check"]
 
 [tasks.fix]
-depends = ["//...:fix"]
+description = "Apply every fix: formatters, linters, generators"
+depends = ["fix:*", "//...:fix"]
 
 [tasks.test]
+description = "Run every test suite"
 depends = ["//...:test"]
 
 [tasks."check:task-files"]
@@ -126,20 +134,16 @@ deny_net = true
 deny_write = true
 
 [tasks."check:comment-types"]
-description = "Every code comment must carry a registered type prefix (see Code comments in AGENTS.md)"
-run = { task = "strip-comments", args = ["--check"] }
+description = "Every code comment carries a registered type prefix (see Code comments in AGENTS.md)"
+run = { task = "fix:comment-types", args = ["--check"] }
 
 [tasks."check:skill-manifest"]
-description = "Every currently shipped image skill's content hash is in the shipped-skill manifest, and the manifest is append-only"
+description = "Every shipped image skill's content hash is in the append-only shipped-skill manifest"
 run = "pnpm --filter agent-runtime exec tsx scripts/skill-manifest.ts check"
 deny_net = true
 
-[tasks."skills:manifest:generate"]
-description = "Append the current image skills' content hashes to the shipped-skill manifest"
+[tasks."fix:skill-manifest"]
+description = "Append the shipped image skills' content hashes to the shipped-skill manifest"
 run = "pnpm --filter agent-runtime exec tsx scripts/skill-manifest.ts generate"
 deny_net = true
 
-[tasks."skills:manifest:backfill"]
-description = "Append every historical image-skill content hash from git history to the shipped-skill manifest"
-run = "pnpm --filter agent-runtime exec tsx scripts/skill-manifest.ts backfill"
-deny_net = true

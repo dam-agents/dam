@@ -48,7 +48,7 @@ so it inherits the `claude` CLI, the model gateway, and CA trust. On top it adds
   campaign-authoring reference) shipped into the workspace.
 - The Nous **wiki** commands (`post-campaign`, `index-wiki`,
   `visualize-campaign`, `visualize-registry`, `suggest-next`) vendored from the
-  upstream repo as skills into `~/.agents/skills/` (`mise run :sync-commands`), with their render scripts in
+  upstream repo as skills into `~/.agents/skills/` (`mise run :sync-skills`), with their render scripts in
   `~/scripts/`. They turn finished campaigns' `ledger.json`/`principles.json`
   into a cross-campaign knowledge graph under `~/.nous/wiki/` so findings
   compound across runs.

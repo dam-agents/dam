@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Import image tars into the cluster's k3s. Honors LIMA_INSTANCE and IS_SANDBOX."
+#MISE description="Import image tars into the cluster's k3s"
 #MISE hide=true
 #USAGE arg "<tar>..." var=#true
 set -euo pipefail

@@ -1,5 +1,12 @@
 #!/usr/bin/env node
-//MISE description="Architecture docs stay within their character budget. The cap is a forcing function (consolidate prose, push rationale into an ADR), not a byte limit. Only a page this working tree changed against main can fail it: two branches can each add prose to a different part of one page, each measure green against the base it branched from, and merge over the cap, and an over-cap page is wordy, not broken — reding main and every branch rebased on it costs more than it is worth. On main nothing differs from main, so the check passes and reports what is over."
+//MISE description="Architecture pages a branch changes stay within their character budget"
+/* UNIT_BOUNDARY_DESCRIPTION: The cap is a forcing function (consolidate prose, push rationale into an
+ADR), not a byte limit. Only a page this working tree changed against main
+can fail it: two branches can each add prose to a different part of one
+page, each measure green against the base it branched from, and merge over
+the cap, and an over-cap page is wordy, not broken; reding main and every
+branch rebased on it costs more than it is worth. On main nothing differs
+from main, so the check passes and reports what is over. */
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";

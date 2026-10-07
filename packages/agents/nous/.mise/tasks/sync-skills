@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Refresh the Nous wiki skills in rootfs/app/working-dir/.agents/skills from the upstream repo's commands, replacing each skill by name"
+#MISE description="Refresh the Nous wiki skills from the upstream repo's commands"
 #USAGE flag "--ref <ref>" help="Upstream git ref (tag|branch|sha) to sync from (default: main)"
 set -euo pipefail
 

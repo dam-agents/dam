@@ -8,7 +8,9 @@ auto = true
 run = "uv sync --frozen --group dev"
 
 [tasks.check]
+description = "Run this package's checks"
 depends = [":check:*"]
 
 [tasks.fix]
+description = "Apply this package's fixes"
 depends = [":fix:*"]

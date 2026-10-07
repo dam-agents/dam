@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Every schema.ts change has a generated migration"
 #MISE sources=["src/schema.ts", "drizzle/meta/*.json"]
 #MISE outputs=[]
 #MISE cache.enabled=true

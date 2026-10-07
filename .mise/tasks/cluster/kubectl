@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Run kubectl against the cluster. Usage: mise run cluster:kubectl -- get pods"
+#MISE description="Run kubectl against the cluster (args after --)"
 #MISE raw=true
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 exec kubectl "$@"

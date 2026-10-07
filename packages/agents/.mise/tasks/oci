@@ -1,5 +1,5 @@
 #!/usr/bin/env -S usage bash
-#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as dist/oci/<agent>.tar in each agent's directory, named platform-<agent>:latest: all of packages/agents, or the ones named (the e2e mock too). The default image is packed onto the shared apt base with image:pack, and every workload and the mock onto the default image; the apt base is the Debian base with its own apt-get run in it under chroot. Off Linux the build runs in the dev cluster's Lima VM ($AGENT_BUILD_VM, default platform-k3s, else $LIMA_INSTANCE), whichever cluster imports them."
+#MISE description="Build agent images as dist/oci/<agent>.tar, or reuse them from the registry while their source is unchanged"
 #MISE dir="{{vars.repo_root}}"
 #USAGE flag "--build" help="Never reuse an image from the registry"
 #USAGE flag "--no-tar" help="Linux only: keep an image as its OCI layout"
@@ -7,6 +7,13 @@
 #USAGE flag "--bump" help="With --lock, re-resolve `latest` pins"
 #USAGE flag "--warm" help="Install every image's tools for CI's cache; builds nothing"
 #USAGE arg "[agent]..." var=#true
+# All of packages/agents, or the ones named (the e2e mock too), each named
+# platform-<agent>:latest. The default image is packed onto the shared apt
+# base with image:pack, and every workload and the mock onto the default
+# image; the apt base is the Debian base with its own apt-get run in it under
+# chroot. Off Linux the build runs in the dev cluster's Lima VM
+# ($AGENT_BUILD_VM, default platform-k3s, else $LIMA_INSTANCE), whichever
+# cluster imports them.
 set -euo pipefail
 # What the build creates is the image's, not the build user's: a umask of 002
 # would make root's paths writable to group 0, the agent's group.

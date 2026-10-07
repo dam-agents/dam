@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Run the controller's Go tests"
 # The vm runner's contract fixtures are inputs: the machine API client and the
 # runner's Deployment are tested against them, and the runner's own tests read
 # the same files, so a fixture the runner's side changed must rerun these. The

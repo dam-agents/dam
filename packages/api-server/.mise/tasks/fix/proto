@@ -8,3 +8,6 @@ node_modules/.bin/grpc_tools_node_protoc \
   --ts_proto_opt=outputServices=grpc-js,esModuleInterop=true,useExactTypes=false,unknownFields=true,outputJsonMethods=false,outputClientImpl=false,fileSuffix=.gen \
   --proto_path=proto \
   proto/external_auth.proto
+# ts-proto writes unformatted code, and the package formatter skips proto-gen/,
+# so format here: regenerating an unchanged proto leaves the file unchanged.
+pnpm exec prettier --write src/proto-gen

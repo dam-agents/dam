@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Generate the Agent CR spec TypeScript types from the controller's CRDs.
-# Shared by //packages/api-server-api:gen:crd-types (writes the committed file)
+# Shared by //packages/api-server-api:fix:crd-types (writes the committed file)
 # and api-server-api:check:gen (writes a temp file, then diffs) so the drift
 # gate never rewrites the committed file that tsc consumers read.
 #
@@ -16,7 +16,7 @@ emit() { # <crd-file> <TypeName> — the CRD's .spec subschema as a TS interface
 }
 
 {
-  echo "/* Code generated from the agent-platform.ai CRDs by \`mise run //packages/api-server-api:gen:crd-types\`. DO NOT EDIT. */"
+  echo "/* Code generated from the agent-platform.ai CRDs by \`mise run //packages/api-server-api:fix:crd-types\`. DO NOT EDIT. */"
   echo
   emit agent-platform.ai_agents.yaml AgentSpecCR
 } >"$out"
