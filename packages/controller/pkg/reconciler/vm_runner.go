@@ -682,7 +682,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						}, {
 							Name: "SMOLVM_SECCOMP", Value: "enforce",
 						}, {
-							Name: "SMOLVM_LANDLOCK", Value: "enforce",
+							Name: "SMOLVM_LANDLOCK", Value: "off",
 						}, {
 							Name: "RUST_LOG", Value: "info",
 						}, {
