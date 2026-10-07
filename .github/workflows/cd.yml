@@ -376,7 +376,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
         with:
-          install_args: nodejs pnpm crane usage conda:pigz
+          install_args: nodejs pnpm crane usage uv conda:pigz
           quay-username: ${{ secrets.QUAY_USERNAME }}
           quay-password: ${{ secrets.QUAY_PASSWORD }}
       - uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
@@ -450,7 +450,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
         with:
-          install_args: nodejs pnpm crane usage conda:pigz
+          install_args: nodejs pnpm crane usage uv conda:pigz
           quay-username: ${{ secrets.QUAY_USERNAME }}
           quay-password: ${{ secrets.QUAY_PASSWORD }}
       - uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
@@ -513,7 +513,7 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
         with:
-          install_args: nodejs pnpm crane usage conda:pigz
+          install_args: nodejs pnpm crane usage uv conda:pigz
           quay-username: ${{ secrets.QUAY_USERNAME }}
           quay-password: ${{ secrets.QUAY_PASSWORD }}
       - uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]

@@ -1,134 +1,177 @@
-#!/usr/bin/env -S usage bash
+#!/usr/bin/env -S uv run --script
 #MISE description="Write an image tar for the host's arch: a directory's tree as one layer on a base image"
 #MISE hide=true
 #MISE dir="{{cwd}}"
-#USAGE arg "<base>" help="Base image reference, pinned by digest, or a local OCI layout directory"
-#USAGE arg "<root>" help="Directory whose tree becomes the layer, at / or --at"
-#USAGE arg "<tar>" help="Image tar to write, or with --layout the OCI layout directory"
-#USAGE arg "<tag>" help="Tag the tar carries"
-#USAGE flag "--entrypoint <entrypoint>" help="The image's ENTRYPOINT, its words separated by commas; it clears the base's CMD"
-#USAGE flag "--cmd <cmd>" help="The image's CMD, its words separated by commas"
-#USAGE flag "--workdir <workdir>"
-#USAGE flag "--user <user>"
-#USAGE flag "--env <env>" var=#true help="KEY=VALUE in the image's env, replacing the base's KEY; a later one replaces an earlier"
-#USAGE flag "--owner <uid:gid>" default="0:0" help="Owner of every entry in the layer"
-#USAGE flag "--own <spec>" var=#true help="<uid:gid>=<path>: the owner of <root>'s <path> and everything under it, in place of --owner; a <path> <root> lacks is skipped"
-#USAGE flag "--own-dir <spec>" var=#true help="<uid:gid>=<path>: the owner of <root>'s directory <path> itself, its entries keeping --owner"
-#USAGE flag "--mode <mode>" help="A chmod mode every entry of every layer this adds gets, e.g. go-w so the build host's umask never makes a root path writable to group 0"
-#USAGE flag "--layout" help="Write the image as an OCI layout directory at <tar>, not a tar of one"
-#USAGE flag "--at <dir>" help="The image directory <root>'s tree lands in. The layer has no entries for it or its parents, so the base's keep their owner and mode"
-#USAGE flag "--root-layer <dir>" var=#true help="A directory whose tree becomes a root-owned layer under <root>'s, e.g. whiteouts of the base's files"
-#USAGE flag "--layer <spec>" var=#true help="A further layer over <root>'s, as <uid:gid>=<image dir>=<dir>: <dir>'s tree at <image dir>, every entry owned by <uid:gid>, with no entries for <image dir> or its parents"
+# /// script
+# requires-python = ">=3.13"
+# ///
 # The tar holds an OCI layout, like every other image tar: the base's layers as
 # the registry serves them, then the new layers as plain tars, which a local
-# cluster imports as they are and image:ci-build gzips as it publishes them. The base is kept as a layout per reference and arch,
-# so a rebuild downloads nothing; the reference carries its digest, so an entry
-# never goes stale.
-set -euo pipefail
-arch="$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')"
-cache="${XDG_CACHE_HOME:-$HOME/.cache}/platform-image-pack"
-mkdir -p "$cache"
-base="$cache/$(printf '%s %s' "$usage_base" "$arch" | sha256sum | cut -c1-32)"
-if [ -f "$usage_base/index.json" ]; then
-  base="$usage_base"
-elif [ ! -f "$base/index.json" ]; then
-  rm -rf "$base.$$"
-  crane pull --format=oci --platform "linux/$arch" "$usage_base" "$base.$$"
-  mv -T "$base.$$" "$base" 2>/dev/null || rm -rf "$base.$$"
-fi
+# cluster imports as they are and image:ci-build gzips as it publishes them.
+# The base is kept as a layout per reference and arch, so a rebuild downloads
+# nothing; the reference carries its digest, so an entry never goes stale.
+import argparse
+import hashlib
+import json
+import os
+import platform
+import shutil
+import subprocess
+import tarfile
+import tempfile
+from pathlib import Path
+
+p = argparse.ArgumentParser()
+p.add_argument("base", help="Base image reference, pinned by digest, or a local OCI layout directory")
+p.add_argument("root", help="Directory whose tree becomes the layer, at / or --at")
+p.add_argument("tar", help="Image tar to write, or with --layout the OCI layout directory")
+p.add_argument("tag", help="Tag the tar carries")
+p.add_argument("--entrypoint", help="The image's ENTRYPOINT, its words separated by commas; it clears the base's CMD")
+p.add_argument("--cmd", help="The image's CMD, its words separated by commas")
+p.add_argument("--workdir")
+p.add_argument("--user")
+p.add_argument("--env", action="append", default=[], help="KEY=VALUE in the image's env, replacing the base's KEY; a later one replaces an earlier")
+p.add_argument("--owner", default="0:0", help="Owner of every entry in the layer")
+p.add_argument("--own", action="append", default=[], help="<uid:gid>=<path>: the owner of <root>'s <path> and everything under it, in place of --owner")
+p.add_argument("--own-dir", action="append", default=[], help="<uid:gid>=<path>: the owner of <root>'s directory <path> itself, its entries keeping --owner")
+p.add_argument("--umask", default="0", help="Octal mode bits cleared from every entry of every layer this adds, e.g. 022 so the build host's umask never makes a root path writable to group 0")
+p.add_argument("--layout", action="store_true", help="Write the image as an OCI layout directory at <tar>, not a tar of one")
+p.add_argument("--at", default="", help="The image directory <root>'s tree lands in. The layer has no entries for it or its parents, so the base's keep their owner and mode")
+p.add_argument("--root-layer", action="append", default=[], help="A directory whose tree becomes a root-owned layer under <root>'s, e.g. whiteouts of the base's files")
+p.add_argument("--layer", action="append", default=[], help="A further layer over <root>'s, as <uid:gid>=<image dir>=<dir>: <dir>'s tree at <image dir>, every entry owned by <uid:gid>, with no entries for <image dir> or its parents")
+args = p.parse_args()
+
+arch = {"aarch64": "arm64", "x86_64": "amd64"}.get(platform.machine(), platform.machine())
+cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "platform-image-pack"
+cache.mkdir(parents=True, exist_ok=True)
+base = Path(args.base)
+if not (base / "index.json").is_file():
+    base = cache / hashlib.sha256(f"{args.base} {arch}".encode()).hexdigest()[:32]
+    if not (base / "index.json").is_file():
+        tmp = Path(f"{base}.{os.getpid()}")
+        shutil.rmtree(tmp, ignore_errors=True)
+        subprocess.run(["crane", "pull", "--format=oci", "--platform", f"linux/{arch}", args.base, tmp], check=True)
+        try:
+            tmp.rename(base)
+        except OSError:
+            shutil.rmtree(tmp)
+
+
+def owner_of(spec):
+    uid, gid = spec.split(":")
+    return int(uid), int(gid)
+
+
+def owned(specs):
+    return [(owner_of(o), path) for o, path in (s.split("=", 1) for s in specs)]
+
+
+# <src>'s tree, not <src> itself, so a layer never resets / or <at>'s parents.
+# tarfile walks it sorted and keeps hard links as links. Each entry has mtime
+# 0, no owner names, and its owner by path, so the tar follows the tree's
+# content alone and holds each path once, which CRI-O needs.
+def tree_tar(src, dest, owner, at="", owns=(), own_dirs=(), clear=0):
+    def entry(info):
+        rel = info.name.removeprefix(f"{at}/") if at else info.name
+        info.uid, info.gid = owner
+        for o, path in owns:
+            if rel == path or rel.startswith(f"{path}/"):
+                info.uid, info.gid = o
+        for o, path in own_dirs:
+            if rel == path:
+                info.uid, info.gid = o
+        info.uname = info.gname = ""
+        info.mtime = 0
+        info.mode &= ~clear
+        return info
+
+    with tarfile.open(dest, "w", format=tarfile.GNU_FORMAT) as t:
+        for name in sorted(os.listdir(src)):
+            t.add(Path(src, name), arcname=f"{at}/{name}" if at else name, filter=entry)
+
+
 # In the cache, so the base's blobs are hard links rather than copies.
-work="$(mktemp -d "$cache/work.XXXXXX")"
-trap 'rm -rf "$work"' EXIT
-out="$work/oci"
-mkdir -p "$out/blobs/sha256"
-cp -l "$base"/blobs/sha256/* "$out/blobs/sha256/" 2>/dev/null || cp "$base"/blobs/sha256/* "$out/blobs/sha256/"
+work = Path(tempfile.mkdtemp(dir=cache, prefix="work."))
+try:
+    out = work / "oci"
+    blobs = out / "blobs" / "sha256"
+    blobs.mkdir(parents=True)
+    for b in (base / "blobs" / "sha256").iterdir():
+        try:
+            os.link(b, blobs / b.name)
+        except OSError:
+            shutil.copy(b, blobs / b.name)
 
-blob() { echo "$out/blobs/${1/://}"; }
-# One owner, mtime 0, sorted: the layer's digest follows its content alone.
-# Its top-level entries, not ".", so the layer never resets / itself. A path
-# <root> gives another owner (--own, --own-dir) is left out of the rest and
-# appended after it under that owner, a directory alone followed by its entries
-# under the layer's: every path has one entry, since CRI-O refuses a layer that
-# repeats one.
-layers='[]'
-# Reads layer's $at.
-pack_tar() {
-  local o=$1; shift
-  tar --sort=name --owner="${o%:*}" --group="${o#*:}" --numeric-owner --mtime=@0 --format=gnu \
-    ${mode[@]+"${mode[@]}"} ${at:+--transform "s|^|$at/|S"} "$@"
-}
-eval "owns=(${usage_own:-})" "own_dirs=(${usage_own_dir:-})"
-mode=(${usage_mode:+--mode="$usage_mode"})
-layer() {
-  local t="$work/layer.tar" h spec p at=${3:-} excl=()
-  [ "${4:-}" != own ] || for spec in ${owns[@]+"${owns[@]}"} ${own_dirs[@]+"${own_dirs[@]}"}; do excl+=("--exclude=${spec#*=}"); done
-  pack_tar "$2" --anchored ${excl[@]+"${excl[@]}"} -C "$1" -cf "$t" $(ls -A "$1")
-  if [ "${4:-}" = own ]; then
-    for spec in ${owns[@]+"${owns[@]}"} ${own_dirs[@]+"${own_dirs[@]}"}; do
-      p="${spec#*=}"
-      [ -e "$1/$p" ] || continue
-      case " ${own_dirs[*]:-} " in
-        *" $spec "*)
-          pack_tar "${spec%%=*}" --no-recursion -C "$1" -rf "$t" "$p"
-          [ -z "$(ls -A "$1/$p")" ] || pack_tar "$2" -C "$1" -rf "$t" $(ls -A "$1/$p" | sed "s|^|$p/|") ;;
-        *) pack_tar "${spec%%=*}" -C "$1" -rf "$t" "$p" ;;
-      esac
-    done
-  fi
-  h="$(sha256sum "$t" | cut -c1-64)"
-  mv "$t" "$out/blobs/sha256/$h"
-  layers="$(jq -c --arg d "sha256:$h" --argjson s "$(wc -c < "$out/blobs/sha256/$h")" \
-    '. + [{mediaType: "application/vnd.oci.image.layer.v1.tar", digest: $d, size: $s}]' <<< "$layers")"
-}
-eval "root_layers=(${usage_root_layer:-})"
-for d in ${root_layers[@]+"${root_layers[@]}"}; do layer "$d" 0:0; done
-at="${usage_at:-}"; at="${at#/}"; at="${at%/}"
-layer "$usage_root" "$usage_owner" "$at" own
-eval "extra_layers=(${usage_layer:-})"
-for spec in ${extra_layers[@]+"${extra_layers[@]}"}; do
-  owner="${spec%%=*}" rest="${spec#*=}"
-  dir="${rest#*=}" at="${rest%%=*}"; at="${at#/}"; at="${at%/}"
-  layer "$dir" "$owner" "$at"
-done
+    def blob(digest):
+        return blobs / digest.removeprefix("sha256:")
 
-put() {
-  local h
-  h="$(printf '%s' "$1" | sha256sum | cut -c1-64)"
-  printf '%s' "$1" > "$out/blobs/sha256/$h"
-  jq -cn --arg d "sha256:$h" --argjson s "${#1}" '{digest: $d, size: $s}'
-}
-manifest="$(cat "$(blob "$(jq -r '.manifests[0].digest' "$base/index.json")")")"
-# OCI layers under a Docker manifest are what quay refuses.
-[ "$(jq -r .mediaType <<< "$manifest")" = application/vnd.oci.image.manifest.v1+json ] ||
-  { echo "image:pack: $usage_base is not an OCI image manifest" >&2; exit 1; }
-eval "envs=(${usage_env:-})"
-env_json="$(printf '%s\n' ${envs[@]+"${envs[@]}"} | jq -R 'select(. != "")' | jq -cs .)"
-config="$(jq -c --argjson l "$layers" --arg ep "${usage_entrypoint:-}" --arg cmd "${usage_cmd:-}" \
-  --arg wd "${usage_workdir:-}" --arg user "${usage_user:-}" --argjson env "$env_json" '
-  .rootfs.diff_ids += [$l[].digest]
-  | .history = (.history // []) + [$l[] | {created_by: "image:pack"}]
-  | if $ep != "" then .config.Entrypoint = ($ep | split(",")) | del(.config.Cmd) else . end
-  | if $cmd != "" then .config.Cmd = ($cmd | split(",")) else . end
-  | if $wd != "" then .config.WorkingDir = $wd else . end
-  | if $user != "" then .config.User = $user else . end
-  | reduce $env[] as $e (.; ($e | split("=")[0]) as $k
-      | .config.Env = ((.config.Env // []) | map(select(split("=")[0] != $k))) + [$e])' \
-  "$(blob "$(jq -r .config.digest <<< "$manifest")")")"
-manifest="$(jq -c --argjson c "$(put "$config")" --argjson l "$layers" \
-  '.config += $c | .layers += $l | del(.annotations)' <<< "$manifest")"
-jq -n --argjson m "$(put "$manifest")" --arg a "$arch" \
-  '{schemaVersion: 2, mediaType: "application/vnd.oci.image.index.v1+json",
-    manifests: [$m + {mediaType: "application/vnd.oci.image.manifest.v1+json", platform: {architecture: $a, os: "linux"}}]}' \
-  > "$out/index.json"
-echo '{"imageLayoutVersion":"1.0.0"}' > "$out/oci-layout"
-# Only the blobs the image names: a base layout may hold more.
-jq -r '.config.digest, .layers[].digest' <<< "$manifest" | sed 's/^sha256://' | sort > "$work/keep"
-jq -r '.manifests[0].digest' "$out/index.json" | sed 's/^sha256://' >> "$work/keep"
-(cd "$out/blobs/sha256" && ls | sort | comm -23 - <(sort "$work/keep") | xargs -r rm -f)
-"$(dirname "$0")/name-layout" "$out" "$usage_tag"
-mkdir -p "$(dirname "$usage_tar")"
-if [ "${usage_layout:-}" = true ]; then
-  rm -rf "$usage_tar" && mv "$out" "$usage_tar"
-else
-  tar --sort=name --mtime=@0 -C "$out" -cf "$usage_tar" $(ls -A "$out")
-fi
+    def put(path, media_type):
+        with path.open("rb") as f:
+            digest = hashlib.file_digest(f, "sha256").hexdigest()
+        size = path.stat().st_size
+        path.rename(blobs / digest)
+        return {"mediaType": media_type, "digest": f"sha256:{digest}", "size": size}
+
+    def put_json(obj, media_type):
+        path = work / "blob.json"
+        path.write_text(json.dumps(obj, separators=(",", ":")))
+        return put(path, media_type)
+
+    layers = []
+
+    def add_layer(src, owner, at="", owns=(), own_dirs=()):
+        path = work / "layer.tar"
+        tree_tar(src, path, owner_of(owner), at.strip("/"), owned(owns), owned(own_dirs), int(args.umask, 8))
+        layers.append(put(path, "application/vnd.oci.image.layer.v1.tar"))
+
+    for d in args.root_layer:
+        add_layer(d, "0:0")
+    add_layer(args.root, args.owner, args.at, args.own, args.own_dir)
+    for spec in args.layer:
+        owner, at, d = spec.split("=", 2)
+        add_layer(d, owner, at)
+
+    manifest = json.loads(blob(json.loads((base / "index.json").read_text())["manifests"][0]["digest"]).read_text())
+    # OCI layers under a Docker manifest are what quay refuses.
+    if manifest.get("mediaType") != "application/vnd.oci.image.manifest.v1+json":
+        raise SystemExit(f"image:pack: {args.base} is not an OCI image manifest")
+    config = json.loads(blob(manifest["config"]["digest"]).read_text())
+    config["rootfs"]["diff_ids"] += [l["digest"] for l in layers]
+    config["history"] = config.get("history", []) + [{"created_by": "image:pack"} for _ in layers]
+    c = config.setdefault("config", {})
+    if args.entrypoint:
+        c["Entrypoint"] = args.entrypoint.split(",")
+        c.pop("Cmd", None)
+    if args.cmd:
+        c["Cmd"] = args.cmd.split(",")
+    if args.workdir:
+        c["WorkingDir"] = args.workdir
+    if args.user:
+        c["User"] = args.user
+    for e in args.env:
+        c["Env"] = [v for v in c.get("Env", []) if v.split("=")[0] != e.split("=")[0]] + [e]
+    manifest["config"] = put_json(config, "application/vnd.oci.image.config.v1+json")
+    manifest["layers"] += layers
+    manifest.pop("annotations", None)
+    desc = put_json(manifest, "application/vnd.oci.image.manifest.v1+json")
+    (out / "index.json").write_text(json.dumps({
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.index.v1+json",
+        "manifests": [desc | {"platform": {"architecture": arch, "os": "linux"}}],
+    }))
+    (out / "oci-layout").write_text('{"imageLayoutVersion":"1.0.0"}')
+    # Only the blobs the image names: a base layout may hold more.
+    keep = {blob(d).name for d in [desc["digest"], manifest["config"]["digest"], *(l["digest"] for l in manifest["layers"])]}
+    for b in blobs.iterdir():
+        if b.name not in keep:
+            b.unlink()
+    subprocess.run([Path(__file__).parent / "name-layout", out, args.tag], check=True)
+    dest = Path(args.tar)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if args.layout:
+        shutil.rmtree(dest, ignore_errors=True)
+        out.rename(dest)
+    else:
+        tree_tar(out, dest, (0, 0))
+finally:
+    shutil.rmtree(work, ignore_errors=True)

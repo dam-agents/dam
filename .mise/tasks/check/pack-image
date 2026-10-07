@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Assert image:pack's ownership and mode flags on a tiny image: --own, --own-dir and --mode"
+#MISE description="Assert image:pack's ownership and mode flags on a tiny image: --own, --own-dir and --umask"
 #MISE sources=[".mise/tasks/image/pack", ".mise/tasks/image/name-layout", ".mise/tasks/check/pack-image"]
 #MISE outputs=[]
 #MISE cache.enabled=true
@@ -24,7 +24,7 @@ echo '{"imageLayoutVersion":"1.0.0"}' > "$t/base/oci-layout"
 # A tree as a build user with umask 002 leaves it: group-writable throughout.
 mkdir -p "$t/whiteouts/etc" "$t/root/app/dist" "$t/root/app/.hidden" "$t/root/home/agent/.config" "$t/root/etc/mise"
 touch "$t/whiteouts/etc/.wh.motd" "$t/root/app/dist/server.js" "$t/root/home/agent/.config/x" "$t/root/etc/mise/config.toml" "$t/root/etc/hosts"
-(cd "$t" && XDG_CACHE_HOME="$t/cache" "$pack" "$t/base" "$t/root" "$t/out" check:latest --layout --mode=go-w --root-layer="$t/whiteouts" \
+(cd "$t" && XDG_CACHE_HOME="$t/cache" "$pack" "$t/base" "$t/root" "$t/out" check:latest --layout --umask=022 --root-layer="$t/whiteouts" \
   --own=65532:0=home/agent --own=65532:0=etc/mise --own=65532:0=absent --own-dir=65532:0=app >/dev/null)
 
 m="$(jq -r '.manifests[0].digest | sub(":"; "/")' "$t/out/index.json")"

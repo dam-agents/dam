@@ -60,6 +60,13 @@ build_runtime() {
   rm -rf "$runtime"
   npm_config_inject_workspace_packages=true \
     pnpm --filter agent-runtime deploy --frozen-lockfile --prod --node-linker=hoisted "$runtime"
+  # What pnpm writes for itself, which nothing reads at run time, varies every
+  # build or names the build's directory: its records, pnpm 12's leftover
+  # staging files under random names, and the target each .bin shim notes in a
+  # comment (a shim finds its target by its own path).
+  rm -f "$runtime"/node_modules/.{modules.yaml,pnpm-workspace-state-v1.json,pnpm/lock.yaml}
+  find "$runtime/node_modules" -name '*_pacquet-stage_*' -delete
+  find "$runtime/node_modules/.bin" -type f -exec sed -i '/^# cmd-shim-target=/d' {} +
   cp packages/agent-runtime/package.json "$runtime/package.json"
   (cd "$runtime" && pnpm pkg delete devDependencies)
 }
@@ -185,7 +192,7 @@ agent_owned=(--own=65532:0=home/agent --own=65532:0=etc/mise --own=65532:0=usr/l
 pack_image() {
   local agent=$1 base=$2 tree=$3
   shift 3
-  "$root/$pack" "$base" "$tree" "$oci_out/$agent" "platform-$agent:latest" --layout --mode=go-w "${agent_owned[@]}" "$@"
+  "$root/$pack" "$base" "$tree" "$oci_out/$agent" "platform-$agent:latest" --layout --umask=022 "${agent_owned[@]}" "$@"
   echo "OCI layout: $oci_out/$agent"
 }
 
@@ -385,7 +392,7 @@ build_apt_base() {
 . .mise/lib/lima-build.sh
 build_in_vm() {
   # mise runs the arm64 node it installs, which links libatomic.
-  lima_build libatomic1 "node pnpm usage crane" \
+  lima_build libatomic1 "node pnpm usage crane uv" \
     sh -c 'AGENT_OCI_OUT="$HOME/platform-agent-oci" exec packages/agents/.mise/tasks/oci --build --no-tar "$@"' _ "$@"
 }
 layout() {
