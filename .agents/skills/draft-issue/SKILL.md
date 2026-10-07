@@ -10,7 +10,7 @@ Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidel
 
 ## Workflow
 
-1. **Understand the request.** Identify the problem, who it affects, and the outcome wanted. Restate it in one or two sentences, and ask follow-ups for anything that would change the issue's shape (scope, who it affects, dependencies) before drafting. **Context leads every template** (why this matters, what led here): if the ask doesn't convey it, ask for it. A ticket without real context is what this step prevents.
+1. **Understand the request.** Identify the problem, who it affects, and the outcome wanted. Restate it in one or two sentences, and ask follow-ups for anything that would change the issue's shape (scope, who it affects, dependencies) before drafting. **Context leads every template** (why this matters, what led here): if the ask doesn't convey it, ask for it.
 
    **Came from user feedback in Slack?** Get the permalink to the thread where it was raised (ask if you don't have it) — it goes in the **Follow up** section at the end of the body (see **Follow up** in the guidelines).
 

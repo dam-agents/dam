@@ -40,11 +40,6 @@ Platform constraints every generated file respects; cite them when a wish confli
   turn; later kit edits never touch agents already created.
 - The platform **never reads configuration back from an agent's repo or workspace**: the kit is a catalog input read before create, so an
   agent committing to its own definition can widen nothing the platform enforces.
-- **The onboarding gate**: the scheduler **holds every schedule** of a kit-created agent
-  until it reports configured (`held: onboarding not complete`; the next occurrence is
-  armed as normal). ONBOARDING drives the three pending-only MCP tools
-  (`set_onboarding_checklist`, `complete_onboarding_step`, `mark_onboarding_complete`);
-  the checklist holds only what the **operator** must supply, never the agent's own work.
 
 ## Scheduling
 

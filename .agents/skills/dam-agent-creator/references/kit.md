@@ -1,14 +1,11 @@
 # The kit (`kit.yaml`)
 
-Read in Phase 0, before the interview: the kit decides what the operator never does by
-hand, which changes what Phase 2 proposes and what ONBOARDING still owns.
-
 A **Starter Kit** is how the platform creates an agent: the connections, schedules,
 channels, size and seed a job needs, declared in a `kit.yaml` read from git. Here **the
 definition repository *is* the kit**: `kit.yaml` sits at the root beside `CLAUDE.md`, so a
 definition change and the matching kit change are one commit.
 
-Generate one for every agent. Without it the operator wires the agent by hand from README
+Without it the operator wires the agent by hand from README
 and pastes the ONBOARDING.md link; with it they pick the kit from the catalog.
 
 ## What the kit does and what ONBOARDING still owns
@@ -169,11 +166,8 @@ All optional; declare only what the design needs.
   repository"*, and it never reaches the listing.
 - **A version is written one way**: a plain `url` plus optional `ref`. A URL with a `#ref`
   fragment or `/tree/<ref>/…` path is refused, never read at the default branch.
-- **The platform never reads configuration back from the agent's repo.** The kit is read
-  before create; later commits to the definition change nothing the platform enforces.
 - **A kit failing schema validation is dropped from the listing** with a logged reason.
   Validate before publishing (`scripts/validate-definition.sh` covers the shape).
-- Apply is **create-only**: editing the kit never touches agents already created.
 
 ## Publishing the kit
 

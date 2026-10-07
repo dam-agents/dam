@@ -34,9 +34,9 @@ The layers live **inside each module of a server package**, where business logic
 
 **Validation (contract package, not server modules).** tRPC routers define the API surface and parse, validate and sanitize input with Zod, then delegate immediately to the service interface; no business logic. One router file per resource of the module's bounded context. The server implements the interface and has no routers of its own.
 
-**1. Application (`services/`).** Services orchestrate use cases and coordinate domain objects. They get dependencies, including infrastructure ports, by injection ([infrastructure.md](infrastructure.md)). They map validated input into domain operations and domain results back into responses, own transaction boundaries and cross-cutting concerns (logging, auth checks), and emit domain events on meaningful state changes.
+**1. Application (`services/`).** Services get dependencies, including infrastructure ports, by injection ([infrastructure.md](infrastructure.md)). They map validated input into domain operations and domain results back into responses, own transaction boundaries and cross-cutting concerns (logging, auth checks), and emit domain events on meaningful state changes.
 
-**2. Domain (`domain/`).** The innermost layer: pure TypeScript, **zero external dependencies**, imports from no other layer. Entities, value objects, aggregates, domain events; every business rule and invariant is enforced here. Logic is pure and deterministic (no side effects, I/O or framework imports). Assembly functions compute rich domain state from raw data (e.g. infrastructure state + application state). Domain errors are `Result` values, not exceptions.
+**2. Domain (`domain/`).** The innermost layer: pure TypeScript, **zero external dependencies**, imports from no other layer. Entities, value objects, aggregates, domain events; every business rule and invariant is enforced here. Logic is pure and deterministic (no side effects, I/O or framework imports). Assembly functions compute rich domain state from raw data (e.g. infrastructure state + application state).
 
 **3. Infrastructure (`infrastructure/`).** Implements the ports services depend on (repositories, external adapters, clients) and holds storage-specific mappers between domain objects and persistence formats. **Inner layers define what they need (ports); infrastructure provides it (adapters).** It may import from domain (to implement ports and map types), never from services. Patterns: [infrastructure.md](infrastructure.md).
 
@@ -46,10 +46,7 @@ The layers live **inside each module of a server package**, where business logic
 services → domain ← infrastructure
 ```
 
-- Contract routers delegate to the service interface and live in the contract package.
 - Services import only from domain; they receive infrastructure by injection, depending on port interfaces, never implementations.
-- Domain imports nothing outside itself.
-- Infrastructure may import from domain.
 
 Any violation (a domain entity importing a service, a service importing an infrastructure implementation) is always an error.
 

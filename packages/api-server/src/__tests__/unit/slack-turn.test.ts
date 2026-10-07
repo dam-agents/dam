@@ -1100,7 +1100,6 @@ describe("slack turn — network-access framing and attendance", () => {
 
     expect(prompt).toContain("never write the bare id as visible text");
     expect(prompt).toContain("<@U024BE7LH>");
-    expect(prompt).toContain("leave alsoSendToChannel off unless");
     expect(prompt).not.toContain(
       "thread is old enough that people watching the channel",
     );

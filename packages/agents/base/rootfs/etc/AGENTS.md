@@ -1,6 +1,6 @@
 # DAM sandboxed runtime
 
-You are running in a cloud VM managed by DAM. The VM may be stopped and restarted during periods of inactivity. Only `/home/agent` is persisted after restart, rest of the filesystem is lost.
+You are running in a sandbox (a container or a VM) managed by DAM. It may be stopped and restarted during periods of inactivity. Only `/home/agent` is persisted after restart, rest of the filesystem is lost.
 
 Caches in the home that no tool here reads are removed at boot: a Go module cache (no Go is shipped) and pnpm's own store layouts (`pnpm` is aube). In a container, `~/.cache` and npm's cache live on local disk and reset on restart.
 

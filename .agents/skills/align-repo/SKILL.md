@@ -6,16 +6,11 @@ description: |
 
 # Align Repo Conventions
 
-Audit the current repo's `.claude/settings.json` and `CLAUDE.md` against team standards.
-
 ## Execution Rules
 
-- **Execute the checklist strictly step by step.**
 - Present ONE item per message. Show its status, and if action is needed, ask and **STOP**.
-- Do not present the next item until the user has responded.
 - If an item is already aligned, say so and immediately proceed to the next item in the same message.
 - If an item needs action, show current vs expected and ask: _"Want me to align this?"_
-- Never batch multiple action items into one message.
 - Never auto-apply changes — every modification requires explicit user confirmation.
 - **Merge, don't overwrite** — add missing keys without clobbering existing ones.
 - **Preserve existing content** in CLAUDE.md — don't remove or reorder existing sections.

@@ -26,8 +26,6 @@ allowed-tools:
 
 Mode: `$ARGUMENTS`
 
-The mode picks which steps of the workflow run:
-
 - **sec-only** (default): empty argument or any word for security (`sec`, `security`, `vuln`, `vulnerable`, `cve`, …). Fixes known vulnerabilities; skips steps marked so.
 - **full**: any word for every dependency (`all`, `feat`, `feature`, `full`, …). Runs every step.
 
@@ -46,7 +44,7 @@ Ask with AskUserQuestion only if the word fits neither. Never ask which dependen
   - mise: `min_version` in `.mise/config.toml` and `version:` in `.github/actions/setup-mise/action.yml`.
   - Go: mise `go` and the `toolchain` line in `packages/controller/go.mod`. Raise its `go` directive only when a dependency requires it.
   - k3s and Gateway API: `GATEWAY_API_VERSION` in `.mise/tasks/cluster/install` is exactly the bundle k3s's `gateway-api-crd` chart ships for `INSTALL_K3S_VERSION`, never newer (the comment above the pin says why).
-- **Always through mise**: `mise run` for tasks, `mise x -- <tool>` for a one-off command. Never call a tool directly.
+- **Always through mise**: `mise run` for tasks, `mise x -- <tool>` for a one-off command.
 - **Never skip or disable a test** to make a bump pass.
 
 ## Ecosystems
@@ -69,7 +67,6 @@ Ask with AskUserQuestion only if the word fits neither. Never ask which dependen
 
 ## Workflow
 
-Steps marked **Skip in sec-only mode.** run only in full mode.
 
 ### 1. Collect the vulnerabilities
 

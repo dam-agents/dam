@@ -1,6 +1,5 @@
 <!-- TODO(creator): This is the always-loaded core. Keep the final file under ~150 lines.
-     Fill every TODO from the approved design, delete sections that don't apply, and
-     delete every TODO comment. One home per concept: procedures live in docs/, this file
+     Delete sections that don't apply. One home per concept: procedures live in docs/, this file
      only contracts, config semantics, the trust boundary, invariants, and the docs map. -->
 
 # {{AGENT_DISPLAY_NAME}}

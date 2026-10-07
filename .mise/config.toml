@@ -126,7 +126,7 @@ deny_net = true
 deny_write = true
 
 [tasks."check:comment-types"]
-description = "Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"
+description = "Every code comment must carry a registered type prefix (see Code comments in AGENTS.md)"
 run = { task = "strip-comments", args = ["--check"] }
 
 [tasks."check:skill-manifest"]

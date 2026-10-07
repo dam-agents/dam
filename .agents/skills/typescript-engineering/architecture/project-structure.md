@@ -1,7 +1,5 @@
 # Project Structure
 
-A workspace monorepo.
-
 ## Monorepo Layout
 
 ```
@@ -43,7 +41,7 @@ Package names are **not enforced** (`api-server`, `backend`, `web`, `ui`, `dashb
 
 ### Server packages
 
-Backend logic in modules, each a bounded context as a vertical slice with three layers: services, domain, infrastructure ([slice-composition.md](slice-composition.md), [modules.md](modules.md)). Validation (tRPC routers) lives in the contract package.
+Backend logic in modules, each a bounded context as a vertical slice with three layers: services, domain, infrastructure ([slice-composition.md](slice-composition.md), [modules.md](modules.md)).
 
 **Required:** `@trpc/server`, `zod`, `rxjs`; dev: `@types/node`.
 
@@ -53,12 +51,12 @@ Consume the API through a typed tRPC client; any UI framework. **Required:** `@t
 
 ### API contract package
 
-Defines the contract: router types, router implementations and service interfaces. Clients consume its `AppRouter` type for end-to-end type safety; naming and scope are flexible. **Flat modules, no layers**, each with:
+Defines the contract: router types, router implementations and service interfaces. Clients consume its `AppRouter` type for end-to-end type safety. **Flat modules, no layers**, each with:
 
 - **Types + service interface**: Zod schemas, input/output types, and the interface between router and implementation.
 - **Router**: a tRPC router taking a service implementation and delegating every call to it; no business logic.
 
-Service-interface naming (`*Service`, `*Context`, …) is free, but file, interface and variable names agree within a project. The server implements the interfaces, so the contract says *what* operations exist and the server *how*.
+Service-interface naming (`*Service`, `*Context`, …) is free, but file, interface and variable names agree within a project.
 
 ### Other packages
 
@@ -81,4 +79,4 @@ Each package extends the root's strict `tsconfig.base.json`:
 }
 ```
 
-Server packages add `"types": ["node"]` to `compilerOptions`, since they run in Node, not the browser.
+Server packages add `"types": ["node"]` to `compilerOptions`.

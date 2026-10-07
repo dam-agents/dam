@@ -1,10 +1,8 @@
 # Review Mode
 
-Architecture review of a TypeScript client-server project that follows, or aims to follow, this architecture.
-
 ## Scope
 
-Ask if unclear: full repo / package / module / file (the code as it is); a diff (uncommitted, staged or branch, via git); or a PR (`gh pr view`, `gh pr diff`; number or URL). For diffs and PRs, flag only violations the change introduces or amplifies; untouched pre-existing ones are out of scope.
+Full repo / package / module / file (the code as it is); a diff (uncommitted, staged or branch, via git); or a PR (`gh pr view`, `gh pr diff`; number or URL). For diffs and PRs, flag only violations the change introduces or amplifies; untouched pre-existing ones are out of scope.
 
 Read [../architecture/index.md](../architecture/index.md). Full review: load every linked file. Diff/PR: load the files covering the layers and concerns touched, plus any file a finding points to.
 

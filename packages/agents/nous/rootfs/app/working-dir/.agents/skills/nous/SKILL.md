@@ -32,9 +32,7 @@ credential, never write one to disk, and never `pip install` Nous yourself.
 
 The pod-level workflow (per-campaign directories, unique run ids, always
 `--auto-approve`, running campaigns in the background, resume-on-restart) is
-defined in this pod's system context (`AGENTS.md`). **This skill is the CLI and
-campaign-authoring reference**; follow `AGENTS.md` for *how* to drive a campaign
-in this environment.
+defined in this pod's system context (`AGENTS.md`).
 
 ## The loop
 
@@ -255,8 +253,7 @@ run. A good flow:
    care about*, *which parameters must stay fixed*. Explain the tradeoff behind
    each question rather than dumping schema jargon on them.
 4. **Show the final `campaign.yaml` and get an explicit go-ahead before
-   `nous run`.** Call out the rough cost/time and the model IDs you pinned. Never
-   launch a campaign the user hasn't seen and confirmed.
+   `nous run`.** Call out the rough cost/time and the model IDs you pinned.
 
 ## The five hypothesis arms
 
@@ -353,8 +350,7 @@ channels:
 How it holds together: `NO_PROXY=127.0.0.1` (set in the image) keeps Nous's POST
 local; the bridge's own call to the MCP endpoint routes back out through the
 egress gateway and is authorized by the pod's mesh identity (no token). Delivery
-is best-effort — a hiccup logs a warning and never blocks the campaign. See
-`AGENTS.md` for the operate-in-this-pod steps (incl. resume-on-restart).
+is best-effort — a hiccup logs a warning and never blocks the campaign.
 
 ## Output artifacts
 
@@ -392,9 +388,7 @@ These are Claude Code slash commands shipped with this agent (in
 The wiki commands turn raw `ledger.json` / `principles.json` into structured
 knowledge — **dead-ends** (refuted approaches), **frontiers** (boundary
 conditions), and untested **interactions** — plus interactive HTML
-visualizations. Knowledge **compounds**: `/suggest-next` draws on findings from
-*all* indexed campaigns to point the next campaign at the highest-value open
-questions.
+visualizations.
 
 > The viz commands invoke `python scripts/<name>.py`; run them from `$HOME`
 > (where the shipped `scripts/` live) or call `~/scripts/<name>.py` directly.
@@ -402,7 +396,7 @@ questions.
 
 ## Full CLI surface (13 subcommands)
 
-Run `nous <cmd> --help` for exact flags. Grouped by purpose:
+Run `nous <cmd> --help` for exact flags.
 
 **Lifecycle — run & control**
 - `nous run <campaign>` — run end-to-end. Flags: `--max-iterations`, `--model`,

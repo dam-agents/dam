@@ -4175,7 +4175,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const one = batch.length === 1;
     return [
       "<new-messages>",
-      `${one ? "Another message" : `${batch.length} more messages`} arrived in this conversation while you were working. Read ${one ? "it" : "them"} before you reply, and answer everything in one reply rather than replying more than once.`,
+      `${one ? "Another message" : `${batch.length} more messages`} arrived in this conversation while you were working. Answer everything in one reply rather than replying more than once.`,
       ...(conversation.oneThread
         ? []
         : [

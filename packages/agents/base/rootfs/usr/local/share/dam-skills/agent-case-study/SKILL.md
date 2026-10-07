@@ -11,14 +11,11 @@ description: >
 ---
 
 You write one document: a plain-English, one-page case study of this agent,
-for the platform team. It covers the use case the agent serves, how it uses
-the platform, and where the platform got in the way. The use
-case and the platform are the subject, never the model's craft. You then
-submit it to the platform, where only the owner can see it until they release
-it.
+for the platform team. The use case and the platform are the subject, never
+the model's craft.
 
 Keep it general. An account of the use case is useful; an account full of this
-deployment's names is not. Anonymizing is required.
+deployment's names is not.
 
 ## Rules
 
@@ -101,7 +98,7 @@ nothing. A quiet week is normal; never pad an edition to fill one.
 - The person served is a role, not a character. Describe the job, use they/them,
   and give no traits the use case does not need.
 - Final gate: reread the document and ask whether any sentence can identify this
-  company or a person, and whether an 18-year-old understands it. Fix every hit.
+  company or a person, and whether an 18-year-old understands it.
   Unsure counts as identifying.
 
 ## Step 3: Write
@@ -110,7 +107,7 @@ Draft in a scratch location, never the workspace. Follow
 `references/template.md` exactly. One page, strictly. Tables for enumerable
 facts, prose for behavior. Results only, no methodology, no source notes. An
 empty section says so in one line. No em dashes in
-paragraphs. No padding.
+paragraphs.
 
 ## Step 4: Publish and submit
 

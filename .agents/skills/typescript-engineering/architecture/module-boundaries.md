@@ -84,8 +84,3 @@ shipping ──subscribes────┘
 ```
 
 The publisher knows nothing about subscribers; the subscriber depends one way on a stable contract (the event shape from `orders/index.ts`), not on implementation.
-
-## Forbidden
-
-- Importing another module's service (`'../identity/services/...'`), domain entity (`'../identity/domain/...'`) or repository (`'../identity/infrastructure/...'`).
-- Any import that bypasses `index.ts`.

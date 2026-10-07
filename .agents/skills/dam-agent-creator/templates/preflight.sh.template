@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # preflight.sh — deterministic pre-flight for {{AGENT_NAME}}.
 #
-# TODO(creator): keep this header contract verbatim, fill the per-mode detection, delete
-# TODO comments. The script DETECTS, it NEVER ACTS:
+# TODO(creator): keep this header contract verbatim, fill the per-mode detection.
+# The script DETECTS, it NEVER ACTS:
 #
 #   - NO external writes at all (list/GET calls only),
 #   - NO git commit/push (the agent persists at end of run),

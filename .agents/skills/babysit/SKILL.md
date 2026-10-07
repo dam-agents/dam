@@ -127,8 +127,6 @@ and surroundings, files a sweep names, your diff); never re-review the PR.
 - **Never weaken the check instead of the code** (deleted test, widened type,
   suppressed warning, relaxed assertion) unless that removal is the requested
   fix.
-- **Read each anchor before writing.** A fix written from the summary alone
-  adds the next finding.
 - **Keep the diff to the findings**: every hunk is a fresh candidate. No
   drive-by refactors, renames or formatting. Take an `optional`/`deferred`
   one-liner only in a file this round already edits (it would return later);
@@ -211,8 +209,7 @@ Then run the repo's own build and tests once over what changed.
    - **Fixed**: what changed and every location, including beyond the listed
      ones. If the prescribed fix leaves part of the finding open, say what.
    - **Disputed**: why it doesn't hold, from the code (line, condition,
-     input), and that the code is unchanged. Never drop a finding silently;
-     silence reads as `still`.
+     input), and that the code is unchanged.
    - **Deferred**: only on the caller's decision, naming it.
 
    Then one line for checks run and results, one for optional items taken.
@@ -240,5 +237,3 @@ only on request.
 - Every location of every fixed finding changed (`also` and unlisted rule hits
   included); its check is clean or the answer says why not.
 - Every `rules` entry holds in every touched file.
-- The diff passed self-review; the repo's build and tests pass.
-- One push and one comment carry the work.

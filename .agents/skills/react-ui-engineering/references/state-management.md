@@ -4,15 +4,6 @@
 
 ## The lineage model (CRITICAL)
 
-Classify state by where its source of truth lives; each lineage has one home. Mixing them causes stale state, redundant fetching and sprawl.
-
-| Lineage | Source of truth | Home | Examples |
-|---|---|---|---|
-| **Server** | Backend | TanStack Query cache | agents, secrets, connections; user profile; connector config |
-| **UI, global** | Client | Zustand or React Context | theme, open dialog, selected agent id, nav collapsed, toast queue |
-| **UI, local** | Client | `useState` / `useRef` | focus, hover, unsubmitted field value, accordion expanded |
-| **URL** | URL | `useSearchParams` / path | route, filters, selected tab, pagination, search query |
-
 **[CRITICAL] Never duplicate across lineages.** Server-owned data isn't copied into Zustand; Zustand state isn't shadowed in `useState`; URL state isn't mirrored into Zustand without a strong reason (e.g. a brief optimistic beat before the route resolves).
 
 Decision recipe:
@@ -20,10 +11,6 @@ Decision recipe:
 2. Needed by components that aren't parent/child? → **Zustand or Context** (pick one per project).
 3. Would a refresh or shared link lose something that matters? → **URL**.
 4. Otherwise → **`useState`**.
-
-## Server state
-
-Per `references/async-data.md`: never a server list in Zustand; invalidate via `meta.invalidates`; optimism via `onMutate`, not a Zustand shadow copy.
 
 ## Zustand
 
@@ -100,10 +87,8 @@ Files: `contexts/theme/theme-context.ts`, `theme-provider.tsx`, `index.ts` (the 
 
 ## Local `useState`
 
-Correct only when the value is not derivable from props/state (compute or `useMemo`), not fetched (TQ), not needed by a sibling (lift it, or Zustand/Context), and not shareable via URL.
-
 **[MODERATE]** ~5 `useState` calls in one component are usually related: a loading/error/data trio is a TQ query (`const { data, isLoading, error } = useAgents()`); genuinely local composite state is a `useReducer(wizardReducer, initialWizard)` or a hook.
 
 ## URL state
 
-**[HIGH]** The URL owns what should survive a refresh or be shareable: route/subview, active tab in a persistent panel, filters, sort, pagination, search query, and the selected entity id when it determines the page. Use `useSearchParams` or the router equivalent; never store it in Zustand and sync by hand.
+**[HIGH]** The URL owns what should survive a refresh or be shareable: route/subview, active tab in a persistent panel, filters, sort, pagination, search query, and the selected entity id when it determines the page. Use `useSearchParams` or the router equivalent.

@@ -9,8 +9,7 @@ description: >
 Implements a feature `plan-feature` already planned under `docs/plan/<NNN-slug>/` (README + one
 file per sub-issue): one atomic commit per sub-issue on the branch `plan-feature` created, a
 cleanup commit deleting the plan, and the draft PR flipped to ready. The whole feature lands as
-one PR. Rhythm: read everything and clear confusion *before* coding; implement one sub-issue at a
-time; after each, **pause for the user to smoke-test and review** before committing.
+one PR.
 
 **Input:** a GitHub issue number/URL (find the plan folder by its issue-number prefix) or a
 `docs/plan/<NNN-slug>/` path.
@@ -72,9 +71,6 @@ Topological order per the README's dependency graph. For each:
 > invalidates an assumption a *later* sub-issue depends on); once agreed, update the affected
 > README/sub-issues so remaining slices stay consistent. *Adapt and note* purely local, in-intent
 > details.
->
-> The commit lands **after** the user's sign-off, never before: one clean commit per reviewed
-> slice, no amend churn.
 
 ## 6. Whole-feature gate
 

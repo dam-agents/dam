@@ -28,8 +28,7 @@ frontier keeps the best candidates across rounds. It fits objectives that are
 that calls `gepa.optimize(...)`, run with the venv's interpreter,
 `"$GEPA_VENV/bin/python"`; never `pip install gepa` yourself, it's pre-installed.
 
-**This skill is the pure library reference.** Everything platform-specific
-lives elsewhere: how this pod reaches model providers (credentials, gateway,
+Everything platform-specific lives elsewhere: how this pod reaches model providers (credentials, gateway,
 probing) is the **`platform-models` skill**; how to operate runs in this pod
 (pre-launch gate, run directories, backgrounding, resume-on-wake, guardrails,
 extra venv deps) is the pod's system context (**`AGENTS.md`**).

@@ -95,8 +95,7 @@ Merge a single campaign's extracted knowledge into the cross-campaign registry.
 
 ## Deduplication Rules
 
-- **Entities**: Match by normalized name (lowercase, strip parenthetical suffixes). If matched, add campaign to existing entity's `campaigns[]` array.
-- **Everything else** (concepts, parameters, dead-ends, frontiers, interactions): Always create new entries. Different campaigns may have similar-sounding entries that are contextually distinct. Never deduplicate these across campaigns.
+- **Everything except entities** (concepts, parameters, dead-ends, frontiers, interactions): Always create new entries. Different campaigns may have similar-sounding entries that are contextually distinct. Never deduplicate these across campaigns.
 
 ## Important Rules
 

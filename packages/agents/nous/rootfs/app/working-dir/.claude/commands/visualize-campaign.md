@@ -72,8 +72,6 @@ Examples:
    }
    ```
 
-   Provide the original definitions as context so the LLM knows what to restyle.
-
    **Call 2 — Iteration summaries:**
 
    Prompt:
@@ -183,12 +181,7 @@ Examples:
    open ~/.nous/wiki/viz/<campaign-name>.html
    ```
 
-9. **Report** the output path.
-
 ## Important
 
 - This skill does NOT modify any wiki files or registry data.
-- Style restyling is ephemeral — it only affects the generated HTML, not the stored JSON.
-- If style is present, the 5 LLM calls are independent and can be made in parallel (i.e., as separate tool calls in a single response) for speed.
-- If any restyle call fails, that file falls back to canonical text with a visible warning.
 - Campaign names must not contain `::`. If a campaign directory name contains double colons, rename it before using this skill.

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-//MISE description="Architecture docs stay within their character budget. The cap is a forcing function (consolidate prose, push rationale into an ADR), not a byte limit. Only a page this working tree changed against main can fail it: two branches can each add prose to a different part of one page, each measure green against the base it branched from, and merge over the cap, and an over-cap page is wordy, not broken — reding main and every branch rebased on it costs more than it is worth. On main nothing differs from main, so the check passes and reports what is over. The PreToolUse hook (.claude/hooks/doc-size.mjs) shares this measurement front-line."
+//MISE description="Architecture docs stay within their character budget. The cap is a forcing function (consolidate prose, push rationale into an ADR), not a byte limit. Only a page this working tree changed against main can fail it: two branches can each add prose to a different part of one page, each measure green against the base it branched from, and merge over the cap, and an over-cap page is wordy, not broken — reding main and every branch rebased on it costs more than it is worth. On main nothing differs from main, so the check passes and reports what is over."
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -7,16 +7,16 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 
-export const CAPS = { page: 40000, index: 8000 };
+const CAPS = { page: 40000, index: 8000 };
 
 const ARCH_DIR = join(REPO_ROOT, "docs", "architecture");
-export const INDEX_PATH = join(REPO_ROOT, "docs", "architecture.md");
+const INDEX_PATH = join(REPO_ROOT, "docs", "architecture.md");
 
-export function measure(content) {
+function measure(content) {
   return content.length;
 }
 
-export function capFor(filePath) {
+function capFor(filePath) {
   const abs = resolve(REPO_ROOT, filePath);
   if (abs === INDEX_PATH) return { kind: "index", cap: CAPS.index };
   const rel = relative(ARCH_DIR, abs);
@@ -24,7 +24,7 @@ export function capFor(filePath) {
   return isDirectChild ? { kind: "page", cap: CAPS.page } : null;
 }
 
-export function overageReport({ path, size, cap, kind }) {
+function overageReport({ path, size, cap, kind }) {
   const over = size - cap;
   const label = kind === "index" ? "index (always loaded, hardest cap)" : "page";
   return (
@@ -68,12 +68,12 @@ function resolves(ref) {
 
 const PAGESPEC = ["docs/architecture.md", "docs/architecture/*.md"];
 
-export function mainRef() {
+function mainRef() {
   if (process.env.GITHUB_BASE_REF && resolves("HEAD^2")) return "HEAD^1";
   return ["origin/main", "main"].find(resolves) ?? null;
 }
 
-export function pagesChangedFromMain() {
+function pagesChangedFromMain() {
   const ref = mainRef();
   if (!ref) return null;
   const tracked = git("diff", "--name-only", ref, "--", ...PAGESPEC);
@@ -82,7 +82,7 @@ export function pagesChangedFromMain() {
   return new Set(`${tracked}\n${untracked}`.split("\n").filter(Boolean));
 }
 
-export function check() {
+function check() {
   const overBudget = [INDEX_PATH, ...listPages()].map(checkFile).filter(Boolean);
   if (!overBudget.length) {
     process.stdout.write("✅ check:doc-size: all architecture docs within budget.\n");
@@ -109,4 +109,4 @@ export function check() {
   process.exit(1);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) check();
+check();

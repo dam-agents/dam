@@ -8,11 +8,11 @@ argument-hint: "[what the issue is about]"
 
 # File an Issue
 
-Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md). This skill adds the workflow: understand → type → research → dedupe → draft → attribute → approve → file.
+Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidelines/issue-guidelines.md).
 
 ## Workflow
 
-1. **Understand the request.** Identify the problem, who it affects, and the outcome wanted. Restate it in one or two sentences, and ask follow-ups for anything that would change the issue's shape (scope, who it affects, dependencies) before drafting. **Context leads every template** (why this matters, what led here): if the ask doesn't convey it, ask for it. A ticket without real context is what this step prevents.
+1. **Understand the request.** Identify the problem, who it affects, and the outcome wanted. Restate it in one or two sentences, and ask follow-ups for anything that would change the issue's shape (scope, who it affects, dependencies) before drafting. **Context leads every template** (why this matters, what led here): if the ask doesn't convey it, ask for it.
 
    **Came from user feedback in Slack?** Get the permalink to the thread where it was raised (ask if you don't have it) — it goes in the **Follow up** section at the end of the body (see **Follow up** in the guidelines).
 
@@ -26,7 +26,7 @@ Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidel
    gh issue list --repo owner/repo --search "keywords" --state all
    ```
 
-   On a plausible duplicate or close relative, show it with a one-line summary and ask: comment on it, file anyway with a cross-link, or drop the request as already tracked. Never silently file a duplicate.
+   On a plausible duplicate or close relative, show it with a one-line summary and ask: comment on it, file anyway with a cross-link, or drop the request as already tracked.
 
 4. **Non-epic types: consider an epic.** List the board's epics:
 
@@ -37,7 +37,7 @@ Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidel
 
    If one clearly fits, put it on the draft's **Epic** line with a one-line justification. Otherwise omit the line; triage can place it later. Epics have no parent.
 
-5. **Draft inline** with the type's template: full title + body (+ Epic line) in the chat. Don't file yet.
+5. **Draft inline** with the type's template: full title + body (+ Epic line) in the chat.
 
 6. **Filed by footer?** You file under a credential you don't own; compare its owner with the requester (rule, format and fallback order: **Attribution** in the guidelines).
 
@@ -50,7 +50,7 @@ Content shape: all of [docs/guidelines/issue-guidelines.md](../../../docs/guidel
 
 7. **Get explicit approval** to file as-is or revise. Never file without it. Approval covers the type and epic too; changing either is a revision. **Every revision voids the previous approval**: present the revised draft and get a fresh, explicit "file it".
 
-8. **File** (below), apply the relationships, return the URL.
+8. **File** (below) and apply the relationships.
 
 ## Filing
 

@@ -7,7 +7,7 @@
 This reference teaches how to decide, not the project's tokens, primitives or theme values: those change, and a copy here would drift until it teaches something the code deleted. Before styling:
 
 - **Read the theme file** for the real tokens (colors, spacing, shadows). Never invent a token or trust one named here without confirming it exists.
-- **Compose from the shared UI/primitive library.** Don't hand-roll a control or surface it provides, or reproduce a primitive's class recipe inline.
+- Don't reproduce a primitive's class recipe inline.
 - **Grep existing call sites** for the pattern and match the codebase over any example here.
 
 ## The stack
@@ -24,7 +24,7 @@ This reference teaches how to decide, not the project's tokens, primitives or th
 <div style={{ "--progress": `${percent}%` } as CSSProperties} className="progress-bar" />
 ```
 
-**[HIGH] Conditional classes through the project's `cn()`** (`clsx` + `tailwind-merge`, which also resolves conflicts: `px-4 px-6` → `px-6`), never template-literal class strings. Find the existing helper; don't redefine it.
+**[HIGH] Conditional classes through the project's `cn()`** (`clsx` + `tailwind-merge`), never template-literal class strings. Find the existing helper; don't redefine it.
 
 **[MODERATE] `cva` (`class-variance-authority`) for 3+ variants**; two uncomposed variants are fine with `cn()`.
 
@@ -44,10 +44,4 @@ This reference teaches how to decide, not the project's tokens, primitives or th
 
 ## Anti-patterns
 
-- Static `style={{}}` for a value that could be a class.
-- Template-literal class strings instead of `cn()`.
-- Hand-rolling a control or surface the primitive library provides.
-- A hardcoded hex for a color with a theme token, especially the accent.
-- Copying token names, primitive props or theme values into this skill.
-- Arbitrary-value spam (`bg-[#a1b2c3] text-[13px] leading-[1.23]`) across components → token.
 - `!important`: nearly always a Tailwind specificity misunderstanding; `tailwind-merge` covers the common case.

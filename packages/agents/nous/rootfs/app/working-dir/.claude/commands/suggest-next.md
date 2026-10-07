@@ -17,7 +17,7 @@ Examples:
 
 ## Algorithm
 
-The algorithm has five phases: **A: Retrieval** (script-driven, deterministic), **B: Synthesis** (LLM reasoning over the retrieved context), **C: Output** (write markdown), **D: Format** (file structure), and **E: Campaign Generation** (interactive YAML creation). The LLM selects what to retrieve; the script does the mechanical graph traversal and filtering.
+The LLM selects what to retrieve; the script does the mechanical graph traversal and filtering.
 
 ---
 
@@ -71,7 +71,7 @@ Using the assembled context block from Phase A, generate **top 3 recommended cam
 1. **Score it** on five dimensions:
    - **Novelty (weight 0.25):** How far is this from known dead-ends? Does it explore genuinely new territory?
    - **Foundation (weight 0.20):** How many scoped principles does it build upon? Stronger foundation = higher confidence.
-   - **Impact (weight 0.25):** Based on related results, what's the estimated effect size? Prioritize high-impact experiments.
+   - **Impact (weight 0.25):** Based on related results, what's the estimated effect size?
    - **Testability (weight 0.15):** Can this be validated in a single campaign run? Concrete, bounded experiments score higher.
    - **Efficiency (weight 0.15):** How cost-effective is this experiment predicted to be? Score based on:
      - Predicted cost relative to predicted impact (low cost + high impact = high efficiency)
@@ -340,5 +340,3 @@ Iteration count heuristics:
 - Always ground recommendations in specific prior data (principle IDs, frontier IDs, dead-end IDs). Never hallucinate IDs that don't exist in the loaded files.
 - Keep recommendations actionable — each should be concrete enough to immediately write a `campaign.yaml` from.
 - Prefer recommendations that combine insights from multiple campaigns over those that just extend a single campaign.
-- Always use the Cost Context section to ground cost predictions in real data — never invent cost numbers without historical basis.
-- **Scoring transparency is non-negotiable** — every recommendation must include its full score breakdown table with per-dimension rationale. The summary table at the top lets users compare at a glance.

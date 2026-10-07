@@ -10,7 +10,7 @@
 
 ## `type` vs `interface`
 
-**[MODERATE]** `interface` for object shapes that might be extended (props, context values, module augmentation; errors show the interface name). `type` for everything else: unions, intersections, tuples, mapped/conditional types, records, function types. Within a file, be consistent for similar things.
+**[MODERATE]** `interface` for object shapes that might be extended (props, context values, module augmentation; errors show the interface name). `type` for everything else: unions, intersections, tuples, mapped/conditional types, records, function types.
 
 ```ts
 ✅ interface AgentCardProps { agent: Agent; onSelect?: (id: string) => void }
@@ -32,7 +32,7 @@ interface Props {
 export function AgentCard({ agent, variant = "full", onSelect, children }: Props) { ... }
 ```
 
-Optional props use `?`; children are typed explicitly as `ReactNode` (not `PropsWithChildren`, whose indirection buys nothing); handlers get specific signatures, never `(e: any) => void`.
+Children are typed explicitly as `ReactNode` (not `PropsWithChildren`, whose indirection buys nothing); handlers get specific signatures, never `(e: any) => void`.
 
 ## Zod-inferred types
 
@@ -51,8 +51,6 @@ export type Agent = z.infer<typeof agentSchema>;
 **[HIGH] Export the schema *and* the type**: validators import the schema, everyone else the type.
 
 ## `unknown` over `any`
-
-Type genuinely unknown shapes (library returns, parsed JSON, errors) as `unknown` and narrow:
 
 ```ts
 ✅ function parseConfig(raw: unknown): Config { return configSchema.parse(raw); }
@@ -158,10 +156,7 @@ When the tuple must cover every union member (exhaustiveness, not just typo-safe
 
 ## Anti-patterns
 
-- `any` anywhere.
 - `as` to silence the compiler (it's telling you something is off); non-null assertions (`x!`), the same smell: prove it with a guard or handle null.
 - `@ts-ignore`, or `@ts-expect-error` without the reason on the same line (`// @ts-expect-error <why>`).
-- Redundant annotations (`const name: string = getName()`).
 - Unannotated parameters on exported functions.
 - `type Props = {}`: omit the parameter.
-- Magic strings/numbers; TypeScript `enum`.

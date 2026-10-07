@@ -9,7 +9,7 @@ argument-hint: "[what you'd like to do]"
 
 # ADR Tracking
 
-Manage Architecture Decision Records in `docs/adrs/`. Interpret `$ARGUMENTS` as natural language.
+Interpret `$ARGUMENTS` as natural language.
 
 ADRs are human-first; the agent-facing source of truth is the architecture docs. Read `docs/adrs/` only to author or update an ADR: `docs/adrs/index.md` first, then only the records it points you to. Never read the log to understand the current system.
 
@@ -65,7 +65,7 @@ Then regenerate the index: `mise run //docs:generate:adr-index`.
 
 ## Updating an ADR
 
-Read the target ADR directly. Valid status transitions: `accepted`, `deprecated`, and supersession via the *new* ADR's `supersedes` field. An accepted body is immutable: only its frontmatter (`status`, `summary`, `supersedes`) may change, and `check:adr-immutable` enforces that at commit.
+Valid status transitions: `accepted`, `deprecated`, and supersession via the *new* ADR's `supersedes` field. An accepted body is immutable: only its frontmatter (`status`, `summary`, `supersedes`) may change, and `check:adr-immutable` enforces that at commit.
 
 Promoting a draft: `git mv DRAFT-title.md NNN-title.md`, set `id` and `status: accepted`, then `mise run //docs:generate:adr-index`.
 

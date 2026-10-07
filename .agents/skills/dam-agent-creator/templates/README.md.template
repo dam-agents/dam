@@ -1,5 +1,5 @@
 <!-- TODO(creator): the human-facing document — operators and teammates read this, the
-     agent rarely does. Fill every TODO from the approved design, delete TODO comments.
+     agent rarely does.
      Keep tables in sync with CLAUDE.md → Runtime configuration and with ONBOARDING. -->
 
 # {{AGENT_NAME}}

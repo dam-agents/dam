@@ -19,8 +19,7 @@ the user for a key, and never write credentials to disk.
 GEPA (Genetic-Pareto) evolves the text components of a system against a
 metric: an LLM reads full execution traces to diagnose *why* a candidate
 failed, proposes an improved one, and a Pareto frontier keeps the best
-candidates across rounds (select → execute → reflect → mutate → accept). Its
-tagline: if you can measure it, you can optimize it.
+candidates across rounds (select → execute → reflect → mutate → accept).
 
 **GEPA ships no CLI — it is a Python library.** Every run is a driver script
 you author that calls `gepa.optimize(...)`. Two skills split the reference
@@ -29,7 +28,7 @@ template, `DefaultAdapter` vs a custom `GEPAAdapter`, run-directory layout —
 nothing platform-specific), and **the `platform-models` skill** is how this
 pod reaches model providers (connection env discovery, placeholder-key
 wiring through the gateway, probing). Consult both whenever you set up a
-run. This file is the *how-to-operate-in-this-pod* layer.
+run.
 
 ## Two model paths (you only configure one)
 
@@ -90,7 +89,7 @@ checks that protect the user's own tokens, so they always run — "go fast" lets
 you run them inline without narrating each one, but it does **not** let you
 drop them (the smoke-eval especially: skipping it can silently burn the whole
 budget on a miswired evaluator). Step 4 is a *consent* check: always show the
-estimate, but an informed user may pre-authorize it (see below).
+estimate, but an informed user may pre-authorize it.
 
 1. **The objective is measurable.** You must be able to write an evaluator
    that returns a number for "better." If the user's goal isn't measurable as
@@ -130,7 +129,7 @@ estimate, but an informed user may pre-authorize it (see below).
   reports harness-registered tasks to the runtime: the pod is held awake for
   as long as the run lives, and the finishing task wakes you for a follow-up
   turn — **report the result to the user then** (the best candidate and the
-  `run_dir/` path), don't wait to be asked. A detached `nohup` process is
+  `run_dir/` path). A detached `nohup` process is
   invisible to that contract, so the pod can hibernate mid-run. Still keep
   the PID and log in the run directory for monitoring and crash recovery:
 
@@ -178,7 +177,7 @@ but the uv cache is on persistent `$HOME`, so reinstall extras after a restart
 With the launch discipline above, a running optimization **holds the pod
 awake** (reported background work) and hibernation mid-run is the exception,
 not the rule. It can still happen — a pod restart or eviction, a crash, or a
-run launched the legacy detached way — and then the pod scales to zero once
+run launched outside the background-work contract — and then the pod scales to zero once
 the session goes idle. The run directory lives on persistent `$HOME`, so the
 run is recoverable but **does not progress while the pod is down**.
 
@@ -194,16 +193,13 @@ a per-invocation count, so never inflate it on resume (and remove a leftover
 reached its budget is done; raising the budget is a new, re-gated decision,
 not a resume.
 
-**Keep-awake escape hatch (legacy fallback):** if a run somehow lives outside
-the background-work contract (launched detached, or the report was refused),
-an open **terminal or SSH session** pins the pod awake until it finishes —
-but the primary mechanism is launching as a reported harness task in the
-first place.
+If a run lives outside the background-work contract (launched detached, or
+the report was refused), an open terminal or SSH session pins the pod awake
+until it finishes.
 
 ## Hard guardrails
 
-- **Always bound the run** — `max_metric_calls` set to what the user approved.
-  Never work around the library's stop-condition requirement with an
+- Never work around the library's stop-condition requirement with an
   effectively-unbounded stopper.
 - **Wire both models only from env the connection actually injected** per the
   `platform-models` skill (discover → wire → probe). Never pick a LiteLLM
@@ -221,7 +217,6 @@ first place.
 - **Leave experiment tracking off** (`use_wandb` / `use_mlflow`) unless the
   user explicitly provides a reachable tracking setup — the defaults try to
   reach services this pod has no credentials for.
-- **Refuse if the objective isn't measurable** (see the pre-launch gate).
 
 ## GitHub access goes through the connection — never a held token
 
@@ -249,8 +244,7 @@ Envoy injects the real credential on the wire to the allowed GitHub hosts. So:
   in the work dir — where the UI file browser and the terminal land — on
   persistent `$HOME`; created lazily, see Run discipline). Holds `driver.py`,
   the dataset, any `repo/` clone, `run.pid`, `run.log` (driver stdout), and
-  `run_dir/` (GEPA's own state). Always give the user the full path when
-  reporting.
+  `run_dir/` (GEPA's own state).
 - **GEPA state** under `run_dir/`: `gepa_state.bin` (the checkpoint that makes
   reruns resume), `run_log.txt` (iteration log), `candidates.json` (every
   candidate proposed so far), and `generated_best_outputs_valset/` (best
