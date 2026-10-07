@@ -63,13 +63,6 @@ export interface SchedulerRunnerDeps {
   now?: () => Date;
 }
 
-const ONCE_OUTCOMES: ReadonlySet<string> = new Set(Object.values(OnceResult));
-
-function hasOnceOutcome(sched: Schedule): boolean {
-  const result = sched.status?.lastResult;
-  return result !== undefined && ONCE_OUTCOMES.has(result);
-}
-
 const VERDICT: Record<EventOutcome, PrecheckVerdict> = {
   ok: "allowed",
   declined: "declined",
@@ -85,14 +78,6 @@ export function createSchedulerRunner(
   const upcoming = (sched: Schedule): Date | null =>
     match(sched.spec)
       .with({ type: "once" }, (spec) => onceFireAt(spec, sched.status, now()))
-      .with({ type: "cron" }, { type: "rrule" }, (spec) =>
-        nextFireAt(spec, now()),
-      )
-      .exhaustive();
-
-  const afterFire = (sched: Schedule): Date | null =>
-    match(sched.spec)
-      .with({ type: "once" }, () => null)
       .with({ type: "cron" }, { type: "rrule" }, (spec) =>
         nextFireAt(spec, now()),
       )
@@ -204,14 +189,55 @@ export function createSchedulerRunner(
         );
   }
 
-  async function deliverTrigger(
+  async function fireOnce(
     sched: Schedule,
-    eventId: string,
-    payload: Record<string, unknown>,
-    expiresAt: Date,
+    spec: ScheduleSpecOnce,
+    fireAt: Date,
+    lastAttempt: boolean,
   ): Promise<void> {
-    await commitTrigger(sched, eventId, payload, expiresAt);
-    await pokeAgent(sched, eventId);
+    const result = sched.status?.lastResult;
+    if (result !== undefined && result !== OnceResult.Delivering) {
+      log(`fire: one-time schedule ${sched.id} already fired; dropping`);
+      return;
+    }
+    const eventId = `${sched.id}:${fireAt.getTime()}`;
+    if (result === OnceResult.Delivering) {
+      log(`fire: one-time schedule ${sched.id} is committed; poking again`);
+    } else {
+      const expiresAt = onceExpiry(spec);
+      if (expiresAt <= now()) {
+        log(`fire: one-time schedule ${sched.id} is past its window; missed`);
+        await deps.repo.recordFire(sched.id, OnceResult.Missed, null);
+        await emitChanged(sched.agentId, sched.id);
+        return;
+      }
+      try {
+        await commitTrigger(
+          sched,
+          eventId,
+          triggerPayload(sched, fireAt),
+          expiresAt,
+        );
+      } catch (err) {
+        const reason = (err as Error).message ?? String(err);
+        log(`fire: one-time schedule ${sched.id} failed: ${reason}`);
+        if (lastAttempt) {
+          await deps.repo.recordFire(sched.id, reason, null).catch(() => {});
+          await emitFired(sched, "failure");
+        }
+        throw err;
+      }
+    }
+    try {
+      await pokeAgent(sched, eventId);
+    } catch (err) {
+      log(
+        `fire: one-time schedule ${sched.id} is committed but the poke failed: ${(err as Error).message}; it stays delivering`,
+      );
+      if (lastAttempt) await emitFired(sched, "failure");
+      throw err;
+    }
+    await emitFired(sched, "success");
   }
 
   async function fire(
@@ -228,22 +254,19 @@ export function createSchedulerRunner(
       log(`fire: schedule ${scheduleId} disabled; dropping`);
       return;
     }
-    const once = sched.spec.type === "once";
-    if (once && hasOnceOutcome(sched)) {
-      log(`fire: one-time schedule ${scheduleId} already fired; dropping`);
-      return;
-    }
+    const spec = sched.spec;
+    if (spec.type === "once") return fireOnce(sched, spec, fireAt, lastAttempt);
     const hold = async (result: string) => {
-      const after = nextFireAt(sched.spec, now());
+      const after = nextFireAt(spec, now());
       await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
       if (after) await deps.queue.enqueue(scheduleId, after, now());
     };
-    if (!once && (await deps.onboardingPending?.(sched.agentId))) {
+    if (await deps.onboardingPending?.(sched.agentId)) {
       log(`fire: agent ${sched.agentId} has not finished onboarding; holding`);
       await hold("held: onboarding not complete");
       return;
     }
-    if (!once && (await deps.runtimeMigrating?.(sched.agentId))) {
+    if (await deps.runtimeMigrating?.(sched.agentId)) {
       log(`fire: agent ${sched.agentId} is moving to the new runtime; holding`);
       await hold("held: moving to the new runtime");
       return;
@@ -251,30 +274,24 @@ export function createSchedulerRunner(
 
     const eventId = `${scheduleId}:${fireAt.getTime()}`;
     const firedAt = now();
-    const expiresAt = match(sched.spec)
-      .with({ type: "once" }, (spec) => onceExpiry(spec))
-      .with({ type: "cron" }, { type: "rrule" }, (spec) =>
-        triggerExpiry(firedAt, nextFireAt(spec, firedAt), TRIGGER_TTL_SECONDS),
-      )
-      .exhaustive();
-    if (once && expiresAt <= firedAt) {
-      log(`fire: one-time schedule ${scheduleId} is past its window; missed`);
-      await deps.repo.recordFire(scheduleId, OnceResult.Missed, null);
-      await emitChanged(sched.agentId, scheduleId);
-      return;
-    }
+    const expiresAt = triggerExpiry(
+      firedAt,
+      nextFireAt(spec, firedAt),
+      TRIGGER_TTL_SECONDS,
+    );
 
     try {
-      await deliverTrigger(
+      await commitTrigger(
         sched,
         eventId,
         triggerPayload(sched, fireAt),
         expiresAt,
       );
+      await pokeAgent(sched, eventId);
     } catch (err) {
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
-      const after = lastAttempt ? afterFire(sched) : fireAt;
+      const after = lastAttempt ? nextFireAt(spec, now()) : fireAt;
       await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
       if (lastAttempt) {
         if (after) await deps.queue.enqueue(scheduleId, after, now());
@@ -283,9 +300,9 @@ export function createSchedulerRunner(
       throw err;
     }
 
-    const next = afterFire(sched);
-    if (sched.spec.precheck) await deps.repo.setNextRun(scheduleId, next);
-    else if (!once) await deps.repo.recordFire(scheduleId, "success", next);
+    const next = nextFireAt(spec, now());
+    if (spec.precheck) await deps.repo.setNextRun(scheduleId, next);
+    else await deps.repo.recordFire(scheduleId, "success", next);
     if (next) await deps.queue.enqueue(scheduleId, next, now());
     await emitFired(sched, "success");
   }
