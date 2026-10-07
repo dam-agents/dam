@@ -680,7 +680,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 						Env: []corev1.EnvVar{{
 							Name: "SMOLVM_VM_UID_DROP", Value: "off",
 						}, {
-							Name: "SMOLVM_SECCOMP", Value: "enforce",
+							Name: "SMOLVM_SECCOMP", Value: "audit",
 						}, {
 							Name: "SMOLVM_LANDLOCK", Value: "enforce",
 						}, {
