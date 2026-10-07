@@ -48,7 +48,8 @@ pipewire-pulse &
 wait_for "$pulse_socket" "PipeWire's PulseAudio server"
 
 # The video is VP8 alone, locked: royalty-free, and the lightest to encode on
-# a small CPU share. Audio is queued 250 ms deep (backpressure-queue-size counts 10 ms chunks of
+# a small CPU share. The panel is the client's whole frame, so its sidebar and
+# buttons are hidden; sound starts on its own. Audio is queued 250 ms deep (backpressure-queue-size counts 10 ms chunks of
 # it) so a stall does not drop sound; the page's jitter buffer drops past
 # 80 ms itself, so the depth adds no steady lag.
 /opt/selkies/bin/selkies \
@@ -59,7 +60,9 @@ wait_for "$pulse_socket" "PipeWire's PulseAudio server"
   --backpressure-queue-size=25 \
   --video-streaming-mode=false \
   --framerate=30,8-60 \
-  --encoder=vp8enc &
+  --encoder=vp8enc \
+  --ui-show-sidebar=false \
+  --ui-show-core-buttons=false &
 
 wait -n
 echo "platform-display: a part of the display stack exited" >&2
