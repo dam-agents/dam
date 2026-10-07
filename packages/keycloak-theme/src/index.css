@@ -42,6 +42,7 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-placeholder: var(--placeholder);
   --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --radius-sm: calc(var(--radius) - 4px);
@@ -64,8 +65,10 @@
   --muted-foreground: #4d5358;
   --placeholder: #94989b;
   --accent: #0f62fe;
+  --accent-foreground: #ffffff;
   --input: #dde1e6;
   --ring: #000000;
+
 }
 
 .dark {
@@ -77,8 +80,10 @@
   --muted-foreground: #a8a29e;
   --placeholder: #6a6562;
   --accent: #78a9ff;
+  --accent-foreground: #ffffff;
   --input: #292524;
   --ring: #fafaf9;
+
 }
 
 body {

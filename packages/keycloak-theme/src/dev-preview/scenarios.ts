@@ -72,6 +72,9 @@ const BASE: LoginContext = {
     PLATFORM_REQUEST_ACCESS_URL: "https://ibm.biz/dam-access",
     PLATFORM_SHARE_CLIENT_ID: "platform-share",
   },
+  "x-keycloakify": {
+    messages: {},
+  },
 } as unknown as LoginContext;
 
 export const SIGN_IN: LoginContext = { ...BASE };

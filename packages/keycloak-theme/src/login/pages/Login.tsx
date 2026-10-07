@@ -6,13 +6,13 @@ import { Button } from "../../components/button.js";
 import { Input } from "../../components/input.js";
 import { Label } from "../../components/label.js";
 import { cn } from "../../lib/cn.js";
-import { GrainDefs } from "../components/grain-defs.js";
+import { StackedCharacters } from "../components/animated-characters.js";
 import {
   BandAccess,
+  BandCapabilities,
   BandChannels,
   BandFaq,
-  BandJobs,
-  BandLoop,
+  BandWhatIsDam,
 } from "../components/info-bands.js";
 import { SocialProviderButton } from "../components/social-provider-button.js";
 import { useApplyThemeScript } from "../hooks/use-apply-theme-script.js";
@@ -24,9 +24,7 @@ type LoginContext = Extract<KcContext, { pageId: "login.ftl" }>;
 
 const LOGIN_DOCS_URL = "https://ibm.biz/dam-docs";
 
-export default function Login(
-  props: PageProps<LoginContext, I18n>,
-) {
+export default function Login(props: PageProps<LoginContext, I18n>) {
   const { kcContext, i18n, doUseDefaultCss, Template, classes } = props;
   const { social, realm, url, usernameHidden, login, auth, messagesPerField } =
     kcContext;
@@ -55,26 +53,23 @@ export default function Login(
 
   const showBands = !isShareSignIn;
 
-  const formEl = (
-    <LoginForm
-      url={url}
-      realm={realm}
-      login={login}
-      auth={auth}
-      usernameHidden={usernameHidden}
-      usernameError={usernameError}
-      usernameLabel={usernameLabel}
-      messagesPerField={messagesPerField}
-      isSsoOnly={isSsoOnly}
-      isSubmitting={isSubmitting}
-      setIsSubmitting={setIsSubmitting}
-      providerButtons={providerButtons}
-      msgStr={msgStr}
-      msg={msg}
-    />
-  );
+  const formProps = {
+    url,
+    realm,
+    login,
+    auth,
+    usernameHidden,
+    usernameError,
+    usernameLabel,
+    messagesPerField,
+    isSsoOnly,
+    isSubmitting,
+    setIsSubmitting,
+    providerButtons,
+    msgStr,
+    msg,
+  };
 
-  // Share-artifact: simple single-column via Template, no bands.
   if (!showBands) {
     return (
       <Template
@@ -88,7 +83,7 @@ export default function Login(
         <p className="mt-6 text-[15px] leading-relaxed text-muted-foreground">
           Sign in with your account to view the shared artifact.
         </p>
-        {formEl}
+        <LoginForm {...formProps} formId="kc-form-login" autoFocusInput />
         {requestAccessUrl && (
           <p className="mt-16">
             <a
@@ -103,23 +98,36 @@ export default function Login(
     );
   }
 
-  // Main login: two-column layout with scrolling info bands.
   return (
-    <LoginWithBands
+    <ScrollPage
       kcContext={kcContext}
-      formEl={formEl}
+      brand={brand}
+      heroFormEl={
+        <LoginForm {...formProps} formId="kc-form-login" autoFocusInput />
+      }
+      bottomFormEl={
+        <LoginForm
+          {...formProps}
+          formId="kc-form-login-bottom"
+          autoFocusInput={false}
+        />
+      }
       requestAccessUrl={requestAccessUrl}
     />
   );
 }
 
-function LoginWithBands({
+function ScrollPage({
   kcContext,
-  formEl,
+  brand,
+  heroFormEl,
+  bottomFormEl,
   requestAccessUrl,
 }: {
   kcContext: LoginContext;
-  formEl: React.ReactNode;
+  brand: string;
+  heroFormEl: React.ReactNode;
+  bottomFormEl: React.ReactNode;
   requestAccessUrl: string;
 }) {
   useApplyThemeScript();
@@ -130,103 +138,107 @@ function LoginWithBands({
 
   return (
     <div className="min-h-screen bg-background">
-      <GrainDefs />
+      {/* Hero — sign-in form + marketing column */}
+      <section className="relative min-h-screen">
+        {/* Visual placeholder — right half, full bleed */}
+        <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-gray-200 md:block dark:bg-gray-800" />
 
-      <div className="flex min-h-screen flex-col lg:flex-row">
-        {/* Left column — sign-in, sticky at desktop */}
-        <div className="shrink-0 px-6 pt-12 pb-8 lg:sticky lg:top-0 lg:h-screen lg:w-[480px] lg:overflow-y-auto lg:px-12 lg:py-12 xl:w-[540px]">
-          <div className="max-w-[var(--width-login-col)]">
-            <p className="text-base font-semibold tracking-tight">
-              Deploy Agents Massively
-            </p>
-            <h1 className="mt-3 text-[32px] leading-[1.2] font-light tracking-[-0.03em] md:text-[40px] md:leading-[1.2] lg:text-[48px] lg:leading-[1.15]">
-              Put an agent
-              <br />
-              on it.
-            </h1>
+        <div className="relative flex min-h-screen items-center">
+          <div className="flex w-full justify-center px-6 md:w-1/2">
+            <div className="max-w-sm space-y-6">
+              <h1 className="text-2xl font-semibold leading-none tracking-tight">
+                {`Sign in to ${brand}`}
+              </h1>
 
-            <p className="mt-5 text-[15px] leading-relaxed text-muted-foreground">
-              Give an AI agent a task and a schedule. It runs on its own and
-              reports back.{" "}
-              <a
-                href={LOGIN_DOCS_URL}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="text-accent hover:underline"
-              >
-                Learn more
-              </a>
-            </p>
-
-            {showMessage && kcContext.message && (
-              <div
-                role="alert"
-                className={cn(
-                  "mt-6 rounded-md border px-3 py-2 text-sm",
-                  kcContext.message.type === "error"
-                    ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-                    : "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300",
-                )}
-                dangerouslySetInnerHTML={{
-                  __html: kcSanitize(kcContext.message.summary),
-                }}
-              />
-            )}
-
-            {formEl}
-
-            {/* Scroll hint — desktop only */}
-            <button
-              type="button"
-              className="mt-10 hidden items-center gap-2 text-[14px] text-muted-foreground hover:text-foreground lg:flex"
-              onClick={() => {
-                document
-                  .getElementById("info-bands")
-                  ?.scrollIntoView({ behavior: "smooth" });
-              }}
-            >
-              <span>What is this?</span>
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M8 3v10m0 0l-3.5-3.5M8 13l3.5-3.5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+              {showMessage && kcContext.message && (
+                <div
+                  role="alert"
+                  className={cn(
+                    "rounded-md border px-3 py-2 text-[14px]",
+                    kcContext.message.type === "error"
+                      ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+                      : "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300",
+                  )}
+                  dangerouslySetInnerHTML={{
+                    __html: kcSanitize(kcContext.message.summary),
+                  }}
                 />
-              </svg>
-            </button>
+              )}
+
+              <p className="text-[15px] leading-relaxed text-pretty text-muted-foreground">
+                AI agents that keep working after you close the tab. Connect
+                the tools you already use, and hand off the work.{" "}
+                <a
+                  href={LOGIN_DOCS_URL}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-accent hover:underline"
+                >
+                  Read the docs.
+                </a>
+              </p>
+
+              {heroFormEl}
+
+              {requestAccessUrl && (
+                <p className="mt-16">
+                  <a
+                    href={requestAccessUrl}
+                    className="text-[15px] text-accent hover:underline"
+                  >
+                    Request access
+                  </a>
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Divider — desktop only */}
-        <div className="hidden lg:block lg:w-px lg:self-stretch lg:bg-input" />
-
-        {/* Right column — scrolling info bands */}
-        <div
-          id="info-bands"
-          className="flex-1 px-6 py-12 lg:overflow-y-auto lg:px-12 lg:py-16 xl:px-16"
-        >
-          <div className="max-w-[520px] space-y-16">
-            <BandJobs />
-            <BandLoop />
-            <BandChannels />
-            <BandFaq />
-            <BandAccess requestAccessUrl={requestAccessUrl} />
-          </div>
+        <div className="absolute bottom-8 left-0 right-0 text-center">
+          <button
+            type="button"
+            className="mx-auto inline-flex h-[35px] items-center gap-1.5 rounded-full border border-input bg-background px-3 text-[14px] font-normal text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors hover:bg-muted"
+            onClick={() => {
+              document
+                .getElementById("info-bands")
+                ?.scrollIntoView({ behavior: "smooth" });
+            }}
+          >
+            <span>What is this?</span>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 32 32"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M16 28l-7-7 1.414-1.414L16 25.172l5.586-5.586L23 21l-7 7zM16 21l-7-7 1.414-1.414L16 18.172l5.586-5.586L23 14l-7 7z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
         </div>
+      </section>
+
+      <div id="info-bands">
+        <BandWhatIsDam />
+        <BandCapabilities />
+        <BandChannels />
+        <BandFaq />
+        <BandAccess
+          requestAccessUrl={requestAccessUrl}
+          formEl={bottomFormEl}
+          characters={<StackedCharacters />}
+        />
       </div>
     </div>
   );
 }
 
 function LoginForm({
+  formId,
+  autoFocusInput,
   url,
   realm,
   login,
@@ -242,6 +254,8 @@ function LoginForm({
   msgStr,
   msg,
 }: {
+  formId: string;
+  autoFocusInput: boolean;
   url: LoginContext["url"];
   realm: LoginContext["realm"];
   login: LoginContext["login"];
@@ -261,8 +275,8 @@ function LoginForm({
     <>
       {!isSsoOnly && realm.password && (
         <form
-          id="kc-form-login"
-          className="mt-8 max-w-[var(--width-login-col)] space-y-4"
+          id={formId}
+          className="space-y-4"
           onSubmit={() => {
             setIsSubmitting(true);
             return true;
@@ -272,12 +286,12 @@ function LoginForm({
         >
           {!usernameHidden && (
             <div className="space-y-2">
-              <Label htmlFor="username">{usernameLabel}</Label>
+              <Label htmlFor={`${formId}-username`}>{usernameLabel}</Label>
               <Input
-                id="username"
+                id={`${formId}-username`}
                 name="username"
                 type="text"
-                autoFocus
+                autoFocus={autoFocusInput}
                 autoComplete="username"
                 placeholder="you@example.com"
                 tabIndex={2}
@@ -288,9 +302,9 @@ function LoginForm({
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="password">{msg("password")}</Label>
+            <Label htmlFor={`${formId}-password`}>{msg("password")}</Label>
             <Input
-              id="password"
+              id={`${formId}-password`}
               name="password"
               type="password"
               autoComplete="current-password"
@@ -331,14 +345,14 @@ function LoginForm({
       )}
 
       {isSsoOnly ? (
-        <div className="mt-10 max-w-[var(--width-login-col)] space-y-2">
+        <div className="space-y-2">
           {providerButtons}
         </div>
       ) : (
         providerButtons.length > 0 && (
-          <div className="mt-4 max-w-[var(--width-login-col)]">
+          <div>
             {realm.password && (
-              <div className="relative mb-4">
+              <div className="relative my-4">
                 <div className="absolute inset-0 flex items-center">
                   <span className="border-input w-full border-t" />
                 </div>
