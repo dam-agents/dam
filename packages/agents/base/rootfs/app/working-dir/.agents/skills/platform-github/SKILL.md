@@ -17,7 +17,7 @@ You are running inside a Platform agent pod. GitHub credentials never reach you:
 gh auth status
 ```
 
-It lists every GitHub account granted to this agent, named after the platform Connections, and marks the active one. With one account there is nothing to choose. With several, the active one is what the platform user set as the default, and each account may reach different repositories.
+It lists every GitHub account granted to this agent, named after the platform Connections, and marks the active one. With several, the active one is what the platform user set as the default, and each account may reach different repositories.
 
 ## Act as another account
 
@@ -41,4 +41,4 @@ It lists every GitHub account granted to this agent, named after the platform Co
 
 ## Report, do not work around
 
-If no account you hold can reach what the task needs, say so and stop. The platform user grants access; you never try other credentials.
+If no account you hold can reach what the task needs, say so and stop. The platform user grants access.

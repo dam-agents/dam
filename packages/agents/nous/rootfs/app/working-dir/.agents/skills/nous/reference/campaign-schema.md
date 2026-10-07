@@ -98,7 +98,7 @@ bundle) and `nous schema findings` (EXECUTE_ANALYZE results).
   - `slack` — POST to Slack webhook (`text` field contains markdown).
   - `webhook` — generic HTTP POST (`{"markdown": "..."}` body + custom headers).
   - Best-effort: timeouts, 5xx, DNS failures log warnings but **do NOT** break
-    the gate or campaign. Notification is supplemental.
+    the gate or campaign.
 
 ## Scoring & reproducibility
 

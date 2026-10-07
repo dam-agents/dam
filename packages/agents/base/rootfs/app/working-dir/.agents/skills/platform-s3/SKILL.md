@@ -18,13 +18,13 @@ grep '^\[' ~/.aws/credentials
 echo "$AWS_PROFILE"
 ```
 
-Each `[<profile>]` section is one storage Connection granted to this agent, named after the Connection. Its `[profile <profile>]` section in `~/.aws/config` carries the endpoint, the signing region, path-style addressing and `request_checksum_calculation = when_required`. `AWS_PROFILE` names the profile the platform user set as the default, or the earliest grant. With one profile there is nothing to choose.
+Each `[<profile>]` section is one storage Connection granted to this agent, named after the Connection. Its `[profile <profile>]` section in `~/.aws/config` carries the endpoint, the signing region, path-style addressing and `request_checksum_calculation = when_required`. `AWS_PROFILE` names the profile the platform user set as the default, or the earliest grant.
 
 A profile is a key pair plus an endpoint; the bucket is not in the config. Read the Connection's description or ask the user which bucket to use. When the Connection is limited to one bucket, requests to any other bucket on that endpoint are refused by the gateway.
 
 ## Install a client
 
-No S3 client is baked into the image. Install one when you need it:
+No S3 client is baked into the image:
 
 ```
 uv tool install awscli        # aws-cli v1: aws s3 ls, cp, sync, rm
@@ -54,4 +54,4 @@ Both read the profiles as they are. Always address buckets by name, never by sub
 
 ## Report, do not work around
 
-If no profile you hold can reach what the task needs, say so and stop. The platform user grants storage; you never try other keys.
+If no profile you hold can reach what the task needs, say so and stop. The platform user grants storage.

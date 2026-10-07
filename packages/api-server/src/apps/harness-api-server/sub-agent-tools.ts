@@ -35,7 +35,7 @@ A need the request does not bear out is refused: different-harness on your own h
 
 The sub-agent runs one prompt to completion unattended, reports one result matching the JSON Schema you give, and is then removed. It cannot ask you anything, so the prompt must let it finish on its own. It runs on your model provider; connections you pass must be your own grants (see list_connections). A setup step that fails fails the sub-agent at once with the reason. Returns the sub-agent id at once; call await_subagents with it to get the result. Do not retry this call blindly after an error: a duplicate call is a second sub-agent.`;
 
-const AWAIT_DESCRIPTION = `Wait for sub-agents you started with spawn_subagent. Pass the sub-agent ids you are waiting on. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your sub-agents comes back under unknown.`;
+const AWAIT_DESCRIPTION = `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your sub-agents comes back under unknown.`;
 
 const spawnShape = spawnInvocationRequestSchema.shape;
 
@@ -52,9 +52,7 @@ export type SpawnNeed = (typeof SPAWN_NEEDS)[number];
 const needsInput = z
   .array(z.enum(SPAWN_NEEDS))
   .min(1)
-  .describe(
-    "Why your harness's own subagent cannot do this; one or more of the needs listed in the description.",
-  );
+  .describe("Why your harness's own subagent cannot do this.");
 
 const spawnInput = {
   needs: needsInput,

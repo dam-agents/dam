@@ -186,7 +186,7 @@ describe("slack addressed turns — coalescing", () => {
 
     expect(h.steered).toHaveLength(1);
     expect(h.steered[0]).toContain("specifically the migration");
-    expect(h.steered[0]).toContain("answer everything in one reply");
+    expect(h.steered[0]).toContain("Answer everything in one reply");
 
     h.releaseAll();
     await h.waitFor(() => false);

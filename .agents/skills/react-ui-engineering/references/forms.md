@@ -6,8 +6,6 @@
 
 **[HIGH]** Use RHF + Zod when **any** holds: ≥ 3 fields; cross-field validation (`confirmPassword === password`, "at least one of these three"); a multi-step flow (wizard, tabs sharing validation); dirty-tracking (disable Save until changed, warn on unsaved navigate-away); or schema reuse across submit, API parsing and edit pre-fill. Below that (a 1–2 field input, search box, inline edit), controlled `useState` is fine.
 
-Stack: Zod defines the schema and the values type (`z.infer`), RHF owns register/state/validation/submit, `zodResolver` (`@hookform/resolvers/zod`) joins them.
-
 ## Schema and setup
 
 **[HIGH] The schema is the source of truth; the values type is inferred.** Reuse it for the mutation input instead of redeclaring the shape. It lives in the module (`modules/<domain>/api/schemas.ts` or `types.ts`).
@@ -107,10 +105,4 @@ await createAgent.mutateAsync(values, {
 
 ## Anti-patterns
 
-- A `useState` mega-form (14 fields) → RHF + Zod.
-- Manual dirty-tracking with refs or initial-state copies → `formState.isDirty`.
-- Fetching in the submit handler → mutation.
-- Validation duplicated in Zod and the component → shape in schema, UX in component.
-- Missing `defaultValues`.
-- `register` and `Controller` on the same field.
 - Error UI that bypasses `formState.errors`.

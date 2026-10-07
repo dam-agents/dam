@@ -15,7 +15,7 @@
 # (docs/self-modification.md §9).
 # TODO(creator): write one test_<mode>.sh per pre-flight mode covering: happy
 # path, nothing_to_do, dedup/skip decisions, lock takeover, and error fallback
-# (fail_out on unreachable integration). Then delete the TODO comments.
+# (fail_out on unreachable integration).
 set -u
 
 DIR="$(cd "$(dirname "$0")" && pwd)"

@@ -1,6 +1,6 @@
 # The pre-flight pattern (scheduled runs)
 
-Read when the design has a scheduled run type. Two reasons for the pattern: **cost** (a
+Two reasons for the pattern: **cost** (a
 10-minute heartbeat fires ~144×/day; runs that find nothing must cost ~zero) and
 **auditability** (every decision that can be deterministic is made by a versioned script a
 human can read, test and diff, not a model turn).
@@ -109,8 +109,7 @@ One JSON key per action kind, arrays of self-contained entries:
   those.
 - **A failed read is never an answer.** A scan that couldn't run emits `null`/`unknown`
   plus a warn in `checks`/`logs`, never `0`, an empty array, or "no marker → not handled
-  yet". A failed dedup scan read as absence double-posts; a failed count read as zero
-  reports a clean week never measured.
+  yet".
 
 Emit with `jq -n` from arrays built during detection (see the template's `emit()` helper);
 never hand-concatenate JSON strings.
@@ -123,8 +122,7 @@ never hand-concatenate JSON strings.
   unless unavoidable (and then say so in the design).
 - Cache what is re-fetched per run but rarely changes (e.g. installed helpers keyed by
   their source's content hash).
-- Each scheduled run type states its cost: runs/day × non-idle ratio × agent work. The
-  operator approves numbers, not vibes.
+- Each scheduled run type states its cost: runs/day × non-idle ratio × agent work.
 
 ## Schedule task text
 

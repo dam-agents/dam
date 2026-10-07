@@ -195,7 +195,7 @@ export function catchUpLegend(
     "You were away. The messages below arrived while you were not reading " +
     "them, and each line carries the time it was sent. " +
     omitted +
-    "Read them all, then act only on what is still open and still worth " +
+    "Act only on what is still open and still worth " +
     "acting on. A question someone else has since answered, or a " +
     "conversation that has moved on, needs nothing from you — staying silent " +
     "on it is the right outcome, not a failure. Don't repeat or contradict " +

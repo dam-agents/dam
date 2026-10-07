@@ -75,5 +75,3 @@ Status: PR opened, skipped, or user declined.
 ## Rules
 
 - Never push or open a PR without explicit user approval for that specific item.
-- One branch and PR per issue; never bundle.
-- `mise run check` passes before any diff is presented.

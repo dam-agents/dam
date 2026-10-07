@@ -34,7 +34,7 @@
 # TODO(creator): fill in the check blocks below from the approved design — one
 # check per file, key, and table the ONBOARDING steps create, plus one --live
 # probe per integration. Keep every FAIL's `fix:` actionable and pointed at the
-# doc that owns the shape. Then delete the TODO comments.
+# doc that owns the shape.
 
 set -u
 export LC_ALL=C

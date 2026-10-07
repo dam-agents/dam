@@ -71,7 +71,6 @@ the Phase 2 proposal.
    the interview still has to ask).
 2. Ask where the repo should live (default: a new directory named after the agent, sibling
    to the cwd) and `git init` it.
-3. Carry any purpose the user already described into Phase 1 rather than re-asking.
 
 ### Phase 1 — Domain interview
 
@@ -108,8 +107,6 @@ if the agent talks to people or listens on channels. Present one proposal:
   (often empty).
 - **Hard invariants**, domain-specific ones included.
 - **Cost estimate**: runs/day, expected idle ratio, script vs agent-turn split.
-
-Iterate to approval; the proposal is Phase 3's source of truth.
 
 ### Phase 3 — Scaffold the definition repo
 
@@ -192,7 +189,7 @@ mandatory CLAUDE.md sections, leftover placeholders or `TODO(creator)`, `bash -n
 scripts, dead relative links, the `kit.yaml` invariants a mis-declared kit would otherwise
 fail at only silently (dropped from the catalog, or stamped onboarded at create), and, with
 `--reference`, any copied mention of the reference implementation this skill came from.
-Fix everything and re-run until clean. Then the judgment pass it can't do: no instance
+Then the judgment pass it can't do: no instance
 values hard-coded (they belong in `work/CONFIG.md`), no concept stated twice, CLAUDE.md
 still slim.
 
@@ -256,7 +253,8 @@ line.
   record ordering (write-before-send when a duplicate is worse, send-then-record when a
   silent drop is) and the audit checks the window it leaves open.
 - **Rules are enforced, not narrated.** Anything the runtime depends on that could be
-  violated silently gets a deterministic home alongside its prose: a validator check,
-  pre-flight gate, audit check or test.
+  violated silently (a state-file shape, a file layout, a resource two concurrent runs
+  could share, a "never do X" whose violation still produces output) gets a deterministic
+  home alongside its prose: a validator check, pre-flight gate, audit check or test.
 - **English definitions**, placeholder examples only (`acme/widgets`, `alice`,
   `U0123ABCD`).

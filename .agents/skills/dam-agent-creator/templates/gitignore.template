@@ -27,7 +27,7 @@
 
 # TODO(creator): if the design adds top-level definition files, re-include them above —
 # nothing else at $HOME top level may ever become trackable. Drop the !/.github/ line
-# when the design skipped CI. Then delete this comment.
+# when the design skipped CI.
 
 # TODO(creator): keep this block only when the design bundles its own skills. Runtime
 # skill installs land in .agents/skills/ too, so re-include the bundled ones BY NAME —

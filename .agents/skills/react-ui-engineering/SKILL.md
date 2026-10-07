@@ -5,16 +5,15 @@ description: 'Use this skill whenever writing, editing, reviewing, or refactorin
 
 # React + TypeScript UI Engineering
 
-Opinionated standards for React+TS UI code. When a rule doesn't fit, say so and propose a deviation instead of silently ignoring it.
+When a rule doesn't fit, say so and propose a deviation instead of silently ignoring it.
 
 ## Core principles
 
 1. **One job each.** Every component, hook and function does one thing; extract a pattern on its third appearance.
 2. **Separation by lineage.** State is classified by where its source of truth lives (server, UI, local, URL), each with one home. Mixing lineages is the biggest driver of drift.
 3. **Small files.** A component or hook too big to hold in working memory is a future bug; split along responsibilities.
-4. **Meaningful names**: `selectedAgentId` not `sel`, `hasUnsavedChanges` not `flag`, `useFilteredAgents` not `useData`.
-5. **No prose comments**: follow `docs/guidelines/comment-guidelines.md`. Names, types and structure carry the *why*; only typed comments and tool directives survive `check:comment-types`.
-6. **Types at boundaries, not assertions.** `any`, `as` and untyped fetch responses rot codebases; prefer Zod inference and type guards.
+4. **No prose comments**: follow `docs/guidelines/comment-guidelines.md`. Names, types and structure carry the *why*; only typed comments and tool directives survive `check:comment-types`.
+5. **Types at boundaries, not assertions.** `any`, `as` and untyped fetch responses rot codebases; prefer Zod inference and type guards.
 
 ## Severity tiers
 

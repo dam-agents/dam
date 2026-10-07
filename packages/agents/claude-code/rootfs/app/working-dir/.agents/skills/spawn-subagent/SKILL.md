@@ -69,13 +69,13 @@ from the pod (no URL or token to pass):
 - **Python** — `import driver_sdk as d` works in any `python3` on this image.
 - **JS** — `import { spawn, listImages, listConnections, s } from "/usr/local/lib/driver-sdk.mjs";`
 
-Write a small script and run it. Examples below are Python; the JS names are the
+Examples below are Python; the JS names are the
 camelCase equivalents (`listImages`, `ttlMs`, …) and take one options object.
 
 ## Before you spawn: choose what it runs on — do not guess
 
 1. Run `d.list_images()` and `d.list_connections()` and show the human what is
-   available. If it is not obvious which to use, **ask them**.
+   available.
 2. **What it runs on** — `harness="claude-code"` (or `codex`, `pi`, `bob`; each
    `list_images()` entry names its `harness`). The sub-agent runs on that
    harness's default image and size. `image="<full ref>"` runs a custom image instead, with
@@ -206,8 +206,7 @@ same model connection.
 `spawn()` raises `InvocationFailed` when the sub-agent fails. Its `reason` says
 why — setup failed (a harness config it cannot apply included), deadline
 exceeded, the sub-agent restarted mid-turn, the provider does not fit. The sub-agent is already deleted by then, so **print or
-log the reason**; it is the only diagnosis there is. Let it raise to abort, or
-catch it to retry or skip that item.
+log the reason**; it is the only diagnosis there is.
 
 ## Schema shorthand (`s`)
 

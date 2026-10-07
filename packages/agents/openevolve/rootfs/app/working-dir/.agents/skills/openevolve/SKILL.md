@@ -42,8 +42,7 @@ program's imports. See `AGENTS.md` ("Run dependencies").
 
 The pod-level workflow — the mandatory pre-launch gate, per-run directories,
 backgrounding runs, resume-on-wake, and the hard guardrails — is defined in this
-pod's system context (`AGENTS.md`). **This skill is the setup-and-CLI
-reference**; follow `AGENTS.md` for *how* to operate a run in this environment.
+pod's system context (`AGENTS.md`).
 
 ## Step 1 — set up the evolution model
 
@@ -116,8 +115,7 @@ false` (and keep the file small) — marker-less diff mode wastes iterations on
 and returns a metrics dict that **must include `combined_score`** (a float, by
 convention in `[0, 1]`, higher = better). `combined_score` is the single key
 OpenEvolve optimizes; **if it's absent, OpenEvolve averages all numeric metrics**
-and silently optimizes the wrong thing. Extra metrics are fine for visibility but
-only `combined_score` drives selection.
+and silently optimizes the wrong thing.
 
 ```python
 def evaluate(program_path):

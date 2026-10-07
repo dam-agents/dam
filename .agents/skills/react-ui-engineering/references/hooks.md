@@ -2,7 +2,7 @@
 
 **Read when:** extracting logic from a component, writing a hook, a hook feels bloated, a component has tangled state/effects.
 
-A hook is a named, reusable unit of stateful or effectful logic with one job you can state in one sentence; an "and" in that sentence usually means two hooks.
+A hook has one job you can state in one sentence; an "and" in that sentence usually means two hooks.
 
 **[CRITICAL] Extract a hook when:**
 1. The same `useState` + `useEffect` pattern appears in two or more components.
@@ -57,8 +57,6 @@ modules/{protocol}/hooks/
 └── use-xxx-session.ts           thin orchestrator composing the above (~50 lines)
 ```
 
-Each child is testable on its own.
-
 ## Shared utility hooks
 
 When a stateful pattern repeats across files, extract instead of copying:
@@ -91,9 +89,4 @@ Test pure-logic hooks (projection, derivation) with `@testing-library/react`'s `
 
 ## Anti-patterns
 
-- Mega-hook → split.
 - A hook returning a component → write a component.
-- Fetching without TQ, or `useEffect` for data fetching → TQ query hook.
-- Conditional hook calls (breaks the Rules of Hooks) → stable shape, branch inside.
-- `useState` for derived values → `useMemo` or compute inline.
-- A hook copied across files with small variations → extract or parameterize.

@@ -23,8 +23,6 @@ Index a completed Nous campaign into the shared wiki and generate a visualizatio
 
    If `campaign.yaml` doesn't exist in the campaign directory, check for `report.md` and extract the research question from its opening section. If neither exists, ask the user for the campaign context.
 
-   The campaign context will be embedded in JSON metadata for each output file.
-
 3. **Check idempotency**: Check if `~/.nous/wiki/campaigns/<campaign-name>/concepts.json` exists. If it does, report "Campaign already indexed — skipping to visualization" and jump to step 11.
 
 4. **Write dead-ends.json**: Write a JSON array to `~/.nous/wiki/campaigns/<campaign-name>/dead-ends.json`.
@@ -74,7 +72,7 @@ Index a completed Nous campaign into the shared wiki and generate a visualizatio
    ]
    ```
 
-   Write 5-10 frontiers per campaign. Prioritize frontiers where the next experiment is clearly actionable. **Only include frontiers based on high-confidence principles.**
+   Write 5-10 frontiers per campaign. Prioritize frontiers where the next experiment is clearly actionable.
 
 6. **Write interactions.json**: Write a JSON array to `~/.nous/wiki/campaigns/<campaign-name>/interactions.json`.
 
@@ -279,7 +277,7 @@ Index a completed Nous campaign into the shared wiki and generate a visualizatio
       ...
     }
     ```
-    Write a summary for EVERY iteration (including baseline). These appear in the side panel when a user clicks an iteration node. Keep concise but informative.
+    Write a summary for EVERY iteration (including baseline). These appear in the side panel when a user clicks an iteration node.
 
 11. **Generate visualization and open**: Only after ALL indexing steps (4-10) are complete, invoke `/visualize-campaign` to generate and open the HTML.
 
@@ -306,4 +304,3 @@ Index a completed Nous campaign into the shared wiki and generate a visualizatio
 
 - **Read-only inputs**: Never modify the campaign's own files (ledger.json, principles.json, etc.).
 - **Per-campaign isolation**: Each campaign's structured data lives in `~/.nous/wiki/campaigns/<name>/`. No shared markdown files.
-- **Idempotent**: If the campaign is already indexed (step 3 check), skip indexing and only regenerate the visualization (steps 11-12).

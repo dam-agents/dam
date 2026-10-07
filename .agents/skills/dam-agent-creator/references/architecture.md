@@ -1,7 +1,7 @@
 # Architecture of a generated agent
 
-Structural rules for every generated definition. Read before the Phase 2 proposal; the
-generated `docs/self-modification.md` cites them rather than restating them.
+Structural rules for every generated definition. The generated
+`docs/self-modification.md` cites them rather than restating them.
 
 ## One repo, one data directory, one backup remote
 
@@ -31,7 +31,7 @@ Why this shape works:
 
 ## Run models
 
-Pick per the interview; a definition may combine them.
+A definition may combine them.
 
 - **Scheduled** — platform cron runs. Each run type starts with the pre-flight
   (`references/preflight.md`) and ends, when state changed, with the
@@ -208,9 +208,6 @@ cost of a working run once the idle runs cost nothing.
 
 ## Autonomous effects (opt-in)
 
-Read when an effect a person normally takes may become automatic (merge, deploy, close,
-push a fix).
-
 - **Off by default, granted twice**: a config key the admin enables at onboarding, plus a
   human-managed trigger per item (a label, an approval). The agent never sets the trigger
   itself.
@@ -254,12 +251,6 @@ CHANGELOG.md, docs/self-modification.md, docs/persistence.md), write per-domain:
   read-only pre-flight per scheduled mode. Run it at the end of onboarding, from any
   upgrade step that changes what onboarding produces, and from the weekly audit.
 
-**A rule the runtime depends on is enforced, not narrated.** Any decision that can be
-violated silently (a state-file shape, a file layout, a resource two concurrent runs could
-share, a "never do X" whose violation still produces output) gets a deterministic home
-alongside its prose: validator check, pre-flight gate, audit check or test.
-
 Keep CLAUDE.md slim: run types, contracts, config semantics, trust boundary, hard
-invariants, and a "map of docs/" table saying when to read what. One home per concept;
-elsewhere at most one line + link. Split a file that outgrows its purpose: the definition
+invariants, and a "map of docs/" table saying when to read what. Split a file that outgrows its purpose: the definition
 is paid for in tokens on every read.

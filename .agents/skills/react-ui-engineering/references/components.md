@@ -112,7 +112,7 @@ For optional fields, narrow first so TypeScript keeps the narrowing (`if (!sched
 
 ## Side effects
 
-**[HIGH]** `useEffect` synchronizes with external systems (subscriptions, DOM, network where TQ doesn't fit). Not for derived state (compute it), not for responding to user events (do it in the handler), not for fetching (TQ, `references/async-data.md`). More than ~2 effects means the component orchestrates too much: extract a hook.
+**[HIGH]** `useEffect` synchronizes with external systems (subscriptions, DOM, network where TQ doesn't fit). Not for responding to user events (do it in the handler), not for fetching (TQ, `references/async-data.md`). More than ~2 effects means the component orchestrates too much: extract a hook.
 
 ## Styling
 

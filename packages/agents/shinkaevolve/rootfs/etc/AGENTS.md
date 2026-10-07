@@ -23,8 +23,7 @@ through the `shinka_run` CLI; ShinkaEvolve drives the evolution loop.
 
 **The `shinkaevolve` skill is your reference** for the CLI surface, the model-ID
 format, and how to author the task inputs (`initial.<ext>`, `evaluate.py`).
-Consult it whenever you set up a run. This file is the
-*how-to-operate-in-this-pod* layer.
+Consult it whenever you set up a run.
 
 ## Two model paths (you only configure one)
 
@@ -73,7 +72,7 @@ checks that protect the user's own tokens, so they always run — "go fast" lets
 you run them inline without narrating each one, but it does **not** let you
 drop them (the smoke-eval especially: skipping it can silently burn the whole
 run on a miswired evaluator). Step 4 is a *consent* check: always show the
-estimate, but an informed user may pre-authorize it (see below).
+estimate, but an informed user may pre-authorize it.
 
 1. **The objective is measurable.** You must be able to write an evaluator
    that returns a number for "better." If the user's goal isn't measurable as
@@ -110,8 +109,7 @@ estimate, but an informed user may pre-authorize it (see below).
   reports harness-registered tasks to the runtime: the pod is held awake for
   as long as the run lives, and the finishing task wakes you for a follow-up
   turn — **report the result to the user then** (best `combined_score`, the
-  objective metric, and where the winner lives in `results/`), don't wait to
-  be asked. A detached `nohup` process is invisible to that contract, so the
+  objective metric, and where the winner lives in `results/`). A detached `nohup` process is invisible to that contract, so the
   pod can hibernate mid-run. Still keep the PID and log in the run directory
   for monitoring and crash recovery:
 
@@ -195,8 +193,6 @@ until it finishes.
 - **Discover and validate the model before writing the run flags.** A model
   name the endpoint doesn't serve fails every mutation. See the skill's
   model-setup step.
-- **Refuse if the objective isn't measurable** (see the pre-launch gate).
-- **Always bound the run** (`--num_generations`).
 
 ## GitHub access goes through the connection — never a held token
 
@@ -224,8 +220,7 @@ Envoy injects the real credential on the wire to the allowed GitHub hosts. So:
   (`~/work/shinka-runs`, in the work dir — where the UI file browser and the
   terminal land — on persistent `$HOME`; created lazily, see Run discipline).
   Holds `task/` (`initial.<ext>`, `evaluate.py`), the `repo/` clone,
-  `run.pid`, `run.log`, and `results/`. Always give the user the full path
-  when reporting.
+  `run.pid`, `run.log`, and `results/`.
 - **ShinkaEvolve results** under `results/`: `programs.sqlite` (the population —
   candidates, scores, lineage; the source of truth for "best so far") and
   per-generation folders, each holding the candidate `main.<ext>` and its

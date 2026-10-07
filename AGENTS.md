@@ -18,13 +18,13 @@ For the local k3s cluster (lima), e2e test runs, and mesh/cert failures, use the
 
 ## System Architecture (what this system is)
 
-Platform-specific. Start from [`docs/architecture.md`](docs/architecture.md) to understand the system, and read a subsystem's architecture page before changing its behavior: the architecture pages are the source of truth, so don't infer the architecture from the code alone.
+Start from [`docs/architecture.md`](docs/architecture.md) to understand the system, and read a subsystem's architecture page before changing its behavior: the architecture pages are the source of truth, so don't infer the architecture from the code alone.
 
-ADRs (`docs/adrs/`) are human-first decision history; the agent-facing source of truth is the architecture docs. Agents read ADRs only when authoring a new ADR (via the `/adr` skill) or recompiling docs. Ordinary work (implementing, understanding the current system) uses the architecture docs, never the ADR log. Never link or reference an ADR from code or documentation.
+ADRs (`docs/adrs/`) are human-first decision history; the agent-facing source of truth is the architecture docs. Agents read ADRs only when authoring a new ADR (via the `/adr` skill) or recompiling docs. Never link or reference an ADR from code or documentation.
 
 ## TypeScript Engineering (how to write TS here)
 
-Generic conventions for TS server-side code (tRPC, Zod, RxJS, layering). Invoke the `/typescript-engineering` skill whenever touching server-side TS. If you spot a contradiction between the skill and a Platform architecture doc, **stop and flag it** — the two should stay aligned, so a conflict means one of them is wrong.
+Invoke the `/typescript-engineering` skill whenever touching server-side TS. If you spot a contradiction between the skill and a Platform architecture doc, **stop and flag it** — the two should stay aligned, so a conflict means one of them is wrong.
 
 ## Code rules
 
@@ -59,5 +59,5 @@ Never hardcode the brand (`Dam`, `dam`, or any replacement) in code. The codenam
 
 ## Worktrees
 
-Use `.worktrees/` for git worktrees. Branch naming follows commit conventions (e.g., `feat/session-history`).
+Use `.worktrees/` for git worktrees.
 

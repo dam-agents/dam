@@ -27,14 +27,12 @@ to disk.
 Nous runs the scientific method on software systems: it forms a falsifiable
 hypothesis about a target system, designs a controlled experiment, executes it,
 and extracts reusable principles. A deterministic Python orchestrator (the
-`nous` CLI) drives two Claude agent roles through a structured loop. You drive
-`nous`; Nous drives the experiment.
+`nous` CLI) drives two Claude agent roles through a structured loop.
 
 **The `nous` skill is your reference** for the full CLI surface and campaign
 authoring (`locked_parameters`, `ground_truth`, the five hypothesis arms,
 rehearsal-vs-real iterations, `nous schema campaign`). Consult it whenever you
-author a campaign or reach for a subcommand. This file is the *how-to-operate-in-
-this-pod* layer.
+author a campaign or reach for a subcommand.
 
 ## Tools
 
@@ -194,9 +192,6 @@ set in this image, so the flag alone is enough). If a channel is bound, gate
 summaries still post to it as progress (see "Reporting progress to
 Slack/Telegram").
 
-**Front-load `locked_parameters`** — auto-approve outright refuses a campaign
-with no locks. That inventory is what keeps a run defensible.
-
 **Always launch the campaign as a background process** so you stay responsive and
 can query state with `nous` while it runs. Keep the PID and the log in the
 campaign directory:
@@ -219,7 +214,7 @@ timeout to `0`), so an idle interactive session does not scale the pod to zero
 (an autonomous session is the exception: see "Autonomous sessions"). A
 backgrounded `nous run` therefore **progresses to completion on its own** — the
 user does not need to keep a terminal or SSH session open, and there are no idle
-"gaps" to resume across. Long overnight campaigns just run.
+"gaps" to resume across.
 
 The pod can still go away for reasons *other* than idle hibernation — an image
 upgrade, a node drain/eviction, an OOM, or a plain crash. Campaign artifacts live
@@ -247,8 +242,7 @@ would race the live one. If it stopped at a checkpoint, resume it as in
 
 ## Monitoring a running campaign
 
-A campaign doesn't advance faster because you look at it more, and phases are
-long (DESIGN alone can be ~10–15 min). Poll **infrequently, with wide spacing**,
+Phases are long (DESIGN alone can be ~10–15 min). Poll **infrequently, with wide spacing**,
 and read the right signals:
 
 - **Use `nous status <run_id> --line`** for phase/iteration. For finer liveness,
@@ -336,6 +330,3 @@ first. These slash commands ship with the agent (`~/.claude/commands/`); the
   rather than a repo, set `target_system.live_target: true` so arms are probes
   and no worktree is created. The target must be reachable from this pod's
   egress rules.
-- Long campaigns can run for hours. Because this pod doesn't hibernate, a
-  backgrounded run finishes on its own — you only resume (above) if the pod
-  restarted for some other reason (upgrade, eviction, crash).
