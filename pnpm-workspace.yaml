@@ -18,9 +18,10 @@ minimumReleaseAgeExclude:
   - "@earendil-works/pi-mcp@1.0.2"
   - "@earendil-works/pi-telemetry@1.0.2"
   - "@earendil-works/pi-tui@1.0.2"
-  # @earendil-works/pi-ai 1.0.2 pins @anthropic-ai/sdk 0.129.0 (2026-09-28).
-  # Drop this once it ages past the floor (2026-10-05).
-  - "@anthropic-ai/sdk@0.129.0"
+  # source-map-js 1.2.2 (2026-09-30) fixes CVE-2026-93749, an event-loop DoS
+  # through indexed source-map section offsets. Drop this once it ages past
+  # the floor (2026-10-08).
+  - "source-map-js@1.2.2"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while
@@ -52,7 +53,6 @@ allowBuilds:
   protobufjs: true
   sharp: true
 overrides:
-  "@hono/node-server@<2.0.10": "2.0.12"
   "esbuild@<0.25.0": "0.25.12"
   "esbuild@>=0.27.3 <0.28.1": "0.28.1"
   "serialize-javascript@<7.0.5": "7.0.5"
