@@ -111,7 +111,9 @@ The parts:
   side changes included (a doc, a config key, a migration). The reviewer
   reads anything the body does not declare as undeclared scope.
 - **Issue** — `Closes #<n>` only when the change delivers all the issue asks;
-  `Refs #<n>` and one line on what stays open otherwise.
+  `Refs #<n>` and one line on what stays open otherwise. With no issue, one
+  line says that no issue tracks the change. A link to a pull request is
+  context, never the issue link.
 - **Testing** — what ran, with its result; what could not run, and why.
 - The `author-decisions` block (**The author-decisions block**).
 
