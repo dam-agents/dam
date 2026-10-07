@@ -23,7 +23,7 @@ export function PageHeader({
     <header className={cn("@container mb-8", className)}>
       <div className="flex flex-col @lg:flex-row @lg:flex-wrap @lg:items-center @lg:justify-between @lg:gap-x-4">
         {}
-        <div className="order-1 flex min-h-10 min-w-0 items-center gap-3">
+        <div className="order-1 flex min-h-10 min-w-0 items-center gap-3 @lg:flex-1">
           {leading}
           <h1
             title={typeof title === "string" ? title : undefined}
