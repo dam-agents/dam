@@ -1,3 +1,9 @@
+---
+name: visualize-registry
+description: >-
+  Render the cross-campaign knowledge graph from the Nous wiki registry.
+---
+
 Render the cross-campaign knowledge graph from the Nous wiki registry.
 
 ## Steps

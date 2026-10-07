@@ -56,7 +56,7 @@ Ask in [GitHub Discussions](https://github.com/dam-agents/dam/discussions), or o
 
 ## Working with coding agents
 
-The repository is set up for coding agents such as Claude Code: [`AGENTS.md`](AGENTS.md) holds the conventions agents follow, and project skills live in [`.claude/skills/`](.claude/skills/). You're welcome to use agents; you're responsible for reviewing and understanding everything you submit.
+The repository is set up for coding agents such as Claude Code: [`AGENTS.md`](AGENTS.md) holds the conventions agents follow, and project skills live in [`.agents/skills/`](.agents/skills/), which Codex and Pi read directly and Claude Code reads through the `.claude/skills` link. You're welcome to use agents; you're responsible for reviewing and understanding everything you submit.
 
 ## License
 

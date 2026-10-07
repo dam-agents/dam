@@ -367,8 +367,8 @@ Under `$NOUS_CAMPAIGN_PARENT/<run_id>/`:
 
 When a campaign finishes, harvest its `ledger.json` / `principles.json` into a
 cross-campaign **wiki** at `~/.nous/wiki/` so knowledge compounds across runs.
-These are Claude Code slash commands shipped with this agent (in
-`~/.claude/commands/`); the rendering scripts live at `~/scripts/`:
+These are skills shipped with this agent (in `~/.agents/skills/`); the
+rendering scripts live at `~/scripts/`:
 
 ```bash
 # Extract knowledge, index it into the registry, generate an interactive HTML viz.

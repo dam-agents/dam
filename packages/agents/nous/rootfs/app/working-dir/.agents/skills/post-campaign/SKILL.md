@@ -1,3 +1,9 @@
+---
+name: post-campaign
+description: >-
+  Index a completed Nous campaign into the shared wiki and generate a visualization.
+---
+
 Index a completed Nous campaign into the shared wiki and generate a visualization.
 
 ## Steps

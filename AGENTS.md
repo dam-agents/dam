@@ -14,7 +14,7 @@ pnpm workspaces for TypeScript, plus a Go module (`packages/controller`), Rust c
 
 mise is the task runner, in monorepo mode: each package's tasks live in its `.mise/` directory and are addressed as `//packages/<name>:<task>` (or `:<task>` from inside the package); repo-level tasks (`check`, `test`, `cluster:*`, …) live in the root `.mise/`. Shared task shapes are templates in `.mise/config.toml`; checks are cached by their inputs and run sandboxed. Rules in [`docs/guidelines/mise-tasks.md`](docs/guidelines/mise-tasks.md). **Always use `mise run` for building, checking, testing, and cluster operations — never invoke `go`, `pnpm`, `helm`, `kubectl`, etc. directly.** mise manages tool versions and environment; running tools directly will break. `mise tasks --all` lists everything available.
 
-For the local k3s cluster (lima), e2e test runs, and mesh/cert failures, use the [`cluster-ops`](.claude/skills/cluster-ops/SKILL.md) skill. In a Claude Code on the web session, also use [`ccweb`](.claude/skills/ccweb/SKILL.md): it covers what differs in that sandbox.
+For the local k3s cluster (lima), e2e test runs, and mesh/cert failures, use the [`cluster-ops`](.agents/skills/cluster-ops/SKILL.md) skill. In a Claude Code on the web session, also use [`ccweb`](.agents/skills/ccweb/SKILL.md): it covers what differs in that sandbox.
 
 ## System Architecture (what this system is)
 

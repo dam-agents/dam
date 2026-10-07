@@ -46,9 +46,9 @@ so it inherits the `claude` CLI, the model gateway, and CA trust. On top it adds
 - A Nous-oriented [`AGENTS.md`](./rootfs/etc/AGENTS.md) as the chat-mode system context,
   plus the [`nous` skill](./rootfs/app/working-dir/.agents/skills/nous/SKILL.md) (CLI +
   campaign-authoring reference) shipped into the workspace.
-- The Nous **wiki** slash commands (`post-campaign`, `index-wiki`,
-  `visualize-campaign`, `visualize-registry`, `suggest-next`) vendored verbatim
-  from the upstream repo into `~/.claude/commands/`, with their render scripts in
+- The Nous **wiki** commands (`post-campaign`, `index-wiki`,
+  `visualize-campaign`, `visualize-registry`, `suggest-next`) vendored from the
+  upstream repo as skills into `~/.agents/skills/` (`mise run :sync-commands`), with their render scripts in
   `~/scripts/`. They turn finished campaigns' `ledger.json`/`principles.json`
   into a cross-campaign knowledge graph under `~/.nous/wiki/` so findings
   compound across runs.

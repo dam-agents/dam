@@ -1,3 +1,9 @@
+---
+name: index-wiki
+description: >-
+  Merge a single campaign's extracted knowledge into the cross-campaign registry.
+---
+
 Merge a single campaign's extracted knowledge into the cross-campaign registry.
 
 ## Usage
