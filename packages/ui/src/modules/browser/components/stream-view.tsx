@@ -18,7 +18,7 @@ interface Props {
  * socket reaches the display's stream server through the agent's runtime.
  * The client authenticates with the token in its page's address and
  * reconnects by reloading that page, so each reload of its own, and each
- * reconnect of the panel's control socket, checks the token: once it has been
+ * time the panel's watch of the browser goes live again, checks the token: once it has been
  * renewed, the page is loaded again with the new one, or every reconnect after
  * the old one expires would be refused.
  */

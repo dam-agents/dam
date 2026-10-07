@@ -3,8 +3,8 @@ import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import { WebSocket, WebSocketServer } from "ws";
 import type { WatchPages } from "../../modules/browser-cdp.js";
+import type { BrowserSnapshot } from "agent-runtime-api";
 import {
-  DISPLAY_UNAVAILABLE,
   LAUNCH,
   commandTimeoutMs,
   createCommandQueue,
@@ -12,12 +12,11 @@ import {
   isPreviewProcess,
   killablePreviewPids,
   createBrowserPreview,
-  parseControl,
   previewUrl,
   type BrowserPreview,
 } from "../../modules/browser-preview.js";
 
-// TEST_OVERVIEW: The browser panel shows the agent's one browser — the one every plain agent-browser command drives — streamed from its virtual display. A single supervisor keeps that browser up for every open panel: it launches it once, runs its own browser commands one at a time, tells the panels the page's address and the browser's state, and brings the browser back — without dropping the panels — when it fails to start, dies, or stops answering. A panel's display socket is relayed to the display's stream server.
+// TEST_OVERVIEW: The browser panel shows the agent's one browser — the one every plain agent-browser command drives — streamed from its virtual display. A single supervisor keeps that browser up for every panel watching it: it launches it once, runs its own browser commands one at a time, tells the panels the page's address and the browser's state, runs their toolbar, and brings the browser back — without dropping the panels — when it fails to start, dies, or stops answering. It is offered only on an agent that requires named connections. A panel's display socket is relayed to the display's stream server.
 
 const closers: (() => Promise<void> | void)[] = [];
 
@@ -99,14 +98,11 @@ function fakeBrowser() {
   return { calls, run, watch, browser };
 }
 
-async function host(preview: BrowserPreview) {
+async function displayHost(preview: BrowserPreview) {
   const wss = new WebSocketServer({ noServer: true });
   const server: Server = createServer();
   server.on("upgrade", (req, socket, head) => {
-    const display = req.url?.startsWith("/display");
-    wss.handleUpgrade(req, socket, head, (ws) =>
-      display ? preview.attachDisplay(ws) : preview.attach(ws),
-    );
+    wss.handleUpgrade(req, socket, head, (ws) => preview.attachDisplay(ws));
   });
   await new Promise<void>((r) => server.listen(0, r));
   closers.push(() => {
@@ -114,8 +110,8 @@ async function host(preview: BrowserPreview) {
     return new Promise<void>((r) => server.close(() => r()));
   });
   const port = (server.address() as { port: number }).port;
-  return async (path = "/") => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`);
+  return async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/`);
     closers.push(() => ws.terminate());
     const messages: (string | Buffer)[] = [];
     ws.on("message", (d: Buffer, isBinary) =>
@@ -125,15 +121,28 @@ async function host(preview: BrowserPreview) {
       ws.once("open", () => res());
       ws.once("error", rej);
     });
-    const json = () =>
-      messages
-        .filter((m): m is string => typeof m === "string")
-        .map((m) => JSON.parse(m) as Record<string, unknown>);
-    const states = () =>
-      json()
-        .filter((m) => m.type === "browser_state")
-        .map((m) => m.state);
-    return { ws, messages, json, states };
+    return { ws, messages };
+  };
+}
+
+function watching(preview: BrowserPreview) {
+  const abort = new AbortController();
+  const snapshots: BrowserSnapshot[] = [];
+  const result = preview.watch(abort.signal);
+  if (!result.ok) throw new Error(`watch refused: ${result.error.kind}`);
+  void (async () => {
+    for await (const snapshot of result.value) snapshots.push(snapshot);
+  })();
+  closers.push(() => abort.abort());
+  const states = () =>
+    snapshots
+      .map((s) => s.state)
+      .filter((state, i, all) => i === 0 || all[i - 1] !== state);
+  return {
+    snapshots,
+    states,
+    page: () => snapshots.at(-1)?.page ?? null,
+    stop: () => abort.abort(),
   };
 }
 
@@ -157,6 +166,7 @@ function preview(
     profileDir: "/tmp/x",
     socketDir: "/tmp/y",
     available: () => true,
+    offered: () => true,
     stopBrowser: async () => {},
     retryDelaysMs: [10],
     log: () => {},
@@ -189,47 +199,22 @@ describe("previewUrl", () => {
   });
 });
 
-describe("parseControl", () => {
-  // TEST_SCENARIO: Only the panel's own control messages are acted on; anything else or malformed is ignored.
-  it("recognises navigation and the browser's restart only", () => {
-    expect(parseControl('{"type":"navigate","url":"http://a"}')).toEqual({
-      type: "navigate",
-      url: "http://a",
-    });
-    for (const type of [
-      "reload",
-      "back",
-      "forward",
-      "clear_data",
-      "restart_browser",
-    ])
-      expect(parseControl(JSON.stringify({ type }))).toEqual({ type });
-    expect(
-      parseControl('{"type":"resize","width":900,"height":640}'),
-    ).toBeNull();
-    expect(parseControl('{"type":"navigate"}')).toBeNull();
-    expect(parseControl("{")).toBeNull();
-  });
-});
-
 describe("browser preview", () => {
-  // TEST_SCENARIO: A panel connects. The browser is launched through agent-browser — the same browser the agent's own commands drive — and the panel is told it is ready and what page it shows. An address from the panel opens over CDP, and the page's state reaches the panel as the browser reports it, with no polling.
+  // TEST_SCENARIO: A panel starts watching. The browser is launched through agent-browser — the same browser the agent's own commands drive — and the panel is told it is ready and what page it shows. An address from the panel opens over CDP, and the page's state reaches the panel as the browser reports it, with no polling.
   it("launches, navigates and reports the page", async () => {
     const fake = fakeBrowser();
-    const connect = await host(preview(fake));
-    const { ws, states, json } = await connect();
+    const browser = preview(fake);
+    closers.push(() => browser.close());
+    const panel = watching(browser);
     await until(launched);
     expect(isLaunch(fake.calls[0]!)).toBe(true);
-    await until(() => states().includes("ready"));
-    expect(json()).toContainEqual(
-      expect.objectContaining({ type: "page", url: "about:blank" }),
-    );
-    ws.send(JSON.stringify({ type: "navigate", url: "http://127.0.0.1:5173" }));
-    await until(() =>
-      json().some(
-        (m) => m.type === "page" && m.url === "http://127.0.0.1:5173/",
-      ),
-    );
+    await until(() => panel.states().includes("ready"));
+    expect(panel.page()?.url).toBe("about:blank");
+    expect(await browser.navigate("http://127.0.0.1:5173")).toEqual({
+      ok: true,
+      value: undefined,
+    });
+    await until(() => panel.page()?.url === "http://127.0.0.1:5173/");
     expect(fake.calls).toContainEqual([
       "page",
       "navigate",
@@ -245,42 +230,54 @@ describe("browser preview", () => {
       opts.onState(watcher.state()!);
       return watcher;
     };
-    const connect = await host(preview(fake, { watch: eager }));
-    const { states, json } = await connect();
-    await until(() => states().includes("ready"));
-    expect(json().some((m) => m.type === "page")).toBe(true);
-    expect(json().filter((m) => m.state === "failed")).toEqual([]);
+    const browser = preview(fake, { watch: eager });
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().includes("ready"));
+    expect(panel.page()).not.toBeNull();
+    expect(panel.states()).not.toContain("failed");
   });
 
-  // TEST_SCENARIO: an agent whose image lacks the display stack cannot show its browser; both of the panel's sockets are told so in words and closed, rather than showing a blank panel, and no browser is started.
-  it("refuses a panel when the image has no display stack", async () => {
-    const fake = fakeBrowser();
-    const connect = await host(preview(fake, { available: () => false }));
-    for (const path of ["/", "/display"]) {
-      const { ws, json } = await connect(path);
+  // TEST_SCENARIO: the browser panel is the user browsing from inside the agent's sandbox, through its gateway. On an agent whose gateway injects its credentials into unaddressed requests, that would be browsing as the agent's accounts, so the platform refuses it there — not only hides it: watching, every toolbar action and the display socket are refused before any browser starts. An image without the display stack is refused the same way, with its own reason.
+  it("refuses an agent without named connections, or without a display", async () => {
+    for (const [extra, kind] of [
+      [{ offered: () => false }, "NotOffered"],
+      [{ available: () => false }, "NoDisplay"],
+    ] as const) {
+      const fake = fakeBrowser();
+      const browser = preview(fake, extra);
+      closers.push(() => browser.close());
+      expect(browser.watch()).toEqual({ ok: false, error: { kind } });
+      expect(await browser.navigate("http://a/")).toEqual({
+        ok: false,
+        error: { kind },
+      });
+      expect(await browser.act("restart")).toEqual({
+        ok: false,
+        error: { kind },
+      });
+      const connect = await displayHost(browser);
+      const { ws } = await connect();
       const code = await new Promise<number>((r) => ws.once("close", r));
       expect(code).toBe(1011);
-      expect(json()).toContainEqual({
-        type: "preview_error",
-        message: DISPLAY_UNAVAILABLE,
-      });
+      expect(fake.calls).toEqual([]);
     }
-    expect(fake.calls).toEqual([]);
   });
 
-  // TEST_SCENARIO: The toolbar's navigate, reload, stop, back and forward run on the page over CDP, never through agent-browser, whose one-at-a-time queue may hold the agent's own commands. A non-web address is answered with an error rather than opened.
+  // TEST_SCENARIO: The toolbar's reload, stop, back and forward run on the page over CDP, never through agent-browser, whose one-at-a-time queue may hold the agent's own commands. A non-web address is refused rather than opened.
   it("runs the toolbar on the page and refuses non-web addresses", async () => {
     const fake = fakeBrowser();
-    const connect = await host(preview(fake));
-    const { ws, json, states } = await connect();
-    await until(() => states().includes("ready"));
+    const browser = preview(fake);
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().includes("ready"));
 
-    for (const type of ["reload", "stop", "back", "forward"])
-      ws.send(JSON.stringify({ type }));
-    ws.send(JSON.stringify({ type: "navigate", url: "file:///etc/passwd" }));
-    await until(() => json().some((m) => m.type === "preview_error"));
-    await until(() => fake.calls.filter((c) => c[0] === "page").length >= 4);
-
+    for (const action of ["reload", "stop", "back", "forward"] as const)
+      expect((await browser.act(action)).ok).toBe(true);
+    expect(await browser.navigate("file:///etc/passwd")).toEqual({
+      ok: false,
+      error: { kind: "NotWebAddress" },
+    });
     for (const action of ["reload", "stop", "back", "forward"])
       expect(fake.calls).toContainEqual(["page", action]);
     expect(fake.calls.flat()).not.toContain("file:///etc/passwd");
@@ -291,31 +288,32 @@ describe("browser preview", () => {
   it("opens an address sent while the browser starts", async () => {
     const fake = fakeBrowser();
     fake.browser.launchFailures = 1;
-    const connect = await host(preview(fake));
-    const { ws, states } = await connect();
-    ws.send(JSON.stringify({ type: "navigate", url: "http://a/" }));
-    await until(() => states().at(-1) === "ready");
+    const browser = preview(fake);
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    expect((await browser.navigate("http://a/")).ok).toBe(true);
+    await until(() => panel.states().at(-1) === "ready");
     await until(() =>
       fake.calls.some((c) => c[0] === "page" && c[2] === "http://a/"),
     );
   });
 
-  // TEST_SCENARIO: the agent may be using the browser while no panel is open, so the last panel closing leaves it running; the supervisor only stops watching it.
-  it("leaves the browser running when the last panel closes", async () => {
+  // TEST_SCENARIO: the agent may be using the browser while no panel is open, so the last panel leaving leaves it running; the supervisor only stops watching it.
+  it("leaves the browser running when the last panel leaves", async () => {
     const fake = fakeBrowser();
     let stops = 0;
-    const connect = await host(
-      preview(fake, {
-        healthCheckMs: 20,
-        stopBrowser: async () => {
-          stops++;
-        },
-      }),
-    );
-    const { ws } = await connect();
+    const browser = preview(fake, {
+      healthCheckMs: 20,
+      stopBrowser: async () => {
+        stops++;
+      },
+    });
+    closers.push(() => browser.close());
+    const panel = watching(browser);
     await until(launched);
-    ws.close();
-    await pause(100);
+    panel.stop();
+    await until(() => browser.viewers() === 0);
+    await pause(60);
     const pings = fake.browser.pings;
     await pause(100);
     expect(stops).toBe(0);
@@ -324,12 +322,13 @@ describe("browser preview", () => {
 });
 
 describe("one browser for every panel", () => {
-  // TEST_SCENARIO: two panels — two tabs, or a reconnect racing the old socket — must not launch the browser twice; they share one launch and both are told it is ready.
+  // TEST_SCENARIO: two panels — two tabs, or a reconnect racing the old subscription — must not launch the browser twice; they share one launch and both are told it is ready.
   it("shares one launch between panels", async () => {
     const fake = fakeBrowser();
-    const connect = await host(preview(fake));
-    const a = await connect();
-    const b = await connect();
+    const browser = preview(fake);
+    closers.push(() => browser.close());
+    const a = watching(browser);
+    const b = watching(browser);
     await until(() => a.states().includes("ready"));
     await until(() => b.states().includes("ready"));
     expect(fake.calls.filter(isLaunch)).toHaveLength(1);
@@ -337,73 +336,70 @@ describe("one browser for every panel", () => {
 });
 
 describe("recovery", () => {
-  // TEST_SCENARIO: right after a boot the browser can fail to start a few times — a profile lock from the last boot, a display still coming up. The panel stays connected and is told the browser is starting, later that it failed; the supervisor keeps retrying with a growing delay, and the panel goes live once a launch works, without reconnecting.
-  it("retries a failed launch while the panel stays connected", async () => {
+  // TEST_SCENARIO: right after a boot the browser can fail to start a few times — a profile lock from the last boot, a display still coming up. The panel keeps watching and is told the browser is starting, later that it failed and why; the supervisor keeps retrying with a growing delay, and the panel goes live once a launch works.
+  it("retries a failed launch while the panel keeps watching", async () => {
     const fake = fakeBrowser();
     fake.browser.launchFailures = 3;
-    const connect = await host(preview(fake));
-    const { ws, states, json } = await connect();
-    await until(() => states().at(-1) === "ready");
+    const browser = preview(fake);
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().at(-1) === "ready");
     expect(fake.calls.filter(isLaunch)).toHaveLength(4);
-    expect(states()).toEqual(["starting", "failed", "starting", "ready"]);
-    expect(json().find((m) => m.state === "failed")?.message).toContain(
-      "Chrome exited early",
-    );
-    expect(ws.readyState).toBe(WebSocket.OPEN);
+    expect(panel.states()).toContain("failed");
+    expect(
+      panel.snapshots.find((s) => s.state === "failed")?.message,
+    ).toContain("Chrome exited early");
   });
 
-  // TEST_SCENARIO: the browser can die under an open panel — the agent closed it, Chrome crashed. Its CDP connection drops at once; the panel is not dropped but told the browser is starting, and the supervisor launches it again.
+  // TEST_SCENARIO: the browser can die under an open panel — the agent closed it, Chrome crashed. Its CDP connection drops at once; the panel is told the browser is starting, and the supervisor launches it again.
   it("brings a dead browser back under an open panel", async () => {
     const fake = fakeBrowser();
-    const connect = await host(preview(fake));
-    const { ws, states } = await connect();
-    await until(() => states().includes("ready"));
+    const browser = preview(fake);
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().includes("ready"));
 
     fake.browser.die();
     await until(() => fake.calls.filter(isLaunch).length === 2 && launched());
-    await until(() => states().at(-1) === "ready");
-    expect(states().slice(-2)).toEqual(["starting", "ready"]);
-    expect(ws.readyState).toBe(WebSocket.OPEN);
+    await until(() => panel.states().at(-1) === "ready");
+    expect(panel.states().slice(-2)).toEqual(["starting", "ready"]);
   });
 
   // TEST_SCENARIO: a browser that stops answering — every check timing out — is stopped and launched again once it has been silent past the limit, rather than leaving the panel frozen until someone notices.
   it("restarts a browser that stopped answering", async () => {
     const fake = fakeBrowser();
     let stops = 0;
-    const connect = await host(
-      preview(fake, {
-        healthCheckMs: 20,
-        unresponsiveRestartMs: 100,
-        stopBrowser: async () => {
-          stops++;
-          fake.browser.alive = false;
-          fake.browser.failPing = false;
-        },
-      }),
-    );
-    const { ws } = await connect();
+    const browser = preview(fake, {
+      healthCheckMs: 20,
+      unresponsiveRestartMs: 100,
+      stopBrowser: async () => {
+        stops++;
+        fake.browser.alive = false;
+        fake.browser.failPing = false;
+      },
+    });
+    closers.push(() => browser.close());
+    watching(browser);
     await until(launched);
 
     fake.browser.failPing = true;
     await until(() => stops === 1);
     await until(() => fake.calls.filter(isLaunch).length >= 2 && launched());
-    expect(ws.readyState).toBe(WebSocket.OPEN);
   });
 
   // TEST_SCENARIO: the agent keeps the browser busy — a loop of screenshots of a heavy Flash game — so the health check times out again and again. A busy browser is not a dead one: it is neither stopped nor relaunched before the silence limit, which killed the user's page when two timeouts were taken for a lost browser.
   it("leaves a busy browser alone until the silence limit", async () => {
     const fake = fakeBrowser();
     let stops = 0;
-    const connect = await host(
-      preview(fake, {
-        healthCheckMs: 20,
-        unresponsiveRestartMs: 60_000,
-        stopBrowser: async () => {
-          stops++;
-        },
-      }),
-    );
-    await connect();
+    const browser = preview(fake, {
+      healthCheckMs: 20,
+      unresponsiveRestartMs: 60_000,
+      stopBrowser: async () => {
+        stops++;
+      },
+    });
+    closers.push(() => browser.close());
+    watching(browser);
     await until(launched);
     fake.browser.failPing = true;
     await pause(300);
@@ -415,35 +411,34 @@ describe("recovery", () => {
   // TEST_SCENARIO: with the browser stuck, a health check never returns; the next checks must wait for it rather than pile up.
   it("runs one health check at a time", async () => {
     const fake = fakeBrowser();
-    const connect = await host(preview(fake, { healthCheckMs: 20 }));
-    const { states } = await connect();
-    await until(() => states().includes("ready"));
+    const browser = preview(fake, { healthCheckMs: 20 });
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().includes("ready"));
     fake.browser.hangPing = true;
     const before = fake.browser.pings;
     await pause(300);
     expect(fake.browser.pings - before).toBeLessThanOrEqual(1);
   });
 
-  // TEST_SCENARIO: Restart browser and Clear browser data stop the shared browser — on Clear, its profile is deleted — and the supervisor launches a fresh one. The panels stay connected through it and see the browser starting, then ready.
+  // TEST_SCENARIO: Restart browser and Clear browser data stop the shared browser — on Clear, its profile is deleted — and the supervisor launches a fresh one. The panels keep watching through it and see the browser starting, then ready.
   it("restarts the browser without dropping the panels", async () => {
     const fake = fakeBrowser();
     let stops = 0;
-    const connect = await host(
-      preview(fake, {
-        stopBrowser: async () => {
-          stops++;
-          fake.browser.alive = false;
-        },
-      }),
-    );
-    const { ws, states } = await connect();
-    await until(() => states().includes("ready"));
-    ws.send(JSON.stringify({ type: "restart_browser" }));
+    const browser = preview(fake, {
+      stopBrowser: async () => {
+        stops++;
+        fake.browser.alive = false;
+      },
+    });
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().includes("ready"));
+    expect((await browser.act("restart")).ok).toBe(true);
     await until(() => fake.calls.filter(isLaunch).length === 2);
-    await until(() => states().at(-1) === "ready");
+    await until(() => panel.states().at(-1) === "ready");
     expect(stops).toBe(1);
-    expect(states().slice(-2)).toEqual(["starting", "ready"]);
-    expect(ws.readyState).toBe(WebSocket.OPEN);
+    expect(panel.states().slice(-2)).toEqual(["starting", "ready"]);
   });
 });
 
@@ -457,12 +452,12 @@ describe("display stream", () => {
       () => new Promise<void>((r) => (up ? up.close(() => r()) : r())),
     );
     const fake = fakeBrowser();
-    const connectTo = await host(
+    const connectTo = await displayHost(
       preview(fake, {
         displayStreamUrl: `ws://127.0.0.1:${port}/api/websockets`,
       }),
     );
-    const { ws, messages } = await connectTo("/display");
+    const { ws, messages } = await connectTo();
     ws.send("hello");
     ws.send(Buffer.from([1, 2, 3]));
     await pause(700);
@@ -488,12 +483,12 @@ describe("display stream", () => {
   it("closes a display socket that sends too much before the server answers", async () => {
     const port = await freePort();
     const fake = fakeBrowser();
-    const connectTo = await host(
+    const connectTo = await displayHost(
       preview(fake, {
         displayStreamUrl: `ws://127.0.0.1:${port}/api/websockets`,
       }),
     );
-    const { ws } = await connectTo("/display");
+    const { ws } = await connectTo();
     const closed = new Promise<number>((r) => ws.once("close", r));
     for (let i = 0; i < 5; i++) ws.send(Buffer.alloc(64 * 1024));
     expect(await closed).toBe(1013);

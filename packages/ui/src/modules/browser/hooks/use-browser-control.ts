@@ -1,38 +1,59 @@
+import { TRPCClientError } from "@trpc/client";
+import {
+  type BrowserSnapshot,
+  browserSnapshotSchema,
+  type PageState,
+} from "agent-runtime-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getAccessToken } from "../../../auth.js";
-import {
-  type BrowserState,
-  type PageState,
-  parseControlMessage,
-} from "../lib/control.js";
+import { watchWithRetry } from "../../../lib/watch-retry.js";
+import { agentTrpc } from "../../agents/agent-trpc.js";
 
-const RECONNECT_DELAYS_MS = [500, 1_000, 2_000, 5_000, 10_000];
-const GIVE_UP_NOTICE_AFTER = 3;
 const ERROR_SHOWN_MS = 6_000;
 
 export type BrowserConnection =
   "connecting" | "live" | "disconnected" | "unavailable";
 
+const NO_PAGE: PageState = {
+  url: "",
+  title: "",
+  loading: false,
+  canGoBack: false,
+  canGoForward: false,
+};
+
+const refused = (error: unknown) =>
+  error instanceof TRPCClientError &&
+  (error.data?.code === "FORBIDDEN" ||
+    error.data?.code === "PRECONDITION_FAILED");
+
+const messageOf = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
+type Client = ReturnType<typeof agentTrpc>;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the browser panel's control of the agent's
+ * browser, over the agent's tRPC. Watching keeps the browser running while the
+ * panel is open and reports its state and page; the toolbar's actions are
+ * mutations. An address asked for before the watch is live is sent once it
+ * is, as the agent may still be waking. `connects` counts each time the watch
+ * goes live, which the stream page uses to check its token. An agent that does
+ * not offer the panel is told apart from one that cannot be reached, and is
+ * not retried.
+ */
 export function useBrowserControl(agentId: string) {
-  const wsRef = useRef<WebSocket | null>(null);
   const [connection, setConnection] = useState<BrowserConnection>("connecting");
-  const [page, setPage] = useState<PageState>({
-    url: "",
-    title: "",
-    loading: false,
-    canGoBack: false,
-    canGoForward: false,
+  const [snapshot, setSnapshot] = useState<BrowserSnapshot>({
+    state: "starting",
+    message: null,
+    page: null,
   });
   const [error, setError] = useState<string | null>(null);
-  const [browser, setBrowser] = useState<{
-    state: BrowserState;
-    message: string | null;
-  }>({ state: "starting", message: null });
-  const [connectKey, setConnectKey] = useState(0);
+  const [watchKey, setWatchKey] = useState(0);
   const [connects, setConnects] = useState(0);
-  const failedAttemptsRef = useRef(0);
-  const pendingUrlRef = useRef<string | null>(null);
+  const live = useRef(false);
+  const pendingUrl = useRef<string | null>(null);
 
   useEffect(() => {
     if (!error) return;
@@ -40,107 +61,76 @@ export function useBrowserControl(agentId: string) {
     return () => clearTimeout(timer);
   }, [error]);
 
-  const send = useCallback((msg: object) => {
-    const ws = wsRef.current;
-    if (ws?.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify(msg));
-  }, []);
+  const run = useCallback(
+    (call: (client: Client) => Promise<unknown>) => {
+      setError(null);
+      call(agentTrpc(agentId)).catch((e: unknown) => setError(messageOf(e)));
+    },
+    [agentId],
+  );
 
   const navigate = useCallback(
     (url: string) => {
-      setError(null);
-      setPage((p) => ({ ...p, url, loading: true }));
-      if (wsRef.current?.readyState === WebSocket.OPEN)
-        send({ type: "navigate", url });
-      else pendingUrlRef.current = url;
+      setSnapshot((s) => ({
+        ...s,
+        page: { ...(s.page ?? NO_PAGE), url, loading: true },
+      }));
+      if (!live.current) {
+        pendingUrl.current = url;
+        return;
+      }
+      run((client) => client.browser.navigate.mutate({ url }));
     },
-    [send],
+    [run],
   );
 
   useEffect(() => {
-    let cancelled = false;
-    let ws: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-    void (async () => {
-      setConnection("connecting");
-      const token = await getAccessToken();
-      if (cancelled) return;
-      const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-      ws = new WebSocket(
-        `${scheme}//${location.host}/api/agents/${encodeURIComponent(agentId)}/browser?token=${encodeURIComponent(token)}`,
-      );
-      wsRef.current = ws;
-      ws.onopen = () => {
-        if (cancelled) return;
-        failedAttemptsRef.current = 0;
-        setConnection("live");
-        setConnects((n) => n + 1);
-        if (pendingUrlRef.current) {
-          send({ type: "navigate", url: pendingUrlRef.current });
-          pendingUrlRef.current = null;
-        }
-      };
-      ws.onmessage = (e: MessageEvent<string>) => {
-        if (typeof e.data !== "string") return;
-        const msg = parseControlMessage(e.data);
-        if (!msg) return;
-        if (msg.type === "page")
-          setPage({
-            url: msg.url,
-            title: msg.title,
-            loading: msg.loading,
-            canGoBack: msg.canGoBack,
-            canGoForward: msg.canGoForward,
-          });
-        else if (msg.type === "browser_state")
-          setBrowser({ state: msg.state, message: msg.message });
-        else setError(msg.message);
-      };
-      ws.onclose = (e) => {
-        if (cancelled) return;
-        if (e.code === 1011 && e.reason === "display unavailable")
-          return setConnection("unavailable");
-        failedAttemptsRef.current += 1;
-        const attempt = failedAttemptsRef.current;
-        setConnection(
-          attempt > GIVE_UP_NOTICE_AFTER ? "disconnected" : "connecting",
-        );
-        reconnectTimer = setTimeout(
-          () => setConnectKey((k) => k + 1),
-          RECONNECT_DELAYS_MS[
-            Math.min(attempt - 1, RECONNECT_DELAYS_MS.length - 1)
-          ],
-        );
-      };
-    })().catch(() => {
-      if (!cancelled) setConnection("disconnected");
+    live.current = false;
+    setConnection("connecting");
+    return watchWithRetry((onError) => {
+      let started = false;
+      return agentTrpc(agentId).browser.watch.subscribe(undefined, {
+        onData: (data) => {
+          const parsed = browserSnapshotSchema.safeParse(data);
+          if (!parsed.success) return;
+          if (!started) {
+            started = true;
+            live.current = true;
+            setConnection("live");
+            setConnects((n) => n + 1);
+            const url = pendingUrl.current;
+            pendingUrl.current = null;
+            if (url) run((client) => client.browser.navigate.mutate({ url }));
+          }
+          setSnapshot(parsed.data);
+        },
+        onError: (e) => {
+          live.current = false;
+          if (refused(e)) {
+            setConnection("unavailable");
+            setError(messageOf(e));
+            return;
+          }
+          setConnection("disconnected");
+          onError(e);
+        },
+      });
     });
-
-    return () => {
-      cancelled = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      ws?.close();
-      wsRef.current = null;
-    };
-  }, [agentId, connectKey, send]);
+  }, [agentId, watchKey, run]);
 
   return {
     connection,
     connects,
-    browser,
-    page,
+    browser: { state: snapshot.state, message: snapshot.message },
+    page: snapshot.page ?? NO_PAGE,
     error,
     navigate,
-    reload: () => send({ type: "reload" }),
-    stop: () => send({ type: "stop" }),
-    back: () => send({ type: "back" }),
-    forward: () => send({ type: "forward" }),
-    clearData: () => send({ type: "clear_data" }),
-    restartBrowser: () => send({ type: "restart_browser" }),
-    reconnect: () => {
-      failedAttemptsRef.current = 0;
-      setConnectKey((k) => k + 1);
-    },
+    reload: () => run((client) => client.browser.reload.mutate()),
+    stop: () => run((client) => client.browser.stop.mutate()),
+    back: () => run((client) => client.browser.back.mutate()),
+    forward: () => run((client) => client.browser.forward.mutate()),
+    clearData: () => run((client) => client.browser.clearData.mutate()),
+    restartBrowser: () => run((client) => client.browser.restart.mutate()),
+    reconnect: () => setWatchKey((k) => k + 1),
   };
 }
