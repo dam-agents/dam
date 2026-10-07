@@ -116,7 +116,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     const shared = deps.backgroundWork;
     const owned = (): string[] =>
       shared
-        .held()
+        .reported()
         .map((h) => h.sessionId)
         .filter((sid) => ownsSession(lease(), sid));
     return {
@@ -124,11 +124,16 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       hasWork: (sid) => shared.hasWork(sid),
       held: () =>
         shared.held().filter((h) => ownsSession(lease(), h.sessionId)),
+      reported: () =>
+        shared.reported().filter((h) => ownsSession(lease(), h.sessionId)),
+      drop: (sid, itemId) => shared.drop(sid, itemId),
+      keepChanged: () => shared.keepChanged(),
       forget: (sid) => shared.forget(sid),
       clear: () => {
         for (const sid of owned()) shared.forget(sid);
       },
       onRelease: (cb) => releaseListeners.push(cb),
+      onChange: (cb) => shared.onChange(cb),
     };
   }
 

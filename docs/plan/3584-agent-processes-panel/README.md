@@ -125,13 +125,17 @@ processes.applyPendingRestart: mutation () => void                       // 03
 ```
 
 `pendingRestart` is part of the `list` result from 01 on, always `null` until 03 fills it.
+`setKeep` and `stop` answer `NOT_FOUND` for a key no running row has, and `BAD_REQUEST`
+with a message written to be shown (a Turn Process for `setKeep`, a Harness Task without a
+pid for `stop`). (02: a user override on a Harness Task is stored under the task, so it
+holds when the row's key changes from `task:…` to `pid:start` once its process is found.)
 
 ## Sub-issues
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
 | 01 | ✅ [Process inventory](./01-process-inventory.md) | Runtime `/proc` scan, classification, finished history document, `processes.list` / `watch` / `output` | — |
-| 02 | [Keep marks, user override, Stop](./02-keep-marks-and-stop.md) | `platform-keep` CLI, loopback mark endpoint, `setKeep` / `stop`, busy integration, registry split, agent instructions | 01 |
+| 02 | ✅ [Keep marks, user override, Stop](./02-keep-marks-and-stop.md) | `platform-keep` CLI, loopback mark endpoint, `setKeep` / `stop`, busy integration, registry split, agent instructions | 01 |
 | 03 | [Settings wait for kept Harness Tasks](./03-restart-deferral.md) | Harness lease never forces a recycle while a kept task runs, `pendingRestart`, `applyPendingRestart` | 02 |
 | 04 | [Processes panel (read-only)](./04-processes-panel.md) | `processes` feature flag, sidebar section, running and finished lists, output view, live updates, Always-on wording | 01 |
 | 05 | [Panel controls and header indicator](./05-panel-controls.md) | Stop, keep switch with who decided, Apply-now banner, header indicator | 02, 03, 04 |

@@ -110,6 +110,11 @@ export interface AcpRuntime {
   shutdown(): void;
 }
 
+export interface KeptProcesses {
+  count(): number;
+  onRelease(cb: () => void): void;
+}
+
 export interface AcpRuntimeDeps {
   spawnAgent: () => AgentProcess;
   workingDir: string;
@@ -128,6 +133,7 @@ export interface AcpRuntimeDeps {
   sessionMetadata?: SessionMetadataStore;
   backgroundWork?: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
+  keptProcesses?: KeptProcesses;
   queueParkMs?: number;
   undeliveredPrompts: UndeliveredPromptStore;
   activeTurns: ActiveTurnStore;
@@ -543,7 +549,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return (
       `${promptScheduler.activeTurnCount()} turn(s), ` +
       `${pendingRequests.size()} pending request(s), ` +
-      `${deps.backgroundWork?.held().length ?? 0} background hold(s)`
+      `${deps.backgroundWork?.held().length ?? 0} background hold(s), ` +
+      `${deps.keptProcesses?.count() ?? 0} kept process(es)`
     );
   }
 
@@ -654,10 +661,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   function runtimeBusy(): boolean {
     if (promptScheduler.anyWork() || pendingRequests.any()) return true;
-    return (deps.backgroundWork?.held().length ?? 0) > 0;
+    if ((deps.backgroundWork?.held().length ?? 0) > 0) return true;
+    return (deps.keptProcesses?.count() ?? 0) > 0;
   }
 
   deps.backgroundWork?.onRelease(() => lease.maybeRecycle());
+  deps.keptProcesses?.onRelease(() => lease.maybeRecycle());
 
   function detach(channel: ClientChannel): void {
     const sessions = engagedSessions.get(channel);

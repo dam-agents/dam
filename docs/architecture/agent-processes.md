@@ -20,11 +20,18 @@ die seconds after the last tab closed. ACP carries no signal to consult — a se
 nothing between turns, and `session/close` is specified to cancel any ongoing work — so
 the platform asks instead of inferring. A session reports its **complete in-flight set**
 to the runtime's in-pod surface, as a level rather than start/stop edges, and while that
-set is non-empty the runtime will not close the session and reports itself busy, so the
-idle checker cannot hibernate the pod underneath the work. An empty report ends both.
+set is non-empty the runtime will not close the session and, while the work is kept,
+reports itself busy, so the idle checker cannot hibernate the pod underneath the work. An
+empty report ends both.
 Reporting is optional: a harness that never reports behaves exactly as it did before the
 contract. What is held is published on the runtime's status surface, so an agent that
 stays awake can be explained by the work holding it.
+
+Holding the session and keeping the agent awake are **two separate holds**. Every
+reported task holds its session open, because closing the session would kill it. Only a
+task that is [kept](#keeping-work) makes the runtime busy — every task by default, until
+the user turns that off for it. An unkept task runs on with its session open and dies at
+hibernation, and the status surface lists only the kept ones.
 
 Only work a harness *supervises* reaches its report, which bounds what the contract
 promises. A job the agent detached from the harness is invisible to it, and what is
@@ -74,6 +81,44 @@ outlives one. The history keeps the newest twenty entries, none older than a wee
 the same per-agent relay as the file and session watches; a hibernated agent shows
 nothing until it wakes. A watch sends data-less change notices when a row appears, goes,
 or changes whether it keeps the agent awake, and the reader re-queries; CPU and memory are
-polled. The runtime scans every few seconds while someone watches and twice a minute
-otherwise, so finished work is recorded even when nobody looks. Field-level contract:
+polled. The runtime scans every few seconds while someone watches, every quarter minute
+while a Keep Mark or kept Detached Process lives, and twice a minute otherwise, so finished
+work is recorded even when nobody looks. The user's decisions — the keep switch and Stop
+— go through the same surface. Field-level contract:
 [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
+
+## Keeping work
+
+Only **kept** work keeps the agent awake; everything else survives the user leaving and
+dies at hibernation. Each row resolves who decided, in this order:
+
+1. **The user**, through the keep switch in the panel, in either direction. The choice
+   lasts for that process (for a Harness Task, that task) and wins over everything else.
+2. **The agent**, with a **Keep Mark** on a Detached Process. `platform-keep`, a command
+   in every agent image, starts a job in its own session with its output in a log file and
+   marks it, or marks a process that already runs. A launch passes an id down the job's
+   environment, which every descendant inherits through `nohup` and `setsid`; a mark on a
+   running process names its pid and start time. A Detached Process is marked while any
+   process of its tree carries a live mark.
+3. **The default**: a Harness Task is kept, since backgrounding it was the agent's
+   choice; a Detached Process is not. A Turn Process ends with its turn and takes no
+   decision.
+
+The agent marks through the runtime's in-pod surface, from inside the agent only. Once the
+user has decided about a process, a later mark on it is refused with a message that names
+the user's choice, so the agent can ask instead. This, like the reported contract, is not a
+security boundary — the agent could kill its own work anyway — but a rule an honest agent
+follows. Kept Detached Processes count toward the runtime's busy signal next to kept
+Harness Tasks; when the last one ends, a recycle that waited for an idle runtime runs.
+With holds refused by the install, nothing is kept, though the rows still say who decided.
+
+Marks and user choices live in the processes document, keyed so a reused pid never
+inherits one, and go on a new boot with everything else boot-scoped.
+
+**Stop.** The user can stop any listed process that has one: the runtime signals its whole
+tree — every descendant, and the process group its root leads — to terminate, and after a
+short grace kills what is left, matching each process by its start time so a reused pid is
+never hit. The row moves to the finished history as stopped by the user; a Turn Process
+just ends, and its tool call fails in front of the agent. A stopped Harness Task is dropped
+from its session's report and ignored until the harness stops reporting it, so a stale
+report cannot bring it back. A Harness Task matched to no process cannot be stopped.

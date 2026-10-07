@@ -47,6 +47,21 @@ export const processKeyInputSchema = z.object({
   key: z.string().min(1).max(512),
 });
 
+export const setKeepInputSchema = processKeyInputSchema.extend({
+  keepsAwake: z.boolean(),
+});
+
+const markedPidSchema = z.number().int().positive();
+
+export const keepMarkRequestSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("launch"),
+    markId: z.string().min(8).max(128),
+    pid: markedPidSchema,
+  }),
+  z.object({ kind: z.literal("pid"), pid: markedPidSchema }),
+]);
+
 export const processOutputSchema = z.object({
   text: z.string(),
   truncated: z.boolean(),

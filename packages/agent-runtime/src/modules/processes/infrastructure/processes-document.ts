@@ -18,11 +18,26 @@ const trackedRowSchema: z.ZodType<TrackedRow> = z.object({
   keepSource: z.enum(["default", "agent", "user"]),
 });
 
+const keepMarkSchema = z.object({
+  id: z.string(),
+  pid: z.number().int(),
+  startTime: z.number().int(),
+  createdAt: z.string(),
+});
+
+const keepOverrideSchema = z.object({
+  key: z.string(),
+  keepsAwake: z.boolean(),
+  decidedAt: z.string(),
+});
+
 const processesDocumentSchema: z.ZodType<ProcessesDocument> = z.object({
   bootId: z.string(),
   lastScanAt: z.string().nullable(),
   lastRunning: z.array(trackedRowSchema),
   finished: z.array(finishedRowSchema),
+  marks: z.array(keepMarkSchema).default([]),
+  overrides: z.array(keepOverrideSchema).default([]),
 });
 
 export function openProcessesDocument(
@@ -35,6 +50,8 @@ export function openProcessesDocument(
       lastScanAt: null,
       lastRunning: [],
       finished: [],
+      marks: [],
+      overrides: [],
     }),
   });
 }

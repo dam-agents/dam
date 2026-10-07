@@ -1,5 +1,6 @@
 import type { FinishedRow, KeepSource, ProcessRow } from "agent-runtime-api";
 import { commandLabel, type ProcessTree } from "./classify.js";
+import type { KeepMark, KeepOverride, KeepResolution } from "./keep.js";
 import { CLK_TCK, procKey, type ScannedProcess } from "./snapshot.js";
 
 export const FINISHED_KEEP_COUNT = 20;
@@ -22,6 +23,8 @@ export interface ProcessesDocument {
   lastScanAt: string | null;
   lastRunning: TrackedRow[];
   finished: FinishedRow[];
+  marks: KeepMark[];
+  overrides: KeepOverride[];
 }
 
 export interface CpuSample {
@@ -54,7 +57,7 @@ function cpuPercent(
   return Math.round(percent * 10) / 10;
 }
 
-function finishedFrom(
+export function finishedFrom(
   row: TrackedRow,
   finishedAt: string,
   endedBy: FinishedRow["endedBy"],
@@ -87,6 +90,7 @@ export function assembleInventory(input: {
   scannedAt: number;
   baseline: CpuSample | null;
   previous: TrackedRow[];
+  resolveKeep: (tree: ProcessTree) => KeepResolution;
 }): Inventory {
   const previousByIdentity = new Map(
     input.previous.map((row) => [row.identity, row]),
@@ -119,7 +123,7 @@ export function assembleInventory(input: {
       tree.task?.command ??
       tree.task?.description ??
       (tree.shown ? commandLabel(tree.shown.cmdline) : "");
-    const keepsAwake = tree.kind === "harness-task";
+    const { keepsAwake, keepSource } = input.resolveKeep(tree);
     const row: ProcessRow = {
       key: tree.key,
       kind: tree.kind,
@@ -132,7 +136,7 @@ export function assembleInventory(input: {
         : null,
       outputPath: tree.shown?.outputPath ?? tree.root?.outputPath ?? null,
       keepsAwake,
-      keepSource: "default",
+      keepSource,
     };
     running.push(row);
     if (tree.kind === "turn") continue;
@@ -185,6 +189,8 @@ export function startNewBoot(
     lastScanAt: null,
     lastRunning: [],
     finished: trimFinished([...hibernated, ...doc.finished], nowMs),
+    marks: [],
+    overrides: [],
   };
 }
 
@@ -197,7 +203,7 @@ export function trackedSignature(rows: TrackedRow[]): string {
 
 export function noticeSignature(running: ProcessRow[]): string {
   return running
-    .map((row) => `${row.key}:${row.keepsAwake ? 1 : 0}`)
+    .map((row) => `${row.key}:${row.keepsAwake ? 1 : 0}:${row.keepSource}`)
     .sort()
     .join("\n");
 }

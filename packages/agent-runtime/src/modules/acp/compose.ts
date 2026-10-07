@@ -25,6 +25,7 @@ import {
 } from "./infrastructure/session-metadata-store.js";
 import {
   createAcpRuntime,
+  type KeptProcesses,
   type ReportableTurn,
 } from "./services/acp-runtime/acp-runtime.js";
 import { createOnceReporter } from "./services/once-reporter.js";
@@ -68,6 +69,8 @@ export interface ComposeAcpOptions {
   harnesses: Readonly<Record<string, HarnessRuntime>>;
   isTerminalSessionActive: (sessionId: string) => boolean;
   backgroundWorkHolds: boolean;
+  isKeptTask: (sessionId: string, taskId: string) => boolean;
+  keptProcesses: KeptProcesses;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   beforeSpawn: () => Promise<void>;
   leaseModel: (lease: {
@@ -130,6 +133,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   );
   const backgroundWork = createBackgroundWorkRegistry({
     enabled: opts.backgroundWorkHolds,
+    isKept: (sessionId, item) => opts.isKeptTask(sessionId, item.id),
     log: opts.log,
   });
   const undeliveredPrompts = createUndeliveredPromptStore(
@@ -206,6 +210,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
           });
         },
         backgroundWork: scoped.backgroundWork,
+        ...(isDefault ? { keptProcesses: opts.keptProcesses } : {}),
         onHarnessExited: scoped.onHarnessExited,
         workingDir: opts.workingDir,
         sessionMetadata,

@@ -28,7 +28,9 @@ export interface ProcessTree {
   task: ReportedTask | null;
 }
 
-export function taskIdentity(task: ReportedTask): string {
+export function taskIdentity(
+  task: Pick<ReportedTask, "sessionId" | "taskId">,
+): string {
   return `task:${task.sessionId}:${task.taskId}`;
 }
 
@@ -51,6 +53,32 @@ export function commandLabel(cmdline: string): string {
   const evaluated = SHELL_EVAL.exec(cmdline)?.[1];
   const label = evaluated === undefined ? cmdline : normalizeCommand(evaluated);
   return label.slice(0, COMMAND_LABEL_MAX);
+}
+
+function runtimeAncestors(
+  byPid: ReadonlyMap<number, ScannedProcess>,
+  runtimePid: number,
+): Set<number> {
+  const ancestors = new Set<number>([1]);
+  for (
+    let pid = byPid.get(runtimePid)?.ppid;
+    pid !== undefined && pid > 0 && !ancestors.has(pid);
+    pid = byPid.get(pid)?.ppid
+  ) {
+    ancestors.add(pid);
+  }
+  return ancestors;
+}
+
+export function platformOwnPids(
+  processes: ScannedProcess[],
+  runtimePid: number,
+): Set<number> {
+  const byPid = new Map(processes.map((p) => [p.pid, p]));
+  const own = runtimeAncestors(byPid, runtimePid);
+  own.add(runtimePid);
+  for (const p of processes) if (p.ppid === runtimePid) own.add(p.pid);
+  return own;
 }
 
 /**
@@ -95,14 +123,7 @@ export function classifyProcesses(input: ClassifyInput): ProcessTree[] {
     return out;
   };
 
-  const ancestors = new Set<number>([1]);
-  for (
-    let pid = byPid.get(input.runtimePid)?.ppid;
-    pid !== undefined && pid > 0 && !ancestors.has(pid);
-    pid = byPid.get(pid)?.ppid
-  ) {
-    ancestors.add(pid);
-  }
+  const ancestors = runtimeAncestors(byPid, input.runtimePid);
 
   const harness =
     input.harnessPid === null ? undefined : byPid.get(input.harnessPid);

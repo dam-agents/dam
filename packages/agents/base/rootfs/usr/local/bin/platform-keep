@@ -1,0 +1,137 @@
+#!/usr/bin/env node
+
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { closeSync, fstatSync, mkdirSync, openSync, readlinkSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+
+const TIMEOUT_MS = 10_000;
+
+const USAGE = `usage: platform-keep [--log FILE] -- <command> [args...]
+       platform-keep --pid <PID>
+
+Keeps work running after your turn ends, and holds the agent awake until it
+exits. The first form starts <command> in its own session and returns at once.
+Its stdout and stderr are appended to FILE; without --log, to this command's
+own stdout when that is a file outside the temp directory (where harnesses
+keep tool output), else to ~/.platform/keep-logs/<id>.log. The
+second form keeps a process that already runs. Everything kept work starts is
+kept too.
+
+The user sees kept work in the agent's Processes panel and can stop it, or let
+it stop at hibernation. Their choice wins: a later platform-keep on that
+process is refused. Keep only the long job itself, never a helper daemon.
+`;
+
+function fail(message, code = 1) {
+  process.stderr.write(`platform-keep: ${message}\n`);
+  process.exit(code);
+}
+
+function parseArgs(argv) {
+  const parsed = { log: null, pid: null, command: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--help" || arg === "-h") {
+      process.stdout.write(USAGE);
+      process.exit(0);
+    } else if (arg === "--log") {
+      parsed.log = argv[++i] ?? fail("--log needs a file", 2);
+    } else if (arg === "--pid") {
+      const pid = Number(argv[++i]);
+      if (!Number.isInteger(pid) || pid <= 0) fail("--pid needs a process id", 2);
+      parsed.pid = pid;
+    } else if (arg === "--") {
+      parsed.command = argv.slice(i + 1);
+      break;
+    } else if (arg.startsWith("-")) {
+      fail(`unknown option ${arg}\n\n${USAGE}`, 2);
+    } else {
+      parsed.command = argv.slice(i);
+      break;
+    }
+  }
+  if ((parsed.pid === null) === (parsed.command.length === 0))
+    fail(`give either --pid or a command\n\n${USAGE}`, 2);
+  return parsed;
+}
+
+async function postMark(runtime, mark) {
+  const res = await fetch(`${runtime}/api/keep-marks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(mark),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (res.ok) return { ok: true, key: body.key };
+  return { ok: false, error: body.error ?? `the runtime answered ${res.status}` };
+}
+
+function stdoutFile() {
+  try {
+    if (!fstatSync(1).isFile()) return null;
+    const path = readlinkSync("/proc/self/fd/1");
+    return path.startsWith(`${tmpdir()}/`) ? null : path;
+  } catch {
+    return null;
+  }
+}
+
+function openOutput(logArg, markId) {
+  if (logArg === null) {
+    const inherited = stdoutFile();
+    if (inherited !== null) return { fd: 1, path: inherited };
+  }
+  const path = resolve(
+    logArg ?? join(homedir(), ".platform", "keep-logs", `${markId}.log`),
+  );
+  mkdirSync(dirname(path), { recursive: true });
+  return { fd: openSync(path, "a"), path };
+}
+
+function launch(command, output, markId) {
+  return new Promise((resolveLaunch) => {
+    const child = spawn(command[0], command.slice(1), {
+      detached: true,
+      stdio: ["ignore", output.fd, output.fd],
+      env: { ...process.env, PLATFORM_KEEP: markId },
+    });
+    child.once("spawn", () => {
+      child.unref();
+      resolveLaunch(child.pid);
+    });
+    child.once("error", (err) => fail(`${command[0]}: ${err.message}`, 127));
+  });
+}
+
+const args = parseArgs(process.argv.slice(2));
+const runtime = process.env.PLATFORM_RUNTIME_URL;
+if (!runtime)
+  fail(
+    "PLATFORM_RUNTIME_URL is not set, so there is no agent runtime to keep work with. Run this inside the agent.",
+  );
+
+try {
+  if (args.pid !== null) {
+    const result = await postMark(runtime, { kind: "pid", pid: args.pid });
+    if (!result.ok) fail(result.error);
+    process.stdout.write(`kept: pid ${args.pid}\n`);
+    process.exit(0);
+  }
+
+  const markId = randomUUID();
+  const output = openOutput(args.log, markId);
+  const pid = await launch(args.command, output, markId);
+  if (output.fd !== 1) closeSync(output.fd);
+  const result = await postMark(runtime, { kind: "launch", markId, pid });
+  if (!result.ok)
+    fail(
+      `pid ${pid} started, but is not kept: ${result.error}\nIt runs on, and stops at hibernation.`,
+    );
+  process.stdout.write(`kept: pid ${pid}, output ${output.path}\n`);
+  process.exit(0);
+} catch (err) {
+  fail(`could not reach the agent runtime: ${err.message}`);
+}

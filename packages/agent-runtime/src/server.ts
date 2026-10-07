@@ -18,6 +18,7 @@ import {
   AGENT_WORK_DIR,
   STAGED_SKILLS_DIR,
   backgroundWorkReportSchema,
+  keepMarkRequestSchema,
   type AgentRuntimeContext,
   type ApplyStateInput,
 } from "agent-runtime-api";
@@ -53,7 +54,7 @@ import {
 import { startDisplaySupervisor } from "./modules/browser-display.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
-import { composeProcesses } from "./modules/processes/index.js";
+import { prepareProcesses } from "./modules/processes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
 import { sessionDirectoryEntries } from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
@@ -206,6 +207,8 @@ let leaseModel:
     }) => Promise<string | null>)
   | null = null;
 
+const processes = prepareProcesses(stateBackend);
+
 const {
   runtime: acpRuntime,
   triggerDriver,
@@ -243,6 +246,8 @@ const {
   ),
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
+  isKeptTask: processes.isKeptTask,
+  keptProcesses: processes.keptProcesses,
   onArtifactTouch: artifactTouchReporter.report,
   beforeSpawn: () => {
     if (seedHarnessModel) return seedHarnessModel();
@@ -255,13 +260,13 @@ const {
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
-const { service: processesService } = composeProcesses({
-  stateBackend,
+const { service: processesService, keepMarks } = processes.start({
+  backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   runtimePid: process.pid,
   harnessPid: () => acpRuntime.harnessPid(),
   activeTurnSince: () => acpRuntime.activeTurnSince(),
   reportedTasks: () =>
-    backgroundWork.held().flatMap(({ sessionId, items }) =>
+    backgroundWork.reported().flatMap(({ sessionId, items }) =>
       items.map((item) => ({
         sessionId,
         taskId: item.id,
@@ -270,6 +275,8 @@ const { service: processesService } = composeProcesses({
       })),
     ),
   onTasksChanged: (cb) => backgroundWork.onChange(cb),
+  onTaskKeepChanged: () => backgroundWork.keepChanged(),
+  dropTask: (sessionId, taskId) => backgroundWork.drop(sessionId, taskId),
   log: (msg) => process.stderr.write(`[processes] ${msg}\n`),
 });
 
@@ -712,6 +719,14 @@ function attachPty(
   });
 }
 
+function isLoopback(address: string | undefined): boolean {
+  return (
+    address === "::1" ||
+    address?.startsWith("127.") === true ||
+    address?.startsWith("::ffff:127.") === true
+  );
+}
+
 async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let bytes = 0;
@@ -812,6 +827,35 @@ const server = http.createServer((req, res) => {
         res
           .writeHead(400, { "Content-Type": "application/json", ...CORS })
           .end(JSON.stringify({ error: String(err) }));
+      });
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/keep-marks") {
+    const reply = (status: number, body: unknown) =>
+      res
+        .writeHead(status, { "Content-Type": "application/json", ...CORS })
+        .end(JSON.stringify(body));
+    if (!isLoopback(req.socket.remoteAddress)) {
+      reply(403, { error: "keep marks are taken from inside the agent only" });
+      return;
+    }
+    void readJsonBody(req)
+      .then(async (body) => {
+        const parsed = keepMarkRequestSchema.safeParse(body);
+        if (!parsed.success) {
+          reply(400, { error: parsed.error.message });
+          return;
+        }
+        const result = await keepMarks.mark(parsed.data);
+        if (result.ok) reply(200, result.value);
+        else
+          reply(result.error.kind === "NotFound" ? 404 : 409, {
+            error: result.error.message,
+          });
+      })
+      .catch((err: unknown) => {
+        reply(400, { error: String(err) });
       });
     return;
   }

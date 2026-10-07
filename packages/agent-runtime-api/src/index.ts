@@ -95,6 +95,7 @@ export type { SshService } from "./modules/ssh/types.js";
 export type { HarnessConfigService } from "./modules/harness-config/types.js";
 export type {
   FinishedRow,
+  KeepMarkRequest,
   KeepSource,
   PendingRestart,
   ProcessesDomainError,
@@ -107,11 +108,13 @@ export type {
 } from "./modules/processes/types.js";
 export {
   finishedRowSchema,
+  keepMarkRequestSchema,
   PROCESS_OUTPUT_MAX_BYTES,
   processListSchema,
   processNoticeSchema,
   processOutputSchema,
   processRowSchema,
+  setKeepInputSchema,
 } from "./modules/processes/schemas.js";
 
 export {
