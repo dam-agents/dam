@@ -74,7 +74,7 @@ spec:
             {{- $r := .Values.virtualization.runner }}
             {{- $dp := .Values.virtualization.devicePlugin }}
             {{- $cache := .Values.virtualization.imageCache | default dict }}
-            {{- $devices := $r.devices | default (ternary (dict (printf "%s/kvm" $dp.domain) "1" (printf "%s/tun" $dp.domain) "1") (dict "devices.kubevirt.io/kvm" "1" "devices.kubevirt.io/tun" "1") $dp.enabled) }}
+            {{- $devices := $r.devices | default (ternary (dict (printf "%s/kvm" $dp.domain) "1") (dict "devices.kubevirt.io/kvm" "1") $dp.enabled) }}
             {{- $runner := dict
                   "image" (include "platform.vmRunner.image" .)
                   "imagePullPolicy" ($r.image.pullPolicy | default "IfNotPresent")

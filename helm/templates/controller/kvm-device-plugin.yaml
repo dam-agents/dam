@@ -1,6 +1,6 @@
 {{- if and .Values.virtualization.enabled .Values.virtualization.devicePlugin.enabled }}
 {{- /*
-Advertises /dev/kvm and /dev/net/tun as extended resources on every node it
+Advertises /dev/kvm as an extended resource on every node it
 runs on, so the VM runner pod can hold them without privilege on a cluster
 that has no KubeVirt (whose virt-handler is the alternative source of such a
 grant). The plugin itself is the one privileged piece: it needs the kubelet's
@@ -57,7 +57,6 @@ spec:
           args:
             - --domain={{ $dp.domain }}
             - --device={"name":"kvm","groups":[{"count":{{ $dp.count }},"paths":[{"path":"/dev/kvm"}]}]}
-            - --device={"name":"tun","groups":[{"count":{{ $dp.count }},"paths":[{"path":"/dev/net/tun"}]}]}
           securityContext:
             privileged: true
           resources:

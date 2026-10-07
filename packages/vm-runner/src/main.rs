@@ -218,13 +218,11 @@ fn check_ports(min: u16, max: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm and /dev/net/tun, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, and so does a node cache, whose service is its only writer; a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, and so does a node cache, whose service is its only writer; a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
 fn prepare_host(args: &Args) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    for device in ["/dev/kvm", "/dev/net/tun"] {
-        if let Err(e) = std::fs::set_permissions(device, std::fs::Permissions::from_mode(0o666)) {
-            tracing::warn!(path = device, error = %e, "device not writable for machine uids");
-        }
+    if let Err(e) = std::fs::set_permissions("/dev/kvm", std::fs::Permissions::from_mode(0o666)) {
+        tracing::warn!(path = "/dev/kvm", error = %e, "device not writable for machine uids");
     }
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -281,6 +279,24 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         .unwrap_or_default();
     let kept = (!home.as_os_str().is_empty()).then(|| home.join(templates::KEPT_DIR));
     server.background(move |cancel| templates::warm(&install, kept.as_deref(), &home, &cancel));
+    let logs = server.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(vm_runner::console::TRIM_EVERY);
+        loop {
+            tick.tick().await;
+            let logs = logs.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                for id in logs.list().unwrap_or_default() {
+                    vm_runner::console::trim_logs(
+                        &id,
+                        &smolvm::agent::vm_data_dir(&id),
+                        vm_runner::console::LOG_CAP_BYTES,
+                    );
+                }
+            })
+            .await;
+        }
+    });
     // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped.
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(REAP_EVERY);

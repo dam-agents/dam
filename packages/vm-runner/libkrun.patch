@@ -1,0 +1,1171 @@
+diff --git a/src/devices/src/virtio/balloon/device.rs b/src/devices/src/virtio/balloon/device.rs
+index f0fbb06c..05a6e15a 100644
+--- a/src/devices/src/virtio/balloon/device.rs
++++ b/src/devices/src/virtio/balloon/device.rs
+@@ -83,6 +83,9 @@ pub struct Balloon {
+ /// A stats entry is a packed le16 tag followed by a le64 value. `repr(C)` would
+ /// pad that to 16 bytes, so the fields are read individually.
+ const STAT_ENTRY_LEN: usize = 10;
++/// Upper bound on a stats sample read from the guest: Linux sends one entry
++/// per known tag (VIRTIO_BALLOON_S_NR, 16 today), i.e. 160 bytes.
++const MAX_STATS_LEN: usize = 4096;
+ 
+ /// Decode the guest's stats buffer. Returns `None` if it holds no complete
+ /// entry; a trailing partial entry is ignored rather than rejecting the sample.
+@@ -244,7 +247,8 @@ impl Balloon {
+             let mut buf = Vec::new();
+             for desc in head.into_iter() {
+                 let at = buf.len();
+-                buf.resize(at + desc.len as usize, 0);
++                // The guest sizes the buffer (up to 4 GiB); a real sample is far smaller.
++                buf.resize(at + cmp::min(desc.len as usize, MAX_STATS_LEN - at), 0);
+                 if let Err(e) = mem.read_slice(&mut buf[at..], desc.addr) {
+                     error!("balloon: unreadable stats buffer: {e:?}");
+                     buf.truncate(at);
+@@ -424,30 +428,36 @@ impl Balloon {
+ /// by the reclaim path's inward alignment.
+ fn release_guest_range(mem: &GuestMemoryMmap, gpa: u64, len: u64) {
+     use vm_memory::GuestAddress;
+-    let host_addr = match mem.get_host_address(GuestAddress(gpa)) {
+-        Ok(p) => p,
+-        Err(e) => {
+-            error!("balloon: inflate range outside guest memory: 0x{gpa:x}+{len}: {e:?}");
+-            return;
+-        }
+-    };
+-    #[cfg(target_os = "macos")]
+-    if hvf::balloon_reclaim_enabled() {
+-        hvf::balloon_reclaim_range(gpa, host_addr as u64, len);
++    // Both ends are guest-chosen: the whole range must be guest memory, and it
++    // is released per region since adjacent regions need not be host-adjacent.
++    if !mem.check_range(GuestAddress(gpa), len as usize) {
++        error!("balloon: inflate range outside guest memory: 0x{gpa:x}+{len}");
+         return;
+     }
+-    #[cfg(target_os = "linux")]
+-    let advice = libc::MADV_DONTNEED;
+-    #[cfg(target_os = "macos")]
+-    let advice = libc::MADV_FREE_REUSABLE;
+-    #[cfg(unix)]
+-    unsafe {
+-        libc::madvise(host_addr as *mut libc::c_void, len as usize, advice)
+-    };
+-    #[cfg(target_os = "windows")]
+-    unsafe {
+-        DiscardVirtualMemory(host_addr as *mut core::ffi::c_void, len as usize)
+-    };
++    let mut next_gpa = gpa;
++    for slice in mem.get_slices(GuestAddress(gpa), len as usize).flatten() {
++        // Only the macOS reclaim path needs the slice's guest address.
++        #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
++        let (gpa, host_addr, len) = (next_gpa, slice.ptr_guard_mut().as_ptr(), slice.len());
++        next_gpa += len as u64;
++        #[cfg(target_os = "macos")]
++        if hvf::balloon_reclaim_enabled() {
++            hvf::balloon_reclaim_range(gpa, host_addr as u64, len as u64);
++            continue;
++        }
++        #[cfg(target_os = "linux")]
++        let advice = libc::MADV_DONTNEED;
++        #[cfg(target_os = "macos")]
++        let advice = libc::MADV_FREE_REUSABLE;
++        #[cfg(unix)]
++        unsafe {
++            libc::madvise(host_addr as *mut libc::c_void, len, advice)
++        };
++        #[cfg(target_os = "windows")]
++        unsafe {
++            DiscardVirtualMemory(host_addr as *mut core::ffi::c_void, len)
++        };
++    }
+ }
+ 
+ impl VirtioDevice for Balloon {
+@@ -861,3 +871,87 @@ mod checkpoint_quiescence_tests {
+         }
+     }
+ }
++
++#[cfg(all(test, target_os = "linux"))]
++mod guest_range_tests {
++    use super::*;
++    use crate::legacy::DummyIrqChip;
++    use crate::virtio::queue::tests::VirtQueue;
++    use std::sync::Arc;
++    use vm_memory::{GuestAddress, GuestRegionMmap, MmapRegion};
++
++    fn max_rss_bytes() -> i64 {
++        let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
++        unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
++        usage.ru_maxrss * 1024
++    }
++
++    /// The guest picks both ends of a released range. One running past the
++    /// end of guest memory must not reach whatever the host mapped next.
++    #[test]
++    fn a_release_past_guest_memory_leaves_the_next_host_mapping_alone() {
++        let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
++        let prot = libc::PROT_READ | libc::PROT_WRITE;
++        let flags = libc::MAP_PRIVATE | libc::MAP_ANONYMOUS;
++        let host = unsafe { libc::mmap(std::ptr::null_mut(), 3 * page, prot, flags, -1, 0) };
++        assert_ne!(host, libc::MAP_FAILED);
++        let host = host as *mut u8;
++        let beyond = unsafe { std::slice::from_raw_parts_mut(host.add(2 * page), page) };
++        beyond.fill(0xa5);
++        // Guest memory is the first two pages; the third is a neighbouring host mapping.
++        let region = unsafe { MmapRegion::build_raw(host, 2 * page, prot, flags) }.unwrap();
++        let mem = GuestMemoryMmap::from_regions(vec![
++            GuestRegionMmap::new(region, GuestAddress(0)).unwrap(),
++        ])
++        .unwrap();
++
++        release_guest_range(&mem, page as u64, 2 * page as u64);
++
++        assert!(
++            beyond.iter().all(|&b| b == 0xa5),
++            "madvise reached past the end of guest memory"
++        );
++        drop(mem);
++        unsafe { libc::munmap(host as *mut libc::c_void, 3 * page) };
++    }
++
++    /// The stats buffer length is guest-chosen (up to 4 GiB); it must not size
++    /// a host allocation before the descriptor is known to be readable.
++    #[test]
++    fn an_oversized_stats_descriptor_does_not_size_a_host_allocation() {
++        const CLAIMED: u32 = 1 << 30;
++        let memory = GuestMemoryMmap::from_ranges(&[(GuestAddress(0), 0x20000)]).unwrap();
++        let rings: Vec<_> = (0..defs::NUM_QUEUES)
++            .map(|i| VirtQueue::new(GuestAddress(0x1000 + i as u64 * 0x1000), &memory, 8))
++            .collect();
++        let queues = rings
++            .iter()
++            .map(|ring| {
++                DeviceQueue::new(
++                    ring.create_queue(),
++                    Arc::new(EventFd::new(utils::eventfd::EFD_NONBLOCK).unwrap()),
++                )
++            })
++            .collect();
++        let mut balloon = Balloon::new().unwrap();
++        balloon
++            .activate(
++                memory.clone(),
++                InterruptTransport::new(DummyIrqChip::new().into(), "stats test".into()).unwrap(),
++                queues,
++            )
++            .unwrap();
++        rings[STQ_INDEX].dtable[0].addr.set(0x10000);
++        rings[STQ_INDEX].dtable[0].len.set(CLAIMED);
++        rings[STQ_INDEX].avail.ring[0].set(0);
++        rings[STQ_INDEX].avail.idx.set(1);
++
++        let before = max_rss_bytes();
++        balloon.process_stq();
++        let grown = max_rss_bytes() - before;
++        assert!(
++            grown < i64::from(CLAIMED) / 2,
++            "process_stq grew the peak RSS by {grown} bytes for a {CLAIMED}-byte claim"
++        );
++    }
++}
+diff --git a/src/devices/src/virtio/fs/linux/passthrough.rs b/src/devices/src/virtio/fs/linux/passthrough.rs
+index 0dc67a50..d086dc20 100644
+--- a/src/devices/src/virtio/fs/linux/passthrough.rs
++++ b/src/devices/src/virtio/fs/linux/passthrough.rs
+@@ -60,6 +60,15 @@ struct HandleData {
+     exported: AtomicBool,
+ }
+ 
++// Runs inside setattr once it holds the handle's fd, so a test can race a
++// RELEASE against the fd syscalls deterministically.
++#[cfg(test)]
++thread_local! {
++    #[allow(clippy::type_complexity)]
++    static SETATTR_FD_HOOK: std::cell::Cell<Option<Box<dyn FnOnce(&PassthroughFs)>>> =
++        const { std::cell::Cell::new(None) };
++}
++
+ #[repr(C, packed)]
+ #[derive(Clone, Copy, Debug, Default)]
+ struct LinuxDirent64 {
+@@ -1569,14 +1578,10 @@ impl FileSystem for PassthroughFs {
+         F: FnMut(DirEntry, Entry) -> io::Result<usize>,
+     {
+         self.do_readdir(inode, handle, size, offset, |dir_entry| {
+-            // Safe because the kernel guarantees that the buffer is nul-terminated. Additionally,
+-            // the kernel will pad the name with '\0' bytes up to 8-byte alignment and there's no
+-            // way for us to know exactly how many padding bytes there are. This would cause
+-            // `CStr::from_bytes_with_nul` to return an error because it would think there are
+-            // interior '\0' bytes. We trust the kernel to provide us with properly formatted data
+-            // so we'll just skip the checks here.
+-            let name = unsafe { CStr::from_bytes_with_nul_unchecked(dir_entry.name) };
+-            let entry = self.lookup(ctx, inode, name)?;
++            // do_readdir already cut the name at its NUL, so it has no interior NUL.
++            let name = CString::new(dir_entry.name)
++                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
++            let entry = self.lookup(ctx, inode, &name)?;
+ 
+             add_entry(dir_entry, entry)
+         })
+@@ -1782,8 +1787,11 @@ impl FileSystem for PassthroughFs {
+         }
+ 
+         // If we have a handle then use it otherwise get a new fd from the inode.
++        // `hd` outlives every use of the raw fd: a concurrent release would
++        // otherwise close it and a newly opened file could reuse the number.
++        let hd;
+         let data = if let Some(handle) = handle {
+-            let hd = self
++            hd = self
+                 .handles
+                 .read()
+                 .unwrap()
+@@ -1800,6 +1808,11 @@ impl FileSystem for PassthroughFs {
+             Data::ProcPath(pathname)
+         };
+ 
++        #[cfg(test)]
++        if let Some(hook) = SETATTR_FD_HOOK.take() {
++            hook(self);
++        }
++
+         if self.cfg.override_stat
+             && valid.intersects(SetattrValid::MODE | SetattrValid::UID | SetattrValid::GID)
+         {
+@@ -2579,6 +2592,8 @@ impl FileSystem for PassthroughFs {
+         // Take just a read lock as we're not going to alter the file descriptor offset.
+         let fd_out = data_out.file.read().unwrap().as_raw_fd();
+ 
++        let len = len.try_into().map_err(|_| einval())?;
++        let flags = flags.try_into().map_err(|_| einval())?;
+         // Safe because this will only modify `offset_in` and `offset_out` and we check
+         // the return value.
+         let res = unsafe {
+@@ -2587,8 +2602,8 @@ impl FileSystem for PassthroughFs {
+                 &mut (offset_in as i64) as &mut _ as *mut _,
+                 fd_out,
+                 &mut (offset_out as i64) as &mut _ as *mut _,
+-                len.try_into().unwrap(),
+-                flags.try_into().unwrap(),
++                len,
++                flags,
+             )
+         };
+         if res < 0 {
+@@ -3162,4 +3177,213 @@ mod tests {
+         );
+         Ok(())
+     }
++
++    // A RELEASE racing a setattr must not close the handle's fd before the
++    // fd syscalls run: a file opened in between would reuse the number and
++    // the truncate would land on it instead.
++    #[test]
++    fn setattr_keeps_its_handle_open_across_a_concurrent_release() {
++        let nonce = SystemTime::now()
++            .duration_since(UNIX_EPOCH)
++            .unwrap()
++            .as_nanos();
++        let root = std::env::temp_dir().join(format!(
++            "libkrun-setattr-release-{}-{nonce}",
++            std::process::id()
++        ));
++        fs::create_dir(&root).unwrap();
++        fs::write(root.join("a"), b"aaaa").unwrap();
++        fs::write(root.join("b"), b"bbbb").unwrap();
++
++        let filesystem = PassthroughFs::new(
++            Config {
++                root_dir: root.to_string_lossy().into_owned(),
++                ..Default::default()
++            },
++            Arc::new(InodeAllocator::new()),
++        )
++        .unwrap();
++        FileSystem::init(&filesystem, FsOptions::empty()).unwrap();
++        let context = Context {
++            uid: 0,
++            gid: 0,
++            pid: 0,
++        };
++        let a = CString::new("a").unwrap();
++        let entry = FileSystem::lookup(&filesystem, context, fuse::ROOT_ID, &a).unwrap();
++        let (handle, _) = FileSystem::open(
++            &filesystem,
++            context,
++            entry.inode,
++            false,
++            libc::O_RDWR as u32,
++        )
++        .unwrap();
++        let handle = handle.unwrap();
++        let a_fd = filesystem.handles.read().unwrap()[&handle]
++            .file
++            .read()
++            .unwrap()
++            .as_raw_fd();
++
++        let (opened, reopened) = std::sync::mpsc::channel();
++        let b_path = root.join("b");
++        let inode = entry.inode;
++        SETATTR_FD_HOOK.set(Some(Box::new(move |filesystem: &PassthroughFs| {
++            FileSystem::release(filesystem, context, inode, 0, handle, false, false, None).unwrap();
++            let b = fs::OpenOptions::new()
++                .read(true)
++                .write(true)
++                .open(b_path)
++                .unwrap();
++            opened.send(b).unwrap();
++        })));
++
++        let mut attr: libc::stat64 = unsafe { mem::zeroed() };
++        attr.st_size = 0;
++        let result = FileSystem::setattr(
++            &filesystem,
++            context,
++            entry.inode,
++            attr,
++            Some(handle),
++            SetattrValid::SIZE,
++        );
++        let b = reopened.recv().unwrap();
++        eprintln!(
++            "released fd {a_fd}, then b opened as fd {}{}",
++            b.as_raw_fd(),
++            if b.as_raw_fd() == a_fd {
++                " (number reused)"
++            } else {
++                ""
++            }
++        );
++        result.unwrap();
++        assert_eq!(
++            fs::read(root.join("b")).unwrap(),
++            b"bbbb",
++            "b was truncated"
++        );
++        assert_eq!(
++            fs::read(root.join("a")).unwrap(),
++            b"",
++            "a was not truncated"
++        );
++
++        drop(b);
++        fs::remove_dir_all(root).unwrap();
++    }
++
++    #[test]
++    fn readdirplus_looks_up_each_entry_by_its_full_name() {
++        let nonce = SystemTime::now()
++            .duration_since(UNIX_EPOCH)
++            .unwrap()
++            .as_nanos();
++        let root = std::env::temp_dir().join(format!(
++            "libkrun-readdirplus-{}-{nonce}",
++            std::process::id()
++        ));
++        fs::create_dir(&root).unwrap();
++        fs::write(root.join("abc"), b"data").unwrap();
++        fs::write(root.join("ab"), b"other").unwrap();
++
++        let filesystem = PassthroughFs::new(
++            Config {
++                root_dir: root.to_string_lossy().into_owned(),
++                ..Default::default()
++            },
++            Arc::new(InodeAllocator::new()),
++        )
++        .unwrap();
++        FileSystem::init(&filesystem, FsOptions::ZERO_MESSAGE_OPENDIR).unwrap();
++        let context = Context {
++            uid: 0,
++            gid: 0,
++            pid: 0,
++        };
++        let mut found = Vec::new();
++        FileSystem::readdirplus(
++            &filesystem,
++            context,
++            fuse::ROOT_ID,
++            0,
++            4096,
++            0,
++            |dir_entry, entry| {
++                found.push((dir_entry.name.to_vec(), entry.attr.st_ino));
++                Ok(1)
++            },
++        )
++        .unwrap();
++        found.sort();
++        let ino = |name: &str| fs::metadata(root.join(name)).unwrap().ino();
++        assert_eq!(
++            found,
++            vec![(b"ab".to_vec(), ino("ab")), (b"abc".to_vec(), ino("abc"))]
++        );
++
++        fs::remove_dir_all(root).unwrap();
++    }
++
++    #[test]
++    fn copy_file_range_rejects_flags_wider_than_the_syscall_takes() {
++        let nonce = SystemTime::now()
++            .duration_since(UNIX_EPOCH)
++            .unwrap()
++            .as_nanos();
++        let root =
++            std::env::temp_dir().join(format!("libkrun-copy-range-{}-{nonce}", std::process::id()));
++        fs::create_dir(&root).unwrap();
++        fs::write(root.join("src"), b"data").unwrap();
++        fs::write(root.join("dst"), b"").unwrap();
++
++        let filesystem = PassthroughFs::new(
++            Config {
++                root_dir: root.to_string_lossy().into_owned(),
++                ..Default::default()
++            },
++            Arc::new(InodeAllocator::new()),
++        )
++        .unwrap();
++        FileSystem::init(&filesystem, FsOptions::empty()).unwrap();
++        let context = Context {
++            uid: 0,
++            gid: 0,
++            pid: 0,
++        };
++        let open = |name: &str| {
++            let name = CString::new(name).unwrap();
++            let entry = FileSystem::lookup(&filesystem, context, fuse::ROOT_ID, &name).unwrap();
++            let (handle, _) = FileSystem::open(
++                &filesystem,
++                context,
++                entry.inode,
++                false,
++                libc::O_RDWR as u32,
++            )
++            .unwrap();
++            (entry.inode, handle.unwrap())
++        };
++        let (src, src_handle) = open("src");
++        let (dst, dst_handle) = open("dst");
++
++        let error = FileSystem::copyfilerange(
++            &filesystem,
++            context,
++            src,
++            src_handle,
++            0,
++            dst,
++            dst_handle,
++            0,
++            4,
++            1 << 32,
++        )
++        .unwrap_err();
++        assert_eq!(error.raw_os_error(), Some(libc::EINVAL));
++
++        fs::remove_dir_all(root).unwrap();
++    }
+ }
+diff --git a/src/devices/src/virtio/fs/worker.rs b/src/devices/src/virtio/fs/worker.rs
+index 3a6ffc96..b742478d 100644
+--- a/src/devices/src/virtio/fs/worker.rs
++++ b/src/devices/src/virtio/fs/worker.rs
+@@ -467,24 +467,30 @@ impl FsWorker {
+         let mut processed = false;
+         while let Some(head) = queue.pop(mem) {
+             processed = true;
+-            let reader = Reader::new(mem, head.clone())
+-                .map_err(FsError::QueueReader)
+-                .unwrap();
+-            let writer = Writer::new(mem, head.clone())
+-                .map_err(FsError::QueueWriter)
+-                .unwrap();
+-
+-            let len = match server.handle_message(
+-                reader,
+-                writer,
+-                shm_region,
+-                exit_code,
+-                #[cfg(any(target_os = "macos", target_os = "windows"))]
+-                map_sender,
++            let len = match (
++                Reader::new(mem, head.clone()).map_err(FsError::QueueReader),
++                Writer::new(mem, head.clone()).map_err(FsError::QueueWriter),
+             ) {
+-                Ok(len) => len,
+-                Err(e) => {
+-                    error!("error handling message: {e:?}");
++                (Ok(reader), Ok(writer)) => match server.handle_message(
++                    reader,
++                    writer,
++                    shm_region,
++                    exit_code,
++                    #[cfg(any(target_os = "macos", target_os = "windows"))]
++                    map_sender,
++                ) {
++                    Ok(len) => len,
++                    Err(e) => {
++                        error!("error handling message: {e:?}");
++                        0
++                    }
++                },
++                (reader, writer) => {
++                    error!(
++                        "invalid descriptor chain: {:?} {:?}",
++                        reader.err(),
++                        writer.err()
++                    );
+                     0
+                 }
+             };
+@@ -506,3 +512,34 @@ impl FsWorker {
+         processed
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::legacy::DummyIrqChip;
++    use crate::virtio::queue::tests::VirtQueue;
++    use vm_memory::GuestAddress;
++
++    #[test]
++    fn a_request_outside_guest_memory_is_completed_not_fatal() {
++        let mem = GuestMemoryMmap::from_ranges(&[(GuestAddress(0), 0x20000)]).unwrap();
++        let ring = VirtQueue::new(GuestAddress(0x1000), &mem, 8);
++        ring.dtable[0].set(0x10_0000, 64, 0, 0);
++        ring.avail.ring[0].set(0);
++        ring.avail.idx.set(1);
++        let mut queue = ring.create_queue();
++        let server = FsWorker::new_server(None, None, false, Vec::new(), None).unwrap();
++
++        FsWorker::process_queue(
++            &mut queue,
++            &server,
++            &mem,
++            &None,
++            &InterruptTransport::new(DummyIrqChip::new().into(), "fs test".into()).unwrap(),
++            &Arc::new(AtomicI32::new(0)),
++            #[cfg(any(target_os = "macos", target_os = "windows"))]
++            &None,
++        );
++        assert_eq!(ring.used.idx.get(), 1);
++    }
++}
+diff --git a/src/devices/src/virtio/mmio.rs b/src/devices/src/virtio/mmio.rs
+index f72d3a68..1c18d894 100644
+--- a/src/devices/src/virtio/mmio.rs
++++ b/src/devices/src/virtio/mmio.rs
+@@ -364,10 +364,19 @@ impl MmioTransport {
+         // . Do not reset config_generation and keep it monotonically increasing
+     }
+ 
+-    fn activate(&mut self) {
++    fn activate(&mut self) -> std::result::Result<(), String> {
+         let Some(queues) = self.queues.take() else {
+-            return;
++            return Ok(());
+         };
++        // Devices read the rings without bounds checks, so a ready queue must
++        // lie in guest memory before any device sees it.
++        if let Some(i) = queues
++            .iter()
++            .position(|q| q.ready && !q.is_valid(&self.mem))
++        {
++            self.queues = Some(queues);
++            return Err(format!("queue {i} is not valid"));
++        }
+ 
+         let mut device_queues: Vec<DeviceQueue> = queues
+             .into_iter()
+@@ -384,6 +393,7 @@ impl MmioTransport {
+         locked_device
+             .activate(self.mem.clone(), self.interrupt.clone(), device_queues)
+             .expect("Failed to activate device");
++        Ok(())
+     }
+ 
+     /// Re-activate this device from a checkpoint, **bypassing the guest's
+@@ -416,7 +426,7 @@ impl MmioTransport {
+             | device_status::DRIVER_OK;
+ 
+         if !self.locked_device().is_activated() {
+-            self.activate();
++            self.activate()?;
+         }
+         Ok(())
+     }
+@@ -445,8 +455,9 @@ impl MmioTransport {
+             DRIVER_OK if self.device_status == (ACKNOWLEDGE | DRIVER | FEATURES_OK) => {
+                 self.device_status = status;
+                 let device_activated = self.locked_device().is_activated();
+-                if !device_activated {
+-                    self.activate();
++                if !device_activated && let Err(e) = self.activate() {
++                    error!("refusing to activate virtio device: {e}");
++                    self.device_status |= FAILED;
+                 }
+             }
+             _ if (status & FAILED) != 0 => {
+@@ -946,6 +957,11 @@ pub(crate) mod tests {
+         d.write(0, 0xa4, &buf[..]);
+         assert_eq!(d.queues.as_ref().unwrap()[0].used_ring.0, 125 + (125 << 32));
+ 
++        // Point the rings back inside guest memory, or DRIVER_OK refuses activation.
++        let queue = &mut d.queues.as_mut().unwrap()[0];
++        (queue.desc_table, queue.avail_ring, queue.used_ring) =
++            (GuestAddress(0), GuestAddress(0), GuestAddress(0));
++
+         set_device_status(
+             &mut d,
+             device_status::ACKNOWLEDGE
+@@ -1059,6 +1075,44 @@ pub(crate) mod tests {
+         assert!(d.locked_device().is_activated());
+     }
+ 
++    #[test]
++    fn a_ring_outside_guest_memory_refuses_activation() {
++        let m = GuestMemoryMmap::from_ranges(&[(GuestAddress(0), 0x1000)]).unwrap();
++        let mut d = MmioTransport::new(
++            m,
++            DummyIrqChip::new().into(),
++            Arc::new(Mutex::new(DummyDevice::new())),
++        )
++        .unwrap();
++        set_device_status(&mut d, device_status::ACKNOWLEDGE);
++        set_device_status(&mut d, device_status::ACKNOWLEDGE | device_status::DRIVER);
++        set_device_status(
++            &mut d,
++            device_status::ACKNOWLEDGE | device_status::DRIVER | device_status::FEATURES_OK,
++        );
++        let mut buf = [0; 4];
++        for q in 0..2 {
++            d.queue_select = q;
++            write_le_u32(&mut buf[..], 16);
++            d.write(0, 0x38, &buf[..]);
++            write_le_u32(&mut buf[..], 1);
++            d.write(0, 0x44, &buf[..]);
++        }
++        // Queue 1's available ring lies past the end of guest memory.
++        write_le_u32(&mut buf[..], 0x10_0000);
++        d.write(0, 0x90, &buf[..]);
++
++        set_device_status(
++            &mut d,
++            device_status::ACKNOWLEDGE
++                | device_status::DRIVER
++                | device_status::FEATURES_OK
++                | device_status::DRIVER_OK,
++        );
++        assert!(!d.locked_device().is_activated());
++        assert_ne!(d.device_status & device_status::FAILED, 0);
++    }
++
+     fn activate_device(d: &mut MmioTransport) {
+         set_device_status(d, device_status::ACKNOWLEDGE);
+         set_device_status(d, device_status::ACKNOWLEDGE | device_status::DRIVER);
+diff --git a/src/devices/src/virtio/net/worker.rs b/src/devices/src/virtio/net/worker.rs
+index cb43aa70..673f69af 100644
+--- a/src/devices/src/virtio/net/worker.rs
++++ b/src/devices/src/virtio/net/worker.rs
+@@ -404,6 +404,16 @@ impl NetWorker {
+                 }
+             }
+ 
++            // Backends assume a frame follows the vnet header; an empty or
++            // unreadable chain has none, so drop it.
++            if read_count <= VNET_HDR_LEN {
++                tx_queue
++                    .add_used(&self.mem, head_index, 0)
++                    .map_err(TxError::QueueError)?;
++                raise_irq = true;
++                continue;
++            }
++
+             self.tx_frame_len = read_count;
+             match self
+                 .backend
+@@ -531,3 +541,54 @@ impl NetWorker {
+         Ok(())
+     }
+ }
++
++#[cfg(all(test, unix))]
++mod tests {
++    use super::*;
++    use crate::legacy::DummyIrqChip;
++    use crate::virtio::queue::tests::VirtQueue;
++    use std::os::fd::{IntoRawFd, RawFd};
++    use std::sync::Arc;
++
++    /// A TX chain too short to hold a frame after the vnet header is dropped,
++    /// not handed to a backend that assumes a frame is there.
++    #[test]
++    fn a_tx_chain_without_a_frame_is_dropped() {
++        for (kind, backend) in [
++            (
++                socket2::Type::STREAM,
++                VirtioNetBackend::UnixstreamFd as fn(RawFd) -> _,
++            ),
++            (socket2::Type::DGRAM, VirtioNetBackend::UnixgramFd),
++        ] {
++            let mem = GuestMemoryMmap::from_ranges(&[(GuestAddress(0), 0x20000)]).unwrap();
++            let (rx, tx) = (
++                VirtQueue::new(GuestAddress(0x1000), &mem, 8),
++                VirtQueue::new(GuestAddress(0x4000), &mem, 8),
++            );
++            tx.dtable[0].set(0x10000, 0, 0, 0);
++            tx.avail.ring[0].set(0);
++            tx.avail.idx.set(1);
++            let (ours, _peer) = socket2::Socket::pair(socket2::Domain::UNIX, kind, None).unwrap();
++            let queue = |ring: &VirtQueue| {
++                DeviceQueue::new(
++                    ring.create_queue(),
++                    Arc::new(EventFd::new(utils::eventfd::EFD_NONBLOCK).unwrap()),
++                )
++            };
++            let mut worker = NetWorker::new(
++                queue(&rx),
++                queue(&tx),
++                InterruptTransport::new(DummyIrqChip::new().into(), "net test".into()).unwrap(),
++                mem.clone(),
++                0,
++                backend(ours.into_raw_fd()),
++                EventFd::new(utils::eventfd::EFD_NONBLOCK).unwrap(),
++            )
++            .unwrap();
++
++            assert!(worker.process_tx().is_ok(), "{kind:?}");
++            assert_eq!(tx.used.idx.get(), 1, "{kind:?}");
++        }
++    }
++}
+diff --git a/src/devices/src/virtio/queue.rs b/src/devices/src/virtio/queue.rs
+index 027c2a48..230e0b0a 100644
+--- a/src/devices/src/virtio/queue.rs
++++ b/src/devices/src/virtio/queue.rs
+@@ -450,30 +450,21 @@ impl Queue {
+         {
+             error!("virtio queue with invalid size: {}", self.size);
+             false
+-        } else if desc_table
+-            .checked_add(desc_table_size)
+-            .is_none_or(|v| !mem.address_in_range(v))
+-        {
++        } else if !mem.check_range(desc_table, desc_table_size as usize) {
+             error!(
+                 "virtio queue descriptor table goes out of bounds: start:0x{:08x} size:0x{:08x}",
+                 desc_table.raw_value(),
+                 desc_table_size
+             );
+             false
+-        } else if avail_ring
+-            .checked_add(avail_ring_size)
+-            .is_none_or(|v| !mem.address_in_range(v))
+-        {
++        } else if !mem.check_range(avail_ring, avail_ring_size as usize) {
+             error!(
+                 "virtio queue available ring goes out of bounds: start:0x{:08x} size:0x{:08x}",
+                 avail_ring.raw_value(),
+                 avail_ring_size
+             );
+             false
+-        } else if used_ring
+-            .checked_add(used_ring_size)
+-            .is_none_or(|v| !mem.address_in_range(v))
+-        {
++        } else if !mem.check_range(used_ring, used_ring_size as usize) {
+             error!(
+                 "virtio queue used ring goes out of bounds: start:0x{:08x} size:0x{:08x}",
+                 used_ring.raw_value(),
+@@ -497,7 +488,13 @@ impl Queue {
+     /// Returns the number of yet-to-be-popped descriptor chains in the avail ring.
+     #[allow(clippy::len_without_is_empty)]
+     pub fn len(&self, mem: &GuestMemoryMmap) -> u16 {
+-        (self.avail_idx(mem, Ordering::Acquire).unwrap() - self.next_avail).0
++        match self.avail_idx(mem, Ordering::Acquire) {
++            Ok(idx) => (idx - self.next_avail).0,
++            Err(e) => {
++                error!("failed to read the available ring index: {e:?}");
++                0
++            }
++        }
+     }
+ 
+     /// Checks if the driver has made any descriptor chains available in the avail ring.
+@@ -540,11 +537,15 @@ impl Queue {
+         fence(Ordering::Acquire);
+ 
+         // `self.is_valid()` already performed all the bound checks on the descriptor table
+-        // and virtq rings, so it's safe to unwrap guest memory reads and to use unchecked
+-        // offsets.
+-        let desc_index: u16 = mem
+-            .read_obj(self.avail_ring.unchecked_add(u64::from(index_offset)))
+-            .unwrap();
++        // and virtq rings, so it's safe to use unchecked offsets.
++        let desc_index: u16 =
++            match mem.read_obj(self.avail_ring.unchecked_add(u64::from(index_offset))) {
++                Ok(index) => index,
++                Err(e) => {
++                    error!("failed to read the available ring: {e:?}");
++                    return None;
++                }
++            };
+ 
+         DescriptorChain::checked_new(mem, self.desc_table, self.actual_size(), desc_index)
+             .inspect(|_| self.next_avail += Wrapping(1))
+@@ -1240,4 +1241,21 @@ pub(crate) mod tests {
+         assert_eq!(x.id, 1);
+         assert_eq!(x.len, 0x1000);
+     }
++
++    #[test]
++    fn popping_from_rings_outside_guest_memory_fails_cleanly() {
++        let m = &GuestMemoryMmap::from_ranges(&[(GuestAddress(0), 0x10000)]).unwrap();
++        let vq = VirtQueue::new(GuestAddress(0), m, 16);
++
++        let mut q = vq.create_queue();
++        q.avail_ring = GuestAddress(0x10_0000);
++        assert_eq!(q.len(m), 0);
++        assert!(q.pop(m).is_none());
++
++        // The index is readable but the ring entry it points at is not.
++        let mut q = vq.create_queue();
++        q.avail_ring = GuestAddress(0x10000 - 4);
++        m.write_obj::<u16>(1, GuestAddress(0x10000 - 2)).unwrap();
++        assert!(q.pop(m).is_none());
++    }
+ }
+diff --git a/src/devices/src/virtio/rng/device.rs b/src/devices/src/virtio/rng/device.rs
+index 2d6cf4ff..3a0ef0c5 100644
+--- a/src/devices/src/virtio/rng/device.rs
++++ b/src/devices/src/virtio/rng/device.rs
+@@ -1,6 +1,6 @@
+ use rand::{TryRngCore, rngs::OsRng};
+ use utils::eventfd::EventFd;
+-use vm_memory::{Bytes, GuestMemoryMmap};
++use vm_memory::{Bytes, GuestMemory, GuestMemoryMmap};
+ 
+ use super::super::{
+     ActivateError, ActivateResult, DeviceQueue, DeviceState, QueueConfig, RngError, VirtioDevice,
+@@ -14,6 +14,9 @@ pub(crate) const REQ_INDEX: usize = 0;
+ // Supported features.
+ pub(crate) const AVAIL_FEATURES: u64 = 1 << uapi::VIRTIO_F_VERSION_1 as u64;
+ 
++// Linux's virtio-rng driver posts small, sub-page buffers.
++const MAX_REQUEST_LEN: u32 = 64 * 1024;
++
+ pub struct Rng {
+     pub(crate) queues: Option<Vec<DeviceQueue>>,
+     pub(crate) avail_features: u64,
+@@ -103,7 +106,15 @@ impl Rng {
+             let index = head.index;
+             let mut written = 0;
+             for desc in head.into_iter() {
+-                let mut rand_bytes = vec![0u8; desc.len as usize];
++                // The length is guest-chosen (up to 4 GiB) and the device may fill
++                // less than offered. Check the range before allocating: rewinding
++                // below would retry a bad descriptor forever.
++                let len = desc.len.min(MAX_REQUEST_LEN);
++                if !mem.check_range(desc.addr, len as usize) {
++                    error!("rng: request buffer outside guest memory");
++                    break;
++                }
++                let mut rand_bytes = vec![0u8; len as usize];
+                 if let Err(e) = OsRng.try_fill_bytes(&mut rand_bytes) {
+                     error!("Failed to fill buffer with random data: {e:?}");
+                     queues[REQ_INDEX].queue.go_to_previous_position();
+@@ -114,7 +125,7 @@ impl Rng {
+                     queues[REQ_INDEX].queue.go_to_previous_position();
+                     break;
+                 }
+-                written += desc.len;
++                written += len;
+             }
+ 
+             have_used = true;
+@@ -345,3 +356,48 @@ mod checkpoint_tests {
+         assert!(!rng.deferred_request);
+     }
+ }
++
++#[cfg(test)]
++mod guest_range_tests {
++    use super::*;
++    use crate::legacy::DummyIrqChip;
++    use crate::virtio::queue::tests::VirtQueue;
++    use std::sync::Arc;
++    use std::time::Duration;
++    use vm_memory::GuestAddress;
++
++    /// A request buffer outside guest memory must complete instead of being
++    /// retried forever, and its guest-chosen length must not size an
++    /// allocation first.
++    #[test]
++    fn an_out_of_range_request_completes_once() {
++        let (done, finished) = std::sync::mpsc::channel();
++        // Run on a thread: the failure mode is process_req never returning.
++        std::thread::spawn(move || {
++            let memory = GuestMemoryMmap::from_ranges(&[(GuestAddress(0), 0x20000)]).unwrap();
++            let ring = VirtQueue::new(GuestAddress(0x1000), &memory, 8);
++            let mut rng = Rng::new().unwrap();
++            rng.activate(
++                memory.clone(),
++                InterruptTransport::new(DummyIrqChip::new().into(), "range test".into()).unwrap(),
++                vec![DeviceQueue::new(
++                    ring.create_queue(),
++                    Arc::new(EventFd::new(utils::eventfd::EFD_NONBLOCK).unwrap()),
++                )],
++            )
++            .unwrap();
++            ring.dtable[0].addr.set(0x10000);
++            ring.dtable[0].len.set(64 << 20);
++            ring.dtable[0].flags.set(2);
++            ring.avail.ring[0].set(0);
++            ring.avail.idx.set(1);
++            rng.process_req();
++            done.send(ring.used.idx.get()).unwrap();
++        });
++        assert_eq!(
++            finished.recv_timeout(Duration::from_secs(20)),
++            Ok(1),
++            "process_req did not complete the request"
++        );
++    }
++}
+diff --git a/src/devices/src/virtio/vsock/muxer.rs b/src/devices/src/virtio/vsock/muxer.rs
+index 0653cde0..3adc179f 100644
+--- a/src/devices/src/virtio/vsock/muxer.rs
++++ b/src/devices/src/virtio/vsock/muxer.rs
+@@ -902,7 +902,7 @@ impl VsockMuxer {
+                 }
+                 let rxq = self.rxq.clone();
+ 
+-                let mut unix = UnixProxy::new(
++                let mut unix = match UnixProxy::new(
+                     id,
+                     self.cid,
+                     pkt.dst_port(),
+@@ -912,8 +912,19 @@ impl VsockMuxer {
+                     rxq,
+                     path.to_path_buf(),
+                     self.snapshot_gate.clone(),
+-                )
+-                .unwrap();
++                ) {
++                    Ok(unix) => unix,
++                    // e.g. EMFILE: the guest can open connections faster than they close.
++                    Err(e) => {
++                        warn!("host-IPC proxy for {path:?} failed, sending rst: {e:?}");
++                        let rx = MuxerRx::Reset {
++                            local_port: pkt.dst_port(),
++                            peer_port: pkt.src_port(),
++                        };
++                        push_packet(self.cid, rx, &self.rxq, queue, mem, &self.snapshot_gate);
++                        return;
++                    }
++                };
+                 let tsi = TsiConnectReq {
+                     peer_port: 0,
+                     addr: SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0).into(),
+diff --git a/src/devices/src/virtio/vsock/packet.rs b/src/devices/src/virtio/vsock/packet.rs
+index 6ac7c735..19e12ff6 100644
+--- a/src/devices/src/virtio/vsock/packet.rs
++++ b/src/devices/src/virtio/vsock/packet.rs
+@@ -409,6 +409,13 @@ impl VsockPacket {
+         }
+     }
+ 
++    /// The packet payload: the first `len()` bytes of the data buffer, which the
++    /// guest may have made larger than the packet. Only valid for TX packets,
++    /// whose buffer was checked to hold `len()` bytes.
++    pub fn data(&self) -> Option<&[u8]> {
++        self.buf().map(|buf| &buf[..self.len() as usize])
++    }
++
+     /// Provides in-place, byte-slice, mutable access to the vsock packet data buffer.
+     ///
+     /// Note: control packets (e.g. connection request or reset) have no data buffer associated.
+diff --git a/src/devices/src/virtio/vsock/tsi_dgram.rs b/src/devices/src/virtio/vsock/tsi_dgram.rs
+index 9305b45a..f126c56c 100644
+--- a/src/devices/src/virtio/vsock/tsi_dgram.rs
++++ b/src/devices/src/virtio/vsock/tsi_dgram.rs
+@@ -362,13 +362,13 @@ impl Proxy for TsiDgramProxy {
+         // Connected DNS socket: route the query to the worker; the worker pushes
+         // the response and signals the guest asynchronously.
+         if self.connected_dns {
+-            if let Some(buf) = pkt.buf() {
++            if let Some(buf) = pkt.data() {
+                 self.send_dns_query(buf);
+             }
+             return ProxyUpdate::default();
+         }
+ 
+-        let ret = if let Some(buf) = pkt.buf() {
++        let ret = if let Some(buf) = pkt.data() {
+             #[cfg(target_os = "linux")]
+             let send_res = self.sock.send_with_flags(buf, libc::MSG_NOSIGNAL);
+             #[cfg(not(target_os = "linux"))]
+@@ -416,7 +416,7 @@ impl Proxy for TsiDgramProxy {
+         self.peer_fwd_cnt = Wrapping(pkt.fwd_cnt());
+ 
+         if let Some(addr) = self.sendto_addr.clone() {
+-            if let Some(buf) = pkt.buf() {
++            if let Some(buf) = pkt.data() {
+                 // Unconnected DNS query (sendto a resolver:53): route to the
+                 // worker instead of the host socket.
+                 if self.dns_sender.is_some() && sockaddr_port(&addr) == Some(DNS_PORT) {
+diff --git a/src/devices/src/virtio/vsock/tsi_stream.rs b/src/devices/src/virtio/vsock/tsi_stream.rs
+index 153f86b1..54533d34 100644
+--- a/src/devices/src/virtio/vsock/tsi_stream.rs
++++ b/src/devices/src/virtio/vsock/tsi_stream.rs
+@@ -938,11 +938,24 @@ impl Proxy for TsiStreamProxy {
+         // Accept the whole buffer from the guest (a vsock data packet is
+         // all-or-nothing — there is no way to tell the guest we took only part),
+         // then drain as much as the host socket will take right now.
+-        if let Some(buf) = pkt.buf() {
+-            self.tx_buf.extend(buf.iter().copied());
+-        }
++        // A guest honouring the window we advertise (buf_alloc = CONN_TX_BUF_SIZE,
++        // fwd_cnt = flushed bytes) never has more than that unflushed.
++        let accepted = match pkt.data() {
++            Some(buf) if self.tx_buf.len() + buf.len() > defs::CONN_TX_BUF_SIZE => {
++                warn!(
++                    "sendmsg: guest overran its tx window, resetting id={}",
++                    self.id
++                );
++                Err(())
++            }
++            Some(buf) => {
++                self.tx_buf.extend(buf.iter().copied());
++                Ok(())
++            }
++            None => Ok(()),
++        };
+ 
+-        match self.flush_tx() {
++        match accepted.and_then(|()| self.flush_tx()) {
+             Ok(advanced) => {
+                 if advanced && self.maybe_send_credit_update() {
+                     update.signal_queue = true;
+diff --git a/src/devices/src/virtio/vsock/unix.rs b/src/devices/src/virtio/vsock/unix.rs
+index 90dc05ee..a8806db6 100644
+--- a/src/devices/src/virtio/vsock/unix.rs
++++ b/src/devices/src/virtio/vsock/unix.rs
+@@ -494,11 +494,24 @@ impl Proxy for UnixProxy {
+         // host socket will take now. `tx_cnt` advances only for flushed bytes, so
+         // a stalled host peer backpressures the guest via its own vsock window and
+         // never blocks the muxer thread. See smol-machines/smolvm#1093.
+-        if let Some(buf) = pkt.buf() {
+-            self.tx_buf.extend(buf.iter().copied());
+-        }
++        // A guest honouring the window we advertise (buf_alloc = CONN_TX_BUF_SIZE,
++        // fwd_cnt = flushed bytes) never has more than that unflushed.
++        let accepted = match pkt.data() {
++            Some(buf) if self.tx_buf.len() + buf.len() > defs::CONN_TX_BUF_SIZE => {
++                warn!(
++                    "sendmsg: guest overran its tx window, resetting id={}",
++                    self.id
++                );
++                Err(())
++            }
++            Some(buf) => {
++                self.tx_buf.extend(buf.iter().copied());
++                Ok(())
++            }
++            None => Ok(()),
++        };
+ 
+-        match self.flush_tx() {
++        match accepted.and_then(|()| self.flush_tx()) {
+             Ok(advanced) => {
+                 if advanced && self.maybe_send_credit_update() {
+                     update.signal_queue = true;
+@@ -904,3 +917,85 @@ impl Proxy for UnixAcceptorProxy {
+ const ACCEPTOR_FAMILY: Family = Family::Unix;
+ #[cfg(windows)]
+ const ACCEPTOR_FAMILY: Family = Family::Inet;
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::virtio::queue::tests::VirtQueue as TestQueue;
++    use crate::virtio::vsock::packet::VSOCK_PKT_HDR_SIZE;
++    use std::io::Read;
++    use vm_memory::{Bytes, GuestAddress};
++
++    const HDR: u64 = 0x10000;
++    const DATA: u64 = 0x11000;
++
++    fn proxy_with_peer(mem: &GuestMemoryMmap, rx: &TestQueue) -> (UnixProxy, Socket) {
++        let (ours, peer) = Socket::pair(Domain::UNIX, Type::STREAM, None).unwrap();
++        ours.set_nonblocking(true).unwrap();
++        let proxy = UnixProxy::new_reverse(
++            1,
++            3,
++            1024,
++            2048,
++            ours,
++            mem.clone(),
++            Arc::new(Mutex::new(rx.create_queue())),
++            Arc::new(Mutex::new(MuxerRxQ::new())),
++            Arc::new(SnapshotGate::default()),
++        );
++        (proxy, peer)
++    }
++
++    /// A TX packet whose header claims `len` bytes in a `desc_len`-byte data descriptor.
++    fn tx_packet(mem: &GuestMemoryMmap, tx: &TestQueue, len: u32, desc_len: u32) -> VsockPacket {
++        tx.dtable[0].set(HDR, VSOCK_PKT_HDR_SIZE as u32, 1, 1);
++        tx.dtable[1].set(DATA, desc_len, 0, 0);
++        // The header's `len` field sits at byte 24.
++        mem.write_obj(len, GuestAddress(HDR + 24)).unwrap();
++        tx.avail.ring[0].set(0);
++        tx.avail.idx.set(1);
++        let head = tx.create_queue().pop(mem).unwrap();
++        VsockPacket::from_tx_virtq_head(&head).unwrap()
++    }
++
++    #[test]
++    fn only_the_header_length_reaches_the_host_socket() {
++        let mem = GuestMemoryMmap::from_ranges(&[(GuestAddress(0), 0x40000)]).unwrap();
++        let (tx, rx) = (
++            TestQueue::new(GuestAddress(0x1000), &mem, 8),
++            TestQueue::new(GuestAddress(0x4000), &mem, 8),
++        );
++        mem.write_slice(&[0x5a; 4096], GuestAddress(DATA)).unwrap();
++        let (mut proxy, mut peer) = proxy_with_peer(&mem, &rx);
++
++        proxy.sendmsg(&tx_packet(&mem, &tx, 10, 4096));
++
++        peer.set_nonblocking(true).unwrap();
++        let mut received = [0u8; 8192];
++        let n = peer.read(&mut received).unwrap();
++        assert_eq!(n, 10, "sent the whole descriptor instead of the packet");
++    }
++
++    #[test]
++    fn unflushed_tx_data_stays_within_the_advertised_window() {
++        let mem = GuestMemoryMmap::from_ranges(&[(GuestAddress(0), 0x40000)]).unwrap();
++        let (tx, rx) = (
++            TestQueue::new(GuestAddress(0x1000), &mem, 8),
++            TestQueue::new(GuestAddress(0x4000), &mem, 8),
++        );
++        let (mut proxy, _peer) = proxy_with_peer(&mem, &rx);
++        let max = defs::MAX_PKT_BUF_SIZE as u32;
++        let pkt = tx_packet(&mem, &tx, max, max);
++
++        // The peer never reads, so a guest ignoring its credit piles data up.
++        for _ in 0..2 * defs::CONN_TX_BUF_SIZE / defs::MAX_PKT_BUF_SIZE {
++            proxy.sendmsg(&pkt);
++            assert!(
++                proxy.tx_buf.len() <= defs::CONN_TX_BUF_SIZE,
++                "tx_buf grew to {} bytes",
++                proxy.tx_buf.len()
++            );
++        }
++        assert_eq!(proxy.status, ProxyStatus::Closed);
++    }
++}

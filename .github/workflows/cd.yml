@@ -273,7 +273,7 @@ jobs:
             ~/.cargo/git/db
             ~/.cache/platform-vm-runner
             packages/vm-runner/target
-          key: &rust-release-key rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin') }}
+          key: &rust-release-key rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/libkrun.patch') }}
       # check-test's Go and pnpm caches, read-only, for the images that build
       # from them. Before setup-mise, for the reason check-test gives.
       - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'controller') }}
@@ -662,7 +662,10 @@ jobs:
       - &e2e-image-log
         name: Image fetch log
         if: ${{ !cancelled() }}
-        run: cat /tmp/ci-images.log
+        # A build that never finished never printed its own log there.
+        run: |
+          cat /tmp/ci-images.log
+          [ "$(cat /tmp/ci-images.status 2>/dev/null)" = ok ] || tail -n 200 /tmp/ci-build/logs/*.log 2>/dev/null || true
       - &e2e-provision-log
         name: k3s provision log
         if: ${{ !cancelled() }}
