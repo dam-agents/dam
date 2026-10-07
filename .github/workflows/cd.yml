@@ -388,6 +388,9 @@ jobs:
           ARCH: ${{ matrix.arch }}
           AGENTS: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
           PR: ${{ github.event_name == 'pull_request' }}
+          # The stream server's build is cached in the registry by its inputs
+          # (packages/agents/base/selkies), so each is built once, PRs included.
+          PLATFORM_SELKIES_PUSH: "1"
         run: |
           set -euo pipefail
           # A PR only proves its agents build.
