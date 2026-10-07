@@ -8,11 +8,16 @@ import {
   capInlineImages,
   buildPlatformTurnEndedNotification,
   jsonRpcErrorDetails,
+  platformRemoveQueuedParamsSchema,
   platformUndeliveredPromptSchema,
+  platformUpdateQueuedParamsSchema,
+  PROMPT_NOT_QUEUED_CODE,
+  PROMPT_NOT_QUEUED_MESSAGE,
   promptBlockSchema,
   SessionType,
   type PromptBlock,
   type PlatformTurnEndedParams,
+  type PlatformUpdateQueuedParams,
   type PlatformUndeliveredPrompt,
 } from "api-server-api";
 
@@ -553,6 +558,60 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const channel of engagedViewersOf(sessionId)) channel.send(line);
   }
 
+  function promptFrameFor(
+    source: unknown,
+    sessionId: string,
+    outboundId: number,
+  ): object {
+    const forward = stripPlatformMeta(source);
+    const framed =
+      isDirectSurface(platformString(source, "surface")) &&
+      deps.sessionMetadata?.get(sessionId)?.meta.threadTs !== undefined
+        ? frameDirectTurn(forward)
+        : forward;
+    return rewriteCwd({ ...framed, id: outboundId }, deps.workingDir);
+  }
+
+  function updateQueuedPrompt(
+    sessionId: string,
+    { promptId, prompt }: PlatformUpdateQueuedParams,
+  ): boolean {
+    return promptScheduler.update(sessionId, promptId, (entry) => {
+      const source = isNonNullObject(entry.source) ? entry.source : {};
+      const params = isNonNullObject(source.params) ? source.params : {};
+      const edited = { ...source, params: { ...params, prompt } };
+      return {
+        source: edited,
+        frame: promptFrameFor(edited, sessionId, entry.outboundId),
+        typed: prompt,
+        blocks: queueableBlocks(prompt),
+      };
+    });
+  }
+
+  function answerQueueEdit(
+    channel: ClientChannel,
+    id: unknown,
+    done: boolean,
+  ): void {
+    sendToChannel(
+      channel,
+      JSON.stringify(
+        done
+          ? { jsonrpc: "2.0", id, result: {} }
+          : {
+              jsonrpc: "2.0",
+              id,
+              error: {
+                code: -32000,
+                message: PROMPT_NOT_QUEUED_MESSAGE,
+                data: { code: PROMPT_NOT_QUEUED_CODE },
+              },
+            },
+      ),
+    );
+  }
+
   function announceQueue(sessionId: string): void {
     const line = JSON.stringify(
       buildPlatformQueueChangedNotification({
@@ -863,6 +922,38 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           : "";
       const paramsSid = extractParamsSessionId(frame);
 
+      if (method === "platform/updateQueued" && paramsSid) {
+        const parsed = platformUpdateQueuedParamsSchema.safeParse(
+          (frame as { params?: unknown }).params,
+        );
+        const updated =
+          parsed.success && updateQueuedPrompt(paramsSid, parsed.data);
+        answerQueueEdit(channel, frame.id, updated);
+        return;
+      }
+
+      if (method === "platform/removeQueued" && paramsSid) {
+        const parsed = platformRemoveQueuedParamsSchema.safeParse(
+          (frame as { params?: unknown }).params,
+        );
+        const removed = parsed.success
+          ? promptScheduler.remove(paramsSid, parsed.data.promptId)
+          : null;
+        if (removed !== null) {
+          outboundIdToClient.delete(removed.outboundId);
+          sendToChannel(
+            removed.channel,
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: removed.originalId,
+              result: { stopReason: "cancelled" },
+            }),
+          );
+        }
+        answerQueueEdit(channel, frame.id, removed !== null);
+        return;
+      }
+
       if (method === "platform/forgetUndelivered" && paramsSid) {
         const id = extractUndeliveredId(frame);
         if (id !== null && deps.undeliveredPrompts.forget(paramsSid, id))
@@ -1026,17 +1117,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           ? stripPlatformMeta(frame)
           : frame;
 
-      const framedFrame =
-        promptSessionId !== null &&
-        isDirectSurface(platformString(frame, "surface")) &&
-        deps.sessionMetadata?.get(promptSessionId)?.meta.threadTs !== undefined
-          ? frameDirectTurn(forwardFrame)
-          : forwardFrame;
-
-      const rewritten = rewriteCwd(
-        { ...framedFrame, id: outboundId },
-        deps.workingDir,
-      );
+      const rewritten =
+        promptSessionId !== null
+          ? promptFrameFor(frame, promptSessionId, outboundId)
+          : rewriteCwd({ ...forwardFrame, id: outboundId }, deps.workingDir);
       outboundIdToClient.set(outboundId, {
         channel,
         originalId: frame.id,
@@ -1061,6 +1145,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           frame: rewritten,
           promptId,
           runPrompt: surface === "cli",
+          source: frame,
           typed: typedPrompt,
           blocks: queueableBlocks(typedPrompt),
           editable: surface === "ui",

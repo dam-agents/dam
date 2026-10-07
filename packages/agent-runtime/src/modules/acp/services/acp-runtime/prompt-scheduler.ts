@@ -26,6 +26,7 @@ export interface PromptSubmission {
   promptId: string | null;
   runPrompt?: boolean;
   unattended?: boolean;
+  source?: unknown;
   typed?: unknown;
   blocks?: PromptBlock[];
   editable?: boolean;
@@ -48,6 +49,14 @@ export interface PromptScheduler {
   onDetached(sessionId: string): void;
   refuseQueue(sessionId: string, message: string): void;
   snapshot(sessionId: string): QueuedPrompt[];
+  update(
+    sessionId: string,
+    promptId: string,
+    edit: (
+      entry: PromptSubmission,
+    ) => Pick<PromptSubmission, "source" | "frame" | "typed" | "blocks">,
+  ): boolean;
+  remove(sessionId: string, promptId: string): PromptSubmission | null;
   forget(sessionId: string): void;
   clear(): void;
 }
@@ -278,6 +287,32 @@ export function createPromptScheduler(
       clearParkTimer(sessionId);
       deps.onQueueChanged?.(sessionId);
       for (const entry of queue) refuse(entry, message);
+    },
+
+    update(sessionId, promptId, edit) {
+      const entry = queues
+        .get(sessionId)
+        ?.find((e) => e.editable === true && e.promptId === promptId);
+      if (entry === undefined) return false;
+      Object.assign(entry, edit(entry));
+      deps.onQueueChanged?.(sessionId);
+      return true;
+    },
+
+    remove(sessionId, promptId) {
+      const queue = queues.get(sessionId);
+      const index =
+        queue?.findIndex(
+          (e) => e.editable === true && e.promptId === promptId,
+        ) ?? -1;
+      if (queue === undefined || index === -1) return null;
+      const [entry] = queue.splice(index, 1);
+      if (queue.length === 0) {
+        queues.delete(sessionId);
+        clearParkTimer(sessionId);
+      }
+      deps.onQueueChanged?.(sessionId);
+      return entry ?? null;
     },
 
     snapshot(sessionId) {

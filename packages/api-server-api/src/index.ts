@@ -528,6 +528,10 @@ export {
   platformQueueMetaSchema,
   platformQueueChangedParamsSchema,
   buildPlatformQueueChangedNotification,
+  platformUpdateQueuedParamsSchema,
+  platformRemoveQueuedParamsSchema,
+  PROMPT_NOT_QUEUED_CODE,
+  PROMPT_NOT_QUEUED_MESSAGE,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "./modules/acp/types.js";
@@ -542,6 +546,8 @@ export type {
   PromptBlock,
   QueuedPrompt,
   PlatformQueueChangedParams,
+  PlatformUpdateQueuedParams,
+  PlatformRemoveQueuedParams,
 } from "./modules/acp/types.js";
 
 export { brandSchema } from "./modules/brand/types.js";

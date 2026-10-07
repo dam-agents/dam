@@ -4,6 +4,10 @@ export const PROMPT_QUEUE_FULL_CODE = "PROMPT_QUEUE_FULL";
 
 export const PROMPT_QUEUE_FULL_MESSAGE = "prompt queue full";
 
+export const PROMPT_NOT_QUEUED_CODE = "PROMPT_NOT_QUEUED";
+
+export const PROMPT_NOT_QUEUED_MESSAGE = "prompt is no longer queued";
+
 export function jsonRpcErrorDetails(data: unknown): string | undefined {
   if (typeof data === "string" && data) return data;
   if (data && typeof data === "object") {
@@ -261,3 +265,20 @@ export function buildPlatformQueueChangedNotification(
     params,
   });
 }
+
+export const platformUpdateQueuedParamsSchema = z.object({
+  sessionId: z.string().min(1),
+  promptId: z.string().min(1),
+  prompt: z.array(promptBlockSchema).min(1),
+});
+export type PlatformUpdateQueuedParams = z.infer<
+  typeof platformUpdateQueuedParamsSchema
+>;
+
+export const platformRemoveQueuedParamsSchema = z.object({
+  sessionId: z.string().min(1),
+  promptId: z.string().min(1),
+});
+export type PlatformRemoveQueuedParams = z.infer<
+  typeof platformRemoveQueuedParamsSchema
+>;

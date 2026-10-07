@@ -95,11 +95,12 @@ Add to `packages/api-server-api/src/modules/acp/types.ts` (schemas + builders, l
 | #  | Title | Scope | Depends on | Done |
 |----|-------|-------|------------|------|
 | 01 | [The queue is shared and truthful](01-shared-queue.md) | Broadcast + load snapshot of the queue, echo at start, UI renders queue state inline, Stop/disconnect stop ending queued bubbles | — | ✓ |
-| 02 | [Edit and delete a queued message](02-edit-queued.md) | `updateQueued`/`removeQueued`, inline Edit/Delete on a queued bubble | 01 | |
+| 02 | [Edit and delete a queued message](02-edit-queued.md) | `updateQueued`/`removeQueued`, inline Edit/Delete on a queued bubble | 01 | ✓ |
 | 03 | [Steer a mid-turn message](03-native-steer.md) | Runtime steers UI prompts via `_session/steering`, steered echo, composer wording | 01 | |
 | 04 | [Edit an earlier message and rerun](04-rewrite-from.md) | `rewriteFrom` via harness fork, replace in place, Edit on user bubbles when idle | 01 | |
 | 05 | [pi steers](05-pi-steering.md) | pi-acp `_session/steering` from upstream PR #115, carried in the pi-agent image | 03 | |
 | 06 | [One steering point for every surface](06-channel-steering-in-runtime.md) | Channel queue submits steerable prompts; runtime steers; channel steer path removed | 03 | |
+| 07 | [Chat UI bug bash on both Backends](07-chat-bug-bash.md) | Smoke the whole chat on the vm Backend (virtualization + sandbox runtime) and on container; reproduce and fix message-handling bugs | 01–06 | |
 
 ```mermaid
 graph LR
@@ -108,6 +109,10 @@ graph LR
   01 --> 04
   03 --> 05
   03 --> 06
+  02 --> 07
+  04 --> 07
+  05 --> 07
+  06 --> 07
 ```
 
 ## Open decision (outside this plan)
