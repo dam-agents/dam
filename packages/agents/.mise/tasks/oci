@@ -280,6 +280,9 @@ full_copy_venv() {
   home="$(sed -n 's/^home = //p' "$venv/pyvenv.cfg")"
   mkdir -p "$dest"
   cp -a "${home%/bin}/." "$dest/"
+  # The interpreter's own pip vendors libraries it never updates, each a scan
+  # finding; the workloads install with `uv pip --python`.
+  rm -rf "$dest"/bin/pip "$dest"/bin/pip3* "$dest"/lib/python3.*/site-packages/pip "$dest"/lib/python3.*/site-packages/pip-*.dist-info
   sp="$(ls -d "$venv"/lib/python3.*/site-packages)"
   cp -a "$sp/." "$dest/lib/$(basename "$(dirname "$sp")")/site-packages/"
   for f in "$venv"/bin/*; do

@@ -33,9 +33,9 @@ import {
 
 const PATTERNS = `
 /bin/echo (hello|goodbye)  # Say something
-/bin/tail -f /etc/hosts
+/usr/bin/tail -f /etc/hosts
 /bin/sleep ^[1-9]$
-/bin/false  # Fail
+/usr/bin/false  # Fail
 `;
 
 const IDENTITY = { name: "test-box", maxConcurrent: 4 };
@@ -183,7 +183,9 @@ describe("the worker's log", () => {
   });
 
   it("tells a command that ran and failed apart from one that was blocked", async () => {
-    const { lines } = await driveLogged([runItem(1, ["/bin/false"], AGENT)]);
+    const { lines } = await driveLogged([
+      runItem(1, ["/usr/bin/false"], AGENT),
+    ]);
     expect(lines.some((line) => /^FAILED #1 in .*: exit 1$/.test(line))).toBe(
       true,
     );
@@ -314,7 +316,7 @@ describe("a job that does not run to completion", () => {
 
   it("still reports what the job printed before it was killed", async () => {
     const { worker, backend, reports, allReported } = harness([
-      runItem(1, ["/bin/tail", "-f", "/etc/hosts"]),
+      runItem(1, ["/usr/bin/tail", "-f", "/etc/hosts"]),
     ]);
     const running = worker.start();
     await new Promise((r) => setTimeout(r, 400));
