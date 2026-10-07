@@ -116,15 +116,20 @@ tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${
 # Drop this once a smolvm release ships these fixes.
 lk_deps="clang libclang-dev patchelf pkg-config libvirglrenderer-dev libepoxy-dev libdrm-dev libgbm-dev"
 lk_missing=$(for p in $lk_deps; do dpkg -s "$p" >/dev/null 2>&1 || echo "$p"; done)
-[ -z "$lk_missing" ] || { ${sudo[@]+"${sudo[@]}"} apt-get update -qq && ${sudo[@]+"${sudo[@]}"} apt-get install -y -qq $lk_missing; }
-rustup target add "$(uname -m)-unknown-linux-musl" >/dev/null
+# Unattended and bounded: CI runs this in the background beside a starting k3s,
+# where a debconf or needrestart prompt waits on stdin for good, a needrestart
+# restart takes k3s down, and a stalled mirror or fetch hangs the e2e job until
+# its step times out, with nothing in the log.
+apt=(${sudo[@]+"${sudo[@]}"} env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l timeout 600 apt-get -o DPkg::Lock::Timeout=300)
+[ -z "$lk_missing" ] || { "${apt[@]}" update -qq && "${apt[@]}" install -y -qq $lk_missing; } </dev/null
+timeout 600 rustup target add "$(uname -m)-unknown-linux-musl" >/dev/null
 lk_commit="$(sed -n 's/^libkrun-commit=//p' smolvm.pin)"
 [ -n "$lk_commit" ] || { echo "smolvm.pin names no libkrun-commit" >&2; exit 1; }
 lk="$cache/libkrun"
 if [ "$(git -C "$lk" rev-parse HEAD 2>/dev/null)" != "$lk_commit" ]; then
   rm -rf "$lk"
   git init -q "$lk"
-  git -C "$lk" fetch -q --depth 1 https://github.com/smol-machines/libkrun "$lk_commit"
+  timeout 600 git -C "$lk" fetch -q --depth 1 https://github.com/smol-machines/libkrun "$lk_commit"
   git -C "$lk" checkout -q FETCH_HEAD
 fi
 # Its target stays between builds; only the sources are reset.
@@ -141,7 +146,7 @@ install -m 755 "$lk_so" "$b/opt/smolvm/lib/libkrun.so"
 
 # smolvm's guest rootfs ships a crane built with Go 1.21.6 and go-containerregistry
 # v0.19-era deps (docker/docker v24, x/sys v0.8.0) — 3 critical + 54 lesser CVEs, all
-# from this one file. Upstream has not rebuilt it as of 1.23.4, so replace it here.
+# from this one file. Upstream has not rebuilt it as of 1.24.1, so replace it here.
 # Drop this once a smolvm release ships a current crane.
 #
 # The same binary serves the runner: a machine may reach only its gateway, so the

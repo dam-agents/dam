@@ -15,11 +15,8 @@ cd "$(dirname "$0")/.."
 tag=$(sed -n 's/^tag=//p' smolvm.pin)
 commit=$(sed -n 's/^commit=//p' smolvm.pin)
 [ -n "$tag" ] && [ -n "$commit" ] || { echo "smolvm.pin must set tag= and commit=" >&2; exit 1; }
-# The tree is the pinned commit with smolvm.patch applied, so a changed patch
-# fetches it afresh rather than patching a patched tree.
-pinned="$commit $(git hash-object smolvm.patch)"
 
-if [ -f .smolvm/.pinned ] && [ "$(cat .smolvm/.pinned)" = "$pinned" ]; then
+if [ -f .smolvm/.pinned ] && [ "$(cat .smolvm/.pinned)" = "$commit" ]; then
   exit 0
 fi
 
@@ -35,8 +32,4 @@ if [ "$actual" != "$commit" ]; then
   echo "smolvm $tag is $actual, but smolvm.pin expects $commit" >&2
   exit 1
 fi
-# The release exports the guest's root and image trees writable, so a guest
-# could chmod, chown or retime files its sibling machines boot from; the patch
-# exports both read-only. Drop it once a smolvm release does the same.
-git -C .smolvm apply "$PWD/smolvm.patch"
-echo "$pinned" > .smolvm/.pinned
+echo "$commit" > .smolvm/.pinned
