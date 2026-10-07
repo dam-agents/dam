@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { parseFrame } from "../../domain/frames.js";
 import { rewriteAuthError } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 
@@ -116,15 +117,97 @@ function withPlatformMeta(
   });
 }
 
+type FrameShape =
+  | { kind: "chunk"; run: string }
+  | { kind: "tool_call" | "tool_call_update"; toolCallId: string }
+  | { kind: "other" };
+
+const CHUNK_UPDATES = new Set([
+  "user_message_chunk",
+  "agent_message_chunk",
+  "agent_thought_chunk",
+]);
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function shapeOf(line: string): FrameShape {
+  const frame = asRecord(parseFrame(line));
+  const update =
+    frame?.method === "session/update"
+      ? asRecord(asRecord(frame.params)?.update)
+      : null;
+  const kind = update?.sessionUpdate;
+  if (!update || typeof kind !== "string") return { kind: "other" };
+  if (CHUNK_UPDATES.has(kind)) {
+    const messageId =
+      typeof update.messageId === "string" ? update.messageId : "";
+    return { kind: "chunk", run: `${kind}:${messageId}` };
+  }
+  if (
+    (kind === "tool_call" || kind === "tool_call_update") &&
+    typeof update.toolCallId === "string"
+  ) {
+    return { kind, toolCallId: update.toolCallId };
+  }
+  return { kind: "other" };
+}
+
+function tailStart(entries: readonly LogEntry[], size: number): number {
+  if (entries.length <= size) return 0;
+  const cut = entries.length - size;
+  const shapes: FrameShape[] = [];
+  const shapeAt = (i: number): FrameShape =>
+    (shapes[i] ??= shapeOf(entries[i]!.line));
+  const continuesRun = (i: number): boolean => {
+    const here = shapeAt(i);
+    const before = shapeAt(i - 1);
+    return (
+      here.kind === "chunk" &&
+      before.kind === "chunk" &&
+      here.run === before.run
+    );
+  };
+  const walkBack = (ignored: ReadonlySet<string>) => {
+    const unopened = new Set<string>();
+    const include = (i: number): void => {
+      const shape = shapeAt(i);
+      if (shape.kind === "tool_call") unopened.delete(shape.toolCallId);
+      else if (
+        shape.kind === "tool_call_update" &&
+        !ignored.has(shape.toolCallId)
+      )
+        unopened.add(shape.toolCallId);
+    };
+    for (let i = entries.length - 1; i >= cut; i--) include(i);
+    let start = cut;
+    while (start > 0 && (unopened.size > 0 || continuesRun(start))) {
+      start -= 1;
+      include(start);
+    }
+    return { start, unopened };
+  };
+  const first = walkBack(new Set());
+  return first.unopened.size === 0
+    ? first.start
+    : walkBack(first.unopened).start;
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Keeps each session's message history and tracks how
  * far every attached channel has read it, so a channel that joins late or
  * reconnects receives only what it missed. Sequence numbers, the size cap,
  * eviction, and the clip accounting all stay inside. A fresh viewer that opts
- * into the tail gets only the newest replayTailEvents entries; catchUp and
- * replayPage report what was cut — and an opaque cursor naming where the cut
- * ends, when the older range is still in the log — so the caller can put that
- * on the load response. A viewer that does not opt in replays everything the
+ * into the tail gets only the newest replayTailEvents entries, moved back so
+ * the cut never splits a run of one message's chunks or parts a tool call
+ * from its updates, since the client would show half a sentence or drop the
+ * updates; a page is cut the same way. catchUp and replayPage report what
+ * was cut — and an opaque cursor naming where the cut ends, when the older
+ * range is still in the log — so the caller can put that on the load
+ * response. A viewer that does not opt in replays everything the
  * log holds, clipped only by eviction. replayPage serves older ranges on
  * demand without moving any cursor; the cursor embeds the log generation, so
  * a cursor minted before this log was (re)built is refused rather than
@@ -230,11 +313,12 @@ export function createSessionTranscript(
       if (!log) return { clipped: false };
       const current = cursorFor(channel, sessionId);
       let pending = log.entries.filter((entry) => entry.seq > current);
-      const capped =
-        current === 0 &&
-        (opts?.tail ?? false) &&
-        pending.length > deps.replayTailEvents;
-      if (capped) pending = pending.slice(-deps.replayTailEvents);
+      const start =
+        current === 0 && (opts?.tail ?? false)
+          ? tailStart(pending, deps.replayTailEvents)
+          : 0;
+      const capped = start > 0;
+      if (capped) pending = pending.slice(start);
       let lastSeq = current;
       for (const entry of pending) {
         if (!channel.isOpen()) break;
@@ -263,7 +347,7 @@ export function createSessionTranscript(
         return { ok: false };
       }
       const older = log.entries.filter((entry) => entry.seq < decoded.seq);
-      const page = older.slice(-deps.replayTailEvents);
+      const page = older.slice(tailStart(older, deps.replayTailEvents));
       const first = page[0];
       if (first === undefined)
         return { ok: true, clip: { clipped: log.truncated } };

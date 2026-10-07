@@ -22,7 +22,7 @@ import type { HistoryProvider } from "../../../infrastructure/history-provider.j
 const SESSION = "sess-provider";
 
 function updateLine(text: string): string {
-  return JSON.stringify(frames.agentMessage(SESSION, text));
+  return JSON.stringify(frames.agentMessage(SESSION, text, text));
 }
 
 function providerOf(
