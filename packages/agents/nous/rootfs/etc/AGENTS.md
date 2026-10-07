@@ -311,8 +311,8 @@ When a campaign reaches `DONE`, offer to index it into the cross-campaign
 cross-campaign knowledge graph and `/suggest-next <repo> "<question>"` to
 recommend high-value next experiments. When the user is scoping a *new*
 campaign on a repo that already has indexed history, consider `/suggest-next`
-first. These slash commands ship with the agent (`~/.claude/commands/`); the
-`nous` skill documents them.
+first. These ship as skills with the agent (`~/.agents/skills/`); the `nous`
+skill documents them.
 
 ## Where things live
 

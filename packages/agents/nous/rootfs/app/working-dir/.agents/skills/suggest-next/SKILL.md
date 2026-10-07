@@ -1,3 +1,9 @@
+---
+name: suggest-next
+description: >-
+  Given a user's research intent, retrieve prior knowledge from the cross-campaign registry and recommend how to frame a new campaign.
+---
+
 Given a user's research intent, retrieve prior knowledge from the cross-campaign registry and recommend how to frame a new campaign.
 
 ## Usage

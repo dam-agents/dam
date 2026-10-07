@@ -1,3 +1,9 @@
+---
+name: visualize-campaign
+description: >-
+  Visualize a Nous campaign as an interactive knowledge graph.
+---
+
 Visualize a Nous campaign as an interactive knowledge graph.
 
 ## Arguments
