@@ -84,7 +84,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             packages/vm-runner/target
-          key: &rust-key rust-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin') }}
+          key: &rust-key rust-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch') }}
           restore-keys: |
             rust-${{ runner.os }}-check-test-
             rust-${{ runner.os }}-
@@ -273,7 +273,7 @@ jobs:
             ~/.cargo/git/db
             ~/.cache/platform-vm-runner
             packages/vm-runner/target
-          key: &rust-release-key rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/libkrun.patch') }}
+          key: &rust-release-key rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch', 'packages/vm-runner/libkrun.patch') }}
       # check-test's Go and pnpm caches, read-only, for the images that build
       # from them. Before setup-mise, for the reason check-test gives.
       - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'controller') }}

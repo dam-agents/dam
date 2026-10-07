@@ -7,7 +7,7 @@
 # side changed must rerun these. The image's entrypoint (image.toml) passes
 # arguments this binary has to accept, and the chart's image cache template the
 # arguments the image cache service has to accept.
-#MISE sources=["src/**/*.rs", "platform-init/src/**/*.rs", "Cargo.toml", "platform-init/Cargo.toml", "Cargo.lock", "smolvm.pin", "contract/*.json", "image.toml", "{{vars.repo_root}}/helm/templates/controller/vm-image-cache.yaml"]
+#MISE sources=["src/**/*.rs", "platform-init/src/**/*.rs", "Cargo.toml", "platform-init/Cargo.toml", "Cargo.lock", "smolvm.pin", "smolvm.patch", "contract/*.json", "image.toml", "{{vars.repo_root}}/helm/templates/controller/vm-image-cache.yaml"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail
