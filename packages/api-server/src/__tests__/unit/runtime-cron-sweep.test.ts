@@ -29,7 +29,7 @@ function harness(opts: {
     listRetryable: async () => opts.retryable,
     deleteExpiredEvents: async () => {
       expiredDrops += 1;
-      return 0;
+      return [];
     },
   } as unknown as OutboxRepo;
   const queue = {

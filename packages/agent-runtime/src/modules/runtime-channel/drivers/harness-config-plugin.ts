@@ -30,6 +30,7 @@ export type ApplyHarnessConfigFn = (
 export interface HarnessConfigPlugin extends Plugin {
   readonly supported: boolean;
   readonly catalog: HarnessConfigBinding["catalog"];
+  readonly sessionModel: boolean;
   readCurrent(opts?: { discover?: boolean }): Promise<HarnessConfigCurrent>;
   apply: ApplyHarnessConfigFn;
   seedModel(): Promise<boolean>;
@@ -178,6 +179,7 @@ export function createHarnessConfigPlugin(deps: {
     name: IMPL_NAME,
     supported: binding !== undefined,
     catalog: binding?.catalog,
+    sessionModel: binding?.sessionModel === true,
     readCurrent,
     apply,
     seedModel,

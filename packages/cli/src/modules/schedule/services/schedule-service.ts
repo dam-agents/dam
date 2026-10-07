@@ -1,7 +1,9 @@
 import type { inferRouterOutputs } from "@trpc/server";
 import type {
   AppRouter,
+  ScheduleCreateOnceInput,
   ScheduleCreateRRuleInput,
+  ScheduleUpdateOnceInput,
   ScheduleUpdateRRuleInput,
 } from "api-server-api";
 import { err, ok, type Result } from "../../../result.js";
@@ -45,6 +47,22 @@ export interface ScheduleService {
   >;
   updateRRule(
     input: ScheduleUpdateRRuleInput,
+  ): Promise<
+    Result<
+      ScheduleView,
+      | TransportError
+      | AuthRequiredError
+      | ScheduleNotFoundError
+      | InvalidInputError
+    >
+  >;
+  createOnce(
+    input: ScheduleCreateOnceInput,
+  ): Promise<
+    Result<ScheduleView, TransportError | AuthRequiredError | InvalidInputError>
+  >;
+  updateOnce(
+    input: ScheduleUpdateOnceInput,
   ): Promise<
     Result<
       ScheduleView,
@@ -103,6 +121,30 @@ export function createScheduleService(deps: {
     async updateRRule(input) {
       try {
         return ok(await deps.trpc.schedules.updateRRule.mutate(input));
+      } catch (e) {
+        const code = codeOf(e);
+        if (code === "NOT_FOUND") {
+          return err({ kind: "schedule-not-found", id: input.id });
+        }
+        if (code === "BAD_REQUEST") {
+          return err({ kind: "invalid-input", message: messageOf(e) });
+        }
+        return classifyTrpcError(e);
+      }
+    },
+    async createOnce(input) {
+      try {
+        return ok(await deps.trpc.schedules.createOnce.mutate(input));
+      } catch (e) {
+        if (codeOf(e) === "BAD_REQUEST") {
+          return err({ kind: "invalid-input", message: messageOf(e) });
+        }
+        return classifyTrpcError(e);
+      }
+    },
+    async updateOnce(input) {
+      try {
+        return ok(await deps.trpc.schedules.updateOnce.mutate(input));
       } catch (e) {
         const code = codeOf(e);
         if (code === "NOT_FOUND") {

@@ -1,9 +1,6 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/dam-light.svg" />
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/dam-dark.svg" />
-    <img src="docs/assets/dam-dark.svg" width="150" alt="DAM" />
-  </picture>
+  <img src="docs/assets/dam-dark.svg#gh-light-mode-only" width="150" alt="DAM" />
+  <img src="docs/assets/dam-light.svg#gh-dark-mode-only" width="150" alt="DAM" />
 </p>
 
 <h3 align="center">

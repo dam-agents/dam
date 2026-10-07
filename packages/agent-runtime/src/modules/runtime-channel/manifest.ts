@@ -46,6 +46,7 @@ export type ModelDiscoverySources = z.infer<typeof modelDiscoverySources>;
 
 export const harnessConfigBinding = z.object({
   file: z.string().min(1),
+  sessionModel: z.boolean().optional(),
   format: z.enum(["json", "toml"]).default("json"),
   keys: z
     .object({

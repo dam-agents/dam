@@ -41,6 +41,7 @@ export function createHarnessConfigService(deps: {
       return {
         supported: harnessConfigSupported(capabilities),
         catalog: harnessConfigCatalogOf(capabilities),
+        sessionModel: sessionModelSupported(capabilities),
       };
     },
 
@@ -127,6 +128,22 @@ export function harnessConfigSupportOf(
     supported: harnessConfigSupported(capabilities),
     optionIds: catalog ? catalog.options.map((o) => o.id) : null,
   };
+}
+
+function sessionModelSupported(capabilities: unknown): boolean {
+  if (capabilities == null) return false;
+  return (capabilities as { sessionModel?: unknown }).sessionModel === true;
+}
+
+export function sessionModelChoices(
+  capabilities: unknown,
+  discovered: readonly { value: string }[] | null,
+): string[] | null {
+  if (!sessionModelSupported(capabilities)) return null;
+  if (discovered?.length) return discovered.map((m) => m.value);
+  const catalog = harnessConfigCatalogOf(capabilities);
+  const models = catalog?.options.find((o) => o.category === "model");
+  return models?.choices.map((c) => c.value) ?? [];
 }
 
 function harnessConfigCatalogOf(

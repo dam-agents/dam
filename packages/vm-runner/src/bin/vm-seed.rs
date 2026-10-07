@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -176,6 +177,75 @@ async fn await_reachable(url: &str, deadline: Duration) -> anyhow::Result<()> {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how long the connection may take nothing of the body while the archive has a chunk ready for it, and how long the runner may take to answer once the whole body is sent. The connection's own timeouts cover only connecting: a runner that accepted the connection and then never read the body or never answered would otherwise hold this Job until its deadline. The stall limit is longer than the runner's own idle limit, so a runner that is alive drops a stalled upload first and its answer says why.
+const STALL: Duration = Duration::from_secs(360);
+const ANSWER_WAIT: Duration = Duration::from_secs(600);
+const WATCH_EVERY: Duration = Duration::from_secs(5);
+
+// UNIT_BOUNDARY_DESCRIPTION: where the body stands, as the connection sees it. `waiting` is when a chunk was last handed to the connection without it asking for the next one — the connection not draining — and is clear while the connection waits on the archive, since a slow walk is progress the runner's idle limit already covers. `ended` is when the last chunk was taken.
+struct Progress {
+    waiting: Option<Instant>,
+    ended: Option<Instant>,
+}
+
+impl Progress {
+    fn new(now: Instant) -> Self {
+        Progress {
+            waiting: Some(now),
+            ended: None,
+        }
+    }
+
+    fn polled<T>(&mut self, poll: &std::task::Poll<Option<T>>, now: Instant) {
+        match poll {
+            std::task::Poll::Pending => self.waiting = None,
+            std::task::Poll::Ready(Some(_)) => self.waiting = Some(now),
+            std::task::Poll::Ready(None) => {
+                self.waiting = None;
+                self.ended.get_or_insert(now);
+            }
+        }
+    }
+
+    fn stalled(&self, now: Instant) -> Option<String> {
+        if let Some(ended) = self.ended {
+            if now.duration_since(ended) <= ANSWER_WAIT {
+                return None;
+            }
+            let waited = ANSWER_WAIT.as_secs();
+            return Some(format!(
+                "the runner sent no answer {waited}s after the seed was sent"
+            ));
+        }
+        let waiting = self.waiting?;
+        if now.duration_since(waiting) <= STALL {
+            return None;
+        }
+        let stalled = STALL.as_secs();
+        Some(format!(
+            "the runner took nothing of the seed for {stalled}s"
+        ))
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: waits on the upload's answer and gives it up once the progress reads as stalled. Giving up drops the request, which ends the body and so the walk.
+async fn watched<F: std::future::Future>(
+    send: F,
+    progress: &Mutex<Progress>,
+) -> Result<F::Output, String> {
+    tokio::pin!(send);
+    loop {
+        tokio::select! {
+            sent = &mut send => return Ok(sent),
+            () = tokio::time::sleep(WATCH_EVERY) => {
+                if let Some(stalled) = progress.lock().unwrap().stalled(Instant::now()) {
+                    return Err(stalled);
+                }
+            }
+        }
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: a failure that a fresh attempt at the same home meets again: the home is past a walk limit, or the runner refused it as larger than the machine's disk.
 #[derive(Debug)]
 struct Permanent(String);
@@ -222,17 +292,25 @@ fn upload() -> anyhow::Result<()> {
             let (chunks, mut received) = tokio::sync::mpsc::channel(CHUNKS);
             let url = args.url.clone();
             let archiving = tokio::task::spawn_blocking(move || archive(&args, chunks));
+            let progress = Arc::new(Mutex::new(Progress::new(Instant::now())));
+            let polled = progress.clone();
             let body = reqwest::Body::wrap_stream(futures_util::stream::poll_fn(move |cx| {
-                received.poll_recv(cx)
+                let poll = received.poll_recv(cx);
+                polled.lock().unwrap().polled(&poll, Instant::now());
+                poll
             }));
-            let response = client
+            let send = client
                 .put(&url)
                 .bearer_auth(token)
                 .header("content-type", "application/x-tar")
                 .body(body)
-                .send()
-                .await;
+                .send();
+            let response = watched(send, &progress).await;
             let archived = archiving.await?;
+            let response = match response {
+                Ok(response) => response,
+                Err(stalled) => anyhow::bail!("uploading the seed to {url}: {stalled}"),
+            };
             let response = match (response, &archived) {
                 (Ok(response), _) => response,
                 (Err(_), Err(e)) if e.kind() == io::ErrorKind::QuotaExceeded => {
@@ -246,7 +324,11 @@ fn upload() -> anyhow::Result<()> {
                 }
             };
             let status = response.status();
-            let answer = response.text().await.unwrap_or_default();
+            let waited = ANSWER_WAIT.as_secs();
+            let answer = tokio::time::timeout(ANSWER_WAIT, response.text())
+                .await
+                .with_context(|| format!("the runner's answer did not arrive in {waited}s"))?
+                .unwrap_or_default();
             if status == reqwest::StatusCode::PAYLOAD_TOO_LARGE {
                 return Err(Permanent(format!("the runner refused the seed: {status}: {}", answer.trim())).into());
             }
@@ -309,6 +391,47 @@ mod tests {
         .await
         .unwrap();
         opener.abort();
+    }
+
+    // TEST_SCENARIO: a connection that was handed a chunk and never asked for the next one reads as stalled once the stall limit passes, and not before.
+    #[test]
+    fn a_connection_that_takes_nothing_reads_as_stalled() {
+        let start = Instant::now();
+        let mut progress = Progress::new(start);
+        progress.polled(&std::task::Poll::Ready(Some(())), start);
+        assert!(progress.stalled(start + STALL / 2).is_none());
+        let stalled = progress
+            .stalled(start + STALL + Duration::from_secs(1))
+            .unwrap();
+        assert!(stalled.contains("took nothing"), "{stalled}");
+    }
+
+    // TEST_SCENARIO: a connection that waits on a slow walk of the home is not stalled however long the walk takes, since the runner's idle limit already bounds that; once the body ended, the runner's answer is what is waited on, and its absence past the answer limit is a stall.
+    #[test]
+    fn a_slow_walk_is_not_a_stall_but_a_missing_answer_is() {
+        let start = Instant::now();
+        let mut progress = Progress::new(start);
+        progress.polled(&std::task::Poll::<Option<()>>::Pending, start);
+        assert!(progress.stalled(start + STALL * 10).is_none());
+        progress.polled(&std::task::Poll::<Option<()>>::Ready(None), start);
+        assert!(progress.stalled(start + ANSWER_WAIT / 2).is_none());
+        let stalled = progress
+            .stalled(start + ANSWER_WAIT + Duration::from_secs(1))
+            .unwrap();
+        assert!(stalled.contains("no answer"), "{stalled}");
+    }
+
+    // TEST_SCENARIO: a runner that accepts the connection and then neither reads the upload nor answers fails the upload once the stall limit passes, instead of holding the Job until its deadline.
+    #[tokio::test]
+    async fn an_upload_the_runner_never_reads_is_given_up() {
+        let handed = Instant::now()
+            .checked_sub(STALL + Duration::from_secs(1))
+            .unwrap();
+        let progress = Mutex::new(Progress::new(handed));
+        let err = watched(std::future::pending::<()>(), &progress)
+            .await
+            .unwrap_err();
+        assert!(err.contains("took nothing"), "{err}");
     }
 
     // TEST_SCENARIO: a runner that never answers fails the wait once the deadline passes, and the error names the address, so the Job's message says where it could not reach.

@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-10-05
+Last verified: 2026-10-07
 
 ## System context
 
@@ -61,14 +61,14 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [platform-topology](architecture/platform-topology.md) — the long-lived components (controller, api-server, agent-runtime, ui, and the VM runner), the protocols between them, and the K8s resource model; the [images](architecture/agent-images.md) agents run in.
 - [vm-runner](architecture/vm-runner.md) — `vm` hosts; [Mac](architecture/vm-host-runner.md), [image cache](architecture/vm-image-cache.md).
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete.
-- [schedules](architecture/schedules.md) — recurring work on an Agent: arming and firing occurrences, the Precheck that declines a fire before any model wakes, and the Session each fire opens.
+- [schedules](architecture/schedules.md) — recurring and one-time work on an Agent: arming and firing occurrences, the Precheck that declines a fire before any model wakes, and the Session each fire opens.
 - [budgets](architecture/budgets.md) — per-user ceiling on concurrently reserved compute, enforced by the controller at the 0→1 scale transition; UserBudget CRs for privileged users.
 - [persistence](architecture/persistence.md) — the storage substrates (Postgres, custom resources, per-Agent PVC, the VM runner volume) and what survives each lifecycle event.
 - [security-and-credentials](architecture/security-and-credentials.md) — identity, Secret storage, HITL, boundaries; [credential-gateway](architecture/credential-gateway.md).
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, bindings, ambient mode, identity linking.
 - [channel-turns](architecture/channel-turns.md) — a channel message becoming an agent turn: inbound relay, outbound tools, the liveness watch, delivery recovery.
 - [slack-guarantees](architecture/slack-guarantees.md): what is guaranteed in Slack
-- [public-agent-page](architecture/public-agent-page.md) — the one unauthenticated surface, reached from the Slack Agent Footer: a conversion page that names a channel-bound Agent and its owner, rather than a dead end.
+- [public-agent-page](architecture/public-agent-page.md) — an unauthenticated page from the Slack Agent Footer, naming a channel-bound Agent and its owner.
 - [cli](architecture/cli.md) — `dam` command-line client, an npm-distributed Node package that points at a configured Platform deployment.
 - [satellites](architecture/satellites.md) — MCP servers on machines outside the cluster: a polled queue, tools re-exposed to the agent scoped by machine, and the jobs it starts against them.
 - [skills](architecture/skills.md) — the skills catalog: connectable git-based skill sources, per-Agent install records, reusable named selections a user carries between agents, publish back as a PR.

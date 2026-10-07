@@ -115,9 +115,21 @@ export interface AcpRuntimeDeps {
   undeliveredPrompts: UndeliveredPromptStore;
   activeTurns: ActiveTurnStore;
   runResults?: RunResultStore;
+  sessionMcpServers?: (ref: string) => unknown[];
+  onReportableTurnEnded?: (report: ReportableTurn) => void;
   isTerminalSessionActive?: (sessionId: string) => boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
+}
+
+export const SCHEDULE_SURFACE = "schedule";
+
+export interface ReportableTurn {
+  sessionId: string;
+  reportTo: string;
+  reportName: string;
+  text: string;
+  truncated: boolean;
 }
 
 interface OutboundMapping {
@@ -161,7 +173,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const isMachineSession = (sessionId: string): boolean => {
     const meta = deps.sessionMetadata?.get(sessionId)?.meta;
-    return meta?.type === SessionType.ScheduleCron || Boolean(meta?.scheduleId);
+    return (
+      meta?.type === SessionType.ScheduleCron ||
+      meta?.type === SessionType.ScheduleOnce ||
+      Boolean(meta?.scheduleId)
+    );
   };
 
   let shuttingDown = false;
@@ -296,6 +312,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     onLoadOrphaned(sessionId, outboundId) {
       orphanLoad(sessionId, outboundId);
     },
+    mcpServersFor,
   });
 
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -306,9 +323,37 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   >();
 
   function isRunSession(sessionId: string): boolean {
-    return (
-      deps.sessionMetadata?.get(sessionId)?.meta.type === SessionType.CliRun
-    );
+    const meta = deps.sessionMetadata?.get(sessionId)?.meta;
+    return meta?.type === SessionType.CliRun || meta?.reportTo !== undefined;
+  }
+
+  function refFor(sessionId: string): string {
+    const current = deps.sessionMetadata?.get(sessionId)?.meta;
+    if (current?.ref) return current.ref;
+    const ref = randomUUID();
+    deps.sessionMetadata?.set(sessionId, { ...current, ref });
+    return ref;
+  }
+
+  function mcpServersFor(sessionId: string): unknown[] {
+    return deps.sessionMcpServers?.(refFor(sessionId)) ?? [];
+  }
+
+  function reportTurnEnd(
+    sessionId: string,
+    buffer: { text: string; truncated: boolean } | undefined,
+  ): void {
+    const meta = deps.sessionMetadata?.get(sessionId)?.meta;
+    if (!meta?.reportTo) return;
+    const { reportTo, reportName, ...rest } = meta;
+    deps.sessionMetadata?.set(sessionId, rest);
+    deps.onReportableTurnEnded?.({
+      sessionId,
+      reportTo,
+      reportName: reportName ?? "one-time task",
+      text: buffer?.text ?? "",
+      truncated: buffer?.truncated ?? false,
+    });
   }
 
   function accumulateRunText(sessionId: string, text: string): void {
@@ -393,7 +438,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           jsonrpc: "2.0",
           id: outboundId,
           method,
-          params: { sessionId, cwd: ".", mcpServers: [] },
+          params: { sessionId, cwd: ".", mcpServers: mcpServersFor(sessionId) },
         },
         deps.workingDir,
       ),
@@ -778,6 +823,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               truncated: buffer?.truncated ?? false,
               endedAt: new Date().toISOString(),
             });
+            reportTurnEnd(sid, buffer);
           }
           maybeCloseIdleSession(sid);
           if (turnEnded) lease.maybeRecycle();
@@ -988,15 +1034,24 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const promptSessionId = method === "session/prompt" ? paramsSid : null;
 
       const platformMeta =
-        method === "session/new" ? extractPlatformMeta(frame) : null;
+        method === "session/new"
+          ? { ...(extractPlatformMeta(frame) ?? {}), ref: randomUUID() }
+          : null;
       const promptId =
         method === "session/prompt" ? platformString(frame, "promptId") : null;
       const retryOf =
         method === "session/prompt" ? platformString(frame, "retryOf") : null;
-      const forwardFrame =
+      const strippedFrame =
         platformMeta !== null || method === "session/prompt"
           ? stripPlatformMeta(frame)
           : frame;
+      const forwardFrame =
+        platformMeta !== null
+          ? withMcpServers(
+              strippedFrame,
+              deps.sessionMcpServers?.(platformMeta.ref) ?? [],
+            )
+          : strippedFrame;
 
       const framedFrame =
         promptSessionId !== null &&
@@ -1042,7 +1097,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           promptId,
           runPrompt: platformString(frame, "surface") === "cli",
           unattended:
-            nonViewerChannels.has(channel) && isMachineSession(promptSessionId),
+            nonViewerChannels.has(channel) &&
+            (isMachineSession(promptSessionId) ||
+              platformString(frame, "surface") === SCHEDULE_SURFACE),
         });
         if (fate === "refused") {
           outboundIdToClient.delete(outboundId);
@@ -1189,6 +1246,14 @@ function extractUndeliveredPrompts(
     .max(HANDOVER_PROMPT_CAP)
     .safeParse(params.prompts);
   return parsed.success ? parsed.data : null;
+}
+
+function withMcpServers(frame: object, extra: unknown[]): object {
+  if (extra.length === 0 || !isNonNullObject(frame)) return frame;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return frame;
+  const own = Array.isArray(params.mcpServers) ? params.mcpServers : [];
+  return { ...frame, params: { ...params, mcpServers: [...own, ...extra] } };
 }
 
 function stripPlatformMeta(frame: unknown): object {

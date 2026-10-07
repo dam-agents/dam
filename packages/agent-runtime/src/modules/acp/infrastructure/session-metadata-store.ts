@@ -7,6 +7,9 @@ export const platformSessionMetaSchema = z.object({
   scheduleId: z.string().optional(),
   initialization: z.boolean().optional(),
   threadTs: z.string().optional(),
+  ref: z.string().optional(),
+  reportTo: z.string().optional(),
+  reportName: z.string().optional(),
 });
 
 const sessionMetaEntrySchema = z.object({
@@ -41,6 +44,7 @@ export type SessionMetaEntry = z.infer<typeof sessionMetaEntrySchema>;
 
 export interface SessionMetadataStore {
   get(sessionId: string): SessionMetaEntry | undefined;
+  findByRef(ref: string): string | undefined;
   set(sessionId: string, meta: PlatformSessionMeta): void;
   recordActivity(sessionId: string): void;
   recordSeen(sessionId: string): void;
@@ -82,6 +86,14 @@ export function createSessionMetadataStore(
   return {
     get(sessionId) {
       return store.read().sessions[sessionId];
+    },
+    findByRef(ref) {
+      const { sessions, tombstones } = store.read();
+      const dead = new Set(tombstones);
+      for (const [sessionId, entry] of Object.entries(sessions)) {
+        if (entry.meta.ref === ref && !dead.has(sessionId)) return sessionId;
+      }
+      return undefined;
     },
     set(sessionId, meta) {
       const { sessions, tombstones } = store.read();

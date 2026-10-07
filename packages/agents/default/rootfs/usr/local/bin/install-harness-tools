@@ -12,4 +12,7 @@ tools=$PLATFORM_TOOLS_VOLUME
 # and leave its dir passing as installed. Dirs left empty before that are swept.
 [ ! -d "$tools/installs" ] || find "$tools/installs" -mindepth 2 -maxdepth 2 -type d -empty -delete
 MISE_CACHE_DIR="$tools/cache" MISE_LOCKFILE=1 MISE_NPM_PACKAGE_MANAGER=aube MISE_GITHUB_SLSA=false mise install --system
+# aube unpacks agent-browser's native binaries without their exec bit, and its
+# launcher's chmod fails on the volume agents mount read-only: set it here.
+[ ! -d "$tools/installs/npm-agent-browser" ] || find "$tools/installs/npm-agent-browser" -path '*/agent-browser/bin/agent-browser-*' -type f ! -name '*.js' ! -name '*.exe' -exec chmod +x {} +
 PLAYWRIGHT_BROWSERS_PATH="$tools/ms-playwright" playwright install chromium

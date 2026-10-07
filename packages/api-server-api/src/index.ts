@@ -118,11 +118,16 @@ export {
 export type {
   Schedule,
   ScheduleSpec,
+  ScheduleSpecOnce,
+  ScheduleOnceOrigin,
+  ScheduleStatus,
   QuietWindow,
   ScheduleCreator,
   ScheduleCreateCronInput,
   ScheduleCreateRRuleInput,
   ScheduleUpdateRRuleInput,
+  ScheduleCreateOnceInput,
+  ScheduleUpdateOnceInput,
   SchedulesService,
   PrecheckVerdict,
 } from "./modules/schedules/types.js";
@@ -233,6 +238,13 @@ export type {
 } from "./modules/features/types.js";
 export { featureIdSchema } from "./modules/features/schemas.js";
 export { quietWindowSchema } from "./modules/schedules/schemas.js";
+export {
+  ONCE_DELIVERY_WINDOW_MS,
+  OnceResult,
+  isOnceFinished,
+  onceState,
+} from "./modules/schedules/once.js";
+export type { OnceState } from "./modules/schedules/once.js";
 export {
   ALL_DAYS,
   buildRRule,
