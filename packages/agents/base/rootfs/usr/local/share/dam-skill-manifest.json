@@ -1,6 +1,9 @@
 {
   "manifestVersion": 1,
   "skills": {
+    "agent-browser": [
+      "6f6ff4c22d420c2a86a176de5e98f7b779f166cb19eb3b2faeedcfbcc888b902"
+    ],
     "agent-case-study": [
       "89de1762a9c515e2aee30af59edee909f0cea1cfa65e6198612b03c727661f5d",
       "f14537a93590a5875f0bb5352cd85179758d163d3082ba6e0411da79913eacde",
@@ -50,9 +53,6 @@
       "2f9ae8cc4fd4d486613b14e8797c52c20e1c547c120e691b576ba0ae8ae79d07",
       "eb80b4461fc782fa238f15957ff56217a18e3b15c164c718c813486c6ff0d1db",
       "195c17218c34d8de9f37e12fc8965dad3bef87dd6ca0edd6fc83ceeb683e5b16"
-    ],
-    "platform-browser": [
-      "90ad1f7271c28915541c234860ecb5a32cbd09c37c4471b09c3ccd24d6d2b9bd"
     ],
     "platform-github": [
       "a1e778f24f0d193b5d6c104141e4bed37cd23c5d4321654a7e496c651a297014",

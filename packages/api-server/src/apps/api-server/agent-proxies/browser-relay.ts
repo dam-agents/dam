@@ -64,6 +64,7 @@ export function createBrowserRelay(
     agentId: string,
   ) {
     const url = new URL(req.url!, `http://${req.headers.host}`);
+    const display = STREAM_SOCKET_PATH.test(url.pathname);
     wss.handleUpgrade(req, socket, head, async (client) => {
       client.on("error", () => client.terminate());
       const release = presence.acquire(agentId);
@@ -129,7 +130,7 @@ export function createBrowserRelay(
         client.on("message", (d, isBinary) => {
           if (us.readyState !== WebSocket.OPEN) return;
           us.send(d, { binary: isBinary });
-          stamper.bump(agentId);
+          if (!display) stamper.bump(agentId);
         });
         us.on("message", (d, isBinary) => {
           if (client.readyState === WebSocket.OPEN)

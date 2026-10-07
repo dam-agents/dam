@@ -30,6 +30,7 @@ export function useBrowserControl(agentId: string) {
     message: string | null;
   }>({ state: "starting", message: null });
   const [connectKey, setConnectKey] = useState(0);
+  const [connects, setConnects] = useState(0);
   const failedAttemptsRef = useRef(0);
   const pendingUrlRef = useRef<string | null>(null);
 
@@ -74,6 +75,7 @@ export function useBrowserControl(agentId: string) {
         if (cancelled) return;
         failedAttemptsRef.current = 0;
         setConnection("live");
+        setConnects((n) => n + 1);
         if (pendingUrlRef.current) {
           send({ type: "navigate", url: pendingUrlRef.current });
           pendingUrlRef.current = null;
@@ -125,6 +127,7 @@ export function useBrowserControl(agentId: string) {
 
   return {
     connection,
+    connects,
     browser,
     page,
     error,

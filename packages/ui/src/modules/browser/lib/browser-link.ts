@@ -38,14 +38,21 @@ export function browserLinkLabel(url: string): string {
   return `${host}${pathname === "/" ? "" : pathname}`;
 }
 
-const BROWSER_LINK_IN_TEXT = /\((platform:\/\/browser\?url=[^)\s]+)\)/g;
+export function mayAutoOpen(
+  link: BrowserLink,
+  opts: { now: number; draftOpen: boolean; alreadyOpened: boolean },
+): boolean {
+  return !opts.draftOpen && !opts.alreadyOpened && isFreshLink(link, opts.now);
+}
 
-export function browserLinksIn(text: string): BrowserLink[] {
-  const links: BrowserLink[] = [];
-  for (const match of text.matchAll(BROWSER_LINK_IN_TEXT)) {
-    const link = parseBrowserLink(match[1]);
-    if (link && !links.some((l) => l.url === link.url && l.at === link.at))
-      links.push(link);
-  }
-  return links;
+export function streamPageUrl(agentId: string, token: string): string {
+  return `/api/public/browser-stream/${encodeURIComponent(agentId)}/index.html?token=${encodeURIComponent(token)}`;
+}
+
+export function streamPageReload(
+  agentId: string,
+  shownToken: string | null,
+  token: string,
+): string | null {
+  return token === shownToken ? null : streamPageUrl(agentId, token);
 }

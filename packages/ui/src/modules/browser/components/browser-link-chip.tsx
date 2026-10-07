@@ -2,15 +2,15 @@ import { Globe } from "@carbon/icons-react";
 
 import { Tooltip } from "@/components/ui/tooltip";
 
-import { useStore } from "../../../store.js";
 import {
   useAutoOpenBrowser,
   useBrowserAvailable,
+  useOpenBrowser,
 } from "../hooks/use-auto-open-browser.js";
 import { type BrowserLink, browserLinkLabel } from "../lib/browser-link.js";
 
 export function BrowserLinkChip({ link }: { link: BrowserLink }) {
-  const setOpenBrowser = useStore((s) => s.setOpenBrowser);
+  const openBrowser = useOpenBrowser();
   const { agentId, available } = useBrowserAvailable();
   useAutoOpenBrowser(link);
   const { url } = link;
@@ -26,7 +26,7 @@ export function BrowserLinkChip({ link }: { link: BrowserLink }) {
       <button
         type="button"
         disabled={!available}
-        onClick={() => agentId && setOpenBrowser(agentId, url)}
+        onClick={() => agentId && void openBrowser(agentId, url)}
         className="not-prose inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-card px-2 py-0.5 align-middle text-sm font-medium text-foreground transition-colors hover:border-accent hover:bg-accent-light hover:text-accent disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-border disabled:hover:bg-card disabled:hover:text-foreground"
       >
         <Globe size={13} className="shrink-0 text-muted-foreground" />

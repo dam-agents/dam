@@ -9,7 +9,6 @@ import type {
   Role,
   ToolChip as ToolChipPart,
 } from "../../../types.js";
-import { ToolBrowserLinks } from "../../browser/components/tool-browser-links.js";
 import { DelegationBlock } from "../../invocations/components/delegation-block.js";
 import { useOwnedSpawns } from "../../invocations/components/delegation-owners.js";
 import {
@@ -26,12 +25,7 @@ function ToolPart({ chip }: { chip: ToolChipPart }) {
   if (spawns) return <DelegationBlock chip={chip} spawns={spawns} />;
   if (isAwaitSubAgentsChip(chip))
     return <ToolChip chip={{ ...chip, title: awaitChipTitle(chip) }} />;
-  return (
-    <>
-      <ToolChip chip={chip} />
-      <ToolBrowserLinks chip={chip} />
-    </>
-  );
+  return <ToolChip chip={chip} />;
 }
 
 function HistoryBlock({ text }: { text: string }) {

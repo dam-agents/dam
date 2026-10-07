@@ -1,12 +1,13 @@
-// TEST_OVERVIEW: an agent shows the user a page with `platform-browser open`, which prints `[Open host](platform://browser?url=<encoded>&at=<ms>)`. The chat turns that link into a button that opens the browser panel on the page, opens the panel by itself when the link is fresh, and the panel navigates to it once, when it is ready.
+// TEST_OVERVIEW: an agent shows the user a page by writing `[Open host](platform://browser?url=<encoded>&at=<ms>)` in its reply, as its `agent-browser` skill teaches. The chat turns that link into a button that opens the browser panel on the page, opens the panel by itself when the link is fresh, and the panel navigates to it once, when it is ready.
 import { describe, expect, test } from "vitest";
 import { create } from "zustand";
 
 import {
   browserLinkLabel,
-  browserLinksIn,
   isFreshLink,
+  mayAutoOpen,
   parseBrowserLink,
+  streamPageReload,
 } from "../../modules/browser/lib/browser-link.js";
 import { createBrowserSlice } from "../../modules/browser/store.js";
 import type { PlatformStore } from "../../store.js";
@@ -59,25 +60,6 @@ describe("isFreshLink", () => {
   });
 });
 
-describe("browserLinksIn", () => {
-  // TEST_SCENARIO: agents often leave the line `platform-browser open` prints in the tool output instead of pasting it into their reply. The chat finds the link there, among the command's other output, so the panel can open anyway; repeats collapse to one, and a broken link is skipped.
-  test("finds the browser links in a command's output", () => {
-    const local = `platform://browser?url=${encodeURIComponent("http://localhost:3000/")}&at=5`;
-    const out = [
-      `[Open localhost:3000](${local})`,
-      "✓ Done",
-      `[Open localhost:3000](${local})`,
-      `[Open x](platform://browser?url=${encodeURIComponent("file:///etc/passwd")})`,
-      `[Open kiwi](platform://browser?url=${encodeURIComponent("https://www.kiwi.com/en/")})`,
-    ].join("\n");
-    expect(browserLinksIn(out)).toEqual([
-      { url: "http://localhost:3000/", at: 5 },
-      { url: "https://www.kiwi.com/en/", at: null },
-    ]);
-    expect(browserLinksIn("no links here")).toEqual([]);
-  });
-});
-
 describe("browser open request", () => {
   // TEST_SCENARIO: clicking a button opens the panel and asks it to go to the page. The panel takes the request once; reopening the panel later must not send the user back to an old page.
   test("is taken once", () => {
@@ -106,5 +88,43 @@ describe("maximized browser", () => {
     expect(store.getState().browserMaximized).toBe(true);
     store.getState().setOpenBrowser(null);
     expect(store.getState().browserMaximized).toBe(false);
+  });
+});
+
+describe("mayAutoOpen", () => {
+  const link = { url: "http://a/", at: 1_000_000 };
+  const now = 1_000_000 + 10_000;
+
+  // TEST_SCENARIO: a fresh link the agent just wrote opens the panel by itself, but never over an unsaved file or artifact draft in the docked slot: nobody asked for the panel, so nobody is asked to discard the draft. It waits, and opens once the draft is gone if the link is still fresh; a link it already opened stays opened.
+  test("waits while a draft is unsaved, and opens a fresh link once", () => {
+    expect(
+      mayAutoOpen(link, { now, draftOpen: false, alreadyOpened: false }),
+    ).toBe(true);
+    expect(
+      mayAutoOpen(link, { now, draftOpen: true, alreadyOpened: false }),
+    ).toBe(false);
+    expect(
+      mayAutoOpen(link, { now, draftOpen: false, alreadyOpened: true }),
+    ).toBe(false);
+    expect(
+      mayAutoOpen(link, {
+        now: link.at + 3 * 60_000,
+        draftOpen: false,
+        alreadyOpened: false,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("streamPageReload", () => {
+  // TEST_SCENARIO: the stream page authenticates with the token in its address and reconnects by reloading that address. Once the access token has been renewed, the page must be loaded again with the new one, or every reconnect after the old one expires is refused; while the token is unchanged nothing is reloaded.
+  test("reloads the stream page only with a renewed token", () => {
+    expect(streamPageReload("agent 1", null, "t1")).toBe(
+      "/api/public/browser-stream/agent%201/index.html?token=t1",
+    );
+    expect(streamPageReload("agent 1", "t1", "t1")).toBeNull();
+    expect(streamPageReload("agent 1", "t1", "t2")).toBe(
+      "/api/public/browser-stream/agent%201/index.html?token=t2",
+    );
   });
 });

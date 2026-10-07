@@ -13,7 +13,7 @@ import {
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import type { SessionPresence } from "../../apps/api-server/agent-proxies/session-presence.js";
 
-// TEST_OVERVIEW: The browser relay carries the chat's browser panel to the agent's `/api/browser` stream: frames from the agent, input from the user. It is open only on agents whose gateway injects credentials into addressed requests alone, it keeps the agent awake like an open chat, and only the user's input — never a frame — counts as activity.
+// TEST_OVERVIEW: The browser relay carries the chat's browser panel to the agent: its control socket to `/api/browser` — the page's state from the agent, the toolbar's requests from the user — and its stream page's socket to `/api/browser/display`. It is open only on agents whose gateway injects credentials into addressed requests alone, it keeps the agent awake like an open chat, and only the toolbar's requests count as activity, never the stream.
 
 const closers: (() => Promise<void> | void)[] = [];
 
@@ -145,8 +145,8 @@ describe("browser relay", () => {
     expect(relayed).toBe(false);
   });
 
-  // TEST_SCENARIO: A panel attaches. It holds the agent awake for as long as it is open, its address reaches the agent, frames reach the panel and input reaches the agent; input stamps last-activity, frames do not.
-  it("pipes frames and input, holding presence and stamping only on input", async () => {
+  // TEST_SCENARIO: A panel's control socket attaches. It holds the agent awake for as long as it is open, the page's state reaches the panel and the toolbar's requests reach the agent; a request stamps last-activity, the page's state does not.
+  it("relays the control socket, holding presence and stamping only on requests", async () => {
     const agent = await fakeAgent();
     const stamps: string[] = [];
     let held = 0;
@@ -183,6 +183,48 @@ describe("browser relay", () => {
     ws.send(JSON.stringify({ type: "reload" }));
     await until(() => agent.received.length === 1);
     expect(stamps).toEqual(["agent-1"]);
+
+    ws.close();
+    await until(() => held === 0);
+    relay.close();
+  });
+
+  // TEST_SCENARIO: The stream client's socket carries the picture and the stream protocol's own traffic — it acknowledges frames many times a second — so nothing on it stamps last-activity; otherwise a forgotten panel would keep the agent's idle clock fresh forever. It still holds the agent awake while open, as any panel connection does.
+  it("relays the stream socket without stamping activity", async () => {
+    const agent = await fakeAgent();
+    const stamps: string[] = [];
+    let held = 0;
+    const repo = {
+      ensureReady: async () => {},
+      patchAnnotation: async (id: string) => {
+        stamps.push(id);
+      },
+    } as unknown as AgentsRepository;
+    const presence = {
+      acquire: () => {
+        held++;
+        return () => {
+          held--;
+        };
+      },
+    } as unknown as SessionPresence;
+    const relay = createBrowserRelay("ns", repo, presence, () => agent.base);
+    const server = createServer();
+    server.on("upgrade", (req, socket, head) =>
+      relay.handleUpgrade(req, socket, head, "agent-1"),
+    );
+    const port = await listen(server);
+
+    const { ws } = await open(
+      `ws://127.0.0.1:${port}/api/public/browser-stream/agent-1/api/websockets?token=t`,
+    );
+    await until(() => agent.sockets.length === 1);
+    expect(held).toBe(1);
+    expect(agent.paths[0]).toBe("/api/browser/display");
+
+    for (let i = 0; i < 5; i++) ws.send(`ACK ${i}`);
+    await until(() => agent.received.length === 5);
+    expect(stamps).toEqual([]);
 
     ws.close();
     await until(() => held === 0);

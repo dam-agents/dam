@@ -77,6 +77,7 @@ import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
+import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
@@ -197,7 +198,7 @@ export function ChatView() {
   const openBrowserAgentId = useStore((s) =>
     s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
   );
-  const setOpenBrowser = useStore((s) => s.setOpenBrowser);
+  const openBrowser = useOpenBrowser();
   const browserMaximized = useStore((s) => s.browserMaximized);
   const openDelegation = useStore((s) =>
     s.openDelegation?.driverAgentId === s.selectedAgent
@@ -638,7 +639,7 @@ export function ChatView() {
                 )}
                 {canOpenBrowser && selectedAgent && (
                   <DropdownMenuItem
-                    onSelect={() => setOpenBrowser(selectedAgent)}
+                    onSelect={() => void openBrowser(selectedAgent)}
                   >
                     Open browser
                   </DropdownMenuItem>

@@ -236,7 +236,12 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
       )}
 
       <div className="relative min-h-0 flex-1 overflow-hidden overscroll-none bg-muted/30">
-        <StreamView ref={screenRef} agentId={agentId} agentName={agentName} />
+        <StreamView
+          ref={screenRef}
+          agentId={agentId}
+          agentName={agentName}
+          reconnects={stream.connects}
+        />
         {(stream.connection === "connecting" ||
           (stream.connection === "live" &&
             stream.browser.state === "starting")) && (
