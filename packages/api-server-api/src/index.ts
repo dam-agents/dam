@@ -426,6 +426,7 @@ export {
   OP_OUTPUT,
   OP_RESIZE,
   OP_EXIT,
+  OP_SESSION,
   encodeDataFrame,
   encodeResize,
   encodeExit,
