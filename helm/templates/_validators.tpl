@@ -30,11 +30,27 @@ add it to the include list in `platform.validate`.
 The api-server refuses to start on a feature mode it cannot read.
 */}}
 {{- define "platform.validate.featureModes" -}}
-{{- range $id, $mode := .Values.features -}}
+{{- range $id, $mode := fromJson (include "platform.featureModes" $) -}}
 {{- if not (has $mode (list "off" "experimental" "on")) -}}
 {{- fail (printf "features.%s must be off, experimental or on, got %v." $id $mode) -}}
 {{- end -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+`features` as JSON. YAML 1.1 reads an unquoted on/off as a boolean, so a
+boolean is taken as the mode it was written as.
+*/}}
+{{- define "platform.featureModes" -}}
+{{- $modes := dict -}}
+{{- range $id, $mode := .Values.features | default dict -}}
+{{- if kindIs "bool" $mode -}}
+{{- $_ := set $modes $id (ternary "on" "off" $mode) -}}
+{{- else -}}
+{{- $_ := set $modes $id $mode -}}
+{{- end -}}
+{{- end -}}
+{{- toJson $modes -}}
 {{- end -}}
 
 {{/*

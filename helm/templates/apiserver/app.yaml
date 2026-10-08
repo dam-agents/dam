@@ -249,7 +249,7 @@ spec:
               value: "true"
             {{- end }}
             - name: FEATURE_MODES
-              value: {{ .Values.features | default dict | toJson | quote }}
+              value: {{ include "platform.featureModes" . | quote }}
             {{- if .Values.virtualization.enabled }}
             - name: VIRTUALIZATION_ENABLED
               value: "true"
