@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-07
+Last verified: 2026-10-08
 
 ## Overview
 
@@ -20,7 +20,7 @@ A discovery source is also what lets a **seeded model** exist, and it is the one
 
 Bedrock is the third dialect, after the OpenAI model list and LiteLLM's model info. The [AWS Bedrock](connections.md#app-preset-aws-bedrock) Connection names the region's control-plane endpoint, and Pi's manifest declares it as a source ahead of its OpenAI one, speaking Bedrock's inference-profile listing — the profiles that can be invoked from that region, each carrying a region prefix a bare model ID lacks, which is why a typed ID is the wrong unit to offer. Models Bedrock also serves on demand under their bare ID are not in that listing, so they are not offered either; the Anthropic models a coding harness runs on are reachable only through a profile. A manifest lists its sources in priority order and the first whose variable is set answers, so one harness fronts several providers' dialects without a static catalog. The seed and the provider pin behave exactly as for an OpenAI-shaped provider. What no listing can say is whether the account has been granted a model: that is learned at the first call, as an error the turn reports. Claude Code's catalog is model tiers, which Claude Code itself resolves to the region's Bedrock profiles ([connections](connections.md#app-preset-aws-bedrock)), so its source asks only the LiteLLM-shaped endpoint a connection points it at, and extends the tiers rather than replacing them. There its in-pod model gateway maps every tier to the newest model the provider has for it, which on a provider that serves no Claude model is one model for all of them; the provider's other models are reachable only by name, so the panel lists them after the tiers, under the lowercased, `claude/`-prefixed names the gateway publishes to Claude Code itself, so a choice made in the panel and one made in Claude Code's own model picker are the same value. Nothing is seeded: the tiers already resolve on any provider.
 
-Beside the model it is set to, the runtime reports the harness's **default**: what a session runs on when the config file names no model. That is a model the provider pins through its environment if one is pinned, otherwise a value the manifest declares that selects the harness's built-in default in a single session. A harness with neither reports none. A [schedule](schedules.md#session-model) with no model runs on this default, not on the model the agent is set to.
+The runtime also reports the harness's **default**, what a session runs on when the config file names no model: a model the provider pins through its environment, otherwise a manifest-declared value that selects the harness's built-in default for one session. Only a harness that can switch a session's model reports one. A [schedule](schedules.md#session-model) with no model runs on it, not on the model the agent is set to.
 
 ## Snapshots
 
