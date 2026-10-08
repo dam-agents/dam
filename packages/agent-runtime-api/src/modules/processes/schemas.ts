@@ -59,7 +59,11 @@ export const keepMarkRequestSchema = z.discriminatedUnion("kind", [
     markId: z.string().min(8).max(128),
     pid: markedPidSchema,
   }),
-  z.object({ kind: z.literal("pid"), pid: markedPidSchema }),
+  z.object({
+    kind: z.literal("pid"),
+    pid: markedPidSchema,
+    callerPid: markedPidSchema,
+  }),
 ]);
 
 export const processOutputSchema = z.object({

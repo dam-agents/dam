@@ -129,7 +129,10 @@ dies at hibernation. Each row resolves who decided, in this order:
    detached. A launch passes an id down the job's
    environment, which every descendant inherits through `nohup` and `setsid`; a mark on a
    running process names its pid and start time. A Detached Process is marked while any
-   process of its tree carries a live mark.
+   process of its tree carries a live mark. A mark on a pid that runs under the chat
+   harness is refused, since such work never detaches: a Harness Task is kept already, and
+   anything else there ends with its command or session. The one exception is a child of
+   the shell that runs `platform-keep` itself, which detaches when that shell exits.
 3. **The default**: a Harness Task is kept, since backgrounding it was the agent's
    choice; a Detached Process is not. A Turn Process ends with its turn and takes no
    decision.

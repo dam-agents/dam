@@ -119,6 +119,51 @@ export function withOverride(
   return [...overrides.filter((o) => o.key !== next.key), next];
 }
 
+export interface PidMarkInput {
+  target: ScannedProcess;
+  tree: ProcessTree | undefined;
+  processes: ScannedProcess[];
+  harnessPid: number | null;
+  callerPid: number;
+}
+
+function ancestorPids(
+  target: ScannedProcess,
+  processes: ScannedProcess[],
+): Set<number> {
+  const byPid = new Map(processes.map((p) => [p.pid, p]));
+  const ancestors = new Set<number>();
+  for (
+    let pid = target.ppid;
+    pid > 0 && !ancestors.has(pid);
+    pid = byPid.get(pid)?.ppid ?? 0
+  ) {
+    ancestors.add(pid);
+  }
+  return ancestors;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Decides whether `platform-keep --pid` may mark a
+ * process, and says why not. A mark counts only on a Detached Process. A
+ * Harness Task is kept by default, so it needs none. Other work under the
+ * chat harness ends with the command that runs it, or with its session, and
+ * never detaches, so a mark on it would report a keep that does nothing. The
+ * one exception is a child of the shell that runs `platform-keep` itself, as
+ * in `nohup job & platform-keep --pid $!`: it detaches when that shell exits.
+ * Work outside the harness, such as under a terminal, is marked and counts
+ * once it detaches.
+ */
+export function pidMarkRefusal(input: PidMarkInput): string | null {
+  const { target, tree, harnessPid, callerPid } = input;
+  if (tree?.kind === "harness-task")
+    return `pid ${target.pid} is a background task your harness runs. It is kept by default, so it needs no mark.`;
+  const ancestors = ancestorPids(target, input.processes);
+  if (harnessPid === null || !ancestors.has(harnessPid)) return null;
+  if (ancestors.has(callerPid)) return null;
+  return `pid ${target.pid} runs under your harness as part of another command, such as a background task or a tool call that still runs. It ends with that command or its session, so a mark cannot keep it. Start the job with platform-keep -- <command> instead.`;
+}
+
 export function userChoiceMessage(override: KeepOverride): string {
   return override.keepsAwake
     ? "The user set this process to keep the agent awake in the Processes panel. It needs no mark."

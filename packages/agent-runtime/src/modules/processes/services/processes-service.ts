@@ -34,6 +34,7 @@ import {
   liveMarks,
   liveOverrides,
   pidMarkId,
+  pidMarkRefusal,
   userChoiceMessage,
   withOverride,
 } from "../domain/keep.js";
@@ -60,7 +61,8 @@ const NOTICE: ProcessNotice = { topic: "processes" };
 
 export type KeepMarkError =
   | { kind: "NotFound"; message: string }
-  | { kind: "UserDecided"; message: string };
+  | { kind: "UserDecided"; message: string }
+  | { kind: "NotKeepable"; message: string };
 
 export interface KeepMarkSink {
   mark(
@@ -524,6 +526,18 @@ export function createProcessesService(
           kind: "UserDecided",
           message: userChoiceMessage(override),
         });
+      const refusal =
+        request.kind === "pid"
+          ? pidMarkRefusal({
+              target,
+              tree,
+              processes: current.snapshot.processes,
+              harnessPid: deps.harnessPid(),
+              callerPid: request.callerPid,
+            })
+          : null;
+      if (refusal !== null)
+        return err({ kind: "NotKeepable", message: refusal });
       const id =
         request.kind === "launch"
           ? request.markId
