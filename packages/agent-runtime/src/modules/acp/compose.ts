@@ -69,7 +69,7 @@ export interface ComposeAcpOptions {
   isTerminalSessionActive: (sessionId: string) => boolean;
   backgroundWorkHolds: boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
-  beforeFirstSpawn: () => Promise<void>;
+  beforeSpawn: () => Promise<void>;
   leaseModel: (lease: {
     harness: string;
     provider: string | null;
@@ -219,9 +219,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
         log: (msg) => opts.log(`[${pair.harness}] ${msg}`),
         envReadyAtBoot: opts.envReader.ready(),
         ...(isDefault
-          ? { beforeFirstSpawn: opts.beforeFirstSpawn }
+          ? { beforeSpawn: opts.beforeSpawn }
           : seedsLease
-            ? { beforeFirstSpawn: seedLease }
+            ? { beforeSpawn: seedLease }
             : {}),
         idleReapDelayMs: 3_000,
         ...(config.QUEUE_PARK_MS !== undefined

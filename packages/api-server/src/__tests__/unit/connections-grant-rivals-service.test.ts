@@ -104,6 +104,7 @@ function setup(
     oauthEngine: unused(),
     githubAppEngine: unused(),
     s3CredentialProbe: unused(),
+    providerBalance: unused(),
     providerKeyProbe: unused(),
     oauthCallbackUrl: "https://example.com/callback",
     brandName: "Test",

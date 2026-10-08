@@ -42,6 +42,7 @@ import { loadExtensions } from "./infrastructure/extension-loader.js";
 import type { HarnessClient } from "./harness-client.js";
 import { createRuntimeChannelService } from "./service.js";
 import {
+  SEED_LISTING_RETRY,
   createHarnessConfigPlugin,
   type HarnessConfigPlugin,
 } from "./drivers/harness-config-plugin.js";
@@ -199,6 +200,7 @@ export async function composeRuntimeChannel(
         agentHome: opts.agentHome,
         envReader: opts.envReader,
         discoverModels,
+        seedListingRetry: SEED_LISTING_RETRY,
         log,
       }),
     );

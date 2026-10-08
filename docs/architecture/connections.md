@@ -217,19 +217,15 @@ to offer for this to work is the OpenAI-shaped chat-completion route, a
 model-information route reporting a non-empty model list (Bob treats an
 empty list as an error), and no region hint of its own — a gateway
 answering the profile route with one would redirect Bob's inference calls
-off the configured host. This Connection contributes no model of its
-own, and Bob's built-in default resolves to one only its own gateway
-serves — so a model has to come from somewhere else. A provider pin or a
-per-agent override supplies one, and when neither does, nobody has to
-step in: because this Connection redirects Bob, the platform seeds one
-before the harness starts, taking the first of the names the endpoint
-lists once they are ordered ([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
+off the configured host. Bob's built-in default resolves to a model only
+its own gateway serves, so the Connection pins Bob's model as it pins
+Codex's and Pi's; a per-agent override or a session's pick that the endpoint lists
+outranks the pin, and a pin the endpoint no longer lists is passed over. A redirecting Connection that pins nothing leaves the choice to
+the seed, which takes the first of the names the endpoint lists once
+they are ordered — from the OpenAI model list when the key is refused
+the model-information route ([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
 Claude Code reaches custom upstreams through its in-pod model gateway,
 which fronts each granted provider apart.
-A key the endpoint refuses the model-information route still gets one:
-the platform then takes the names from the OpenAI model list, which such
-a key may call.
-The seed fills an empty slot only, never overriding a pin.
 
 ### App preset: Curve Bender
 
@@ -238,7 +234,7 @@ Claude and GPT. It is a provider of its own, offered next to the IBM
 LiteLLM proxy so an agent can hold either or both, and contributes the
 same env, the same Bob prefix rewrite and the same inert key placeholder,
 aimed at its own host. What differs is what it tells the harnesses about its
-models, which the endpoint's model list names but does not describe. Codex and Pi start on GLM, since the
+models, which the endpoint's model list names but does not describe. Codex, Pi and Bob start on GLM, since the
 models the IBM LiteLLM proxy pins do not exist here. Pi gives every model the
 endpoint lists one shared description, so the Connection tells it they are
 reasoning models — without that Pi drops their thinking — and names the

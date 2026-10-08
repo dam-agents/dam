@@ -115,7 +115,7 @@ export interface AcpRuntimeDeps {
   idleReapDelayMs?: number;
   envReadyAtBoot?: boolean;
   warmStartTimeoutMs?: number;
-  beforeFirstSpawn?: () => Promise<void>;
+  beforeSpawn?: () => Promise<void>;
   logBytesCap?: number;
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
@@ -564,9 +564,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     envReadyAtBoot: deps.envReadyAtBoot ?? true,
     warmStartTimeoutMs,
     envForceRecycleMs,
-    ...(deps.beforeFirstSpawn
-      ? { beforeFirstSpawn: deps.beforeFirstSpawn }
-      : {}),
+    ...(deps.beforeSpawn ? { beforeSpawn: deps.beforeSpawn } : {}),
     log(msg) {
       deps.log?.(msg);
     },
