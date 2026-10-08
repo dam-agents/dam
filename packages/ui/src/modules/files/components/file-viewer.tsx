@@ -18,6 +18,7 @@ import { useStore } from "../../../store.js";
 import { useFilePromotion } from "../../artifacts/hooks/use-file-promotion.js";
 import { type FileContent, useFileWriteMutation } from "../api/queries.js";
 import { base64ToBlob, downloadFileContent } from "../lib/download.js";
+import { PLATFORM_INSTRUCTIONS_PATH } from "../lib/platform-instructions.js";
 import { saveFileDraft } from "../lib/save-file.js";
 import { FilePreviewBody } from "./file-preview-body.js";
 import { FullscreenPreviewDialog } from "./fullscreen-preview-dialog.js";
@@ -38,7 +39,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const isPdf = mime === "application/pdf";
   const isBinaryImage =
     binary && !!content && !!mime && mime.startsWith("image/") && !isSvg;
-  const platformInstructions = path === "AGENTS.md";
+  const platformInstructions = path === PLATFORM_INSTRUCTIONS_PATH;
   const editable = !binary && !tooLarge && !platformInstructions;
 
   const selectedAgent = useStore((s) => s.selectedAgent);
