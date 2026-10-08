@@ -57,6 +57,8 @@ export function useProviderModels(
             agentTrpc(agentId).harnessConfig.models.query({ harness, provider })
         : skipToken,
     staleTime: 60_000,
+    refetchInterval: (q) =>
+      q.state.data?.availableModels?.length ? false : 5_000,
     retry: false,
   });
   return { ...query, operable };

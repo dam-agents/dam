@@ -461,33 +461,6 @@ function pairMeta(pair: SessionPair | undefined): Record<string, string> {
   };
 }
 
-async function applySessionModel(
-  connection: {
-    agent: { request: (method: string, params: unknown) => Promise<unknown> };
-  },
-  sessionId: string,
-  opened: unknown,
-  model: string | null | undefined,
-): Promise<void> {
-  if (!model) return;
-  const option = (
-    opened as { configOptions?: { id?: string; currentValue?: unknown }[] }
-  ).configOptions?.find((o) => o.id === "model");
-  if (!option || option.currentValue === model) return;
-  try {
-    await connection.agent.request("session/set_config_option", {
-      sessionId,
-      configId: "model",
-      value: model,
-    });
-  } catch (err) {
-    getLogger().warn(
-      { err, sessionId, model },
-      "acp: the harness would not switch the new session's model",
-    );
-  }
-}
-
 async function resolvePair(
   firePair:
     ((agentId: string) => Promise<SessionPair | null | undefined>) | undefined,
@@ -618,7 +591,6 @@ export function createAcpClient(opts: {
             const s = await connection.agent.request("session/new", newSession);
             sessionId = s.sessionId;
             watchSessionId = sessionId;
-            await applySessionModel(connection, sessionId, s, pair?.model);
           }
           try {
             sendOpts.onSession?.(sessionId);
@@ -741,7 +713,6 @@ export function createAcpClient(opts: {
             });
             sessionId = s.sessionId;
             watchSessionId = sessionId;
-            await applySessionModel(connection, sessionId, s, pair?.model);
             await triggerOpts.onSessionCreated(sessionId);
           }
 

@@ -21,7 +21,6 @@ import { acpSessionsKeys } from "../api/keys.js";
 import { removeSessionFromCache } from "../api/queries.js";
 import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
 import { draftWriter, loadDraftSnapshot } from "../lib/draft-snapshot.js";
-import type { SessionModel } from "../lib/session-model.js";
 
 const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
 
@@ -35,7 +34,6 @@ export interface SessionsSlice {
   sessionMode: SessionMode | null;
   messages: Message[];
   runStarts: string[];
-  sessionModel: SessionModel | null;
   nextSessionPair: Record<string, SessionPair>;
   sessionError: SessionError | null;
   sessionFilter: SessionCategory[];
@@ -57,7 +55,6 @@ export interface SessionsSlice {
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
   addRunStart: (at: string) => void;
-  setSessionModel: (model: SessionModel | null) => void;
   setNextSessionPair: (agentId: string, pair: SessionPair) => void;
   setSessionError: (e: SessionError | null) => void;
   toggleSessionFilter: (category: SessionCategory) => void;
@@ -119,7 +116,6 @@ export const createSessionsSlice: StateCreator<
   return {
     sessionId: null,
     runStarts: [],
-    sessionModel: null,
     nextSessionPair: {},
     sessionMode: null,
     messages: [],
@@ -149,7 +145,6 @@ export const createSessionsSlice: StateCreator<
         messages: typeof updater === "function" ? updater(s.messages) : updater,
       })),
     setRunStarts: (list) => set({ runStarts: list }),
-    setSessionModel: (model) => set({ sessionModel: model }),
     setNextSessionPair: (agentId, pair) =>
       set((state) => ({
         nextSessionPair: { ...state.nextSessionPair, [agentId]: pair },
@@ -238,7 +233,6 @@ export const createSessionsSlice: StateCreator<
         sessionMode: null,
         messages: [],
         runStarts: [],
-        sessionModel: null,
         sessionError: null,
         terminalPaused: false,
         openFilePath: null,

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
+import { trpc } from "../../../trpc.js";
 import type { Attachment, Message, RetryPayload } from "../../../types.js";
 import {
   connectionCloseReason,
@@ -307,6 +308,13 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
 
         finalizeBubble();
       } catch (err: unknown) {
+        if (
+          (err as { data?: { platform?: { reason?: string } } } | null)?.data
+            ?.platform?.reason === "provider-removed"
+        )
+          void queryClient.invalidateQueries({
+            queryKey: trpc.connections.getAgentConnections.queryKey(),
+          });
         const bubble = useStore.getState().messages.find((m) => m.id === aId);
         const streamed = !!bubble && hasAgentContent(bubble);
         const outcome = classifySendOutcome({

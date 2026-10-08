@@ -103,6 +103,7 @@ import {
   setSessionRunning,
   useAgentSession,
 } from "../api/queries.js";
+import { useProviderModels } from "../api/session-pair.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
@@ -131,7 +132,6 @@ import {
   useSidebarPanels,
 } from "../hooks/use-sidebar-panels.js";
 import { draftKey } from "../lib/draft-key.js";
-import { modelDisplayName } from "../lib/session-model.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
 import { dividerLabel, threadItems, timeProps } from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
@@ -298,21 +298,28 @@ export function ChatView() {
             harnessStatus.defaultHarness ?? harnessStatus.harnesses[0]!.name,
         }
       : null;
-  const storedSessionModel = useStore((s) => s.sessionModel);
-  const sessionModel =
-    sessionId && storedSessionModel?.sessionId === sessionId
-      ? storedSessionModel
-      : null;
-  const onOtherHarness =
-    !!currentSession?.harness &&
-    !!harnessStatus?.defaultHarness &&
-    currentSession.harness !== harnessStatus.defaultHarness;
-  const indicatorModel = sessionModel
-    ? (sessionModel.choices.find((c) => c.value === sessionModel.current)
-        ?.name ?? modelDisplayName(sessionModel.current))
-    : onOtherHarness
-      ? (currentSession?.model ?? undefined)
-      : harnessCurrent?.model;
+  const { data: sessionProviderModels } = useProviderModels(
+    sessionId ? selectedAgent : null,
+    currentSession?.harness ?? null,
+    currentSession?.provider ?? null,
+  );
+  const sessionModelChoices = [
+    ...new Map(
+      (sessionProviderModels?.availableModels ?? []).map((m) => [m.value, m]),
+    ).values(),
+  ];
+  const sessionModel = currentSession?.harness
+    ? {
+        current: currentSession.model ?? "",
+        choices: sessionModelChoices,
+      }
+    : null;
+  const indicatorModel = currentSession?.harness
+    ? currentSession.model
+      ? (sessionModelChoices.find((c) => c.value === currentSession.model)
+          ?.name ?? currentSession.model)
+      : "Default model"
+    : harnessCurrent?.model;
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;

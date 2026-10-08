@@ -138,6 +138,51 @@ describe("createReadHarnessConfig", () => {
     ]);
   });
 
+  // TEST_SCENARIO: a tier the provider serves no model of would be mapped onto another model by the harness's gateway, so the picker would promise a model it cannot deliver; only tiers the listing names stay.
+  it("drops the catalog tiers the provider lists no model of", async () => {
+    const out = await createHarnessConfigPlugin({
+      harness: "test",
+      binding: {
+        ...BINDING,
+        catalog: {
+          options: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              choices: [
+                { value: "sonnet", name: "Sonnet" },
+                { value: "haiku", name: "Haiku" },
+              ],
+            },
+          ],
+        },
+        modelDiscovery: { urlEnv: ["U"], extendsCatalog: true },
+      },
+      agentHome: home,
+      envReader: asLease({
+        current: () => ({ U: "https://proxy" }),
+        ready: () => true,
+      }),
+      seedListingRetry: { attempts: 1, delayMs: 0 },
+      discoverModels: async () => ({
+        status: "observed",
+        models: [
+          {
+            value: "claude/aws/claude-sonnet-4-6",
+            name: "claude/aws/claude-sonnet-4-6",
+          },
+        ],
+        via: "U",
+      }),
+      log: noop,
+    }).readCurrent();
+    expect(out.availableModels?.map((m) => m.value)).toEqual([
+      "sonnet",
+      "claude/aws/claude-sonnet-4-6",
+    ]);
+  });
+
   // TEST_SCENARIO: before the env rail has materialized once, a missing URL says nothing about the grant, so the read must not clear an established list.
   it("omits the model list until the runtime env has materialized", async () => {
     const out = await createHarnessConfigPlugin({

@@ -169,7 +169,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
   const runtime = createLeaseRouter({
     defaultHarness: opts.defaultHarness,
     harnessKnown: (harness) => Object.hasOwn(opts.harnesses, harness),
-    modelInLease: (harness) => opts.harnesses[harness]?.sessionModel !== true,
     providers: () => opts.envReader.providers(),
     sessionMetadata,
     backgroundWork,
@@ -186,7 +185,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
         !isDefault && pair.model === null && harness?.sessionModel !== true;
       let seeded: string | null = null;
       const seedLease = async (): Promise<void> => {
-        seeded = await opts.leaseModel(pair);
+        seeded = await opts.leaseModel(scoped.pair());
         if (seeded) opts.log(`[${pair.harness}] lease runs on ${seeded}`);
       };
       return createAcpRuntime({
@@ -200,8 +199,8 @@ export function composeAcp(opts: ComposeAcpOptions): {
             command: opts.command,
             workingDir: opts.workingDir,
             env: leaseSpawnEnv(opts.envReader, {
-              ...pair,
-              model: pair.model ?? seeded,
+              ...scoped.pair(),
+              model: scoped.pair().model ?? seeded,
             }),
           }),
         backgroundWork: scoped.backgroundWork,

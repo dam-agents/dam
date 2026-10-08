@@ -9,6 +9,7 @@ import type { ClientChannel } from "../infrastructure/client-channel.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
 import type { BackgroundWorkRegistry } from "./background-work-registry.js";
 import type { AcpRuntime } from "./acp-runtime/acp-runtime.js";
+import { PIN_MODEL_METHOD } from "agent-runtime-api";
 import type { EnvChange } from "../../runtime-channel/drivers/env-plugin.js";
 
 export interface LeasePair {
@@ -22,13 +23,13 @@ export const PROVIDER_REMOVED_REASON = "provider-removed";
 export interface LeaseRouterDeps {
   defaultHarness: string;
   harnessKnown: (harness: string) => boolean;
-  modelInLease: (harness: string) => boolean;
   providers: () => string[];
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
   createRuntime: (
     pair: LeasePair,
     scoped: {
+      pair: () => LeasePair;
       backgroundWork: BackgroundWorkRegistry;
       onHarnessExited: () => void;
     },
@@ -71,20 +72,23 @@ const keyOf = (pair: LeasePair): string =>
   JSON.stringify([pair.harness, pair.provider, pair.model]);
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Holds one harness process per (harness, provider)
- * pair a session asks for, plus the model for a harness that cannot switch a
- * live session's model. Each lease is an unchanged ACP runtime; the router
- * gives every real channel a virtual one per lease it touches, routes each
- * client frame to the lease of the session it names, keeps agent-request ids
- * apart across leases, and replays the channel's own initialize into a lease
- * it reaches late. A session with no pair, or with a harness but no provider,
- * runs on the default harness and the first granted provider, and keeps that
- * pair once a provider is granted. A lease other than the default one is shut
- * down once it holds no session; one that lost its harness is dropped, and one
- * that chose its model from an env that changed is reopened. The default lease
- * opened before any provider was granted takes the first one granted, so a
- * client attached early and the next session meet on the same lease. A lease's going
- * away closes a client connection only when that client used the lease.
+ * UNIT_BOUNDARY_DESCRIPTION: Holds one harness process per (harness, provider,
+ * model) a session asks for, so a session's model reaches its harness as the
+ * process env rather than as a switch inside a live session. Each lease is an
+ * unchanged ACP runtime; the router gives every real channel a virtual one per
+ * lease it touches, routes each client frame to the lease of the session it
+ * names, keeps agent-request ids apart across leases, and replays the
+ * channel's own initialize into a lease it reaches late. Pinning a session to
+ * another model moves its next turn to that model's lease. A session with no
+ * pair, or with a harness but no provider, runs on the default harness and the
+ * first granted provider, and keeps that pair once a provider is granted. A
+ * lease other than the default one is shut down once it holds no session; one
+ * that lost its harness is dropped, one whose provider was removed is shut
+ * down, and one that chose its model from an env that changed is reopened. The
+ * default lease opened before any provider was granted takes the first one
+ * granted and restarts on its env, so a client attached early and the next
+ * session meet on the same lease. A lease's going away closes a client
+ * connection only when that client used the lease.
  */
 export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   const leases = new Map<string, Lease>();
@@ -98,13 +102,8 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     model: null,
   });
 
-  const normalize = (pair: LeasePair): LeasePair => ({
-    ...pair,
-    model: deps.modelInLease(pair.harness) ? pair.model : null,
-  });
-
   function ownsSession(lease: Lease, sessionId: string): boolean {
-    return keyOf(normalize(pairOfSession(sessionId, false))) === lease.key;
+    return keyOf(pairOfSession(sessionId, false)) === lease.key;
   }
 
   function scopedBackgroundWork(
@@ -131,16 +130,16 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   }
 
   function leaseFor(pair: LeasePair): Lease {
-    const normalized = normalize(pair);
-    const key = keyOf(normalized);
+    const key = keyOf(pair);
     const existing = leases.get(key);
     if (existing) return existing;
     let self: Lease | null = null;
     const releaseListeners: (() => void)[] = [];
-    const runtime = deps.createRuntime(normalized, {
+    const runtime = deps.createRuntime(pair, {
+      pair: () => lease.pair,
       backgroundWork: scopedBackgroundWork(() => self!, releaseListeners),
       onHarnessExited: () => {
-        if (lease.key === keyOf(normalize(defaultPair()))) return;
+        if (lease.key === keyOf(defaultPair())) return;
         deps.log(
           `lease ${lease.key} lost its harness; the next session respawns it`,
         );
@@ -149,7 +148,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     });
     const lease: Lease = {
       key,
-      pair: normalized,
+      pair,
       runtime,
       channels: new Map(),
       releaseListeners,
@@ -310,6 +309,11 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     const params = isNonNullObject(frame.params) ? frame.params : undefined;
     if (method === "initialize") attachment.initialize = params ?? {};
 
+    if (method === PIN_MODEL_METHOD && isRequest(frame)) {
+      pinModel(real, frame.id, params);
+      return;
+    }
+
     if (method === "session/new") {
       const requested = platformPair(params);
       const pair = { ...defaultPair(), ...requested };
@@ -364,8 +368,38 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     );
   }
 
+  function pinModel(
+    real: ClientChannel,
+    id: unknown,
+    params: Record<string, unknown> | undefined,
+  ): void {
+    const sessionId =
+      typeof params?.sessionId === "string" ? params.sessionId : "";
+    const model =
+      typeof params?.model === "string" && params.model !== ""
+        ? params.model
+        : null;
+    const entry = deps.sessionMetadata.get(sessionId);
+    if (!entry) {
+      refuse(real, id, { code: -32602, message: "Unknown session" });
+      return;
+    }
+    const pair = pairOfSession(sessionId, true);
+    if (pair.provider !== null && !deps.providers().includes(pair.provider)) {
+      refuse(real, id, providerRemoved(pair.provider));
+      return;
+    }
+    const { model: _previous, ...meta } = entry.meta;
+    deps.sessionMetadata.set(sessionId, {
+      ...meta,
+      ...(model !== null && { model }),
+    });
+    if (real.isOpen())
+      real.send(JSON.stringify({ jsonrpc: "2.0", id, result: { model } }));
+  }
+
   function idleOut(): void {
-    const defaultKey = keyOf(normalize(defaultPair()));
+    const defaultKey = keyOf(defaultPair());
     for (const lease of [...leases.values()]) {
       if (lease.key === defaultKey) continue;
       if (lease.runtime.holdsSessions()) continue;
@@ -387,15 +421,11 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   idleTimer.unref?.();
 
   function seeded(lease: Lease): boolean {
-    return (
-      lease.key !== keyOf(normalize(defaultPair())) &&
-      deps.modelInLease(lease.pair.harness) &&
-      lease.pair.model === null
-    );
+    return lease.key !== keyOf(defaultPair()) && lease.pair.model === null;
   }
 
   function adoptFirstProvider(): void {
-    const pair = normalize(defaultPair());
+    const pair = defaultPair();
     const key = keyOf(pair);
     if (pair.provider === null || leases.has(key)) return;
     const unprovided = leases.get(keyOf({ ...pair, provider: null }));
@@ -405,10 +435,11 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     unprovided.key = key;
     unprovided.pair = pair;
     leases.set(key, unprovided);
+    unprovided.runtime.refreshEnv({ force: true });
   }
 
   function leaseOfSession(sessionId: string): Lease | undefined {
-    return leases.get(keyOf(normalize(pairOfSession(sessionId, false))));
+    return leases.get(keyOf(pairOfSession(sessionId, false)));
   }
 
   return {
@@ -469,6 +500,15 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     applyEnvChange(change) {
       adoptFirstProvider();
       for (const lease of [...leases.values()]) {
+        if (
+          lease.pair.provider !== null &&
+          !deps.providers().includes(lease.pair.provider)
+        ) {
+          deps.log(`lease ${lease.key} lost its provider; shutting it down`);
+          drop(lease);
+          lease.runtime.shutdown();
+          continue;
+        }
         const hits = [
           change.base,
           change.providers.find((p) => p.id === lease.pair.provider),

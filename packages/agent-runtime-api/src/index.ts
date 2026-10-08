@@ -22,6 +22,7 @@ export type {
   StoreDelegationFramesInput,
   DelegationFrames,
 } from "./modules/sessions/types.js";
+export { PIN_MODEL_METHOD } from "./modules/sessions/types.js";
 export {
   podSessionModeSchema,
   podSessionNoticeSchema,

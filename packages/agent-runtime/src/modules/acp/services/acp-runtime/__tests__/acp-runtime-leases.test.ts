@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
+import { PIN_MODEL_METHOD } from "agent-runtime-api";
 import {
   IDLE_REAP_DELAY_MS,
   createClient,
@@ -44,7 +45,6 @@ function createLeaseWorld(opts: { providers: string[] }) {
   const router = createLeaseRouter({
     defaultHarness: "claude-code",
     harnessKnown: (h) => ["claude-code", "codex"].includes(h),
-    modelInLease: (h) => h === "codex",
     providers: () => providers,
     sessionMetadata: metadata.store,
     backgroundWork,
@@ -62,9 +62,10 @@ function createLeaseWorld(opts: { providers: string[] }) {
         onHarnessExited: scoped.onHarnessExited,
         spawnAgent: () => {
           const { harness, process } = createHarness();
-          const list = harnesses.get(key(pair)) ?? [];
+          const spawnedAs = key(scoped.pair());
+          const list = harnesses.get(spawnedAs) ?? [];
           list.push(harness);
-          harnesses.set(key(pair), list);
+          harnesses.set(spawnedAs, list);
           return process;
         },
       }),
@@ -290,8 +291,9 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
   /** TEST_SCENARIO: A client connects before the agent's first provider has
    * reached the pod, so it lands on a lease with no provider. When the
    * provider arrives, that lease becomes the default one and restarts its
-   * process on the new env, as any env change does; no second lease opens, so
-   * the client and the next session meet on the same lease. */
+   * process on that provider's env, so the next session runs with the
+   * provider's credentials; no second lease opens, so the client and the next
+   * session meet on the same lease. */
   it("lets the provider-less default lease take the first provider", () => {
     const world = createLeaseWorld({ providers: [] });
     const client = world.connect();
@@ -312,10 +314,10 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
 
     expect(early.killed()).toBe(true);
     world.connect().send(newSessionOn(2, {}));
-    expect(world.harness("claude-code/-").received("session/new")).toHaveLength(
-      1,
-    );
-    expect(world.harnessCount("claude-code/conn-a")).toBe(0);
+    expect(
+      world.harness("claude-code/conn-a").received("session/new"),
+    ).toHaveLength(1);
+    expect(world.harnessCount("claude-code/-")).toBe(1);
   });
 
   /** TEST_SCENARIO: A session whose harness this agent no longer carries is
@@ -334,9 +336,10 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
   });
 
   /** TEST_SCENARIO: Every client connection is attached to the default
-   * provider's process. Taking that provider away closes the connections that
-   * used it, and keeps open a connection that used only another provider. */
-  it("closes only the clients that used a removed provider", () => {
+   * provider's process. Rotating that provider's credential restarts the
+   * process and closes the connections that used it, and keeps open a
+   * connection that used only another provider. */
+  it("closes only the clients that used a restarted process", () => {
     const world = createLeaseWorld({ providers: ["conn-a", "conn-b"] });
     const onA = world.connect();
     const onB = world.connect();
@@ -344,7 +347,12 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     startSession(world, onB, "claude-code/conn-b", "s-b", 2, {
       provider: "conn-b",
     });
-    world.revoke("conn-a");
+    world.router.applyEnvChange({
+      namesChanged: true,
+      base: null,
+      providers: [{ id: "conn-a", namesChanged: true }],
+      harnesses: [],
+    });
     world.harness("claude-code/conn-a").exit();
     expect(onA.isOpen()).toBe(false);
     expect(onB.isOpen()).toBe(true);
@@ -415,20 +423,64 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     expect(client.reply(1)?.result).toMatchObject({ sessionId: "s-b" });
   });
 
-  /** TEST_SCENARIO: Background work in a session whose harness switches models
-   * in place keeps that session's process, though the session records a model
-   * and the process does not. */
+  /** TEST_SCENARIO: Background work in a session keeps that session's
+   * process alive after its client leaves, on a process keyed by its model. */
   it("keeps a lease busy while one of its sessions holds background work", () => {
     vi.useFakeTimers();
     const world = createLeaseWorld({ providers: ["conn-a", "conn-b"] });
     const client = world.connect();
-    startSession(world, client, "claude-code/conn-b", "s-b", 1, {
+    startSession(world, client, "claude-code/conn-b/opus", "s-b", 1, {
       provider: "conn-b",
       model: "opus",
     });
     world.backgroundWork.report("s-b", [{ id: "build" }]);
     client.disconnect();
     vi.advanceTimersByTime(IDLE_REAP_DELAY_MS + IDLE_CHECK_MS);
-    expect(world.harness("claude-code/conn-b").killed()).toBe(false);
+    expect(world.harness("claude-code/conn-b/opus").killed()).toBe(false);
+  });
+
+  /** TEST_SCENARIO: Changing a session's model moves it to the process for
+   * that model. The session keeps its harness and provider, its next prompt
+   * reaches the new process, and the process it left gets nothing more. */
+  it("moves a session to the process for the model it is pinned to", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    startSession(world, client, "claude-code/conn-a/sonnet", "s", 1, {
+      model: "sonnet",
+    });
+    client.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: PIN_MODEL_METHOD,
+      params: { sessionId: "s", model: "opus" },
+    });
+    expect(client.reply(2)?.result).toEqual({ model: "opus" });
+    expect(world.metadata.store.get("s")?.meta).toMatchObject({
+      harness: "claude-code",
+      provider: "conn-a",
+      model: "opus",
+    });
+    client.send(frames.prompt(3, "s", "on opus"));
+    expect(promptTextsOf(world.harness("claude-code/conn-a/opus"))).toEqual([
+      "on opus",
+    ]);
+    expect(promptTextsOf(world.harness("claude-code/conn-a/sonnet"))).toEqual(
+      [],
+    );
+  });
+
+  /** TEST_SCENARIO: A process whose provider was taken away holds no
+   * credential the agent may still use, so it is shut down rather than
+   * restarted without one. */
+  it("shuts down the process of a removed provider", () => {
+    const world = createLeaseWorld({ providers: ["conn-a", "conn-b"] });
+    const client = world.connect();
+    startSession(world, client, "claude-code/conn-b", "s-b", 1, {
+      provider: "conn-b",
+    });
+    world.revoke("conn-b");
+    expect(world.harness("claude-code/conn-b").killed()).toBe(true);
+    expect(world.harnessCount("claude-code/conn-b")).toBe(1);
+    expect(world.router.leases().map((l) => l.provider)).toEqual(["conn-a"]);
   });
 });

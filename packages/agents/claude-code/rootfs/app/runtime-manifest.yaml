@@ -21,7 +21,7 @@ agentProcesses: ["claude"]
 drivers:
   harness-config:
     file: "$HOME/.claude/settings.json"
-    # A session can be switched to another model over ACP without touching this file.
+    # Schedules may name a model for this harness; it reaches the harness as PLATFORM_MODEL.
     sessionModel: true
     keys:
       model: "model"

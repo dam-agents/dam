@@ -169,8 +169,14 @@ export function createHarnessConfigPlugin(deps: {
           env,
         )?.spec.extendsCatalog;
         const catalogModels = extendsCatalog
-          ? (binding?.catalog?.options.find((o) => o.id === "model")?.choices ??
-            [])
+          ? (
+              binding?.catalog?.options.find((o) => o.id === "model")
+                ?.choices ?? []
+            ).filter((c) =>
+              outcome.models.some((m) =>
+                m.value.toLowerCase().includes(c.value.toLowerCase()),
+              ),
+            )
           : [];
         const listed = new Set(catalogModels.map((c) => c.value));
         return [
