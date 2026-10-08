@@ -20,7 +20,7 @@ import type { AgentView } from "../../../types.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
   AgentAvatar,
-  isAsleep,
+  avatarMood,
 } from "../../agents/components/avatar/agent-avatar.js";
 import { FreeUpComputeItems } from "../../agents/components/power-menu-items.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
@@ -76,8 +76,11 @@ export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
         <AgentAvatar
           name={avatarName ?? agent.name}
           size={44}
-          sleeping={isAsleep(display.state)}
-          stopped={agent.stopRequested}
+          mood={avatarMood(
+            display.state,
+            agent.stopRequested,
+            working ?? false,
+          )}
         />
       }
       title={agent.name}

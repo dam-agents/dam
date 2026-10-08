@@ -68,7 +68,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "agent-avatars",
     label: "Agent avatars",
     description:
-      "Gives every agent a robot-head avatar drawn from its name and owner, shown in the agents list, the chat and the Home feed. Renaming an agent gives it a new face.",
+      "Gives every agent one of eight characters picked from its name and owner, shown in the agents list, the chat and the Home feed. Its eyes show whether it is working, idle or hibernating. Renaming an agent can give it a new character.",
   },
 ];
 

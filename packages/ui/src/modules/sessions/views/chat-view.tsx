@@ -52,7 +52,7 @@ import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccess
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import {
   AgentAvatar,
-  isAsleep,
+  avatarMood,
 } from "../../agents/components/avatar/agent-avatar.js";
 import {
   agentFailures,
@@ -587,9 +587,12 @@ export function ChatView() {
               <>
                 <AgentAvatar
                   name={agentView.name}
-                  size={40}
-                  sleeping={isAsleep(agentDisplay?.state)}
-                  stopped={agentView.stopRequested}
+                  size={32}
+                  mood={avatarMood(
+                    agentDisplay?.state,
+                    agentView.stopRequested,
+                    busy,
+                  )}
                   className="@max-[149px]:hidden"
                 />
                 <span

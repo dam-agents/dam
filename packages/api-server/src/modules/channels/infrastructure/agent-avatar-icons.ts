@@ -1,13 +1,11 @@
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Resvg } from "@resvg/resvg-js";
-import { avatarSvg } from "api-server-api/avatar/svg";
-import { avatarKey } from "api-server-api/avatar/traits";
+import { avatarKey, avatarSvg } from "api-server-api/avatar/svg";
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
 
 const ICON_PX = 512;
-const ICON_MARGIN = 0.01;
 const UPLOAD_TIMEOUT_MS = 10_000;
 const ICON_WAIT_MS = 2_000;
 const RETRY_AFTER_MS = 10 * 60_000;
@@ -38,7 +36,7 @@ export function createImgbbAgentIcons(
   const failedAt = new Map<string, number>();
 
   const upload = async (key: string): Promise<string> => {
-    const png = new Resvg(avatarSvg(key, false, ICON_MARGIN), {
+    const png = new Resvg(avatarSvg(key), {
       fitTo: { mode: "width", value: ICON_PX },
     })
       .render()

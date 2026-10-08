@@ -36,7 +36,7 @@ import {
   formatTemporaryDraw,
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
-import { AgentAvatar, isAsleep } from "./avatar/agent-avatar.js";
+import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
@@ -115,8 +115,7 @@ export function AgentRow({
       <AgentAvatar
         name={agent.name}
         size={64}
-        sleeping={isAsleep(display.state)}
-        stopped={agent.stopRequested}
+        mood={avatarMood(display.state, agent.stopRequested, working ?? false)}
         className="mr-1 self-start"
       />
       <div className="min-w-0 flex-1">

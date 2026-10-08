@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
-import { LazyRobotHead } from "../../agents/components/avatar/lazy-robot-head.js";
+import { CharacterAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import type { MessageTime } from "../lib/thread-items.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
@@ -135,7 +135,7 @@ export const ChatMessage = memo(function ChatMessage({
         )}
       >
         {isAssistant && avatarAgentName !== undefined && (
-          <LazyRobotHead name={avatarAgentName} size={20} />
+          <CharacterAvatar name={avatarAgentName} size={24} />
         )}
         <span className="text-[11px] font-medium text-muted-foreground">
           {isAssistant ? (avatarAgentName ?? "Agent") : userLabel}
