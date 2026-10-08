@@ -41,6 +41,7 @@ import {
 import type { AgentProcess } from "../../infrastructure/agent-process.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";
+import type { PlatformSessionOf } from "../../infrastructure/terminal-session-pins.js";
 import {
   platformSessionMetaSchema,
   type PlatformSessionMeta,
@@ -117,6 +118,7 @@ export interface AcpRuntimeDeps {
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
   historyProvider?: HistoryProvider;
+  terminalSessionPins?: () => PlatformSessionOf;
   sessionMetadata?: SessionMetadataStore;
   backgroundWork?: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
@@ -796,6 +798,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                   frame,
                   deps.sessionMetadata,
                   sessionIsRunning,
+                  deps.terminalSessionPins?.(),
                 )
               : (frame as object);
           const out = JSON.stringify({
@@ -1341,6 +1344,7 @@ function injectPlatformMetaIntoList(
   frame: unknown,
   store: SessionMetadataStore,
   isRunning: (sessionId: string) => boolean,
+  platformSessionOf: PlatformSessionOf | undefined,
 ): object {
   if (!isNonNullObject(frame)) return frame as object;
   const result = frame.result;
@@ -1350,13 +1354,14 @@ function injectPlatformMetaIntoList(
   const originals = new Map<string, Record<string, unknown>>();
   for (const raw of Array.isArray(result.sessions) ? result.sessions : []) {
     if (!isNonNullObject(raw) || typeof raw.sessionId !== "string") continue;
-    originals.set(raw.sessionId, raw);
+    originals.set(platformSessionOf?.(raw.sessionId) ?? raw.sessionId, raw);
     listed.push(raw as unknown as ListedHarnessSession);
   }
 
   const sessions = composeSessionList(listed, store.all(), {
     isTombstoned: (sessionId) => store.isTombstoned(sessionId),
     isRunning,
+    platformSessionOf,
   }).map((session) => {
     const original = originals.get(session.sessionId) ?? {};
     const existingMeta = isNonNullObject(original._meta) ? original._meta : {};

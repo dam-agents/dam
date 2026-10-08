@@ -6,7 +6,7 @@ import {
   type SessionMetaLike,
 } from "../../modules/acp/domain/session-list.js";
 
-// TEST_OVERVIEW: the one session-list composition both read paths share — union, tombstones, terminal default, schema narrowing — and the filtered, newest-first pages cut from it.
+// TEST_OVERVIEW: the one session-list composition both read paths share — union, tombstones, terminal default, terminal pins, schema narrowing — and the filtered, newest-first pages cut from it.
 
 function entry(meta: SessionMetaLike["meta"]): SessionMetaLike {
   return { meta, createdAt: "2026-08-27T10:00:00.000Z" };
@@ -69,6 +69,43 @@ describe("composeSessionList", () => {
       { isTombstoned: notTombstoned, isRunning: notRunning },
     );
     expect(out[0]).toMatchObject({ mode: "chat", type: "regular" });
+  });
+
+  // TEST_SCENARIO: a harness that mints its own id for a terminal conversation lists it under that id; with a pin it must show as one row under the terminal Session id, carrying the harness title, so opening it resumes the conversation. A store entry left under the harness id by opening the duplicate row before must not come back as a row of its own.
+  it("lists a pinned harness session once, under its terminal session", () => {
+    const out = composeSessionList(
+      [{ sessionId: "task-1", title: "kolik je 1+1?" }],
+      {
+        "term-1": entry({ mode: "terminal" }),
+        "task-1": entry({ mode: "terminal" }),
+      },
+      {
+        isTombstoned: notTombstoned,
+        isRunning: notRunning,
+        platformSessionOf: (id) => (id === "task-1" ? "term-1" : undefined),
+      },
+    );
+    expect(out).toEqual([
+      expect.objectContaining({
+        sessionId: "term-1",
+        mode: "terminal",
+        title: "kolik je 1+1?",
+      }),
+    ]);
+  });
+
+  // TEST_SCENARIO: deleting a terminal Session tombstones its platform id; the pinned harness conversation must disappear with it rather than resurface under the harness id.
+  it("hides a pinned harness session whose terminal session was deleted", () => {
+    const out = composeSessionList(
+      [{ sessionId: "task-1", title: "t" }],
+      { "term-1": entry({ mode: "terminal" }) },
+      {
+        isTombstoned: (id) => id === "term-1",
+        isRunning: notRunning,
+        platformSessionOf: (id) => (id === "task-1" ? "term-1" : undefined),
+      },
+    );
+    expect(out).toEqual([]);
   });
 });
 

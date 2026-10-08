@@ -202,6 +202,12 @@ const {
   stateBackend,
   envReader: envStore,
   sessionHistory: runtimeManifest.sessionHistory,
+  ...(runtimeManifest.terminalSessionPins && {
+    terminalSessionPins: expandHome(
+      runtimeManifest.terminalSessionPins,
+      homeDir,
+    ),
+  }),
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   onArtifactTouch: artifactTouchReporter.report,
