@@ -230,6 +230,11 @@ function makeService(
         throw new Error("Unexpected dependency: s3CredentialProbe");
       },
     },
+    providerBalance: {
+      lookup: async () => {
+        throw new Error("Unexpected dependency: providerBalance");
+      },
+    },
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
     connectionLock: <T>(_key: string, fn: () => Promise<T>): Promise<T> => fn(),

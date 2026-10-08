@@ -45,6 +45,10 @@ export const connectionsRouter = t.router({
     .input(connectionIdInputSchema)
     .query(({ ctx, input }) => ctx.connections.getConnection(input.id)),
 
+  getProviderBalance: readCredentialsProcedure
+    .input(connectionIdInputSchema)
+    .query(({ ctx, input }) => ctx.connections.getProviderBalance(input.id)),
+
   create: manageCredentialsProcedure
     .input(connectionCreateInputSchema)
     .mutation(({ ctx, input }) =>

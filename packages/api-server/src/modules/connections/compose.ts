@@ -3,6 +3,7 @@ import type { ConnectionsService } from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
 import { createKbShareResolver } from "../kb-shares/index.js";
 import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
+import { createProviderBalanceSource } from "./infrastructure/provider-balance-source.js";
 import {
   createOAuthEngine,
   type OAuthEngine,
@@ -163,6 +164,7 @@ export function composeConnectionsForOwner(opts: {
     oauthEngine: opts.oauthEngine,
     githubAppEngine: opts.githubAppEngine,
     s3CredentialProbe: opts.s3CredentialProbe,
+    providerBalance: createProviderBalanceSource(),
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
     connectionLock,

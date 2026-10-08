@@ -1,6 +1,6 @@
 import { Launch } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { PROVIDERS } from "api-server-api";
+import { CURVE_BENDER_HOST, PROVIDERS } from "api-server-api";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -33,8 +33,13 @@ const LITELLM_PROVIDERS = {
   "ibm-litellm": {
     description: IBM_LITELLM_DESCRIPTION,
     keyGuideUrl: KEY_GUIDE_URL,
+    keyGuideHint: "Follow the guide and generate your LiteLLM token",
   },
-  "curve-bender": { description: CURVE_BENDER_DESCRIPTION, keyGuideUrl: null },
+  "curve-bender": {
+    description: CURVE_BENDER_DESCRIPTION,
+    keyGuideUrl: `https://${CURVE_BENDER_HOST}/ui/`,
+    keyGuideHint: "Generate a key in the Curve Bender LiteLLM dashboard",
+  },
 } as const;
 
 export function LiteLlmProxyForm({
@@ -55,7 +60,8 @@ export function LiteLlmProxyForm({
   });
   const { isSubmitting, isValid } = formState;
 
-  const { description, keyGuideUrl } = LITELLM_PROVIDERS[provider];
+  const { description, keyGuideUrl, keyGuideHint } =
+    LITELLM_PROVIDERS[provider];
   const isEdit = variant === "edit";
   const submitDisabled = isSubmitting || !isValid;
 
@@ -73,26 +79,22 @@ export function LiteLlmProxyForm({
       onSubmit={onSubmit}
       onCancel={onCancel}
     >
-      {keyGuideUrl && (
-        <a
-          href={keyGuideUrl}
-          {...externalLinkProps}
-          className="group flex items-start justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/40"
-        >
-          <div className="flex flex-col gap-0.5">
-            <span className="text-sm font-bold text-foreground">
-              Need an API key?
-            </span>
-            <span className="text-sm text-muted-foreground">
-              Follow the guide and generate your LiteLLM token
-            </span>
-          </div>
-          <Launch
-            size={16}
-            className="mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary"
-          />
-        </a>
-      )}
+      <a
+        href={keyGuideUrl}
+        {...externalLinkProps}
+        className="group flex items-start justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/40"
+      >
+        <div className="flex flex-col gap-0.5">
+          <span className="text-sm font-bold text-foreground">
+            Need an API key?
+          </span>
+          <span className="text-sm text-muted-foreground">{keyGuideHint}</span>
+        </div>
+        <Launch
+          size={16}
+          className="mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary"
+        />
+      </a>
 
       <div className="flex gap-3">
         <Input

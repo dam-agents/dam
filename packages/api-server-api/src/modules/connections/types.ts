@@ -242,6 +242,13 @@ export interface GitHubUserTokenProbe {
   installationsTruncated?: boolean;
 }
 
+export interface ProviderBalance {
+  unit: "bobcoins" | "usd";
+  used: number;
+  limit: number | null;
+  resetsAt: string | null;
+}
+
 export interface ConnectionsService {
   listTemplates(): Promise<ConnectionTemplateView[]>;
 
@@ -250,6 +257,8 @@ export interface ConnectionsService {
   getConnection(id: string): Promise<ConnectionView | null>;
 
   validateProviderConnection(id: string): Promise<void>;
+
+  getProviderBalance(id: string): Promise<ProviderBalance | null>;
 
   validateGrantSet(connectionIds: string[]): Promise<void>;
 

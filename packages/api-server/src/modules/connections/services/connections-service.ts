@@ -13,6 +13,7 @@ import {
   type ConnectionTemplateView,
   type ConnectionView,
   type Contribution,
+  type ProviderBalance,
   type SecretRef,
   preferenceGroupOf,
   signingTargetOf,
@@ -59,6 +60,10 @@ import {
   type Sigv4KeyPair,
   sigv4KeyPair,
 } from "../domain/s3-contributions.js";
+import {
+  balanceQueryFor,
+  type ProviderBalanceSource,
+} from "../domain/provider-balance.js";
 import type {
   S3CredentialProbe,
   S3CredentialProbeFailure,
@@ -119,6 +124,7 @@ export function createConnectionsService(deps: {
   oauthEngine: OAuthEngine;
   githubAppEngine: GitHubAppEngine;
   s3CredentialProbe: S3CredentialProbe;
+  providerBalance: ProviderBalanceSource;
   oauthCallbackUrl: string;
   brandName: string;
   connectionLock: XactLock;
@@ -637,6 +643,39 @@ export function createConnectionsService(deps: {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `model provider '${conn.name}' is ${status}; reconnect it before creating an agent`,
+        });
+      }
+    },
+
+    async getProviderBalance(id: string): Promise<ProviderBalance | null> {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (!conn) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "connection not found",
+        });
+      }
+      const query = balanceQueryFor(conn);
+      if (!query || conn.auth.kind !== "header") return null;
+      try {
+        const credential = await deps.secretStore.getField(conn.auth.valueRef);
+        if (!credential) throw new Error("the stored credential is missing");
+        return await deps.providerBalance.lookup(query, credential);
+      } catch (err) {
+        securityLog("warn", "connection.balance_lookup", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          target: conn.id,
+          result: "failure",
+          detail: {
+            templateId: conn.templateId,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        });
+        throw new TRPCError({
+          code: "BAD_GATEWAY",
+          message: "the provider did not report a balance",
         });
       }
     },

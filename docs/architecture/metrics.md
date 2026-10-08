@@ -37,6 +37,12 @@ Three read-only tRPC procedures make up the surface; all are query-only and all 
 
 The Overview session filter is **trace-aware**, not a literal session-id match: a queried session folds in every session that shares a trace with it, so a child harness run counts under "this session" even though it minted its own session id — the filter-side mirror of the per-session rollup's root grouping above. Both folds ride the same trace-context propagation [observability](observability.md#agent-export) describes, and neither crosses the ownership boundary — every side of a fold carries the same owner scope.
 
+## Provider budgets
+
+A second answer to *how much have I spent* comes from the model provider itself, not from telemetry: a provider that keeps a budget for a credential — Bob Shell per team, the LiteLLM proxies per key — reports how much of it is used, its limit and its next reset. The Providers page shows that beside the provider's key. It is read live through the Connections context, which asks the provider with the stored credential on each read, the same way it asks whose account a Connection acts as. Nothing is stored and nothing reaches the telemetry store.
+
+The figure is the provider's, not the platform's, and the two are deliberately kept apart. It covers everything the credential was used for, in or outside the platform, and comes in the provider's own unit (Bobcoins for Bob), so it is never summed with or reconciled against the Usage surfaces. A provider that does not answer reads as *unavailable*, never as zero, for the same reason the disabled backend fails loud. A key that may not read its own figures — a LiteLLM key without access to its key info — shows none, and so do providers that expose no budget to their credential at all, such as Anthropic and OpenAI.
+
 ## Agent-facing read
 
 A second surface serves an agent rather than a signed-in user: three MCP tools over the same reader, each **pinned server-side to the calling agent** — the agent names no id, so it can only ever read its own runs. That pinning is the whole isolation model. It rests on the same gateway-stamped attribution every other read scopes by ([observability — trusted attribution](observability.md#trusted-attribution)), which an agent cannot forge and which platform telemetry never carries, so no widening of the body shapes below can reach another agent's records or the platform's own.
