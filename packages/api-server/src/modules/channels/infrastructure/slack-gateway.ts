@@ -120,6 +120,7 @@ export interface SlackMessage {
   latestReplyTs?: string;
   subtype?: string;
   metadata?: SlackMessageMetadata;
+  fileIds?: string[];
 }
 
 export type SlackBlock = Record<string, unknown>;
@@ -159,7 +160,7 @@ export interface SlackUpload {
   file: Buffer;
   filename: string;
   title?: string;
-  initialComment?: string;
+  blocks?: SlackBlock[];
   threadTs?: string;
   teamId: SlackWorkspace;
 }

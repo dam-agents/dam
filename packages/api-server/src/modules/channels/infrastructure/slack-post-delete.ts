@@ -39,11 +39,14 @@ export function agentPostMetadata(fileIds: string[]): SlackMessageMetadata {
 }
 
 export function deletePostFileIds(message: SlackMessage): string[] {
-  if (message.metadata?.eventType !== AGENT_POST_METADATA) return [];
-  const files = message.metadata.payload["files"];
-  return Array.isArray(files)
+  const files =
+    message.metadata?.eventType === AGENT_POST_METADATA
+      ? message.metadata.payload["files"]
+      : [];
+  const shared = Array.isArray(files)
     ? files.filter((f): f is string => typeof f === "string")
     : [];
+  return [...new Set([...shared, ...(message.fileIds ?? [])])];
 }
 
 export interface DeletePostModalMetadata {
