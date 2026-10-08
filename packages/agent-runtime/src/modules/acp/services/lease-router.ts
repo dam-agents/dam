@@ -81,7 +81,9 @@ const keyOf = (pair: LeasePair): string =>
  * runs on the default harness and the first granted provider, and keeps that
  * pair once a provider is granted. A lease other than the default one is shut
  * down once it holds no session; one that lost its harness is dropped, and one
- * that chose its model from an env that changed is reopened. A lease's going
+ * that chose its model from an env that changed is reopened. The default lease
+ * opened before any provider was granted takes the first one granted, so a
+ * client attached early and the next session meet on the same lease. A lease's going
  * away closes a client connection only when that client used the lease.
  */
 export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
@@ -138,8 +140,10 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     const runtime = deps.createRuntime(normalized, {
       backgroundWork: scopedBackgroundWork(() => self!, releaseListeners),
       onHarnessExited: () => {
-        if (key === keyOf(normalize(defaultPair()))) return;
-        deps.log(`lease ${key} lost its harness; the next session respawns it`);
+        if (lease.key === keyOf(normalize(defaultPair()))) return;
+        deps.log(
+          `lease ${lease.key} lost its harness; the next session respawns it`,
+        );
         drop(lease);
       },
     });
@@ -390,6 +394,19 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     );
   }
 
+  function adoptFirstProvider(): void {
+    const pair = normalize(defaultPair());
+    const key = keyOf(pair);
+    if (pair.provider === null || leases.has(key)) return;
+    const unprovided = leases.get(keyOf({ ...pair, provider: null }));
+    if (!unprovided) return;
+    leases.delete(unprovided.key);
+    deps.log(`lease ${unprovided.key} takes the first provider: ${key}`);
+    unprovided.key = key;
+    unprovided.pair = pair;
+    leases.set(key, unprovided);
+  }
+
   function leaseOfSession(sessionId: string): Lease | undefined {
     return leases.get(keyOf(normalize(pairOfSession(sessionId, false))));
   }
@@ -450,6 +467,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     },
 
     applyEnvChange(change) {
+      adoptFirstProvider();
       for (const lease of [...leases.values()]) {
         const hits = [
           change.base,

@@ -287,6 +287,37 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     });
   });
 
+  /** TEST_SCENARIO: A client connects before the agent's first provider has
+   * reached the pod, so it lands on a lease with no provider. When the
+   * provider arrives, that lease becomes the default one and restarts its
+   * process on the new env, as any env change does; no second lease opens, so
+   * the client and the next session meet on the same lease. */
+  it("lets the provider-less default lease take the first provider", () => {
+    const world = createLeaseWorld({ providers: [] });
+    const client = world.connect();
+    client.send(frames.initialize(1));
+    const early = world.harness("claude-code/-");
+    early.replyTo("initialize", {});
+
+    world.grantAhead("conn-a");
+    world.router.applyEnvChange({
+      namesChanged: true,
+      base: null,
+      providers: [{ id: "conn-a", namesChanged: true }],
+      harnesses: [],
+    });
+    expect(world.router.leases()).toEqual([
+      { harness: "claude-code", provider: "conn-a", model: null },
+    ]);
+
+    expect(early.killed()).toBe(true);
+    world.connect().send(newSessionOn(2, {}));
+    expect(world.harness("claude-code/-").received("session/new")).toHaveLength(
+      1,
+    );
+    expect(world.harnessCount("claude-code/conn-a")).toBe(0);
+  });
+
   /** TEST_SCENARIO: A session whose harness this agent no longer carries is
    * refused with a clear error, not run on another harness. */
   it("refuses a session on a harness the agent does not carry", () => {
