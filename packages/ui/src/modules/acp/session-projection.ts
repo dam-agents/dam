@@ -114,11 +114,14 @@ export function applyUpdate(
   update: AcpUpdate,
   at?: string,
   telemetryPromptId?: string,
+  model?: string,
 ): Message[] {
   const next = applyUpdateOf(messages, update, at, telemetryPromptId);
-  return telemetryPromptId === undefined
-    ? next
-    : stampActiveReply(next, telemetryPromptId);
+  const stamped =
+    telemetryPromptId === undefined
+      ? next
+      : stampActiveReply(next, telemetryPromptId);
+  return model === undefined ? stamped : stampActiveReplyModel(stamped, model);
 }
 
 function applyUpdateOf(
@@ -135,6 +138,7 @@ function applyUpdateOf(
         telemetryPromptId,
         update.error &&
           describeJsonRpcError(update.error.message, update.error.details),
+        update.model,
       );
 
     case "platform_prompt_accepted":
@@ -598,6 +602,7 @@ function closeActiveAssistant(
   at?: string,
   telemetryPromptId?: string,
   interruption?: string,
+  model?: string,
 ): Message[] {
   const i = activeReplyIndex(messages);
   if (i === -1) return messages;
@@ -607,6 +612,7 @@ function closeActiveAssistant(
           ...x,
           ...(at !== undefined && { at }),
           ...(telemetryPromptId !== undefined && { telemetryPromptId }),
+          ...(model !== undefined && { model }),
           ...(interruption !== undefined &&
             hasAgentContent(x) && { error: { message: interruption } }),
           streaming: false,
@@ -630,6 +636,12 @@ function stampActiveReply(
     return messages;
   }
   return messages.map((x, j) => (j === i ? { ...x, telemetryPromptId } : x));
+}
+
+function stampActiveReplyModel(messages: Message[], model: string): Message[] {
+  const i = activeReplyIndex(messages);
+  if (i === -1 || messages[i].model === model) return messages;
+  return messages.map((x, j) => (j === i ? { ...x, model } : x));
 }
 
 function appendOrExtendUser(

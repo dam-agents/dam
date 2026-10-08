@@ -13,13 +13,25 @@ export interface TriggerSessionDriver {
     platformMeta?: PlatformSessionMeta;
     unattended?: boolean;
     model?: string;
-  }): Promise<{ sessionId: string }>;
+  }): Promise<{ sessionId: string; openedOn: string | null }>;
+}
+
+interface OpenedSession {
+  configOptions?: { id?: string; currentValue?: unknown }[];
+  models?: { currentModelId?: string };
+}
+
+function openedModel(res: OpenedSession | null | undefined): string | null {
+  const option = res?.configOptions?.find((o) => o.id === "model");
+  if (typeof option?.currentValue === "string") return option.currentValue;
+  return res?.models?.currentModelId ?? null;
 }
 
 export class SessionModelError extends Error {
   constructor(
     readonly model: string,
     cause: string,
+    readonly sessionId?: string,
   ) {
     super(
       `the harness would not run this session on model "${model}": ${cause}`,
@@ -55,26 +67,30 @@ export function createTriggerSessionDriver(deps: {
 
         const mcp = (mcpServers ?? []) as unknown[];
         let sessionId: string;
+        let openedOn: string | null;
 
         if (resumeSessionId) {
-          await caller.request("session/resume", {
+          const res = await caller.request<OpenedSession>("session/resume", {
             sessionId: resumeSessionId,
             cwd: ".",
             mcpServers: mcp,
           });
           sessionId = resumeSessionId;
+          openedOn = openedModel(res);
         } else {
-          const res = await caller.request<{ sessionId: string }>(
-            "session/new",
-            {
-              cwd: ".",
-              mcpServers: mcp,
-              ...(platformMeta && { _meta: { platform: platformMeta } }),
-            },
-          );
+          const res = await caller.request<
+            OpenedSession & { sessionId: string }
+          >("session/new", {
+            cwd: ".",
+            mcpServers: mcp,
+            ...(platformMeta && { _meta: { platform: platformMeta } }),
+          });
           sessionId = res.sessionId;
-          if (model) await setSessionModel(caller, sessionId, model);
+          openedOn = openedModel(res);
         }
+
+        if (model && model !== openedOn)
+          await setSessionModel(caller, sessionId, model);
 
         caller.notify("session/prompt", {
           sessionId,
@@ -84,7 +100,7 @@ export function createTriggerSessionDriver(deps: {
           }),
         });
 
-        return { sessionId };
+        return { sessionId, openedOn };
       } finally {
         caller.close();
       }
@@ -107,8 +123,12 @@ async function setSessionModel(
         configId: "model",
         value: model,
       });
-    } catch {
-      throw new SessionModelError(model, (first as Error).message);
+    } catch (second) {
+      throw new SessionModelError(
+        model,
+        `${(second as Error).message} (and ${(first as Error).message})`,
+        sessionId,
+      );
     }
   }
 }

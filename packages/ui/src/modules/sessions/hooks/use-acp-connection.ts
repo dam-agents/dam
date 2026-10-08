@@ -47,6 +47,7 @@ interface CollectedUpdate {
   update: AcpUpdate;
   at?: string;
   telemetryPromptId?: string;
+  model?: string;
 }
 
 export type ConnectionState = "idle" | "live" | "reloading" | "reconnecting";
@@ -302,6 +303,7 @@ export function useAcpConnection(
             ...(frame.telemetryPromptId !== undefined && {
               telemetryPromptId: frame.telemetryPromptId,
             }),
+            ...(frame.model !== undefined && { model: frame.model }),
           });
           return;
         }
@@ -397,6 +399,7 @@ export function useAcpConnection(
                 collected.update,
                 collected.at,
                 collected.telemetryPromptId,
+                collected.model,
               ),
             [],
           ),

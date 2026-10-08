@@ -21,7 +21,7 @@ import {
 } from "./model-settings-snapshot.js";
 import { OptionField, ReadOnlyOptionFace } from "./option-field.js";
 
-interface Choice {
+export interface Choice {
   id: string;
   name: string;
   description?: string | null;
@@ -147,8 +147,9 @@ function OptionGroup({
   disabled?: boolean;
   onSelect: (id: string | null) => void;
 }) {
-  const selected = value === null ? null : choices.find((c) => c.id === value);
   if (disabled) {
+    const selected =
+      value === null ? null : choices.find((c) => c.id === value);
     return (
       <OptionField title={title}>
         <ReadOnlyOptionFace label={selected?.name ?? CLEARED_LABEL} />
@@ -157,39 +158,72 @@ function OptionGroup({
   }
   return (
     <OptionField title={title}>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            aria-label={title}
-            className="flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-4 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <span className="truncate">{selected?.name ?? CLEARED_LABEL}</span>
-            <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
+      <OptionPicker
+        title={title}
+        choices={choices}
+        value={value}
+        onSelect={onSelect}
+      />
+    </OptionField>
+  );
+}
+
+export function OptionPicker({
+  title,
+  choices,
+  value,
+  clearable = true,
+  placeholder = CLEARED_LABEL,
+  clearedLabel = CLEARED_LABEL,
+  clearedDescription = CLEARED_DESCRIPTION,
+  onSelect,
+}: {
+  title: string;
+  choices: Choice[];
+  value: string | null;
+  clearable?: boolean;
+  placeholder?: string;
+  clearedLabel?: string;
+  clearedDescription?: string;
+  onSelect: (id: string | null) => void;
+}) {
+  const selected = value === null ? null : choices.find((c) => c.id === value);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={title}
+          className="flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-4 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
+          <span className="truncate">{selected?.name ?? placeholder}</span>
+          <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="max-h-72 w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
+      >
+        {clearable && (
           <OptionItem
-            label={CLEARED_LABEL}
-            description={CLEARED_DESCRIPTION}
+            label={clearedLabel}
+            description={clearedDescription}
             active={value === null}
             onSelect={() => onSelect(null)}
           />
-          {choices.map((c) => (
-            <OptionItem
-              key={c.id}
-              label={c.name}
-              detail={c.name === c.id ? undefined : c.id}
-              description={c.description}
-              active={c.id === value}
-              onSelect={() => onSelect(c.id)}
-            />
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </OptionField>
+        )}
+        {choices.map((c) => (
+          <OptionItem
+            key={c.id}
+            label={c.name}
+            detail={c.name === c.id ? undefined : c.id}
+            description={c.description}
+            active={c.id === value}
+            onSelect={() => onSelect(c.id)}
+          />
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

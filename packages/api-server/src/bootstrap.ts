@@ -1141,10 +1141,10 @@ export async function bootstrap() {
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
     async (event, input) => {
-      const { scheduleId, precheck } =
+      const { scheduleId, precheck, once } =
         event.payload as Partial<TriggerEventPayload>;
       if (!scheduleId) return;
-      if (!precheck) {
+      if (once) {
         if (input.outcome === "failed")
           await schedulesBoot.runner.recordOnceFailure(
             scheduleId,
@@ -1152,11 +1152,13 @@ export async function bootstrap() {
           );
         return;
       }
+      if (!precheck && input.stage !== "run") return;
       await schedulesBoot.runner.reportFire({
         scheduleId,
         eventId: input.eventId,
-        ranPrecheck: precheck,
+        ranPrecheck: precheck ?? null,
         outcome: input.outcome,
+        ...(input.stage ? { stage: input.stage } : {}),
         ...(input.detail ? { detail: input.detail } : {}),
       });
     },

@@ -150,6 +150,7 @@ export function createSchedulesService(deps: {
     async createCron(input: ScheduleCreateCronInput, createdBy = "user") {
       asBadRequest(() => validateCron(input.cron));
       await ensureAgent(input.agentId);
+      await ensureSessionModel(input.agentId, input.model, undefined);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
         type: "cron",
@@ -159,6 +160,7 @@ export function createSchedulesService(deps: {
         createdBy,
         ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         ...(input.precheck ? { precheck: input.precheck } : {}),
+        ...(input.model ? { model: input.model } : {}),
       };
       const schedule = await deps.repo.create({
         agentId: input.agentId,
@@ -184,6 +186,7 @@ export function createSchedulesService(deps: {
           createdBy,
           type: "cron",
           precheck: Boolean(input.precheck),
+          ...(input.model ? { model: input.model } : {}),
           cron: input.cron,
           ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         },
@@ -197,6 +200,7 @@ export function createSchedulesService(deps: {
         validateRRule(input.rrule, input.timezone, input.quietHours ?? []),
       );
       await ensureAgent(input.agentId);
+      await ensureSessionModel(input.agentId, input.model, undefined);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
         type: "rrule",
@@ -210,6 +214,7 @@ export function createSchedulesService(deps: {
           : {}),
         ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         ...(input.precheck ? { precheck: input.precheck } : {}),
+        ...(input.model ? { model: input.model } : {}),
       };
       const schedule = await deps.repo.create({
         agentId: input.agentId,
@@ -235,6 +240,7 @@ export function createSchedulesService(deps: {
           createdBy,
           type: "rrule",
           precheck: Boolean(input.precheck),
+          ...(input.model ? { model: input.model } : {}),
           ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         },
       });
@@ -301,11 +307,12 @@ export function createSchedulesService(deps: {
       if (current.status?.lastRun)
         throw badRequest("a one-time schedule cannot be edited once it fired");
       const at = resolveMoment(input.at, input.timezone, now());
-      await ensureSessionModel(
-        current.agentId,
-        input.model,
-        current.spec.origin,
-      );
+      if (input.model !== current.spec.model)
+        await ensureSessionModel(
+          current.agentId,
+          input.model,
+          current.spec.origin,
+        );
       const { model: _previous, ...unchanged } = current.spec;
       const spec: ScheduleSpec = {
         ...unchanged,
@@ -334,6 +341,8 @@ export function createSchedulesService(deps: {
       );
       const current = await deps.repo.get(input.id, deps.owner);
       if (!current) return null;
+      if (input.model && input.model !== current.spec.model)
+        await ensureSessionModel(current.agentId, input.model, undefined);
       if (current.spec.type === "once")
         throw badRequest("a one-time schedule is edited with updateOnce");
       const spec: ScheduleSpec = {
@@ -348,6 +357,8 @@ export function createSchedulesService(deps: {
       else delete spec.sessionMode;
       if (input.precheck) spec.precheck = input.precheck;
       else if (input.precheck !== undefined) delete spec.precheck;
+      if (input.model) spec.model = input.model;
+      else if (input.model !== undefined) delete spec.model;
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
       if (updated && spec.precheck !== current.spec.precheck)

@@ -21,7 +21,7 @@ function fakeDriver() {
   const driver: TriggerSessionDriver = {
     async start(opts) {
       calls.push(opts);
-      return { sessionId: "new-session" };
+      return { sessionId: "new-session", openedOn: null };
     },
   };
   return { driver, calls };
@@ -46,6 +46,7 @@ const handlerFor = (
 ) =>
   createTriggerPlugin({
     runPrecheck: allows,
+    harnessDefault: async () => null,
     log: () => {},
     reporter: { report: async () => {} },
     ...deps,
@@ -208,6 +209,7 @@ describe("trigger plugin precheck", () => {
     )(payload, ctx);
 
     await vi.waitFor(() => expect(calls).toHaveLength(1));
+    await vi.waitFor(() => expect(reports).toHaveLength(1));
     expect(reports[0]).toEqual({
       eventId: ctx.eventId,
       outcome: "failed",

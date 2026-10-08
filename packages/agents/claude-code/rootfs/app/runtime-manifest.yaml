@@ -29,6 +29,10 @@ drivers:
       configOptions:
         effort: "effortLevel"
         cacheTtl: ["promptCacheTtl", "subagentPromptCacheTtl"]
+    # The model value that switches one session to what the agent's own
+    # Default gives (Claude Code's built-in default), which a schedule with no
+    # model runs on.
+    defaultModel: default
     catalog:
       options:
         - id: model
@@ -38,13 +42,13 @@ drivers:
           choices:
             - value: fable
               name: "Fable"
-              description: "Fable 5 · Most capable for the hardest, longest-running tasks"
+              description: "Fable 5.1 · Most capable for the hardest, longest-running tasks"
             - value: opus
               name: "Opus"
-              description: "Opus 5 · Best for everyday, complex tasks"
+              description: "Opus 5.5 · Best for everyday, complex tasks"
             - value: sonnet
               name: "Sonnet"
-              description: "Sonnet 4.6 · Efficient for routine tasks"
+              description: "Sonnet 5.5 · Efficient for routine tasks"
             - value: haiku
               name: "Haiku"
               description: "Haiku 4.5 · Fastest for quick answers"

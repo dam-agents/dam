@@ -175,10 +175,14 @@ export const triggerEvent = z.object({
 export const eventOutcome = z.enum(["ok", "declined", "failed"]);
 export type EventOutcome = z.infer<typeof eventOutcome>;
 
+export const eventStage = z.enum(["decide", "run"]);
+export type EventStage = z.infer<typeof eventStage>;
+
 export const eventReportInput = z.object({
   eventId: z.string().min(1),
   outcome: eventOutcome,
   detail: z.string().max(2_000).optional(),
+  stage: eventStage.optional(),
 });
 export type EventReportInput = z.infer<typeof eventReportInput>;
 
@@ -330,6 +334,7 @@ export const harnessConfigCurrent = z.object({
   mode: z.string().nullable(),
   configOptions: z.record(z.string().min(1), z.string()),
   availableModels: z.array(harnessConfigChoice).nullable().optional(),
+  defaultModel: z.string().nullable().optional(),
 });
 export type HarnessConfigCurrent = z.infer<typeof harnessConfigCurrent>;
 

@@ -68,7 +68,7 @@ export function buildUpdateCommand(deps: {
     .option("--model <model>", "one-time schedules only: model to run on")
     .option(
       "--model-default",
-      "one-time schedules only: run on the agent's model",
+      "one-time schedules only: run on the default model",
     )
     .option("--daily <HH:MM>", "rebuild recurrence: daily at HH:MM")
     .option("--every <interval>", "rebuild recurrence: every Nm/Nh")

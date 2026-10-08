@@ -815,6 +815,7 @@ export function ChatView() {
                                 avatarsEnabled ? agentView?.name : undefined
                               }
                               isLast={item.index === messages.length - 1}
+                              showModel={runStarts.length > 0}
                               {...timeProps(item.message.at, now)}
                               hasPendingPermission={hasPendingPermission}
                               onRetry={sendPrompt}
