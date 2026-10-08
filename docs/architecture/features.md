@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-10-07
+Last verified: 2026-10-08
 
 ## Overview
 
@@ -20,6 +20,15 @@ flag says ([channels](channels.md#slack-scopes-required-vs-optional)). Graduatin
 id from the enum and its gates from the UI — stored rows for a dropped id are
 simply never read again (Knowledge Bases, the
 [starter kit](starter-kits.md) catalog and session costs graduated this way).
+
+An operator can take a feature out of users' hands: the chart's `features`
+value gives each feature a mode, `experimental` (the default, and what an
+omitted feature reads as) leaving the per-user switch, `on` or `off` deciding
+for every user whatever they stored. A pinned feature's switch is hidden from
+the settings tab, and the api-server answers its flag from the mode, so every
+surface that reads flags — the UI and agent surfaces alike — sees the same
+answer. Stored rows are kept, so returning a feature to `experimental` restores
+each user's own choice.
 
 A per-user flag says what a user wants to see; it cannot say what the install
 can do. The same module therefore answers a second, install-wide question —

@@ -1,10 +1,12 @@
-import type { FeatureId } from "api-server-api";
+import type { FeatureId, FeatureModes } from "api-server-api";
 
-// UNIT_BOUNDARY_DESCRIPTION: which experimental features the settings tab offers. The new sandbox runtime is left out unless the install can run microVMs: on one that cannot, the switch would change nothing a user could see. It stays out until the install has answered, so the row never flashes in and out on load.
+// UNIT_BOUNDARY_DESCRIPTION: which experimental features the settings tab offers. A feature the install pins on or off is left out, since the switch would change nothing. The new sandbox runtime is also left out unless the install can run microVMs. Nothing is offered until the install has answered, so no row flashes in and out on load.
 export function isFeatureOffered(
   id: FeatureId,
-  install: { virtualization?: boolean } | undefined,
+  install: { virtualization: boolean; features: FeatureModes } | undefined,
 ): boolean {
-  if (id === "vm-sandboxes") return install?.virtualization === true;
+  if (!install || (install.features[id] ?? "experimental") !== "experimental")
+    return false;
+  if (id === "vm-sandboxes") return install.virtualization;
   return true;
 }

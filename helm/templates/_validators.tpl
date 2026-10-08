@@ -23,6 +23,18 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
 {{- include "platform.validate.unenforcedMeshOnlyOnALocalCluster" . -}}
 {{- include "platform.validate.gatewayEgressCidrs" . -}}
+{{- include "platform.validate.featureModes" . -}}
+{{- end -}}
+
+{{/*
+The api-server refuses to start on a feature mode it cannot read.
+*/}}
+{{- define "platform.validate.featureModes" -}}
+{{- range $id, $mode := .Values.features -}}
+{{- if not (has $mode (list "off" "experimental" "on")) -}}
+{{- fail (printf "features.%s must be off, experimental or on, got %v." $id $mode) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

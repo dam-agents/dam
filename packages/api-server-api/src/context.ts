@@ -12,7 +12,10 @@ import type { CaseStudiesService } from "./modules/case-studies/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
 import type { ConnectionsService } from "./modules/connections/types.js";
 import type { E2eService } from "./modules/e2e/types.js";
-import type { FeaturesService } from "./modules/features/types.js";
+import type {
+  FeatureModes,
+  FeaturesService,
+} from "./modules/features/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
 import type { LiveEventsService } from "./modules/events/types.js";
 import type {
@@ -75,4 +78,5 @@ export interface ApiContext {
   user: UserIdentity;
   e2eEnabled: boolean;
   virtualizationEnabled: boolean;
+  featureModes: FeatureModes;
 }

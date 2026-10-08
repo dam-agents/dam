@@ -234,9 +234,13 @@ export {
 export type {
   FeatureId,
   FeatureFlags,
+  FeatureModes,
   FeaturesService,
 } from "./modules/features/types.js";
-export { featureIdSchema } from "./modules/features/schemas.js";
+export {
+  featureIdSchema,
+  featureModeSchema,
+} from "./modules/features/schemas.js";
 export { quietWindowSchema } from "./modules/schedules/schemas.js";
 export {
   ONCE_DELIVERY_WINDOW_MS,

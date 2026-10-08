@@ -63,6 +63,18 @@ links:
   # Complete URL. Empty string hides that line; there is no bundled default.
   slackInstallRequest: ""
 
+# -- Experimental features, one mode each: `experimental` leaves the per-user
+# switch in the hidden settings tab; `on` or `off` hides the switch and decides
+# for every user, whatever they stored. An omitted feature is `experimental`.
+# `vm-sandboxes` also needs `virtualization.enabled`.
+features:
+  advanced-connections: experimental
+  vm-sandboxes: experimental
+  interactive-artifacts: experimental
+  agent-telemetry: experimental
+  agent-avatars: experimental
+  strict-connection-addressing: experimental
+
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
 # lives at `keycloak.{domain}`.
