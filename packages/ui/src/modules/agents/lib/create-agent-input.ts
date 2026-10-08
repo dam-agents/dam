@@ -42,6 +42,8 @@ export interface CodingAgentSetupDraft {
   providerRef: ProviderRef | null;
   connectionIds: string[];
   registryCredential: RegistryCredential;
+  sizeCpuMilli: number | null;
+  sizeMemoryMi: number | null;
 }
 
 export function setupUsesCustomImage(draft: CodingAgentSetupDraft): boolean {
@@ -88,6 +90,14 @@ export function buildCodingAgentSetupInput(
             server: credential.server.trim(),
             username: credential.username.trim(),
             password: credential.password,
+          },
+        }
+      : {}),
+    ...(draft.sizeCpuMilli != null && draft.sizeMemoryMi != null
+      ? {
+          size: {
+            cpu: `${draft.sizeCpuMilli}m`,
+            memory: `${draft.sizeMemoryMi}Mi`,
           },
         }
       : {}),

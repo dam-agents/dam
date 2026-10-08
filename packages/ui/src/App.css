@@ -32,6 +32,9 @@
   --color-callout-border: var(--c-callout-border);
   --color-template: var(--c-template);
   --color-template-light: var(--c-template-light);
+  --color-preset: var(--c-preset);
+  --color-preset-light: var(--c-preset-light);
+  --color-preset-border: var(--c-preset-border);
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
@@ -154,6 +157,9 @@
   --c-callout-border: #a6c8ff;
   --c-template: #7c3aed;
   --c-template-light: #f5f3ff;
+  --c-preset: #8a3ffc;
+  --c-preset-light: #f6f2ff;
+  --c-preset-border: #e8daff;
 
   /* shadcn tokens — mapped to brand palette above */
   --radius: 0.5rem;
@@ -196,6 +202,9 @@
   --c-callout-border: #4589ff;
   --c-template: #a78bfa;
   --c-template-light: #1f1438;
+  --c-preset: #a78bfa;
+  --c-preset-light: #1f1438;
+  --c-preset-border: #6929c4;
   color-scheme: dark;
 
   /* shadcn tokens — dark. Surface colors that are pure #ffffff in light
@@ -362,6 +371,58 @@
 }
 .anim-slide-in-right {
   animation: slide-in-right 0.25s ease-out both;
+}
+
+@keyframes nav-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes nav-focus-in {
+  0% {
+    transform: scale(0.97);
+    outline-color: color-mix(in srgb, var(--color-accent) 0%, transparent);
+  }
+  40% {
+    transform: scale(1);
+    outline-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    outline-color: color-mix(in srgb, var(--color-accent) 0%, transparent);
+  }
+}
+@keyframes nav-label-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.anim-nav-row-in {
+  animation: nav-row-in 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.anim-nav-focus-in {
+  outline: 4px solid transparent;
+  animation: nav-focus-in 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.anim-nav-label-in {
+  animation: nav-label-in 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-nav-row-in,
+  .anim-nav-focus-in,
+  .anim-nav-label-in {
+    animation: none;
+  }
 }
 
 @keyframes dot-jump {
@@ -579,4 +640,41 @@
 }
 .prose .hljs {
   background: var(--muted) !important;
+}
+
+/* ── Sonner toast type theming (richColors removed, we own the palette) ── */
+[data-sonner-toast][data-type="success"] {
+  background: var(--c-success-light) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--c-success) 30%,
+    transparent
+  ) !important;
+  color: var(--c-success) !important;
+}
+[data-sonner-toast][data-type="error"] {
+  background: var(--c-danger-light) !important;
+  border-color: color-mix(in srgb, var(--c-danger) 30%, transparent) !important;
+  color: var(--c-danger) !important;
+}
+[data-sonner-toast][data-type="info"] {
+  background: var(--c-info-light) !important;
+  border-color: color-mix(in srgb, var(--c-info) 20%, transparent) !important;
+  color: var(--c-info) !important;
+}
+[data-sonner-toast][data-type="warning"] {
+  background: color-mix(in srgb, var(--c-warning) 10%, white) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--c-warning) 30%,
+    transparent
+  ) !important;
+  color: var(--c-warning-fg) !important;
+}
+[data-sonner-toast][data-type="warning"] [data-icon] svg {
+  color: var(--c-warning) !important;
+}
+.dark [data-sonner-toast][data-type="warning"] {
+  background: var(--c-warning-light) !important;
+  color: var(--c-warning) !important;
 }

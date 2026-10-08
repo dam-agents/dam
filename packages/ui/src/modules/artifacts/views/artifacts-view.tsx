@@ -3,15 +3,14 @@ import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
-import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatBytes } from "@/lib/format-size";
 
 import { api } from "../../../api.js";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
-import { useStore } from "../../../store.js";
 import { useDeleteFolder, useUpdateArtifact } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
 import { ArtifactPreviewDialog } from "../components/artifact-preview-dialog.js";
@@ -44,8 +43,6 @@ export function ArtifactsView() {
     useArtifacts();
   const { data: folders = EMPTY_FOLDERS, isLoading: foldersLoading } =
     useArtifactFolders();
-
-  const setView = useStore((s) => s.setView);
 
   const [search, setSearch] = useState("");
   const [dialog, setDialog] = useState<ArtifactDialog | null>(null);
@@ -146,19 +143,14 @@ export function ArtifactsView() {
   const ungrouped = byFolder.get(null) ?? [];
   const loading = artifactsLoading || foldersLoading;
   const hasContent = artifacts.length > 0 || folders.length > 0;
-  const isEmpty = !loading && !hasContent;
 
   return (
     <div className="anim-in">
-      <PageHeader
-        title="Artifacts"
-        description={
-          hasContent
-            ? "Pages and files created by you and your agents. Share with a link, or set them to delete automatically."
-            : undefined
-        }
-        actions={
-          hasContent ? (
+      {hasContent ? (
+        <PageHeader
+          title="Artifacts"
+          description="Pages and files created by you and your agents. Share with a link, or set them to delete automatically."
+          actions={
             <>
               <Button
                 variant="outline"
@@ -170,9 +162,19 @@ export function ArtifactsView() {
                 Upload artifact
               </Button>
             </>
-          ) : undefined
-        }
-      />
+          }
+        />
+      ) : (
+        <Callout tone="muted" className="flex flex-col gap-4 py-8">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Artifacts
+          </h1>
+          <p className="max-w-[480px] text-[14px] text-foreground/80">
+            Artifacts from every agent collect here. Create an agent to get
+            started.
+          </p>
+        </Callout>
+      )}
 
       {hasContent && (
         <div className="relative mt-7">
@@ -189,17 +191,7 @@ export function ArtifactsView() {
         </div>
       )}
 
-      {}
       {loading && !hasContent && <ListSkeleton rows={2} rowHeight={70} />}
-
-      {isEmpty && (
-        <PageEmptyState
-          title="No artifacts yet"
-          message="Artifacts from every agent collect here."
-          actionLabel="Go to agents"
-          onAction={() => setView("agents")}
-        />
-      )}
 
       {hasContent && (
         <div className="mt-5 flex flex-col gap-3">

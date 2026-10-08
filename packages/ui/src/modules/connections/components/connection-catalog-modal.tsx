@@ -1,10 +1,13 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { emitToast } from "@/lib/toast";
 
+import { api } from "../../../api.js";
+import { queryClient } from "../../../query-client.js";
+import { trpc } from "../../../trpc.js";
 import { useAppConnections } from "../api/queries.js";
 import { TemplateCreateFormBody } from "../forms/template-create-form-body.js";
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
@@ -40,12 +43,14 @@ interface Props {
   onClose: () => void;
   sandbox?: SandboxGrantControls;
   oauthReturnView?: string;
+  initialTemplateId?: string;
 }
 
 export function ConnectionCatalogModal({
   onClose,
   sandbox,
   oauthReturnView,
+  initialTemplateId,
 }: Props) {
   const connectionsQ = useAppConnections();
   const { confirmAndDelete, deletingId } = useDisconnectConnection();
@@ -68,6 +73,27 @@ export function ConnectionCatalogModal({
     [counts],
   );
   const allGroups = useMemo(() => [...byTab.values()].flat(), [byTab]);
+
+  const didAutoOpen = useRef(false);
+  useEffect(() => {
+    if (!initialTemplateId || didAutoOpen.current || allGroups.length === 0)
+      return;
+    didAutoOpen.current = true;
+    for (const group of allGroups) {
+      const match = group.templates.find((t) => t.id === initialTemplateId);
+      if (match) {
+        if (group.templates.length > 1)
+          setPane({ kind: "choose", providerId: group.provider.id });
+        else
+          setPane({
+            kind: "create",
+            templateId: match.id,
+            providerId: group.provider.id,
+          });
+        return;
+      }
+    }
+  }, [initialTemplateId, allGroups]);
 
   const handleDelete = async (id: string, name: string) => {
     if ((await confirmAndDelete(id, name)) && sandbox?.grantedIds.has(id))
@@ -155,13 +181,28 @@ export function ConnectionCatalogModal({
             <ChoosePane
               group={groupById(pane.providerId)}
               onBack={() => setPane({ kind: "browse" })}
-              onPick={(t) =>
+              onPick={(t) => {
+                if (import.meta.env.VITE_MOCK) {
+                  void (api.connections.create as any)
+                    .mutate({
+                      templateId: t.id,
+                      name: t.name,
+                      authKind: t.authKind,
+                    })
+                    .then((result: { id: string }) => {
+                      void queryClient.invalidateQueries({
+                        queryKey: trpc.connections.list.queryKey(),
+                      });
+                      onCreated(result.id);
+                    });
+                  return;
+                }
                 setPane({
                   kind: "create",
                   templateId: t.id,
                   providerId: pane.providerId,
-                })
-              }
+                });
+              }}
             />
           )}
           {pane.kind === "create" && (

@@ -5,6 +5,8 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+const isMock = !!process.env.VITE_MOCK;
+
 export default defineConfig({
   plugins: [
     tailwindcss(),
@@ -12,6 +14,7 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       manifest: false,
+      devOptions: { enabled: !isMock },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
         navigateFallback: "index.html",
@@ -38,8 +41,14 @@ export default defineConfig({
   },
   server: {
     port: 5174,
-    proxy: {
-      "/api": { target: "http://localhost:4444", ws: true, changeOrigin: true },
-    },
+    proxy: isMock
+      ? undefined
+      : {
+          "/api": {
+            target: "http://localhost:4444",
+            ws: true,
+            changeOrigin: true,
+          },
+        },
   },
 });

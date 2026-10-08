@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { AgentView } from "../../../types.js";
 import { useAgents, useAgentsList } from "../../agents/api/queries.js";
 import { useApprovalsForOwner } from "../../approvals/api/queries.js";
+import { isDemoAgentId } from "../../packs/hooks/use-is-demo-agent.js";
 import { listAgentSessionsOverAcp } from "../../sessions/api/acp-session-ops.js";
 import { acpSessionsKeys } from "../../sessions/api/queries.js";
 import { type FeedItem, toFeedItems } from "../lib/feed-item.js";
@@ -38,18 +39,22 @@ export function useFeed(): Feed {
     [agents],
   );
 
+  const mockFn = (window as any).__mockListAgentSessions;
   const sessions = useQueries({
     queries: runningAgents.map((agent) => ({
       queryKey: homeKeys.sessions(agent.id),
-      queryFn: () => listAgentSessionsOverAcp(agent.id),
-      staleTime: SESSIONS_STALE_MS,
+      queryFn: () =>
+        mockFn ? mockFn(agent.id) : listAgentSessionsOverAcp(agent.id),
+      staleTime: mockFn ? Infinity : SESSIONS_STALE_MS,
       retry: false,
-      refetchInterval: (query: { state: { status: string } }) =>
-        !agent.features.liveUpdates
-          ? SESSIONS_COMPAT_POLL_MS
-          : query.state.status === "error"
-            ? SESSIONS_ERROR_RETRY_MS
-            : false,
+      refetchInterval: mockFn
+        ? false
+        : (query: { state: { status: string } }) =>
+            !agent.features.liveUpdates
+              ? SESSIONS_COMPAT_POLL_MS
+              : query.state.status === "error"
+                ? SESSIONS_ERROR_RETRY_MS
+                : false,
     })),
     combine: (results) => ({
       byAgent: results.map((result) => result.data ?? []),
@@ -70,7 +75,7 @@ export function useFeed(): Feed {
     items,
     agents,
     runningAgents,
-    hasAgents: agents.length > 0,
+    hasAgents: agents.filter((a) => !isDemoAgentId(a.id)).length > 0,
     loadingAgents: agentsQuery.isPending,
     loadingFeed: approvals.isPending || sessions.pending,
     unreadableAgents: sessions.failed,

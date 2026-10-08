@@ -1,6 +1,7 @@
 import {
   ArrowDown,
   ArrowLeft,
+  Notification,
   OverflowMenuVertical,
   Renew,
   TrashCan,
@@ -9,6 +10,8 @@ import {
 import { SessionMode } from "api-server-api";
 import {
   type CSSProperties,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -32,6 +35,12 @@ import { cn } from "@/lib/utils";
 
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { isMobile } from "../../../lib/breakpoints.js";
+import {
+  type AgentChrome,
+  LeftDockedPanel,
+  type LeftPanelKind,
+  WorkspaceChatHeader,
+} from "../../../mock/chat-workspace-variants.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
@@ -57,7 +66,6 @@ import {
 } from "../../agents/hooks/use-restart-agent.js";
 import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
-import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
 import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
@@ -65,16 +73,29 @@ import { ExperimentPromptChips } from "../../experiments/components/experiment-p
 import { useDockedExperiment } from "../../experiments/hooks/use-docked-experiment.js";
 import { useExperimentGreeting } from "../../experiments/hooks/use-experiment-greeting.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
-import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
 import {
+  DEMO_HEADER_TEXT_OVERRIDES,
+  DemoHeaderActions,
+} from "../../packs/components/demo-treatments.js";
+import { getDemoFixtures } from "../../packs/data/pack-demo-fixtures.js";
+import {
+  useDemoPackId,
+  useIsDemoAgent,
+} from "../../packs/hooks/use-is-demo-agent.js";
+import {
+  backToPacks,
+  makeThisMine,
+  walkAway,
+} from "../../packs/lib/demo-exit-actions.js";
+import type { SandboxSection } from "../../platform/lib/routes.js";
+import {
   getDefaultExamples,
   useRotatingPlaceholder,
 } from "../../schedules/components/schedule-chat-discovery.js";
-import { ScheduleIndicator } from "../../schedules/components/schedule-indicator.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
@@ -88,16 +109,18 @@ import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
-import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
-import {
-  pushSessionPath,
-  useSessionUrlSync,
-} from "../hooks/use-session-url-sync.js";
+import { useSessionUrlSync } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
+
+const ConfigureAgentModal = lazy(() =>
+  import("../../sandboxes/components/configure-agent-modal.js").then((m) => ({
+    default: m.ConfigureAgentModal,
+  })),
+);
 
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -109,6 +132,16 @@ export function ChatView() {
   const leavingForPublicPage = usePublicAgentFallback(
     selectedAgent,
     agentInaccessible,
+  );
+
+  const isDemo = useIsDemoAgent(selectedAgent);
+  const demoPackId = useDemoPackId(selectedAgent);
+  const demoActions = useMemo(
+    () =>
+      demoPackId
+        ? { packId: demoPackId, makeThisMine, backToPacks, walkAway }
+        : null,
+    [demoPackId],
   );
 
   useSessionUrlSync(selectedAgent);
@@ -139,7 +172,6 @@ export function ChatView() {
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
   const pendingLaunch = useStore((s) => s.pendingLaunch);
-  const unfocusPendingLaunch = useStore((s) => s.unfocusPendingLaunch);
   const {
     experiment: dockedExperiment,
     options: experimentOptions,
@@ -155,44 +187,29 @@ export function ChatView() {
       agentExperiments.find((e) => e.dashboardArtifactId === openArtifactId) ??
       null)
     : null;
-  const artifactsSectionOpen = useStore((s) => s.artifactsSectionOpen);
-  const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const navigateToKnowledgeBaseConfig = useStore(
     (s) => s.navigateToKnowledgeBaseConfig,
   );
   const setView = useStore((s) => s.setView);
-  const filesSectionOpen = useStore((s) => s.filesSectionOpen);
-  const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
   const hasPendingPermission = useHasPendingPermission();
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
-  const [leftW, setLeftW] = useState(
-    () => Number(localStorage.getItem("platform-left-w")) || 220,
-  );
+  const [configureSection, setConfigureSection] =
+    useState<SandboxSection | null>(null);
+
+  const isMock = import.meta.env.VITE_MOCK === "true";
+  const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(new Set());
+  const toggleNotifications = useStore((s) => s.toggleNotifications);
+
   const [rightW, setRightW] = useState<number | null>(
     () => Number(localStorage.getItem("platform-file-w")) || null,
   );
   const filePanelRef = useRef<HTMLDivElement>(null);
-  const [sessionsOpen, setSessionsOpen] = useState(true);
-  const [sessionsH, setSessionsH] = useState(
-    () => Number(localStorage.getItem("platform-sessions-h")) || 260,
-  );
-  const [resizingSections, setResizingSections] = useState(false);
-  const sectionTransition = resizingSections
-    ? undefined
-    : "transition-[flex] duration-200";
-  const sectionFlex = (open: boolean, fixedPx?: number): CSSProperties => ({
-    flex: !open
-      ? "0 0 44px"
-      : fixedPx !== undefined
-        ? `0 0 ${fixedPx}px`
-        : "1 1 0%",
-  });
   const terminalFreshRef = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -228,7 +245,16 @@ export function ChatView() {
     sendPrompt,
   });
 
-  const rotatingPlaceholder = useRotatingPlaceholder(getDefaultExamples());
+  const defaultPlaceholder = useRotatingPlaceholder(getDefaultExamples());
+
+  const demoPlaceholder = useMemo(() => {
+    if (!demoPackId) return null;
+    const fixtures = getDemoFixtures(demoPackId);
+    if (!fixtures?.suggestedPrompt) return null;
+    return { text: fixtures.suggestedPrompt, fading: false };
+  }, [demoPackId]);
+
+  const rotatingPlaceholder = demoPlaceholder ?? defaultPlaceholder;
 
   const launchPaneActive = Boolean(
     pendingLaunch?.focused && pendingLaunch.agentId === selectedAgent,
@@ -346,63 +372,6 @@ export function ChatView() {
     resumeSession,
   ]);
 
-  const pushSessionUrl = useCallback(
-    (sid: string | null, mode: SessionMode | null) => {
-      if (view !== "chat" || !selectedAgent) return;
-      pushSessionPath(selectedAgent, sid, mode);
-    },
-    [view, selectedAgent],
-  );
-
-  const mobileResumeSession = useCallback(
-    (sid: string, mode?: SessionMode) => {
-      unfocusPendingLaunch();
-      pushSessionUrl(sid, mode ?? SessionMode.Chat);
-      setMobileScreen("chat");
-      setSessionMode(mode ?? SessionMode.Chat);
-      if (mode === SessionMode.Terminal) {
-        setSessionId(sid);
-        return;
-      }
-      if (sid === sessionId && !sessionError) {
-        scrollToBottom();
-        return;
-      }
-      resumeSession(sid);
-    },
-    [
-      sessionId,
-      sessionError,
-      setMobileScreen,
-      setSessionMode,
-      setSessionId,
-      resumeSession,
-      scrollToBottom,
-      unfocusPendingLaunch,
-      pushSessionUrl,
-    ],
-  );
-
-  const handleNewSession = useCallback(() => {
-    unfocusPendingLaunch();
-    if (!sessionId && messages.length === 0) {
-      setMobileScreen("chat");
-      return;
-    }
-    pushSessionUrl(null, null);
-    setSessionMode(SessionMode.Chat);
-    resetSession();
-    setMobileScreen("chat");
-  }, [
-    sessionId,
-    messages.length,
-    resetSession,
-    setMobileScreen,
-    setSessionMode,
-    unfocusPendingLaunch,
-    pushSessionUrl,
-  ]);
-
   const showConfirm = useStore((s) => s.showConfirm);
 
   const handleNewTerminal = useCallback(() => {
@@ -457,8 +426,7 @@ export function ChatView() {
         );
     if (!ok) return;
     deleteAgent.mutate({ id: selectedAgent });
-    if (isKnowledgeBaseView) setView("agents");
-    else setView("home");
+    setView("home");
   }, [
     selectedAgent,
     selectedAgentName,
@@ -485,132 +453,154 @@ export function ChatView() {
   const statusLineInThread =
     lastMessage?.role === "assistant" && !lastMessage.notice;
 
-  return (
-    <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
-      {}
-      <header
-        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-center gap-3 px-6 h-[70px] border-b border-border shrink-0 relative z-content`}
-      >
+  const backButton = (
+    <Button
+      variant="ghost"
+      size="inline"
+      aria-label="Back"
+      onClick={handleBack}
+      className={cn(
+        "md:hidden gap-1 text-sm font-medium hover:bg-transparent",
+        isDemo
+          ? `${DEMO_HEADER_TEXT_OVERRIDES.muted} hover:${DEMO_HEADER_TEXT_OVERRIDES.name}`
+          : "text-muted-foreground",
+      )}
+    >
+      <ArrowLeft size={14} />
+    </Button>
+  );
+
+  const agentDropdown = !isDemo ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <Button
-          variant="ghost"
-          size="inline"
-          aria-label="Back"
-          onClick={handleBack}
-          className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
+          variant="outline"
+          size="icon-xs"
+          aria-label={surfaceCopy.actionsAria}
         >
-          <ArrowLeft size={14} />
+          <OverflowMenuVertical size={16} />
         </Button>
-        <div className="flex items-center gap-3 min-w-0">
-          <span
-            aria-hidden
-            className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-          />
-          <h1 className="text-sm font-bold text-foreground truncate">
-            {selectedAgentName}
-          </h1>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={surfaceCopy.actionsAria}
-              >
-                <OverflowMenuVertical size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onSelect={handleConfigureSandbox}>
-                {surfaceCopy.configure}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={handleRestartSandbox}>
-                Restart
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={handleDeleteSandbox}
-              >
-                {surfaceCopy.delete}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <ChatHeaderStatus
-            selectedAgent={selectedAgent}
-            agents={agents}
-            busy={busy}
-            connectionState={connectionState}
-            sessionId={sessionId}
-          />
-        </div>
-      </header>
-
-      {}
-      <div className="flex flex-1 min-h-0">
-        {}
-        <div
-          style={{ width: leftW }}
-          className={`shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content ${
-            mobileScreen === "chat" ? "hidden md:flex" : "flex"
-          } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={handleConfigureSandbox}>
+          {surfaceCopy.configure}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={handleRestartSandbox}>
+          Restart
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          onSelect={handleDeleteSandbox}
         >
-          {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
-          <SessionsSidebar
-            open={sessionsOpen}
-            onToggle={() => setSessionsOpen((o) => !o)}
-            className={sectionTransition}
-            style={sectionFlex(
-              sessionsOpen,
-              sessionsOpen && filesSectionOpen ? sessionsH : undefined,
-            )}
-            onResumeSession={mobileResumeSession}
-            onNewSession={handleNewSession}
-          />
-          {sessionsOpen && filesSectionOpen && (
-            <ResizeHandle
-              orientation="vertical"
-              onResize={(d) => {
-                setResizingSections(true);
-                setSessionsH((h) => {
-                  const v = Math.max(120, Math.min(600, h + d));
-                  localStorage.setItem("platform-sessions-h", String(v));
-                  return v;
-                });
-              }}
-              onDragEnd={() => setResizingSections(false)}
-            />
+          {surfaceCopy.delete}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null;
+
+  const headerStatus =
+    isDemo && demoActions ? (
+      <DemoHeaderActions actions={demoActions} />
+    ) : (
+      <ChatHeaderStatus
+        selectedAgent={selectedAgent}
+        agents={agents}
+        busy={busy}
+        connectionState={connectionState}
+        sessionId={sessionId}
+      />
+    );
+
+  const statusDot = !isDemo && (
+    <span
+      aria-hidden
+      className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+    />
+  );
+
+  const chrome: AgentChrome = {
+    agentId: selectedAgent,
+    name: selectedAgentName ?? "",
+    statusDot,
+    menu: agentDropdown,
+    status: headerStatus,
+    backButton,
+    onOpenFile: openFileHandler,
+    onConfigure: () => setConfigureSection("setup"),
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-background relative overflow-hidden">
+      {isMock && (
+        <div
+          className={cn(
+            "flex shrink-0 items-center justify-end border-b px-6 h-10 transition-colors duration-200",
+            openPanels.size > 0 || openArtifactId
+              ? "border-border"
+              : "border-transparent",
           )}
-          <FilesPanel
-            open={filesSectionOpen}
-            onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
-            className={sectionTransition}
-            style={sectionFlex(filesSectionOpen)}
-            onOpenFile={openFileHandler}
-          />
-          <ChatArtifactsPanel
-            agentId={selectedAgent}
-            open={artifactsSectionOpen}
-            onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
-            className={sectionTransition}
-            style={sectionFlex(artifactsSectionOpen)}
-          />
-        </div>
-        <ResizeHandle
-          side="left"
-          onResize={(d) =>
-            setLeftW((w) => {
-              const v = Math.max(140, Math.min(400, w + d));
-              localStorage.setItem("platform-left-w", String(v));
-              return v;
-            })
-          }
-        />
-
-        {}
-        <div
-          className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}
         >
-          {}
+          <button
+            type="button"
+            onClick={toggleNotifications}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Activity"
+            title="Activity"
+          >
+            <Notification size={16} />
+          </button>
+        </div>
+      )}
+      <div className="flex flex-1 min-h-0">
+        {isMock && (
+          <LeftDockedPanel
+            openPanels={openPanels}
+            chrome={chrome}
+            onClosePanel={(panel) =>
+              setOpenPanels((prev) => {
+                const next = new Set(prev);
+                next.delete(panel);
+                return next;
+              })
+            }
+          />
+        )}
+        <div
+          className={cn(
+            "relative flex flex-1 flex-col min-w-0",
+            mobileScreen === "sessions" ? "hidden md:flex" : "flex",
+          )}
+          onClick={(e) => {
+            const tag = (e.target as HTMLElement).closest(
+              "button, a, input, textarea, select, [role='button'], [contenteditable]",
+            );
+            if (!tag) textareaRef.current?.focus();
+          }}
+        >
+          <WorkspaceChatHeader
+            chrome={chrome}
+            openPanels={isMock ? openPanels : undefined}
+            onTogglePanel={
+              isMock
+                ? (panel: LeftPanelKind) =>
+                    setOpenPanels((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(panel)) next.delete(panel);
+                      else next.add(panel);
+                      return next;
+                    })
+                : undefined
+            }
+            onNewChat={
+              isMock
+                ? () => {
+                    resetSession();
+                    requestAnimationFrame(() => textareaRef.current?.focus());
+                  }
+                : undefined
+            }
+          />
+          {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           {sessionMode === SessionMode.Terminal &&
           selectedAgent &&
           sessionId ? (
@@ -675,6 +665,8 @@ export function ChatView() {
                             appears here as soon as it&apos;s up.
                           </p>
                         </div>
+                      ) : isMock ? (
+                        <div className="flex flex-1 flex-col items-center justify-center" />
                       ) : (
                         <div className="flex flex-1 flex-col items-center justify-center text-center">
                           <p className="text-base font-bold text-foreground mb-2">
@@ -733,6 +725,9 @@ export function ChatView() {
                   onSend={sendPrompt}
                   onStop={stopAgent}
                   rotatingPlaceholder={rotatingPlaceholder}
+                  onConfigureSection={
+                    selectedAgent ? setConfigureSection : undefined
+                  }
                 />
                 {!hasPendingPermission && (
                   <div className="px-4 md:px-8">
@@ -752,12 +747,6 @@ export function ChatView() {
                             }
                           />
                         )}
-                        {selectedAgent && (
-                          <>
-                            <span className="text-border">·</span>
-                            <ScheduleIndicator agentId={selectedAgent} />
-                          </>
-                        )}
                       </div>
                     </ChatColumn>
                   </div>
@@ -767,7 +756,7 @@ export function ChatView() {
           )}
         </div>
 
-        {}
+        {/* Docked file/artifact viewer (opens on click) */}
         {(openFilePath || openArtifactId || dockedExperiment) && (
           <>
             <div className="hidden md:flex">
@@ -776,7 +765,10 @@ export function ChatView() {
                 onResize={(d) =>
                   setRightW((w) => {
                     const base = w ?? filePanelRef.current?.offsetWidth ?? 0;
-                    const max = Math.min(960, window.innerWidth - 500);
+                    const container =
+                      filePanelRef.current?.parentElement?.offsetWidth ??
+                      window.innerWidth;
+                    const max = Math.floor(container * (2 / 3));
                     const v = Math.max(240, Math.min(max, base + d));
                     localStorage.setItem("platform-file-w", String(v));
                     return v;
@@ -830,6 +822,16 @@ export function ChatView() {
           onBack={handleBack}
         />
       ) : null}
+
+      {configureSection && selectedAgent && (
+        <Suspense fallback={null}>
+          <ConfigureAgentModal
+            agentId={selectedAgent}
+            initialSection={configureSection}
+            onClose={() => setConfigureSection(null)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

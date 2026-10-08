@@ -27,14 +27,42 @@ async function main() {
     } catch (err) {
       console.error("[mock] MSW failed to start:", err);
     }
+
+    const { mockSessions, MOCK_SESSION_IDS } =
+      await import("./mock/data/sessions.js");
+    const sessionsByAgent: Record<string, unknown[]> = { ...mockSessions };
+    (window as any).__mockListAgentSessions = (agentId: string) =>
+      Promise.resolve(sessionsByAgent[agentId] ?? []);
+
+    for (const [agentId, sessions] of Object.entries(sessionsByAgent)) {
+      queryClient.setQueryData(["acp-sessions", agentId, "home"], sessions);
+    }
+
+    const { agents } = await import("./mock/data/agents.js");
+
+    {
+      const { REAL_PACKS } = await import("./modules/packs/data/packs.js");
+      const pack = REAL_PACKS[0];
+      const agentId = agents[0]?.id;
+      if (pack && agentId) {
+        useStore.getState().initOnboarding(agentId, pack);
+      }
+    }
+
     await loadBrand().then(applyBrand);
+
+    history.replaceState(null, "", `/chat/${agents[0]!.id}`);
+    useStore.setState({
+      view: "chat",
+      selectedAgent: agents[0]!.id,
+      pendingResumeSessionId: MOCK_SESSION_IDS.diffs,
+    });
+
     const { default: App } = await import("./app.js");
-    const { MockStateBar } = await import("./mock/state-bar.js");
     createRoot(document.getElementById("root")!).render(
       <StrictMode>
         <QueryClientProvider client={queryClient}>
           <TooltipProvider delayDuration={200}>
-            <MockStateBar />
             <App />
             <Toaster />
           </TooltipProvider>
@@ -52,10 +80,7 @@ async function main() {
     return;
   }
 
-  const [user] = await Promise.all([
-    initAuth(),
-    loadBrand().then(applyBrand),
-  ]);
+  const [user] = await Promise.all([initAuth(), loadBrand().then(applyBrand)]);
   if (!user) return;
 
   if (!(await preflightTermsGate())) {

@@ -8,7 +8,7 @@ import {
 } from "@carbon/icons-react";
 import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 
-import { badgeVariants } from "@/components/ui/badge";
+import { Badge, badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,6 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
 import { formatDateTime } from "@/lib/format-time";
@@ -38,24 +39,28 @@ export function StandaloneSkillRow({
   divided,
   readOnly,
   canPublish,
+  fromPack,
   onPublish,
   onDownload,
   onDelete,
   onTrack,
   onOpen,
   trackUnavailable,
+  hideActions,
 }: {
   skill: LocalSkill;
   publish?: SkillPublishRecord;
   divided: boolean;
   readOnly: boolean;
   canPublish: boolean;
+  fromPack?: boolean;
   onPublish: () => void;
   onDownload: () => void;
   onDelete: () => void;
   onTrack?: () => void;
   onOpen?: () => void;
   trackUnavailable?: boolean;
+  hideActions?: boolean;
 }) {
   const pill = PR_STATE_PILL[publish?.prState ?? "unknown"];
   const canRepublish = !publish || publish.prState === "closed";
@@ -83,6 +88,12 @@ export function StandaloneSkillRow({
         )}
       </div>
 
+      {fromPack && (
+        <Badge variant="muted" size="sm" className="shrink-0">
+          Starter kit
+        </Badge>
+      )}
+
       {publish && (
         <Tooltip
           content={`Published to ${publish.sourceName} on ${formatDateTime(
@@ -103,65 +114,75 @@ export function StandaloneSkillRow({
         </Tooltip>
       )}
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Skill actions"
-            className="shrink-0 text-muted-foreground"
-          >
-            <OverflowMenuHorizontal size={16} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          {onOpen && (
-            <DropdownMenuItem onSelect={onOpen}>
-              <View size={14} />
-              <span className="flex-1">Preview SKILL.md</span>
-            </DropdownMenuItem>
-          )}
-          {publish?.prState === "merged" && onTrack && (
-            <DropdownMenuItem
-              disabled={trackUnavailable}
-              onSelect={onTrack}
-              title={
-                trackUnavailable
-                  ? `${publish.sourceName} hasn't been scanned yet, so this skill's published version isn't known`
-                  : undefined
-              }
+      <Switch
+        checked
+        label={`Toggle ${skill.name}`}
+        testId={`standalone-skill-toggle-${skill.name}`}
+      />
+
+      {!hideActions && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Skill actions"
+              className="shrink-0 text-muted-foreground"
             >
-              <Renew size={14} />
-              <span className="flex-1">Track from {publish.sourceName}</span>
+              <OverflowMenuHorizontal size={16} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            {onOpen && (
+              <DropdownMenuItem onSelect={onOpen}>
+                <View size={14} />
+                <span className="flex-1">Preview SKILL.md</span>
+              </DropdownMenuItem>
+            )}
+            {publish?.prState === "merged" && onTrack && (
+              <DropdownMenuItem
+                disabled={trackUnavailable}
+                onSelect={onTrack}
+                title={
+                  trackUnavailable
+                    ? `${publish.sourceName} hasn't been scanned yet, so this skill's published version isn't known`
+                    : undefined
+                }
+              >
+                <Renew size={14} />
+                <span className="flex-1">Track from {publish.sourceName}</span>
+              </DropdownMenuItem>
+            )}
+            {}
+            {canRepublish && (
+              <DropdownMenuItem
+                disabled={!canPublish}
+                onSelect={onPublish}
+                title={
+                  canPublish
+                    ? undefined
+                    : "Add a GitHub source first to publish there"
+                }
+              >
+                <Export size={14} />
+                <span className="flex-1">
+                  {publish ? "Publish again…" : "Publish…"}
+                </span>
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onSelect={onDownload}>
+              <Download size={14} />
+              <span className="flex-1">Download skill</span>
             </DropdownMenuItem>
-          )}
-          {}
-          {canRepublish && (
-            <DropdownMenuItem
-              disabled={!canPublish}
-              onSelect={onPublish}
-              title={
-                canPublish
-                  ? undefined
-                  : "Add a GitHub source first to publish there"
-              }
-            >
-              <Export size={14} />
-              <span className="flex-1">
-                {publish ? "Publish again…" : "Publish…"}
-              </span>
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem onSelect={onDownload}>
-            <Download size={14} />
-            <span className="flex-1">Download skill</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem tone="danger" onSelect={onDelete}>
-            <TrashCan size={14} />
-            <span className="flex-1">Delete skill</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            {!fromPack && (
+              <DropdownMenuItem tone="danger" onSelect={onDelete}>
+                <TrashCan size={14} />
+                <span className="flex-1">Delete skill</span>
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }

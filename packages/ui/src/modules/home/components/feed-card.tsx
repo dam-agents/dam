@@ -1,8 +1,13 @@
+import { Document } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
 import { WorkingDots } from "../../sessions/components/working-dots.js";
+
+interface ArtifactChip {
+  name: string;
+}
 
 interface Props {
   icon: ReactNode;
@@ -11,8 +16,10 @@ interface Props {
   meta: string;
   working?: boolean;
   unread?: boolean;
+  artifact?: ArtifactChip;
   onOpen?: () => void;
   onDismiss?: () => void;
+  onArtifactClick?: () => void;
   children?: ReactNode;
 }
 
@@ -23,8 +30,10 @@ export function FeedCard({
   meta,
   working = false,
   unread = false,
+  artifact,
   onOpen,
   onDismiss,
+  onArtifactClick,
   children,
 }: Props) {
   return (
@@ -78,6 +87,22 @@ export function FeedCard({
       </div>
 
       {children}
+
+      {artifact && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onArtifactClick?.();
+          }}
+          className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/50 bg-muted/40 px-2.5 py-1.5 transition-colors hover:bg-muted/70"
+        >
+          <Document size={16} className="shrink-0 text-muted-foreground" />
+          <span className="truncate text-sm text-muted-foreground">
+            {artifact.name}
+          </span>
+        </button>
+      )}
 
       <div className="-mx-5 -mb-5 mt-3 flex items-center justify-between border-t border-border px-5 py-2.5">
         <span className="text-sm text-muted-foreground">{meta}</span>

@@ -14,6 +14,7 @@ import {
   createDismissalsSlice,
   type DismissalsSlice,
 } from "./modules/home/store.js";
+import { createPacksSlice, type PacksSlice } from "./modules/packs/store.js";
 import {
   createDialogSlice,
   type DialogSlice,
@@ -26,6 +27,10 @@ import {
   createSidebarSlice,
   type SidebarSlice,
 } from "./modules/platform/store/sidebar.js";
+import {
+  createSidebarAgentsSlice,
+  type SidebarAgentsSlice,
+} from "./modules/platform/store/sidebar-agents.js";
 import {
   createThemeSlice,
   type ThemeSlice,
@@ -56,26 +61,30 @@ export type PlatformStore = DialogSlice &
   ThemeSlice &
   NavigationSlice &
   SidebarSlice &
+  SidebarAgentsSlice &
   AgentsSlice &
   SessionsSlice &
   ExperimentsSlice &
   FilesSlice &
   ArtifactsSlice &
-  DismissalsSlice &
-  PermissionsSlice;
+  PermissionsSlice &
+  PacksSlice &
+  DismissalsSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),
   ...createSidebarSlice(...a),
+  ...createSidebarAgentsSlice(...a),
   ...createAgentsSlice(...a),
   ...createSessionsSlice(...a),
   ...createExperimentsSlice(...a),
   ...createFilesSlice(...a),
   ...createArtifactsSlice(...a),
-  ...createDismissalsSlice(...a),
   ...createPermissionsSlice(...a),
+  ...createPacksSlice(...a),
+  ...createDismissalsSlice(...a),
 }));
 
 let draftSyncStarted = false;

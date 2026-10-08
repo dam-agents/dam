@@ -62,8 +62,7 @@ export async function initAuth(): Promise<User | null> {
 }
 
 export async function getAccessToken(): Promise<string> {
-  if (import.meta.env.VITE_MOCK)
-    return "mock-token";
+  if (import.meta.env.VITE_MOCK) return "mock-token";
   const user = await userManager.getUser();
   if (user && !user.expired) {
     return user.access_token;

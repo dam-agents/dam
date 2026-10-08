@@ -1,50 +1,54 @@
 import {
   Add,
   ArrowLeft,
-  ConnectionSignal,
   OverflowMenuVertical,
-  SkillLevelAdvanced,
+  Pause,
+  Search,
   Time,
-  Upload,
 } from "@carbon/icons-react";
-import type { Skill } from "api-server-api";
-import { skillKey } from "api-server-api";
+import type { ConnectionTemplateView } from "api-server-api";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
 import { emitToast } from "@/lib/toast";
+import { cn } from "@/lib/utils";
 
-import type { Schedule } from "../../../types.js";
-import { ConnectionIcon } from "../../connections/components/connection-icon.js";
-import {
-  agentConnections as mockAgentConnections,
-  connectionTemplates as mockTemplates,
-  connections as mockConnections,
-} from "../../../mock/data/connections.js";
 import { schedules as mockSchedules } from "../../../mock/data/schedules.js";
+import type { Schedule } from "../../../types.js";
+import { useSetAgentConnections } from "../../agents/api/mutations.js";
+import { useAgentConnections } from "../../agents/api/queries.js";
+import { useAppConnections } from "../../connections/api/queries.js";
+import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
+import { ConnectionGroupCard } from "../../connections/components/connection-group-card.js";
+import { ConnectionMaintenanceDialog } from "../../connections/components/connection-update-credential-dialog.js";
+import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js";
+import { useConnectionMaintenance } from "../../connections/hooks/use-connection-maintenance.js";
+import type { CatalogProviderGroup } from "../../connections/lib/catalog-providers.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
+import { SkillsSurface } from "../../sandboxes/components/skills/skills-surface.js";
+import { useSkillsDerivations } from "../../sandboxes/hooks/use-skills-derivations.js";
+import { useSkillsSurface } from "../../sandboxes/hooks/use-skills-surface.js";
+import { excludeProviderConnections } from "../../sandboxes/lib/provider-connections.js";
+import { ScheduleFormModal } from "../../schedules/forms/schedule-form-modal.js";
 import {
   formatRunTime,
   scheduleCadenceText,
 } from "../../schedules/lib/schedule-format.js";
-import { useSkillsDerivations } from "../../sandboxes/hooks/use-skills-derivations.js";
-import { useSkillsSurface } from "../../sandboxes/hooks/use-skills-surface.js";
 
 type Panel = "menu" | "skills" | "schedules" | "connections";
 
@@ -67,6 +71,44 @@ export function PlusMenuPopover({
 }: PlusMenuProps) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>("menu");
+  const [catalogOpen, setCatalogOpen] = useState(false);
+
+  const maintenance = useConnectionMaintenance();
+
+  const connectionsQ = useAppConnections();
+  const agentConnectionsQ = useAgentConnections(agentId);
+  const setConnections = useSetAgentConnections();
+
+  const grantedIds = useMemo(
+    () =>
+      new Set(
+        agentConnectionsQ.data?.connections.map((c) => c.connectionId) ?? [],
+      ),
+    [agentConnectionsQ.data],
+  );
+
+  const toggleGrant = useCallback(
+    (id: string, on: boolean) => {
+      if (!agentId) return;
+      const current =
+        agentConnectionsQ.data?.connections.map((c) => c.connectionId) ?? [];
+      const next = on
+        ? [...new Set([...current, id])]
+        : current.filter((x) => x !== id);
+      setConnections.mutate({ agentId, connectionIds: next });
+    },
+    [agentId, agentConnectionsQ.data, setConnections],
+  );
+
+  const granted = useMemo(
+    () =>
+      excludeProviderConnections(connectionsQ.data ?? []).filter((c) =>
+        grantedIds.has(c.id),
+      ),
+    [connectionsQ.data, grantedIds],
+  );
+
+  const { populated: groups, templateById } = useCatalogGroups(granted);
 
   const handleOpenChange = useCallback((next: boolean) => {
     setOpen(next);
@@ -75,71 +117,122 @@ export function PlusMenuPopover({
 
   const goBack = useCallback(() => setPanel("menu"), []);
 
+  const openCatalog = useCallback(() => {
+    handleOpenChange(false);
+    setTimeout(() => setCatalogOpen(true), 150);
+  }, [handleOpenChange]);
+
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0 mb-[9px] h-10 w-10 text-muted-foreground hover:text-primary disabled:opacity-40"
-          disabled={disabled}
-          aria-label="Add"
-          tooltip="Add"
-        >
-          <Add size={16} />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        align="start"
-        className="w-[360px] max-h-[60vh] overflow-hidden p-0"
-      >
-        <div className="relative overflow-hidden">
-          <div
-            className="flex transition-transform duration-150 ease-in-out"
-            style={{ transform: `translateX(${panel === "menu" ? "0" : "-100%"})` }}
+    <>
+      <Popover open={open} onOpenChange={handleOpenChange}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0 mb-[9px] h-10 w-10 text-muted-foreground hover:text-primary disabled:opacity-40"
+            disabled={disabled}
+            aria-label="Add"
+            tooltip="Add"
           >
-            <div className="w-[360px] shrink-0">
-              <MenuRoot
-                agentId={agentId}
-                onAttachFile={() => { onAttachFile(); handleOpenChange(false); }}
-                onOpenPanel={setPanel}
-                hasConfigureSection={!!onConfigureSection}
-              />
-            </div>
-            <div className="w-[360px] shrink-0 max-h-[60vh] overflow-y-auto">
-              {panel === "skills" && (
-                <SkillsPanel
+            <Add size={16} />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          side="top"
+          align="start"
+          className="w-[360px] max-h-[60vh] overflow-hidden p-0"
+        >
+          <div className="relative overflow-hidden">
+            <div
+              className="flex transition-transform duration-150 ease-in-out"
+              style={{
+                transform: `translateX(${panel === "menu" ? "0" : "-100%"})`,
+              }}
+            >
+              <div className="w-[360px] shrink-0">
+                <MenuRoot
                   agentId={agentId}
-                  onBack={goBack}
-                  onManage={() => { onConfigureSection?.("skills"); handleOpenChange(false); }}
-                  onSkillClick={(name) => { onInsertSkillChip?.(name); handleOpenChange(false); }}
-                />
-              )}
-              {panel === "schedules" && (
-                <SchedulesPanel
-                  agentId={agentId}
-                  onBack={goBack}
-                  onManage={() => { onConfigureSection?.("schedules"); handleOpenChange(false); }}
-                  onDescribe={() => {
-                    onPrefillInput?.("Create a schedule that ");
+                  onAttachFile={() => {
+                    onAttachFile();
                     handleOpenChange(false);
                   }}
-                  onSetup={() => { onConfigureSection?.("schedules"); handleOpenChange(false); }}
+                  onOpenPanel={setPanel}
+                  hasConfigureSection={!!onConfigureSection}
+                  connectionCount={granted.length}
+                  connectionHasBroken={granted.some(
+                    (c) =>
+                      c.status === "expired" || c.status === "disconnected",
+                  )}
                 />
-              )}
-              {panel === "connections" && (
-                <ConnectionsPanel
-                  agentId={agentId}
-                  onBack={goBack}
-                  onManage={() => { onConfigureSection?.("connections"); handleOpenChange(false); }}
-                />
-              )}
+              </div>
+              <div className="w-[360px] shrink-0 max-h-[60vh] overflow-y-auto">
+                {panel === "skills" && (
+                  <SkillsPanel
+                    agentId={agentId}
+                    onBack={goBack}
+                    onManage={() => {
+                      onConfigureSection?.("skills");
+                      handleOpenChange(false);
+                    }}
+                    onSkillClick={(name) => {
+                      onInsertSkillChip?.(name);
+                      handleOpenChange(false);
+                    }}
+                    onDescribe={() => {
+                      onPrefillInput?.("Create a skill that...");
+                      handleOpenChange(false);
+                    }}
+                  />
+                )}
+                {panel === "schedules" && (
+                  <SchedulesPanel
+                    agentId={agentId}
+                    onBack={goBack}
+                    onManage={() => {
+                      onConfigureSection?.("schedules");
+                      handleOpenChange(false);
+                    }}
+                    onDescribe={() => {
+                      onPrefillInput?.("Every morning at 9am...");
+                      handleOpenChange(false);
+                    }}
+                    onSetup={() => {
+                      onConfigureSection?.("schedules");
+                      handleOpenChange(false);
+                    }}
+                  />
+                )}
+                {panel === "connections" && (
+                  <ConnectionsPanel
+                    groups={groups}
+                    templateById={templateById}
+                    onToggleGrant={toggleGrant}
+                    maintenance={maintenance}
+                    loaded={
+                      !connectionsQ.isPending && !agentConnectionsQ.isPending
+                    }
+                    onBack={goBack}
+                    onManage={() => {
+                      onConfigureSection?.("connections");
+                      handleOpenChange(false);
+                    }}
+                    onOpenCatalog={openCatalog}
+                  />
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      </PopoverContent>
-    </Popover>
+        </PopoverContent>
+      </Popover>
+
+      {catalogOpen && (
+        <ConnectionCatalogModal
+          onClose={() => setCatalogOpen(false)}
+          sandbox={{ grantedIds, onToggleGrant: toggleGrant }}
+        />
+      )}
+      <ConnectionMaintenanceDialog maintenance={maintenance} />
+    </>
   );
 }
 
@@ -148,37 +241,38 @@ function MenuRoot({
   onAttachFile,
   onOpenPanel,
   hasConfigureSection,
+  connectionCount,
+  connectionHasBroken,
 }: {
   agentId: string | null;
   onAttachFile: () => void;
   onOpenPanel: (p: Panel) => void;
   hasConfigureSection: boolean;
+  connectionCount: number;
+  connectionHasBroken: boolean;
 }) {
   const skillCount = useSkillCount(agentId);
   const scheduleCount = useScheduleCount(agentId);
-  const connectionCount = useConnectionCount(agentId);
 
   return (
     <div className="py-1">
-      <MenuRow icon={<Upload size={16} />} label="Attach file" onClick={onAttachFile} />
+      <MenuRow label="Attach file" onClick={onAttachFile} />
       {hasConfigureSection && (
         <>
           <MenuRow
-            icon={<SkillLevelAdvanced size={16} />}
             label="Skills"
             badge={skillCount > 0 ? `${skillCount} on` : undefined}
             onClick={() => onOpenPanel("skills")}
           />
           <MenuRow
-            icon={<Time size={16} />}
             label="Schedules"
             badge={scheduleCount > 0 ? `${scheduleCount} active` : undefined}
             onClick={() => onOpenPanel("schedules")}
           />
           <MenuRow
-            icon={<ConnectionSignal size={16} />}
             label="Connections"
             badge={connectionCount > 0 ? `${connectionCount}` : undefined}
+            badgeDanger={connectionHasBroken}
             onClick={() => onOpenPanel("connections")}
           />
         </>
@@ -188,14 +282,14 @@ function MenuRoot({
 }
 
 function MenuRow({
-  icon,
   label,
   badge,
+  badgeDanger,
   onClick,
 }: {
-  icon: ReactNode;
   label: string;
   badge?: string;
+  badgeDanger?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -204,10 +298,13 @@ function MenuRow({
       onClick={onClick}
       className="flex w-full items-center gap-3 px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
     >
-      <span className="shrink-0 text-muted-foreground">{icon}</span>
       <span className="flex-1 text-left">{label}</span>
       {badge && (
-        <Badge variant="muted" size="sm" className="shrink-0">
+        <Badge
+          variant={badgeDanger ? "danger" : "muted"}
+          size="sm"
+          className="shrink-0"
+        >
           {badge}
         </Badge>
       )}
@@ -236,7 +333,9 @@ function PanelHeader({
       >
         <ArrowLeft size={16} />
       </button>
-      <span className="flex-1 text-sm font-semibold text-foreground">{title}</span>
+      <span className="flex-1 text-sm font-semibold text-foreground">
+        {title}
+      </span>
       {onManage && (
         <button
           type="button"
@@ -261,14 +360,19 @@ function SearchInput({
 }) {
   return (
     <div className="px-3 py-2">
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded-lg bg-muted px-3 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-        autoFocus
-      />
+      <div className="relative">
+        <Search
+          size={16}
+          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="pl-9"
+          autoFocus
+        />
+      </div>
     </div>
   );
 }
@@ -306,162 +410,38 @@ function SkillsPanel({
   agentId,
   onBack,
   onManage,
-  onSkillClick,
+  onDescribe,
 }: {
   agentId: string | null;
   onBack: () => void;
   onManage: () => void;
   onSkillClick: (name: string) => void;
+  onDescribe: () => void;
 }) {
-  const [query, setQuery] = useState("");
-  const surface = useSkillsSurface(agentId, {
-    readOnly: false,
-    isError: false,
-  });
-  const derived = useSkillsDerivations(surface, {
-    readOnly: false,
-    query,
-  });
-
-  const {
-    sources,
-    sourcesLoaded,
-    stateLoaded,
-    skillsBySource,
-    installedRef,
-    mutationsDisabled,
-    busyKey,
-    standalone,
-  } = surface;
-
-  const { shownSources, totals } = derived;
-
-  const loaded = sourcesLoaded && stateLoaded;
-  const totalSkills = totals.skills;
-
   return (
     <div className="flex flex-col">
       <PanelHeader title="Skills" onBack={onBack} onManage={onManage} />
-      {totalSkills > 6 && (
-        <SearchInput value={query} onChange={setQuery} placeholder="Search skills..." />
-      )}
-      {!loaded ? (
-        <SkeletonRows />
-      ) : sources.length === 0 && standalone.length === 0 ? (
-        <PanelEmpty
-          message="No skills configured yet"
-          action={
-            <Button variant="outline" size="sm" onClick={onManage}>
-              <Add size={16} /> Add skill
-            </Button>
-          }
+      <div className="px-3 pt-2 pb-3">
+        <SkillsSurface
+          agentId={agentId}
+          agentState="running"
+          readOnly={false}
+          hideSetActions
+          compactEmpty
+          hideRowActions
         />
-      ) : (
-        <div className="flex flex-col gap-0.5 px-1 pb-2">
-          {standalone.length > 0 && (
-            <SkillGroup label="Created in this agent">
-              {standalone.map((s) => (
-                <SkillPanelRow
-                  key={s.name}
-                  name={s.name}
-                  installed
-                  alwaysOn
-                  busy={false}
-                  disabled={false}
-                  onToggle={() => {}}
-                  onClick={() => onSkillClick(s.name)}
-                />
-              ))}
-            </SkillGroup>
-          )}
-          {shownSources.map((src) => {
-            const skills = skillsBySource[src.id] ?? [];
-            if (skills.length === 0) return null;
-            return (
-              <SkillGroup key={src.id} label={src.name}>
-                {skills.map((skill) => {
-                  const installed = installedRef(skill.source, skill.name) !== undefined;
-                  const busy = busyKey === skillKey(skill);
-                  return (
-                    <SkillPanelRow
-                      key={skillKey(skill)}
-                      name={skill.name}
-                      installed={installed}
-                      busy={busy}
-                      disabled={mutationsDisabled}
-                      onToggle={() => void surface.toggle(skill)}
-                      onClick={() => onSkillClick(skill.name)}
-                    />
-                  );
-                })}
-              </SkillGroup>
-            );
-          })}
-        </div>
-      )}
-      <div className="sticky bottom-0 border-t border-border bg-background px-3 py-2.5">
-        <Button variant="outline" size="sm" onClick={onManage}>
-          <Add size={16} /> Add skill
-        </Button>
       </div>
-    </div>
-  );
-}
-
-function SkillGroup({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="mt-1">
-      <p className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      {children}
-    </div>
-  );
-}
-
-function SkillPanelRow({
-  name,
-  installed,
-  alwaysOn,
-  busy,
-  disabled,
-  onToggle,
-  onClick,
-}: {
-  name: string;
-  installed: boolean;
-  alwaysOn?: boolean;
-  busy: boolean;
-  disabled: boolean;
-  onToggle: () => void;
-  onClick: () => void;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-2 rounded-lg px-3 py-1.5 transition-colors hover:bg-muted/60",
-        installed && !alwaysOn && "bg-muted/40",
-      )}
-    >
-      <button
-        type="button"
-        onClick={onClick}
-        className="min-w-0 flex-1 truncate text-left text-sm text-foreground hover:underline"
-        title={`Using ${name}`}
-      >
-        {name}
-      </button>
-      {busy && <Spinner size={14} />}
-      {alwaysOn ? (
-        <span className="text-[11px] text-muted-foreground">Always on</span>
-      ) : (
-        <Switch
-          checked={installed}
-          onCheckedChange={() => onToggle()}
-          label={`${installed ? "Disable" : "Enable"} ${name}`}
-          className={cn((disabled || busy) && "pointer-events-none opacity-50")}
-        />
-      )}
+      <div className="sticky bottom-0 flex items-center justify-between border-t border-border bg-background px-3 py-2.5">
+        <Button variant="outline" size="sm" onClick={onManage}>
+          <Add size={16} /> Add source
+        </Button>
+        <button
+          onClick={onDescribe}
+          className="rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          Or, describe to create
+        </button>
+      </div>
     </div>
   );
 }
@@ -492,7 +472,11 @@ function SchedulesPanel({
     <div className="flex flex-col">
       <PanelHeader title="Schedules" onBack={onBack} onManage={onManage} />
       {schedules.length > 6 && (
-        <SearchInput value={query} onChange={setQuery} placeholder="Search schedules..." />
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Search schedules..."
+        />
       )}
       {schedules.length === 0 ? (
         <PanelEmpty
@@ -511,19 +495,22 @@ function SchedulesPanel({
       ) : filtered.length === 0 ? (
         <PanelEmpty message={`No schedules match "${query}"`} />
       ) : (
-        <div className="flex flex-col gap-0.5 px-1 pb-2">
+        <div className="flex flex-col gap-1.5 px-2 py-2">
           {filtered.map((s) => (
             <SchedulePanelRow key={s.id} schedule={s} />
           ))}
         </div>
       )}
-      <div className="sticky bottom-0 flex items-center gap-2 border-t border-border bg-background px-3 py-2.5">
-        <Button variant="outline" size="sm" onClick={onDescribe}>
-          Describe it
+      <div className="sticky bottom-0 flex items-center justify-between border-t border-border bg-background px-3 py-2.5">
+        <Button variant="outline" size="sm" onClick={onSetup}>
+          <Add size={16} /> Add schedule
         </Button>
-        <Button variant="ghost" size="sm" onClick={onSetup}>
-          Set it up myself
-        </Button>
+        <button
+          onClick={onDescribe}
+          className="rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          Or, describe to create
+        </button>
       </div>
     </div>
   );
@@ -531,6 +518,7 @@ function SchedulesPanel({
 
 function SchedulePanelRow({ schedule }: { schedule: Schedule }) {
   const [enabled, setEnabled] = useState(schedule.enabled);
+  const [editing, setEditing] = useState(false);
 
   const cadence = scheduleCadenceText(schedule);
   const nextRun = schedule.status?.nextRun
@@ -552,22 +540,54 @@ function SchedulePanelRow({ schedule }: { schedule: Schedule }) {
   );
 
   return (
-    <div className="flex items-center gap-2 rounded-lg px-3 py-2 transition-colors hover:bg-muted/60">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-foreground">{schedule.name}</p>
-        <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
+    <>
+      <div
+        className={cn(
+          CARD_SURFACE,
+          CARD_HOVER,
+          "group flex items-center gap-3 rounded-xl px-3 py-2.5",
+        )}
+      >
+        <div
+          className={cn(
+            "flex size-8 shrink-0 items-center justify-center rounded-lg",
+            enabled
+              ? "bg-blue-100/50 text-accent dark:bg-blue-950/50"
+              : "bg-muted text-muted-foreground",
+          )}
+        >
+          {enabled ? <Time size={16} /> : <Pause size={16} />}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-foreground">
+            {schedule.name}
+          </p>
+          <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Switch
+            checked={enabled}
+            onCheckedChange={handleToggle}
+            label={enabled ? "Disable schedule" : "Enable schedule"}
+          />
+          <ScheduleOverflowMenu onEdit={() => setEditing(true)} />
+        </div>
       </div>
-      <ScheduleOverflowMenu schedule={schedule} />
-      <Switch
-        checked={enabled}
-        onCheckedChange={handleToggle}
-        label={`${enabled ? "Disable" : "Enable"} schedule`}
-      />
-    </div>
+
+      {editing && (
+        <ScheduleFormModal
+          existing={schedule}
+          onClose={() => setEditing(false)}
+          onSaved={() => setEditing(false)}
+        />
+      )}
+    </>
   );
 }
 
-function ScheduleOverflowMenu({ schedule }: { schedule: Schedule }) {
+function ScheduleOverflowMenu({ onEdit }: { onEdit: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -580,167 +600,96 @@ function ScheduleOverflowMenu({ schedule }: { schedule: Schedule }) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" side="top">
-        <DropdownMenuItem>Edit schedule</DropdownMenuItem>
-        <DropdownMenuItem>View results</DropdownMenuItem>
-        {schedule.sessionMode === "continuous" && (
-          <DropdownMenuItem>Reset session</DropdownMenuItem>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          className="text-destructive"
-          onSelect={() =>
-            emitToast({ kind: "info", message: `Schedule deleted — ${schedule.name}` })
-          }
-        >
-          Delete
-        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onEdit}>Edit schedule</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
 function ConnectionsPanel({
-  agentId,
+  groups,
+  templateById,
+  onToggleGrant,
+  maintenance,
+  loaded,
   onBack,
   onManage,
+  onOpenCatalog,
 }: {
-  agentId: string | null;
+  groups: CatalogProviderGroup[];
+  templateById: Map<string, ConnectionTemplateView>;
+  onToggleGrant: (id: string, on: boolean) => void;
+  maintenance: ReturnType<typeof useConnectionMaintenance>;
+  loaded: boolean;
   onBack: () => void;
   onManage: () => void;
+  onOpenCatalog: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const { granted, available, loaded } = useAgentConnections(agentId);
 
-  const allConns = [...granted, ...available];
-  const q = query.toLowerCase();
-  const filteredGranted = q
-    ? granted.filter((c) => c.name.toLowerCase().includes(q))
-    : granted;
-  const filteredAvailable = q
-    ? available.filter((c) => c.name.toLowerCase().includes(q))
-    : available;
+  const totalConnections = groups.reduce((n, g) => n + g.connections.length, 0);
+
+  const filteredGroups = useMemo(() => {
+    if (!query.trim()) return groups;
+    const q = query.toLowerCase();
+    return groups
+      .map((g) => ({
+        ...g,
+        connections: g.connections.filter(
+          (c) =>
+            c.name.toLowerCase().includes(q) ||
+            g.provider.title.toLowerCase().includes(q),
+        ),
+      }))
+      .filter((g) => g.connections.length > 0);
+  }, [groups, query]);
 
   return (
     <div className="flex flex-col">
       <PanelHeader title="Connections" onBack={onBack} onManage={onManage} />
-      {allConns.length > 6 && (
-        <SearchInput value={query} onChange={setQuery} placeholder="Search connections..." />
+      {totalConnections > 6 && (
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Search connections..."
+        />
       )}
       {!loaded ? (
         <SkeletonRows />
-      ) : allConns.length === 0 ? (
+      ) : totalConnections === 0 ? (
         <PanelEmpty
           message="No connections configured"
           action={
-            <Button variant="outline" size="sm" onClick={onManage}>
+            <Button variant="outline" size="sm" onClick={onOpenCatalog}>
               <Add size={16} /> Add connection
             </Button>
           }
         />
+      ) : filteredGroups.length === 0 ? (
+        <PanelEmpty message={`No connections match "${query}"`} />
       ) : (
-        <div className="flex flex-col gap-0.5 px-1 pb-2">
-          {filteredGranted.length > 0 && (
-            <ConnectionGroup label="On for this agent">
-              {filteredGranted.map((c) => (
-                <ConnectionPanelRow
-                  key={c.id}
-                  connection={c}
-                  granted
-                />
-              ))}
-            </ConnectionGroup>
-          )}
-          {filteredAvailable.length > 0 && (
-            <ConnectionGroup label="Available">
-              {filteredAvailable.map((c) => (
-                <ConnectionPanelRow
-                  key={c.id}
-                  connection={c}
-                  granted={false}
-                />
-              ))}
-            </ConnectionGroup>
-          )}
-          {filteredGranted.length === 0 && filteredAvailable.length === 0 && (
-            <PanelEmpty message={`No connections match "${query}"`} />
-          )}
+        <div className="flex flex-col gap-3 px-2 py-2">
+          {filteredGroups.map((group) => (
+            <ConnectionGroupCard
+              key={group.provider.id}
+              group={group}
+              templateById={templateById}
+              showCount
+              grant={(c) => ({
+                granted: true,
+                onToggle: (on) => onToggleGrant(c.id, on),
+                actionHidden: true,
+              })}
+              maintenance={maintenance.rowActions}
+            />
+          ))}
         </div>
       )}
       <div className="sticky bottom-0 border-t border-border bg-background px-3 py-2.5">
-        <Button variant="outline" size="sm" onClick={onManage}>
+        <Button variant="outline" size="sm" onClick={onOpenCatalog}>
           <Add size={16} /> Add connection
         </Button>
       </div>
-    </div>
-  );
-}
-
-function ConnectionGroup({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="mt-1">
-      <p className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      {children}
-    </div>
-  );
-}
-
-interface MockConnection {
-  id: string;
-  templateId: string;
-  name: string;
-  status: string;
-  iconSlug?: string;
-}
-
-function ConnectionPanelRow({
-  connection,
-  granted,
-}: {
-  connection: MockConnection;
-  granted: boolean;
-}) {
-  const [isGranted, setIsGranted] = useState(granted);
-
-  const iconSlug = useConnectionIconSlug(connection.templateId);
-  const isBroken = connection.status === "expired" || connection.status === "disconnected";
-
-  const handleToggle = useCallback(
-    (on: boolean) => {
-      setIsGranted(on);
-      emitToast({
-        kind: "info",
-        message: `Connection updated — ${connection.name} ${on ? "granted" : "removed"}`,
-      });
-    },
-    [connection.name],
-  );
-
-  return (
-    <div className="flex items-center gap-2 rounded-lg px-3 py-1.5 transition-colors hover:bg-muted/60">
-      <ConnectionIcon iconSlug={iconSlug} alt={connection.name} size={16} />
-      <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-        {connection.name}
-      </span>
-      {isBroken && (
-        <Badge
-          variant={connection.status === "expired" ? "warning" : "danger"}
-          size="sm"
-        >
-          {connection.status === "expired" ? "Expired" : "Disconnected"}
-        </Badge>
-      )}
-      {connection.status === "pending" && (
-        <Badge variant="muted" size="sm">
-          Pending
-        </Badge>
-      )}
-      <Switch
-        checked={isGranted}
-        onCheckedChange={handleToggle}
-        label={`${isGranted ? "Remove" : "Grant"} ${connection.name}`}
-      />
     </div>
   );
 }
@@ -762,10 +711,6 @@ function useScheduleCount(agentId: string | null): number {
   return schedules.filter((s) => s.enabled).length;
 }
 
-function useConnectionCount(agentId: string | null): number {
-  return mockAgentConnections.length;
-}
-
 function useAgentSchedules(agentId: string | null): Schedule[] {
   return useMemo(() => {
     if (!agentId) return [];
@@ -773,22 +718,4 @@ function useAgentSchedules(agentId: string | null): Schedule[] {
       (s) => s.agentId === agentId,
     );
   }, [agentId]);
-}
-
-function useAgentConnections(_agentId: string | null) {
-  return useMemo(() => {
-    const grantedIds = new Set(mockAgentConnections.map((c) => c.id));
-    const granted: MockConnection[] = mockAgentConnections as MockConnection[];
-    const available: MockConnection[] = (mockConnections as MockConnection[]).filter(
-      (c) => !grantedIds.has(c.id),
-    );
-    return { granted, available, loaded: true };
-  }, []);
-}
-
-function useConnectionIconSlug(templateId: string): string | undefined {
-  return useMemo(() => {
-    const tpl = mockTemplates.find((t) => t.id === templateId);
-    return tpl?.iconSlug;
-  }, [templateId]);
 }

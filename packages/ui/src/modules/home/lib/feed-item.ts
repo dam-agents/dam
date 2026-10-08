@@ -3,6 +3,11 @@ import type { ApprovalView } from "api-server-api";
 import type { SessionView } from "../../../types.js";
 import { isUnreadSession } from "./unread.js";
 
+export interface FeedArtifact {
+  name: string;
+  artifactId: string;
+}
+
 export type FeedItem =
   | {
       kind: "approval";
@@ -17,6 +22,7 @@ export type FeedItem =
       agentId: string;
       at: string | null;
       session: SessionView;
+      artifact?: FeedArtifact;
     }
   | {
       kind: "unread";
@@ -24,6 +30,7 @@ export type FeedItem =
       agentId: string;
       at: string | null;
       session: SessionView;
+      artifact?: FeedArtifact;
     };
 
 export interface FeedSources {

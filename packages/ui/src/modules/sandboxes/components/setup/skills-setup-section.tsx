@@ -107,8 +107,7 @@ export function SkillsSetupSection({ setup }: { setup: SkillsSetup }) {
     return true;
   };
 
-  const hasContent =
-    sources.length > 0 || stagedLocalSkills.length > 0;
+  const hasContent = sources.length > 0 || stagedLocalSkills.length > 0;
   const selectedCount =
     selectedKeys.size + pendingSetIds.length + stagedLocalSkills.length;
 

@@ -16,7 +16,11 @@ import { applyBrand } from "../brand.js";
 import { queryClient } from "../query-client.js";
 import { agents } from "./data/agents.js";
 import { approvals } from "./data/approvals.js";
-import { artifactFolders, artifacts } from "./data/artifacts.js";
+import {
+  artifactContents,
+  artifactFolders,
+  artifacts,
+} from "./data/artifacts.js";
 import { brand } from "./data/brand.js";
 import { budgetsReserved } from "./data/budgets.js";
 import { channelsAvailable } from "./data/channels.js";
@@ -29,12 +33,10 @@ import { driverSummaries, experiments } from "./data/experiments.js";
 import { featureFlags } from "./data/features.js";
 import { knowledgeBases } from "./data/knowledge-bases.js";
 import { schedules } from "./data/schedules.js";
+import { mockSessions } from "./data/sessions.js";
+import { spendBreakdown } from "./data/spend.js";
 import { templates } from "./data/templates.js";
 import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
-
-// ─── Hash-based routing for file:// support ─────────────────────────────────
-// Intercept ALL clicks in capture phase (fires before React or bubbling).
-// Convert <a href="/..."> to hash navigation so file:// doesn't navigate away.
 
 history.pushState = () => {};
 history.replaceState = () => {};
@@ -98,7 +100,7 @@ queryClient.setQueryData(
 );
 queryClient.setQueryData(trpcKey("connections.list"), connections);
 queryClient.setQueryData(trpcKey("connections.getAgentConnections"), {
-  connections: agentConnections.map((c) => ({ ...c, connectionId: c.id })),
+  connections: agentConnections,
 });
 
 // Templates
@@ -126,9 +128,30 @@ queryClient.setQueryData(
   trpcKey("artifactLibrary.listFolders"),
   artifactFolders,
 );
+queryClient.setQueryData(
+  trpcKey("artifactLibrary.get", { id: "art-1" }),
+  artifacts[0],
+);
+queryClient.setQueryData(
+  trpcKey("artifactLibrary.getContent", { id: "art-1" }),
+  artifactContents["art-1"],
+);
+queryClient.setQueryData(
+  trpcKey("artifactLibrary.getContent", { id: "art-1", version: undefined }),
+  artifactContents["art-1"],
+);
+queryClient.setQueryData(
+  trpcKey("artifactLibrary.listVersions", { id: "art-1" }),
+  [
+    { version: 3, createdAt: new Date().toISOString() },
+    { version: 2, createdAt: new Date(Date.now() - 3600000).toISOString() },
+    { version: 1, createdAt: new Date(Date.now() - 7200000).toISOString() },
+  ],
+);
 
 // Skills
 queryClient.setQueryData(trpcKey("skills.list"), []);
+queryClient.setQueryData(trpcKey("skills.sources.list"), []);
 queryClient.setQueryData(trpcKey("skills.state"), {
   installed: [
     { source: "platform", name: "code-review", version: "1.0.0" },
@@ -152,6 +175,47 @@ queryClient.setQueryData(trpcKey("metrics.usage"), {
   totalTokens: 0,
   totalCostCents: 0,
 });
+
+// Spend breakdown (for SpendWidget on home page)
+queryClient.setQueryData(trpcKey("metrics.spendBreakdown"), spendBreakdown);
+
+// Links (used by ComputeWidget's "Request more" link)
+queryClient.setQueryData(trpcKey("links.all"), {
+  computeRequest: "#",
+  docs: "#",
+  status: "#",
+});
+
+// Sessions per agent (for feed / notifications)
+// These go through ACP WebSocket (not tRPC), so the fetch stub can't intercept them.
+// Seed data AND provide a queryFn override that returns it, so refetches don't wipe it.
+const sessionsByAgent: Record<string, unknown[]> = { ...mockSessions };
+for (const agent of agents) {
+  if (agent.state === "running" && !(agent.id in sessionsByAgent)) {
+    sessionsByAgent[agent.id] = [];
+  }
+}
+for (const [agentId, sessions] of Object.entries(sessionsByAgent)) {
+  queryClient.setQueryData(["acp-sessions", agentId, "home"], sessions);
+  queryClient.setQueryData(
+    ["acp-sessions", agentId, "notifications"],
+    sessions,
+  );
+  queryClient.setQueryData(
+    ["acp-sessions", agentId, { channels: false, scheduled: false }],
+    sessions,
+  );
+  queryClient.setQueryData(
+    ["acp-sessions", agentId, { channels: true, scheduled: true }],
+    sessions,
+  );
+}
+(window as any).__mockListAgentSessions = (agentId: string) =>
+  Promise.resolve(sessionsByAgent[agentId] ?? []);
+console.warn(
+  "[MOCK] Registered __mockListAgentSessions for",
+  Object.keys(sessionsByAgent),
+);
 
 // Egress rules
 queryClient.setQueryData(trpcKey("egressRules.list"), [
@@ -214,7 +278,7 @@ const fixtures: Record<string, unknown> = {
   "connections.listTemplates": connectionTemplates,
   "connections.list": connections,
   "connections.getAgentConnections": {
-    connections: agentConnections.map((c) => ({ ...c, connectionId: c.id })),
+    connections: agentConnections,
   },
   "templates.list": templates,
   "budgets.reserved": budgetsReserved,
@@ -224,10 +288,19 @@ const fixtures: Record<string, unknown> = {
   "knowledgeBases.list": knowledgeBases,
   "artifactLibrary.list": artifacts,
   "artifactLibrary.listFolders": artifactFolders,
+  "artifactLibrary.get": artifacts[0],
+  "artifactLibrary.getContent": artifactContents["art-1"],
+  "artifactLibrary.listVersions": [
+    { version: 3, createdAt: new Date().toISOString() },
+    { version: 2, createdAt: new Date(Date.now() - 3600000).toISOString() },
+    { version: 1, createdAt: new Date(Date.now() - 7200000).toISOString() },
+  ],
   "egressRules.list": [],
   "repos.list": [],
   "apiKeys.list": [],
   "metrics.usage": { totalTokens: 0, totalCostCents: 0 },
+  "metrics.spendBreakdown": spendBreakdown,
+  "links.all": { computeRequest: "#", docs: "#", status: "#" },
   "harnessConfig.get": {},
   "harnessConfig.status": {
     catalog: {

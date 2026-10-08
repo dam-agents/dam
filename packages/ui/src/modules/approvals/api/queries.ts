@@ -29,3 +29,13 @@ export function useApprovalsForAgent(agentId: string | null) {
     meta: { errorToast: "Couldn't load agent approvals" },
   });
 }
+
+export const usePendingApprovals = useApprovalsForOwner;
+
+export function useApprovalHistory() {
+  return useQuery({
+    queryKey: [...approvalsKeys.all, "history"],
+    queryFn: () => api.approvals.listForOwner.query(),
+    meta: { errorToast: "Couldn't load approval history" },
+  });
+}

@@ -31,8 +31,6 @@ export function ConnectionRowActions({
   grant,
   maintenance,
   onManage,
-  onDelete,
-  deleting = false,
 }: Props) {
   const reauthLabel =
     connection.status === "pending" ? "Authorize" : "Re-authenticate";
@@ -127,16 +125,7 @@ export function ConnectionRowActions({
           )}
           {onManage && (
             <DropdownMenuItem onSelect={onManage}>
-              Manage connections
-            </DropdownMenuItem>
-          )}
-          {onDelete && (
-            <DropdownMenuItem
-              tone="danger"
-              disabled={deleting}
-              onSelect={onDelete}
-            >
-              Delete this connection
+              Manage global connections
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>

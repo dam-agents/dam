@@ -1,5 +1,7 @@
 import { http, HttpResponse } from "msw";
 
+import { agentsKeys } from "../modules/agents/api/queries.js";
+import { queryClient } from "../query-client.js";
 import { agents } from "./data/agents.js";
 import { approvals } from "./data/approvals.js";
 import {
@@ -25,34 +27,53 @@ import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
 
 /** Toggleable mock state — controlled by the floating MockToggle component. */
 export let mockEmpty = false;
+export let mockFirstRun = false;
+
+const resolvedApprovalIds = new Set<string>();
 
 export function setMockEmpty(value: boolean) {
   mockEmpty = value;
+  if (value) mockFirstRun = false;
+}
+
+export function setMockFirstRun(value: boolean) {
+  mockFirstRun = value;
+  if (value) mockEmpty = false;
+}
+
+export function resetResolvedApprovals() {
+  resolvedApprovalIds.clear();
 }
 
 function getFixtures(): Record<string, unknown> {
   const empty = mockEmpty;
+  const fresh = mockFirstRun;
   return {
-    "agents.list": empty ? [] : agents,
+    "agents.list": empty || fresh ? [] : agents,
     "agents.get": agents[1],
-    "channels.available": channelsAvailable,
+    "channels.available": fresh ? [] : channelsAvailable,
     "channels.telegramBot": null,
-    "approvals.listForOwner": approvals,
-    "approvals.listForInstance": approvals.slice(0, 2),
+    "approvals.listForOwner": fresh
+      ? []
+      : approvals.filter((a) => !resolvedApprovalIds.has(a.id)),
+    "approvals.listForInstance": fresh
+      ? []
+      : approvals.slice(0, 2).filter((a) => !resolvedApprovalIds.has(a.id)),
     "terms.current": termsCurrent,
     "terms.latestAcceptance": termsLatestAcceptance,
     "features.flags": featureFlags,
     "connections.listTemplates": connectionTemplates,
-    "connections.list": connections,
-    "connections.getAgentConnections": {
-      connections: agentConnections.map((c) => ({ ...c, connectionId: c.id })),
-    },
+    "connections.list": fresh ? [] : connections,
+    "connections.getAgentConnections": fresh
+      ? { connections: [] }
+      : { connections: agentConnections },
     "templates.list": templates,
-    "budgets.reserved": budgetsReserved,
-    "experiments.list": empty ? [] : experiments,
-    "experiments.driverSummaries": empty ? [] : driverSummaries,
-    "schedules.list": schedules,
-    "knowledgeBases.list": empty ? [] : knowledgeBases,
+    "budgets.reserved": fresh ? [] : budgetsReserved,
+    "experiments.list": empty || fresh ? [] : experiments,
+    "experiments.driverSummaries": empty || fresh ? [] : driverSummaries,
+    "schedules.list": fresh ? [] : schedules,
+    "schedules.listForOwner": fresh ? [] : schedules,
+    "knowledgeBases.list": empty || fresh ? [] : knowledgeBases,
     "egressRules.list": [
       {
         id: "er-1",
@@ -93,33 +114,80 @@ function getFixtures(): Record<string, unknown> {
     ],
     "egressRules.currentPreset": "trusted",
     "skills.list": [],
-    "skills.state": {
-      installed: [
-        { source: "platform", name: "code-review", version: "1.0.0" },
-        { source: "platform", name: "test-runner", version: "1.2.0" },
-      ],
-      standalone: [
-        {
-          name: "my-custom-skill",
-          description: "A custom skill",
-          skillPath: "/skills/my-custom-skill",
-          origin: "user",
-        },
-      ],
-      instancePublishes: [],
-    },
-    "files.list": empty
+    "skills.sources.list": fresh
       ? []
       : [
-          { path: "src/middleware/auth.ts", type: "file" },
-          { path: "src/middleware/strategies/jwt.ts", type: "file" },
-          { path: "src/middleware/strategies/session.ts", type: "file" },
-          { path: "src/routes/auth.ts", type: "file" },
-          { path: "src/index.ts", type: "file" },
-          { path: "package.json", type: "file" },
+          {
+            id: "src-github-1",
+            name: "acme/agent-skills",
+            gitUrl: "https://github.com/acme/agent-skills",
+            path: "skills",
+          },
         ],
-    "artifactLibrary.list": empty ? [] : artifacts,
-    "artifactLibrary.listFolders": empty ? [] : artifactFolders,
+    "skills.listWithScan": fresh
+      ? { skills: [], scannedAt: null, visibility: null }
+      : {
+          skills: [
+            {
+              source: "src-github-1",
+              name: "code-review",
+              description: "Automated code review with best practices",
+              version: "1.0.0",
+              contentHash: "abc123",
+            },
+            {
+              source: "src-github-1",
+              name: "test-generator",
+              description: "Generate unit tests for functions",
+              version: "1.2.0",
+              contentHash: "def456",
+            },
+            {
+              source: "src-github-1",
+              name: "doc-writer",
+              description: "Generate documentation from code",
+              version: "0.9.0",
+              contentHash: "ghi789",
+            },
+          ],
+          scannedAt: new Date(Date.now() - 3600_000).toISOString(),
+          visibility: "public",
+        },
+    "skills.sets.list": [],
+    "skills.state": fresh
+      ? { installed: [], standalone: [], instancePublishes: [] }
+      : {
+          installed: [
+            { source: "src-github-1", name: "code-review", version: "1.0.0" },
+            {
+              source: "src-github-1",
+              name: "test-generator",
+              version: "1.2.0",
+            },
+          ],
+          standalone: [
+            {
+              name: "my-custom-skill",
+              description: "A custom skill",
+              skillPath: "/skills/my-custom-skill",
+              origin: "user",
+            },
+          ],
+          instancePublishes: [],
+        },
+    "files.list":
+      empty || fresh
+        ? []
+        : [
+            { path: "src/middleware/auth.ts", type: "file" },
+            { path: "src/middleware/strategies/jwt.ts", type: "file" },
+            { path: "src/middleware/strategies/session.ts", type: "file" },
+            { path: "src/routes/auth.ts", type: "file" },
+            { path: "src/index.ts", type: "file" },
+            { path: "package.json", type: "file" },
+          ],
+    "artifactLibrary.list": empty || fresh ? [] : artifacts,
+    "artifactLibrary.listFolders": empty || fresh ? [] : artifactFolders,
     "artifactLibrary.folderShareUrl": null,
     "repos.list": [],
     "apiKeys.list": [],
@@ -309,7 +377,6 @@ export const handlers = [
     const procedures = procedurePath.split(",");
     const fixtures = getFixtures();
 
-    // tRPC batch input: ?input={"0":{"json":{...}}} or per-index ?input[0]=...
     const getInputForIndex = (
       idx: number,
     ): Record<string, unknown> | undefined => {
@@ -317,14 +384,10 @@ export const handlers = [
         const raw = url.searchParams.get("input");
         if (raw) {
           const parsed = JSON.parse(raw);
-          // Batch format: {"0": {"json": {...}}}
           if (parsed[String(idx)]?.json) return parsed[String(idx)].json;
-          // Single non-batch: {"json": {...}}
           if (parsed.json && procedures.length === 1) return parsed.json;
-          // Direct object (no json wrapper): {"0": {"id": "..."}}
           if (parsed[String(idx)] && !parsed[String(idx)].json)
             return parsed[String(idx)];
-          // Direct single: {"id": "..."}
           if (parsed.id && procedures.length === 1) return parsed;
         }
       } catch {
@@ -336,7 +399,6 @@ export const handlers = [
     const results = procedures.map((proc, idx) => {
       const inputObj = getInputForIndex(idx);
 
-      // Dynamic artifact lookups
       if (proc === "artifactLibrary.get") {
         const id = inputObj?.id as string | undefined;
         const art = id ? artifacts.find((a) => a.id === id) : artifacts[0];
@@ -376,41 +438,181 @@ export const handlers = [
     return HttpResponse.json(results);
   }),
 
+  // Agent-specific tRPC mutations (POST)
+  http.post(/\/api\/agents\/[^/]+\/trpc\/.*/, async ({ request }) => {
+    try {
+      const url = new URL(request.url);
+      const procedurePath = url.pathname.replace(
+        /^\/api\/agents\/[^/]+\/trpc\//,
+        "",
+      );
+      const procedures = procedurePath.split(",");
+
+      let body: any = null;
+      try {
+        const text = await request.text();
+        if (text) body = JSON.parse(text);
+      } catch {
+        /* no body */
+      }
+
+      const results = procedures.map((proc, idx) => {
+        console.info(`[MSW] Mock agent mutation: ${proc}`);
+        if (
+          proc === "approvals.approveOnce" ||
+          proc === "approvals.approvePermanent" ||
+          proc === "approvals.approveHost" ||
+          proc === "approvals.denyForever" ||
+          proc === "approvals.dismiss"
+        ) {
+          const input = body?.[String(idx)]?.json ?? body?.json ?? body;
+          const id = input?.approvalId ?? input?.id;
+          if (id) resolvedApprovalIds.add(id);
+          return { result: { data: { ok: true } } };
+        }
+        if (proc === "connections.setAgentConnections") {
+          const input = body?.[String(idx)]?.json ?? body?.json ?? body;
+          const ids: string[] = input?.connectionIds ?? [];
+          agentConnections.length = 0;
+          ids.forEach((id: string) =>
+            agentConnections.push({ connectionId: id }),
+          );
+          return { result: { data: null } };
+        }
+        if (proc === "skills.install" || proc === "skills.uninstall") {
+          return { result: { data: null } };
+        }
+        if (proc === "skills.applyBatch") {
+          return { result: { data: null } };
+        }
+        if (proc === "skills.sources.create") {
+          return {
+            result: {
+              data: {
+                id: `src-${Date.now()}`,
+                name: "new-source",
+                gitUrl: "https://github.com/example/skills",
+              },
+            },
+          };
+        }
+        if (proc === "skills.sources.delete") {
+          return { result: { data: null } };
+        }
+        if (proc === "skills.sources.refresh") {
+          return { result: { data: null } };
+        }
+        return { result: { data: null } };
+      });
+
+      return HttpResponse.json(results);
+    } catch (err) {
+      console.error("[MSW] Agent POST handler error:", err);
+      return HttpResponse.json([{ result: { data: null } }]);
+    }
+  }),
+
   // tRPC batch mutations (POST)
-  http.post("/api/trpc/*", ({ request }) => {
-    const url = new URL(request.url);
-    const procedurePath = url.pathname.replace("/api/trpc/", "");
-    const procedures = procedurePath.split(",");
+  http.post("/api/trpc/*", async ({ request }) => {
+    try {
+      const url = new URL(request.url);
+      const procedurePath = url.pathname.replace("/api/trpc/", "");
+      const procedures = procedurePath.split(",");
 
-    const results = procedures.map((proc) => {
-      console.info(`[MSW] Mock mutation: ${proc}`);
-      if (proc === "agents.create") {
-        mockEmpty = false;
-        return { result: { data: agents[0] } };
+      let body: any = null;
+      try {
+        const text = await request.text();
+        if (text) body = JSON.parse(text);
+      } catch {
+        /* no body */
       }
-      if (proc === "agents.upgrade") {
-        return { result: { data: { ...agents[1], templateUpdate: null } } };
-      }
-      if (proc === "experiments.createSandbox") {
-        mockEmpty = false;
-        return {
-          result: {
-            data: agents.find((a) => a.kind === "experiment") ?? agents[0],
-          },
-        };
-      }
-      if (proc === "knowledgeBases.create") {
-        mockEmpty = false;
-        return {
-          result: {
-            data: agents.find((a) => a.kind === "knowledge-base") ?? agents[0],
-          },
-        };
-      }
-      return { result: { data: null } };
-    });
 
-    return HttpResponse.json(results);
+      const results = procedures.map((proc, idx) => {
+        console.info(`[MSW] Mock mutation: ${proc}`);
+        if (proc === "agents.create") {
+          mockEmpty = false;
+          return { result: { data: agents[0] } };
+        }
+        if (proc === "agents.wake") {
+          const entry = body?.[String(idx)];
+          const input = entry?.json ?? entry ?? body?.json ?? body;
+          const target = agents.find((a) => a.id === input?.id) as
+            | { state: string }
+            | undefined;
+          if (target) {
+            target.state = "starting";
+            setTimeout(() => {
+              target.state = "running";
+              void queryClient.invalidateQueries({
+                queryKey: agentsKeys.root,
+              });
+            }, 1500);
+          }
+          return { result: { data: null } };
+        }
+        if (proc === "agents.upgrade") {
+          return { result: { data: { ...agents[1], templateUpdate: null } } };
+        }
+        if (proc === "experiments.createSandbox") {
+          mockEmpty = false;
+          return {
+            result: {
+              data: agents.find((a) => a.kind === "experiment") ?? agents[0],
+            },
+          };
+        }
+        if (proc === "knowledgeBases.create") {
+          mockEmpty = false;
+          return {
+            result: {
+              data:
+                agents.find((a) => a.kind === "knowledge-base") ?? agents[0],
+            },
+          };
+        }
+        if (
+          proc === "approvals.approveOnce" ||
+          proc === "approvals.approvePermanent" ||
+          proc === "approvals.approveHost" ||
+          proc === "approvals.denyForever" ||
+          proc === "approvals.dismiss"
+        ) {
+          const input = body?.[String(idx)]?.json ?? body?.json ?? body;
+          const id = input?.approvalId ?? input?.id;
+          if (id) resolvedApprovalIds.add(id);
+          return { result: { data: { ok: true } } };
+        }
+        if (proc === "skills.install" || proc === "skills.uninstall") {
+          return { result: { data: null } };
+        }
+        if (proc === "skills.applyBatch") {
+          return { result: { data: null } };
+        }
+        if (proc === "skills.sources.create") {
+          return {
+            result: {
+              data: {
+                id: `src-${Date.now()}`,
+                name: "new-source",
+                gitUrl: "https://github.com/example/skills",
+              },
+            },
+          };
+        }
+        if (proc === "skills.sources.delete") {
+          return { result: { data: null } };
+        }
+        if (proc === "skills.sources.refresh") {
+          return { result: { data: null } };
+        }
+        return { result: { data: null } };
+      });
+
+      return HttpResponse.json(results);
+    } catch (err) {
+      console.error("[MSW] POST handler error:", err);
+      return HttpResponse.json([{ result: { data: null } }]);
+    }
   }),
 
   // Brand endpoint

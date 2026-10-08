@@ -93,6 +93,7 @@ export function SkillSourceCard({
   filteredNames,
   onToggleAll,
   bulkBusy,
+  compact,
 }: {
   source: SkillSource;
   skills: Skill[] | undefined;
@@ -115,6 +116,7 @@ export function SkillSourceCard({
   filteredNames?: ReadonlySet<string> | null;
   onToggleAll?: (on: boolean, scope?: Skill[]) => void;
   bulkBusy?: boolean;
+  compact?: boolean;
 }) {
   const loaded = skills !== undefined;
   const list = (skills ?? []).filter((s) => !suppressedNames?.has(s.name));
@@ -180,67 +182,68 @@ export function SkillSourceCard({
             {repoLabel(source)}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {}
-          {!error && scannedAt && onRescan && (
-            <ScanFreshness
-              scannedAt={scannedAt}
-              scanning={loading}
-              onRescan={onRescan}
-            />
-          )}
-          {!scannedAt && loading && <Spinner size={15} />}
-          {}
-          {onToggleAll && !readOnly && loaded && !error && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={disabled || bulkBusy || bulkList.length === 0}
-              onClick={() =>
-                onToggleAll(!bulkAllOn, filtering ? visible : undefined)
-              }
-            >
-              {bulkBusy && <Spinner size={13} />}
-              {filtering
-                ? `${bulkAllOn ? "Disable" : "Enable"} ${bulkList.length} matching`
-                : bulkAllOn
-                  ? "Disable all"
-                  : "Enable all"}
-            </Button>
-          )}
-          {}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+        {!compact && (
+          <div className="flex shrink-0 items-center gap-2">
+            {!error && scannedAt && onRescan && (
+              <ScanFreshness
+                scannedAt={scannedAt}
+                scanning={loading}
+                onRescan={onRescan}
+              />
+            )}
+            {!scannedAt && loading && <Spinner size={15} />}
+            {onToggleAll && !readOnly && loaded && !error && (
               <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Source actions"
-                className="shrink-0 text-muted-foreground"
-              >
-                <OverflowMenuHorizontal size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {onRescan && (
-                <DropdownMenuItem onSelect={onRescan}>Re-scan</DropdownMenuItem>
-              )}
-              <DropdownMenuItem
-                onSelect={() =>
-                  window.open(source.gitUrl, "_blank", "noopener,noreferrer")
+                variant="outline"
+                size="sm"
+                disabled={disabled || bulkBusy || bulkList.length === 0}
+                onClick={() =>
+                  onToggleAll(!bulkAllOn, filtering ? visible : undefined)
                 }
               >
-                <span className="flex-1">View repo</span>
-                <Launch size={14} />
-              </DropdownMenuItem>
-              {canRemove && (
-                <DropdownMenuItem tone="danger" onSelect={onRemove}>
-                  <TrashCan size={14} />
-                  <span className="flex-1">Remove source</span>
+                {bulkBusy && <Spinner size={13} />}
+                {filtering
+                  ? `${bulkAllOn ? "Disable" : "Enable"} ${bulkList.length} matching`
+                  : bulkAllOn
+                    ? "Disable all"
+                    : "Enable all"}
+              </Button>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Source actions"
+                  className="shrink-0 text-muted-foreground"
+                >
+                  <OverflowMenuHorizontal size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {onRescan && (
+                  <DropdownMenuItem onSelect={onRescan}>
+                    Re-scan
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  onSelect={() =>
+                    window.open(source.gitUrl, "_blank", "noopener,noreferrer")
+                  }
+                >
+                  <span className="flex-1">View repo</span>
+                  <Launch size={14} />
                 </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+                {canRemove && (
+                  <DropdownMenuItem tone="danger" onSelect={onRemove}>
+                    <TrashCan size={14} />
+                    <span className="flex-1">Remove source</span>
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
       </div>
 
       {!loaded && !error && <SkillRowsSkeleton />}

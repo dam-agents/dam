@@ -17,8 +17,15 @@ export function nextSandboxName(
   kind: SandboxNameKind,
   takenNames: Iterable<string>,
 ): string {
-  const prefix = PREFIX[kind];
-  const pattern = new RegExp(`^${prefix}-(\\d+)$`);
+  return nextNameWithPrefix(PREFIX[kind], takenNames);
+}
+
+export function nextNameWithPrefix(
+  prefix: string,
+  takenNames: Iterable<string>,
+): string {
+  const normalized = prefix.toLowerCase();
+  const pattern = new RegExp(`^${normalized}-(\\d+)$`);
   let highest = 0;
   for (const taken of takenNames) {
     const match = pattern.exec(taken.trim().toLowerCase());
@@ -26,5 +33,5 @@ export function nextSandboxName(
     const ordinal = Number(match[1]);
     if (Number.isSafeInteger(ordinal) && ordinal > highest) highest = ordinal;
   }
-  return `${prefix}-${highest + 1}`;
+  return `${normalized}-${highest + 1}`;
 }

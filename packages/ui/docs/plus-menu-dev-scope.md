@@ -17,7 +17,7 @@ Replace the chat input's `DropdownMenu` (navigate-to-configure) with a `Popover`
 | Level 1 menu (Attach file, Skills, Schedules, Connections) | Working — icons, badges, click targets |
 | Skills panel — grouped by source, toggle switches, "Always on" for standalone | Working — reuses `useSkillsSurface` + `useSkillsDerivations` |
 | Schedules panel — cadence subtitle, overflow menu, enable/disable | Working with mock data |
-| Connections panel — "On for this agent" / "Available" groups, status badges, toggle | Working with mock data |
+| Connections panel — grouped by provider, status badges, overflow menus | Working — reuses `ConnectionGroupCard`, `useCatalogGroups`, `useConnectionMaintenance` |
 | Panel transitions (CSS translateX slide) | Working |
 | Search within each panel (shown when count > 6) | Working |
 | Skeleton loading states | Working |
@@ -38,16 +38,13 @@ Replace the chat input's `DropdownMenu` (navigate-to-configure) with a `Popover`
 **Toggle handler:** Call `api.schedules.update({ id, enabled })` instead of local `useState`.  
 **Delete handler:** Call `api.schedules.delete({ id })` instead of just showing a toast.
 
-#### 2. Wire Connections to real data
-**Files:** `plus-menu-popover.tsx` → `useAgentConnections`, `useConnectionCount`, `useConnectionIconSlug`  
-**Current:** Reads from `mockAgentConnections`, `mockConnections`, `mockTemplates` static arrays.  
-**Needed:** Replace with `api.connections.listGranted(agentId)` + `api.connections.listAvailable(agentId)` (or the equivalent from `connections-section.tsx`).  
-**Toggle handler:** Call `setAgentConnections` (grant/revoke) instead of local `useState`. Needs the contribution fanout pipeline wiring from `connections-section.tsx`.
+#### 2. ~~Wire Connections to real data~~ ✅ Done in prototype
+**Files:** `plus-menu-popover.tsx`  
+**Done:** Replaced mock arrays with `useAppConnections` + `useAgentConnections` + `excludeProviderConnections` + `useCatalogGroups`. Renders `ConnectionGroupCard` per provider group. Uses `useSetAgentConnections` for grant/revoke. `ConnectionCatalogModal` and `ConnectionMaintenanceDialog` lifted outside the Popover (z-index). Mock handler supports `setAgentConnections` mutation.
 
-#### 3. Remove mock imports
-**Files:** `plus-menu-popover.tsx` lines 36–40  
-**Current:** Static imports from `../../../mock/data/connections.js` and `../../../mock/data/schedules.js`.  
-**Needed:** Delete these imports once real data hooks are in place. The component should have zero `mock/` imports in production.
+#### 3. ~~Remove mock connection imports~~ ✅ Done
+**Files:** `plus-menu-popover.tsx`  
+**Done:** All `mock/data/connections.js` imports removed. Only `mock/data/schedules.js` remains (schedules still use mock data). Deleted `MockConnection`, `ConnectionPanelRow`, `ConnectionGroup`, mock `useAgentConnections`, `useConnectionIconSlug`.
 
 #### 4. Confirm dialog for revoking mid-task
 **Flow spec section:** "Confirm dialog: revoking mid-task"  
@@ -88,9 +85,8 @@ chat-input.tsx
        ├─ SchedulesPanel     — needs real data hook
        │    ├─ SchedulePanelRow    — name, cadence, overflow, switch
        │    └─ ScheduleOverflowMenu
-       └─ ConnectionsPanel   — needs real data hook
-            ├─ ConnectionGroup     — "On for this agent" / "Available"
-            └─ ConnectionPanelRow  — icon, name, status badge, switch
+       └─ ConnectionsPanel   — real hooks (useAppConnections + useCatalogGroups)
+            └─ ConnectionGroupCard — reused from connections module (grouped by provider)
 ```
 
 Shared sub-components: `PanelHeader`, `SearchInput`, `PanelEmpty`, `SkeletonRows`, `MenuRow`.
@@ -102,9 +98,9 @@ Shared sub-components: `PanelHeader`, `SearchInput`, `PanelEmpty`, `SkeletonRows
 | Prototype hook | What it does | Replace with |
 |---|---|---|
 | `useAgentSchedules(agentId)` | Filters `mockSchedules` by agentId | tRPC `api.schedules.list({ agentId })` |
-| `useAgentConnections(agentId)` | Splits mock arrays into granted/available | tRPC granted + available queries from `connections-section.tsx` |
-| `useConnectionCount(agentId)` | Returns `mockAgentConnections.length` | Derived from real granted connections query |
-| `useConnectionIconSlug(templateId)` | Finds icon slug in `mockTemplates` | Use the existing `ConnectionIcon` resolution from `connection-icon.tsx` |
+| ~~`useAgentConnections(agentId)`~~ | ~~Splits mock arrays into granted/available~~ | ✅ Replaced — uses real `useAgentConnections` + `useAppConnections` + `excludeProviderConnections` + `useCatalogGroups` |
+| ~~`useConnectionCount(agentId)`~~ | ~~Returns `mockAgentConnections.length`~~ | ✅ Replaced — derived from real granted connections; also exposes `hasBroken` for danger badge |
+| ~~`useConnectionIconSlug(templateId)`~~ | ~~Finds icon slug in `mockTemplates`~~ | ✅ Deleted — `ConnectionGroupCard` handles icons internally |
 | `useScheduleCount(agentId)` | Counts enabled in mock | Derived from real schedules query |
 | `useSkillCount(agentId)` | Already real — uses `useSkillsSurface` | No change needed |
 

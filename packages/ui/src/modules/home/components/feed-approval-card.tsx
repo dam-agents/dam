@@ -86,16 +86,61 @@ export function FeedApprovalCard({
       <div className="-mx-5 -mb-5 mt-3 flex items-center justify-between border-t border-border px-5 py-2.5">
         <span className="text-sm text-muted-foreground">{meta}</span>
         {resolved ? (
-          <span
-            className={cn(
-              "text-sm",
-              resolved.startsWith("Denied")
-                ? "text-destructive"
-                : "text-success",
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "inline-flex items-center rounded-md px-2.5 py-1 text-sm font-medium",
+                resolved.startsWith("Denied")
+                  ? "bg-[#fff1f1] text-destructive dark:bg-destructive/15"
+                  : "bg-[#defbe6] text-success dark:bg-success/15",
+              )}
+            >
+              {resolved}
+            </span>
+            {hostLabel !== null && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="px-2"
+                    aria-label="More actions"
+                  >
+                    <OverflowMenuVertical size={16} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={openSettings}>
+                    <Settings size={16} />
+                    Network settings
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
-          >
-            {resolved}
-          </span>
+          </div>
+        ) : expiredNote ? (
+          <div className="flex items-center gap-2">
+            {hostLabel !== null && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="px-2"
+                    aria-label="More actions"
+                  >
+                    <OverflowMenuVertical size={16} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={openSettings}>
+                    <Settings size={16} />
+                    Network settings
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         ) : (
           <div className="flex items-center gap-2">
             {allowOnce && (

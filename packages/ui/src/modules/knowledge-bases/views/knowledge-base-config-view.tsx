@@ -22,7 +22,7 @@ export function KnowledgeBaseConfigView() {
   const f = useSandboxSettingsForm();
   const openKnowledgeBase = useStore((s) => s.openKnowledgeBase);
   const setView = useStore((s) => s.setView);
-  const navigateToKnowledgeBases = () => setView("agents");
+  const navigateToKnowledgeBases = () => setView("home");
   const showConfirm = useStore((s) => s.showConfirm);
   const deleteAgent = useDeleteAgent();
   const display = useResolvedAgentDisplay(f.agent);

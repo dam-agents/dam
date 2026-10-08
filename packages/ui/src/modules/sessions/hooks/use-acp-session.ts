@@ -110,6 +110,19 @@ export function useAcpSession(
       useStore.getState().setSessionError(null);
       setSessionId(sid);
 
+      if (import.meta.env.VITE_MOCK) {
+        const { mockTranscript } =
+          await import("../../../mock/data/transcripts.js");
+        const { MOCK_SESSION_IDS } =
+          await import("../../../mock/data/sessions.js");
+        setMessages(mockTranscript(selectedAgent, sid));
+        if (sid === MOCK_SESSION_IDS.artifact) {
+          useStore.getState().setOpenArtifactId("art-1");
+        }
+        setLoadingSession(false);
+        return;
+      }
+
       try {
         const fresh = await loadSessionHistory(sid);
         if (useStore.getState().sessionId !== sid) return;
@@ -179,11 +192,43 @@ export function useAcpSession(
     delivery,
   });
 
+  const mockSendPrompt: typeof sendPrompt = useCallback(
+    async (text) => {
+      if (!text.trim()) return;
+      const { mockReply } = await import("../../../mock/data/transcripts.js");
+      const replyId = crypto.randomUUID();
+      setMessages((p) => [
+        ...p,
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          parts: [{ kind: "text", text }],
+          streaming: false,
+        },
+        { id: replyId, role: "assistant", parts: [], streaming: true },
+      ]);
+      setTimeout(() => {
+        setMessages((p) =>
+          p.map((m) =>
+            m.id === replyId
+              ? {
+                  ...m,
+                  streaming: false,
+                  parts: [{ kind: "text", text: mockReply(text) }],
+                }
+              : m,
+          ),
+        );
+      }, 1200);
+    },
+    [setMessages],
+  );
+
   return {
     resetSession,
     resumeSession,
     loadOlderMessages,
-    sendPrompt,
+    sendPrompt: import.meta.env.VITE_MOCK ? mockSendPrompt : sendPrompt,
     stopAgent,
     busy,
     loadingSession,

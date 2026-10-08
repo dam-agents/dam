@@ -41,23 +41,27 @@ export function StandaloneSkillsGroup({
   readOnly,
   publishes,
   canPublish,
+  packSkillNames,
   onPublish,
   onDownload,
   onDelete,
   onTrack,
   onOpenSkill,
   trackUnavailableNames,
+  hideRowActions,
 }: {
   skills: LocalSkill[];
   readOnly: boolean;
   publishes: SkillPublishRecord[];
   canPublish: boolean;
+  packSkillNames?: ReadonlySet<string>;
   onPublish: (skill: LocalSkill) => void;
   onDownload: (skill: LocalSkill) => void;
   onDelete: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
   onTrack: (skill: LocalSkill, publish: SkillPublishRecord) => void;
   onOpenSkill?: (skill: LocalSkill) => void;
   trackUnavailableNames: ReadonlySet<string>;
+  hideRowActions?: boolean;
 }) {
   const published = latestPublishByName(publishes);
 
@@ -77,12 +81,14 @@ export function StandaloneSkillsGroup({
               divided={i > 0}
               readOnly={readOnly}
               canPublish={canPublish}
+              fromPack={packSkillNames?.has(skill.name)}
               onPublish={() => onPublish(skill)}
               onDownload={() => onDownload(skill)}
               onDelete={() => onDelete(skill, pub)}
               onTrack={pub ? () => onTrack(skill, pub) : undefined}
               onOpen={onOpenSkill ? () => onOpenSkill(skill) : undefined}
               trackUnavailable={trackUnavailableNames.has(skill.name)}
+              hideActions={hideRowActions}
             />
           );
         })}

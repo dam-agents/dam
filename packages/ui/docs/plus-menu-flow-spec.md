@@ -150,30 +150,19 @@ Click "Connections" row in Level 1.
 Shown when total connection count > 6. Placeholder: `"Search connections..."`.
 
 ### Body
-Two groups:
+Connections grouped by provider using `ConnectionGroupCard` (reused from the connections module). Each group shows the provider icon + title + connection count header, followed by individual connection rows.
 
-**"On for this agent"** — granted connections
-Each row:
-- `ConnectionIcon` (16px, using existing icon resolution)
-- Connection name (14px medium, truncated)
-- Status badge when not "active": "Expired" (warning), "Pending" (muted), "Disconnected" (destructive) — reuse existing badge variants
-- Switch: on → clicking turns off (revokes grant)
+Each connection row (via `CatalogConnectionRow`):
+- Provider icon (from template)
+- Connection name (15px, truncated)
+- Auth kind subtitle (e.g. "GitHub app", "Personal access token")
+- `ConnectionStatusBadge` when not "active": "Expired" (danger), "Authorizing…" (muted), "Disconnected" (muted)
+- Overflow ⋯ menu via `ConnectionRowActions`: Re-authenticate, Edit scope, Update credential, Remove from agent, Manage, Delete
 
-**"Available"** — connections NOT granted to this agent
-Each row:
-- `ConnectionIcon` (16px)
-- Connection name (14px medium, truncated)
-- Status badge (same as above)
-- Switch: off → clicking turns on (grants to agent)
+Expired connections also show an inline "Re-authenticate" button.
 
-### Confirm dialog: revoking mid-task
-When the agent is `running` and the user turns OFF a connection:
-> **Remove connection while agent is working?**
-> {name} will lose access immediately. The agent keeps running but requests using this connection will fail.
-> [Cancel] [Remove]
-
-### Broken connection warning
-Connections with status `"expired"` or `"disconnected"` show a small warning icon next to the status badge. Click → opens the `ConnectionMaintenanceDialog` (existing re-auth flow).
+### Broken connection indicator
+Connections badge on Level 1 menu shows danger variant when any granted connection has status `"expired"` or `"disconnected"`. Overflow menu provides "Re-authenticate" and "Update credential" actions via `useConnectionMaintenance`.
 
 ### Footer
 **"Add connection"** button → opens `ConnectionCatalogModal` (existing) with `sandbox` grant controls wired in so newly created connections are auto-granted.
@@ -186,13 +175,11 @@ Connections with status `"expired"` or `"disconnected"` show a small warning ico
 
 | State | What shows |
 |---|---|
-| Loading | 3 skeleton rows in "On for this agent" group |
+| Loading | 3 skeleton rows |
 | Empty (no connections at all) | "No connections configured" + "Add connection" button |
-| Empty granted (has available) | "On for this agent" section empty, "Available" section shows available connections |
+| Search with no match | "No connections match "{query}"" |
 | Error | "Couldn't load connections" + retry link |
-| Read-only (viewer) | Switches hidden; no footer; status badges still visible |
 | Agent hibernating | Normal panel; granting is fine (applied on wake) |
-| Agent mid-task | Normal panel; revoke shows confirm dialog (above) |
 
 ---
 
@@ -261,9 +248,10 @@ chat-input.tsx
        ├─ SchedulesPanel       — Level 2 schedules
        │    ├─ ScheduleRowList  — schedule rows with switches + overflow
        │    └─ SchedulePanelFooter
-       └─ ConnectionsPanel     — Level 2 connections
-            ├─ ConnectionGroupList — granted + available groups
-            └─ ConnectionPanelFooter
+       └─ ConnectionsPanel     — Level 2 connections (real hooks)
+            └─ ConnectionGroupCard[] — reused, grouped by provider
+  ConnectionCatalogModal        — rendered outside Popover (z-index)
+  ConnectionMaintenanceDialog   — rendered outside Popover (z-index)
 ```
 
-Single `Popover` component. Internal `panel` state: `"menu" | "skills" | "schedules" | "connections"`. Panel transitions use CSS translate animation.
+Single `Popover` component. Internal `panel` state: `"menu" | "skills" | "schedules" | "connections"`. Panel transitions use CSS translate animation. `ConnectionCatalogModal` and `ConnectionMaintenanceDialog` render as siblings after the `</Popover>` to avoid Radix z-index conflicts.

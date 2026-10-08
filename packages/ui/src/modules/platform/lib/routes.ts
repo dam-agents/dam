@@ -32,9 +32,18 @@ export type Route =
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
   | { view: "agents" }
   | { view: "agent-new" }
-  | { view: "knowledge-base-chat"; agent: string }
-  | { view: "knowledge-base-config"; agentId: string }
-  | { view: "artifacts" };
+  | { view: "artifacts" }
+  | { view: "packs" }
+  | { view: "setup-workbench" }
+  | { view: "presets" }
+  | { view: "schedules" }
+  | { view: "card-gallery" }
+  | { view: "component-showcase" }
+  | { view: "sidebar-specs" }
+  | { view: "nav-flows" }
+  | { view: "placeholder-texts" }
+  | { view: "flow-screen"; flowId: string; screen: number }
+  | { view: "agent-landing"; agentId: string };
 
 export type View = Route["view"];
 
@@ -67,6 +76,8 @@ export const RETIRED_PATHS = new Set([
   "/experiments",
   "/experiments/new",
   "/knowledge-bases/new",
+  "/agents",
+  "/knowledge-bases",
 ]);
 
 const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
@@ -95,8 +106,25 @@ export function parseRoute(path: string): Route {
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
-  if (RETIRED_PATHS.has(path)) return { view: "agents" };
+  if (RETIRED_PATHS.has(path)) return { view: "home" };
   if (path === "/artifacts") return { view: "artifacts" };
+  if (path === "/packs") return { view: "packs" };
+  if (path === "/setup-workbench") return { view: "setup-workbench" };
+  if (path === "/presets") return { view: "presets" };
+  if (path === "/schedules") return { view: "schedules" };
+  if (path === "/card-gallery") return { view: "card-gallery" };
+  if (path === "/component-showcase") return { view: "component-showcase" };
+  if (path === "/sidebar-specs") return { view: "sidebar-specs" };
+  if (path === "/nav-flows") return { view: "nav-flows" };
+  if (path === "/placeholder-texts") return { view: "placeholder-texts" };
+  const flowScreenMatch = path.match(/^\/flow-screen\/([^/]+)\/(\d+)$/);
+  if (flowScreenMatch) {
+    return {
+      view: "flow-screen",
+      flowId: decodeSegment(flowScreenMatch[1]!),
+      screen: Number(flowScreenMatch[2]),
+    };
+  }
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
@@ -107,22 +135,14 @@ export function parseRoute(path: string): Route {
     };
   }
   if (path === "/agents/new") return { view: "agent-new" };
-  if (path === "/agents") return { view: "agents" };
-  if (path === "/knowledge-bases") return { view: "agents" };
-  const knowledgeBaseConfigMatch = path.match(
-    /^\/knowledge-bases\/([^/]+)\/settings$/,
-  );
-  if (knowledgeBaseConfigMatch)
+  const agentLandingMatch = path.match(/^\/agents\/([^/]+)$/);
+  if (agentLandingMatch && agentLandingMatch[1] !== "new") {
     return {
-      view: "knowledge-base-config",
-      agentId: decodeSegment(knowledgeBaseConfigMatch[1]!),
+      view: "agent-landing",
+      agentId: decodeSegment(agentLandingMatch[1]!),
     };
-  const knowledgeBaseChatMatch = path.match(/^\/knowledge-bases\/([^/]+)$/);
-  if (knowledgeBaseChatMatch)
-    return {
-      view: "knowledge-base-chat",
-      agent: decodeSegment(knowledgeBaseChatMatch[1]!),
-    };
+  }
+  if (path.startsWith("/knowledge-bases")) return { view: "home" };
   return { view: "home" };
 }
 
@@ -153,15 +173,33 @@ export function routeToPath(route: Route): string {
         : `${base}/${route.sandboxSection}`;
     }
     case "agents":
-      return "/agents";
+      return "/";
     case "agent-new":
       return "/agents/new";
-    case "knowledge-base-chat":
-      return `/knowledge-bases/${encodeURIComponent(route.agent)}`;
-    case "knowledge-base-config":
-      return `/knowledge-bases/${encodeURIComponent(route.agentId)}/settings`;
     case "artifacts":
       return "/artifacts";
+    case "packs":
+      return "/packs";
+    case "setup-workbench":
+      return "/setup-workbench";
+    case "presets":
+      return "/presets";
+    case "schedules":
+      return "/schedules";
+    case "card-gallery":
+      return "/card-gallery";
+    case "component-showcase":
+      return "/component-showcase";
+    case "sidebar-specs":
+      return "/sidebar-specs";
+    case "nav-flows":
+      return "/nav-flows";
+    case "placeholder-texts":
+      return "/placeholder-texts";
+    case "flow-screen":
+      return `/flow-screen/${encodeURIComponent(route.flowId)}/${route.screen}`;
+    case "agent-landing":
+      return `/agents/${encodeURIComponent(route.agentId)}`;
     default: {
       const unhandled: never = route;
       return unhandled;
@@ -178,7 +216,7 @@ export function routeToNavigationState(route: Route): {
   return {
     view: route.view,
     agentId:
-      route.view === "sandbox-home" || route.view === "knowledge-base-config"
+      route.view === "sandbox-home" || route.view === "agent-landing"
         ? route.agentId
         : null,
     settingsTab: route.view === "settings" ? route.settingsTab : "account",

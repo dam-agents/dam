@@ -1,4 +1,4 @@
-import { Add } from "@carbon/icons-react";
+import { Add, Document } from "@carbon/icons-react";
 import type { SkillsState } from "api-server-api";
 import type { DragEvent } from "react";
 import { useState } from "react";
@@ -37,15 +37,24 @@ export function SkillsSurface({
   readOnly,
   comingUp,
   onStateChange,
+  hideSetActions,
+  compactEmpty,
+  hideRowActions,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
   readOnly: boolean;
   comingUp?: boolean;
   onStateChange?: (state: SkillsState) => void;
+  hideSetActions?: boolean;
+  compactEmpty?: boolean;
+  hideRowActions?: boolean;
 }) {
   const isError = agentState === "error";
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const packSkillNames = useStore((s) =>
+    agentId ? s.packSkillsByAgent.get(agentId) : undefined,
+  );
   const wakeAgent = useWakeAgent();
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(agentId);
   const staleModel = useStaleModel(agentId);
@@ -85,6 +94,7 @@ export function SkillsSurface({
   const addSourceButton = (
     <Button
       variant="outline"
+      size="sm"
       onClick={() =>
         setOpenModal({ kind: "add-source", tab: "github", files: [] })
       }
@@ -205,12 +215,14 @@ export function SkillsSurface({
                 ) : undefined
               }
               actions={
-                <SkillSetActions
-                  canSave={anyInstalled}
-                  previewReady={previewReady}
-                  onAddSets={() => setOpenModal({ kind: "add-sets" })}
-                  onSaveSet={() => setOpenModal({ kind: "save-set" })}
-                />
+                hideSetActions ? undefined : (
+                  <SkillSetActions
+                    canSave={anyInstalled}
+                    previewReady={previewReady}
+                    onAddSets={() => setOpenModal({ kind: "add-sets" })}
+                    onSaveSet={() => setOpenModal({ kind: "save-set" })}
+                  />
+                )
               }
             />
           </div>
@@ -222,6 +234,7 @@ export function SkillsSurface({
                 readOnly={readOnly}
                 publishes={publishes}
                 canPublish={publishableSources.length > 0}
+                packSkillNames={packSkillNames}
                 onPublish={(skill) => setOpenModal({ kind: "publish", skill })}
                 onDownload={(skill) => void downloadStandalone(skill)}
                 onDelete={(skill, pub) =>
@@ -234,8 +247,11 @@ export function SkillsSurface({
                     : undefined
                 }
                 trackUnavailableNames={trackUnavailableNames}
+                hideRowActions={hideRowActions}
               />
-            ) : searching ? null : (
+            ) : searching ? null : compactEmpty ? (
+              <CompactSkillsEmpty />
+            ) : (
               <StandaloneSkillsEmptyState />
             )}
 
@@ -253,6 +269,7 @@ export function SkillsSurface({
               }
               onRemove={(src) => void removeSourceWithConfirm(src)}
               onManageConnections={manageConnections}
+              compact={compactEmpty}
             />
 
             {}
@@ -281,6 +298,17 @@ export function SkillsSurface({
         }
         onClose={() => setOpenModal(null)}
       />
+    </div>
+  );
+}
+
+function CompactSkillsEmpty() {
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-4 py-6 text-center">
+      <Document size={16} className="text-muted-foreground" />
+      <p className="text-sm text-muted-foreground">
+        Drop a .md file here, add a source, or describe what you need below
+      </p>
     </div>
   );
 }

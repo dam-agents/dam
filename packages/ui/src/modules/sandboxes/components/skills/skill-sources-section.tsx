@@ -1,4 +1,4 @@
-import { Add, Time } from "@carbon/icons-react";
+import { Add, Document } from "@carbon/icons-react";
 import type { Skill, SkillSource } from "api-server-api";
 import type { ReactNode } from "react";
 
@@ -21,6 +21,7 @@ export function SkillSourcesSection({
   onToggleAll,
   onRemove,
   onManageConnections,
+  compact,
 }: {
   readOnly: boolean;
   surface: SkillsSurface;
@@ -31,6 +32,7 @@ export function SkillSourcesSection({
   onToggleAll: (source: SkillSource, on: boolean, scope?: Skill[]) => void;
   onRemove: (source: SkillSource) => void;
   onManageConnections: (() => void) | undefined;
+  compact?: boolean;
 }) {
   const {
     sources,
@@ -56,14 +58,14 @@ export function SkillSourcesSection({
     <section>
       <div className="mb-3 flex items-center justify-between gap-3">
         <SectionLabel>Sourced from GitHub</SectionLabel>
-        {action}
+        {!compact && sourcesLoaded && sources.length > 0 && action}
       </div>
       {!sourcesLoaded ? (
         <SkillSourcesSkeleton />
       ) : sources.length === 0 ? (
-        <Callout variant="dashed">
-          <div className="flex flex-col items-center gap-4 py-10 text-center">
-            <Time size={20} className="text-muted-foreground" />
+        <Callout inset className="bg-card">
+          <div className="flex flex-col items-center gap-4 py-6 text-center">
+            <Document size={20} className="text-muted-foreground" />
             <p className="max-w-md text-sm text-muted-foreground">
               No skill sources connected. Add a GitHub repo to browse and
               install its skills
@@ -107,6 +109,7 @@ export function SkillSourcesSection({
               onToggleAll={(on, scope) => onToggleAll(src, on, scope)}
               bulkBusy={busySourceId === src.id}
               onManageConnections={onManageConnections}
+              compact={compact}
             />
           ))}
         </div>

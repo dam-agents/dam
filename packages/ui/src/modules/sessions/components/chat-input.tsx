@@ -1,9 +1,4 @@
-import {
-  Close,
-  Document,
-  SendAltFilled,
-  Stop,
-} from "@carbon/icons-react";
+import { Close, Document, SendAltFilled, Stop } from "@carbon/icons-react";
 import {
   type KeyboardEvent,
   type RefObject,
@@ -188,18 +183,22 @@ export function ChatInput({
       e.preventDefault();
       send();
     }
+    if (e.key === "Tab" && showRotating && key) {
+      e.preventDefault();
+      setDraft(key, { text: rotatingPlaceholder!.text });
+    }
   };
 
   const placeholder = isComputing ? "Queue a message..." : "Message...";
 
   return (
     <div
-      className="px-4 md:px-8 pt-3 pb-1"
+      className="pt-3 pb-1"
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <ChatColumn className="flex flex-col gap-1.5">
+      <ChatColumn className="px-4 md:px-8 flex flex-col gap-1.5">
         <input
           ref={fileInputRef}
           type="file"
@@ -230,16 +229,26 @@ export function ChatInput({
               disabled={loadingSession || !key}
               onAttachFile={() => fileInputRef.current?.click()}
               onConfigureSection={onConfigureSection}
+              onPrefillInput={(text) => {
+                if (!key) return;
+                setDraft(key, { text });
+                requestAnimationFrame(() => textareaRef.current?.focus());
+              }}
             />
             <div className="relative flex-1">
               {showRotating && (
                 <span
                   className={cn(
-                    "pointer-events-none absolute left-0 top-[17px] pr-2 text-sm leading-[22px] text-muted-foreground/50 transition-opacity duration-300",
+                    "pointer-events-none absolute inset-x-0 top-[17px] flex items-center justify-between text-sm leading-[22px] transition-opacity duration-500",
                     rotatingPlaceholder!.fading && "opacity-0",
                   )}
                 >
-                  {rotatingPlaceholder!.text}
+                  <span className="truncate text-muted-foreground/50">
+                    {rotatingPlaceholder!.text}
+                  </span>
+                  <kbd className="shrink-0 mr-2 inline-flex h-5 items-center rounded border border-border/50 px-1.5 text-[11px] text-muted-foreground/50">
+                    Tab
+                  </kbd>
                 </span>
               )}
               <Textarea
