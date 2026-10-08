@@ -678,29 +678,3 @@
   background: var(--c-warning-light) !important;
   color: var(--c-warning) !important;
 }
-
-/* ── Sidebar color-theme override ──
-   When .sidebar-colored is on the <nav>, CSS vars remap every
-   Tailwind token that the sidebar's children reference. */
-.sidebar-colored {
-  --card: var(--sidebar-bg);
-  --card-foreground: var(--sidebar-text);
-  --foreground: var(--sidebar-text);
-  --muted: var(--sidebar-muted);
-  --muted-foreground: var(--sidebar-muted-fg);
-  --border-ui: var(--sidebar-border);
-  --background: var(--sidebar-muted);
-  --primary: var(--sidebar-text);
-  --primary-foreground: var(--sidebar-bg);
-  --secondary: var(--sidebar-muted);
-  --secondary-foreground: var(--sidebar-text);
-  --input: var(--sidebar-border);
-  --ring: var(--sidebar-text);
-}
-.sidebar-colored .text-foreground\/80,
-.sidebar-colored [class*="text-foreground/80"] {
-  color: color-mix(in srgb, var(--sidebar-text) 80%, transparent);
-}
-.sidebar-colored .text-muted-foreground {
-  color: var(--sidebar-muted-fg);
-}

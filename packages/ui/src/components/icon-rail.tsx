@@ -63,14 +63,6 @@ import { stateDotClass, stateLabel } from "./status-indicator.js";
 const SIDEBAR_ACTIVITY_PAGE = 5;
 const AGENT_SESSION_PAGE = 5;
 
-const SIDEBAR_COLOR_OPTIONS = [
-  { bg: "#E89DA8", text: "#2D0A10", muted: "#C4707E", mutedFg: "#3D1520", border: "#D4808C", label: "Rose" },
-  { bg: "#5B76D2", text: "#FFFFFF", muted: "#4A63B8", mutedFg: "#E8ECF8", border: "#7088DA", label: "Blue" },
-  { bg: "#DE9950", text: "#2C1A04", muted: "#C88540", mutedFg: "#3A2510", border: "#E5AD6E", label: "Amber" },
-  { bg: "#CA6040", text: "#FFFFFF", muted: "#B44E30", mutedFg: "#FFE8DF", border: "#D87A5E", label: "Rust" },
-  { bg: "#3F6C45", text: "#FFFFFF", muted: "#335838", mutedFg: "#E0F0E2", border: "#5A8A60", label: "Forest" },
-] as const;
-
 interface Destination {
   label: string;
   icon: CarbonIconType;
@@ -147,8 +139,6 @@ export function IconRail({
     for (const a of notifAgents) map.set(a.id, a.name);
     return map;
   }, [notifAgents]);
-
-  const [sidebarColor, setSidebarColor] = useState<string | null>(null);
 
   const [activityCount, setActivityCount] = useState(SIDEBAR_ACTIVITY_PAGE);
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>(
@@ -310,35 +300,13 @@ export function IconRail({
     [openAgentSession, setSidebarActiveSession, expandSidebarAgent],
   );
 
-  const activeColor = sidebarColor
-    ? SIDEBAR_COLOR_OPTIONS.find((c) => c.bg === sidebarColor) ?? null
-    : null;
-
-  const sidebarStyle: React.CSSProperties | undefined = activeColor
-    ? ({
-        "--sidebar-bg": activeColor.bg,
-        "--sidebar-text": activeColor.text,
-        "--sidebar-muted": activeColor.muted,
-        "--sidebar-muted-fg": activeColor.mutedFg,
-        "--sidebar-border": activeColor.border,
-        backgroundColor: activeColor.bg,
-        color: activeColor.text,
-        borderColor: activeColor.border,
-      } as React.CSSProperties)
-    : undefined;
-
   return (
     <>
       <nav
         className={cn(
-          "hidden md:flex flex-col h-full shrink-0 transition-[width]",
-          activeColor
-            ? "border-r"
-            : "bg-card border-r border-border",
-          activeColor && "sidebar-colored",
+          "hidden md:flex flex-col h-full bg-card border-r border-border shrink-0 transition-[width]",
           expandedNav ? "w-[320px]" : "w-[56px]",
         )}
-        style={sidebarStyle}
         data-testid="app-sidebar"
       >
         <div
@@ -407,7 +375,7 @@ export function IconRail({
                   className={cn(
                     "sticky top-0 z-10 mb-1.5 flex items-center justify-between bg-card px-5 pb-1 pt-3 transition-[border-color]",
                     agentsStuck
-                      ? cn("border-b", activeColor ? "border-[var(--sidebar-border)]" : "border-[#dde1e6] dark:border-white/10")
+                      ? "border-b border-[#dde1e6] dark:border-white/10"
                       : "border-b border-transparent",
                   )}
                 >
@@ -721,7 +689,7 @@ export function IconRail({
                   className={cn(
                     "sticky top-0 z-10 mb-1.5 flex items-center justify-between bg-card px-5 pb-1 pt-3 transition-[border-color]",
                     activityStuck
-                      ? cn("border-b", activeColor ? "border-[var(--sidebar-border)]" : "border-[#dde1e6] dark:border-white/10")
+                      ? "border-b border-[#dde1e6] dark:border-white/10"
                       : "border-b border-transparent",
                   )}
                 >
@@ -1134,42 +1102,6 @@ export function IconRail({
             )}
             <div className="flex-1" />
           </>
-        )}
-
-        {expandedNav && (
-          <div className="shrink-0 px-4 pb-1">
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setSidebarColor(null)}
-                aria-label="Default theme"
-                className={cn(
-                  "size-5 rounded-full border-2 transition-transform",
-                  sidebarColor === null
-                    ? "border-foreground scale-110"
-                    : "border-border hover:scale-110",
-                )}
-                style={{ backgroundColor: "var(--color-card, #fff)" }}
-              />
-              {SIDEBAR_COLOR_OPTIONS.map((opt) => (
-                <button
-                  key={opt.bg}
-                  type="button"
-                  onClick={() =>
-                    setSidebarColor(sidebarColor === opt.bg ? null : opt.bg)
-                  }
-                  aria-label={opt.label}
-                  className={cn(
-                    "size-5 rounded-full border-2 transition-transform",
-                    sidebarColor === opt.bg
-                      ? "border-foreground scale-110"
-                      : "border-transparent hover:scale-110",
-                  )}
-                  style={{ backgroundColor: opt.bg }}
-                />
-              ))}
-            </div>
-          </div>
         )}
 
         <div className="shrink-0 pb-2 pt-1">
