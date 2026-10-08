@@ -89,6 +89,7 @@ export function fileLog(
 }
 
 export const LAUNCH = ["get", "url"];
+export const NEW_TAB_PAGE = "chrome://newtab/";
 export const CDP_URL = ["get", "cdp-url"];
 
 export const timedOut = (err: Error) => /timed out/i.test(err.message);
@@ -219,10 +220,11 @@ export function createCommandQueue(run: BrowserCommand): {
  * agent-browser's queue — not gone, and is left alone: only an outright
  * failure, or a minute without an answer, stops it (its daemon, its Chromium
  * and the profile's singleton locks) and launches it again, since killing a
- * busy browser loses the user's page. Everything is refused, before anything
- * starts, on an agent that does not require named connections — the panel's
- * user would otherwise browse with the agent's injected credentials — and on
- * an image without the display stack.
+ * busy browser loses the user's page. A browser found on a blank page opens
+ * Chromium's new tab page, so a fresh panel shows a ready browser. Everything
+ * is refused, before anything starts, on an agent that does not require named
+ * connections — the panel's user would otherwise browse with the agent's
+ * injected credentials — and on an image without the display stack.
  */
 export function createBrowserPreview(deps: {
   run: BrowserCommand;
@@ -370,6 +372,10 @@ export function createBrowserPreview(deps: {
       browserUp = true;
       showPage(opened.state());
       failedLaunches = 0;
+      if (!pendingNavigation && opened.state()?.url === "about:blank")
+        await opened
+          .navigate(NEW_TAB_PAGE)
+          .catch((err: Error) => deps.log(`new tab page: ${err.message}`));
       return true;
     } catch (err) {
       if (gen !== generation) {

@@ -6,6 +6,7 @@ import type { WatchPages } from "../../modules/browser-cdp.js";
 import type { BrowserSnapshot } from "agent-runtime-api";
 import {
   LAUNCH,
+  NEW_TAB_PAGE,
   commandTimeoutMs,
   createCommandQueue,
   displayAvailable,
@@ -209,7 +210,7 @@ describe("browser preview", () => {
     await until(launched);
     expect(isLaunch(fake.calls[0]!)).toBe(true);
     await until(() => panel.states().includes("ready"));
-    expect(panel.page()?.url).toBe("about:blank");
+    expect(panel.page()?.url).toBe(NEW_TAB_PAGE);
     expect(await browser.navigate("http://127.0.0.1:5173")).toEqual({
       ok: true,
       value: undefined,
@@ -282,6 +283,41 @@ describe("browser preview", () => {
       expect(fake.calls).toContainEqual(["page", action]);
     expect(fake.calls.flat()).not.toContain("file:///etc/passwd");
     expect(fake.calls.filter((c) => c[0] === "eval")).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a browser that starts with no address shows Chromium's new tab page, not a blank white one — on its first launch, after a restart and after its data is cleared — while a browser already on a page, or started to open an address, is left on it.
+  it("opens the new tab page on a browser with no address", async () => {
+    const fake = fakeBrowser();
+    const browser = preview(fake);
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    const opens = (calls: string[][]) =>
+      calls.filter((c) => c[0] === "page" && c[2] === NEW_TAB_PAGE).length;
+    await until(() => panel.page()?.url === NEW_TAB_PAGE);
+    for (const [i, action] of (["restart", "clearData"] as const).entries()) {
+      fake.browser.url = "about:blank";
+      expect((await browser.act(action)).ok).toBe(true);
+      await until(() => opens(fake.calls) === i + 2);
+      await until(() => panel.page()?.url === NEW_TAB_PAGE);
+    }
+    await pause(50);
+    expect(opens(fake.calls)).toBe(3);
+
+    const busy = fakeBrowser();
+    busy.browser.url = "http://127.0.0.1:4444/";
+    const used = preview(busy);
+    closers.push(() => used.close());
+    const other = watching(used);
+    await until(() => other.states().includes("ready"));
+    expect(opens(busy.calls)).toBe(0);
+
+    const linked = fakeBrowser();
+    const opened = preview(linked);
+    closers.push(() => opened.close());
+    expect((await opened.navigate("http://a/")).ok).toBe(true);
+    const third = watching(opened);
+    await until(() => third.page()?.url === "http://a/");
+    expect(opens(linked.calls)).toBe(0);
   });
 
   // TEST_SCENARIO: an address sent before the browser is up — the panel opened on a link — is opened once it is.

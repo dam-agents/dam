@@ -1,7 +1,7 @@
 // TEST_OVERVIEW: the browser panel's address bar takes what a user types the way a browser does: an address opens, with http added when it has no scheme, and anything else searches DuckDuckGo.
 import { describe, expect, test } from "vitest";
 
-import { addressUrl } from "../../modules/browser/lib/address.js";
+import { addressUrl, shownAddress } from "../../modules/browser/lib/address.js";
 
 describe("addressUrl", () => {
   // TEST_SCENARIO: a user types a dev server the way they would in a browser — `localhost:3000`, which a URL parser reads as the scheme `localhost:`. Anything without `<scheme>://` gets http, so it opens instead of being refused as a non-web address.
@@ -25,6 +25,18 @@ describe("addressUrl", () => {
     );
     expect(addressUrl("c++ & rust")).toBe(
       "https://duckduckgo.com/?q=c%2B%2B%20%26%20rust",
+    );
+  });
+});
+
+describe("shownAddress", () => {
+  // TEST_SCENARIO: a browser with no address shows Chromium's new tab page. Its address bar is empty, the way Chrome's is, so the user types an address or a search there rather than reading an internal `chrome://` address. A web page's address is shown as it is.
+  test("shows an empty address for a blank or new tab page", () => {
+    expect(shownAddress("about:blank")).toBe("");
+    expect(shownAddress("chrome://newtab/")).toBe("");
+    expect(shownAddress("chrome://new-tab-page/")).toBe("");
+    expect(shownAddress("https://github.com/login")).toBe(
+      "https://github.com/login",
     );
   });
 });

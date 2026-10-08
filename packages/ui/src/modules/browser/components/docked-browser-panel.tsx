@@ -28,7 +28,7 @@ import {
 } from "../../../lib/persisted-prefs.js";
 import { useStore } from "../../../store.js";
 import { useBrowserControl } from "../hooks/use-browser-control.js";
-import { addressUrl } from "../lib/address.js";
+import { addressUrl, shownAddress } from "../lib/address.js";
 import { StreamView } from "./stream-view.js";
 
 const SIGN_IN_NOTICE_KEY = "platform.browserPanel.signInNoticeSeen";
@@ -53,7 +53,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     readPersistedFlag(SIGN_IN_NOTICE_KEY, false),
   );
 
-  const shownUrl = stream.page.url === "about:blank" ? "" : stream.page.url;
+  const shownUrl = shownAddress(stream.page.url);
   useEffect(() => {
     if (!editing) setAddress(shownUrl);
   }, [shownUrl, editing]);
