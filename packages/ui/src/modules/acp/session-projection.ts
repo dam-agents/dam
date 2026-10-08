@@ -218,15 +218,53 @@ function setQueuedByPromptId(
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A steered prompt joins the running turn where it
- * was injected and opens no reply of its own, so the sender's view takes the
- * shape every other viewer and a replay give it: the sent message drops its
- * placeholder, and the turn's next output, placed by turn, continues below it.
+ * was injected and opens no reply of its own: the sent message drops its
+ * placeholder, and the turn continues below it.
  */
 function withSteeredSend(messages: Message[], promptId: string): Message[] {
-  return messages.flatMap((m): Message[] => {
+  const marked = messages.flatMap((m): Message[] => {
     if (m.role === "user" && m.id === promptId)
       return [{ ...m, steered: true }];
     return isPlaceholder(m) && m.promptId === promptId ? [] : [m];
+  });
+  return continueTurnBelow(marked, promptId) ?? marked;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Once a message is steered into a running turn,
+ * the agent reads it before anything it writes next, so the turn continues
+ * below it: the reply above it ends (or goes, while still empty) and an empty
+ * reply of the same turn opens right after the message, where the working
+ * indicator now shows and the turn's next output lands. A reply that has no
+ * output yet is known by its prompt's id, which names its turn. Null when no
+ * running reply above the message belongs to a known turn.
+ */
+function continueTurnBelow(
+  messages: Message[],
+  messageId: string,
+): Message[] | null {
+  const at = messages.findIndex((m) => m.role === "user" && m.id === messageId);
+  const running = lastIndexOf(
+    messages.slice(0, Math.max(at, 0)),
+    (m) =>
+      m.role === "assistant" &&
+      m.streaming &&
+      !m.queued &&
+      (m.turnId ?? m.promptId) !== undefined,
+  );
+  if (at === -1 || running === -1) return null;
+  const reply = messages[running]!;
+  const continued: Message = {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    parts: [],
+    streaming: true,
+    turnId: reply.turnId ?? reply.promptId,
+  };
+  return messages.flatMap((m, i): Message[] => {
+    if (i === running)
+      return hasAgentContent(m) ? [{ ...m, streaming: false }] : [];
+    return i === at ? [m, continued] : [m];
   });
 }
 
@@ -507,6 +545,14 @@ function handleUserChunk(
     return queued ? messages : closeActiveAssistant(messages);
 
   if (queued) return appendQueuedUser(messages, mid, bubbles.flat(), at);
+
+  if (steered && mid !== null) {
+    if (messages.some((m) => m.id === mid))
+      return appendOrExtendUser(messages, mid, bubbles.flat(), at, true);
+    const echoed = appendOrExtendUser(messages, mid, bubbles.flat(), at, true);
+    const continued = continueTurnBelow(echoed, mid);
+    if (continued !== null) return continued;
+  }
 
   return bubbles.reduce(
     (acc, parts, i) =>
