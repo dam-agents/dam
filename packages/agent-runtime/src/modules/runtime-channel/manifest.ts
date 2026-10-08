@@ -90,6 +90,8 @@ export const runtimeManifestSchema = z.object({
     })
     .optional(),
 
+  terminalSessionPins: z.string().min(1).optional(),
+
   extensions: z
     .object({
       impls: z.array(extensionImpl).default([]),
