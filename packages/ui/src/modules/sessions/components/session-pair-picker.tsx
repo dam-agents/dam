@@ -162,8 +162,9 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
               disabled={pending}
               aria-label={`Grant ${p.name} to this agent`}
               onClick={() =>
-                void grant(p.id).then(() =>
-                  choose({ harness, provider: p.id, model: null }),
+                void grant(p.id).then(
+                  (ok) =>
+                    ok && choose({ harness, provider: p.id, model: null }),
                 )
               }
               className="inline-flex items-center gap-1.5 self-start px-1 font-medium text-accent hover:underline disabled:opacity-50"

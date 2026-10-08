@@ -95,11 +95,14 @@ export function useGrantProvider(agentId: string | null) {
       errorToast: "Failed to update model providers",
     },
   });
+  const settle = (change: { grant?: string[]; revoke?: string[] }) =>
+    update.mutateAsync(change).then(
+      () => true,
+      () => false,
+    );
   return {
-    grant: (connectionId: string) =>
-      update.mutateAsync({ grant: [connectionId] }),
-    revoke: (connectionId: string) =>
-      update.mutateAsync({ revoke: [connectionId] }),
+    grant: (connectionId: string) => settle({ grant: [connectionId] }),
+    revoke: (connectionId: string) => settle({ revoke: [connectionId] }),
     pending: update.isPending,
   };
 }
