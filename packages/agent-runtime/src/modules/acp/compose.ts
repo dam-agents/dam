@@ -47,6 +47,7 @@ import {
 } from "./services/session-changes.js";
 import { createInProcessCaller } from "./infrastructure/in-process-request.js";
 import { createSessionsService } from "./services/sessions-service.js";
+import { readTerminalSessionPins } from "./infrastructure/terminal-session-pins.js";
 import { createDelegationFramesStore } from "./infrastructure/delegation-frames-store.js";
 import {
   createSubAgentSessionStore,
@@ -64,6 +65,7 @@ export interface ComposeAcpOptions {
     exportName?: string;
     command?: string[];
   };
+  terminalSessionPins?: string;
   isTerminalSessionActive: (sessionId: string) => boolean;
   backgroundWorkHolds: boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
@@ -122,6 +124,10 @@ export function composeAcp(opts: ComposeAcpOptions): {
   const activeTurns = createActiveTurnStore(opts.stateBackend);
   const subAgentSessions = createSubAgentSessionStore(opts.stateBackend);
   const historyProvider = historyProviderOf(opts);
+  const pinsDir = opts.terminalSessionPins;
+  const terminalSessionPins = pinsDir
+    ? () => readTerminalSessionPins(pinsDir)
+    : undefined;
   const runtime = createAcpRuntime({
     undeliveredPrompts,
     activeTurns,
@@ -142,6 +148,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
       subAgentSessions.record(sessionId, subAgentIds),
     ...(historyProvider ? { historyProvider } : {}),
+    ...(terminalSessionPins ? { terminalSessionPins } : {}),
     log: opts.log,
     envReadyAtBoot: opts.envReader.ready(),
     beforeFirstSpawn: opts.beforeFirstSpawn,
@@ -167,6 +174,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionFrames: (sessionId) => runtime.sessionFrames(sessionId),
     delegations: createDelegationFramesStore(opts.agentHome),
     ...(historyProvider ? { historyProvider } : {}),
+    ...(terminalSessionPins ? { terminalSessionPins } : {}),
     log: opts.log,
   });
 

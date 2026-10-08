@@ -41,6 +41,8 @@ function stripPlumbing(raw: string): string {
   return raw.replace(PLUMBING_RE, "").trim();
 }
 
+const INTERRUPT_MARKER_RE = /^\[Request interrupted by user[^\]]*\]$/;
+
 function mapToolContent(
   content: ToolCallContent[] | undefined | null,
 ): ToolContent[] | undefined {
@@ -114,11 +116,15 @@ export function applyUpdate(
   update: AcpUpdate,
   at?: string,
   telemetryPromptId?: string,
+  model?: string,
+  turnId?: string,
 ): Message[] {
-  const next = applyUpdateOf(messages, update, at, telemetryPromptId);
-  return telemetryPromptId === undefined
-    ? next
-    : stampActiveReply(next, telemetryPromptId);
+  const next = applyUpdateOf(messages, update, at, telemetryPromptId, turnId);
+  const stamped =
+    telemetryPromptId === undefined
+      ? next
+      : stampActiveReply(next, telemetryPromptId);
+  return model === undefined ? stamped : stampActiveReplyModel(stamped, model);
 }
 
 function applyUpdateOf(
@@ -126,15 +132,28 @@ function applyUpdateOf(
   update: AcpUpdate,
   at?: string,
   telemetryPromptId?: string,
+  turnId?: string,
 ): Message[] {
   switch (update.sessionUpdate) {
     case "platform_turn_ended":
+      if (update.turnId !== undefined)
+        return closeTurn(messages, update.turnId, {
+          at,
+          telemetryPromptId,
+          interruption:
+            update.error &&
+            describeJsonRpcError(update.error.message, update.error.details),
+          model: update.model,
+          stopped: update.stopReason === "cancelled",
+        });
       return closeActiveAssistant(
         messages,
         at,
         telemetryPromptId,
         update.error &&
           describeJsonRpcError(update.error.message, update.error.details),
+        update.model,
+        update.stopReason === "cancelled",
       );
 
     case "platform_prompt_accepted":
@@ -152,13 +171,13 @@ function applyUpdateOf(
       return handleUserChunk(messages, update, at);
 
     case "agent_message_chunk":
-      return handleAgentChunk(messages, update, "text", at);
+      return handleAgentChunk(messages, update, "text", at, turnId);
 
     case "agent_thought_chunk":
-      return handleAgentChunk(messages, update, "thought", at);
+      return handleAgentChunk(messages, update, "thought", at, turnId);
 
     case "tool_call":
-      return handleToolCall(messages, update, at);
+      return handleToolCall(messages, update, at, turnId);
 
     case "tool_call_update":
       return handleToolCallUpdate(messages, update, at);
@@ -407,6 +426,8 @@ function handleUserChunk(
   let bubbles: MessagePart[][] | null = null;
   if (u.content.type === "text") {
     const txt = stripPlumbing(u.content.text);
+    if (INTERRUPT_MARKER_RE.test(txt))
+      return markLastReplyStopped(closeActiveAssistant(messages));
     if (txt) bubbles = parseUserText(txt);
   } else if (u.content.type === "image") {
     bubbles = [
@@ -431,17 +452,19 @@ function handleAgentChunk(
   u: ContentChunk,
   kind: "text" | "thought",
   at?: string,
+  turnId?: string,
 ): Message[] {
   if (u.content.type === "text") {
     const txt = u.content.text;
     if (!txt) return messages;
-    return appendToActive(messages, [{ kind, text: txt }], at);
+    return appendAgentParts(messages, [{ kind, text: txt }], at, turnId);
   }
   if (u.content.type === "image") {
-    return appendToActive(
+    return appendAgentParts(
       messages,
       [{ kind: "image", data: u.content.data, mimeType: u.content.mimeType }],
       at,
+      turnId,
     );
   }
   return messages;
@@ -451,6 +474,7 @@ function handleToolCall(
   messages: Message[],
   u: ToolCall,
   at?: string,
+  turnId?: string,
 ): Message[] {
   const existingIdx = findToolIdx(messages, u.toolCallId);
   if (existingIdx !== null) return patchToolChip(messages, existingIdx, u, at);
@@ -461,7 +485,7 @@ function handleToolCall(
     status: u.status ?? "pending",
     content: mapToolContent(u.content),
   };
-  return appendToActive(messages, [chip], at);
+  return appendAgentParts(messages, [chip], at, turnId);
 }
 
 function handleToolCallUpdate(
@@ -515,6 +539,148 @@ function patchToolChip(
           ),
         },
   );
+}
+
+function appendAgentParts(
+  messages: Message[],
+  newParts: MessagePart[],
+  at: string | undefined,
+  turnId: string | undefined,
+): Message[] {
+  return turnId === undefined
+    ? appendToActive(messages, newParts, at)
+    : appendToTurn(messages, newParts, at, turnId);
+}
+
+function lastIndexOf(
+  messages: Message[],
+  match: (m: Message) => boolean,
+): number {
+  for (let i = messages.length - 1; i >= 0; i--)
+    if (match(messages[i]!)) return i;
+  return -1;
+}
+
+function isPlaceholder(m: Message | undefined): boolean {
+  return (
+    m !== undefined &&
+    m.role === "assistant" &&
+    m.streaming &&
+    m.parts.length === 0 &&
+    !m.notice
+  );
+}
+
+function isPending(messages: Message[], i: number): boolean {
+  const m = messages[i];
+  return (
+    isPlaceholder(m) || (m?.role === "user" && isPlaceholder(messages[i + 1]))
+  );
+}
+
+function pendingTailStart(messages: Message[]): number {
+  let i = messages.length;
+  while (i > 0 && isPending(messages, i - 1)) i -= 1;
+  return i;
+}
+
+function placeholderFor(messages: Message[], turnId: string): number {
+  return messages.findIndex(
+    (m, i) =>
+      isPlaceholder(m) &&
+      m.turnId === undefined &&
+      (m.promptId === turnId || messages[i - 1]?.id === turnId),
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Places a turn's output by the turn it belongs to
+ * and by when it arrives. It joins the turn's open bubble only while nothing
+ * but waiting prompts came after that bubble; otherwise it fills the
+ * placeholder its own prompt left, or opens a new bubble at the end, ahead of
+ * the prompts still waiting. A reply therefore never lands above a newer
+ * message, and output of a turn nobody prompted shows as the latest message.
+ */
+function appendToTurn(
+  messages: Message[],
+  newParts: MessagePart[],
+  at: string | undefined,
+  turnId: string,
+): Message[] {
+  const fill = (i: number) =>
+    messages.map((m, j) =>
+      j === i
+        ? {
+            ...m,
+            ...(at !== undefined && { at }),
+            parts: mergeParts(m.parts, newParts),
+            streaming: true,
+            queued: false,
+            turnId,
+          }
+        : m,
+    );
+  const own = lastIndexOf(
+    messages,
+    (m) => m.role === "assistant" && m.streaming && m.turnId === turnId,
+  );
+  if (own !== -1 && pendingTailStart(messages) <= own + 1) return fill(own);
+  const slot = placeholderFor(messages, turnId);
+  if (slot !== -1) return fill(slot);
+  const settled =
+    own === -1
+      ? messages
+      : messages.map((m, i) => (i === own ? { ...m, streaming: false } : m));
+  const fresh: Message = {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    parts: mergeParts([], newParts),
+    streaming: true,
+    turnId,
+    ...(at !== undefined && { at }),
+  };
+  const insertAt = pendingTailStart(settled);
+  return [...settled.slice(0, insertAt), fresh, ...settled.slice(insertAt)];
+}
+
+function closeTurn(
+  messages: Message[],
+  turnId: string,
+  end: {
+    at?: string;
+    telemetryPromptId?: string;
+    interruption?: string;
+    model?: string;
+    stopped: boolean;
+  },
+): Message[] {
+  const owned = (m: Message) =>
+    m.role === "assistant" &&
+    (m.turnId === turnId || (m.promptId === turnId && m.parts.length === 0));
+  const last = lastIndexOf(messages, owned);
+  if (last === -1) return messages;
+  const toolStatus = endedToolStatus(end);
+  return messages.map((m, i) => {
+    const settled =
+      toolStatus !== null && owned(m)
+        ? { ...m, parts: settleRunningTools(m.parts, toolStatus) }
+        : m;
+    if (i === last)
+      return {
+        ...settled,
+        ...(end.at !== undefined && { at: end.at }),
+        ...(end.telemetryPromptId !== undefined && {
+          telemetryPromptId: end.telemetryPromptId,
+        }),
+        ...(end.model !== undefined && { model: end.model }),
+        ...(end.interruption !== undefined &&
+          hasAgentContent(m) && { error: { message: end.interruption } }),
+        ...(end.stopped && { stopped: true }),
+        streaming: false,
+        queued: false,
+      };
+    return owned(m) && m.streaming ? { ...settled, streaming: false } : settled;
+  });
 }
 
 interface ActiveTarget {
@@ -598,21 +764,55 @@ function closeActiveAssistant(
   at?: string,
   telemetryPromptId?: string,
   interruption?: string,
+  model?: string,
+  stopped = false,
 ): Message[] {
   const i = activeReplyIndex(messages);
-  if (i === -1) return messages;
+  if (i === -1) return stopped ? markLastReplyStopped(messages) : messages;
+  const toolStatus = endedToolStatus({ interruption, stopped });
   return messages.map((x, j) =>
     j === i
       ? {
           ...x,
           ...(at !== undefined && { at }),
           ...(telemetryPromptId !== undefined && { telemetryPromptId }),
+          ...(model !== undefined && { model }),
           ...(interruption !== undefined &&
             hasAgentContent(x) && { error: { message: interruption } }),
+          ...(stopped && { stopped: true }),
+          ...(toolStatus !== null && {
+            parts: settleRunningTools(x.parts, toolStatus),
+          }),
           streaming: false,
         }
       : x,
   );
+}
+
+function settleRunningTools(
+  parts: MessagePart[],
+  status: "failed" | "cancelled",
+): MessagePart[] {
+  return parts.map((p) =>
+    p.kind === "tool" && (p.status === "in_progress" || p.status === "pending")
+      ? { ...p, status }
+      : p,
+  );
+}
+
+function endedToolStatus(end: {
+  interruption?: string;
+  stopped: boolean;
+}): "failed" | "cancelled" | null {
+  if (end.interruption !== undefined) return "failed";
+  return end.stopped ? "cancelled" : null;
+}
+
+function markLastReplyStopped(messages: Message[]): Message[] {
+  const last = messages.length - 1;
+  const tail = messages[last];
+  if (tail?.role !== "assistant" || tail.notice) return messages;
+  return messages.map((m, i) => (i === last ? { ...m, stopped: true } : m));
 }
 
 /**
@@ -630,6 +830,12 @@ function stampActiveReply(
     return messages;
   }
   return messages.map((x, j) => (j === i ? { ...x, telemetryPromptId } : x));
+}
+
+function stampActiveReplyModel(messages: Message[], model: string): Message[] {
+  const i = activeReplyIndex(messages);
+  if (i === -1 || messages[i].model === model) return messages;
+  return messages.map((x, j) => (j === i ? { ...x, model } : x));
 }
 
 function appendOrExtendUser(

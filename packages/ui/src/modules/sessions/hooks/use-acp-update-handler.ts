@@ -46,7 +46,14 @@ export function useAcpUpdateHandler(): () => UpdateHandler {
       }
 
       setMessages((prev) =>
-        applyUpdate(prev, update, frame?.at, frame?.telemetryPromptId),
+        applyUpdate(
+          prev,
+          update,
+          frame?.at,
+          frame?.telemetryPromptId,
+          frame?.model,
+          frame?.turnId,
+        ),
       );
     };
   }, [dismissStalePermission, setMessages]);

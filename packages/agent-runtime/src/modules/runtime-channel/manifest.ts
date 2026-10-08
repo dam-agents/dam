@@ -71,6 +71,7 @@ export const harnessConfigBinding = z.object({
     ),
   catalog: harnessConfigCatalog.optional(),
   modelDiscovery: modelDiscoverySources.optional(),
+  defaultModel: z.string().min(1).optional(),
 });
 export type HarnessConfigBinding = z.infer<typeof harnessConfigBinding>;
 
@@ -89,6 +90,8 @@ export const runtimeManifestSchema = z.object({
       message: "sessionHistory needs exactly one of module or command",
     })
     .optional(),
+
+  terminalSessionPins: z.string().min(1).optional(),
 
   agentProcesses: z.array(z.string().min(1).max(15)).default([]),
 

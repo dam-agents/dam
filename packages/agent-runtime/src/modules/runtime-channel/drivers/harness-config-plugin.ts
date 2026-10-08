@@ -107,12 +107,24 @@ export function createHarnessConfigPlugin(deps: {
     if (JSON.stringify(before) !== JSON.stringify(after)) deps.onApplied?.();
   };
 
+  const harnessDefault = (): string | null => {
+    if (binding?.sessionModel !== true) return null;
+    const env = envReader.current();
+    const pinned = selectDiscoverySource(binding.modelDiscovery, env)
+      ?.spec.pinEnv?.map((name) => env[name]?.trim())
+      .find((value) => !!value);
+    return pinned ?? binding.defaultModel ?? null;
+  };
+
   const readCurrent = async (opts?: {
     discover?: boolean;
   }): Promise<HarnessConfigCurrent> => {
-    const values = binding
-      ? readCurrentValues(binding, agentHome, log)
-      : { model: null, mode: null, configOptions: {} };
+    const values = {
+      ...(binding
+        ? readCurrentValues(binding, agentHome, log)
+        : { model: null, mode: null, configOptions: {} }),
+      defaultModel: harnessDefault(),
+    };
     if (opts?.discover === false) return values;
 
     const env = envReader.current();

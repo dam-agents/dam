@@ -20,6 +20,8 @@ export interface FrameMeta {
   replayFor?: string;
   at?: string;
   telemetryPromptId?: string;
+  model?: string;
+  turnId?: string;
 }
 
 export type UpdateHandler = (

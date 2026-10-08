@@ -2,6 +2,7 @@ import { match } from "ts-pattern";
 import { OnceResult } from "api-server-api";
 import type {
   EventOutcome,
+  EventStage,
   PrecheckVerdict,
   Schedule,
   ScheduleSpecOnce,
@@ -44,8 +45,9 @@ export interface SchedulerRunner {
   reportFire(input: {
     scheduleId: string;
     eventId: string;
-    ranPrecheck: string;
+    ranPrecheck: string | null;
     outcome: EventOutcome;
+    stage?: EventStage;
     detail?: string;
   }): Promise<void>;
 }
@@ -128,12 +130,12 @@ export function createSchedulerRunner(
     };
     if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
     if (sched.spec.precheck) payload.precheck = sched.spec.precheck;
+    if (sched.spec.model) payload.model = sched.spec.model;
     if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
     if (sched.spec.type === "once") {
       payload.once = true;
       if (sched.spec.origin)
         payload.origin = { ...sched.spec.origin, name: sched.name };
-      if (sched.spec.model) payload.model = sched.spec.model;
     }
     return payload;
   }
@@ -396,9 +398,13 @@ export function createSchedulerRunner(
       const sched = await deps.repo.getById(input.scheduleId);
       if (!sched) return;
       const verdict = VERDICT[input.outcome];
-      const describesCurrentPrecheck =
-        sched.spec.precheck === input.ranPrecheck;
-      if (describesCurrentPrecheck)
+      if (input.stage === "run" && input.outcome === "failed")
+        await deps.repo.stampResult(
+          input.scheduleId,
+          input.detail ?? "the run could not start",
+        );
+      else if (input.ranPrecheck === null) return;
+      else if (sched.spec.precheck === input.ranPrecheck)
         await deps.repo.applyStatusPatch(
           input.scheduleId,
           statusForVerdict(verdict, now(), input.detail ?? "precheck failed"),

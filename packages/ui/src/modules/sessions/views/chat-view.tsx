@@ -149,6 +149,9 @@ function PanelDivider({
   return divider && <ResizeHandle orientation="vertical" {...divider} />;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a sent message lands in the transcript a render or two after the send, so the jump to the end repeats once it is laid out and once more after this wait.
+const SEND_SETTLE_MS = 300;
+
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const { data: agentsData } = useAgents();
@@ -319,6 +322,17 @@ export function ChatView() {
     el.scrollTop = el.scrollHeight;
   }, []);
 
+  const sendAndFollow = useCallback(
+    (...args: Parameters<typeof sendPrompt>) => {
+      scrollToBottom();
+      const sent = sendPrompt(...args);
+      requestAnimationFrame(() => requestAnimationFrame(scrollToBottom));
+      setTimeout(scrollToBottom, SEND_SETTLE_MS);
+      return sent;
+    },
+    [scrollToBottom, sendPrompt],
+  );
+
   const pendingPrependRef = useRef<{
     height: number;
     before: string;
@@ -360,14 +374,14 @@ export function ChatView() {
     if (!el) return;
     const inner = el.firstElementChild;
 
-    const THRESHOLD = 30;
-    const nearBottom = () =>
-      el.scrollHeight - el.scrollTop - el.clientHeight < THRESHOLD;
+    const FOLLOW_WITHIN_PX = 60;
+    const JUMP_BEYOND_PX = 200;
+    const fromBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight;
 
     const onScroll = () => {
-      const near = nearBottom();
-      stickRef.current = near;
-      setShowJump(!near);
+      const distance = fromBottom();
+      stickRef.current = distance < FOLLOW_WITHIN_PX;
+      setShowJump(distance > JUMP_BEYOND_PX);
     };
 
     const ro = new ResizeObserver(() => {
@@ -821,6 +835,7 @@ export function ChatView() {
                                   : undefined
                               }
                               isLast={item.index === messages.length - 1}
+                              showModel={runStarts.length > 0}
                               {...timeProps(item.message.at, now)}
                               hasPendingPermission={hasPendingPermission}
                               onRetry={sendPrompt}
@@ -887,7 +902,7 @@ export function ChatView() {
                   textareaRef={textareaRef}
                   busy={busy}
                   loadingSession={loadingSession}
-                  onSend={sendPrompt}
+                  onSend={sendAndFollow}
                   onStop={stopAgent}
                 />
                 {!hasPendingPermission && indicatorModel && (

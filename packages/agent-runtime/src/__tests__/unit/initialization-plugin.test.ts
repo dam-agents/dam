@@ -20,7 +20,7 @@ function fakeDriver() {
   const driver: TriggerSessionDriver = {
     async start(opts) {
       calls.push(opts);
-      return { sessionId: "s-1" };
+      return { sessionId: "s-1", openedOn: null };
     },
   };
   return { driver, calls };

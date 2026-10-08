@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { type ReactNode, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
 import { DialogActions, DialogBody, DialogHeader } from "@/components/modal";
@@ -18,6 +18,7 @@ import {
 } from "../api/mutations.js";
 import { QuietHoursEditor } from "./quiet-hours-editor.js";
 import {
+  ScheduleModelField,
   SchedulePrecheckField,
   ScheduleRecurrenceFields,
   ScheduleSessionTypeField,
@@ -87,6 +88,7 @@ export function RecurringScheduleForm({
 
   const onSubmit = handleSubmit((v) => {
     const precheck = v.precheck.trim();
+    const model = v.model.trim();
     const common = {
       name: v.name,
       rrule: buildRRuleParts(v).body,
@@ -106,7 +108,12 @@ export function RecurringScheduleForm({
     };
     if (existing) {
       updateSchedule.mutate(
-        { id: existing.id, ...common, precheck: precheck || null },
+        {
+          id: existing.id,
+          ...common,
+          precheck: precheck || null,
+          model: model || null,
+        },
         { onSuccess },
       );
     } else {
@@ -115,6 +122,7 @@ export function RecurringScheduleForm({
           agentId,
           ...common,
           ...(precheck ? { precheck } : {}),
+          ...(model ? { model } : {}),
         },
         { onSuccess },
       );
@@ -162,6 +170,18 @@ export function RecurringScheduleForm({
             {...register("task")}
           />
         </FormField>
+
+        <Controller
+          control={control}
+          name="model"
+          render={({ field }) => (
+            <ScheduleModelField
+              agentId={agentId}
+              value={field.value}
+              onChange={field.onChange}
+            />
+          )}
+        />
 
         <SchedulePrecheckField
           layout="stacked"

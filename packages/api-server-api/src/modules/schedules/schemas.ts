@@ -28,6 +28,8 @@ export const PRECHECK_MAX_LENGTH = 8_000;
 
 export const precheckSchema = z.string().trim().min(1).max(PRECHECK_MAX_LENGTH);
 
+export const scheduleModelSchema = z.string().trim().min(1).max(200);
+
 export const scheduleCreateCronInputSchema = z.object({
   name: z.string().min(1),
   agentId: z.string().min(1),
@@ -35,6 +37,7 @@ export const scheduleCreateCronInputSchema = z.object({
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.optional(),
+  model: scheduleModelSchema.optional(),
 });
 
 export const scheduleCreateRRuleInputSchema = z.object({
@@ -46,6 +49,7 @@ export const scheduleCreateRRuleInputSchema = z.object({
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.optional(),
+  model: scheduleModelSchema.optional(),
 });
 
 export const scheduleUpdateRRuleInputSchema = z.object({
@@ -57,6 +61,7 @@ export const scheduleUpdateRRuleInputSchema = z.object({
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.nullable().optional(),
+  model: scheduleModelSchema.nullable().optional(),
 });
 
 const localDateTimeSchema = z
@@ -119,6 +124,7 @@ const scheduleSpecCronSchema = z
     cron: z.string(),
     task: z.string().optional(),
     precheck: precheckSchema.optional(),
+    model: scheduleModelSchema.optional(),
     enabled: z.boolean(),
     sessionMode: scheduleSessionModeSchema.optional(),
     createdBy: scheduleCreatorSchema,
@@ -134,6 +140,7 @@ const scheduleSpecRRuleSchema = z
     quietHours: z.array(quietWindowConfigMapSchema).optional(),
     task: z.string().optional(),
     precheck: precheckSchema.optional(),
+    model: scheduleModelSchema.optional(),
     enabled: z.boolean(),
     sessionMode: scheduleSessionModeSchema.optional(),
     createdBy: scheduleCreatorSchema,

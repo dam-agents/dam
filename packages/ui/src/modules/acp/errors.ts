@@ -78,6 +78,12 @@ export function describeSendError(raw: string): SendErrorDescription {
     if (/credential secret/i.test(raw)) return { message: raw };
     return { message: raw, hint };
   }
+  if (/process exited unexpectedly/i.test(raw)) {
+    return {
+      message: "The agent's process stopped unexpectedly.",
+      hint: "Send a message to continue — the conversation is kept. This can happen when the agent runs low on memory.",
+    };
+  }
   if (/^internal error\.?$/i.test(raw.trim())) {
     return {
       message: "The agent couldn't process this message.",
