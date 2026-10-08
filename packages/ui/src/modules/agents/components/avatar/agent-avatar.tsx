@@ -16,12 +16,12 @@ import type { AgentDisplayState } from "../../utils/agent-resolver.js";
 
 export function avatarMood(
   state: AgentDisplayState | undefined,
-  stopped = false,
-  working?: boolean,
+  stopped: boolean | undefined,
+  working: boolean,
 ): AvatarMood {
   if (stopped || state === "hibernated" || state === "hibernating")
     return "asleep";
-  return working === false ? "idle" : "working";
+  return working ? "working" : "idle";
 }
 
 export function resolveCharacter(

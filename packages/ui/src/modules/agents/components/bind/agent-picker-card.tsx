@@ -42,7 +42,7 @@ export function AgentPickerCard({
         name={name}
         avatar={agent.avatar}
         size={40}
-        mood={avatarMood(display.state, agent.stopRequested)}
+        mood={avatarMood(display.state, agent.stopRequested, false)}
       />
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
