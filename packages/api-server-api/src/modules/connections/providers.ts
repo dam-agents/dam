@@ -49,7 +49,7 @@ export function ibmLitellmEnvMappings(): EnvMapping[] {
     {
       MODEL: "aws/claude-opus-4-8",
       CONTEXT_WINDOW: "200000",
-      MAX_TOKENS: "8192",
+      MAX_TOKENS: "32768",
     },
   );
 }
