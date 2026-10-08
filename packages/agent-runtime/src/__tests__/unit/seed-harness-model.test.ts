@@ -10,7 +10,10 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RuntimeEnvReader } from "../../core/runtime-env.js";
 import { createHarnessConfigPlugin } from "../../modules/runtime-channel/drivers/harness-config-plugin.js";
-import type { ModelDiscovery } from "../../modules/runtime-channel/infrastructure/model-discovery.js";
+import type {
+  ModelDiscovery,
+  ModelDiscoveryOutcome,
+} from "../../modules/runtime-channel/infrastructure/model-discovery.js";
 import type { HarnessConfigBinding } from "../../modules/runtime-channel/manifest.js";
 
 const BINDING: HarnessConfigBinding = {
@@ -45,21 +48,19 @@ describe("seeding a discovered model", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  const listing =
-    (via: string): ModelDiscovery =>
-    async () => ({
-      status: "observed",
-      via,
-      models: [
-        { value: "first/model", name: "first/model" },
-        { value: "second/model", name: "second/model" },
-      ],
-    });
+  const listing = (via: string): ModelDiscoveryOutcome => ({
+    status: "observed",
+    via,
+    models: [
+      { value: "first/model", name: "first/model" },
+      { value: "second/model", name: "second/model" },
+    ],
+  });
 
   const seedWith = (
     env: Record<string, string>,
     via: string,
-    discoverModels: ModelDiscovery = listing(via),
+    discoverModels: ModelDiscovery = async () => listing(via),
   ) => {
     const envReader: RuntimeEnvReader = {
       current: () => env,
@@ -214,11 +215,9 @@ describe("seeding a discovered model", () => {
    */
   it("asks again while the listing is unavailable", async () => {
     let asked = 0;
-    const lateListing: ModelDiscovery = async (spec, env) => {
+    const lateListing: ModelDiscovery = async () => {
       asked += 1;
-      return asked < 3
-        ? { status: "unavailable" }
-        : listing("REDIRECT_URL")(spec, env);
+      return asked < 3 ? { status: "unavailable" } : listing("REDIRECT_URL");
     };
     expect(
       await seedWith(
