@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Provider } from "@earendil-works/pi-ai";
+import type { OpenAICompletionsCompat, Provider } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ProviderConfig, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 
 declare const process: { env: Record<string, string | undefined> };
@@ -9,6 +9,7 @@ declare const process: { env: Record<string, string | undefined> };
 type ProviderSpec = {
 	name: string;
 	envPrefix: string;
+	compat?: OpenAICompletionsCompat;
 	shadows?: { name: string; urlEnv: string; apiKeyEnv?: string }[];
 };
 
@@ -28,7 +29,7 @@ type ConfigState = {
 const BEDROCK_PROVIDER = "amazon-bedrock";
 const BEDROCK_API = "bedrock-converse-stream";
 const BUILTIN_PROVIDERS_MODULE: string = "@earendil-works/pi-ai/providers/all";
-const OPENAI_COMPLETIONS_MODULE: string = "@earendil-works/pi-ai/api/openai-completions";
+const PI_AI_MODULE: string = "@earendil-works/pi-ai";
 const REASONING_FIELDS = ["reasoning_content", "reasoning", "reasoning_text"];
 
 type StreamSimple = NonNullable<ProviderConfig["streamSimple"]>;
@@ -38,6 +39,7 @@ const SPECS: ProviderSpec[] = [
 	{
 		name: "openai-proxy",
 		envPrefix: "OPENAI_PROXY",
+		compat: { supportsUsageInStreaming: true },
 		shadows: [{ name: "openai", urlEnv: "OPENAI_BASE_URL", apiKeyEnv: "OPENAI_API_KEY" }],
 	},
 ];
@@ -86,10 +88,10 @@ async function activateSpec(pi: ExtensionAPI, spec: ProviderSpec, state: ConfigS
 		api: "openai-completions",
 		apiKey,
 		authHeader: false,
-		models: models.map((m) => buildModelConfig(spec.envPrefix, m)),
+		models: models.map((m) => buildModelConfig(spec, m)),
 	};
 
-	const streamSimple = await loadReasoningFirstStream();
+	const streamSimple = await loadCompletionsStream(spec.compat?.supportsUsageInStreaming === true);
 	pi.registerProvider(spec.name, streamSimple ? { ...provider, streamSimple } : provider);
 	state.models.providers[spec.name] = provider;
 	state.auth[spec.name] = { type: "api_key", key: apiKey };
@@ -101,50 +103,86 @@ async function activateSpec(pi: ExtensionAPI, spec: ProviderSpec, state: ConfigS
 	return { name: spec.name, model: defaultModel };
 }
 
-async function loadReasoningFirstStream(): Promise<StreamSimple | undefined> {
+async function loadCompletionsStream(raiseCutUsage: boolean): Promise<StreamSimple | undefined> {
 	try {
-		const { streamSimple } = (await import(OPENAI_COMPLETIONS_MODULE)) as { streamSimple: StreamSimple };
+		const { openAICompletionsApi } = (await import(PI_AI_MODULE)) as {
+			openAICompletionsApi: () => { streamSimple: StreamSimple };
+		};
+		const { streamSimple } = openAICompletionsApi();
 		return (model, context, options) =>
-			streamSimple(model, context, { ...options, fetch: reasoningBeforeContent(options?.fetch ?? fetch) });
+			streamSimple(model, context, { ...options, fetch: providerStreamFetch(options?.fetch ?? fetch, raiseCutUsage) });
 	} catch (err) {
-		console.warn(`[pi-dynamic-providers] ${OPENAI_COMPLETIONS_MODULE} unavailable: ${err instanceof Error ? err.message : String(err)}`);
+		console.warn(`[pi-dynamic-providers] ${PI_AI_MODULE} openAICompletionsApi unavailable: ${err instanceof Error ? err.message : String(err)}`);
 		return undefined;
 	}
 }
 
-export function reasoningBeforeContent(inner: typeof fetch): typeof fetch {
+export function providerStreamFetch(inner: typeof fetch, raiseCutUsage = false): typeof fetch {
 	return async (input, init) => {
-		const res = await inner(input, init);
-		if (!res.body || !res.headers.get("content-type")?.includes("text/event-stream")) return res;
-		let pending = "";
-		const split = new TransformStream<string, string>({
-			transform(text, controller) {
-				const lines = (pending + text).split("\n");
-				pending = lines.pop() ?? "";
-				for (const line of lines) controller.enqueue(`${splitMixedDelta(line)}\n`);
-			},
-			flush(controller) {
-				if (pending) controller.enqueue(splitMixedDelta(pending));
-			},
-		});
-		const body = res.body.pipeThrough(new TextDecoderStream()).pipeThrough(split).pipeThrough(new TextEncoderStream());
-		return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+		const cap = raiseCutUsage ? requestedCap(init?.body) : undefined;
+		const raise = cap === undefined ? (line: string) => line : raiseCutOutputTo(cap);
+		return rewriteEventStream(await inner(input, init), (line) => splitMixedDelta(raise(line)));
 	};
+}
+
+function requestedCap(body: unknown): number | undefined {
+	if (typeof body !== "string") return undefined;
+	try {
+		const { max_tokens, max_completion_tokens } = JSON.parse(body) as Record<string, unknown>;
+		const cap = max_completion_tokens ?? max_tokens;
+		return typeof cap === "number" && cap > 0 ? cap : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function raiseCutOutputTo(cap: number): (line: string) => string {
+	let cut = false;
+	return (line) => {
+		if (!line.startsWith("data: {")) return line;
+		let chunk: { choices?: ({ finish_reason?: unknown } | null)[]; usage?: { completion_tokens?: unknown } };
+		try {
+			chunk = JSON.parse(line.slice("data: ".length));
+		} catch {
+			return line;
+		}
+		cut ||= chunk.choices?.some((c) => c?.finish_reason === "length") ?? false;
+		const output = chunk.usage?.completion_tokens;
+		if (!cut || typeof output !== "number" || output <= 0 || output >= cap) return line;
+		return `data: ${JSON.stringify({ ...chunk, usage: { ...chunk.usage, completion_tokens: cap } })}`;
+	};
+}
+
+function rewriteEventStream(res: Response, rewrite: (line: string) => string): Response {
+	if (!res.body || !res.headers.get("content-type")?.includes("text/event-stream")) return res;
+	let pending = "";
+	const lines = new TransformStream<string, string>({
+		transform(text, controller) {
+			const parts = (pending + text).split("\n");
+			pending = parts.pop() ?? "";
+			if (parts.length > 0) controller.enqueue(parts.map((line) => `${rewrite(line)}\n`).join(""));
+		},
+		flush(controller) {
+			if (pending) controller.enqueue(rewrite(pending));
+		},
+	});
+	const body = res.body.pipeThrough(new TextDecoderStream()).pipeThrough(lines).pipeThrough(new TextEncoderStream());
+	return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
 }
 
 function splitMixedDelta(line: string): string {
 	if (!line.startsWith("data: {")) return line;
-	let chunk: { choices?: { delta?: Record<string, unknown> }[]; usage?: unknown };
+	let chunk: { choices?: ({ delta?: Record<string, unknown> | null } | null)[]; usage?: unknown };
 	try {
 		chunk = JSON.parse(line.slice("data: ".length));
 	} catch {
 		return line;
 	}
-	const isMixed = (delta: Record<string, unknown> = {}) =>
-		typeof delta.content === "string" && delta.content !== "" && REASONING_FIELDS.some((f) => delta[f]);
-	if (!chunk.choices?.some((c) => isMixed(c.delta))) return line;
+	const isMixed = (delta: Record<string, unknown> | null | undefined) =>
+		typeof delta?.content === "string" && delta.content !== "" && REASONING_FIELDS.some((f) => delta?.[f]);
+	if (!chunk.choices?.some((c) => isMixed(c?.delta))) return line;
 	const keeping = (keep: (field: string) => boolean) =>
-		chunk.choices?.map((c) => ({ ...c, delta: Object.fromEntries(Object.entries(c.delta ?? {}).filter(([f]) => keep(f))) }));
+		chunk.choices?.map((c) => ({ ...c, delta: Object.fromEntries(Object.entries(c?.delta ?? {}).filter(([f]) => keep(f))) }));
 	const { usage: _, ...head } = chunk;
 	const reasoning = { ...head, choices: keeping((f) => f === "role" || REASONING_FIELDS.includes(f)) };
 	const content = { ...chunk, choices: keeping((f) => !REASONING_FIELDS.includes(f)) };
@@ -278,7 +316,7 @@ function applyShadows(pi: ExtensionAPI, spec: ProviderSpec, url: string, state: 
 	}
 }
 
-function buildModelConfig(envPrefix: string, model: DiscoveredModel): ProviderModelConfig {
+function buildModelConfig({ envPrefix, compat }: ProviderSpec, model: DiscoveredModel): ProviderModelConfig {
 	const contextWindow = model.contextWindow ?? intEnv(`${envPrefix}_CONTEXT_WINDOW`, 128000);
 	const maxTokens = Math.min(intEnv(`${envPrefix}_MAX_TOKENS`, 16384), contextWindow);
 	return {
@@ -296,6 +334,7 @@ function buildModelConfig(envPrefix: string, model: DiscoveredModel): ProviderMo
 			maxTokensField: "max_tokens",
 			requiresThinkingAsText: boolEnv(`${envPrefix}_THINKING_AS_TEXT`, false),
 			thinkingFormat: env(`${envPrefix}_THINKING_FORMAT`) as any,
+			...compat,
 		},
 	};
 }

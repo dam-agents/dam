@@ -64,12 +64,9 @@ Apply `/react-ui-engineering` to `packages/ui` and `/typescript-engineering` to 
    or not the reply is the last one. Give it `data-testid="reply-output-limit-notice"`.
    `ChatMessage` is memoised on `message`, so the new flag re-renders it.
 
-6. **Architecture doc**,
-   [`docs/architecture/agent-lifecycle.md`](../../architecture/agent-lifecycle.md): in the
-   session-log paragraph (the one that says a replayed entry carries only what its source
-   supplied), add that a replay source can also mark a reply that stopped at the output limit, so
-   a reopened chat still shows the cut. Keep it to one clause; bump `Last verified`. Run
-   `mise run //docs:check` (the page has a character budget).
+6. **No architecture doc change.** agent-lifecycle is at its 40,000-character cap, and its
+   session-log paragraph already says that a replayed entry carries only what its source supplied
+   (decided during implementation).
 
 ## Acceptance criteria
 

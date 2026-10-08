@@ -39,6 +39,9 @@ After this change:
   LiteLLM connection), so the check is false and Pi keeps the reply. A `length` stop below
   `maxTokens` still happens when Pi clamps the request to fit a full context; that is a real
   overflow, and Pi's recovery is right there.
+- `gcp/gemini-3.1-pro-preview` reports 4 tokens below the request's cap on every cut (probed at
+  64 to 4096), so the extension reports a `length` stop's output as the request's cap. A request
+  that Pi clamped has a lower cap, so Pi's own recovery still sees it.
 - pi-acp rebuilds a reopened chat from Pi's projected messages (`get_messages`), so an omitted
   reply is also missing after a restart. Keeping the reply fixes both.
 
@@ -59,9 +62,10 @@ After this change:
 
 ### The fix, in three parts
 
-1. **Pi image (01).** The `openai-proxy` provider asks for streamed token counts. The in-memory
-   pi-acp patch answers a turn whose last reply stopped at `length` with ACP `max_tokens`, and
-   stamps `_meta.platform.stopReason: "max_tokens"` on the replayed text of such a reply.
+1. **Pi image (01).** The `openai-proxy` provider asks for streamed token counts, and a `length`
+   stop reports the request's cap as its output. The in-memory pi-acp patch answers a turn whose
+   last reply stopped at `length` with ACP `max_tokens`, and stamps
+   `_meta.platform.stopReason: "max_tokens"` on the replayed text of such a reply.
 2. **Contract and UI (02).** `platformFrameMetaSchema` gains `stopReason`. The UI marks a reply
    as cut from either source: `platform/turnEnded.stopReason` while the log is live, or the frame
    stamp after a reopen. Main already stamps a reply's `model` this way (`stampActiveReplyModel`),
@@ -79,7 +83,9 @@ No runtime change and no new storage.
 Architecture pages this touches: [agent-lifecycle](../../architecture/agent-lifecycle.md)
 (session log, replay metadata, end-of-turn signal) and
 [connections](../../architecture/connections.md) (stored contributions, `env` on the runtime
-channel rail; an `env` change recycles the harness at an idle turn boundary).
+channel rail; an `env` change recycles the harness at an idle turn boundary). Neither changes:
+agent-lifecycle already says that a replayed entry carries only what its source supplied, and it
+sits at its character cap.
 
 ### Evidence from the IBM LiteLLM proxy (probed 2026-10-08)
 
@@ -93,6 +99,7 @@ Every chat model on the proxy, one tiny prompt per call:
 | `max_completion_tokens` 32768, every chat model | 200, `gpt-6-astra` included |
 | `stream` + `stream_options.include_usage`, every chat model | 200, final chunk carries `usage.completion_tokens` |
 | `/v1/model/info`, `/model/info` | 403: the key may call only `llm_api_routes`, so per-model limits cannot be discovered |
+| Streamed, cap 64 through each field, a prompt longer than the cap | `length` and `completion_tokens` = 64 for every model except two: `gcp/gemini-3.1-pro-preview` reports 60 (also cap − 4 at 256, 1024, 4096), and `azure/gpt-5.3-codex` reports `stop` even at the cap |
 
 `rits/zai-org/glm-5-1-fp8-agentic` is listed but answers 400 "Invalid model name"; that is a proxy
 quirk, not ours. Curve Bender (also LiteLLM, also on the `openai-proxy` path) was not reachable
@@ -114,6 +121,17 @@ for a probe; the IBM proxy's `rits/*` models (the same RITS backend Curve Bender
   the connection, because LiteLLM refuses the model-info routes. A reply that reaches it takes
   about 8 minutes at the measured ~68 tokens/s.
 
+### Decisions made during implementation
+
+- **No architecture page changes.** agent-lifecycle is at its character cap, and its session-log
+  paragraph already covers a stop reason that a replay source supplies.
+- **A `length` stop reports the request's cap** in the extension's stream wrapper, so Gemini's
+  cut replies stay too.
+- **The stream wrappers load from pi-ai's root entry.** Their old subpath import failed inside
+  Pi, so no wrapper ran on main; this also turns on the reasoning-order split from #4360.
+- **`azure/gpt-5.3-codex` gets no notice.** LiteLLM reports `stop` at the cap, so Pi keeps the
+  reply, but nothing can mark it as cut.
+
 ### Out of scope
 
 - The "Response interrupted" notice (#3557) also lives only in the in-memory log; it is not made
@@ -126,8 +144,8 @@ for a probe; the IBM proxy's `rits/*` models (the same RITS backend Curve Bender
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | [Pi keeps a reply cut at the output limit](./01-pi-keeps-cut-reply.md) | Pi image: streamed usage on `openai-proxy`; pi-acp patch reports `max_tokens` and stamps the replayed reply | — |
-| 02 | [The chat marks a reply cut at the output limit](./02-chat-marks-cut-reply.md) | `platformFrameMetaSchema.stopReason`; UI projection and muted line; agent-lifecycle doc | 01 (for the Pi smoke test only) |
+| 01 | ✅ [Pi keeps a reply cut at the output limit](./01-pi-keeps-cut-reply.md) | Pi image: streamed usage on `openai-proxy`, a `length` stop reports the cap; pi-acp patch reports `max_tokens` and stamps the replayed reply | — |
+| 02 | [The chat marks a reply cut at the output limit](./02-chat-marks-cut-reply.md) | `platformFrameMetaSchema.stopReason`; UI projection and muted line | 01 (for the Pi smoke test only) |
 | 03 | [Pi's output limit on LiteLLM](./03-pi-output-limit-litellm.md) | IBM LiteLLM `MAX_TOKENS` 8192 → 32768 plus data migration; `openai-proxy` sends `max_completion_tokens` | 01 |
 
 03 comes last on purpose: with the 8192 limit still in place, the smoke tests of 01 and 02 reach

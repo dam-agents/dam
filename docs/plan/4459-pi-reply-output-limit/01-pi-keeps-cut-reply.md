@@ -26,6 +26,15 @@ Apply `/typescript-engineering` to the extension.
      split chunk, and LiteLLM's final usage chunk has `choices: []`, so it passes through
      untouched. `mise run //packages/agents:check:pi-reasoning-order` covers that path.
    - 03 adds `maxTokensField` to the same override, so keep the override shape general.
+   - The stream wrapper also reports a `length` stop's `completion_tokens` as the request's cap
+     (`max_completion_tokens` or `max_tokens` in the request body) when the provider reports less
+     but more than 0: `gcp/gemini-3.1-pro-preview` reports 4 below the cap on every cut. Both
+     wrappers share one SSE line rewriter.
+   - Load pi-ai's completions stream from the package root (`openAICompletionsApi`). Pi resolves
+     an extension's pi-ai imports only for the root, `compat`, `oauth` and `providers/all`, so the
+     old `@earendil-works/pi-ai/api/openai-completions` import failed in the image and the
+     provider ran without the extension's `fetch` (found during implementation; the reasoning-order
+     fix from #4360 never ran either).
 
 2. **The turn ends with `max_tokens`**,
    [`pi-acp-patch.mjs`](../../../packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs).
@@ -66,8 +75,9 @@ Apply `/typescript-engineering` to the extension.
      counts and `rits` does not.
 
 Side effect to accept, not to fix: a Pi turn cut at the limit now reports `max_tokens`, like a
-Claude Code turn. A schedule shows that stop reason, and `dam run` exits with its "run stopped"
-code instead of 0 (`stopExitCode` in `packages/cli/src/modules/chat/commands/run.ts`).
+Claude Code turn. `dam run` prints that stop reason and exits with its "run stopped" code instead
+of 0 (`stopExitCode` in `packages/cli/src/modules/chat/commands/run.ts`). No other code reads a
+turn's stop reason; a schedule's "stop reason" is the schedule's own state.
 
 ## Acceptance criteria
 
@@ -81,6 +91,7 @@ code instead of 0 (`stopExitCode` in `packages/cli/src/modules/chat/commands/run
 - [ ] After the agent pod restarts, the reopened chat contains the cut reply, and its replayed
       `session/update` frame carries `_meta.platform.stopReason: "max_tokens"`.
 - [ ] The agent pod log has no `pi-acp-patch: not applied` line.
+- [ ] With `gcp/gemini-3.1-pro-preview`, a cut reply also stays, with `usage.output` 8192.
 - [ ] `mise run //packages/agents:check`, `mise run check:comment-types` and `mise run check`
       pass.
 
@@ -104,5 +115,8 @@ code instead of 0 (`stopExitCode` in `packages/cli/src/modules/chat/commands/run
    `session/update` frame on the WebSocket carries `_meta.platform.stopReason: "max_tokens"`.
 8. `mise run cluster:kubectl -- logs -n platform-agents <agent-pod> -c agent | grep pi-acp-patch`
    prints nothing.
+9. Switch the session model to `gcp/gemini-3.1-pro-preview` and repeat step 3. The cut reply
+   stays: its session-file entry has `stopReason: "length"` and `"output":8192`, and no new
+   `context_edit` appears.
 
 Print a short version of these steps for the user so they can confirm by hand.
