@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from "react";
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
@@ -34,47 +34,49 @@ export function usePromptHistory(apply: (text: string) => void): {
   navigate: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
   reset: () => void;
 } {
-  const messages = useStore((s) => s.messages);
-  const history = useMemo(() => promptsNewestFirst(messages), [messages]);
   const sessionId = useStore((s) => s.sessionId);
   const walk = useRef<{ index: number; draft: string } | null>(null);
   useEffect(() => {
     walk.current = null;
   }, [sessionId]);
 
-  const navigate = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
-    if (e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return false;
-    const { value, selectionStart, selectionEnd } = e.currentTarget;
-    if (selectionStart !== 0 || selectionEnd !== 0) return false;
+  const navigate = useCallback(
+    (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+      if (e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return false;
+      const { value, selectionStart, selectionEnd } = e.currentTarget;
+      if (selectionStart !== 0 || selectionEnd !== 0) return false;
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return false;
+      const history = promptsNewestFirst(useStore.getState().messages);
 
-    if (e.key === "ArrowUp") {
-      const index = (walk.current?.index ?? -1) + 1;
-      if (index >= history.length) return false;
-      walk.current = { index, draft: walk.current?.draft ?? value };
-      apply(history[index]!);
-      return true;
-    }
-
-    if (e.key === "ArrowDown") {
-      const current = walk.current;
-      if (current === null) return false;
-      if (current.index === 0) {
-        walk.current = null;
-        apply(current.draft);
-      } else {
-        walk.current = { ...current, index: current.index - 1 };
-        apply(history[current.index - 1]!);
+      if (e.key === "ArrowUp") {
+        const index = (walk.current?.index ?? -1) + 1;
+        if (index >= history.length) return false;
+        walk.current = { index, draft: walk.current?.draft ?? value };
+        apply(history[index]!);
+        return true;
       }
-      return true;
-    }
 
-    return false;
-  };
+      if (e.key === "ArrowDown") {
+        const current = walk.current;
+        if (current === null) return false;
+        if (current.index === 0) {
+          walk.current = null;
+          apply(current.draft);
+        } else {
+          walk.current = { ...current, index: current.index - 1 };
+          apply(history[current.index - 1]!);
+        }
+        return true;
+      }
 
-  return {
-    navigate,
-    reset: () => {
-      walk.current = null;
+      return false;
     },
-  };
+    [apply],
+  );
+
+  const reset = useCallback(() => {
+    walk.current = null;
+  }, []);
+
+  return useMemo(() => ({ navigate, reset }), [navigate, reset]);
 }

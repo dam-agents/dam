@@ -156,6 +156,19 @@ export function ChatInput({
   const showSend = !isComputing || hasContent;
   const sendDisabled = !isComputing && !hasContent;
 
+  const recallPrompt = useCallback(
+    (text: string) => {
+      if (!key) return;
+      setDraft(key, { text });
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) el.setSelectionRange(0, 0);
+      });
+    },
+    [key, setDraft, textareaRef],
+  );
+  const promptHistory = usePromptHistory(recallPrompt);
+
   const send = useCallback(() => {
     if (!key) return;
     const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
@@ -163,18 +176,10 @@ export function ChatInput({
     const files =
       current.attachments.length > 0 ? current.attachments : undefined;
     if (!text && !files) return;
+    promptHistory.reset();
     clearDraft(key);
     onSend(text, files);
-  }, [key, clearDraft, onSend]);
-
-  const promptHistory = usePromptHistory((text) => {
-    if (!key) return;
-    setDraft(key, { text });
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (el) el.setSelectionRange(0, 0);
-    });
-  });
+  }, [key, clearDraft, onSend, promptHistory]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!isMobile() && promptHistory.navigate(e)) {
