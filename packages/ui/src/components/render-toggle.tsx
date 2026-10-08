@@ -23,6 +23,7 @@ export function RenderToggle({
       className={className}
       onClick={onToggle}
       aria-label={label}
+      tooltip={label}
     >
       {rendered ? <Code size={14} /> : <View size={14} />}
       <span className={labelClassName}>{label}</span>

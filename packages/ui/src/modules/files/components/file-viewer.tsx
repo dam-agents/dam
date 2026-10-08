@@ -226,7 +226,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               disabled={!promotion.promotable || promotion.pending}
               tooltip={
                 promotion.promotable || !promotion.linkReady
-                  ? undefined
+                  ? promotionLabel
                   : "Binary and oversized files can't be promoted from the panel"
               }
               onClick={() => void promotion.promote()}
@@ -241,6 +241,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 className="text-sm font-normal"
                 onClick={() => setEditMode(true)}
                 aria-label="Edit"
+                tooltip="Edit"
               >
                 <Edit size={14} /> <span className={TOOLBAR_LABEL}>Edit</span>
               </Button>
@@ -252,6 +253,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 className="text-sm font-normal"
                 onClick={() => downloadFileContent(file)}
                 aria-label="Download"
+                tooltip="Download"
               >
                 <Download size={14} />{" "}
                 <span className={TOOLBAR_LABEL}>Download</span>
@@ -301,6 +303,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           className="shrink-0"
           onClick={onClose}
           aria-label="Close"
+          tooltip="Close"
         >
           <Close size={16} />
         </Button>
