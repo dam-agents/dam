@@ -126,7 +126,12 @@ export function AgentUnavailableOverlay({
       footer={waiting ? <SkipTheWait agent={agent} /> : undefined}
     >
       {waiting && avatars ? (
-        <CharacterAvatar name={agent.name} size={128} playing />
+        <CharacterAvatar
+          name={agent.name}
+          avatar={agent.avatar}
+          size={128}
+          playing
+        />
       ) : Icon ? (
         <Icon size={40} className="text-muted-foreground" />
       ) : (

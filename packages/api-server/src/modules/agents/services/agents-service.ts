@@ -989,6 +989,7 @@ export function createAgentsService(deps: {
       );
       delete spec.env;
       if (input.secretRef !== undefined) spec.secretRef = input.secretRef;
+      if (input.avatar !== undefined) spec.avatar = input.avatar;
       if (input.hibernationTimeoutMin !== undefined)
         spec.hibernationTimeout = minutesToDuration(
           input.hibernationTimeoutMin,
@@ -1155,6 +1156,7 @@ export function createAgentsService(deps: {
       if (input.name !== undefined) patch.name = input.name;
       if (input.description !== undefined)
         patch.description = input.description;
+      if (input.avatar !== undefined) patch.avatar = input.avatar;
       if (input.secretRef !== undefined) patch.secretRef = input.secretRef;
       if (input.hibernationTimeoutMin !== undefined)
         patch.hibernationTimeout =

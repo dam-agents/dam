@@ -35,10 +35,10 @@ import { useFeed } from "../../home/api/queries.js";
 interface Props {
   agent: AgentView;
   display: AgentDisplay;
-  avatarName?: string;
+  avatar?: string | null;
 }
 
-export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
+export function SandboxHomeHeader({ agent, display, avatar }: Props) {
   const working = useFeed().workingByAgent.get(agent.id);
   const setView = useStore((s) => s.setView);
   const selectAgent = useStore((s) => s.selectAgent);
@@ -74,7 +74,8 @@ export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
     <PageHeader
       leading={
         <AgentAvatar
-          name={avatarName ?? agent.name}
+          name={agent.name}
+          avatar={avatar ?? agent.avatar}
           size={44}
           mood={avatarMood(
             display.state,

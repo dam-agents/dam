@@ -74,6 +74,10 @@ spec:
                   literals in Mounts are already resolved against it at write
                   time, so the controller never sees $HOME.
                 type: string
+              avatar:
+                description: Avatar is the agent's chosen avatar character; unset
+                  means one picked from its owner and name.
+                type: string
               backend:
                 description: |-
                   Backend selects the isolation substrate the agent workload runs on;

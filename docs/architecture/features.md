@@ -10,8 +10,10 @@ features" settings tab (revealed by five taps on the version string). The
 current features are advanced connection types, the new sandbox runtime,
 interactive artifacts, addressed credential injection (a create-page and agent-settings switch for an agent whose gateway injects only requests that name a connection; a starter kit sets the same field whatever the flag says; the flag also shows the [browser panel](browser-panel.md) on such agents), agent telemetry (a per-reply timeline
 in the conversation) and agent avatars (one of eight fixed characters built from
-the Eye-Bee-M rebus, picked by a hash of the agent's name and its owner's
-identity, so nothing is stored and renaming an agent can change it; its eyes
+the Eye-Bee-M rebus; the owner picks it on the create page or in the agent's
+settings and it is stored on the Agent spec, the create page offering the
+character the owner uses least; an agent with none stored shows one picked by
+a hash of its name and its owner's identity, which renaming can change; its eyes
 are open while it works on a prompt, closed between prompts, and closed and
 greyed while it hibernates, and the waking screen loops its gesture; the flag also names the agent on its chat messages, which
 otherwise say "Agent"). Slack replies are the one place an avatar leaves the

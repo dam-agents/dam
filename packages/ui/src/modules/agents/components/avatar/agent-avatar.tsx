@@ -1,8 +1,8 @@
 import "./agent-avatar.css";
 
 import {
+  type AvatarCharacter,
   avatarCharacter,
-  avatarKey,
   type AvatarMood,
   avatarSvg,
 } from "api-server-api/avatar/svg";
@@ -24,8 +24,20 @@ export function avatarMood(
   return working === false ? "idle" : "working";
 }
 
+export function resolveCharacter(
+  name: string,
+  avatar: string | null | undefined,
+): AvatarCharacter {
+  return avatarCharacter(
+    avatar ?? undefined,
+    getUser()?.profile.sub ?? "",
+    name,
+  );
+}
+
 interface Props {
   name: string;
+  avatar?: string | null;
   size?: number;
   mood?: AvatarMood;
   playing?: boolean;
@@ -34,17 +46,18 @@ interface Props {
 
 export function CharacterAvatar({
   name,
+  avatar,
   size = 24,
   mood = "working",
   playing = false,
   className,
 }: Props) {
-  const key = avatarKey(getUser()?.profile.sub ?? "", name);
-  const svg = useMemo(() => avatarSvg(key, mood), [key, mood]);
+  const character = resolveCharacter(name, avatar);
+  const svg = useMemo(() => avatarSvg(character, mood), [character, mood]);
   return (
     <span
       data-testid="agent-avatar"
-      data-character={avatarCharacter(key)}
+      data-character={character}
       data-mood={mood}
       data-playing={playing || undefined}
       aria-hidden

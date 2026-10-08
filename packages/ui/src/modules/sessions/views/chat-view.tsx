@@ -587,6 +587,7 @@ export function ChatView() {
               <>
                 <AgentAvatar
                   name={agentView.name}
+                  avatar={agentView.avatar}
                   size={32}
                   mood={avatarMood(
                     agentDisplay?.state,
@@ -814,8 +815,10 @@ export function ChatView() {
                           <Fragment key={item.message.id}>
                             <ChatMessage
                               message={item.message}
-                              avatarAgentName={
-                                avatarsEnabled ? agentView?.name : undefined
+                              avatarAgent={
+                                avatarsEnabled
+                                  ? (agentView ?? undefined)
+                                  : undefined
                               }
                               isLast={item.index === messages.length - 1}
                               {...timeProps(item.message.at, now)}

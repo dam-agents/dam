@@ -98,14 +98,8 @@ const CHARACTERS: Record<AvatarCharacter, Character> = {
         "M933 1901C1075.54 2205.17 1384.28 2417 1741.93 2417C2099.83 2417 2406.59 2205.51 2549 1901H933Z",
         c.wings,
       ) +
-      path(
-        circlePath(1046.43, 2789.5, EYE_R),
-        c.ink,
-      ) +
-      path(
-        circlePath(2439.42, 2789.5, EYE_R),
-        c.ink,
-      ),
+      path(circlePath(1046.43, 2789.5, EYE_R), c.ink) +
+      path(circlePath(2439.42, 2789.5, EYE_R), c.ink),
   },
   tower: {
     size: 3486,
@@ -187,11 +181,7 @@ const CHARACTERS: Record<AvatarCharacter, Character> = {
   },
 };
 
-export function avatarKey(owner: string, name: string): string {
-  return `${owner}\n${name}`;
-}
-
-export function avatarCharacter(seed: string): AvatarCharacter {
+function hashedCharacter(seed: string): AvatarCharacter {
   let h = 0x811c9dc5;
   for (let i = 0; i < seed.length; i++) {
     h ^= seed.charCodeAt(i);
@@ -203,14 +193,40 @@ export function avatarCharacter(seed: string): AvatarCharacter {
   return AVATAR_CHARACTERS[(h >>> 0) % AVATAR_CHARACTERS.length]!;
 }
 
+export function isAvatarCharacter(value: unknown): value is AvatarCharacter {
+  return AVATAR_CHARACTERS.includes(value as AvatarCharacter);
+}
+
+export function avatarCharacter(
+  chosen: string | undefined,
+  owner: string,
+  name: string,
+): AvatarCharacter {
+  return isAvatarCharacter(chosen)
+    ? chosen
+    : hashedCharacter(`${owner}\n${name}`);
+}
+
+export function leastUsedCharacter(
+  used: readonly AvatarCharacter[],
+): AvatarCharacter {
+  const count = (c: AvatarCharacter) => used.filter((u) => u === c).length;
+  return AVATAR_CHARACTERS.reduce((best, c) =>
+    count(c) < count(best) ? c : best,
+  );
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Both eye groups are always drawn and the one the
  * mood does not show carries display="none". That attribute alone is right for
  * a static render such as the Slack PNG, while page CSS outranks it, so the UI
  * can open an idle character's eyes on hover without a second drawing.
  */
-export function avatarSvg(seed: string, mood: AvatarMood = "working"): string {
-  const ch = CHARACTERS[avatarCharacter(seed)];
+export function avatarSvg(
+  character: AvatarCharacter,
+  mood: AvatarMood = "working",
+): string {
+  const ch = CHARACTERS[character];
   const c =
     mood === "asleep"
       ? {

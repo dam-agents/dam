@@ -1,4 +1,5 @@
 import { starterKitScheduleOverrideSchema } from "api-server-api";
+import { AVATAR_CHARACTERS } from "api-server-api/avatar/svg";
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 
@@ -9,6 +10,7 @@ export type SetupFlow = "coding-agent" | "starter-kit";
 
 const setupFormSchema = z.object({
   name: z.string(),
+  avatar: z.enum(AVATAR_CHARACTERS).nullable().default(null).catch(null),
   providerRef: z.object({ id: z.string() }).nullable().default(null),
   connectionIds: z.array(z.string()).default([]),
   satelliteNames: z.array(z.string()).default([]),

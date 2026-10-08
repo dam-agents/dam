@@ -67,10 +67,12 @@ function rowIcon(kind: RowKind, size = 16) {
 function RowIdentity({
   kind,
   avatarName,
+  avatar,
   mood,
 }: {
   kind: RowKind;
   avatarName: string | undefined;
+  avatar: string | null | undefined;
   mood: AvatarMood;
 }) {
   if (avatarName === undefined) {
@@ -87,7 +89,12 @@ function RowIdentity({
   }
   return (
     <div className="relative size-10">
-      <CharacterAvatar name={avatarName} size={40} mood={mood} />
+      <CharacterAvatar
+        name={avatarName}
+        avatar={avatar}
+        size={40}
+        mood={mood}
+      />
       {kind !== "agent" && (
         <span
           className={cn(
@@ -150,6 +157,7 @@ export function NotificationRow({
         <RowIdentity
           kind={kind}
           avatarName={avatars ? avatarName : undefined}
+          avatar={agent?.avatar}
           mood={avatarMood(agent?.state, agent?.stopRequested, running)}
         />
         {running && (

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AVATAR_CHARACTERS } from "./avatar/svg.js";
 import { egressPresetSchema } from "../egress-rules/schemas.js";
 import { envVarSchema } from "../shared.js";
 
@@ -78,6 +79,7 @@ export const agentCreateInputSchema = z
     templateId: z.string().optional(),
     image: z.string().optional(),
     description: z.string().optional(),
+    avatar: z.enum(AVATAR_CHARACTERS).optional(),
     env: z.array(envVarSchema).max(64).optional(),
     secretRef: z.string().optional(),
     registryCredential: z
@@ -115,6 +117,7 @@ export const agentUpdateInputSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(255).optional(),
   description: z.string().optional(),
+  avatar: z.enum(AVATAR_CHARACTERS).optional(),
   env: z.array(envVarSchema).max(64).optional(),
   secretRef: z.string().optional(),
   hibernationTimeoutMin: z.number().int().min(0).nullable().optional(),

@@ -115,6 +115,7 @@ export function useSandboxSettingsSave({
         dirtyFields.requireConnectionAddress ||
         dirtyFields.envVars ||
         dirtyFields.name ||
+        dirtyFields.avatar ||
         dirtyFields.hibernationTimeoutMin ||
         sizeDirty
       ) {
@@ -124,6 +125,7 @@ export function useSandboxSettingsSave({
             ? { env: sanitizeEnvVars(values.envVars) }
             : {}),
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
+          ...(dirtyFields.avatar ? { avatar: values.avatar } : {}),
           ...(dirtyFields.requireConnectionAddress
             ? { requireConnectionAddress: values.requireConnectionAddress }
             : {}),
@@ -177,6 +179,7 @@ export function useSandboxSettingsSave({
       harnessDraft.commit();
       reset({
         name: values.name.trim(),
+        avatar: values.avatar,
         assignedAppIds: savedAppIds,
         envVars: values.envVars,
         hibernationTimeoutMin: values.hibernationTimeoutMin,

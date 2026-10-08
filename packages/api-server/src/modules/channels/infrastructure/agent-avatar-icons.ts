@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Resvg } from "@resvg/resvg-js";
-import { avatarKey, avatarSvg } from "api-server-api/avatar/svg";
+import { type AvatarCharacter, avatarSvg } from "api-server-api/avatar/svg";
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
 
@@ -12,17 +12,16 @@ const RETRY_AFTER_MS = 10 * 60_000;
 const IMGBB_UPLOAD_URL = "https://api.imgbb.com/1/upload";
 
 export type AgentIconUrl = (
-  ownerSub: string,
-  name: string,
+  character: AvatarCharacter,
 ) => Promise<string | null>;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Slack shows a message's icon_url by fetching it
  * from the public internet, and it takes no inline image data. An internal
  * install has no public URL of its own, so the agent's avatar is drawn to a PNG
- * here and uploaded once to ImgBB, a public image host. The PNG is named by a
- * hash, never by the agent name, and each (owner, name) is uploaded once per
- * process. A Slack post waits at most ICON_WAIT_MS for the upload: past that it
+ * here and uploaded once to ImgBB, a public image host. Agents share a fixed
+ * set of characters, so each character is uploaded once per process, under a
+ * hash of its name. A Slack post waits at most ICON_WAIT_MS for the upload: past that it
  * goes out with the bot's own icon while the upload finishes for later posts. A
  * failed upload is not tried again for RETRY_AFTER_MS, so a slow or broken
  * image host delays one post per avatar, not every post.
@@ -32,10 +31,10 @@ export function createImgbbAgentIcons(
   fetchImpl: typeof fetch = fetch,
   waitMs = ICON_WAIT_MS,
 ): AgentIconUrl {
-  const urls = new Map<string, Promise<string | null>>();
-  const failedAt = new Map<string, number>();
+  const urls = new Map<AvatarCharacter, Promise<string | null>>();
+  const failedAt = new Map<AvatarCharacter, number>();
 
-  const upload = async (key: string): Promise<string> => {
+  const upload = async (key: AvatarCharacter): Promise<string> => {
     const png = new Resvg(avatarSvg(key), {
       fitTo: { mode: "width", value: ICON_PX },
     })
@@ -62,8 +61,7 @@ export function createImgbbAgentIcons(
     return url;
   };
 
-  return (ownerSub, name) => {
-    const key = avatarKey(ownerSub, name);
+  return (key) => {
     const failed = failedAt.get(key);
     if (failed !== undefined && Date.now() - failed < RETRY_AFTER_MS)
       return Promise.resolve(null);

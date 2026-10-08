@@ -114,6 +114,7 @@ export function AgentRow({
     >
       <AgentAvatar
         name={agent.name}
+        avatar={agent.avatar}
         size={64}
         mood={avatarMood(display.state, agent.stopRequested, working ?? false)}
         className="mr-1 self-start"

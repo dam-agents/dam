@@ -40,6 +40,7 @@ export function AgentPickerCard({
     >
       <AgentAvatar
         name={name}
+        avatar={agent.avatar}
         size={40}
         mood={avatarMood(display.state, agent.stopRequested)}
       />

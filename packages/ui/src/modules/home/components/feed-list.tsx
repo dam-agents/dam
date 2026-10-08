@@ -49,8 +49,8 @@ export function FeedList({
   const tick = tickFor(items, Date.now());
   const now = useNow(tick);
 
-  const avatarNameOf = (agentId: string) =>
-    agents.find((a) => a.id === agentId)?.name;
+  const agentOf = (agentId: string) => agents.find((a) => a.id === agentId);
+  const avatarNameOf = (agentId: string) => agentOf(agentId)?.name;
   const nameOf = (agentId: string) => avatarNameOf(agentId) ?? agentId;
 
   return (
@@ -64,6 +64,7 @@ export function FeedList({
               approval={item.approval}
               agentName={nameOf(item.agentId)}
               avatarName={avatarNameOf(item.agentId)}
+              avatar={agentOf(item.agentId)?.avatar}
               meta={meta}
               onDismiss={() => onDismiss(item)}
               resolvedLabel={resolvedLabelFor(item.id)}

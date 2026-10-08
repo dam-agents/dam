@@ -1,3 +1,4 @@
+import type { AvatarCharacter } from "api-server-api/avatar/svg";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
@@ -5,9 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
-import { HintTooltip } from "@/components/ui/tooltip";
 
-import { AgentAvatar } from "../../../agents/components/avatar/agent-avatar.js";
+import { AvatarPicker } from "../../../agents/components/avatar/avatar-picker.js";
 import { useAgentAvatars } from "../../../agents/hooks/use-agent-avatars.js";
 import type { SizeMi } from "../../../budgets/lib/slots.js";
 import { useAppConnections } from "../../../connections/api/queries.js";
@@ -28,9 +28,13 @@ import { DEFAULT_HIBERNATE_MIN, LifecycleField } from "../lifecycle-field.js";
 export function NameSection({
   value,
   onChange,
+  avatar,
+  onAvatarChange,
 }: {
   value: string;
   onChange: (name: string) => void;
+  avatar: AvatarCharacter;
+  onAvatarChange: (avatar: AvatarCharacter) => void;
 }) {
   const avatars = useAgentAvatars();
   return (
@@ -43,14 +47,7 @@ export function NameSection({
             onChange={(event) => onChange(event.target.value)}
             placeholder="my-agent"
           />
-          {avatars && (
-            <HintTooltip
-              label="Agent avatar"
-              content="Agent avatar is generated from its name and can't currently be changed manually."
-            >
-              <AgentAvatar name={value} size={40} />
-            </HintTooltip>
-          )}
+          {avatars && <AvatarPicker value={avatar} onChange={onAvatarChange} />}
         </div>
       </FormField>
     </section>

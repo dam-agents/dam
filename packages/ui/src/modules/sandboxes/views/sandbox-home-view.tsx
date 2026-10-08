@@ -82,7 +82,7 @@ export function SandboxHomeView() {
             <SandboxHomeHeader
               agent={agent}
               display={display}
-              avatarName={f.draftName?.trim() || agent.name}
+              avatar={f.formReady ? f.avatar : undefined}
             />
             {section === "setup" ? (
               <SandboxSetupSection f={f} />
