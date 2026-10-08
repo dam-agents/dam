@@ -6,6 +6,7 @@ import {
   AGENT_TELEMETRY_MAX_LIMIT,
   METRICS_DEFAULT_LIMIT,
   METRICS_MAX_LIMIT,
+  METRICS_MAX_SESSION_IDS,
   METRICS_MAX_SINCE_HOURS,
 } from "./constants.js";
 
@@ -24,6 +25,12 @@ export const metricsOverviewInputSchema = z.object({
     .positive()
     .max(METRICS_MAX_LIMIT)
     .default(METRICS_DEFAULT_LIMIT),
+});
+
+export const metricsSessionCostsInputSchema = z.object({
+  agentId: z.string().min(1),
+  sessionIds: z.array(z.string().min(1)).min(1).max(METRICS_MAX_SESSION_IDS),
+  from: z.string().datetime().optional(),
 });
 
 const agentTelemetryShape = {

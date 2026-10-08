@@ -85,7 +85,7 @@ export function SessionsSidebar({
   );
 
   const { data: features } = useFeatures();
-  const { data: sessionCosts } = useSessionCosts(selectedAgent);
+  const sessionCosts = useSessionCosts(selectedAgent, sessions);
   const telemetryEnabled = features?.["agent-telemetry"] ?? false;
 
   const { data: approvals = EMPTY } = useApprovalsForAgent(selectedAgent);
@@ -141,7 +141,7 @@ export function SessionsSidebar({
         unread={unread}
         draft={draft}
         backgroundWork={backgroundWorkBySession.get(s.sessionId)}
-        cost={sessionCosts?.get(s.sessionId)}
+        cost={sessionCosts.get(s.sessionId)}
         conversation={conversationOf(s)}
         onResume={() => {
           if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);

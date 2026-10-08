@@ -366,6 +366,7 @@ export {
 export type {
   MetricsService,
   MetricsQuery,
+  MetricsSessionCostsQuery,
   MetricsOverview,
   TokenSpendByModel,
   SpendByAgent,
