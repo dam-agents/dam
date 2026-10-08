@@ -4,7 +4,7 @@ import { buildConnection } from "../../modules/connections/domain/build-connecti
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { connectionSecretAnnotations } from "../../modules/connections/domain/connection-sds.js";
 
-// TEST_OVERVIEW: the IBM LiteLLM connection is what points Bob at the proxy, so it must carry the gateway env Bob reads and the path rewrite that turns Bob's /inference/v1 calls into plain /v1, while leaving the model to the agent's Config panel.
+// TEST_OVERVIEW: the IBM LiteLLM connection is what points Bob at the proxy, so it must carry the gateway env Bob reads, the path rewrite that turns Bob's /inference/v1 calls into plain /v1, and a model the proxy serves, since Bob's own default is one the proxy refuses.
 
 function mintRef(purpose: string): SecretRef {
   return { storeId: "k8s", path: `secret-${purpose}`, field: "" };
@@ -44,10 +44,12 @@ describe("ibm-litellm connection template", () => {
     });
   });
 
-  // TEST_SCENARIO: the Bob connection pins the same env name, and an agent can hold both, so this one must never claim it — the model belongs to the agent's Config panel, which reads the list from this very proxy.
-  it("never contributes a Bob model", async () => {
+  // TEST_SCENARIO: Bob's built-in default is a tier alias only its own gateway serves, and the proxy answers a model it does not list with 403 — so the connection pins a Claude model the proxy serves, which the agent's Config panel can still override.
+  it("pins Bob to a Claude model the proxy serves", async () => {
     const { contributions } = await buildIbmLitellm();
-    expect(envOf(contributions, "BOB_SHELL_MODEL")).toBeUndefined();
+    expect(envOf(contributions, "BOB_SHELL_MODEL")).toMatchObject({
+      placeholder: "aws/claude-sonnet-4-6",
+    });
   });
 
   // TEST_SCENARIO: the rewrite reaches Envoy only through the Secret annotation, which is the contract the controller reads.
@@ -89,6 +91,14 @@ describe("curve-bender connection template", () => {
         ],
       ),
     ).toEqual([expect.objectContaining({ host })]);
+  });
+
+  // TEST_SCENARIO: Curve Bender serves open models only, so Bob — like Codex and Pi — has to start on GLM rather than on a Claude model this proxy does not know.
+  it("pins Bob to GLM", async () => {
+    const { contributions } = await buildIbmLitellm("curve-bender");
+    expect(envOf(contributions, "BOB_SHELL_MODEL")).toMatchObject({
+      placeholder: "rits/zai-org/glm-5-3",
+    });
   });
 
   // TEST_SCENARIO: Pi applies one model config to every model the endpoint lists, so it must be told these are reasoning models with a context no larger than the smallest one served — otherwise it drops their thinking and compacts too late.
