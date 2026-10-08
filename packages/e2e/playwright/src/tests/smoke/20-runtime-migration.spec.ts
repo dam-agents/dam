@@ -193,10 +193,14 @@ test("keeps its id, HOME and sessions, and chats on the vm Backend", async ({
       async () => {
         try {
           const ids = await listSessionIds(token, agentId);
-          console.log(`DEBUG-4444 ${new Date().toISOString()} sessions=${JSON.stringify(ids)}`);
+          console.log(
+            `DEBUG-4444 ${new Date().toISOString()} sessions=${JSON.stringify(ids)}`,
+          );
           return ids;
         } catch (e) {
-          console.log(`DEBUG-4444 ${new Date().toISOString()} error=${String(e)}`);
+          console.log(
+            `DEBUG-4444 ${new Date().toISOString()} error=${String(e)}`,
+          );
           throw e;
         }
       },
