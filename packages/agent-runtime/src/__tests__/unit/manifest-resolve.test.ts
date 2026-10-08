@@ -144,6 +144,31 @@ describe("sessionHistory declaration", () => {
   });
 });
 
+describe("agentProcesses declaration", () => {
+  it("defaults to none, so a harness declares only what it runs", () => {
+    const result = runtimeManifestSchema.parse({ manifestVersion: 1 });
+    expect(result.agentProcesses).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the reaper matches the Name: line of /proc/<pid>/status,
+  // TEST_SCENARIO: which the kernel cuts to 15 characters. A longer name could
+  // TEST_SCENARIO: never match, and the process it meant would go unprotected.
+  it("rejects a name longer than the kernel keeps for a process", () => {
+    const result = runtimeManifestSchema.safeParse({
+      manifestVersion: 1,
+      agentProcesses: ["claude-agent-acp"],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("claude-code protects the claude process under its adapter", () => {
+    const manifest = loadManifest(
+      join(agentsDir, "claude-code/rootfs/app/runtime-manifest.yaml"),
+    );
+    expect(manifest.agentProcesses).toEqual(["claude"]);
+  });
+});
+
 describe("shipped agent manifests resolve", () => {
   it("claude-code declares harness-config and inherits the built-ins", () => {
     const r = resolveDrivers(

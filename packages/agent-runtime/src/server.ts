@@ -837,6 +837,7 @@ server.listen(config.PORT, () => {
 if (config.MEM_REAPER && !config.PLATFORM_DEV) {
   startMemReaper({
     thresholdFraction: config.MEM_REAPER_THRESHOLD,
+    agentProcesses: runtimeManifest.agentProcesses,
     log: (msg) => process.stderr.write(`[mem-reaper] ${msg}\n`),
   });
 }

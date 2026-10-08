@@ -210,6 +210,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       db,
       owner: user.sub,
       surface,
+      modes: config.featureModes,
     });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,
@@ -370,6 +371,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       user,
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,
+      featureModes: config.featureModes,
     };
   };
 }

@@ -66,7 +66,12 @@ export function readProcTable(): ProcEntry[] {
  * UNIT_BOUNDARY_DESCRIPTION: Picks which process a memory-pressure reap
  * sacrifices. The root (agent-runtime) and its direct children — the harness,
  * PTY harnesses, the pod service, per-connection sshds — are the supervised
- * platform processes and are never picked; the victim is the largest-RSS
+ * platform processes and are never picked. Some harnesses run the conversation
+ * itself one level further down: claude-agent-acp is an adapter, and each
+ * Session's `claude` process is its child. The harness's runtime manifest names
+ * those processes in `agentProcesses`, and a direct child of a harness with
+ * such a name is protected too; the same name deeper down is a tool the agent
+ * started, and stays a candidate. The victim is the largest-RSS unprotected
  * descendant at depth two or deeper, a tool process whose death the harness
  * observes as a failed command and can recover from inside the turn. Null when
  * only protected processes remain (the harness itself is the hog) — the caller
@@ -75,6 +80,7 @@ export function readProcTable(): ProcEntry[] {
 export function pickVictim(
   table: ProcEntry[],
   rootPid: number,
+  agentProcesses: readonly string[] = [],
 ): ProcEntry | null {
   const children = new Map<number, ProcEntry[]>();
   for (const e of table) {
@@ -82,10 +88,15 @@ export function pickVictim(
     siblings.push(e);
     children.set(e.ppid, siblings);
   }
+  const isProtected = (e: ProcEntry, depth: number): boolean =>
+    depth === 0 || (depth === 1 && agentProcesses.includes(e.name));
   let victim: ProcEntry | null = null;
   const walk = (pid: number, depth: number): void => {
     for (const child of children.get(pid) ?? []) {
-      if (depth >= 1 && (victim === null || child.rssBytes > victim.rssBytes))
+      if (
+        !isProtected(child, depth) &&
+        (victim === null || child.rssBytes > victim.rssBytes)
+      )
         victim = child;
       walk(child.pid, depth + 1);
     }
@@ -175,6 +186,7 @@ export function machineUsage(meminfo = "/proc/meminfo"): MemSample | null {
  */
 export function startMemReaper(opts: {
   thresholdFraction: number;
+  agentProcesses?: readonly string[];
   log: (msg: string) => void;
   pollMs?: number;
 }): void {
@@ -200,7 +212,11 @@ export function startMemReaper(opts: {
       if (sample === null) return;
       if (sample.used / sample.limit < opts.thresholdFraction) return;
       const usage = sample.text;
-      const victim = pickVictim(readProcTable(), process.pid);
+      const victim = pickVictim(
+        readProcTable(),
+        process.pid,
+        opts.agentProcesses,
+      );
       if (victim === null) {
         opts.log(`at ${usage} with only protected processes; cannot reap`);
         return;

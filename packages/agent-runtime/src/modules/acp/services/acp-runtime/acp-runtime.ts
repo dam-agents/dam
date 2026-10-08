@@ -29,6 +29,7 @@ import {
   type JsonRpcId,
 } from "../../domain/frames.js";
 import {
+  harnessLostSession,
   rewriteAuthError,
   rewriteCwd,
   undeliveredOf,
@@ -801,8 +802,21 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
         if (mapping.promptSessionId !== null) {
           const sid = mapping.promptSessionId;
+          const lost = harnessLostSession(frame);
+          if (lost) {
+            deps.log?.(
+              `harness lost session ${sid}; the next prompt loads it back`,
+            );
+            harnessColdSessions.add(sid);
+          }
           const { turnEnded, promptId, runPrompt } =
             promptScheduler.onPromptResponse(sid, outboundId);
+          if (
+            lost &&
+            promptScheduler.hasWork(sid) &&
+            !rehydratingSessions.has(sid)
+          )
+            startHarnessRehydrate(sid);
           deps.sessionMetadata?.recordActivity(sid);
           if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
           const stopReason = extractStopReason(frame);

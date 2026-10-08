@@ -50,6 +50,47 @@ describe("pickVictim", () => {
     expect(pickVictim(table, ROOT)?.pid).toBe(400);
   });
 
+  // TEST_SCENARIO: claude-agent-acp runs each Session's conversation in a
+  // TEST_SCENARIO: `claude` child of the adapter, usually the largest process
+  // TEST_SCENARIO: in the pod. The manifest names it in agentProcesses, so the
+  // TEST_SCENARIO: reaper must take a tool the agent started instead.
+  it("spares a named agent process under the harness and picks a tool", () => {
+    const table = [
+      proc(ROOT, 1, "agent-runtime", 200),
+      proc(200, ROOT, "claude-agent-ac", 150),
+      proc(300, 200, "claude", 1500),
+      proc(400, 300, "bash", 5),
+      proc(500, 400, "node", 300),
+    ];
+    expect(pickVictim(table, ROOT, ["claude"])?.pid).toBe(500);
+    expect(pickVictim(table, ROOT)?.pid).toBe(300);
+  });
+
+  // TEST_SCENARIO: the name protects only the harness's direct child. A
+  // TEST_SCENARIO: `claude -p` the agent runs from its shell is a tool like any
+  // TEST_SCENARIO: other, and stays a candidate.
+  it("still picks a process with an agent name deeper in the tree", () => {
+    const table = [
+      proc(ROOT, 1, "agent-runtime", 200),
+      proc(200, ROOT, "claude-agent-ac", 150),
+      proc(300, 200, "claude", 1500),
+      proc(400, 300, "bash", 5),
+      proc(500, 400, "claude", 600),
+      proc(501, 400, "rg", 50),
+    ];
+    expect(pickVictim(table, ROOT, ["claude"])?.pid).toBe(500);
+  });
+
+  it("returns null when only agent processes remain", () => {
+    const table = [
+      proc(ROOT, 1, "agent-runtime", 200),
+      proc(200, ROOT, "claude-agent-ac", 150),
+      proc(300, 200, "claude", 1500),
+      proc(301, 200, "claude", 900),
+    ];
+    expect(pickVictim(table, ROOT, ["claude"])).toBeNull();
+  });
+
   it("ignores processes outside the root's tree", () => {
     const table = [
       proc(1, 0, "catatonit", 1),

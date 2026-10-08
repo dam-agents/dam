@@ -92,6 +92,8 @@ export const runtimeManifestSchema = z.object({
 
   terminalSessionPins: z.string().min(1).optional(),
 
+  agentProcesses: z.array(z.string().min(1).max(15)).default([]),
+
   extensions: z
     .object({
       impls: z.array(extensionImpl).default([]),
