@@ -646,6 +646,7 @@ export async function bootstrap() {
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
       s3CredentialProbe: connectionsBoot.s3CredentialProbe,
+      providerKeyProbe: connectionsBoot.providerKeyProbe,
       secretStore,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       agentsRepo,
