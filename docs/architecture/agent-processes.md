@@ -111,10 +111,13 @@ work is recorded even when nobody looks. The user's decisions — the keep switc
 inventory as a Processes section beside Sessions, Files and Artifacts, behind the
 `processes` [experimental feature](features.md); a row's output opens in the panel docked
 beside the conversation, the way a file does, and follows the file while the process runs.
-Each row has a Stop that asks first; each Harness Task and Detached Process row also says
-whether it keeps the agent awake and who decided, with a switch to change it (disabled on
-an Always on agent); a change [waiting for kept tasks](#reported-background-work)
-shows above the rows with its Apply now. A header indicator counts the running Harness
+Running rows are grouped by their effect on the agent: active turns, the work keeping
+the agent awake, and the work that stops at hibernation (on an Always on agent the last
+two are one group, since nothing stops there). Each row's menu has a Stop that asks first;
+for a Harness Task or Detached Process it also has the keep choice, which names who
+decided and is disabled on an Always on agent, and changing it moves the row to the other
+group. A change [waiting for kept tasks](#reported-background-work) shows above the rows
+with its Apply now. A header indicator counts the running Harness
 Tasks and Detached Processes and those keeping the agent awake, and opens the section —
 so a user who wonders why the agent stays awake finds the answer one click away.
 

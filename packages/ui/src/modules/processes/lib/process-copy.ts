@@ -1,15 +1,21 @@
 import type { FinishedRow, ProcessKind, ProcessRow } from "agent-runtime-api";
+import { match } from "ts-pattern";
 
-export const PROCESS_KIND_ORDER: readonly ProcessKind[] = [
-  "turn",
-  "harness-task",
-  "detached",
-];
+import type { ProcessGroupId } from "./process-groups.js";
 
-export const PROCESS_KIND_LABEL: Record<ProcessKind, string> = {
-  turn: "Foreground",
-  "harness-task": "Harness task",
+export const BACKGROUND_KIND_LABEL: Record<
+  Exclude<ProcessKind, "turn">,
+  string
+> = {
+  "harness-task": "Background task",
   detached: "Detached",
+};
+
+export const PROCESS_GROUP_LABEL: Record<ProcessGroupId, string> = {
+  turn: "In active turns",
+  awake: "Keeping the agent awake",
+  hibernates: "Stops at hibernation",
+  "always-on": "Running",
 };
 
 export const ENDED_BY_LABEL: Record<FinishedRow["endedBy"], string> = {
@@ -18,26 +24,18 @@ export const ENDED_BY_LABEL: Record<FinishedRow["endedBy"], string> = {
   hibernation: "Ended by hibernation",
 };
 
-export function keepStatusLabel(
-  row: Pick<ProcessRow, "kind" | "keepsAwake">,
-  alwaysOn: boolean,
-): string {
-  if (row.kind === "turn") return "Ends with the turn";
-  if (row.keepsAwake) return "Keeps the agent awake";
-  return alwaysOn ? "Runs until stopped" : "Stops at hibernation";
-}
-
 export function keepSourceCaption(
   row: Pick<ProcessRow, "kind" | "keepSource">,
-): string | null {
-  switch (row.keepSource) {
-    case "agent":
-      return "Agent's choice";
-    case "user":
-      return "Your choice";
-    case "default":
-      return row.kind === "harness-task" ? "Background task" : null;
-  }
+): string {
+  return match(row.keepSource)
+    .with("user", () => "Your choice")
+    .with("agent", () => "The agent's choice")
+    .with("default", () =>
+      row.kind === "harness-task"
+        ? "On by default for background tasks"
+        : "Off by default for detached processes",
+    )
+    .exhaustive();
 }
 
 export const ALWAYS_ON_KEEP_HINT =

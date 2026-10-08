@@ -1,17 +1,19 @@
+import { StopFilledAlt } from "@carbon/icons-react";
 import type { ProcessRow } from "agent-runtime-api";
 
-import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 import { useStore } from "../../../store.js";
 import { useStopProcess } from "../api/mutations.js";
 import { NO_PID_STOP_HINT } from "../lib/process-copy.js";
+import { MenuItemText } from "./menu-item-text.js";
 
 interface Props {
   agentId: string;
   row: ProcessRow;
 }
 
-export function StopProcessButton({ agentId, row }: Props) {
+export function StopProcessMenuItem({ agentId, row }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
   const stop = useStopProcess(agentId);
 
@@ -24,20 +26,24 @@ export function StopProcessButton({ agentId, row }: Props) {
     if (confirmed) stop.mutate(row.key);
   }
 
+  if (row.pid === null)
+    return (
+      <DropdownMenuItem tone="danger" disabled className="h-auto py-2">
+        <StopFilledAlt size={14} />
+        <MenuItemText label="Stop" caption={NO_PID_STOP_HINT} />
+      </DropdownMenuItem>
+    );
+
   return (
-    <Button
-      variant="ghost"
+    <DropdownMenuItem
       tone="danger"
-      size="xs"
-      className="shrink-0 font-normal"
-      aria-label={`Stop ${row.command}`}
       data-testid="process-stop"
-      disabled={row.pid === null || stop.isPending}
-      tooltip={row.pid === null ? NO_PID_STOP_HINT : undefined}
-      onClick={() => void handleStop()}
+      disabled={stop.isPending}
+      onSelect={() => void handleStop()}
     >
-      Stop
-    </Button>
+      <StopFilledAlt size={14} />
+      Stop…
+    </DropdownMenuItem>
   );
 }
 

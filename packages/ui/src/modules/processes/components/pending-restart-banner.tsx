@@ -20,9 +20,9 @@ export function PendingRestartBanner({ agentId, pendingRestart }: Props) {
 
   async function handleApply() {
     const confirmed = await showConfirm(
-      `The agent reloads its settings, and ${one ? "the background task" : `the ${count} background tasks`} it waits for stop now.`,
+      `The agent reloads its settings, and ${one ? "the background task" : `the ${count} background tasks`} it waits for stop now. Stopping ${one ? "the task" : "the tasks"} yourself, or letting ${one ? "it" : "them"} stop at hibernation, also lets the change apply.`,
       "Apply the settings change now?",
-      { confirmLabel: "Apply now" },
+      { confirmLabel: `Apply now (stops ${countTasks(count)})` },
     );
     if (confirmed) apply.mutate();
   }
@@ -32,25 +32,20 @@ export function PendingRestartBanner({ agentId, pendingRestart }: Props) {
       tone="warning"
       size="sm"
       data-testid="pending-restart-banner"
-      className="m-3 flex flex-col gap-2 text-xs"
+      className="mx-3 my-2.5 flex items-center gap-2.5 text-xs"
     >
-      <p className="text-foreground">
-        A settings change is waiting for {count} background{" "}
-        {one ? "task" : "tasks"} to finish.
+      <p className="flex-1 text-foreground">
+        A settings change waits for {count} background {one ? "task" : "tasks"}.
       </p>
       <Button
         variant="outline"
         size="xs"
-        className="self-start"
+        className="shrink-0"
         disabled={apply.isPending}
         onClick={() => void handleApply()}
       >
-        Apply now (stops {countTasks(count)})
+        Apply now
       </Button>
-      <p className="text-muted-foreground">
-        Stopping {one ? "the task" : "the tasks"}, or letting{" "}
-        {one ? "it" : "them"} stop at hibernation, also lets the change apply.
-      </p>
     </Callout>
   );
 }

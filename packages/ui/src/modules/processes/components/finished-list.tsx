@@ -4,6 +4,7 @@ import { DisclosureToggle } from "@/components/ui/disclosure";
 
 import { useStore } from "../../../store.js";
 import { FinishedRow } from "./finished-row.js";
+import { GROUP_HEADING_CLASS, GroupCount } from "./group-heading.js";
 
 interface Props {
   rows: readonly FinishedRowData[];
@@ -22,15 +23,15 @@ export function FinishedList({
   const setOpen = useStore((s) => s.setFinishedListOpen);
   if (rows.length === 0) return null;
   return (
-    <div className="flex flex-col">
+    <section>
       <DisclosureToggle
         open={open}
         onToggle={() => setOpen(!open)}
         chevronSize={14}
-        chevronClassName="text-muted-foreground"
-        className="px-3 py-2 text-xs font-medium text-muted-foreground"
+        className={GROUP_HEADING_CLASS}
       >
-        Recently finished ({rows.length})
+        Recently finished
+        <GroupCount count={rows.length} />
       </DisclosureToggle>
       {open && (
         <ul>
@@ -45,6 +46,6 @@ export function FinishedList({
           ))}
         </ul>
       )}
-    </div>
+    </section>
   );
 }

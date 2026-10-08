@@ -1,18 +1,12 @@
 import type { ProcessRow as ProcessRowData } from "agent-runtime-api";
 
-import { Badge } from "@/components/ui/badge";
+import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
-import {
-  formatCpu,
-  formatMemory,
-  formatRunTime,
-} from "../lib/format-process.js";
-import { keepStatusLabel, PROCESS_KIND_LABEL } from "../lib/process-copy.js";
-import { KeepSwitch } from "./keep-switch.js";
-import { OutputButton } from "./output-button.js";
+import { BACKGROUND_KIND_LABEL } from "../lib/process-copy.js";
+import { ProcessActionsMenu } from "./process-actions-menu.js";
 import { ProcessCommand } from "./process-command.js";
-import { StopProcessButton } from "./stop-process-button.js";
+import { ProcessStats } from "./process-stats.js";
 
 interface Props {
   agentId: string;
@@ -31,44 +25,40 @@ export function ProcessRow({
   outputOpen,
   onOpenOutput,
 }: Props) {
-  const stats = [
-    formatRunTime(row.startedAt, now),
-    formatCpu(row.cpuPercent),
-    formatMemory(row.rssBytes),
-  ].filter((part) => part !== null);
+  const hasOutput = row.outputPath !== null;
+  const toggleOutput = () => onOpenOutput(row.key);
 
   return (
     <li
       data-testid="process-row"
+      aria-pressed={hasOutput ? outputOpen : undefined}
       className={cn(
-        "flex flex-col gap-1 border-b border-border/60 px-3 py-2 text-xs",
-        outputOpen && "bg-muted",
+        "group flex items-center gap-2 border-b border-border py-2.5 pl-4 pr-2 transition-colors",
+        hasOutput && "cursor-pointer",
+        outputOpen ? "bg-muted" : hasOutput && "hover:bg-muted/60",
       )}
+      {...clickableProps(hasOutput ? toggleOutput : undefined)}
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <Badge variant="muted" size="sm" className="shrink-0">
-          {PROCESS_KIND_LABEL[row.kind]}
-        </Badge>
-        <ProcessCommand command={row.command} />
-        {row.outputPath !== null && (
-          <OutputButton
-            command={row.command}
-            active={outputOpen}
-            onClick={() => onOpenOutput(row.key)}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            aria-hidden
+            className="size-1.5 shrink-0 rounded-full bg-success motion-safe:animate-pulse"
           />
-        )}
-        <StopProcessButton agentId={agentId} row={row} />
-      </div>
-      <span className="text-muted-foreground tabular-nums">
-        {stats.join(" · ")}
-      </span>
-      {row.kind === "turn" ? (
-        <span className="text-muted-foreground">
-          {keepStatusLabel(row, alwaysOn)}
+          <ProcessCommand command={row.command} />
+        </div>
+        <span className="truncate text-[11px] text-muted-foreground">
+          {row.kind !== "turn" && `${BACKGROUND_KIND_LABEL[row.kind]} · `}
+          <ProcessStats row={row} now={now} />
         </span>
-      ) : (
-        <KeepSwitch agentId={agentId} row={row} alwaysOn={alwaysOn} />
-      )}
+      </div>
+      <ProcessActionsMenu
+        agentId={agentId}
+        row={row}
+        alwaysOn={alwaysOn}
+        outputOpen={outputOpen}
+        onToggleOutput={toggleOutput}
+      />
     </li>
   );
 }

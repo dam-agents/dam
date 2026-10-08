@@ -4,10 +4,10 @@ import { useMemo } from "react";
 import { useNow } from "../../../hooks/use-now.js";
 import { useStore } from "../../../store.js";
 import { useToggleProcessOutput } from "../hooks/use-toggle-process-output.js";
-import { PROCESS_KIND_ORDER } from "../lib/process-copy.js";
+import { groupProcesses } from "../lib/process-groups.js";
 import { FinishedList } from "./finished-list.js";
 import { PendingRestartBanner } from "./pending-restart-banner.js";
-import { ProcessRow } from "./process-row.js";
+import { ProcessGroup } from "./process-group.js";
 
 interface Props {
   agentId: string;
@@ -19,15 +19,9 @@ export function ProcessList({ agentId, list, alwaysOn }: Props) {
   const now = useNow(1_000);
   const openOutputKey = useStore((s) => s.openProcessOutputKey);
   const toggleOutput = useToggleProcessOutput();
-  const running = useMemo(
-    () =>
-      [...list.running].sort(
-        (a, b) =>
-          PROCESS_KIND_ORDER.indexOf(a.kind) -
-            PROCESS_KIND_ORDER.indexOf(b.kind) ||
-          Date.parse(a.startedAt) - Date.parse(b.startedAt),
-      ),
-    [list.running],
+  const groups = useMemo(
+    () => groupProcesses(list.running, alwaysOn),
+    [list.running, alwaysOn],
   );
   const onOpenOutput = (key: string) => void toggleOutput(key);
 
@@ -39,24 +33,22 @@ export function ProcessList({ agentId, list, alwaysOn }: Props) {
           pendingRestart={list.pendingRestart}
         />
       )}
-      {running.length === 0 ? (
+      {groups.length === 0 ? (
         <p className="px-4 py-5 text-xs text-muted-foreground">
           Nothing is running
         </p>
       ) : (
-        <ul>
-          {running.map((row) => (
-            <ProcessRow
-              key={row.key}
-              agentId={agentId}
-              row={row}
-              alwaysOn={alwaysOn}
-              now={now}
-              outputOpen={row.key === openOutputKey}
-              onOpenOutput={onOpenOutput}
-            />
-          ))}
-        </ul>
+        groups.map((group) => (
+          <ProcessGroup
+            key={group.id}
+            agentId={agentId}
+            group={group}
+            alwaysOn={alwaysOn}
+            now={now}
+            openOutputKey={openOutputKey}
+            onOpenOutput={onOpenOutput}
+          />
+        ))
       )}
       <FinishedList
         rows={list.finished}
