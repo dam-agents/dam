@@ -750,7 +750,7 @@ export function ChatView() {
             />
           ) : (
             <>
-              <div className="relative flex flex-1 flex-col min-h-0">
+              <div className="@container relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
                   <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8 min-h-full">
                     {loadingSession && (
@@ -863,7 +863,7 @@ export function ChatView() {
                 {showJump && (
                   <button
                     onClick={scrollToBottom}
-                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-raised inline-flex items-center gap-1.5 h-[35px] rounded-full border border-border bg-background px-3 text-sm font-normal text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
+                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-raised hidden @[11rem]:inline-flex items-center whitespace-nowrap gap-1.5 h-[35px] rounded-full border border-border bg-background px-3 text-sm font-normal text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
                   >
                     <ArrowDown size={16} />
                     Jump to latest
