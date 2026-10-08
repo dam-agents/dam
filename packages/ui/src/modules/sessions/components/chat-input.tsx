@@ -20,6 +20,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
+import { usePromptHistory } from "../hooks/use-prompt-history.js";
 import { draftKey, EMPTY_DRAFT } from "../lib/draft-key.js";
 import { ChatColumn } from "./chat-column.js";
 
@@ -166,7 +167,20 @@ export function ChatInput({
     onSend(text, files);
   }, [key, clearDraft, onSend]);
 
+  const promptHistory = usePromptHistory((text) => {
+    if (!key) return;
+    setDraft(key, { text });
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (el) el.setSelectionRange(0, 0);
+    });
+  });
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!isMobile() && promptHistory.navigate(e)) {
+      e.preventDefault();
+      return;
+    }
     if (e.key !== "Enter" || e.shiftKey || isMobile()) return;
     e.preventDefault();
     if (e.altKey) document.execCommand("insertText", false, "\n");
@@ -224,7 +238,10 @@ export function ChatInput({
               ref={textareaRef}
               className="flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
               value={input}
-              onChange={(e) => key && setDraft(key, { text: e.target.value })}
+              onChange={(e) => {
+                promptHistory.reset();
+                if (key) setDraft(key, { text: e.target.value });
+              }}
               onKeyDown={onKeyDown}
               onPaste={onPaste}
               placeholder={placeholder}
