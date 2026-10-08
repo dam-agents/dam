@@ -24,6 +24,10 @@ import {
 } from "./infrastructure/external-actor-links-repository.js";
 import { ACTIVITY_RETENTION_DAYS } from "./domain/types.js";
 import { createReportService } from "./services/report-service.js";
+import { createAnalyticsService } from "./services/analytics-service.js";
+import { createAnalyticsRepository } from "./infrastructure/analytics-repository.js";
+import { toLiveAgentFact } from "./infrastructure/live-agent-facts.js";
+import type { AgentSizing } from "./domain/analytics-report.js";
 import { createUsageRoutes } from "./routes.js";
 import type { ApiVariables } from "../../core/http-context.js";
 
@@ -33,6 +37,10 @@ export interface UsageModuleDeps {
   activityTrackingEnabled: boolean;
   inspectorRole: string;
   listK8sAgents: () => Promise<{ id: string; owner: string }[]>;
+  listLiveAgents: () => Promise<
+    Array<{ metadata?: { name?: string }; spec?: unknown }>
+  >;
+  agentSizing: AgentSizing;
 }
 
 type AppEnv = {
@@ -65,6 +73,14 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   const routes: Hono<AppEnv> = deps.inspectorRole
     ? createUsageRoutes({
         service: createReportService(deps.db),
+        analytics: createAnalyticsService({
+          repo: createAnalyticsRepository(deps.db),
+          listLiveAgents: async () =>
+            (await deps.listLiveAgents()).flatMap(
+              (obj) => toLiveAgentFact(obj) ?? [],
+            ),
+          sizing: deps.agentSizing,
+        }),
         inspectorRole: deps.inspectorRole,
       })
     : new Hono();

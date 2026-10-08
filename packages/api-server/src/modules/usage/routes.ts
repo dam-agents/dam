@@ -7,6 +7,7 @@ import {
   type ViewName,
 } from "./services/report-service.js";
 import { renderHtmlReport, type ViewResult } from "./html-report.js";
+import type { AnalyticsService } from "./services/analytics-service.js";
 import { securityLog } from "../../core/security-log.js";
 import type { ApiVariables } from "../../core/http-context.js";
 
@@ -16,6 +17,7 @@ type AppEnv = {
 
 export type UsageRoutesDeps = {
   service: ReportService;
+  analytics: AnalyticsService;
   inspectorRole: string;
 };
 
@@ -51,6 +53,10 @@ export function createUsageRoutes(deps: UsageRoutesDeps) {
 
   routes.get("/api/usage/views", (c) => {
     return c.json({ views: VIEW_NAMES });
+  });
+
+  routes.get("/api/usage/analytics", async (c) => {
+    return c.json(await deps.analytics.report());
   });
 
   routes.get("/api/usage/report", async (c) => {

@@ -784,6 +784,14 @@ export async function bootstrap() {
           owner: a.metadata!.labels![LABEL_OWNER]!,
         }));
     },
+    listLiveAgents: () => agentStateCache.list(),
+    agentSizing: {
+      slot: {
+        cpu: config.agentDefaultCpuLimit,
+        memory: config.agentDefaultMemoryLimit,
+      },
+      defaultStorage: config.agentDefaultStorageSize,
+    },
   });
   usage.start();
   if (config.activityTrackingEnabled) {
