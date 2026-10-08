@@ -22,7 +22,9 @@ After this change:
 - Pi replies report their real token counts.
 - On IBM LiteLLM, Pi replies can be four times longer (32768 output tokens instead of 8192), so a
   cut becomes rare.
-- Pi can use `azure/gpt-6-astra` on IBM LiteLLM. Today every prompt to it fails.
+- The `openai-proxy` provider sends the output limit as `max_completion_tokens`, which every
+  model on the proxy honors. `azure/gpt-6-astra` still fails in Pi: it refuses function tools on
+  chat completions (found during implementation; a follow-up).
 
 ## Approach
 
@@ -97,6 +99,7 @@ Every chat model on the proxy, one tiny prompt per call:
 | `max_tokens` 128000 | 400 for `aws/claude-opus-4-5` (limit 64000) and `gcp/gemini-3.1-pro-preview` |
 | `max_tokens`, any value, `azure/gpt-6-astra` | 400: "Unsupported parameter: 'max_tokens' … Use 'max_completion_tokens' instead" |
 | `max_completion_tokens` 32768, every chat model | 200, `gpt-6-astra` included |
+| `gpt-6-astra` with function tools, any `reasoning_effort` incl. `"none"` | 400: "Function tools with reasoning_effort are not supported … in /v1/chat/completions"; without tools 200 |
 | `stream` + `stream_options.include_usage`, every chat model | 200, final chunk carries `usage.completion_tokens` |
 | `/v1/model/info`, `/model/info` | 403: the key may call only `llm_api_routes`, so per-model limits cannot be discovered |
 | Streamed, cap 64 through each field, a prompt longer than the cap | `length` and `completion_tokens` = 64 for every model except two: `gcp/gemini-3.1-pro-preview` reports 60 (also cap − 4 at 256, 1024, 4096), and `azure/gpt-5.3-codex` reports `stop` even at the cap |
@@ -133,6 +136,10 @@ for a probe; the IBM proxy's `rits/*` models (the same RITS backend Curve Bender
   reply, but nothing can mark it as cut.
 - **The sending tab marks the cut from its prompt response.** It closes the reply on that
   response, which arrives before `platform/turnEnded`, so the notification alone never marked it.
+- **`max_completion_tokens` stays; the `gpt-6-astra` promise goes.** After the field change the
+  model still fails in Pi, because it refuses function tools on chat completions in every form
+  probed. The field is honored by every model on the proxy. `gpt-6-astra` needs the Responses
+  API; a follow-up issue.
 
 ### Out of scope
 
@@ -148,7 +155,7 @@ for a probe; the IBM proxy's `rits/*` models (the same RITS backend Curve Bender
 |----|-------|-------|------------|
 | 01 | ✅ [Pi keeps a reply cut at the output limit](./01-pi-keeps-cut-reply.md) | Pi image: streamed usage on `openai-proxy`, a `length` stop reports the cap; pi-acp patch reports `max_tokens` and stamps the replayed reply | — |
 | 02 | ✅ [The chat marks a reply cut at the output limit](./02-chat-marks-cut-reply.md) | `platformFrameMetaSchema.stopReason`; UI projection and muted line | 01 (for the Pi smoke test only) |
-| 03 | [Pi's output limit on LiteLLM](./03-pi-output-limit-litellm.md) | IBM LiteLLM `MAX_TOKENS` 8192 → 32768 plus data migration; `openai-proxy` sends `max_completion_tokens` | 01 |
+| 03 | ✅ [Pi's output limit on LiteLLM](./03-pi-output-limit-litellm.md) | IBM LiteLLM `MAX_TOKENS` 8192 → 32768 plus data migration; `openai-proxy` sends `max_completion_tokens` | 01 |
 
 03 comes last on purpose: with the 8192 limit still in place, the smoke tests of 01 and 02 reach
 the limit in about 2 minutes. After 03 the same test needs a reply of 32768 tokens.
@@ -190,7 +197,8 @@ On the dev cluster, with images built from the branch head (Pi agent image, api-
 4. Ask: "What was the last section heading in your previous reply?" The agent names it.
 5. Close the chat, wait 5 s, reopen it: the line is still there. Delete the agent pod, wait for it
    to come back, reopen the chat: the reply and the line are still there.
-6. Switch the model to `azure/gpt-6-astra` and send a short prompt: it answers.
+6. (Dropped: `azure/gpt-6-astra` refuses function tools on chat completions, so it cannot answer
+   in Pi. A follow-up.)
 7. `mise run check` and `mise run test` pass.
 
 ## Delivery

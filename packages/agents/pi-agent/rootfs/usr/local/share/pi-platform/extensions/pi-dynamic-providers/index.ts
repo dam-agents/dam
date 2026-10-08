@@ -39,7 +39,7 @@ const SPECS: ProviderSpec[] = [
 	{
 		name: "openai-proxy",
 		envPrefix: "OPENAI_PROXY",
-		compat: { supportsUsageInStreaming: true },
+		compat: { supportsUsageInStreaming: true, maxTokensField: "max_completion_tokens" },
 		shadows: [{ name: "openai", urlEnv: "OPENAI_BASE_URL", apiKeyEnv: "OPENAI_API_KEY" }],
 	},
 ];

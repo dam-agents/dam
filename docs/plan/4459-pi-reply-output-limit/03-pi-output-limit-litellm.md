@@ -11,8 +11,9 @@ accepts 64000 (see the README's evidence table), so this slice raises the value 
 value the Curve Bender connection already uses. A connection stores its contributions when it is
 created, so existing IBM LiteLLM connections need a data migration. The same slice switches the
 `openai-proxy` provider to `max_completion_tokens`: `azure/gpt-6-astra` rejects `max_tokens` at
-any value, so every Pi prompt to it fails today, and every model on the proxy accepts
-`max_completion_tokens`.
+any value, and every model on the proxy accepts and honors `max_completion_tokens`. (Found during
+implementation: `gpt-6-astra` still fails in Pi after this, because it also refuses function
+tools on chat completions. A follow-up; the field stays.)
 
 ## Implementation plan
 
@@ -68,7 +69,8 @@ Apply `/typescript-engineering`.
       `max_tokens` for `rits` if present.
 - [ ] A 7000-word document request completes with `usage.output` above 8192, a normal stop, and no
       output-limit line.
-- [ ] `azure/gpt-6-astra` answers a prompt in a Pi agent.
+- [ ] ~~`azure/gpt-6-astra` answers a prompt in a Pi agent.~~ Dropped: it refuses function tools
+      on chat completions (a follow-up).
 - [ ] `mise run //packages/db:check`, `mise run //packages/agents:check` and `mise run check`
       pass.
 
@@ -85,7 +87,8 @@ Apply `/typescript-engineering`.
 4. Ask: "Without tools, write a detailed 7000-word design document for a URL shortener, in this
    one reply." It completes without the output-limit line. The session file shows `usage.output`
    above 8192.
-5. Switch the session model to `azure/gpt-6-astra` and send "Say hi.": it answers.
-6. If a Curve Bender connection is reachable, repeat step 5 with one of its models.
+5. (Dropped: `azure/gpt-6-astra` cannot answer in Pi; see the context.)
+6. If a Curve Bender connection is reachable, repeat step 4 with one of its models. (It was not
+   reachable from the dev cluster.)
 
 Print a short version of these steps for the user so they can confirm by hand.
