@@ -227,10 +227,10 @@ backend = "npm:@agentclientprotocol/sdk"
 specifiers = ["1.7.0"]
 
 [[tools."npm:@earendil-works/pi-coding-agent"]]
-version = "1.0.4"
-aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/1.0.4", digest = "sha256:967892669af2a4ffe3260da716fb625a5a0282a5bae7250b6adebcce059c6958" }
+version = "1.1.0"
+aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/1.1.0", digest = "sha256:5ddac5f6a40f8b6f6f4bc96cc77a3df8bcd257ab8002710ddc9e53bf98b8b93a" }
 backend = "npm:@earendil-works/pi-coding-agent"
-specifiers = ["1.0.4"]
+specifiers = ["1.1.0"]
 
 [[tools."npm:@zhafron/pi-memory"]]
 version = "1.0.2"
