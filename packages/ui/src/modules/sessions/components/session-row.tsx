@@ -36,7 +36,11 @@ import { cn } from "@/lib/utils";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { onboardingBadge } from "../../agents/utils/agent-kind.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
-import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
+import {
+  formatHarnessSpend,
+  formatTokens,
+  formatUsdCell,
+} from "../../metrics/lib/format.js";
 import { runTimeLabel } from "../lib/run-time.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
@@ -245,6 +249,12 @@ export function SessionRow({
             >
               {" · "}
               {formatUsdCell(cost.costUsd)}
+            </span>
+          )}
+          {!cost && s.spend && (
+            <span className="tabular-nums" data-testid="session-spend">
+              {" · "}
+              {formatHarnessSpend(s.spend)}
             </span>
           )}
         </span>

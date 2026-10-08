@@ -11,6 +11,7 @@ import {
   createWorkerHistoryProvider,
   type HistoryProvider,
 } from "./infrastructure/history-provider.js";
+import { createExecSpendProvider } from "./infrastructure/spend-provider.js";
 import { createRunResultStore } from "./infrastructure/run-result-store.js";
 import {
   createPlatformMcpEntryStore,
@@ -66,6 +67,7 @@ export interface ComposeAcpOptions {
     command?: string[];
   };
   terminalSessionPins?: string;
+  sessionSpend?: { command: string[]; unit: string };
   isTerminalSessionActive: (sessionId: string) => boolean;
   backgroundWorkHolds: boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
@@ -174,6 +176,16 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionFrames: (sessionId) => runtime.sessionFrames(sessionId),
     delegations: createDelegationFramesStore(opts.agentHome),
     ...(historyProvider ? { historyProvider } : {}),
+    ...(opts.sessionSpend
+      ? {
+          spendProvider: createExecSpendProvider({
+            command: opts.sessionSpend.command,
+            unit: opts.sessionSpend.unit,
+            cwd: opts.workingDir,
+            log: opts.log,
+          }),
+        }
+      : {}),
     ...(terminalSessionPins ? { terminalSessionPins } : {}),
     log: opts.log,
   });

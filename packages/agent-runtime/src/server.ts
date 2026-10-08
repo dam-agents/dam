@@ -202,6 +202,7 @@ const {
   stateBackend,
   envReader: envStore,
   sessionHistory: runtimeManifest.sessionHistory,
+  sessionSpend: runtimeManifest.sessionSpend,
   ...(runtimeManifest.terminalSessionPins && {
     terminalSessionPins: expandHome(
       runtimeManifest.terminalSessionPins,
