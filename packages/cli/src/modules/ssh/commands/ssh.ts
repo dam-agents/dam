@@ -56,13 +56,21 @@ export function buildSshCommand(deps: SshDeps): Command {
       "Open an SSH session to an agent, or launch an editor/IDE against it",
     )
     .argument("<agent>", "agent name or ID")
+    .argument(
+      "[ssh-args...]",
+      'extra arguments passed to ssh after "--", e.g. `-- -L 8080:localhost:8080 -N` or a remote command (ssh mode only)',
+    )
     .option(
       "-x, --exec <bin[:mode]>",
       `client to launch: executable name or path, optionally suffixed with ":${MODES_PATTERN}" to force how it's invoked; the mode is otherwise inferred from the name`,
     )
     .option("--server <url>", "override the configured server URL")
     .action(
-      async (agentRef: string, opts: { exec?: string; server?: string }) => {
+      async (
+        agentRef: string,
+        sshArgs: string[],
+        opts: { exec?: string; server?: string },
+      ) => {
         let mode: LaunchMode = "ssh";
         let exec = "ssh";
         if (opts.exec) {
@@ -81,6 +89,8 @@ export function buildSshCommand(deps: SshDeps): Command {
             exec = opts.exec;
           }
         }
+        if (mode !== "ssh" && sshArgs.length)
+          die("extra ssh arguments are only supported in ssh mode");
 
         const host = await resolveActiveHost(deps, opts.server);
         const paths = sshPaths();
@@ -93,7 +103,12 @@ export function buildSshCommand(deps: SshDeps): Command {
         if (mode === "ssh")
           return handoff(
             exec,
-            buildSshArgs({ agentRef, serverFlag: opts.server, paths }),
+            buildSshArgs({
+              agentRef,
+              serverFlag: opts.server,
+              paths,
+              extra: sshArgs,
+            }),
             label,
           );
 

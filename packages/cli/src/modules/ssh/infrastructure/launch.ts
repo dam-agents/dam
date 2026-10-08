@@ -74,12 +74,14 @@ export function buildSshArgs(opts: {
   agentRef: string;
   serverFlag?: string;
   paths: SshPaths;
+  extra?: string[];
 }): string[] {
   return [
     ...sshHostOptions(opts.paths).flatMap(([k, v]) => ["-o", `${k}=${v}`]),
     "-o",
     `ProxyCommand=${proxyCommandString(opts.agentRef, opts.serverFlag)}`,
     sanitizeHost(opts.agentRef),
+    ...(opts.extra ?? []),
   ];
 }
 
