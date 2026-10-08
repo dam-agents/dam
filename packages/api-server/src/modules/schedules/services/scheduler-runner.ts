@@ -9,7 +9,7 @@ import type {
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
 import { nextFireAt, triggerExpiry } from "../domain/recurrences.js";
-import { onceExpiry, onceFireAt } from "../domain/once.js";
+import { onceFireAction, onceFireAt } from "../domain/once.js";
 import { statusForVerdict } from "../domain/status-transitions.js";
 import type { AgentActivityStamp } from "../../agents/index.js";
 import type {
@@ -195,28 +195,27 @@ export function createSchedulerRunner(
     fireAt: Date,
     lastAttempt: boolean,
   ): Promise<void> {
-    const result = sched.status?.lastResult;
-    if (result !== undefined && result !== OnceResult.Delivering) {
+    const action = onceFireAction(spec, sched.status, now());
+    if (action.kind === "drop") {
       log(`fire: one-time schedule ${sched.id} already fired; dropping`);
       return;
     }
+    if (action.kind === "missed") {
+      log(`fire: one-time schedule ${sched.id} is past its window; missed`);
+      await deps.repo.recordFire(sched.id, OnceResult.Missed, null);
+      await emitChanged(sched.agentId, sched.id);
+      return;
+    }
     const eventId = `${sched.id}:${fireAt.getTime()}`;
-    if (result === OnceResult.Delivering) {
+    if (action.kind === "poke") {
       log(`fire: one-time schedule ${sched.id} is committed; poking again`);
     } else {
-      const expiresAt = onceExpiry(spec);
-      if (expiresAt <= now()) {
-        log(`fire: one-time schedule ${sched.id} is past its window; missed`);
-        await deps.repo.recordFire(sched.id, OnceResult.Missed, null);
-        await emitChanged(sched.agentId, sched.id);
-        return;
-      }
       try {
         await commitTrigger(
           sched,
           eventId,
           triggerPayload(sched, fireAt),
-          expiresAt,
+          action.expiresAt,
         );
       } catch (err) {
         const reason = (err as Error).message ?? String(err);
