@@ -1,6 +1,6 @@
 # Agent processes
 
-Last verified: 2026-10-07
+Last verified: 2026-10-08
 
 ## Overview
 
@@ -24,7 +24,10 @@ set is non-empty the runtime will not close the session and, while the work is k
 reports itself busy, so the idle checker cannot hibernate the pod underneath the work. An
 empty report ends both.
 Reporting is optional: a harness that never reports behaves exactly as it did before the
-contract. What is held is published on the runtime's status surface, and the user sees
+contract. Claude Code reports from a Stop hook that its launcher writes into the user
+settings on every start, not into the image's managed settings: an account that receives
+server-managed settings replaces the managed file whole, which would drop the hook. What
+is held is published on the runtime's status surface, and the user sees
 it in the [process inventory](#process-inventory), so an agent that stays awake can be
 explained by the work holding it.
 
