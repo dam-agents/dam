@@ -117,6 +117,7 @@ describe("seeding a discovered model", () => {
       binding,
       agentHome: home,
       envReader: { current: () => env, ready: () => true },
+      seedListingRetry: { attempts: 1, delayMs: 0 },
       discoverModels: async () => ({
         status: "observed",
         via: "BEDROCK_URL",

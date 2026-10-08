@@ -82,6 +82,43 @@ describe("acp-runtime: spawn work before the harness starts", () => {
   });
 
   /**
+   * TEST_SCENARIO: The spawn work of the previous cycle is still pending when
+   * an env change re-arms it — the listing hung past the warm-start ceiling
+   * and the harness started without it. When that old hold finally settles,
+   * it must not count as the new cycle's work: the gate stays shut until the
+   * new hold lands.
+   */
+  it("ignores a spawn-work hold from before the env change", async () => {
+    vi.useFakeTimers();
+    const holds: (() => void)[] = [];
+    const world = createWorld({
+      envReadyAtBoot: true,
+      warmStartTimeoutMs: 1_000,
+      beforeSpawn: () =>
+        new Promise<void>((resolve) => {
+          holds.push(resolve);
+        }),
+    });
+
+    world.connect();
+    vi.advanceTimersByTime(1_000);
+    expect(world.harnessCount()).toBe(1);
+
+    world.runtime.refreshEnv({ force: false });
+    expect(world.harness().killed()).toBe(true);
+    world.connect();
+    expect(holds).toHaveLength(2);
+
+    holds[0]?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(world.harnessCount()).toBe(1);
+
+    holds[1]?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(world.harnessCount()).toBe(2);
+  });
+
+  /**
    * TEST_SCENARIO: A cold boot, where the environment arrives late. The wait
    * for the environment and the wait for the boot work are separate deadlines:
    * the env one must not still be running once the env has arrived, or it

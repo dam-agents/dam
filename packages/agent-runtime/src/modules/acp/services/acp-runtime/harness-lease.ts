@@ -61,6 +61,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   let warmTimer: ReturnType<typeof setTimeout> | null = null;
   let bootWorkStarted = false;
   let bootWorkDone = deps.beforeSpawn === undefined;
+  let bootCycle = 0;
   let gateOpen = envReady && bootWorkDone;
   let bootTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingRecycle:
@@ -101,13 +102,18 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   function startBootWork(): void {
     if (bootWorkStarted || bootWorkDone || !envReady) return;
     bootWorkStarted = true;
+    const cycle = bootCycle;
     const hold = deps.beforeSpawn?.();
     if (!hold) {
       finishBootWork();
       return;
     }
     bootTimer = setTimeout(openGate, deps.warmStartTimeoutMs);
-    void hold.catch(() => {}).then(finishBootWork);
+    void hold
+      .catch(() => {})
+      .then(() => {
+        if (cycle === bootCycle) finishBootWork();
+      });
   }
 
   function markEnvReady(): void {
@@ -168,6 +174,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
 
   function rearmSpawnWork(): void {
     if (deps.beforeSpawn === undefined) return;
+    bootCycle += 1;
     bootWorkStarted = false;
     bootWorkDone = false;
     gateOpen = false;

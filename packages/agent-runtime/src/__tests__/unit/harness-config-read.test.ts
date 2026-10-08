@@ -39,6 +39,7 @@ describe("createReadHarnessConfig", () => {
       binding,
       agentHome: home,
       envReader: noEnv,
+      seedListingRetry: { attempts: 1, delayMs: 0 },
       discoverModels,
       log: noop,
     }).readCurrent;
@@ -108,6 +109,7 @@ describe("createReadHarnessConfig", () => {
       },
       agentHome: home,
       envReader: { current: () => ({ U: "https://proxy" }), ready: () => true },
+      seedListingRetry: { attempts: 1, delayMs: 0 },
       discoverModels: async () => ({
         status: "observed",
         models: [
@@ -130,6 +132,7 @@ describe("createReadHarnessConfig", () => {
       binding: { ...BINDING, modelDiscovery: { urlEnv: ["U"] } },
       agentHome: home,
       envReader: { current: () => ({}), ready: () => false },
+      seedListingRetry: { attempts: 1, delayMs: 0 },
       discoverModels: noDiscovery,
       log: noop,
     }).readCurrent();
@@ -141,6 +144,7 @@ describe("createReadHarnessConfig", () => {
       binding: undefined,
       agentHome: home,
       envReader: noEnv,
+      seedListingRetry: { attempts: 1, delayMs: 0 },
       discoverModels: noDiscovery,
       log: noop,
     }).readCurrent();

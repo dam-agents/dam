@@ -51,6 +51,7 @@ describe("harness-config event handler", () => {
       binding,
       agentHome: home,
       envReader: noEnv,
+      seedListingRetry: { attempts: 1, delayMs: 0 },
       discoverModels: noDiscovery,
       log: () => {},
     }).apply(payload);
@@ -167,6 +168,7 @@ describe("harness-config event handler (TOML)", () => {
       binding: TOML_BINDING,
       agentHome: home,
       envReader: noEnv,
+      seedListingRetry: { attempts: 1, delayMs: 0 },
       discoverModels: noDiscovery,
       log: () => {},
     }).apply(payload);

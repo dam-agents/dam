@@ -22,13 +22,16 @@ import { expandHome } from "../../../core/expand-home.js";
 import type { RuntimeEnvReader } from "../../../core/runtime-env.js";
 
 const IMPL_NAME = "harness-config";
-const SEED_LISTING_ATTEMPTS = 5;
-const SEED_LISTING_RETRY_MS = 2_000;
 
 export interface SeedListingRetry {
   attempts: number;
   delayMs: number;
 }
+
+export const SEED_LISTING_RETRY: SeedListingRetry = {
+  attempts: 5,
+  delayMs: 2_000,
+};
 
 export type ApplyHarnessConfigFn = (
   payload: HarnessConfigEventPayload,
@@ -48,15 +51,12 @@ export function createHarnessConfigPlugin(deps: {
   agentHome: string;
   envReader: RuntimeEnvReader;
   discoverModels: ModelDiscovery;
-  seedListingRetry?: SeedListingRetry;
+  seedListingRetry: SeedListingRetry;
   onApplied?: () => void;
   log: (msg: string) => void;
 }): HarnessConfigPlugin {
   const { binding, agentHome, envReader, discoverModels, log } = deps;
-  const seedRetry = deps.seedListingRetry ?? {
-    attempts: SEED_LISTING_ATTEMPTS,
-    delayMs: SEED_LISTING_RETRY_MS,
-  };
+  const seedRetry = deps.seedListingRetry;
 
   const apply: ApplyHarnessConfigFn = async (payload) => {
     if (!binding) {

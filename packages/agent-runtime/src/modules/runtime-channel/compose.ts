@@ -39,7 +39,10 @@ import { createPluginRegistry } from "./infrastructure/plugin-registry.js";
 import { loadExtensions } from "./infrastructure/extension-loader.js";
 import type { HarnessClient } from "./harness-client.js";
 import { createRuntimeChannelService } from "./service.js";
-import { createHarnessConfigPlugin } from "./drivers/harness-config-plugin.js";
+import {
+  SEED_LISTING_RETRY,
+  createHarnessConfigPlugin,
+} from "./drivers/harness-config-plugin.js";
 import { createModelDiscovery } from "./infrastructure/model-discovery.js";
 import {
   createSessionDirectoryReporter,
@@ -155,6 +158,7 @@ export async function composeRuntimeChannel(
     agentHome: opts.agentHome,
     envReader: opts.envReader,
     discoverModels: createModelDiscovery({ log }),
+    seedListingRetry: SEED_LISTING_RETRY,
     log,
   });
   if (harnessConfigPlugin.supported) registry.register(harnessConfigPlugin);

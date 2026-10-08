@@ -219,8 +219,8 @@ empty list as an error), and no region hint of its own — a gateway
 answering the profile route with one would redirect Bob's inference calls
 off the configured host. Bob's built-in default resolves to a model only
 its own gateway serves, so the Connection pins Bob's model as it pins
-Codex's and Pi's; a per-agent override or a Config panel pick outranks
-the pin, and a pin the endpoint no longer lists is passed over. A redirecting Connection that pins nothing leaves the choice to
+Codex's and Pi's; a per-agent override or a Config panel pick that the endpoint lists
+outranks the pin, and a pin the endpoint no longer lists is passed over. A redirecting Connection that pins nothing leaves the choice to
 the seed, which takes the first of the names the endpoint lists once
 they are ordered — from the OpenAI model list when the key is refused
 the model-information route ([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
