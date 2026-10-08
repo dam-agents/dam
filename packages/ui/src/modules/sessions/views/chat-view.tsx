@@ -360,14 +360,14 @@ export function ChatView() {
     if (!el) return;
     const inner = el.firstElementChild;
 
-    const THRESHOLD = 30;
-    const nearBottom = () =>
-      el.scrollHeight - el.scrollTop - el.clientHeight < THRESHOLD;
+    const FOLLOW_WITHIN_PX = 60;
+    const JUMP_BEYOND_PX = 120;
+    const fromBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight;
 
     const onScroll = () => {
-      const near = nearBottom();
-      stickRef.current = near;
-      setShowJump(!near);
+      const distance = fromBottom();
+      stickRef.current = distance < FOLLOW_WITHIN_PX;
+      setShowJump(distance > JUMP_BEYOND_PX);
     };
 
     const ro = new ResizeObserver(() => {
