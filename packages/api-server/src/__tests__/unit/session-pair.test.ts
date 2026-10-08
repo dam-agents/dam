@@ -169,6 +169,38 @@ describe("resolveFirePair", () => {
   });
 });
 
+describe("resolveFirePair on a harness outside the catalog", () => {
+  /** TEST_SCENARIO: A custom template's agent, such as the e2e mock, runs a
+   * harness the catalog does not offer. Its channel turns and schedule fires
+   * name no pair, so its runtime runs them on its own harness, rather than
+   * failing for want of a provider the catalog would fit. */
+  it("names no pair for an agent whose harness the catalog does not list", async () => {
+    const pair = await resolveFirePair(
+      {
+        pairRepo: {
+          read: async () => null,
+          write: async () => {},
+          grantedProviders: async () => [{ id: "lite", type: "ibm-litellm" }],
+        },
+        catalog: {
+          default: "claude-code",
+          harnesses: [],
+          telemetryEnv: () => [],
+        },
+        getCapabilities: async () => ({
+          defaultHarness: "mock",
+          harnesses: [
+            { name: "mock", harnessConfig: false, sessionModel: false },
+          ],
+        }),
+      },
+      "agent-1",
+      {},
+    );
+    expect(pair).toBeUndefined();
+  });
+});
+
 describe("the harness catalog", () => {
   const config = {
     default: "claude-code" as const,

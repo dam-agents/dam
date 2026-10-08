@@ -238,7 +238,8 @@ export async function resolveRememberedPair(
  * UNIT_BOUNDARY_DESCRIPTION: the pair an unattended run asks the agent for —
  * the one it names, or, naming only a model, that model on the agent's own
  * harness, or else the pair a person last picked. Undefined when the agent's
- * runtime holds one harness only and would ignore a pair.
+ * runtime holds one harness only and would ignore a pair, or runs a harness
+ * the catalog does not offer, such as a custom template's own.
  */
 export async function resolveFirePair(
   deps: PairResolverDeps,
@@ -253,6 +254,11 @@ export async function resolveFirePair(
   ]);
   if (requireLeases && !harnessesOf(capabilities)) return undefined;
   const agentHarness = defaultHarnessOf(capabilities) ?? deps.catalog.default;
+  if (
+    requireLeases &&
+    !deps.catalog.harnesses.some((h) => h.name === agentHarness)
+  )
+    return undefined;
   const remembered: SessionPair | null =
     preferred.harness !== undefined
       ? {
