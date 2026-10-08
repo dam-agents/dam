@@ -42,7 +42,7 @@ function withContext(task: string, context: string | undefined): string {
 export function createTriggerPlugin(deps: {
   driver: TriggerSessionDriver;
   stateStore: TriggerStateStore;
-  harnessDefault: () => Promise<string | null>;
+  harnessDefault?: () => Promise<string | null>;
   runPrecheck: PrecheckRunner;
   log: (msg: string) => void;
   reporter: EventReporter;
@@ -73,7 +73,7 @@ export function createTriggerPlugin(deps: {
         `[trigger] ${payload.scheduleId}: the session that scheduled it is gone; running in a fresh session`,
       );
     }
-    const model = payload.model ?? (await deps.harnessDefault()) ?? undefined;
+    const model = payload.model ?? (await deps.harnessDefault?.()) ?? undefined;
     if (origin?.mode === "report") {
       await deps.driver.start({
         task,
