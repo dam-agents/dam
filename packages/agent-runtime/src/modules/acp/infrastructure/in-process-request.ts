@@ -3,7 +3,25 @@ import type { ClientChannel } from "./client-channel.js";
 interface JsonRpcResponseFrame {
   id: number;
   result?: unknown;
-  error?: { code?: number; message?: string };
+  error?: { code?: number; message?: string; data?: unknown };
+}
+
+function describeError(
+  error: NonNullable<JsonRpcResponseFrame["error"]>,
+): string {
+  const { data } = error;
+  const detail =
+    typeof data === "string"
+      ? data
+      : data && typeof data === "object"
+        ? ((data as { message?: unknown; details?: unknown }).message ??
+          (data as { details?: unknown }).details ??
+          JSON.stringify(data))
+        : undefined;
+  const message = error.message ?? JSON.stringify(error);
+  return typeof detail === "string" && detail !== "" && detail !== message
+    ? `${message}: ${detail}`
+    : message;
 }
 
 export interface InProcessCaller {
@@ -42,6 +60,18 @@ export function createInProcessCaller(
     handler(response);
   });
 
+  channel.onEnd(() => {
+    for (const [id, handler] of [...pending]) {
+      pending.delete(id);
+      handler({
+        id,
+        error: {
+          message: "the runtime closed the connection before answering",
+        },
+      });
+    }
+  });
+
   attach(channel);
 
   return {
@@ -51,9 +81,7 @@ export function createInProcessCaller(
         pending.set(id, (frame) => {
           if (frame.error) {
             reject(
-              new Error(
-                `${method} failed: ${frame.error.message ?? JSON.stringify(frame.error)}`,
-              ),
+              new Error(`${method} failed: ${describeError(frame.error)}`),
             );
             return;
           }
@@ -79,6 +107,7 @@ export function createInProcessCaller(
 interface InMemoryChannel extends ClientChannel {
   sendToServer(line: string): void;
   onServerMessage(handler: (line: string) => void): void;
+  onEnd(handler: () => void): void;
 }
 
 function createInMemoryChannel(): InMemoryChannel {
@@ -86,6 +115,7 @@ function createInMemoryChannel(): InMemoryChannel {
   let clientMessageHandler: ((data: string) => void) | null = null;
   let closeHandler: (() => void) | null = null;
   let serverMessageHandler: ((line: string) => void) | null = null;
+  let endHandler: (() => void) | null = null;
 
   return {
     send(line) {
@@ -95,6 +125,7 @@ function createInMemoryChannel(): InMemoryChannel {
       if (!open) return;
       open = false;
       closeHandler?.();
+      endHandler?.();
     },
     isOpen() {
       return open;
@@ -110,6 +141,9 @@ function createInMemoryChannel(): InMemoryChannel {
     },
     onServerMessage(handler) {
       serverMessageHandler = handler;
+    },
+    onEnd(handler) {
+      endHandler = handler;
     },
   };
 }

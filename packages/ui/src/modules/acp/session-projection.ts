@@ -116,12 +116,15 @@ export function applyUpdate(
   update: AcpUpdate,
   at?: string,
   telemetryPromptId?: string,
+  model?: string,
   turnId?: string,
 ): Message[] {
   const next = applyUpdateOf(messages, update, at, telemetryPromptId, turnId);
-  return telemetryPromptId === undefined
-    ? next
-    : stampActiveReply(next, telemetryPromptId);
+  const stamped =
+    telemetryPromptId === undefined
+      ? next
+      : stampActiveReply(next, telemetryPromptId);
+  return model === undefined ? stamped : stampActiveReplyModel(stamped, model);
 }
 
 function applyUpdateOf(
@@ -140,6 +143,7 @@ function applyUpdateOf(
           interruption:
             update.error &&
             describeJsonRpcError(update.error.message, update.error.details),
+          model: update.model,
           stopped: update.stopReason === "cancelled",
         });
       return closeActiveAssistant(
@@ -148,6 +152,7 @@ function applyUpdateOf(
         telemetryPromptId,
         update.error &&
           describeJsonRpcError(update.error.message, update.error.details),
+        update.model,
         update.stopReason === "cancelled",
       );
 
@@ -645,6 +650,7 @@ function closeTurn(
     at?: string;
     telemetryPromptId?: string;
     interruption?: string;
+    model?: string;
     stopped: boolean;
   },
 ): Message[] {
@@ -666,6 +672,7 @@ function closeTurn(
         ...(end.telemetryPromptId !== undefined && {
           telemetryPromptId: end.telemetryPromptId,
         }),
+        ...(end.model !== undefined && { model: end.model }),
         ...(end.interruption !== undefined &&
           hasAgentContent(m) && { error: { message: end.interruption } }),
         ...(end.stopped && { stopped: true }),
@@ -757,6 +764,7 @@ function closeActiveAssistant(
   at?: string,
   telemetryPromptId?: string,
   interruption?: string,
+  model?: string,
   stopped = false,
 ): Message[] {
   const i = activeReplyIndex(messages);
@@ -768,6 +776,7 @@ function closeActiveAssistant(
           ...x,
           ...(at !== undefined && { at }),
           ...(telemetryPromptId !== undefined && { telemetryPromptId }),
+          ...(model !== undefined && { model }),
           ...(interruption !== undefined &&
             hasAgentContent(x) && { error: { message: interruption } }),
           ...(stopped && { stopped: true }),
@@ -821,6 +830,12 @@ function stampActiveReply(
     return messages;
   }
   return messages.map((x, j) => (j === i ? { ...x, telemetryPromptId } : x));
+}
+
+function stampActiveReplyModel(messages: Message[], model: string): Message[] {
+  const i = activeReplyIndex(messages);
+  if (i === -1 || messages[i].model === model) return messages;
+  return messages.map((x, j) => (j === i ? { ...x, model } : x));
 }
 
 function appendOrExtendUser(

@@ -66,6 +66,7 @@ export interface SchedulesRepository {
   ): Promise<void>;
   transaction<T>(fn: (tx: DbTx) => Promise<T>): Promise<T>;
   stampFire(id: string, result: string): Promise<void>;
+  stampResult(id: string, result: string): Promise<void>;
   applyStatusPatch(id: string, patch: ScheduleStatusPatch): Promise<void>;
   clearPrecheckStatus(id: string): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
@@ -300,6 +301,13 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
           lastFiredResult: result,
           updatedAt: new Date(),
         })
+        .where(eq(schedulesTable.id, id));
+    },
+
+    async stampResult(id, result): Promise<void> {
+      await db
+        .update(schedulesTable)
+        .set({ lastFiredResult: result, updatedAt: new Date() })
         .where(eq(schedulesTable.id, id));
     },
 

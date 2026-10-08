@@ -106,6 +106,7 @@ export type { AgentSpecCR } from "./crd-types.gen.js";
 export type {
   EventReportInput,
   EventOutcome,
+  EventStage,
   HelloInput,
   HelloResult,
 } from "agent-runtime-api";
@@ -113,6 +114,7 @@ export type {
 export {
   scheduleSpecSchema,
   precheckSchema,
+  scheduleModelSchema,
   PRECHECK_MAX_LENGTH,
 } from "./modules/schedules/schemas.js";
 export type {

@@ -71,6 +71,7 @@ export const harnessConfigBinding = z.object({
     ),
   catalog: harnessConfigCatalog.optional(),
   modelDiscovery: modelDiscoverySources.optional(),
+  defaultModel: z.string().min(1).optional(),
 });
 export type HarnessConfigBinding = z.infer<typeof harnessConfigBinding>;
 

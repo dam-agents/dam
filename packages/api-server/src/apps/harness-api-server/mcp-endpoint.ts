@@ -17,6 +17,7 @@ import {
   ChannelType,
   onceState,
   precheckSchema,
+  scheduleModelSchema,
   quietWindowSchema,
   type SchedulesService,
   type SkillsService,
@@ -515,7 +516,7 @@ export function createMcpSession(
 
   server.tool(
     "reply",
-    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
+    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
     {
       text: z.string(),
       attachment: attachmentInput,
@@ -924,6 +925,11 @@ export function createMcpSession(
         .describe(
           "Shell command run before each fire, deciding whether the run happens at all. Runs under `bash -lc` from the workspace root (/home/agent/work) in this pod's environment, so relative paths resolve there — a script in a repo cloned into the workspace is ./<repo>/scripts/check.sh, and a path that does not resolve exits 127, which counts as the check breaking. Exit 0 runs the task, exit 1 skips this occurrence without any model call, and any other exit (or a two-minute timeout) means the check itself broke and the task runs anyway. Whatever it prints on stdout is appended to the task prompt. Use it for a cheap deterministic 'did anything change?' test so a frequent schedule only costs a turn when there is work: PLATFORM_LAST_RUN_AT (ISO timestamp of the last fire that actually ran, empty if never), PLATFORM_FIRE_AT and PLATFORM_SCHEDULE_ID are in the environment.",
         ),
+      model: scheduleModelSchema
+        .optional()
+        .describe(
+          "Optional model this schedule's sessions run on, instead of the default, e.g. a cheap model for a frequent routine check. Use a name from this agent's model settings (for Claude Code: fable, opus, sonnet or haiku). Omit it to run on the harness's own default, what the agent's Default model setting gives, not on whatever model the agent is currently set to. On a harness with no such default (no provider pin and none declared by the harness), a schedule without a model follows the agent's current model instead. A model the harness cannot switch to fails the run with the reason rather than running on the default.",
+        ),
     },
     async ({
       name,
@@ -934,6 +940,7 @@ export function createMcpSession(
       task,
       sessionMode,
       precheck,
+      model,
     }) => {
       if ((cron === undefined) === (rrule === undefined)) {
         return errorResult(
@@ -961,11 +968,20 @@ export function createMcpSession(
                   task,
                   sessionMode,
                   precheck,
+                  model,
                 },
                 "agent",
               )
             : await schedules.createCron(
-                { name, agentId, cron: cron!, task, sessionMode, precheck },
+                {
+                  name,
+                  agentId,
+                  cron: cron!,
+                  task,
+                  sessionMode,
+                  precheck,
+                  model,
+                },
                 "agent",
               );
         return json({
@@ -1025,7 +1041,7 @@ export function createMcpSession(
         .min(1)
         .optional()
         .describe(
-          "Model the new session runs on, e.g. 'haiku' for a routine check or 'opus' for a hard one; omit for the agent's default. Not with inSession continue, which keeps this session's model. An unknown value is refused with the list of choices.",
+          "Model the new session runs on, e.g. 'haiku' for a routine check or 'opus' for a hard one; omit to run on the harness's own default (what the agent's Default model setting gives), not on whatever model the agent is currently set to. Not with inSession continue, which keeps this session's model. An unknown value is refused with the list of choices.",
         ),
     },
     async ({ name, task, at, timezone, inSession, model }) => {

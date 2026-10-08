@@ -16,6 +16,7 @@ interface CreateScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck?: string;
+  model?: string;
 }
 
 export function useCreateSchedule() {
@@ -43,6 +44,7 @@ interface UpdateScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
+  model: string | null;
 }
 
 export function useUpdateSchedule() {

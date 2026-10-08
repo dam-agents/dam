@@ -115,6 +115,11 @@ export async function composeRuntimeChannel(
     createTriggerPlugin({
       driver: opts.triggerDriver,
       stateStore: triggerStateStore,
+      harnessDefault: async () =>
+        harnessConfigPlugin.supported
+          ? ((await harnessConfigPlugin.readCurrent({ discover: false }))
+              .defaultModel ?? null)
+          : null,
       runPrecheck: createPrecheckRunner({
         workDir: opts.workDir,
         envReader: opts.envReader,

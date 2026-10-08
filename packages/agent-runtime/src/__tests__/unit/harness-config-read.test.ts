@@ -58,6 +58,7 @@ describe("createReadHarnessConfig", () => {
       model: "opus",
       mode: "auto",
       configOptions: { effort: "high" },
+      defaultModel: null,
       availableModels: [{ value: "opus", name: "opus" }],
     });
   });
@@ -72,6 +73,7 @@ describe("createReadHarnessConfig", () => {
       model: null,
       mode: null,
       configOptions: {},
+      defaultModel: null,
       availableModels: [{ value: "x", name: "x" }],
     });
   });
@@ -82,6 +84,7 @@ describe("createReadHarnessConfig", () => {
       model: null,
       mode: null,
       configOptions: {},
+      defaultModel: null,
       availableModels: null,
     });
   });
@@ -145,6 +148,7 @@ describe("createReadHarnessConfig", () => {
       model: null,
       mode: null,
       configOptions: {},
+      defaultModel: null,
       availableModels: null,
     });
   });

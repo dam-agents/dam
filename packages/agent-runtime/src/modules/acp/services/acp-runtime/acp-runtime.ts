@@ -76,6 +76,12 @@ const DEFAULT_REPLAY_TAIL_EVENTS = 200;
 
 const DEFAULT_HARNESS_LOAD_TIMEOUT_MS = 30 * 1000;
 
+const SESSION_SETTING_METHODS = new Set([
+  "session/set_config_option",
+  "session/set_mode",
+  "session/set_model",
+]);
+
 const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
 
 const RUN_TEXT_BYTES_CAP = 1024 * 1024;
@@ -226,6 +232,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     canStart: ({ sessionId, unattended }) =>
       (unattended === true || hasEngagedChannel(sessionId)) &&
       !harnessColdSessions.has(sessionId),
+    sessionLoaded: (sessionId) => !harnessColdSessions.has(sessionId),
     onQueueDropped(sessionId, dropped, cause) {
       const recordedAt = new Date().toISOString();
       deps.undeliveredPrompts.remember(
@@ -332,6 +339,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const harnessColdSessions = new Set<string>();
+  const turnModels = new Map<string, string>();
   const runTextBuffers = new Map<
     string,
     { text: string; truncated: boolean }
@@ -511,6 +519,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     promptScheduler.clear();
     autonomousTurns.clear();
     runTextBuffers.clear();
+    turnModels.clear();
     harnessColdSessions.clear();
     rehydratingSessions.clear();
     sessionCloseSupported = true;
@@ -832,6 +841,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
           const stopReason = extractStopReason(frame);
           const error = extractTurnError(frame);
+          const model = turnModels.get(sid);
+          turnModels.delete(sid);
           transcript.append(
             sid,
             JSON.stringify(
@@ -841,6 +852,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                 ...(turnId !== null && { turnId }),
                 ...(stopReason !== null && { stopReason }),
                 ...(error !== undefined && { error }),
+                ...(model !== undefined && { model }),
               }),
             ),
           );
@@ -880,6 +892,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (bootstrap.has(sessionId)) {
         transcript.appendReplay(sessionId, line);
       } else {
+        const reportedModel = extractReportedModel(frame);
+        if (reportedModel !== null) turnModels.set(sessionId, reportedModel);
         const text = extractAgentTextChunk(frame);
         if (
           text !== null &&
@@ -1042,8 +1056,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
       if (method === "initialize") initializeWaiters = [];
 
+      const settingSessionId =
+        SESSION_SETTING_METHODS.has(method) && paramsSid ? paramsSid : null;
+
       if (
-        method === "session/prompt" &&
+        (method === "session/prompt" || settingSessionId !== null) &&
         paramsSid &&
         harnessColdSessions.has(paramsSid) &&
         orphanedHarnessLoads.has(paramsSid)
@@ -1154,6 +1171,27 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         ) {
           startHarnessRehydrate(promptSessionId);
         }
+        return;
+      }
+
+      if (settingSessionId !== null) {
+        const fate = promptScheduler.submitSetting({
+          sessionId: settingSessionId,
+          channel,
+          outboundId,
+          originalId: frame.id,
+          frame: rewritten,
+          promptId: null,
+          unattended:
+            nonViewerChannels.has(channel) &&
+            isMachineSession(settingSessionId),
+        });
+        if (
+          fate === "queued" &&
+          harnessColdSessions.has(settingSessionId) &&
+          !rehydratingSessions.has(settingSessionId)
+        )
+          startHarnessRehydrate(settingSessionId);
         return;
       }
 
@@ -1399,6 +1437,21 @@ function capped(text: string): string {
   return text.length > TURN_ERROR_TEXT_CAP
     ? `${text.slice(0, TURN_ERROR_TEXT_CAP)}…`
     : text;
+}
+
+const REPORTED_MODEL_META_KEY = "_claude/model";
+
+function extractReportedModel(frame: unknown): string | null {
+  if (!isNonNullObject(frame)) return null;
+  if (frame.method !== "session/update") return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const update = params.update;
+  if (!isNonNullObject(update) || !isNonNullObject(update._meta)) return null;
+  const model = update._meta[REPORTED_MODEL_META_KEY];
+  return typeof model === "string" && model !== "" && model !== "<synthetic>"
+    ? model
+    : null;
 }
 
 function sessionUpdateKind(frame: unknown): string | null {
