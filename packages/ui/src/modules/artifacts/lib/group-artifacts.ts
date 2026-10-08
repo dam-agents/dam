@@ -11,7 +11,10 @@ interface ArtifactFolderGroup {
 export function groupArtifactsByFolder(
   artifacts: readonly LibraryArtifact[],
   folders: readonly ArtifactFolder[],
-  { includeEmptyUngrouped = false }: { includeEmptyUngrouped?: boolean } = {},
+  {
+    includeEmptyUngrouped = false,
+    omitEmptyFolders = false,
+  }: { includeEmptyUngrouped?: boolean; omitEmptyFolders?: boolean } = {},
 ): ArtifactFolderGroup[] {
   const byFolder = new Map<string | null, LibraryArtifact[]>();
   for (const artifact of artifacts) {
@@ -19,11 +22,13 @@ export function groupArtifactsByFolder(
     byFolder.set(key, [...(byFolder.get(key) ?? []), artifact]);
   }
 
-  const groups: ArtifactFolderGroup[] = folders.map((folder) => ({
-    key: folder.id,
-    folder,
-    artifacts: byFolder.get(folder.id) ?? [],
-  }));
+  const groups: ArtifactFolderGroup[] = folders
+    .map((folder) => ({
+      key: folder.id,
+      folder,
+      artifacts: byFolder.get(folder.id) ?? [],
+    }))
+    .filter((group) => !omitEmptyFolders || group.artifacts.length > 0);
 
   const knownFolderIds = new Set(folders.map((f) => f.id));
   const ungrouped = artifacts.filter(

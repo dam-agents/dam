@@ -23,6 +23,10 @@ export interface JsonRpcNotification {
 export type JsonRpcFrame =
   JsonRpcRequest | JsonRpcResponse | JsonRpcNotification;
 
+export function isNonNullObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
 export function parseFrame(line: string): JsonRpcFrame | null {
   try {
     const f = JSON.parse(line);

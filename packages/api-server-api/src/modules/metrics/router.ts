@@ -5,6 +5,7 @@ import {
 } from "../../auth-procedures.js";
 import {
   metricsOverviewInputSchema,
+  metricsSessionCostsInputSchema,
   metricsSpendBreakdownInputSchema,
 } from "./schemas.js";
 
@@ -14,6 +15,12 @@ export const metricsRouter = t.router({
     .query(({ ctx, input }) => {
       if (input.agentId) checkAgentBinding(ctx, input.agentId);
       return ctx.metrics.overview(input);
+    }),
+  sessionCosts: readAgentProcedure
+    .input(metricsSessionCostsInputSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.metrics.sessionCosts(input);
     }),
   spendBreakdown: readAgentProcedure
     .input(metricsSpendBreakdownInputSchema)

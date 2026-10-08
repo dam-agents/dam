@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-09-30
+Last verified: 2026-10-08
 
 ## Overview
 
@@ -369,8 +369,10 @@ flowchart LR
   edit, and so does every dismissal of a surface holding one. Deleting the
   artifact a preview is showing closes that preview.
 - On the two agent-scoped surfaces a folder shows only that agent's artifacts,
-  every user folder is listed even when empty (so there is always a filing
-  target). The library itself lists every folder unconditionally.
+  and a folder that holds none of them is not listed, so the agent's artifacts
+  stay in view. **Move to folder…** still offers every user folder as a filing
+  target, and a moved artifact makes its folder appear. The library itself
+  lists every folder unconditionally.
 
 ## Lifecycle and cleanup
 

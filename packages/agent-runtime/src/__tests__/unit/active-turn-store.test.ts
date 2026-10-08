@@ -7,8 +7,9 @@ import { createActiveTurnStore } from "../../modules/acp/infrastructure/active-t
 
 /**
  * TEST_OVERVIEW: the store is the only record that a turn was interrupted, and
- * its load-bearing rules cannot be reached from a browser: a re-record keeps
- * the recovery attempt count (or a crash-loop guard resets on every resume),
+ * its load-bearing rules cannot be reached from a browser: the resumed turn's
+ * re-record keeps the recovery attempt count (or a crash-loop guard resets on
+ * every resume),
  * reading it back across a fresh backend is what boot recovery actually does,
  * and only a marker the previous process left behind is a leftover — a turn
  * this process runs is live work, not an interrupted one. All are asserted

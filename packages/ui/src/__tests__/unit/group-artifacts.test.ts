@@ -40,7 +40,8 @@ const folder = (id: string, name = id): ArtifactFolder => ({
 /**
  * TEST_OVERVIEW: grouping for the folder-aware artifact lists — every user
  * folder is a group (empty included), Ungrouped comes last, and no artifact is ever dropped
- * even when its folder is unknown to the folders list.
+ * even when its folder is unknown to the folders list. An agent-scoped list can omit the
+ * folders that hold none of its artifacts.
  */
 describe("groupArtifactsByFolder", () => {
   test("lists every user folder, empty ones included, with Ungrouped last", () => {
@@ -59,6 +60,15 @@ describe("groupArtifactsByFolder", () => {
       includeEmptyUngrouped: true,
     });
     expect(withEmpty.map((g) => g.key)).toEqual(["f1", UNGROUPED_KEY]);
+  });
+
+  test("omits folders with no artifacts when omitEmptyFolders", () => {
+    const groups = groupArtifactsByFolder(
+      [artifact("a1", "f2"), artifact("a2", null)],
+      [folder("f1"), folder("f2"), folder("f3")],
+      { omitEmptyFolders: true },
+    );
+    expect(groups.map((g) => g.key)).toEqual(["f2", UNGROUPED_KEY]);
   });
 
   test("never drops an artifact whose folder is missing from the folders list", () => {

@@ -114,6 +114,17 @@ function loadPage(
   };
 }
 
+function toolFrame(
+  sessionUpdate: "tool_call" | "tool_call_update",
+  toolCallId: string,
+): Frame {
+  return {
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: { sessionId: SESSION, update: { sessionUpdate, toolCallId } },
+  };
+}
+
 async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -126,7 +137,7 @@ function warmTranscript(
   alice.send(frames.newSession(1));
   world.harness().replyTo("session/new", { sessionId: SESSION });
   for (const text of texts) {
-    world.harness().emit(frames.agentMessage(SESSION, text));
+    world.harness().emit(frames.agentMessage(SESSION, text, text));
   }
   return alice;
 }
@@ -232,6 +243,80 @@ describe("acp-runtime: history replay", () => {
   });
 
   /**
+   * TEST_SCENARIO: A harness streams one reply as many small chunks, and the
+   * tail cap falls inside that run. The viewer must get the whole reply, not
+   * one that starts mid-word, and the older page must end where it starts.
+   */
+  it("should start the tail where a chunked reply starts", () => {
+    const world = createWorld({ replayTailEvents: 2 });
+    warmTranscript(world, ["m1"]);
+    for (const chunk of ["It fits with room to sp", "are", "."]) {
+      world.harness().emit(frames.agentMessage(SESSION, chunk));
+    }
+
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+    expect(replayedUpdates(bob).map((u) => u.text)).toEqual([
+      "It fits with room to sp",
+      "are",
+      ".",
+    ]);
+
+    bob.send(loadPage(2, SESSION, olderOf(bob, 1)));
+    expect(
+      replayedUpdates(bob)
+        .slice(3)
+        .map((u) => u.text),
+    ).toEqual(["m1"]);
+  });
+
+  /**
+   * TEST_SCENARIO: Two tool calls run side by side and the tail cap falls
+   * between their tool_call frames and their updates. The tail must include
+   * both tool_call frames, because a client drops an update for a tool call
+   * it never saw.
+   */
+  it("should keep tool calls with their updates in the tail", () => {
+    const world = createWorld({ replayTailEvents: 2 });
+    warmTranscript(world, ["m1"]);
+    world.harness().emit(toolFrame("tool_call", "tc-a"));
+    world.harness().emit(toolFrame("tool_call", "tc-b"));
+    world.harness().emit(toolFrame("tool_call_update", "tc-a"));
+    world.harness().emit(toolFrame("tool_call_update", "tc-b"));
+
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+
+    expect(replayedUpdates(bob).map((u) => u.kind)).toEqual([
+      "tool_call",
+      "tool_call",
+      "tool_call_update",
+      "tool_call_update",
+    ]);
+    olderOf(bob, 1);
+  });
+
+  /**
+   * TEST_SCENARIO: An update names a tool call whose tool_call frame is not
+   * in the log. Nothing can bring that frame back, so the update must not
+   * pull the whole log into the tail.
+   */
+  it("should not widen the tail for an update whose tool call is not in the log", () => {
+    const world = createWorld({ replayTailEvents: 2 });
+    warmTranscript(world, ["m1", "m2", "m3"]);
+    world.harness().emit(toolFrame("tool_call_update", "tc-gone"));
+    world.harness().emit(frames.agentMessage(SESSION, "m4", "m4"));
+
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+
+    expect(replayedUpdates(bob).map((u) => u.kind)).toEqual([
+      "tool_call_update",
+      "agent_message_chunk",
+    ]);
+  });
+
+  /**
    * TEST_SCENARIO: Paging must not disturb the live view. A page request
    * replays old entries to the asking channel only, and that channel's live
    * cursor stays where it was — new messages still arrive exactly once.
@@ -310,7 +395,7 @@ describe("acp-runtime: history replay", () => {
    */
   it("should mark the eviction floor as clipped without a cursor", () => {
     const entryBytes = JSON.stringify(
-      frames.agentMessage(SESSION, "m1"),
+      frames.agentMessage(SESSION, "m1", "m1"),
     ).length;
     const world = createWorld({
       replayTailEvents: 2,
@@ -570,7 +655,7 @@ describe("acp-runtime: history replay", () => {
     expect((forwarded?.params as { cwd?: string }).cwd).toBe("/workspace");
 
     for (const text of ["m1", "m2", "m3", "m4"]) {
-      world.harness().emit(frames.agentMessage(SESSION, text));
+      world.harness().emit(frames.agentMessage(SESSION, text, text));
     }
     expect(replayedUpdates(bob)).toEqual([]);
     expect(replayedUpdates(carol)).toEqual([]);

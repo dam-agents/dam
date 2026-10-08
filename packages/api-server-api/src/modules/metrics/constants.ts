@@ -4,6 +4,8 @@ export const METRICS_MAX_LIMIT = 1000;
 
 export const METRICS_DEFAULT_LIMIT = 100;
 
+export const METRICS_MAX_SESSION_IDS = 200;
+
 export const AGENT_TELEMETRY_MAX_DAYS = 30;
 
 export const AGENT_TELEMETRY_DEFAULT_DAYS = 7;

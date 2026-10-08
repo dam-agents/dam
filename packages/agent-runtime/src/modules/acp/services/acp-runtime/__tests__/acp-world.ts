@@ -290,7 +290,7 @@ export const frames = {
     id,
     result: { outcome: { outcome: "selected", optionId } },
   }),
-  agentMessage: (sessionId: string, text: string) => ({
+  agentMessage: (sessionId: string, text: string, messageId?: string) => ({
     jsonrpc: "2.0",
     method: "session/update",
     params: {
@@ -298,6 +298,7 @@ export const frames = {
       update: {
         sessionUpdate: "agent_message_chunk",
         content: { type: "text", text },
+        ...(messageId !== undefined && { messageId }),
       },
     },
   }),
