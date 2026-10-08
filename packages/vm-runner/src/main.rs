@@ -330,14 +330,17 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     };
     tokio::pin!(serving);
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-    tokio::select! {
+    let mut hand_off =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined1())?;
+    let handing_off = tokio::select! {
         result = &mut serving => {
             server.close().await;
             return result.map_err(|e| anyhow::anyhow!("serving: {e}"));
         }
-        _ = term.recv() => tracing::info!(signal = "SIGTERM", "VM runner stopping"),
-        _ = tokio::signal::ctrl_c() => tracing::info!(signal = "SIGINT", "VM runner stopping"),
-    }
+        _ = term.recv() => { tracing::info!(signal = "SIGTERM", "VM runner stopping"); false }
+        _ = tokio::signal::ctrl_c() => { tracing::info!(signal = "SIGINT", "VM runner stopping"); false }
+        _ = hand_off.recv() => { tracing::info!(signal = "SIGUSR1", "VM runner handing its machines off to the next release"); true }
+    };
     server.stop_taking_work();
     let draining = async {
         handle.graceful_shutdown(Some(SHUTDOWN_GRACE));
@@ -349,7 +352,14 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             let _ = serving.await;
         }
     };
-    tokio::join!(draining, server.close());
+    let closing = async {
+        if handing_off {
+            server.hand_off().await;
+        } else {
+            server.close().await;
+        }
+    };
+    tokio::join!(draining, closing);
     tracing::info!("VM runner stopped");
     Ok(())
 }
@@ -434,7 +444,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&install);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the arguments the image's entrypoint passes ahead of the controller's, read from the image.toml this binary's image is built from, which sits beside this crate.
+    // UNIT_BOUNDARY_DESCRIPTION: the arguments the image's entrypoint has its loader pass the runner ahead of the controller's, read from the image.toml this binary's image is built from, which sits beside this crate.
     fn entrypoint_args() -> Vec<String> {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/image.toml");
         let config = std::fs::read_to_string(path)
@@ -446,10 +456,15 @@ mod tests {
         let words: Vec<String> =
             serde_json::from_str(line.trim_start_matches("entrypoint = ").trim())
                 .expect("the entrypoint is one line of strings");
-        let runner = words
+        let loader = words
             .iter()
-            .position(|word| word == "vm-runner")
-            .expect("the ENTRYPOINT runs vm-runner");
+            .position(|word| word == "vm-runner-loader")
+            .expect("the ENTRYPOINT runs vm-runner-loader");
+        let runner = loader
+            + words[loader..]
+                .iter()
+                .position(|word| word == "--")
+                .expect("the loader passes the runner every argument after --");
         words[runner + 1..].to_vec()
     }
 

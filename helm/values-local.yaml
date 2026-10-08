@@ -64,6 +64,9 @@ virtualization:
     # No registry in the lima cluster: cluster:install drops the agent image
     # archives here and every runner mounts them read-only.
     imageArchiveHostPath: /var/lib/platform-vm-images
+    # Runner releases are staged on the node, so the loader takes a new runner
+    # build without rebooting the machines; ignored by the Mac's host runner.
+    releaseHostPath: /var/lib/platform-vm-runner-releases
     # Images come from the node, not a registry, so the runner needs nothing
     # outside the cluster — and the exclusions keep it out of the cluster too.
     # The paired gateways are admitted by selector regardless; DNS is not

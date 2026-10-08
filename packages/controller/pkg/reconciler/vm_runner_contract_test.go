@@ -99,3 +99,27 @@ func TestTheAgentsGuestPathsAreTheOnesPlatformInitLaysOut(t *testing.T) {
 	env := envToMap(agentPlatformEnv("my-agent", testConfig, agentHomeDir, "http://10.96.42.42:10000"))
 	assert.Equal(t, guest.CAFile, env["NODE_EXTRA_CA_CERTS"])
 }
+
+// TEST_SCENARIO: an install that stages runner releases on the node gives each runner pod's loader its environment. A name the loader does not read is a pod that silently runs only the release its image carries, so the names rendered here are held to the fixture the loader's tests read, and an install that stages nothing renders none of them.
+func TestTheLoaderGetsTheEnvironmentItsContractNames(t *testing.T) {
+	var want []string
+	readRunnerContract(t, "loader-env.json", &want)
+	names := func(install func(*config.VMRunnerSpec)) []string {
+		agent := vmAgentCR()
+		r, _, _ := setupVMReconciler(t, agent)
+		install(&r.config.VM.Runner)
+		require.NoError(t, r.Reconcile(context.Background(), agent))
+		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+		require.NoError(t, err)
+		var loader []string
+		for _, env := range dep.Spec.Template.Spec.Containers[0].Env {
+			if strings.HasPrefix(env.Name, "VM_RUNNER_") {
+				loader = append(loader, env.Name)
+			}
+		}
+		return loader
+	}
+	assert.Equal(t, want, names(func(spec *config.VMRunnerSpec) { spec.ReleaseHostPath = "/var/lib/platform-runner-releases" }))
+	assert.Empty(t, names(func(*config.VMRunnerSpec) {}))
+}

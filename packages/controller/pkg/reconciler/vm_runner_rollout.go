@@ -57,9 +57,9 @@ func runnerRolloutLimits(spec config.VMRunnerSpec) (int, time.Duration) {
 	return limit, timeout
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner's machines are its processes, so every change to its pod reboots every machine the owner has. Applied as it is rendered, one runner image bump or one controller release that renders the pod differently would reboot every vm machine in the install at the same moment. So a runner is created at once, and left alone while what it would be rendered as is what it was, but a changed pod waits for a free place in the roll: at most `rollout.maxConcurrent` runners are mid-roll at once, and a runner stays mid-roll until its new pod is ready and every machine that was ready before the roll is ready again. The rendered spec is hashed onto the Deployment, because the stored spec carries the API server's defaults and never equals the rendered one.
+// UNIT_BOUNDARY_DESCRIPTION: a runner's machines are its processes, so every change to its pod reboots every machine the owner has. Applied as it is rendered, one runner image bump or one controller release that renders the pod differently would reboot every vm machine in the install at the same moment. So a runner is created at once, and left alone while what it would be rendered as is what it was, but a changed pod waits for a free place in the roll: at most `rollout.maxConcurrent` runners are mid-roll at once, and a runner stays mid-roll until its new pod is ready and every machine that was ready before the roll is ready again. The rendered spec is hashed onto the Deployment, because the stored spec carries the API server's defaults and never equals the rendered one. Where releases are staged on the node, a new runner image alone is not a changed pod (runnerRollSpec): the pod's loader takes it in place, and the pod rolls only for a release its loader can never take.
 func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string, dep *appsv1.Deployment, create bool) error {
-	hash, err := runnerTemplateHash(dep.Spec)
+	hash, err := runnerTemplateHash(runnerRollSpec(dep.Spec, r.config.VM.Runner.ReleaseHostPath != ""))
 	if err != nil {
 		return err
 	}
@@ -79,7 +79,7 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 	if existing.DeletionTimestamp != nil {
 		return errRunnerTerminating
 	}
-	if existing.Annotations[annRunnerTemplate] == hash {
+	if existing.Annotations[annRunnerTemplate] == hash && !r.runnerNeedsPodForRelease(ctx, owner, existing) {
 		return r.repairRunnerDeploymentMeta(ctx, owner, existing, dep)
 	}
 

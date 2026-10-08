@@ -84,6 +84,24 @@ pub struct SeedResult {
     pub sha256: String,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: which runner release the pod runs, as its loader last wrote it: the release running, the one the controller asked for, and, when the two differ, why the loader holds on to the one running. The controller reads it to tell a hand-off that will come by itself from one that never can, which only a new pod settles.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct RunnerRelease {
+    pub running: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub target: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub held: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub message: String,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Not yet staged passes once the node's stager has copied the release. The other two never pass in this pod: a release built against another VM runtime cannot adopt the machines running, and one that exited right after it took over is not tried again until the controller names another.
+pub const HELD_UNSTAGED: &str = "unstaged";
+pub const HELD_RUNTIME: &str = "runtime";
+pub const HELD_FAILED: &str = "failed";
+
 // UNIT_BOUNDARY_DESCRIPTION: vm-seed's exit code for a copy that a fresh attempt cannot change — a home past a walk limit, or larger than the machine's disk — so the controller fails the migration at once instead of spending its attempts on it.
 pub const SEED_EXIT_PERMANENT: u8 = 3;
 
@@ -230,6 +248,15 @@ mod tests {
             },
         );
         matches_the_contract(
+            "runner-release",
+            &RunnerRelease {
+                running: "quay.io/x/vm-runner@sha256:1".into(),
+                target: "quay.io/x/vm-runner@sha256:2".into(),
+                held: HELD_RUNTIME.into(),
+                message: "built against another runtime".into(),
+            },
+        );
+        matches_the_contract(
             "seed-result",
             &SeedResult {
                 bytes: 1234,
@@ -275,5 +302,9 @@ mod tests {
             ])
         );
         assert_eq!(vocabulary["seedExitPermanent"], SEED_EXIT_PERMANENT);
+        assert_eq!(
+            vocabulary["releaseHolds"],
+            serde_json::json!([HELD_UNSTAGED, HELD_RUNTIME, HELD_FAILED])
+        );
     }
 }

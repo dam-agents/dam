@@ -1,0 +1,6 @@
+{
+  "running": "quay.io/x/vm-runner@sha256:1",
+  "target": "quay.io/x/vm-runner@sha256:2",
+  "held": "runtime",
+  "message": "built against another runtime"
+}

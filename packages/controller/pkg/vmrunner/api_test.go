@@ -88,6 +88,12 @@ func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 		HomeSeededFrom: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
 		Nested:         true,
 	})
+	matchesTheContract(t, "runner-release", RunnerRelease{
+		Running: "quay.io/x/vm-runner@sha256:1",
+		Target:  "quay.io/x/vm-runner@sha256:2",
+		Held:    HeldRuntime,
+		Message: "built against another runtime",
+	})
 	matchesTheContract(t, "seed-result", SeedResult{
 		Bytes:  1234,
 		SHA256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
@@ -100,6 +106,7 @@ func TestTheStatesAndReasonsAreTheOnesTheRunnerReports(t *testing.T) {
 		States            []string `json:"states"`
 		Reasons           []string `json:"reasons"`
 		SeedExitPermanent int32    `json:"seedExitPermanent"`
+		ReleaseHolds      []string `json:"releaseHolds"`
 	}](t, "vocabulary.json", contractFixture(t, "vocabulary.json"))
 
 	assert.Equal(t, []string{
@@ -110,4 +117,5 @@ func TestTheStatesAndReasonsAreTheOnesTheRunnerReports(t *testing.T) {
 		ReasonNotReady, ReasonOutOfCapacity, ReasonImageUnavailable, ReasonBootFailed, ReasonSeedMissing,
 	}, vocabulary.Reasons)
 	assert.Equal(t, int32(SeedExitPermanent), vocabulary.SeedExitPermanent)
+	assert.Equal(t, []string{HeldUnstaged, HeldRuntime, HeldFailed}, vocabulary.ReleaseHolds)
 }

@@ -303,10 +303,15 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: stops taking work, cancels what is running, waits up to CLOSE_GRACE for it, and then stops every machine still running within STOP_ON_CLOSE. Cancelling first is what makes the wait short: a fetch allowed twenty minutes ends now and removes its own scratch tree. The machines are stopped as the controller's stop does it, so a runner going away quiesces each guest's disk instead of leaving the pod's kill to cut its power. Ports are dropped last, so an action that finished inside the wait does not leave one bound.
     pub async fn close(self: &Arc<Self>) {
-        self.close_within(CLOSE_GRACE, STOP_ON_CLOSE).await;
+        self.close_within(CLOSE_GRACE, Some(STOP_ON_CLOSE)).await;
     }
 
-    async fn close_within(self: &Arc<Self>, grace: Duration, stopping: Duration) {
+    // UNIT_BOUNDARY_DESCRIPTION: closes the runner as close does, but leaves every machine running, for the next runner process in the same pod to adopt. The loader asks for this when it replaces the runner with another release: the VMMs are processes of the pod, not of this process, and a new runner reads their records and republishes their ports as any restarted runner does.
+    pub async fn hand_off(self: &Arc<Self>) {
+        self.close_within(CLOSE_GRACE, None).await;
+    }
+
+    async fn close_within(self: &Arc<Self>, grace: Duration, stopping: Option<Duration>) {
         self.stop_taking_work();
         if tokio::time::timeout(grace, self.work.wait()).await.is_err() {
             tracing::warn!(
@@ -314,8 +319,10 @@ impl Server {
                 "vm runner: machine actions were still running when the runner closed"
             );
         }
-        let server = self.clone();
-        let _ = tokio::task::spawn_blocking(move || server.stop_running(stopping)).await;
+        if let Some(stopping) = stopping {
+            let server = self.clone();
+            let _ = tokio::task::spawn_blocking(move || server.stop_running(stopping)).await;
+        }
         self.forwarder.unpublish_all();
     }
 
