@@ -12,3 +12,17 @@ export function approvalDetail(approval: ApprovalView): string {
     ? `${payload.method} ${payload.host}${payload.path}`
     : payload.toolName;
 }
+
+export function approvalsBannerCopy(
+  approvals: readonly { agentId: string }[],
+): { title: string; detail: string } {
+  const count = approvals.length;
+  const agents = new Set(approvals.map((a) => a.agentId)).size;
+  return {
+    title: `${String(count)} ${count === 1 ? "approval" : "approvals"} waiting`,
+    detail:
+      agents === 1
+        ? "An agent needs your decision"
+        : `${String(agents)} agents need your decision`,
+  };
+}
