@@ -5,7 +5,7 @@ import type { JsonRpcId } from "../../domain/frames.js";
 import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";
-import type { PlatformUndeliveredPrompt } from "api-server-api";
+import type { PlatformUndeliveredPrompt, QueuedPrompt } from "api-server-api";
 import type { ReplayClip, SessionTranscript } from "./session-transcript.js";
 
 type WaiterKind = "load" | "resume";
@@ -20,6 +20,7 @@ interface Waiter {
 
 interface BootstrapState {
   waiters: Waiter[];
+  fills: ((loaded: boolean) => void)[];
   deadline: ReturnType<typeof setTimeout>;
   harnessLoadId: number | null;
 }
@@ -43,6 +44,7 @@ export interface SessionBootstrap {
     cursor: string,
     opts?: { loadToken?: string },
   ): void;
+  fill(sessionId: string, done: (loaded: boolean) => void): void;
   onLoadResponse(sessionId: string, frame: unknown): void;
   has(sessionId: string): boolean;
   dropChannel(channel: ClientChannel): void;
@@ -63,6 +65,7 @@ export interface SessionBootstrapDeps {
   turnInFlight(sessionId: string): boolean;
   interruptedAt(sessionId: string): string | undefined;
   undeliveredFor(sessionId: string): PlatformUndeliveredPrompt[];
+  queueOf(sessionId: string): QueuedPrompt[];
   supersededFor(sessionId: string): string[];
   runStartsOf(sessionId: string): string[];
   onLoadOrphaned(sessionId: string, outboundId: number): void;
@@ -99,6 +102,8 @@ export interface SessionBootstrapDeps {
  * the session is reported provider-served so the runtime knows the harness
  * itself has not loaded it yet. Any provider failure falls back to the
  * harness load.
+ * fill runs the same cold fill for the runtime itself, with no client
+ * waiting: it reports whether the transcript now holds the session.
  */
 export function createSessionBootstrap(
   deps: SessionBootstrapDeps,
@@ -112,6 +117,7 @@ export function createSessionBootstrap(
     undelivered: PlatformUndeliveredPrompt[],
     superseded: string[],
     runStarts: string[],
+    queue: QueuedPrompt[],
   ): unknown {
     const extras: Record<string, unknown> = {};
     if (clip.clipped)
@@ -120,6 +126,7 @@ export function createSessionBootstrap(
     if (undelivered.length > 0) extras.undelivered = undelivered;
     if (superseded.length > 0) extras.superseded = superseded;
     if (runStarts.length > 0) extras.runStarts = runStarts;
+    if (queue.length > 0) extras.queue = queue;
     if (Object.keys(extras).length === 0) return value;
     const base =
       typeof value === "object" && value !== null
@@ -189,6 +196,7 @@ export function createSessionBootstrap(
         kind === "load" ? deps.undeliveredFor(sessionId) : [],
         kind === "load" ? deps.supersededFor(sessionId) : [],
         kind === "load" ? deps.runStartsOf(sessionId) : [],
+        kind === "load" ? deps.queueOf(sessionId) : [],
       ),
     });
     if (channel.isOpen()) channel.send(rewriteAuthError(response));
@@ -228,6 +236,7 @@ export function createSessionBootstrap(
     deps.onProviderServed(sessionId);
     clearTimeout(boot.deadline);
     bootstrapBySession.delete(sessionId);
+    for (const done of boot.fills) done(true);
     for (const waiter of boot.waiters) {
       if (!waiter.channel.isOpen()) continue;
       respondFromLog(
@@ -245,6 +254,7 @@ export function createSessionBootstrap(
     if (bootstrapBySession.get(sessionId) !== state) return;
     bootstrapBySession.delete(sessionId);
     deps.log(`cold fill of ${sessionId} timed out`);
+    for (const done of state.fills) done(false);
     for (const waiter of state.waiters) {
       if (!waiter.channel.isOpen()) continue;
       waiter.channel.send(
@@ -265,14 +275,20 @@ export function createSessionBootstrap(
     }
   }
 
-  function park(sessionId: string, waiter: Waiter): void {
+  function park(
+    sessionId: string,
+    waiter: Waiter | null,
+    fill?: (loaded: boolean) => void,
+  ): void {
     const boot = bootstrapBySession.get(sessionId);
     if (boot) {
-      boot.waiters.push(waiter);
+      if (waiter !== null) boot.waiters.push(waiter);
+      if (fill !== undefined) boot.fills.push(fill);
       return;
     }
     const state: BootstrapState = {
-      waiters: [waiter],
+      waiters: waiter === null ? [] : [waiter],
+      fills: fill === undefined ? [] : [fill],
       harnessLoadId: null,
       deadline: setTimeout(
         () => expireFill(sessionId, state),
@@ -337,7 +353,15 @@ export function createSessionBootstrap(
           const response = JSON.stringify({
             jsonrpc: "2.0",
             id: originalId,
-            result: withReplayMeta(metadata.value, page.clip, null, [], [], []),
+            result: withReplayMeta(
+              metadata.value,
+              page.clip,
+              null,
+              [],
+              [],
+              [],
+              [],
+            ),
           });
           if (channel.isOpen()) channel.send(rewriteAuthError(response));
           return;
@@ -354,12 +378,21 @@ export function createSessionBootstrap(
       if (channel.isOpen()) channel.send(error);
     },
 
+    fill(sessionId, done) {
+      if (deps.transcript.metadataOf(sessionId).cached) {
+        done(true);
+        return;
+      }
+      park(sessionId, null, done);
+    },
+
     onLoadResponse(sessionId, frame) {
       const boot = bootstrapBySession.get(sessionId);
       if (!boot) return;
       clearTimeout(boot.deadline);
       bootstrapBySession.delete(sessionId);
       const loadFailed = !deps.transcript.metadataOf(sessionId).cached;
+      for (const done of boot.fills) done(!loadFailed);
       for (const waiter of boot.waiters) {
         if (!waiter.channel.isOpen()) continue;
         if (loadFailed) {
@@ -394,6 +427,7 @@ export function createSessionBootstrap(
     clear() {
       for (const state of bootstrapBySession.values()) {
         clearTimeout(state.deadline);
+        for (const done of state.fills) done(false);
       }
       bootstrapBySession.clear();
     },

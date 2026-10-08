@@ -106,10 +106,15 @@ export async function openInitializedConnection(
   agentId: string,
   onUpdate: UpdateHandler,
   opts?: { passive?: boolean; clientInfo?: { name: string; version: string } },
-): Promise<{ connection: ClientConnection; ws: WebSocket }> {
+): Promise<{
+  connection: ClientConnection;
+  ws: WebSocket;
+  forksSessions: boolean;
+}> {
   const { connection, ws } = await openConnection(agentId, onUpdate, opts);
+  let init: unknown;
   try {
-    await connection.agent.request("initialize", {
+    init = await connection.agent.request("initialize", {
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
       ...(opts?.clientInfo ? { clientInfo: opts.clientInfo } : {}),
@@ -120,7 +125,16 @@ export async function openInitializedConnection(
     } catch {}
     throw err;
   }
-  return { connection, ws };
+  return { connection, ws, forksSessions: forksSessionsIn(init) };
+}
+
+function forksSessionsIn(init: unknown): boolean {
+  const caps = (
+    init as {
+      agentCapabilities?: { sessionCapabilities?: { fork?: unknown } };
+    } | null
+  )?.agentCapabilities?.sessionCapabilities;
+  return typeof caps?.fork === "object" && caps.fork !== null;
 }
 
 export async function openConnection(

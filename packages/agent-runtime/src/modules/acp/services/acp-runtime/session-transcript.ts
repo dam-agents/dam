@@ -36,7 +36,11 @@ export interface ReplayOpts {
 
 export interface SessionTranscript {
   append(sessionId: string, line: string, turnId?: string | null): void;
-  appendEcho(sessionId: string, line: string, originator: ClientChannel): void;
+  appendEcho(
+    sessionId: string,
+    line: string,
+    originator: ClientChannel | null,
+  ): void;
   appendReplay(sessionId: string, line: string): void;
   catchUp(
     channel: ClientChannel,

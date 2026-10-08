@@ -3,12 +3,27 @@ import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import type { PodSession } from "agent-runtime-api";
 import {
+  buildPlatformQueueChangedNotification,
   buildPlatformRunStartedNotification,
+  capInlineImages,
   buildPlatformTurnEndedNotification,
   jsonRpcErrorDetails,
+  platformRemoveQueuedParamsSchema,
+  platformRewriteFromParamsSchema,
   platformUndeliveredPromptSchema,
+  platformUpdateQueuedParamsSchema,
+  PROMPT_NOT_QUEUED_CODE,
+  PROMPT_NOT_QUEUED_MESSAGE,
+  promptBlockSchema,
+  REWRITE_REFUSED_CODE,
   SessionType,
+  STEER_METHOD,
+  steerResponseSchema,
+  steeringSupported,
+  type PromptBlock,
   type PlatformTurnEndedParams,
+  type PlatformRewriteFromParams,
+  type PlatformUpdateQueuedParams,
   type PlatformUndeliveredPrompt,
 } from "api-server-api";
 
@@ -60,7 +75,11 @@ import {
 } from "./harness-lease.js";
 import { createPendingAgentRequests } from "./pending-agent-requests.js";
 import { createAutonomousTurns } from "./autonomous-turns.js";
-import { createPromptScheduler } from "./prompt-scheduler.js";
+import {
+  createPromptScheduler,
+  type PromptSubmission,
+  type SteerOutcome,
+} from "./prompt-scheduler.js";
 import { createSessionBootstrap } from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
 import { MAX_RESUME_ATTEMPTS } from "../interrupted-turn-recovery.js";
@@ -168,6 +187,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     deps.harnessLoadTimeoutMs ?? DEFAULT_HARNESS_LOAD_TIMEOUT_MS;
   let sessionCloseSupported = true;
   let sessionResumeSupported = false;
+  let harnessSteers = false;
+  let sessionForkSupported = false;
+  const ownRequests = new Map<number, (frame: unknown) => void>();
   let initializeAnswer: { result?: unknown; error?: unknown } | null = null;
   let initializeWaiters: { channel: ClientChannel; id: unknown }[] | null =
     null;
@@ -206,14 +228,44 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
-    onTurnStarted: ({ sessionId, unattended }) => {
+    onTurnStarted: ({
+      sessionId,
+      unattended,
+      typed,
+      channel,
+      promptId,
+      queuedAt,
+    }) => {
       autonomousTurns.end(sessionId);
+      appendUserPromptToLog(
+        sessionId,
+        typed,
+        queuedAt === undefined ? channel : null,
+        promptId ?? randomUUID(),
+      );
       deps.activeTurns.record(sessionId);
       if (unattended === true) {
         const at = deps.sessionMetadata?.startRun(sessionId);
         if (at) announceRunStart(sessionId, at);
       }
     },
+    canSteer: () => harnessSteers,
+    steer: (entry) => steerIntoTurn(entry),
+    onSteered: (
+      { sessionId, typed, channel, promptId, outboundId, originalId, queuedAt },
+      turnEnded,
+    ) => {
+      outboundIdToClient.delete(outboundId);
+      appendUserPromptToLog(
+        sessionId,
+        typed,
+        queuedAt === undefined ? channel : null,
+        promptId ?? randomUUID(),
+        { steered: true },
+      );
+      if (turnEnded) answerSteered({ channel, originalId }, null);
+    },
+    onQueueChanged: (sessionId) => announceQueue(sessionId),
     onTurnEnded: (sessionId) => {
       if (shuttingDown) return;
       deps.sessionMetadata?.finishRun(sessionId);
@@ -296,6 +348,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
     undeliveredFor(sessionId) {
       return deps.undeliveredPrompts.readFor(sessionId);
+    },
+    queueOf(sessionId) {
+      return promptScheduler.snapshot(sessionId);
     },
     supersededFor(sessionId) {
       return [...(supersededEchoes.get(sessionId) ?? [])];
@@ -526,6 +581,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydratingSessions.clear();
     sessionCloseSupported = true;
     sessionResumeSupported = false;
+    harnessSteers = false;
+    sessionForkSupported = false;
+    const unanswered = [...ownRequests.values()];
+    ownRequests.clear();
+    for (const reply of unanswered)
+      reply({ error: { code: -32000, message: "the harness went down" } });
     initializeAnswer = null;
     initializeWaiters = null;
     deps.backgroundWork?.clear();
@@ -605,6 +666,284 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     for (const channel of engagedViewersOf(sessionId)) channel.send(line);
   }
 
+  function promptFrameFor(
+    source: unknown,
+    sessionId: string,
+    outboundId: number,
+  ): object {
+    const forward = stripPlatformMeta(source);
+    const framed =
+      isDirectSurface(platformString(source, "surface")) &&
+      deps.sessionMetadata?.get(sessionId)?.meta.threadTs !== undefined
+        ? frameDirectTurn(forward)
+        : forward;
+    return rewriteCwd({ ...framed, id: outboundId }, deps.workingDir);
+  }
+
+  function updateQueuedPrompt(
+    sessionId: string,
+    { promptId, prompt }: PlatformUpdateQueuedParams,
+  ): boolean {
+    return promptScheduler.update(sessionId, promptId, (entry) => {
+      const source = isNonNullObject(entry.source) ? entry.source : {};
+      const params = isNonNullObject(source.params) ? source.params : {};
+      const edited = { ...source, params: { ...params, prompt } };
+      return {
+        source: edited,
+        frame: promptFrameFor(edited, sessionId, entry.outboundId),
+        typed: prompt,
+        blocks: queueableBlocks(prompt),
+      };
+    });
+  }
+
+  function answerQueueEdit(
+    channel: ClientChannel,
+    id: unknown,
+    done: boolean,
+  ): void {
+    sendToChannel(
+      channel,
+      JSON.stringify(
+        done
+          ? { jsonrpc: "2.0", id, result: {} }
+          : {
+              jsonrpc: "2.0",
+              id,
+              error: {
+                code: -32000,
+                message: PROMPT_NOT_QUEUED_MESSAGE,
+                data: { code: PROMPT_NOT_QUEUED_CODE },
+              },
+            },
+      ),
+    );
+  }
+
+  function answerSteered(
+    { channel, originalId }: Pick<PromptSubmission, "channel" | "originalId">,
+    stopReason: string | null,
+  ): void {
+    if (originalId === null) return;
+    sendToChannel(
+      channel,
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: originalId,
+        result: { stopReason: stopReason ?? "end_turn" },
+      }),
+    );
+  }
+
+  function requestFromHarness(
+    method: string,
+    params: Record<string, unknown>,
+    onReply: (frame: unknown) => void,
+  ): void {
+    const outboundId = nextOutboundId++;
+    ownRequests.set(outboundId, onReply);
+    if (
+      lease.send(
+        rewriteCwd(
+          { jsonrpc: "2.0", id: outboundId, method, params },
+          deps.workingDir,
+        ),
+      )
+    )
+      return;
+    ownRequests.delete(outboundId);
+    onReply({ error: { code: -32000, message: "the harness is not running" } });
+  }
+
+  function steerIntoTurn(entry: PromptSubmission): Promise<SteerOutcome> {
+    const params = (entry.frame as { params?: { prompt?: unknown } }).params;
+    return new Promise((resolve) => {
+      requestFromHarness(
+        STEER_METHOD,
+        {
+          sessionId: entry.sessionId,
+          prompt: params?.prompt ?? [],
+          _meta: { steering: { idleBehavior: "promptRequired" } },
+        },
+        (frame) => resolve(steerOutcomeOf(frame)),
+      );
+    });
+  }
+
+  function rewriteRefusal(
+    sessionId: string,
+    upToMessageId: string | null,
+  ): string | null {
+    const entry = deps.sessionMetadata?.get(sessionId);
+    const meta = entry?.meta;
+    if (
+      entry === undefined ||
+      deps.sessionMetadata?.isTombstoned(sessionId) === true ||
+      (meta?.type !== undefined && meta.type !== SessionType.Regular) ||
+      meta?.mode === "terminal" ||
+      meta?.threadTs !== undefined ||
+      meta?.scheduleId !== undefined ||
+      meta?.initialization === true
+    )
+      return "only a chat session can be rewritten";
+    if (upToMessageId !== null && !sessionForkSupported)
+      return "this agent cannot rewrite a conversation";
+    if (
+      promptScheduler.hasWork(sessionId) ||
+      pendingRequests.hasFor(sessionId) ||
+      bootstrap.has(sessionId)
+    )
+      return "the session is busy; wait until the agent is idle";
+    return null;
+  }
+
+  function retireSession(sessionId: string): void {
+    deps.sessionMetadata?.tombstone(sessionId);
+    deps.undeliveredPrompts.forgetSession(sessionId);
+    deps.activeTurns.remove(sessionId);
+    deps.runResults?.forgetSession(sessionId);
+    supersededEchoes.delete(sessionId);
+  }
+
+  function rewriteFrom(
+    channel: ClientChannel,
+    id: unknown,
+    params: PlatformRewriteFromParams,
+  ): void {
+    const fail = (message: string, code?: string): void =>
+      sendToChannel(
+        channel,
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32000, message, ...(code && { data: { code } }) },
+        }),
+      );
+    const oldId = params.sessionId;
+    const refusal = rewriteRefusal(oldId, params.upToMessageId);
+    if (refusal !== null) {
+      fail(refusal, REWRITE_REFUSED_CODE);
+      return;
+    }
+    const fresh = params.upToMessageId === null;
+    requestFromHarness(
+      fresh ? "session/new" : "session/fork",
+      {
+        ...(fresh ? {} : { sessionId: oldId }),
+        cwd: ".",
+        mcpServers: [],
+        ...(!fresh && {
+          _meta: {
+            jetbrains: {
+              air: { fork: { version: 1, messageId: params.upToMessageId } },
+            },
+          },
+        }),
+      },
+      (frame) => {
+        const newId = extractResultSessionId(frame);
+        if (newId === null) {
+          fail(
+            extractTurnError(frame)?.message ??
+              "the harness could not fork the session",
+          );
+          return;
+        }
+        if (fresh)
+          transcript.cacheMetadata(
+            newId,
+            (frame as { result?: unknown }).result,
+          );
+        bootstrap.fill(newId, (loaded) => {
+          if (!loaded) {
+            fail("the rewritten session could not be loaded");
+            return;
+          }
+          const meta = {
+            ...(deps.sessionMetadata?.get(oldId)?.meta ?? {}),
+            ...(params.title !== undefined && { title: params.title }),
+          };
+          if (params.mode === "rewind") {
+            deps.sessionMetadata?.adopt(newId, oldId, meta);
+            retireSession(oldId);
+            tearDownSession(oldId);
+          } else {
+            deps.sessionMetadata?.set(newId, meta);
+          }
+          sendToChannel(
+            channel,
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id,
+              result: { sessionId: newId },
+            }),
+          );
+          submitRewrittenPrompt(channel, newId, params);
+        });
+      },
+    );
+  }
+
+  function submitRewrittenPrompt(
+    channel: ClientChannel,
+    sessionId: string,
+    { prompt, promptId }: PlatformRewriteFromParams,
+  ): void {
+    const outboundId = nextOutboundId++;
+    const source = {
+      jsonrpc: "2.0",
+      id: outboundId,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt,
+        _meta: { platform: { promptId, surface: "ui" } },
+      },
+    };
+    engage(channel, sessionId);
+    outboundIdToClient.set(outboundId, {
+      channel,
+      originalId: null,
+      method: "session/prompt",
+      promptSessionId: sessionId,
+      attachSessionId: null,
+      platformMeta: null,
+    });
+    deps.sessionMetadata?.recordActivity(sessionId);
+    const fate = promptScheduler.submit({
+      sessionId,
+      channel,
+      outboundId,
+      originalId: null,
+      frame: promptFrameFor(source, sessionId, outboundId),
+      promptId,
+      source,
+      typed: prompt,
+      blocks: queueableBlocks(prompt),
+      editable: false,
+      steerable: true,
+    });
+    if (fate === "refused") {
+      outboundIdToClient.delete(outboundId);
+      return;
+    }
+    if (
+      harnessColdSessions.has(sessionId) &&
+      !rehydratingSessions.has(sessionId)
+    )
+      startHarnessRehydrate(sessionId);
+  }
+
+  function announceQueue(sessionId: string): void {
+    const line = JSON.stringify(
+      buildPlatformQueueChangedNotification({
+        sessionId,
+        items: promptScheduler.snapshot(sessionId),
+      }),
+    );
+    for (const channel of engagedViewersOf(sessionId)) channel.send(line);
+  }
+
   function hasEngagedViewer(sessionId: string): boolean {
     for (const _ of engagedViewersOf(sessionId)) return true;
     return false;
@@ -613,9 +952,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function appendUserPromptToLog(
     sessionId: string,
     prompt: unknown,
-    originator: ClientChannel,
-    queued: boolean,
+    originator: ClientChannel | null,
     messageId: string,
+    meta?: { steered: true },
   ): void {
     if (!Array.isArray(prompt)) return;
     for (const block of prompt) {
@@ -624,8 +963,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         sessionUpdate: "user_message_chunk",
         content: block,
         messageId,
+        ...(meta !== undefined && { _meta: meta }),
       };
-      if (queued) update._meta = { queued: true };
       const line = JSON.stringify({
         jsonrpc: "2.0",
         method: "session/update",
@@ -753,6 +1092,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     if (frame && isResponse(frame)) {
       const outboundId = frame.id as number;
+      const ownReply = ownRequests.get(outboundId);
+      if (ownReply) {
+        ownRequests.delete(outboundId);
+        ownReply(frame);
+        return;
+      }
       const mapping = outboundIdToClient.get(outboundId);
       if (mapping) {
         outboundIdToClient.delete(outboundId);
@@ -762,6 +1107,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (mapping.method === "initialize") {
           sessionCloseSupported = hasSessionCapability(frame, "close");
           sessionResumeSupported = hasSessionCapability(frame, "resume");
+          sessionForkSupported = hasSessionCapability(frame, "fork");
+          harnessSteers = steeringSupported(
+            (frame as { result?: unknown }).result,
+          );
           const { result, error } = frame as {
             result?: unknown;
             error?: unknown;
@@ -832,8 +1181,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             );
             harnessColdSessions.add(sid);
           }
-          const { turnEnded, promptId, turnId, runPrompt } =
+          const { turnEnded, promptId, turnId, runPrompt, steered } =
             promptScheduler.onPromptResponse(sid, outboundId);
+          for (const follower of steered)
+            answerSteered(follower, extractStopReason(frame));
           if (
             lost &&
             promptScheduler.hasWork(sid) &&
@@ -936,6 +1287,39 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           : "";
       const paramsSid = extractParamsSessionId(frame);
 
+      if (method === "platform/updateQueued" && paramsSid) {
+        const parsed = platformUpdateQueuedParamsSchema.safeParse(
+          (frame as { params?: unknown }).params,
+        );
+        const updated =
+          parsed.success && updateQueuedPrompt(paramsSid, parsed.data);
+        answerQueueEdit(channel, frame.id, updated);
+        return;
+      }
+
+      if (method === "platform/removeQueued" && paramsSid) {
+        const parsed = platformRemoveQueuedParamsSchema.safeParse(
+          (frame as { params?: unknown }).params,
+        );
+        const removed = parsed.success
+          ? promptScheduler.remove(paramsSid, parsed.data.promptId)
+          : null;
+        if (removed !== null) {
+          outboundIdToClient.delete(removed.outboundId);
+          if (removed.originalId !== null)
+            sendToChannel(
+              removed.channel,
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: removed.originalId,
+                result: { stopReason: "cancelled" },
+              }),
+            );
+        }
+        answerQueueEdit(channel, frame.id, removed !== null);
+        return;
+      }
+
       if (method === "platform/forgetUndelivered" && paramsSid) {
         const id = extractUndeliveredId(frame);
         if (id !== null && deps.undeliveredPrompts.forget(paramsSid, id))
@@ -998,12 +1382,25 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
 
+      if (method === "platform/rewriteFrom" && paramsSid) {
+        const parsed = platformRewriteFromParamsSchema.safeParse(
+          (frame as { params?: unknown }).params,
+        );
+        if (parsed.success) rewriteFrom(channel, frame.id, parsed.data);
+        else
+          sendToChannel(
+            channel,
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: frame.id,
+              error: { code: -32602, message: "invalid rewriteFrom params" },
+            }),
+          );
+        return;
+      }
+
       if (method === "platform/deleteSession" && paramsSid) {
-        deps.sessionMetadata?.tombstone(paramsSid);
-        deps.undeliveredPrompts.forgetSession(paramsSid);
-        deps.activeTurns.remove(paramsSid);
-        deps.runResults?.forgetSession(paramsSid);
-        supersededEchoes.delete(paramsSid);
+        retireSession(paramsSid);
         sendToChannel(
           channel,
           JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
@@ -1111,17 +1508,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             )
           : strippedFrame;
 
-      const framedFrame =
-        promptSessionId !== null &&
-        isDirectSurface(platformString(frame, "surface")) &&
-        deps.sessionMetadata?.get(promptSessionId)?.meta.threadTs !== undefined
-          ? frameDirectTurn(forwardFrame)
-          : forwardFrame;
-
-      const rewritten = rewriteCwd(
-        { ...framedFrame, id: outboundId },
-        deps.workingDir,
-      );
+      const rewritten =
+        promptSessionId !== null
+          ? promptFrameFor(frame, promptSessionId, outboundId)
+          : rewriteCwd({ ...forwardFrame, id: outboundId }, deps.workingDir);
       outboundIdToClient.set(outboundId, {
         channel,
         originalId: frame.id,
@@ -1135,17 +1525,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         deps.sessionMetadata?.recordActivity(promptSessionId);
         if (hasEngagedViewer(promptSessionId))
           deps.sessionMetadata?.recordSeen(promptSessionId);
-        const promptBlocks = (frame as { params?: { prompt?: unknown } }).params
+        const surface = platformString(frame, "surface");
+        const typedPrompt = (frame as { params?: { prompt?: unknown } }).params
           ?.prompt;
-        const willQueue = promptScheduler.hasTurnInFlight(promptSessionId);
-        appendUserPromptToLog(
-          promptSessionId,
-          promptBlocks,
-          channel,
-          willQueue,
-          promptId ?? randomUUID(),
-        );
-
         const fate = promptScheduler.submit({
           sessionId: promptSessionId,
           channel,
@@ -1153,7 +1535,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           originalId: frame.id,
           frame: rewritten,
           promptId,
-          runPrompt: platformString(frame, "surface") === "cli",
+          runPrompt: surface === "cli",
+          source: frame,
+          typed: typedPrompt,
+          blocks: queueableBlocks(typedPrompt),
+          editable: surface === "ui",
+          steerable: surface === "ui",
           unattended:
             nonViewerChannels.has(channel) &&
             (isMachineSession(promptSessionId) ||
@@ -1401,7 +1788,7 @@ function injectPlatformMetaIntoList(
 
 function hasSessionCapability(
   frame: unknown,
-  name: "close" | "resume",
+  name: "close" | "resume" | "fork",
 ): boolean {
   if (!isNonNullObject(frame)) return false;
   const result = frame.result;
@@ -1411,6 +1798,24 @@ function hasSessionCapability(
   const session = caps.sessionCapabilities;
   if (!isNonNullObject(session)) return false;
   return isNonNullObject(session[name]);
+}
+
+function steerOutcomeOf(frame: unknown): SteerOutcome {
+  const parsed = steerResponseSchema.safeParse(
+    (frame as { result?: unknown }).result,
+  );
+  return parsed.success && parsed.data.outcome === "injected"
+    ? "injected"
+    : "refused";
+}
+
+function queueableBlocks(prompt: unknown): PromptBlock[] {
+  if (!Array.isArray(prompt)) return [];
+  const blocks = prompt.flatMap((block) => {
+    const parsed = promptBlockSchema.safeParse(block);
+    return parsed.success ? [parsed.data] : [];
+  });
+  return capInlineImages(blocks).blocks;
 }
 
 function extractStopReason(frame: unknown): string | null {

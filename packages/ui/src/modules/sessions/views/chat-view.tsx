@@ -6,7 +6,11 @@ import {
   TrashCan,
   Warning,
 } from "@carbon/icons-react";
-import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
+import {
+  SessionMode,
+  SessionType,
+  TELEMETRY_MAX_SINCE_HOURS,
+} from "api-server-api";
 import {
   type CSSProperties,
   Fragment,
@@ -41,6 +45,7 @@ import {
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import { rewritePointsOf } from "../../acp/session-projection.js";
 import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
@@ -96,7 +101,11 @@ import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { matchTurnsToReplies } from "../../telemetry/lib/align-turns.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import { acpSessionsKeys } from "../api/keys.js";
-import { optimisticInsertSession, setSessionRunning } from "../api/queries.js";
+import {
+  optimisticInsertSession,
+  setSessionRunning,
+  useAgentSession,
+} from "../api/queries.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
@@ -104,6 +113,11 @@ import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
+import { QueuedPrompts } from "../components/queued-prompts.js";
+import {
+  RewritableMessage,
+  RewriteMarker,
+} from "../components/rewritable-message.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
@@ -246,6 +260,7 @@ export function ChatView() {
     resumeSession,
     loadOlderMessages,
     sendPrompt,
+    rewriteFrom,
     stopAgent,
     chooseSessionModel,
     busy,
@@ -313,6 +328,24 @@ export function ChatView() {
       sessionTurns.data?.available === true ? sessionTurns.data.turns : [];
     return matchTurnsToReplies(rows, messages);
   }, [sessionTurns.data, messages]);
+
+  const harnessForks = useStore((s) => s.harnessForks);
+  const queueEmpty = useStore((s) => s.queuedPrompts.length === 0);
+  const { data: sessionView } = useAgentSession(selectedAgent, sessionId);
+  const rewritable =
+    harnessForks &&
+    queueEmpty &&
+    !busy &&
+    sessionView?.mode === SessionMode.Chat &&
+    sessionView.type === SessionType.Regular &&
+    !sessionView.threadTs &&
+    !sessionView.scheduleId &&
+    !sessionView.initialization;
+  const rewritePoints = useMemo(() => rewritePointsOf(messages), [messages]);
+  const rewriting = useStore((s) => s.rewriting);
+  const rewriteIndex = rewriting
+    ? messages.findIndex((m) => m.id === rewriting.messageId)
+    : -1;
 
   const scrollToBottom = useCallback(() => {
     const el = messagesRef.current;
@@ -821,22 +854,59 @@ export function ChatView() {
                           );
                         }
                         const turn = turnForMessage.get(item.message.id);
+                        const chatMessage = (
+                          <ChatMessage
+                            message={item.message}
+                            avatarAgentName={
+                              avatarsEnabled ? agentView?.name : undefined
+                            }
+                            isLast={item.index === messages.length - 1}
+                            showModel={runStarts.length > 0}
+                            {...timeProps(item.message.at, now)}
+                            hasPendingPermission={hasPendingPermission}
+                            onRetry={sendPrompt}
+                            onFileClick={openFileHandler}
+                            onDelete={deleteMessage}
+                            onLoadOlder={loadOlderKeepingScroll}
+                          />
+                        );
+                        const upTo = rewritePoints.get(item.message.id);
+                        const editingHere =
+                          rewriting?.messageId === item.message.id;
+                        const doomed =
+                          rewriting?.mode === "rewind" &&
+                          rewriteIndex !== -1 &&
+                          item.index > rewriteIndex;
                         return (
                           <Fragment key={item.message.id}>
-                            <ChatMessage
-                              message={item.message}
-                              avatarAgentName={
-                                avatarsEnabled ? agentView?.name : undefined
-                              }
-                              isLast={item.index === messages.length - 1}
-                              showModel={runStarts.length > 0}
-                              {...timeProps(item.message.at, now)}
-                              hasPendingPermission={hasPendingPermission}
-                              onRetry={sendPrompt}
-                              onFileClick={openFileHandler}
-                              onDelete={deleteMessage}
-                              onLoadOlder={loadOlderKeepingScroll}
-                            />
+                            {rewritable && upTo !== undefined ? (
+                              <RewritableMessage
+                                message={item.message}
+                                onRewrite={(mode, text) =>
+                                  rewriteFrom({
+                                    messageId: item.message.id,
+                                    upToMessageId: upTo,
+                                    mode,
+                                    text,
+                                    title: sessionView?.title ?? null,
+                                  })
+                                }
+                              >
+                                {chatMessage}
+                              </RewritableMessage>
+                            ) : doomed ? (
+                              <div className="opacity-30 grayscale transition-opacity">
+                                {chatMessage}
+                              </div>
+                            ) : (
+                              chatMessage
+                            )}
+                            {editingHere && rewriting && (
+                              <RewriteMarker
+                                mode={rewriting.mode}
+                                following={messages.length - 1 - item.index}
+                              />
+                            )}
                             {selectedAgent && sessionId && turn && (
                               <TurnTelemetry
                                 agentId={selectedAgent}
@@ -855,6 +925,7 @@ export function ChatView() {
                         claimed={delegationOwners}
                       />
                     )}
+                    <QueuedPrompts onFileClick={openFileHandler} />
                     {telemetryEnabled && sessionTurns.isError && (
                       <p className="py-1 text-[11px] text-muted-foreground/70">
                         Telemetry for this session could not be read.

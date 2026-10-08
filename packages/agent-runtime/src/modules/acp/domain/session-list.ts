@@ -26,6 +26,7 @@ export interface SessionMetaLike {
     scheduleId?: string;
     initialization?: boolean;
     threadTs?: string;
+    title?: string;
   };
   createdAt: string;
   lastActivityAt?: string;
@@ -63,7 +64,7 @@ function fromEntry(
     type: asType(entry.meta.type),
     createdAt: entry.createdAt,
     updatedAt: entry.lastActivityAt ?? listed?.updatedAt ?? null,
-    title: listed?.title ?? null,
+    title: entry.meta.title ?? listed?.title ?? null,
     scheduleId: entry.meta.scheduleId ?? null,
     initialization: entry.meta.initialization === true,
     threadTs: entry.meta.threadTs ?? null,

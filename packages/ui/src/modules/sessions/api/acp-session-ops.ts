@@ -7,6 +7,7 @@ import {
 } from "agent-runtime-api";
 import {
   type PlatformUndeliveredPrompt,
+  type PromptBlock,
   SessionMode,
   SessionType,
   type SessionView,
@@ -195,6 +196,31 @@ export async function deleteAgentSession(
   );
 }
 
+export async function updateQueuedPrompt(
+  agentId: string,
+  sessionId: string,
+  promptId: string,
+  prompt: PromptBlock[],
+): Promise<void> {
+  await withConnection(agentId, (conn) =>
+    conn.agent.request("platform/updateQueued", {
+      sessionId,
+      promptId,
+      prompt,
+    }),
+  );
+}
+
+export async function removeQueuedPrompt(
+  agentId: string,
+  sessionId: string,
+  promptId: string,
+): Promise<void> {
+  await withConnection(agentId, (conn) =>
+    conn.agent.request("platform/removeQueued", { sessionId, promptId }),
+  );
+}
+
 export async function forgetUndeliveredPrompt(
   agentId: string,
   sessionId: string,
@@ -229,4 +255,20 @@ export async function setSessionMode(
       _meta: { platform: { mode } },
     }),
   );
+}
+
+export async function rewriteSessionFrom(
+  agentId: string,
+  sessionId: string,
+  rewrite: {
+    upToMessageId: string | null;
+    prompt: PromptBlock[];
+    promptId: string;
+    title?: string;
+  },
+): Promise<string> {
+  const result = await withConnection(agentId, (conn) =>
+    conn.agent.request("platform/rewriteFrom", { sessionId, ...rewrite }),
+  );
+  return (result as { sessionId: string }).sessionId;
 }

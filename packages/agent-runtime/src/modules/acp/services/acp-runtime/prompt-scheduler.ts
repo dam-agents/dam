@@ -4,6 +4,7 @@ import {
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
+import type { PromptBlock, QueuedPrompt } from "api-server-api";
 
 import { randomUUID } from "node:crypto";
 
@@ -13,7 +14,9 @@ import type { ClientChannel } from "../../infrastructure/client-channel.js";
 const PROMPT_QUEUE_CAP = 32;
 const DEFAULT_QUEUE_PARK_MS = 90 * 1000;
 
-export type PromptFate = "started" | "queued" | "refused";
+export type PromptFate = "started" | "queued" | "steering" | "refused";
+
+export type SteerOutcome = "injected" | "refused";
 
 export type QueueDropCause =
   "park-expired" | "session-forgotten" | "scheduler-cleared";
@@ -22,11 +25,17 @@ export interface PromptSubmission {
   sessionId: string;
   channel: ClientChannel;
   outboundId: number;
-  originalId: JsonRpcId;
+  originalId: JsonRpcId | null;
   frame: unknown;
   promptId: string | null;
   runPrompt?: boolean;
   unattended?: boolean;
+  source?: unknown;
+  typed?: unknown;
+  blocks?: PromptBlock[];
+  editable?: boolean;
+  steerable?: boolean;
+  queuedAt?: string;
 }
 
 export interface PromptScheduler {
@@ -40,6 +49,7 @@ export interface PromptScheduler {
     promptId: string | null;
     turnId: string | null;
     runPrompt: boolean;
+    steered: PromptSubmission[];
   };
   activeTurnId(sessionId: string): string | null;
   hasTurnInFlight(sessionId: string): boolean;
@@ -51,6 +61,15 @@ export interface PromptScheduler {
   onSessionReady(sessionId: string): void;
   onDetached(sessionId: string): void;
   refuseQueue(sessionId: string, message: string): void;
+  snapshot(sessionId: string): QueuedPrompt[];
+  update(
+    sessionId: string,
+    promptId: string,
+    edit: (
+      entry: PromptSubmission,
+    ) => Pick<PromptSubmission, "source" | "frame" | "typed" | "blocks">,
+  ): boolean;
+  remove(sessionId: string, promptId: string): PromptSubmission | null;
   forget(sessionId: string): void;
   clear(): void;
 }
@@ -65,6 +84,10 @@ export interface PromptSchedulerDeps {
     cause: QueueDropCause,
   ) => void;
   onTurnStarted?: (submission: PromptSubmission) => void;
+  canSteer?: (sessionId: string) => boolean;
+  steer?: (submission: PromptSubmission) => Promise<SteerOutcome>;
+  onSteered?: (submission: PromptSubmission, turnEnded: boolean) => void;
+  onQueueChanged?: (sessionId: string) => void;
   onTurnEnded?: (sessionId: string) => void;
   onTurnInterrupted?: (
     sessionId: string,
@@ -79,7 +102,18 @@ export interface PromptSchedulerDeps {
  * with a structured error) and promoted when the turn ahead of it ends. The
  * scheduler tells the sender each prompt's fate itself — accepted, queued,
  * started — over the sender's own channel, and answers the runtime's
- * busy/idle questions about turn state.
+ * busy/idle questions about turn state. Every change to a queue is announced
+ * over onQueueChanged and snapshot lists it, so every viewer sees the same
+ * queue the scheduler holds.
+ * A steerable prompt that arrives while a turn runs and nothing waits ahead of
+ * it is steered into that turn instead of queued, when the harness steers; so
+ * is the head of the queue, one at a time, whenever a turn is running and no
+ * steer is out, so a queue drains into the turn in order. The steer is a round
+ * trip: while it is out, the queue holds, so a turn ending in that window
+ * cannot start a later prompt ahead of it. Injected, the prompt is part of the
+ * running turn and its sender is answered when that turn ends; refused, it
+ * goes back to the head of the queue and waits for the next turn. Either way
+ * it reaches the harness once.
  * A turn becomes active only when the harness actually took the frame:
  * sendToAgent reports delivery, and on failure the prompt stays queued and
  * no promptStarted is sent. The turn-started and turn-ended callbacks fire on
@@ -119,8 +153,10 @@ export function createPromptScheduler(
       promptId: string | null;
       turnId: string;
       runPrompt: boolean;
+      steered: PromptSubmission[];
     }
   >();
+  const steering = new Map<string, PromptSubmission>();
   const queues = new Map<string, PromptSubmission[]>();
   const pendingSettings = new Map<string, PromptSubmission[]>();
   const parkTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -170,9 +206,15 @@ export function createPromptScheduler(
       `the setting was not applied: the session's queue was dropped (${cause})`,
     );
     clearParkTimer(sessionId);
-    const dropped = queues.get(sessionId);
+    const inFlight = steering.get(sessionId);
+    steering.delete(sessionId);
+    const dropped = [
+      ...(inFlight === undefined ? [] : [inFlight]),
+      ...(queues.get(sessionId) ?? []),
+    ];
     queues.delete(sessionId);
-    if (dropped === undefined || dropped.length === 0) return;
+    if (dropped.length === 0) return;
+    deps.onQueueChanged?.(sessionId);
     deps.onQueueDropped(sessionId, dropped, cause);
   }
 
@@ -180,7 +222,11 @@ export function createPromptScheduler(
     if (channel.isOpen()) channel.send(line);
   }
 
-  function notifyAccepted(entry: PromptSubmission, queued: boolean): void {
+  function notifyAccepted(
+    entry: PromptSubmission,
+    queued: boolean,
+    steered = false,
+  ): void {
     if (entry.promptId === null) return;
     sendToChannel(
       entry.channel,
@@ -189,9 +235,69 @@ export function createPromptScheduler(
           sessionId: entry.sessionId,
           promptId: entry.promptId,
           queued,
+          ...(steered && { steered: true }),
         }),
       ),
     );
+  }
+
+  function enqueue(entry: PromptSubmission, atHead: boolean): void {
+    const queue = queues.get(entry.sessionId) ?? [];
+    entry.queuedAt = new Date().toISOString();
+    if (atHead) queue.unshift(entry);
+    else queue.push(entry);
+    queues.set(entry.sessionId, queue);
+    deps.onQueueChanged?.(entry.sessionId);
+  }
+
+  function canSteerNow(entry: PromptSubmission): boolean {
+    const sessionId = entry.sessionId;
+    return (
+      entry.steerable === true &&
+      deps.steer !== undefined &&
+      activeTurns.has(sessionId) &&
+      !steering.has(sessionId) &&
+      (deps.canSteer?.(sessionId) ?? false) &&
+      deps.canStart(entry)
+    );
+  }
+
+  function beginSteer(entry: PromptSubmission): void {
+    steering.set(entry.sessionId, entry);
+    const steer = deps.steer;
+    if (steer === undefined) return;
+    steer(entry).then(
+      (outcome) => settleSteer(entry, outcome),
+      () => settleSteer(entry, "refused"),
+    );
+  }
+
+  function steerFromQueue(sessionId: string): void {
+    const queue = queues.get(sessionId);
+    const head = queue?.[0];
+    if (queue === undefined || head === undefined || !canSteerNow(head)) return;
+    queue.shift();
+    if (queue.length === 0) queues.delete(sessionId);
+    deps.onQueueChanged?.(sessionId);
+    beginSteer(head);
+  }
+
+  function settleSteer(entry: PromptSubmission, outcome: SteerOutcome): void {
+    const sessionId = entry.sessionId;
+    if (steering.get(sessionId) !== entry) return;
+    steering.delete(sessionId);
+    if (outcome === "refused") {
+      enqueue(entry, true);
+      notifyAccepted(entry, true);
+      maybeStartNext(sessionId);
+      return;
+    }
+    notifyAccepted(entry, false, true);
+    const active = activeTurns.get(sessionId);
+    active?.steered.push(entry);
+    deps.onSteered?.(entry, active === undefined);
+    if (active === undefined) maybeStartNext(sessionId);
+    else steerFromQueue(sessionId);
   }
 
   function start(entry: PromptSubmission): boolean {
@@ -202,6 +308,7 @@ export function createPromptScheduler(
       promptId: entry.promptId,
       turnId: entry.promptId ?? randomUUID(),
       runPrompt: entry.runPrompt ?? false,
+      steered: [],
     });
     deps.onTurnStarted?.(entry);
     if (entry.promptId !== null) {
@@ -221,17 +328,23 @@ export function createPromptScheduler(
   function maybeStartNext(sessionId: string): void {
     flushSettings(sessionId);
     if (pendingSettings.has(sessionId)) return;
-    if (activeTurns.has(sessionId)) return;
+    if (activeTurns.has(sessionId) || steering.has(sessionId)) return;
     const queue = queues.get(sessionId);
     const next = queue?.[0];
     if (queue === undefined || next === undefined) return;
     if (!deps.canStart(next)) return;
-    if (!start(next)) return;
     queue.shift();
+    if (!start(next)) {
+      queue.unshift(next);
+      return;
+    }
     if (queue.length === 0) queues.delete(sessionId);
+    deps.onQueueChanged?.(sessionId);
+    steerFromQueue(sessionId);
   }
 
   function refuse(entry: PromptSubmission, message?: string): void {
+    if (entry.originalId === null) return;
     sendToChannel(
       entry.channel,
       JSON.stringify({
@@ -252,20 +365,28 @@ export function createPromptScheduler(
   return {
     submit(submission) {
       const sessionId = submission.sessionId;
-      if (activeTurns.has(sessionId) || !deps.canStart(submission)) {
-        const queue = queues.get(sessionId) ?? [];
-        if (queue.length >= PROMPT_QUEUE_CAP) {
+      if (!queues.get(sessionId)?.length && canSteerNow(submission)) {
+        beginSteer(submission);
+        return "steering";
+      }
+      if (
+        activeTurns.has(sessionId) ||
+        steering.has(sessionId) ||
+        !deps.canStart(submission)
+      ) {
+        if ((queues.get(sessionId)?.length ?? 0) >= PROMPT_QUEUE_CAP) {
           refuse(submission);
           return "refused";
         }
-        queue.push(submission);
-        queues.set(sessionId, queue);
+        enqueue(submission, false);
         notifyAccepted(submission, true);
         return "queued";
       }
       notifyAccepted(submission, false);
       if (start(submission)) return "started";
+      submission.queuedAt = new Date().toISOString();
       queues.set(sessionId, [submission]);
+      deps.onQueueChanged?.(sessionId);
       return "queued";
     },
 
@@ -292,6 +413,7 @@ export function createPromptScheduler(
           promptId: null,
           turnId: null,
           runPrompt: false,
+          steered: [],
         };
       }
       activeTurns.delete(sessionId);
@@ -303,6 +425,7 @@ export function createPromptScheduler(
         promptId: active.promptId,
         turnId: active.turnId,
         runPrompt: active.runPrompt,
+        steered: active.steered,
       };
     },
 
@@ -321,6 +444,7 @@ export function createPromptScheduler(
     hasWork(sessionId) {
       return (
         activeTurns.has(sessionId) ||
+        steering.has(sessionId) ||
         queues.has(sessionId) ||
         pendingSettings.has(sessionId)
       );
@@ -328,7 +452,10 @@ export function createPromptScheduler(
 
     anyWork() {
       return (
-        activeTurns.size > 0 || queues.size > 0 || pendingSettings.size > 0
+        activeTurns.size > 0 ||
+        steering.size > 0 ||
+        queues.size > 0 ||
+        pendingSettings.size > 0
       );
     },
 
@@ -351,7 +478,43 @@ export function createPromptScheduler(
       if (queue === undefined) return;
       queues.delete(sessionId);
       clearParkTimer(sessionId);
+      deps.onQueueChanged?.(sessionId);
       for (const entry of queue) refuse(entry, message);
+    },
+
+    update(sessionId, promptId, edit) {
+      const entry = queues
+        .get(sessionId)
+        ?.find((e) => e.editable === true && e.promptId === promptId);
+      if (entry === undefined) return false;
+      Object.assign(entry, edit(entry));
+      deps.onQueueChanged?.(sessionId);
+      return true;
+    },
+
+    remove(sessionId, promptId) {
+      const queue = queues.get(sessionId);
+      const index =
+        queue?.findIndex(
+          (e) => e.editable === true && e.promptId === promptId,
+        ) ?? -1;
+      if (queue === undefined || index === -1) return null;
+      const [entry] = queue.splice(index, 1);
+      if (queue.length === 0) {
+        queues.delete(sessionId);
+        clearParkTimer(sessionId);
+      }
+      deps.onQueueChanged?.(sessionId);
+      return entry ?? null;
+    },
+
+    snapshot(sessionId) {
+      return (queues.get(sessionId) ?? []).map((entry) => ({
+        promptId: entry.promptId,
+        blocks: entry.blocks ?? [],
+        queuedAt: entry.queuedAt ?? "",
+        editable: entry.editable === true && entry.promptId !== null,
+      }));
     },
 
     onDetached(sessionId) {
@@ -388,7 +551,7 @@ export function createPromptScheduler(
         );
       const active = [...activeTurns.entries()];
       activeTurns.clear();
-      for (const sessionId of [...queues.keys()])
+      for (const sessionId of new Set([...queues.keys(), ...steering.keys()]))
         dropQueue(sessionId, "scheduler-cleared");
       for (const [sessionId, turn] of active) {
         deps.onTurnInterrupted?.(sessionId, turn);

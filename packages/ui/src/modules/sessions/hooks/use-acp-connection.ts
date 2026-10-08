@@ -4,6 +4,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import {
   platformClippedReplayMetaSchema,
+  platformQueueMetaSchema,
   platformReplayTurnMetaSchema,
   platformRunStartsMetaSchema,
   platformSupersededMetaSchema,
@@ -202,7 +203,7 @@ export function useAcpConnection(
       let settled = false;
       let kept = false;
       const handler = makeUpdateHandler();
-      const { connection, ws } = await openInitializedConnection(
+      const { connection, ws, forksSessions } = await openInitializedConnection(
         selectedAgent,
         withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
           if (listening) handler(update, updateSessionId, frame);
@@ -220,6 +221,7 @@ export function useAcpConnection(
           },
         });
         startedSessionId = session.sessionId;
+        useStore.getState().setHarnessForks(forksSessions);
         const viewing = useStore.getState().sessionId;
         if (viewing === null || viewing === startedSessionId) {
           useStore
@@ -289,7 +291,7 @@ export function useAcpConnection(
     if (existing && existing.ws.readyState === WebSocket.OPEN) return existing;
     if (!selectedAgent) throw new Error("No agent selected");
     const handler = makeUpdateHandler();
-    const { connection, ws } = await openInitializedConnection(
+    const { connection, ws, forksSessions } = await openInitializedConnection(
       selectedAgent,
       withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
         const collector = collectorRef.current;
@@ -314,6 +316,7 @@ export function useAcpConnection(
     );
     attachCloseHandler(ws);
     connectionRef.current = { connection, ws };
+    useStore.getState().setHarnessForks(forksSessions);
     return connectionRef.current;
   }, [selectedAgent, makeUpdateHandler, delivery, attachCloseHandler]);
 
@@ -356,6 +359,7 @@ export function useAcpConnection(
               undelivered?: unknown;
               superseded?: unknown;
               runStarts?: unknown;
+              queue?: unknown;
             };
           };
         } | null
@@ -374,6 +378,9 @@ export function useAcpConnection(
               platformRunStartsMetaSchema.element.safeParse(at).success,
           )
         : [];
+      const queue = platformQueueMetaSchema.safeParse(
+        platformMeta?.queue ?? [],
+      );
       const clipped =
         clippedRaw === undefined
           ? null
@@ -442,6 +449,7 @@ export function useAcpConnection(
           .setRunStarts([
             ...new Set([...useStore.getState().runStarts, ...runStarts]),
           ]);
+        useStore.getState().setQueuedPrompts(queue.success ? queue.data : []);
         if (turn.success && !turn.data.inFlight)
           idleSessionsRef.current.set(sid, Date.now());
         else idleSessionsRef.current.delete(sid);

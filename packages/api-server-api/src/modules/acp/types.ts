@@ -4,6 +4,29 @@ export const PROMPT_QUEUE_FULL_CODE = "PROMPT_QUEUE_FULL";
 
 export const PROMPT_QUEUE_FULL_MESSAGE = "prompt queue full";
 
+export const PROMPT_NOT_QUEUED_CODE = "PROMPT_NOT_QUEUED";
+
+export const PROMPT_NOT_QUEUED_MESSAGE = "prompt is no longer queued";
+
+export const REWRITE_REFUSED_CODE = "REWRITE_REFUSED";
+
+export const STEER_METHOD = "_session/steering";
+
+export const steerResponseSchema = z.object({
+  outcome: z.string().optional(),
+});
+
+export function steeringSupported(initializeResult: unknown): boolean {
+  const parsed = z
+    .object({
+      _meta: z.object({
+        steering: z.object({ supported: z.literal(true) }),
+      }),
+    })
+    .safeParse(initializeResult);
+  return parsed.success;
+}
+
 export function jsonRpcErrorDetails(data: unknown): string | undefined {
   if (typeof data === "string" && data) return data;
   if (data && typeof data === "object") {
@@ -130,6 +153,7 @@ export const platformPromptAcceptedParamsSchema = z.object({
   sessionId: z.string().min(1),
   promptId: z.string().min(1),
   queued: z.boolean(),
+  steered: z.literal(true).optional(),
 });
 export type PlatformPromptAcceptedParams = z.infer<
   typeof platformPromptAcceptedParamsSchema
@@ -227,3 +251,69 @@ export function buildPlatformPromptStartedNotification(
     params,
   });
 }
+
+export const queuedPromptSchema = z.object({
+  promptId: z.string().nullable(),
+  blocks: z.array(promptBlockSchema),
+  queuedAt: z.string(),
+  editable: z.boolean(),
+});
+export type QueuedPrompt = z.infer<typeof queuedPromptSchema>;
+
+export const platformQueueMetaSchema = z.array(queuedPromptSchema);
+
+export const platformQueueChangedParamsSchema = z.object({
+  sessionId: z.string().min(1),
+  items: platformQueueMetaSchema,
+});
+export type PlatformQueueChangedParams = z.infer<
+  typeof platformQueueChangedParamsSchema
+>;
+
+const platformQueueChangedNotificationSchema = z.object({
+  jsonrpc: z.literal("2.0"),
+  method: z.literal("platform/queueChanged"),
+  params: platformQueueChangedParamsSchema,
+});
+type PlatformQueueChangedNotification = z.infer<
+  typeof platformQueueChangedNotificationSchema
+>;
+
+export function buildPlatformQueueChangedNotification(
+  params: PlatformQueueChangedParams,
+): PlatformQueueChangedNotification {
+  return platformQueueChangedNotificationSchema.parse({
+    jsonrpc: "2.0",
+    method: "platform/queueChanged",
+    params,
+  });
+}
+
+export const platformUpdateQueuedParamsSchema = z.object({
+  sessionId: z.string().min(1),
+  promptId: z.string().min(1),
+  prompt: z.array(promptBlockSchema).min(1),
+});
+export type PlatformUpdateQueuedParams = z.infer<
+  typeof platformUpdateQueuedParamsSchema
+>;
+
+export const platformRemoveQueuedParamsSchema = z.object({
+  sessionId: z.string().min(1),
+  promptId: z.string().min(1),
+});
+export type PlatformRemoveQueuedParams = z.infer<
+  typeof platformRemoveQueuedParamsSchema
+>;
+
+export const platformRewriteFromParamsSchema = z.object({
+  sessionId: z.string().min(1),
+  mode: z.enum(["rewind", "fork"]),
+  upToMessageId: z.string().min(1).nullable(),
+  prompt: z.array(promptBlockSchema).min(1),
+  promptId: z.string().min(1),
+  title: z.string().min(1).optional(),
+});
+export type PlatformRewriteFromParams = z.infer<
+  typeof platformRewriteFromParamsSchema
+>;

@@ -4,7 +4,11 @@ import type {
   ToolCallContent,
   ToolCallUpdate,
 } from "@agentclientprotocol/sdk";
-import type { PlatformUndeliveredPrompt } from "api-server-api";
+import type {
+  PlatformUndeliveredPrompt,
+  PromptBlock,
+  QueuedPrompt,
+} from "api-server-api";
 
 import type {
   Message,
@@ -157,12 +161,16 @@ function applyUpdateOf(
       );
 
     case "platform_prompt_accepted":
+      if (update.steered) return withSteeredSend(messages, update.promptId);
       return update.queued && waitsBehindAnotherReply(messages, update.promptId)
         ? setQueuedByPromptId(messages, update.promptId, true)
         : messages;
 
     case "platform_prompt_started":
-      return setQueuedByPromptId(messages, update.promptId, false);
+      return withReplyPlaceholder(
+        setQueuedByPromptId(messages, update.promptId, false),
+        update.promptId,
+      );
 
     case "platform_clipped_replay":
       return appendClippedMarker(messages, update.older);
@@ -208,6 +216,61 @@ function setQueuedByPromptId(
   );
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A steered prompt joins the running turn where it
+ * was injected and opens no reply of its own, so the sender's view takes the
+ * shape every other viewer and a replay give it: the sent message drops its
+ * placeholder, and the turn's next output, placed by turn, continues below it.
+ */
+function withSteeredSend(messages: Message[], promptId: string): Message[] {
+  return messages.flatMap((m): Message[] => {
+    if (m.role === "user" && m.id === promptId)
+      return [{ ...m, steered: true }];
+    return isPlaceholder(m) && m.promptId === promptId ? [] : [m];
+  });
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The sender's own bubbles for a prompt the runtime
+ * queued give way to the queue, which renders it for every viewer alike.
+ */
+export function withoutQueuedSends(
+  messages: Message[],
+  items: QueuedPrompt[],
+): Message[] {
+  const queued = new Set(
+    items.flatMap((item) => (item.promptId === null ? [] : [item.promptId])),
+  );
+  if (queued.size === 0) return messages;
+  return messages.filter(
+    (m) =>
+      !(m.role === "user" && queued.has(m.id)) &&
+      !(
+        m.role === "assistant" &&
+        m.promptId !== undefined &&
+        queued.has(m.promptId) &&
+        m.parts.length === 0
+      ),
+  );
+}
+
+function withReplyPlaceholder(
+  messages: Message[],
+  promptId: string,
+): Message[] {
+  if (messages.some((m) => m.promptId === promptId)) return messages;
+  return [
+    ...messages,
+    {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      parts: [],
+      streaming: true,
+      promptId,
+    },
+  ];
+}
+
 function appendNotice(messages: Message[], text: string): Message[] {
   return [
     ...messages,
@@ -245,15 +308,19 @@ export function finalizeAllStreaming(messages: Message[]): Message[] {
   return messages.map(finalizeStreaming);
 }
 
+export function finalizeRunningReply(messages: Message[]): Message[] {
+  return messages.map((m) => (m.queued ? m : finalizeStreaming(m)));
+}
+
 const UNDELIVERED_MESSAGE = "Not delivered — this never reached the agent.";
 
-function textOf(record: PlatformUndeliveredPrompt): string {
-  return record.blocks
+function textOf({ blocks }: { blocks: PromptBlock[] }): string {
+  return blocks
     .flatMap((b) => (b.type === "text" ? [b.text] : []))
     .join("\n\n");
 }
 
-function partsOf(record: PlatformUndeliveredPrompt): MessagePart[] {
+export function partsOf(record: { blocks: PromptBlock[] }): MessagePart[] {
   const parts: MessagePart[] = [];
   for (const block of record.blocks) {
     if (block.type === "image")
@@ -421,6 +488,7 @@ function handleUserChunk(
   at?: string,
 ): Message[] {
   const queued = u._meta?.queued === true;
+  const steered = u._meta?.steered === true;
   const mid = u.messageId ?? null;
 
   let bubbles: MessagePart[][] | null = null;
@@ -442,7 +510,13 @@ function handleUserChunk(
 
   return bubbles.reduce(
     (acc, parts, i) =>
-      appendOrExtendUser(acc, i === 0 ? mid : mid && `${mid}:${i}`, parts, at),
+      appendOrExtendUser(
+        acc,
+        i === 0 ? mid : mid && `${mid}:${i}`,
+        parts,
+        at,
+        steered,
+      ),
     closeActiveAssistant(messages),
   );
 }
@@ -454,10 +528,17 @@ function handleAgentChunk(
   at?: string,
   turnId?: string,
 ): Message[] {
+  const messageId = kind === "text" ? (u.messageId ?? undefined) : undefined;
   if (u.content.type === "text") {
     const txt = u.content.text;
     if (!txt) return messages;
-    return appendAgentParts(messages, [{ kind, text: txt }], at, turnId);
+    return appendAgentParts(
+      messages,
+      [{ kind, text: txt }],
+      at,
+      turnId,
+      messageId,
+    );
   }
   if (u.content.type === "image") {
     return appendAgentParts(
@@ -465,6 +546,7 @@ function handleAgentChunk(
       [{ kind: "image", data: u.content.data, mimeType: u.content.mimeType }],
       at,
       turnId,
+      messageId,
     );
   }
   return messages;
@@ -546,10 +628,11 @@ function appendAgentParts(
   newParts: MessagePart[],
   at: string | undefined,
   turnId: string | undefined,
+  messageId?: string,
 ): Message[] {
   return turnId === undefined
-    ? appendToActive(messages, newParts, at)
-    : appendToTurn(messages, newParts, at, turnId);
+    ? appendToActive(messages, newParts, at, messageId)
+    : appendToTurn(messages, newParts, at, turnId, messageId);
 }
 
 function lastIndexOf(
@@ -606,6 +689,7 @@ function appendToTurn(
   newParts: MessagePart[],
   at: string | undefined,
   turnId: string,
+  messageId?: string,
 ): Message[] {
   const fill = (i: number) =>
     messages.map((m, j) =>
@@ -613,6 +697,7 @@ function appendToTurn(
         ? {
             ...m,
             ...(at !== undefined && { at }),
+            ...(messageId !== undefined && { lastMessageId: messageId }),
             parts: mergeParts(m.parts, newParts),
             streaming: true,
             queued: false,
@@ -638,6 +723,7 @@ function appendToTurn(
     streaming: true,
     turnId,
     ...(at !== undefined && { at }),
+    ...(messageId !== undefined && { lastMessageId: messageId }),
   };
   const insertAt = pendingTailStart(settled);
   return [...settled.slice(0, insertAt), fresh, ...settled.slice(insertAt)];
@@ -706,6 +792,7 @@ function appendToActive(
   messages: Message[],
   newParts: MessagePart[],
   at?: string,
+  messageId?: string,
 ): Message[] {
   const target = findActiveAssistant(messages);
   if (target === null) {
@@ -715,6 +802,7 @@ function appendToActive(
       parts: mergeParts([], newParts),
       streaming: true,
       ...(at !== undefined && { at }),
+      ...(messageId !== undefined && { lastMessageId: messageId }),
     };
     return [...messages, newMsg];
   }
@@ -723,6 +811,7 @@ function appendToActive(
     return {
       ...m,
       ...(at !== undefined && { at }),
+      ...(messageId !== undefined && { lastMessageId: messageId }),
       parts: mergeParts(m.parts, newParts),
       streaming: true,
       queued: target.promote ? false : m.queued,
@@ -843,6 +932,7 @@ function appendOrExtendUser(
   mid: string | null,
   parts: MessagePart[],
   at?: string,
+  steered = false,
 ): Message[] {
   if (mid) {
     const idx = messages.findIndex((m) => m.id === mid);
@@ -858,6 +948,7 @@ function appendOrExtendUser(
     parts,
     streaming: false,
     ...(at !== undefined && { at }),
+    ...(steered && { steered: true }),
   };
   return [...messages, newMsg];
 }
@@ -909,4 +1000,31 @@ function appendQueuedUser(
         ]
       : messages;
   return [...parked, userMsg, pending];
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Where the conversation can be rewritten from: for
+ * each user message that started a turn, the id of the last agent message
+ * before it, which a rewrite keeps, or null when nothing precedes it. A
+ * message steered into a running turn, a queued or undelivered one, and one
+ * whose preceding reply carries no message id are not rewritable.
+ */
+export function rewritePointsOf(
+  messages: Message[],
+): Map<string, string | null> {
+  const points = new Map<string, string | null>();
+  let sawReply = false;
+  let lastMessageId: string | undefined;
+  for (const m of messages) {
+    if (m.notice) continue;
+    if (m.role === "assistant") {
+      if (hasAgentContent(m)) sawReply = true;
+      if (m.lastMessageId !== undefined) lastMessageId = m.lastMessageId;
+      continue;
+    }
+    if (m.queued || m.steered || m.error !== undefined) continue;
+    if (!sawReply) points.set(m.id, null);
+    else if (lastMessageId !== undefined) points.set(m.id, lastMessageId);
+  }
+  return points;
 }
