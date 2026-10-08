@@ -683,14 +683,14 @@ export function createMcpSession(
       });
       if ("error" in result) return errorResult(result.error);
       return textResult(
-        `Handed to ${result.agent}. It picks the turn up from here and answers in the thread, so post nothing further. Your turn ends now; you will not see its reply, and if it cannot pick the turn up the person who asked is told, not you.`,
+        `Handed to ${result.agent}. It picks the turn up from here and answers in the thread, so post nothing further. Your turn ends now, with no further tool calls or thinking; you will not see its reply, and if it cannot pick the turn up the person who asked is told, not you.`,
       );
     },
   );
 
   server.tool(
     "no_reply_needed",
-    "End your turn without sending anything to the channel. Call this when the message doesn't need a response from you — routine chatter that isn't aimed at you, or something another person already handled. It just records that you deliberately stayed silent.",
+    "End your turn without sending anything to the channel. Call this when the message doesn't need a response from you — routine chatter that isn't aimed at you, or something another person already handled. It records that you deliberately stayed silent. Call it last, once all your work is done.",
     {
       reason: z
         .string()
@@ -710,7 +710,9 @@ export function createMcpSession(
         threadTs,
       );
       if ("error" in result) return errorResult(result.error);
-      return textResult("No reply sent.");
+      return textResult(
+        "No reply sent. Your turn is over: stop now, with no further tool calls or thinking.",
+      );
     },
   );
 
