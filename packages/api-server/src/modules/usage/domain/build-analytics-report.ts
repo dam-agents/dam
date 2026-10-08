@@ -32,6 +32,7 @@ const REGULAR_DAYS = 3;
 const SUPER_DAYS = 5;
 const LONGITUDINAL_SPAN = 21;
 const FUNNEL_SPAN = 21;
+const FUNNEL_MIN_DAYS = 4;
 const OOM_WINDOW_DAYS = 30;
 
 const FEATURE_LABELS: Record<CoreFeature, string> = {
@@ -258,10 +259,13 @@ function buildOnboarding(
     kitAgentsBySub.set(k.sub, list);
   }
 
-  const funnelBase = pop.users.length;
+  const funnelUsers = pop.users.filter(
+    (u) => u.firstDay + FUNNEL_MIN_DAYS <= today,
+  );
+  const funnelBase = funnelUsers.length;
   const funnelStages = [1, 2, 3, 4].map((n) => ({
     label: `${ordinal(n)} active day`,
-    count: pop.users.filter(
+    count: funnelUsers.filter(
       (u) =>
         activeIn(u, { from: u.firstDay, to: u.firstDay + FUNNEL_SPAN }) >= n,
     ).length,

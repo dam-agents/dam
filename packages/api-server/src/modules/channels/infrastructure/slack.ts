@@ -4620,6 +4620,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         externalActorId: args.externalActorId,
         outcome,
         ...(failureReason !== undefined ? { reason: failureReason } : {}),
+        ambient: true,
       });
     }
     const spoken = turnRefs

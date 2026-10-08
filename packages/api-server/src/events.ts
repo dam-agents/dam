@@ -116,6 +116,7 @@ export type ChannelTurnRelayed = {
   externalActorId?: string;
   outcome: TurnOutcome;
   reason?: string;
+  ambient?: true;
 };
 
 export type ChannelMessageSent = {

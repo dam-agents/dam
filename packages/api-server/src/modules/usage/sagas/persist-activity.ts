@@ -96,6 +96,7 @@ export function startPersistActivitySaga(
         : {}),
       payload: {
         ...(event.reason ? { reason: event.reason } : {}),
+        ...(event.ambient ? { ambient: true } : {}),
       },
     }),
     "channel",

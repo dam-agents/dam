@@ -103,18 +103,21 @@ describe("usage analytics report", () => {
     expect(r.last7.onboardingConversion.value).toBe(50);
   });
 
-  // TEST_SCENARIO: the funnel counts everyone in its first columns, but "active
-  // TEST_SCENARIO: in week 3" only counts users who have had three weeks, with its own base.
-  it("gives the last funnel stage its own base of users 21 days in", () => {
+  // TEST_SCENARIO: the first funnel columns count users who have had at least
+  // TEST_SCENARIO: 4 full days, so each could have reached a 4th active day; "active in
+  // TEST_SCENARIO: week 3" only counts users who have had three weeks, with its own base.
+  it("gives the funnel stages bases every counted user could have reached", () => {
     const r = buildAnalyticsReport(
       facts({
         users: [
           { sub: "old", firstSeenAt: at("2026-09-01") },
           { sub: "recent", firstSeenAt: at("2026-10-01") },
+          { sub: "brand-new", firstSeenAt: at("2026-10-05") },
         ],
         activeDays: [
           ...days("old", "2026-09-01", "2026-09-16"),
           ...days("recent", "2026-10-01"),
+          ...days("brand-new", "2026-10-05"),
         ],
       }),
       NOW,

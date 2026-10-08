@@ -17,7 +17,9 @@ CREATE VIEW "usage_users" AS
 -- Every message a user sent to an agent, from any surface. A session turn names
 -- its sender. A Slack or Telegram turn names only the messenger user, so it is
 -- attributed through external_actor_links; a sender who never linked an account
--- stays unattributed and is left out.
+-- stays unattributed and is left out. An ambient turn is a message people posted
+-- in a channel an agent listens to without being addressed, so it is not a
+-- message sent to the agent and is left out too.
 CREATE VIEW "usage_user_messages" AS
   SELECT m.actor_sub, m.agent_id, m.occurred_at
   FROM (
@@ -32,6 +34,7 @@ CREATE VIEW "usage_user_messages" AS
       ON l.provider = e.surface
      AND l.external_actor_hash = e.payload ->> 'externalActorId'
     WHERE e.type = 'channel_turn'
+      AND (e.payload ->> 'ambient') IS NULL
   ) m
   JOIN usage_users u ON u.actor_sub = m.actor_sub;
 --> statement-breakpoint

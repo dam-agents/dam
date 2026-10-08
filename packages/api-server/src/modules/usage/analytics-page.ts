@@ -626,7 +626,7 @@ function renderText() {
   setText("last7Window", \`\${fmtUp(R.last7.from)} – \${fmtUp(R.last7.to)} · ROLLING · COMPARED WITH THE 7 DAYS BEFORE\`);
   setText("cohortNote", O.cohortWeeks.length ? \`A cohort appears once every member has had at least 7 days since first login, so the newest shown is the week of \${fmt(O.cohortWeeks.at(-1))}.\` : "A cohort appears once every member has had at least 7 days since first login.");
   const weekThree = O.funnel.at(-1);
-  setText("funnelBase", \`First five columns: all \${O.funnel[0].count} authenticated users, active days counted within each user's first 21 days, so recent users are still filling in · Active in week 3: only the \${weekThree.base} users whose first login was at least 21 days ago, with an active day in days 15–21\`);
+  setText("funnelBase", \`First five columns: the \${O.funnel[0].count} users whose first login was at least 4 days ago, so each could have reached a 4th active day; active days counted within each user's first 21 days · Active in week 3: only the \${weekThree.base} users whose first login was at least 21 days ago, with an active day in days 15–21\`);
   setText("kitDay1Base", \`Split: % of users in the cohorts above (n = \${O.cohortSizes.reduce((a, b) => a + b, 0)}) · kits: % of the \${O.firstDayKitUsers} users who created a starter-kit agent on their first day\`);
   setText("useWindow", \`CALENDAR WEEKS · MON – SUN · LAST COMPLETE WEEK \${fmtUp(A.weeks.at(-1))}\`);
   setText("longiBase", \`Same thresholds, met in each of the 3 weeks ending that week · base grows from \${A.longitudinalEligible[0]} to \${A.longitudinalEligible.at(-1)} users\`);
