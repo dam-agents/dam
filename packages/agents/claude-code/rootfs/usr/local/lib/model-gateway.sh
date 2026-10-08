@@ -9,6 +9,10 @@ else
 	case "${ANTHROPIC_BASE_URL:-}" in
 	"" | http://127.0.0.1:* | http://localhost:*) ;;
 	*)
+		# Claude Code turns tool search off behind a non-first-party
+		# ANTHROPIC_BASE_URL, so every MCP tool schema is loaded up front
+		# and sessions start near the compaction threshold (#3793).
+		[ -n "${ENABLE_TOOL_SEARCH:-}" ] || export ENABLE_TOOL_SEARCH=true
 		_i=0
 		_gateway_env=""
 		_gateway_up=false
