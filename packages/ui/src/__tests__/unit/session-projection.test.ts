@@ -802,7 +802,9 @@ describe("applyUpdate — the harness's name for the prompt", () => {
      * turnEnded to carry the id, so each replayed chunk names it instead.
      */
     const start: Message[] = [userMsg("u1", "hi")];
-    const out = applyUpdate(start, txtChunk("hello"), undefined, "otel-2");
+    const out = applyUpdate(start, txtChunk("hello"), {
+      telemetryPromptId: "otel-2",
+    });
     expect(out[1].role).toBe("assistant");
     expect(out[1].telemetryPromptId).toBe("otel-2");
   });
