@@ -38,7 +38,8 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const isPdf = mime === "application/pdf";
   const isBinaryImage =
     binary && !!content && !!mime && mime.startsWith("image/") && !isSvg;
-  const editable = !binary && !tooLarge;
+  const platformInstructions = path === "AGENTS.md";
+  const editable = !binary && !tooLarge && !platformInstructions;
 
   const selectedAgent = useStore((s) => s.selectedAgent);
   const promotion = useFilePromotion(selectedAgent, file);
@@ -297,6 +298,12 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           <Close size={16} />
         </Button>
       </div>
+      {platformInstructions && (
+        <p className="px-4 py-2 border-b border-border text-xs text-muted-foreground">
+          This file holds the platform's instructions and is read-only. Put your
+          own instructions in <code>work/AGENTS.md</code>.
+        </p>
+      )}
       <div
         className={
           editMode ? "flex-1 overflow-hidden p-2" : "flex-1 overflow-auto p-4"
