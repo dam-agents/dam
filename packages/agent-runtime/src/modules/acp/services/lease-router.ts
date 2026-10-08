@@ -93,6 +93,7 @@ const keyOf = (pair: LeasePair): string =>
 export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   const leases = new Map<string, Lease>();
   const attachments = new Map<ClientChannel, Attachment>();
+  const movedSessions = new Set<string>();
   let nextInbound = 1;
   let nextSwallowed = 1;
 
@@ -361,8 +362,11 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       refuse(real, frame.id, providerRemoved(pair.provider!));
       return;
     }
-    const v = channelOn(real, leaseFor(pair));
+    const lease = leaseFor(pair);
+    const v = channelOn(real, lease);
     v.used = true;
+    if (movedSessions.delete(sessionId))
+      lease.runtime.markSessionCold(sessionId);
     v.deliver(
       method === "session/resume" ? JSON.stringify(withoutPair(frame)) : data,
     );
@@ -389,11 +393,23 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       refuse(real, id, providerRemoved(pair.provider));
       return;
     }
+    const from = leases.get(keyOf(pair));
     const { model: _previous, ...meta } = entry.meta;
     deps.sessionMetadata.set(sessionId, {
       ...meta,
       ...(model !== null && { model }),
     });
+    movedSessions.add(sessionId);
+    if (from && from.key !== keyOf(pairOfSession(sessionId, false))) {
+      from.runtime.releaseSession(sessionId);
+      if (from.key !== keyOf(defaultPair()) && !from.runtime.holdsSessions()) {
+        deps.log(
+          `lease ${from.key} holds no session after a pin; shutting it down`,
+        );
+        drop(from);
+        from.runtime.shutdown();
+      }
+    }
     if (real.isOpen())
       real.send(JSON.stringify({ jsonrpc: "2.0", id, result: { model } }));
   }
@@ -489,6 +505,14 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       leaseOfSession(sessionId)?.runtime.resetSession(sessionId);
     },
 
+    markSessionCold(sessionId) {
+      leaseOfSession(sessionId)?.runtime.markSessionCold(sessionId);
+    },
+
+    releaseSession(sessionId) {
+      leaseOfSession(sessionId)?.runtime.releaseSession(sessionId);
+    },
+
     holdsSessions() {
       return [...leases.values()].some((l) => l.runtime.holdsSessions());
     },
@@ -505,8 +529,13 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
           !deps.providers().includes(lease.pair.provider)
         ) {
           deps.log(`lease ${lease.key} lost its provider; shutting it down`);
+          const users = [...lease.channels]
+            .filter(([, v]) => v.used)
+            .map(([real]) => real);
           drop(lease);
           lease.runtime.shutdown();
+          for (const real of users)
+            if (real.isOpen()) real.close(1012, PROVIDER_REMOVED_REASON);
           continue;
         }
         const hits = [

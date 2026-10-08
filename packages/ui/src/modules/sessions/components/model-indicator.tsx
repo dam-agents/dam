@@ -51,7 +51,8 @@ export function ModelIndicator({
         side="top"
         align="start"
         aria-labelledby={titleId}
-        className="flex w-[300px] flex-col gap-2 text-sm"
+        collisionPadding={8}
+        className="flex max-h-[var(--radix-popover-content-available-height)] w-[300px] flex-col gap-2 overflow-y-auto text-sm"
       >
         <div className="flex items-start justify-between gap-3">
           <h2 id={titleId} className="font-bold text-foreground">

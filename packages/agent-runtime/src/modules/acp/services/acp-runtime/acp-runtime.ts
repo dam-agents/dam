@@ -100,6 +100,8 @@ export interface AcpRuntime {
   isSessionRunning(sessionId: string): boolean;
   sessionFrames(sessionId: string): { frames: string[]; truncated: boolean };
   resetSession(sessionId: string): void;
+  markSessionCold(sessionId: string): void;
+  releaseSession(sessionId: string): void;
   holdsSessions(): boolean;
   refreshEnv(opts: { force: boolean }): void;
   recycleForConfig(): void;
@@ -1265,6 +1267,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     resetSession(sessionId) {
       tearDownSession(sessionId);
       deps.log?.(`reset session ${sessionId}`);
+    },
+
+    markSessionCold(sessionId) {
+      harnessColdSessions.add(sessionId);
+    },
+
+    releaseSession(sessionId) {
+      tearDownSession(sessionId);
+      for (const sessions of engagedSessions.values())
+        sessions.delete(sessionId);
     },
 
     holdsSessions() {

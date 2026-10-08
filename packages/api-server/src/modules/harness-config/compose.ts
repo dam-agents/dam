@@ -7,6 +7,7 @@ import type {
 import {
   createHarnessConfigService,
   resolveFirePair,
+  harnessesOf,
   sessionModelChoices,
 } from "./services/harness-config-service.js";
 import { createSessionPairRepo } from "./infrastructure/session-pair-repo.js";
@@ -38,11 +39,14 @@ export function composeSessionModelChoices(deps: {
   getCapabilities: (agentId: string) => Promise<unknown>;
 }): (agentId: string) => Promise<string[] | null> {
   const snapshotRepo = createHarnessConfigSnapshotRepo(deps.db);
-  return async (agentId) =>
-    sessionModelChoices(
-      await deps.getCapabilities(agentId),
+  return async (agentId) => {
+    const capabilities = await deps.getCapabilities(agentId);
+    if (harnessesOf(capabilities)) return [];
+    return sessionModelChoices(
+      capabilities,
       (await snapshotRepo.read(agentId))?.availableModels ?? null,
     );
+  };
 }
 
 export type FirePair = (

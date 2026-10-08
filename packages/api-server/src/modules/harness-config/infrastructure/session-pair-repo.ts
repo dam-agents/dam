@@ -57,7 +57,7 @@ export function createSessionPairRepo(db: Db): SessionPairRepo {
             inArray(connectionsTable.templateId, [...PROVIDER_TEMPLATE_IDS]),
           ),
         )
-        .orderBy(asc(connectionsTable.createdAt), asc(connectionsTable.id));
+        .orderBy(asc(connectionsTable.name), asc(connectionsTable.id));
       return rows.flatMap((r) => {
         const type = providerTypeForTemplateId(r.templateId);
         return type ? [{ id: r.id, type }] : [];

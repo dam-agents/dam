@@ -440,8 +440,10 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
   });
 
   /** TEST_SCENARIO: Changing a session's model moves it to the process for
-   * that model. The session keeps its harness and provider, its next prompt
-   * reaches the new process, and the process it left gets nothing more. */
+   * that model. The session keeps its harness and provider, the new process
+   * loads the session before its first prompt there, and the process it left
+   * releases it, shutting down when it holds nothing else, so a harness that
+   * locks a session to one writer can load it in the new one. */
   it("moves a session to the process for the model it is pinned to", () => {
     const world = createLeaseWorld({ providers: ["conn-a"] });
     const client = world.connect();
@@ -455,15 +457,20 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
       params: { sessionId: "s", model: "opus" },
     });
     expect(client.reply(2)?.result).toEqual({ model: "opus" });
+    expect(world.harness("claude-code/conn-a/sonnet").killed()).toBe(true);
     expect(world.metadata.store.get("s")?.meta).toMatchObject({
       harness: "claude-code",
       provider: "conn-a",
       model: "opus",
     });
     client.send(frames.prompt(3, "s", "on opus"));
-    expect(promptTextsOf(world.harness("claude-code/conn-a/opus"))).toEqual([
-      "on opus",
-    ]);
+    const opus = world.harness("claude-code/conn-a/opus");
+    const loads = opus
+      .receivedMethods()
+      .filter((m) => ["session/load", "session/resume"].includes(m));
+    expect(loads).toHaveLength(1);
+    opus.replyTo(loads[0]!, {});
+    expect(promptTextsOf(opus)).toEqual(["on opus"]);
     expect(promptTextsOf(world.harness("claude-code/conn-a/sonnet"))).toEqual(
       [],
     );
@@ -471,7 +478,8 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
 
   /** TEST_SCENARIO: A process whose provider was taken away holds no
    * credential the agent may still use, so it is shut down rather than
-   * restarted without one. */
+   * restarted without one, and a client that used it is told, so a turn it
+   * still shows as running ends. */
   it("shuts down the process of a removed provider", () => {
     const world = createLeaseWorld({ providers: ["conn-a", "conn-b"] });
     const client = world.connect();
@@ -481,6 +489,7 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     world.revoke("conn-b");
     expect(world.harness("claude-code/conn-b").killed()).toBe(true);
     expect(world.harnessCount("claude-code/conn-b")).toBe(1);
+    expect(client.isOpen()).toBe(false);
     expect(world.router.leases().map((l) => l.provider)).toEqual(["conn-a"]);
   });
 });

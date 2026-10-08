@@ -40,6 +40,8 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
       backgroundWork: [],
     }),
     resetSession: () => {},
+    markSessionCold: () => {},
+    releaseSession: () => {},
     holdsSessions: () => false,
     refreshEnv: () => {},
     recycleForConfig: () => {},
