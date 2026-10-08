@@ -1,8 +1,8 @@
 import type { FinishedRow as FinishedRowData } from "agent-runtime-api";
-import { useState } from "react";
 
 import { DisclosureToggle } from "@/components/ui/disclosure";
 
+import { useStore } from "../../../store.js";
 import { FinishedRow } from "./finished-row.js";
 
 interface Props {
@@ -18,7 +18,8 @@ export function FinishedList({
   openOutputKey,
   onOpenOutput,
 }: Props) {
-  const [open, setOpen] = useState(true);
+  const open = useStore((s) => s.finishedListOpen);
+  const setOpen = useStore((s) => s.setFinishedListOpen);
   if (rows.length === 0) return null;
   return (
     <div className="flex flex-col">
