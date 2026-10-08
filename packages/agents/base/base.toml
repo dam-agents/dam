@@ -61,13 +61,16 @@ PLAYWRIGHT_BROWSERS_PATH = "/opt/ms-playwright"
 # sound, on a profile that keeps the user's sign-ins. A flag still overrides
 # its variable. Containers have no user namespaces for Chromium's sandbox, and
 # a container's 64 MB /dev/shm crashes a heavy page's renderer, so Chromium
-# keeps its shared memory in /tmp.
+# keeps its shared memory in /tmp. Chromium's own Google account check and
+# push-messaging check-in point at a closed loopback port: the gateway would
+# hold each one for approval, though no page asked for it. The rest of its
+# background traffic is off by policy (/etc/opt/chrome_for_testing/policies).
 AGENT_BROWSER_EXECUTABLE_PATH = "/opt/ms-playwright/chromium"
 AGENT_BROWSER_HEADED = "1"
 AGENT_BROWSER_NO_XVFB = "1"
 AGENT_BROWSER_PROFILE = "/home/agent/.local/share/platform/browser"
 AGENT_BROWSER_SOCKET_DIR = "/tmp/agent-browser"
-AGENT_BROWSER_ARGS = "--no-sandbox,--disable-dev-shm-usage,--kiosk,--hide-scrollbars,--no-first-run,--test-type,--disable-infobars,--autoplay-policy=no-user-gesture-required,--ozone-platform=x11"
+AGENT_BROWSER_ARGS = "--no-sandbox,--disable-dev-shm-usage,--kiosk,--hide-scrollbars,--no-first-run,--test-type,--disable-infobars,--autoplay-policy=no-user-gesture-required,--ozone-platform=x11,--gaia-url=http://127.0.0.1:9/,--gcm-checkin-url=http://127.0.0.1:9/checkin,--gcm-mcs-endpoint=http://127.0.0.1:9,--gcm-registration-url=http://127.0.0.1:9/register"
 DISPLAY = ":99"
 XDG_RUNTIME_DIR = "/tmp/platform-display"
 PULSE_SERVER = "unix:/tmp/platform-display/pulse/native"

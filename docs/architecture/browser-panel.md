@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-10-07
+Last verified: 2026-10-08
 
 ## Overview
 
@@ -19,6 +19,8 @@ The cost is fidelity: the screen arrives as compressed video, and each input tak
 ## One browser
 
 The panel shows **the browser agent-browser drives**. The image sets agent-browser's defaults through its `AGENT_BROWSER_*` variables: Playwright's full Chromium, headed on the sandbox's virtual display, in kiosk mode, with sound, on a profile in the agent's home. So every plain `agent-browser` command — the agent's, and the runtime's for the panel — runs on that one browser: the user watches what the agent does and shares its sign-ins, and the agent sees what the user does. A command-line flag still overrides its variable, so an agent that passes `--session` or `--profile` gets a browser of its own that the panel does not show; the agent instructions and the `agent-browser` skill say not to.
+
+**Quiet in the background.** The browser is Chrome for Testing, which calls Google's services on its own: network time, account and sync checks, push-messaging check-in, search suggestions. Every such call is egress the gateway holds for the user's approval, though no page asked for it. A managed policy in the image (`/etc/opt/chrome_for_testing/policies/managed/platform.json`) turns off network time, sign-in, sync, search suggestions and Google's AI and search side panel features, and launch switches point the account check and the push-messaging check-in at a closed loopback port. Safe Browsing and the component updater stay on: the updater is how Chrome gets security-critical data such as certificate revocations. What still leaves is the component updater and, on Chrome's new tab page, a few requests to `www.google.com`.
 
 ## The display
 

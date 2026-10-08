@@ -1,0 +1,10 @@
+{
+  "BrowserNetworkTimeQueriesEnabled": false,
+  "BrowserSignin": 0,
+  "SyncDisabled": true,
+  "SigninInterceptionEnabled": false,
+  "SearchSuggestEnabled": false,
+  "AIModeSettings": 1,
+  "GeminiSettings": 1,
+  "GoogleSearchSidePanelEnabled": false
+}
