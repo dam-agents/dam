@@ -125,7 +125,9 @@ export function useSandboxSettingsSave({
             ? { env: sanitizeEnvVars(values.envVars) }
             : {}),
           ...(dirtyFields.name ? { name: values.name.trim() } : {}),
-          ...(dirtyFields.avatar ? { avatar: values.avatar } : {}),
+          ...(dirtyFields.avatar || (dirtyFields.name && !agent?.avatar)
+            ? { avatar: values.avatar }
+            : {}),
           ...(dirtyFields.requireConnectionAddress
             ? { requireConnectionAddress: values.requireConnectionAddress }
             : {}),
