@@ -687,10 +687,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (rehydrateTimer) clearTimeout(rehydrateTimer);
     rehydrateTimers.delete(sessionId);
     rehydrateLoadIds.delete(sessionId);
+    autonomousTurns.end(sessionId);
     transcript.forget(sessionId);
     supersededEchoes.delete(sessionId);
     promptScheduler.forget(sessionId);
-    autonomousTurns.end(sessionId);
     runTextBuffers.delete(sessionId);
     pendingRequests.forget(sessionId);
     deps.backgroundWork?.forget(sessionId);
