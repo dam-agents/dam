@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 
 use crate::api::{RunnerRelease, HELD_RUNTIME, HELD_UNSTAGED};
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner release is the runner and the two guest binaries it copies into every share, staged together on the node so the runner and platform-init stay one version. runtime-id names what the release was built against and the pod does not change: the smolvm release, crane and the base image's libc. The runner itself is the VMM of every machine it starts, so a release built against another runtime cannot adopt machines running on this one.
+// UNIT_BOUNDARY_DESCRIPTION: a runner release is the runner and the two guest binaries it copies into every share, staged together on the node so the runner and platform-init stay one version. runtime-id names what the release was built against and the pod does not change: the smolvm release with its patched libkrun, crane and the base image's libc. The runner itself is the VMM of every machine it starts, so a release built against another runtime cannot adopt machines running on this one.
 pub const FILES: [&str; 4] = ["vm-runner", "platform-init", "platform-runc", RUNTIME_ID];
 pub const RUNNER: &str = "vm-runner";
 pub const RUNTIME_ID: &str = "runtime-id";

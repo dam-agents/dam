@@ -161,10 +161,12 @@ install -m 755 "$b/opt/smolvm/agent-rootfs/usr/local/bin/crane" "$b/usr/local/bi
 # mise is isolated from the repo.
 from="$(mise config get -f "$repo/.mise/config.toml" vars.base_image_debian)"
 # What a runner release is built against and a running pod cannot change: the
-# smolvm release with its guest agent and crane, and the base image's libc the
-# runner links. A loader hands its machines only to a release whose id matches.
-{ echo "$from"; tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - -C "$b/opt/smolvm" . | sha256sum; } |
-  sha256sum | cut -d' ' -f1 > "$rel/runtime-id"
+# smolvm release with its guest agent, the patched libkrun and crane, and the
+# base image's libc the runner links. A loader hands its machines only to a
+# release whose id matches. It hashes those inputs, not the built bytes: a
+# libkrun rebuilt from the same sources need not be byte-identical, and an id
+# that moved on every build would roll every pod.
+{ echo "$from" "$crane_version" "$crane_sha"; cat smolvm.pin libkrun.patch; } | sha256sum | cut -d' ' -f1 > "$rel/runtime-id"
 project="$work/project"
 mkdir -p "$project" "$work"/{data,cache,state,config}
 cp image.toml "$project/mise.toml"
