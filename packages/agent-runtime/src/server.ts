@@ -681,6 +681,7 @@ const server = http.createServer((req, res) => {
           sessionId,
         );
         if (slot) {
+          ptyLog(sessionId, "harness moved its PTY here");
           markTerminalSeen(sessionId);
           if (slot.client?.readyState === 1)
             slot.client.send(encodeDataFrame(OP_SESSION, sessionId));
