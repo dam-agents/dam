@@ -149,6 +149,9 @@ function PanelDivider({
   return divider && <ResizeHandle orientation="vertical" {...divider} />;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a sent message lands in the transcript a render or two after the send, so the jump to the end repeats once it is laid out and once more after this wait.
+const SEND_SETTLE_MS = 300;
+
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const { data: agentsData } = useAgents();
@@ -322,7 +325,10 @@ export function ChatView() {
   const sendAndFollow = useCallback(
     (...args: Parameters<typeof sendPrompt>) => {
       scrollToBottom();
-      return sendPrompt(...args);
+      const sent = sendPrompt(...args);
+      requestAnimationFrame(() => requestAnimationFrame(scrollToBottom));
+      setTimeout(scrollToBottom, SEND_SETTLE_MS);
+      return sent;
     },
     [scrollToBottom, sendPrompt],
   );
