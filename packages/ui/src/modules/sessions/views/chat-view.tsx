@@ -749,7 +749,7 @@ export function ChatView() {
             </DropdownMenu>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-2 px-6">
+        <div className="ml-auto flex items-center gap-2 pl-6 pr-14 md:pr-16">
           <ChatHeaderStatus
             selectedAgent={selectedAgent}
             agents={agents}
