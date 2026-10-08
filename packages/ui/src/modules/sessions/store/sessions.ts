@@ -25,6 +25,13 @@ import type { SessionModel } from "../lib/session-model.js";
 
 const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
 
+export type RewriteMode = "rewind" | "fork";
+
+export interface Rewriting {
+  messageId: string;
+  mode: RewriteMode;
+}
+
 export interface SessionError {
   sessionId: string;
   kind: SessionFailureKind;
@@ -36,6 +43,8 @@ export interface SessionsSlice {
   messages: Message[];
   runStarts: string[];
   queuedPrompts: QueuedPrompt[];
+  harnessForks: boolean;
+  rewriting: Rewriting | null;
   sessionModel: SessionModel | null;
   sessionError: SessionError | null;
   sessionFilter: SessionCategory[];
@@ -57,6 +66,8 @@ export interface SessionsSlice {
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
   setQueuedPrompts: (items: QueuedPrompt[]) => void;
+  setHarnessForks: (forks: boolean) => void;
+  setRewriting: (rewriting: Rewriting | null) => void;
   addRunStart: (at: string) => void;
   setSessionModel: (model: SessionModel | null) => void;
   setSessionError: (e: SessionError | null) => void;
@@ -120,6 +131,8 @@ export const createSessionsSlice: StateCreator<
     sessionId: null,
     runStarts: [],
     queuedPrompts: [],
+    harnessForks: false,
+    rewriting: null,
     sessionModel: null,
     sessionMode: null,
     messages: [],
@@ -150,6 +163,8 @@ export const createSessionsSlice: StateCreator<
       })),
     setRunStarts: (list) => set({ runStarts: list }),
     setQueuedPrompts: (items) => set({ queuedPrompts: items }),
+    setHarnessForks: (forks) => set({ harnessForks: forks }),
+    setRewriting: (rewriting) => set({ rewriting }),
     setSessionModel: (model) => set({ sessionModel: model }),
     addRunStart: (at) =>
       set((s) =>
@@ -236,6 +251,7 @@ export const createSessionsSlice: StateCreator<
         messages: [],
         runStarts: [],
         queuedPrompts: [],
+        rewriting: null,
         sessionModel: null,
         sessionError: null,
         terminalPaused: false,

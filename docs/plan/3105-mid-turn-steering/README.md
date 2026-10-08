@@ -15,7 +15,7 @@ state: queued, then sent (steered or started), then answered.
 
 ## Approach
 
-Read first: [agent-lifecycle — Session inside the pod, Prompt delivery](../../architecture/agent-lifecycle.md#prompt-delivery),
+Read first: [sessions — Session inside the pod, Prompt delivery](../../architecture/sessions.md#prompt-delivery),
 [channel-turns — Inbound](../../architecture/channel-turns.md), and
 [platform-topology — Protocols](../../architecture/platform-topology.md).
 
@@ -51,8 +51,9 @@ Read first: [agent-lifecycle — Session inside the pod, Prompt delivery](../../
 2. A queued item can be edited or removed through runtime methods until it starts.
 3. A UI prompt that arrives mid-turn is **steered** by the runtime when the harness supports it,
    and queued otherwise.
-4. Idle sessions can be **rewritten from a message**: fork up to the reply before it, move the
-   session's identity to the fork, delete the original, send the edited text.
+4. Idle sessions can be **rewound** or **forked** from a message, the action chosen up front (as
+   in Claude Code): both copy the session up to the reply before it and send the edited text;
+   rewind moves the session's identity to the copy and deletes the original, fork keeps both.
 5. pi gains steering through a pi-acp patch (upstream PR svkozak/pi-acp#115).
 6. Channel steering moves into the runtime: the channel queue submits prompts that may be steered,
    and its own steer path goes away. The runtime is then the one steering point for every surface.
@@ -70,7 +71,7 @@ Add to `packages/api-server-api/src/modules/acp/types.ts` (schemas + builders, l
 | `platform/removeQueued` | client → runtime (request) | `{ sessionId, promptId }` → `{}` or error `data.code = "PROMPT_NOT_QUEUED"` | 02 |
 | `platform/promptAccepted` | runtime → sender | adds `steered?: true` (then no `promptStarted` follows) | 03 |
 | user echo `_meta` | transcript | `{ steered: true }` on a steered echo; `queued` no longer written | 01, 03 |
-| `platform/rewriteFrom` | client → runtime (request) | `{ sessionId, upToMessageId: string \| null, prompt: PromptBlock[], promptId }` → `{ sessionId: newId }` | 04 |
+| `platform/rewriteFrom` | client → runtime (request) | `{ sessionId, mode: "rewind" \| "fork", upToMessageId: string \| null, prompt: PromptBlock[], promptId, title? }` → `{ sessionId: newId }`, answered before the new session's first frame | 04 |
 | `session/prompt` `_meta.platform.steer` | channel → runtime | `{ prompt: PromptBlock[] }` — the text to inject if steered; presence marks the prompt steerable | 06 |
 
 `QueuedPrompt = { promptId: string | null, blocks: PromptBlock[], queuedAt: string, editable: boolean }`
@@ -97,8 +98,8 @@ Add to `packages/api-server-api/src/modules/acp/types.ts` (schemas + builders, l
 |----|-------|-------|------------|------|
 | 01 | [The queue is shared and truthful](01-shared-queue.md) | Broadcast + load snapshot of the queue, echo at start, UI renders queue state inline, Stop/disconnect stop ending queued bubbles | — | ✓ |
 | 02 | [Edit and delete a queued message](02-edit-queued.md) | `updateQueued`/`removeQueued`, inline Edit/Delete on a queued bubble | 01 | ✓ |
-| 03 | [Steer a mid-turn message](03-native-steer.md) | Runtime steers UI prompts via `_session/steering`, steered echo, composer wording | 01 |✓ |
-| 04 | [Edit an earlier message and rerun](04-rewrite-from.md) | `rewriteFrom` via harness fork, replace in place, Edit on user bubbles when idle | 01 | |
+| 03 | [Steer a mid-turn message](03-native-steer.md) | Runtime steers UI prompts via `_session/steering`, steered echo, composer wording | 01 | ✓ |
+| 04 | [Rewind or fork from an earlier message](04-rewrite-from.md) | `rewriteFrom` via harness fork; Rewind replaces in place, Fork keeps the original; actions chosen up front | 01 | ✓ |
 | 05 | [pi steers](05-pi-steering.md) | pi-acp `_session/steering` from upstream PR #115, carried in the pi-agent image | 03 | |
 | 06 | [One steering point for every surface](06-channel-steering-in-runtime.md) | Channel queue submits steerable prompts; runtime steers; channel steer path removed | 03 | |
 | 07 | [Chat UI bug bash on both Backends](07-chat-bug-bash.md) | Smoke the whole chat on the vm Backend (virtualization + sandbox runtime) and on container; reproduce and fix message-handling bugs | 01–06 | |
@@ -127,8 +128,10 @@ The team decides whether it is needed; if so, it becomes a follow-up issue.
 
 - **Queued** — waiting in the scheduler; editable while queued. **Steered** — injected into the
   running turn. **Started** — handed to the harness as a turn. **Locked** — steered or started.
-- **Rewrite** — the user-visible "edit and rerun": the session keeps its place, title and URL slot;
-  its id changes to the fork's.
+- **Rewind** — edit a message and rerun from it in the same conversation: the session keeps its
+  place and title, its id changes to the copy's, and what followed the message is gone.
+- **Fork** — edit a message and continue from it in a new conversation, "<title> (fork)"; the
+  original stays as it was.
 - Server-side TS: apply `/typescript-engineering`. UI (`packages/ui`): apply `/react-ui-engineering`;
   prefer `@carbon/icons-react`.
 - Update the architecture pages named above in the same slice that changes their behavior
@@ -145,8 +148,10 @@ On the local cluster with a Claude Code agent, in two browser tabs on the same s
    bubbles. Edit the first in tab B, delete the second in tab A; both tabs agree. Press Stop: the
    current turn ends and the edited message starts.
 3. Reload mid-queue: queued bubbles come back as separate, queued bubbles.
-4. On the Claude Code agent, idle: edit the second user message to a new text. The session keeps
-   its place and title in the list, the later messages are gone, and the agent answers the new text.
+4. On the Claude Code agent, idle: rewind to the second user message with a new text. The
+   transcript stays on screen, the later messages go, the session keeps its place and title, and
+   the agent answers the new text. Fork from the same message: a new "(fork)" conversation opens
+   and the original is unchanged.
 5. On a pi agent: step 1 behaves the same as on Claude Code.
 6. Slack DM to a Claude Code agent: send a task, then a follow-up mid-turn. One reply covers both.
 

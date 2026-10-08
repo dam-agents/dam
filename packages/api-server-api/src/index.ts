@@ -534,6 +534,8 @@ export {
   PROMPT_NOT_QUEUED_MESSAGE,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
+  REWRITE_REFUSED_CODE,
+  platformRewriteFromParamsSchema,
   STEER_METHOD,
   steerResponseSchema,
   steeringSupported,
@@ -551,6 +553,7 @@ export type {
   PlatformQueueChangedParams,
   PlatformUpdateQueuedParams,
   PlatformRemoveQueuedParams,
+  PlatformRewriteFromParams,
 } from "./modules/acp/types.js";
 
 export { brandSchema } from "./modules/brand/types.js";

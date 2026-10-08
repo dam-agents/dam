@@ -9,17 +9,20 @@ import {
   buildPlatformTurnEndedNotification,
   jsonRpcErrorDetails,
   platformRemoveQueuedParamsSchema,
+  platformRewriteFromParamsSchema,
   platformUndeliveredPromptSchema,
   platformUpdateQueuedParamsSchema,
   PROMPT_NOT_QUEUED_CODE,
   PROMPT_NOT_QUEUED_MESSAGE,
   promptBlockSchema,
+  REWRITE_REFUSED_CODE,
   SessionType,
   STEER_METHOD,
   steerResponseSchema,
   steeringSupported,
   type PromptBlock,
   type PlatformTurnEndedParams,
+  type PlatformRewriteFromParams,
   type PlatformUpdateQueuedParams,
   type PlatformUndeliveredPrompt,
 } from "api-server-api";
@@ -161,7 +164,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   let sessionCloseSupported = true;
   let sessionResumeSupported = false;
   let harnessSteers = false;
-  const steerReplies = new Map<number, (outcome: SteerOutcome) => void>();
+  let sessionForkSupported = false;
+  const ownRequests = new Map<number, (frame: unknown) => void>();
   let initializeAnswer: { result?: unknown; error?: unknown } | null = null;
   let initializeWaiters: { channel: ClientChannel; id: unknown }[] | null =
     null;
@@ -505,8 +509,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sessionCloseSupported = true;
     sessionResumeSupported = false;
     harnessSteers = false;
-    for (const reply of steerReplies.values()) reply("refused");
-    steerReplies.clear();
+    sessionForkSupported = false;
+    const unanswered = [...ownRequests.values()];
+    ownRequests.clear();
+    for (const reply of unanswered)
+      reply({ error: { code: -32000, message: "the harness went down" } });
     initializeAnswer = null;
     initializeWaiters = null;
     deps.backgroundWork?.clear();
@@ -644,6 +651,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     { channel, originalId }: Pick<PromptSubmission, "channel" | "originalId">,
     stopReason: string | null,
   ): void {
+    if (originalId === null) return;
     sendToChannel(
       channel,
       JSON.stringify({
@@ -654,25 +662,203 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     );
   }
 
+  function requestFromHarness(
+    method: string,
+    params: Record<string, unknown>,
+    onReply: (frame: unknown) => void,
+  ): void {
+    const outboundId = nextOutboundId++;
+    ownRequests.set(outboundId, onReply);
+    if (
+      lease.send(
+        rewriteCwd(
+          { jsonrpc: "2.0", id: outboundId, method, params },
+          deps.workingDir,
+        ),
+      )
+    )
+      return;
+    ownRequests.delete(outboundId);
+    onReply({ error: { code: -32000, message: "the harness is not running" } });
+  }
+
   function steerIntoTurn(entry: PromptSubmission): Promise<SteerOutcome> {
+    const params = (entry.frame as { params?: { prompt?: unknown } }).params;
     return new Promise((resolve) => {
-      const outboundId = nextOutboundId++;
-      const params = (entry.frame as { params?: { prompt?: unknown } }).params;
-      steerReplies.set(outboundId, resolve);
-      const sent = lease.send({
-        jsonrpc: "2.0",
-        id: outboundId,
-        method: STEER_METHOD,
-        params: {
+      requestFromHarness(
+        STEER_METHOD,
+        {
           sessionId: entry.sessionId,
           prompt: params?.prompt ?? [],
           _meta: { steering: { idleBehavior: "promptRequired" } },
         },
-      });
-      if (sent) return;
-      steerReplies.delete(outboundId);
-      resolve("refused");
+        (frame) => resolve(steerOutcomeOf(frame)),
+      );
     });
+  }
+
+  function rewriteRefusal(
+    sessionId: string,
+    upToMessageId: string | null,
+  ): string | null {
+    const entry = deps.sessionMetadata?.get(sessionId);
+    const meta = entry?.meta;
+    if (
+      entry === undefined ||
+      deps.sessionMetadata?.isTombstoned(sessionId) === true ||
+      (meta?.type !== undefined && meta.type !== SessionType.Regular) ||
+      meta?.mode === "terminal" ||
+      meta?.threadTs !== undefined ||
+      meta?.scheduleId !== undefined ||
+      meta?.initialization === true
+    )
+      return "only a chat session can be rewritten";
+    if (upToMessageId !== null && !sessionForkSupported)
+      return "this agent cannot rewrite a conversation";
+    if (
+      promptScheduler.hasWork(sessionId) ||
+      pendingRequests.hasFor(sessionId) ||
+      bootstrap.has(sessionId)
+    )
+      return "the session is busy; wait until the agent is idle";
+    return null;
+  }
+
+  function retireSession(sessionId: string): void {
+    deps.sessionMetadata?.tombstone(sessionId);
+    deps.undeliveredPrompts.forgetSession(sessionId);
+    deps.activeTurns.remove(sessionId);
+    deps.runResults?.forgetSession(sessionId);
+    supersededEchoes.delete(sessionId);
+  }
+
+  function rewriteFrom(
+    channel: ClientChannel,
+    id: unknown,
+    params: PlatformRewriteFromParams,
+  ): void {
+    const fail = (message: string, code?: string): void =>
+      sendToChannel(
+        channel,
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32000, message, ...(code && { data: { code } }) },
+        }),
+      );
+    const oldId = params.sessionId;
+    const refusal = rewriteRefusal(oldId, params.upToMessageId);
+    if (refusal !== null) {
+      fail(refusal, REWRITE_REFUSED_CODE);
+      return;
+    }
+    const fresh = params.upToMessageId === null;
+    requestFromHarness(
+      fresh ? "session/new" : "session/fork",
+      {
+        ...(fresh ? {} : { sessionId: oldId }),
+        cwd: ".",
+        mcpServers: [],
+        ...(!fresh && {
+          _meta: {
+            jetbrains: {
+              air: { fork: { version: 1, messageId: params.upToMessageId } },
+            },
+          },
+        }),
+      },
+      (frame) => {
+        const newId = extractResultSessionId(frame);
+        if (newId === null) {
+          fail(
+            extractTurnError(frame)?.message ??
+              "the harness could not fork the session",
+          );
+          return;
+        }
+        if (fresh)
+          transcript.cacheMetadata(
+            newId,
+            (frame as { result?: unknown }).result,
+          );
+        bootstrap.fill(newId, (loaded) => {
+          if (!loaded) {
+            fail("the rewritten session could not be loaded");
+            return;
+          }
+          const meta = {
+            ...(deps.sessionMetadata?.get(oldId)?.meta ?? {}),
+            ...(params.title !== undefined && { title: params.title }),
+          };
+          if (params.mode === "rewind") {
+            deps.sessionMetadata?.adopt(newId, oldId, meta);
+            retireSession(oldId);
+            tearDownSession(oldId);
+          } else {
+            deps.sessionMetadata?.set(newId, meta);
+          }
+          sendToChannel(
+            channel,
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id,
+              result: { sessionId: newId },
+            }),
+          );
+          submitRewrittenPrompt(channel, newId, params);
+        });
+      },
+    );
+  }
+
+  function submitRewrittenPrompt(
+    channel: ClientChannel,
+    sessionId: string,
+    { prompt, promptId }: PlatformRewriteFromParams,
+  ): void {
+    const outboundId = nextOutboundId++;
+    const source = {
+      jsonrpc: "2.0",
+      id: outboundId,
+      method: "session/prompt",
+      params: {
+        sessionId,
+        prompt,
+        _meta: { platform: { promptId, surface: "ui" } },
+      },
+    };
+    engage(channel, sessionId);
+    outboundIdToClient.set(outboundId, {
+      channel,
+      originalId: null,
+      method: "session/prompt",
+      promptSessionId: sessionId,
+      attachSessionId: null,
+      platformMeta: null,
+    });
+    deps.sessionMetadata?.recordActivity(sessionId);
+    const fate = promptScheduler.submit({
+      sessionId,
+      channel,
+      outboundId,
+      originalId: null,
+      frame: promptFrameFor(source, sessionId, outboundId),
+      promptId,
+      source,
+      typed: prompt,
+      blocks: queueableBlocks(prompt),
+      editable: false,
+      steerable: true,
+    });
+    if (fate === "refused") {
+      outboundIdToClient.delete(outboundId);
+      return;
+    }
+    if (
+      harnessColdSessions.has(sessionId) &&
+      !rehydratingSessions.has(sessionId)
+    )
+      startHarnessRehydrate(sessionId);
   }
 
   function announceQueue(sessionId: string): void {
@@ -832,10 +1018,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     if (frame && isResponse(frame)) {
       const outboundId = frame.id as number;
-      const steerReply = steerReplies.get(outboundId);
-      if (steerReply) {
-        steerReplies.delete(outboundId);
-        steerReply(steerOutcomeOf(frame));
+      const ownReply = ownRequests.get(outboundId);
+      if (ownReply) {
+        ownRequests.delete(outboundId);
+        ownReply(frame);
         return;
       }
       const mapping = outboundIdToClient.get(outboundId);
@@ -847,6 +1033,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (mapping.method === "initialize") {
           sessionCloseSupported = hasSessionCapability(frame, "close");
           sessionResumeSupported = hasSessionCapability(frame, "resume");
+          sessionForkSupported = hasSessionCapability(frame, "fork");
           harnessSteers = steeringSupported(
             (frame as { result?: unknown }).result,
           );
@@ -1017,14 +1204,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           : null;
         if (removed !== null) {
           outboundIdToClient.delete(removed.outboundId);
-          sendToChannel(
-            removed.channel,
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id: removed.originalId,
-              result: { stopReason: "cancelled" },
-            }),
-          );
+          if (removed.originalId !== null)
+            sendToChannel(
+              removed.channel,
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: removed.originalId,
+                result: { stopReason: "cancelled" },
+              }),
+            );
         }
         answerQueueEdit(channel, frame.id, removed !== null);
         return;
@@ -1092,12 +1280,25 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
 
+      if (method === "platform/rewriteFrom" && paramsSid) {
+        const parsed = platformRewriteFromParamsSchema.safeParse(
+          (frame as { params?: unknown }).params,
+        );
+        if (parsed.success) rewriteFrom(channel, frame.id, parsed.data);
+        else
+          sendToChannel(
+            channel,
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: frame.id,
+              error: { code: -32602, message: "invalid rewriteFrom params" },
+            }),
+          );
+        return;
+      }
+
       if (method === "platform/deleteSession" && paramsSid) {
-        deps.sessionMetadata?.tombstone(paramsSid);
-        deps.undeliveredPrompts.forgetSession(paramsSid);
-        deps.activeTurns.remove(paramsSid);
-        deps.runResults?.forgetSession(paramsSid);
-        supersededEchoes.delete(paramsSid);
+        retireSession(paramsSid);
         sendToChannel(
           channel,
           JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }),
@@ -1444,7 +1645,7 @@ function injectPlatformMetaIntoList(
 
 function hasSessionCapability(
   frame: unknown,
-  name: "close" | "resume",
+  name: "close" | "resume" | "fork",
 ): boolean {
   if (!isNonNullObject(frame)) return false;
   const result = frame.result;

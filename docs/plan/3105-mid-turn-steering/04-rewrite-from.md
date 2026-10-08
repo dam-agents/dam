@@ -1,4 +1,4 @@
-# 04 — Edit an earlier message and rerun
+# 04 — Rewind or fork from an earlier message
 
 **Depends on:** 01-shared-queue
 **Part of:** Mid-turn steering and message correction — see [README](./README.md)
@@ -48,7 +48,21 @@ Apply `/typescript-engineering` (runtime, contract) and `/react-ui-engineering` 
    - Other tabs on the old session: on the tombstone, follow to the newest session or show the
      existing "session deleted" state (keep it simple; note in the PR).
 6. **Docs** — `agent-lifecycle.md` "Session inside the pod": a session can be rewritten from a
-   message, which forks it and replaces the original.
+   message, which forks it and replaces the original. (Done in `sessions.md`: the session sections
+   moved there from `agent-lifecycle.md`, which was at its size cap.)
+
+## As built (notes)
+
+- The fork capability reaches the UI from the `initialize` answer (as 03's steering does), not as
+  load meta; the UI decides eligibility from the session's type in the session list.
+- The harness titles a fork "<title> (fork)": the UI passes the session's title and the runtime
+  keeps it as the Session's own title.
+- A fork is not yet held by the harness: the runtime fills its transcript from the harness and
+  reloads it before the edited prompt runs, so it opens with its history.
+- The original is retired like a deleted Session (tombstoned, its platform state dropped), not
+  removed from the harness's store.
+- Steered messages are not rewrite points: a fork cut mid-turn would separate a tool call from its
+  result.
 
 ## Acceptance criteria
 
@@ -66,3 +80,16 @@ Apply `/typescript-engineering` (runtime, contract) and `/react-ui-engineering` 
 On a Claude Code agent: send "my name is Ann", then "what is my name?", then "my favourite colour
 is red". Edit the second message to "what is my favourite colour?" — the reply says it does not
 know (message 3 is gone). Reload: three messages are not there, the list has one session.
+
+## Rework after review (operator)
+
+- **Two actions, chosen up front** as in Claude Code: Rewind and Fork on each eligible user
+  message, instead of one Edit. The editor knows the action and previews it while you type:
+  Rewind fades the messages it will remove behind a line that says how many; Fork says the
+  conversation stays as it is.
+- **Fork** keeps the original: same harness fork, the copy titled "<title> (fork)", its own
+  creation time; nothing is retired.
+- **No reload**: the tab sends `rewriteFrom` on its live connection, trims its transcript in place
+  and switches to the new id without loading it; the runtime answers before the new session's
+  first frame so the tab already follows the new id. The edited prompt is not editable while it
+  briefly queues behind the harness load.

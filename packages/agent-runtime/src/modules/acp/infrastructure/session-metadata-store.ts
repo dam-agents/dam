@@ -7,6 +7,7 @@ export const platformSessionMetaSchema = z.object({
   scheduleId: z.string().optional(),
   initialization: z.boolean().optional(),
   threadTs: z.string().optional(),
+  title: z.string().optional(),
 });
 
 const sessionMetaEntrySchema = z.object({
@@ -48,6 +49,11 @@ export interface SessionMetadataStore {
   finishRun(sessionId: string): void;
   runStartsOf(sessionId: string): string[];
   all(): Record<string, SessionMetaEntry>;
+  adopt(
+    sessionId: string,
+    fromSessionId: string,
+    meta: PlatformSessionMeta,
+  ): void;
   tombstone(sessionId: string): void;
   isTombstoned(sessionId: string): boolean;
 }
@@ -95,6 +101,22 @@ export function createSessionMetadataStore(
             meta,
             createdAt: existing?.createdAt ?? now(),
             seenAt: existing?.seenAt ?? now(),
+          },
+        },
+      });
+    },
+    adopt(sessionId, fromSessionId, meta) {
+      const { sessions, tombstones } = store.read();
+      const from = sessions[fromSessionId];
+      store.write({
+        tombstones,
+        sessions: {
+          ...sessions,
+          [sessionId]: {
+            meta,
+            createdAt: from?.createdAt ?? now(),
+            seenAt: now(),
+            lastActivityAt: now(),
           },
         },
       });

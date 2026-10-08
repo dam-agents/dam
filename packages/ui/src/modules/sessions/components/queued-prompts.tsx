@@ -3,7 +3,6 @@ import type { PromptBlock, QueuedPrompt } from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
@@ -15,6 +14,7 @@ import {
   updateQueuedPrompt,
 } from "../api/acp-session-ops.js";
 import { ChatMessage } from "./chat-message.js";
+import { MessageEditor } from "./message-editor.js";
 
 const ALREADY_SENT = "Already sent — it can no longer be changed.";
 
@@ -81,9 +81,9 @@ function QueuedPromptItem({
     }
   };
 
-  const save = () => {
-    if (target === null || draft === null) return;
-    const blocks = withText(item.blocks, draft.trim());
+  const save = (text: string) => {
+    if (target === null) return;
+    const blocks = withText(item.blocks, text);
     if (blocks.length === 0) return;
     void run(() =>
       updateQueuedPrompt(
@@ -104,35 +104,12 @@ function QueuedPromptItem({
 
   if (draft !== null) {
     return (
-      <div className="flex flex-col items-end gap-2">
-        <Textarea
-          autoFocus
-          value={draft}
-          disabled={pending}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              save();
-            } else if (e.key === "Escape") {
-              setDraft(null);
-            }
-          }}
-        />
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="xs"
-            disabled={pending}
-            onClick={() => setDraft(null)}
-          >
-            Cancel
-          </Button>
-          <Button size="xs" disabled={pending} onClick={save}>
-            Save
-          </Button>
-        </div>
-      </div>
+      <MessageEditor
+        initial={draft}
+        pending={pending}
+        onSave={save}
+        onCancel={() => setDraft(null)}
+      />
     );
   }
 

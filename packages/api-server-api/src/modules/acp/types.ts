@@ -8,6 +8,8 @@ export const PROMPT_NOT_QUEUED_CODE = "PROMPT_NOT_QUEUED";
 
 export const PROMPT_NOT_QUEUED_MESSAGE = "prompt is no longer queued";
 
+export const REWRITE_REFUSED_CODE = "REWRITE_REFUSED";
+
 export const STEER_METHOD = "_session/steering";
 
 export const steerResponseSchema = z.object({
@@ -299,4 +301,16 @@ export const platformRemoveQueuedParamsSchema = z.object({
 });
 export type PlatformRemoveQueuedParams = z.infer<
   typeof platformRemoveQueuedParamsSchema
+>;
+
+export const platformRewriteFromParamsSchema = z.object({
+  sessionId: z.string().min(1),
+  mode: z.enum(["rewind", "fork"]),
+  upToMessageId: z.string().min(1).nullable(),
+  prompt: z.array(promptBlockSchema).min(1),
+  promptId: z.string().min(1),
+  title: z.string().min(1).optional(),
+});
+export type PlatformRewriteFromParams = z.infer<
+  typeof platformRewriteFromParamsSchema
 >;

@@ -255,3 +255,19 @@ export async function setSessionMode(
     }),
   );
 }
+
+export async function rewriteSessionFrom(
+  agentId: string,
+  sessionId: string,
+  rewrite: {
+    upToMessageId: string | null;
+    prompt: PromptBlock[];
+    promptId: string;
+    title?: string;
+  },
+): Promise<string> {
+  const result = await withConnection(agentId, (conn) =>
+    conn.agent.request("platform/rewriteFrom", { sessionId, ...rewrite }),
+  );
+  return (result as { sessionId: string }).sessionId;
+}

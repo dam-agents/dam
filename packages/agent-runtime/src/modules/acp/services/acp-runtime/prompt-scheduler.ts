@@ -23,7 +23,7 @@ export interface PromptSubmission {
   sessionId: string;
   channel: ClientChannel;
   outboundId: number;
-  originalId: JsonRpcId;
+  originalId: JsonRpcId | null;
   frame: unknown;
   promptId: string | null;
   runPrompt?: boolean;
@@ -291,6 +291,7 @@ export function createPromptScheduler(
   }
 
   function refuse(entry: PromptSubmission, message?: string): void {
+    if (entry.originalId === null) return;
     sendToChannel(
       entry.channel,
       JSON.stringify({

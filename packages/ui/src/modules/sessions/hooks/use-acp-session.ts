@@ -1,4 +1,4 @@
-import { SessionMode } from "api-server-api";
+import { type PromptBlock, SessionMode } from "api-server-api";
 import {
   useCallback,
   useEffect,
@@ -8,8 +8,9 @@ import {
 } from "react";
 
 import { emitToast } from "../../../lib/toast.js";
+import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import type { Attachment } from "../../../types.js";
+import type { Attachment, MessagePart } from "../../../types.js";
 import {
   classifyResumeError,
   extractErrorMessage,
@@ -27,11 +28,13 @@ import {
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
 import { findAgentSession } from "../api/acp-session-ops.js";
+import { acpSessionsKeys } from "../api/keys.js";
 import { setSessionRunning } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
 import { sessionModelFrom } from "../lib/session-model.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
+import type { RewriteMode } from "../store/sessions.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
@@ -148,6 +151,7 @@ export function useAcpSession(
       resetConnection();
       setLoadingSession(true);
       setMessages([]);
+      useStore.getState().setRewriting(null);
       useStore.getState().setRunStarts([]);
       useStore.getState().setSessionModel(null);
       useStore.getState().setSessionError(null);
@@ -244,6 +248,70 @@ export function useAcpSession(
     [connectionRef, ensureLive],
   );
 
+  const rewriteFrom = useCallback(
+    async (rewrite: {
+      messageId: string;
+      upToMessageId: string | null;
+      mode: RewriteMode;
+      text: string;
+      title: string | null;
+    }): Promise<void> => {
+      if (!selectedAgent) return;
+      const live = await ensureLive();
+      if (!live) throw new Error("the agent is not connected");
+      const all = useStore.getState().messages;
+      const at = all.findIndex((m) => m.id === rewrite.messageId);
+      if (at === -1) return;
+      const parts = [
+        ...all[at].parts.filter((p) => p.kind === "image"),
+        { kind: "text" as const, text: rewrite.text },
+      ];
+      const promptId = crypto.randomUUID();
+      const result = (await live.connection.agent.request(
+        "platform/rewriteFrom",
+        {
+          sessionId: live.sessionId,
+          mode: rewrite.mode,
+          upToMessageId: rewrite.upToMessageId,
+          prompt: promptBlocksOf(parts),
+          promptId,
+          ...(rewrite.title
+            ? {
+                title:
+                  rewrite.mode === "fork"
+                    ? `${rewrite.title} (fork)`
+                    : rewrite.title,
+              }
+            : {}),
+        },
+      )) as { sessionId: string };
+      bindEngagement(result.sessionId);
+      setSessionId(result.sessionId);
+      setMessages((prev) => [
+        ...prev.slice(0, at),
+        {
+          id: promptId,
+          role: "user",
+          parts,
+          streaming: false,
+          at: new Date().toISOString(),
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          parts: [],
+          streaming: true,
+          promptId,
+        },
+      ]);
+      useStore.getState().setRewriting(null);
+      void queryClient.invalidateQueries({
+        queryKey: acpSessionsKeys.agent(selectedAgent),
+      });
+    },
+    [selectedAgent, ensureLive, bindEngagement, setSessionId, setMessages],
+  );
+
   const sendPrompt = useCallback(
     (
       text: string,
@@ -261,10 +329,21 @@ export function useAcpSession(
     resumeSession,
     loadOlderMessages,
     sendPrompt,
+    rewriteFrom,
     stopAgent,
     chooseSessionModel,
     busy,
     loadingSession,
     connectionState,
   };
+}
+
+function promptBlocksOf(parts: MessagePart[]): PromptBlock[] {
+  return parts.flatMap((p): PromptBlock[] =>
+    p.kind === "image"
+      ? [{ type: "image", data: p.data, mimeType: p.mimeType }]
+      : p.kind === "text"
+        ? [{ type: "text", text: p.text }]
+        : [],
+  );
 }

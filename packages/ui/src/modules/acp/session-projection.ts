@@ -205,6 +205,8 @@ function setQueuedByPromptId(
  */
 function withSteeredSend(messages: Message[], promptId: string): Message[] {
   return messages.flatMap((m): Message[] => {
+    if (m.role === "user" && m.id === promptId)
+      return [{ ...m, steered: true }];
     if (m.role !== "assistant" || !m.streaming || m.queued) return [m];
     if (m.promptId === promptId) return [m];
     return hasAgentContent(m) ? [{ ...m, streaming: false }] : [];
@@ -469,6 +471,7 @@ function handleUserChunk(
   at?: string,
 ): Message[] {
   const queued = u._meta?.queued === true;
+  const steered = u._meta?.steered === true;
   const mid = u.messageId ?? null;
 
   let bubbles: MessagePart[][] | null = null;
@@ -488,7 +491,13 @@ function handleUserChunk(
 
   return bubbles.reduce(
     (acc, parts, i) =>
-      appendOrExtendUser(acc, i === 0 ? mid : mid && `${mid}:${i}`, parts, at),
+      appendOrExtendUser(
+        acc,
+        i === 0 ? mid : mid && `${mid}:${i}`,
+        parts,
+        at,
+        steered,
+      ),
     closeActiveAssistant(messages),
   );
 }
@@ -499,16 +508,18 @@ function handleAgentChunk(
   kind: "text" | "thought",
   at?: string,
 ): Message[] {
+  const messageId = kind === "text" ? (u.messageId ?? undefined) : undefined;
   if (u.content.type === "text") {
     const txt = u.content.text;
     if (!txt) return messages;
-    return appendToActive(messages, [{ kind, text: txt }], at);
+    return appendToActive(messages, [{ kind, text: txt }], at, messageId);
   }
   if (u.content.type === "image") {
     return appendToActive(
       messages,
       [{ kind: "image", data: u.content.data, mimeType: u.content.mimeType }],
       at,
+      messageId,
     );
   }
   return messages;
@@ -607,6 +618,7 @@ function appendToActive(
   messages: Message[],
   newParts: MessagePart[],
   at?: string,
+  messageId?: string,
 ): Message[] {
   const target = findActiveAssistant(messages);
   if (target === null) {
@@ -616,6 +628,7 @@ function appendToActive(
       parts: mergeParts([], newParts),
       streaming: true,
       ...(at !== undefined && { at }),
+      ...(messageId !== undefined && { lastMessageId: messageId }),
     };
     return [...messages, newMsg];
   }
@@ -624,6 +637,7 @@ function appendToActive(
     return {
       ...m,
       ...(at !== undefined && { at }),
+      ...(messageId !== undefined && { lastMessageId: messageId }),
       parts: mergeParts(m.parts, newParts),
       streaming: true,
       queued: target.promote ? false : m.queued,
@@ -704,6 +718,7 @@ function appendOrExtendUser(
   mid: string | null,
   parts: MessagePart[],
   at?: string,
+  steered = false,
 ): Message[] {
   if (mid) {
     const idx = messages.findIndex((m) => m.id === mid);
@@ -719,6 +734,7 @@ function appendOrExtendUser(
     parts,
     streaming: false,
     ...(at !== undefined && { at }),
+    ...(steered && { steered: true }),
   };
   return [...messages, newMsg];
 }
@@ -770,4 +786,31 @@ function appendQueuedUser(
         ]
       : messages;
   return [...parked, userMsg, pending];
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Where the conversation can be rewritten from: for
+ * each user message that started a turn, the id of the last agent message
+ * before it, which a rewrite keeps, or null when nothing precedes it. A
+ * message steered into a running turn, a queued or undelivered one, and one
+ * whose preceding reply carries no message id are not rewritable.
+ */
+export function rewritePointsOf(
+  messages: Message[],
+): Map<string, string | null> {
+  const points = new Map<string, string | null>();
+  let sawReply = false;
+  let lastMessageId: string | undefined;
+  for (const m of messages) {
+    if (m.notice) continue;
+    if (m.role === "assistant") {
+      if (hasAgentContent(m)) sawReply = true;
+      if (m.lastMessageId !== undefined) lastMessageId = m.lastMessageId;
+      continue;
+    }
+    if (m.queued || m.steered || m.error !== undefined) continue;
+    if (!sawReply) points.set(m.id, null);
+    else if (lastMessageId !== undefined) points.set(m.id, lastMessageId);
+  }
+  return points;
 }
