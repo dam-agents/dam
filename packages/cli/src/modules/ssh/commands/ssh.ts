@@ -105,7 +105,7 @@ export function buildSshCommand(deps: SshDeps): Command {
           });
 
         const alias = await ensureManagedSshHost({
-          agentRef,
+          agent,
           serverFlag: opts.server,
           paths,
         });
@@ -164,7 +164,7 @@ export function buildSshCommand(deps: SshDeps): Command {
             rows.push({
               name: a.name,
               alias: await ensureManagedSshHost({
-                agentRef: a.name,
+                agent: a,
                 serverFlag: opts.server,
                 paths,
               }),
@@ -188,7 +188,7 @@ export function buildSshCommand(deps: SshDeps): Command {
 
         const agent = await resolveAgent(deps, host, agentRef!);
         const alias = await ensureManagedSshHost({
-          agentRef: agentRef!,
+          agent,
           serverFlag: opts.server,
           paths,
         });

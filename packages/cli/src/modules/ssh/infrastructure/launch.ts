@@ -83,10 +83,6 @@ export function buildSshArgs(opts: {
   ];
 }
 
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function damConfigPath(env: NodeJS.ProcessEnv): string {
   const xdg = env.XDG_CONFIG_HOME;
   return join(
@@ -117,13 +113,13 @@ function dropManagedBlocks(
 }
 
 export async function ensureManagedSshHost(opts: {
-  agentRef: string;
+  agent: { id: string; name: string };
   serverFlag?: string;
   paths: SshPaths;
   env?: NodeJS.ProcessEnv;
 }): Promise<string> {
   const env = opts.env ?? process.env;
-  const host = sanitizeHost(opts.agentRef);
+  const host = sanitizeHost(opts.agent.name);
   const alias = `dam-${host}`;
   const start = `# >>> dam ssh: ${alias} (managed) >>>`;
   const end = `# <<< dam ssh: ${alias} (managed) <<<`;
@@ -134,7 +130,7 @@ export async function ensureManagedSshHost(opts: {
     ...sshHostOptions(opts.paths).map(
       ([k, v]) => `  ${k} ${sshConfigValue(v)}`,
     ),
-    `  ProxyCommand ${proxyCommandString(opts.agentRef, opts.serverFlag)}`,
+    `  ProxyCommand ${proxyCommandString(opts.agent.id, opts.serverFlag)}`,
     end,
   ].join("\n");
 
@@ -144,11 +140,11 @@ export async function ensureManagedSshHost(opts: {
   try {
     damExisting = await readFile(damConfig, "utf8");
   } catch {}
-  const re = new RegExp(
-    `\\n*${escapeRe(start)}[\\s\\S]*?${escapeRe(end)}\\n*`,
-    "g",
+  const idAlias = `dam-${sanitizeHost(opts.agent.id)}`;
+  const { body: stripped } = dropManagedBlocks(
+    damExisting,
+    (a) => a === alias || a === idAlias,
   );
-  const stripped = damExisting.replace(re, "\n").replace(/^\n+/, "").trimEnd();
   const body = stripped ? `${stripped}\n\n${block}\n` : `${block}\n`;
   await writeFile(damConfig, body, { mode: 0o600 });
 
