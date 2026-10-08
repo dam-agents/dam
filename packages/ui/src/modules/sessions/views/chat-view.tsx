@@ -131,6 +131,8 @@ const LEFT_WIDTH_KEY = "platform-left-w";
 const LEFT_MIN_W = 240;
 const LEFT_MAX_W = 400;
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
+const CHAT_MIN_W = 320;
+const SIDE_PANEL_MIN_W = 320;
 const TELEMETRY_SETTLE_MS = 5 * 60_000;
 
 function clampLeftWidth(width: number): number {
@@ -230,6 +232,16 @@ export function ChatView() {
     readPersistedNumber(FILE_PANEL_WIDTH_KEY, null),
   );
   const rightWRef = useRef(rightW);
+  const [columnsEl, setColumnsEl] = useState<HTMLDivElement | null>(null);
+  const [columnsW, setColumnsW] = useState<number | null>(null);
+  useEffect(() => {
+    if (!columnsEl) return;
+    const ro = new ResizeObserver(([entry]) =>
+      setColumnsW(entry.contentRect.width),
+    );
+    ro.observe(columnsEl);
+    return () => ro.disconnect();
+  }, [columnsEl]);
   const filePanelRef = useRef<HTMLDivElement>(null);
   const panelStack = useSidebarPanels([
     { id: "sessions", open: sessionsSectionOpen },
@@ -522,6 +534,20 @@ export function ChatView() {
     agentView?.requireConnectionAddress === true;
   const browserFills =
     browserMaximized && openBrowserAgentId !== null && canOpenBrowser;
+  const sidePanelOpen =
+    openDelegation !== null ||
+    openFilePath !== null ||
+    openArtifactId !== null ||
+    (openBrowserAgentId !== null && canOpenBrowser);
+  const columnsDoNotFit =
+    columnsW !== null && columnsW < leftW + CHAT_MIN_W + SIDE_PANEL_MIN_W;
+  const sidePanelFills = browserFills || (sidePanelOpen && columnsDoNotFit);
+  const sidePanelMaxW =
+    columnsW === null ? null : columnsW - leftW - CHAT_MIN_W;
+  const sidePanelW =
+    rightW !== null && sidePanelMaxW !== null
+      ? Math.min(rightW, Math.max(SIDE_PANEL_MIN_W, sidePanelMaxW))
+      : rightW;
   const surfaceCopy = {
     actionsAria: "Agent actions",
     configure: "Configure agent",
@@ -685,7 +711,7 @@ export function ChatView() {
       </header>
 
       {}
-      <div className="flex flex-1 min-h-0">
+      <div ref={setColumnsEl} className="flex flex-1 min-h-0">
         {}
         <div
           style={leftPanelWidth}
@@ -734,7 +760,7 @@ export function ChatView() {
 
         {}
         <div
-          className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} ${browserFills ? "md:!hidden" : ""}`}
+          className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
         >
           {}
           {sessionMode === SessionMode.Terminal &&
@@ -768,7 +794,7 @@ export function ChatView() {
             <>
               <div className="relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
-                  <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8 min-h-full">
+                  <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 flex flex-col gap-8 min-h-full">
                     {loadingSession && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
@@ -900,7 +926,7 @@ export function ChatView() {
                   onStop={stopAgent}
                 />
                 {!hasPendingPermission && indicatorModel && (
-                  <div className="px-4 md:px-8">
+                  <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
                     <ChatColumn>
                       <ModelIndicator
                         model={indicatorModel}
@@ -933,18 +959,20 @@ export function ChatView() {
         </div>
 
         {}
-        {(openDelegation ||
-          openFilePath ||
-          openArtifactId ||
-          (openBrowserAgentId && canOpenBrowser)) && (
+        {sidePanelOpen && (
           <>
-            <div className={browserFills ? "hidden" : "hidden md:flex"}>
+            <div className={sidePanelFills ? "hidden" : "hidden md:flex"}>
               <ResizeHandle
                 side="right"
                 onResize={(d) => {
-                  const base =
-                    rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0;
-                  const max = Math.min(960, window.innerWidth - 500);
+                  const max = Math.min(
+                    960,
+                    sidePanelMaxW ?? window.innerWidth - 500,
+                  );
+                  const base = Math.min(
+                    rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0,
+                    max,
+                  );
                   const v = Math.max(240, Math.min(max, base + d));
                   rightWRef.current = v;
                   writePersistedNumber(FILE_PANEL_WIDTH_KEY, v);
@@ -955,15 +983,15 @@ export function ChatView() {
             <div
               ref={filePanelRef}
               style={
-                rightW !== null
-                  ? ({ "--file-w": `${rightW}px` } as CSSProperties)
+                sidePanelW !== null
+                  ? ({ "--file-w": `${sidePanelW}px` } as CSSProperties)
                   : undefined
               }
               className={cn(
                 "flex flex-col overflow-hidden bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
-                browserFills
+                sidePanelFills
                   ? "md:flex-1 md:min-w-0"
-                  : rightW !== null
+                  : sidePanelW !== null
                     ? "md:shrink-0 md:w-[var(--file-w)]"
                     : "md:flex-1 md:basis-0 md:min-w-0",
                 "md:border-l md:border-border",
