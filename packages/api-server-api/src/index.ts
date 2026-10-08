@@ -534,6 +534,9 @@ export {
   PROMPT_NOT_QUEUED_MESSAGE,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
+  STEER_METHOD,
+  steerResponseSchema,
+  steeringSupported,
 } from "./modules/acp/types.js";
 export type {
   PlatformTurnEndedParams,

@@ -25,8 +25,14 @@ Apply `/typescript-engineering` (runtime, contract) and `/react-ui-engineering` 
    steers, call a new dep `steer(submission): Promise<"injected" | "refused">` instead of queueing.
    - Claim before sending: while a steer is in flight, later submissions for the session queue
      behind it (order rule).
-   - `injected` and the same turn is still active → `onSteered(submission)`; otherwise put the
-     submission back at the **head** of the queue and run the normal queued path.
+   - `injected` → `onSteered(submission)`, always: the harness checks for and joins the running
+     turn in one step, so an injected prompt is delivered even if the runtime already saw the
+     turn end (its sender is then answered at once). `promptRequired` or a failed steer → put the
+     submission back at the **head** of the queue and run the normal queued path. The queue
+     holds while a steer is out. No deadline on the steer reply: giving up could deliver twice.
+   - After an injection, and when a queued prompt starts a turn, the queue's head is steered into
+     the running turn if it is steerable — one at a time, so the queue drains in order (operator
+     decision). A refused head stays queued for the next turn.
    - The steer request uses `_meta.steering.idleBehavior = "promptRequired"`, so an idle harness
      answers `promptRequired` and never starts a turn on its own.
 3. **Runtime** — on `onSteered`: write the user echo with `_meta.steered: true` (same
@@ -35,8 +41,8 @@ Apply `/typescript-engineering` (runtime, contract) and `/react-ui-engineering` 
    the running turn ends, with that turn's stop reason (map the steered `outboundId` to the active
    turn in `outboundIdToClient`).
 4. **UI** — `session-projection.ts` / `prompt-delivery.ts`: a `steered` acceptance marks the user
-   bubble sent (no queued indicator) and adds no assistant placeholder; the answer continues in the
-   running assistant bubble. A steered echo from another tab renders as a user bubble where it was
+   bubble sent (no queued indicator); the reply so far ends above it and the turn's output
+   continues in a reply bubble below it — the shape other viewers and a replay give it. A steered echo from another tab renders as a user bubble where it was
    injected. `chat-input.tsx`: while a turn runs, the button and placeholder say "Send" when the
    harness steers and "Queue" when it does not — expose the capability to the UI through the
    existing session load meta (`_meta.platform.steering: boolean`).
@@ -48,7 +54,8 @@ Apply `/typescript-engineering` (runtime, contract) and `/react-ui-engineering` 
 - [ ] On Claude Code, a message sent mid-turn is answered within the same turn; no second turn
       starts for it.
 - [ ] A message with an image sent mid-turn is steered and the agent sees the image.
-- [ ] A message sent while an earlier one is still queued queues behind it (no reorder).
+- [ ] A message sent while an earlier one is still queued queues behind it (no reorder), and
+      queued messages are steered into a running turn one by one, in order.
 - [ ] If the turn ends during the steer round trip, the message starts as the next turn, once.
 - [ ] A scheduled fire or invocation outcome arriving mid-turn still queues.
 - [ ] On Codex/Bob the composer says "Queue" and messages queue as in 01.

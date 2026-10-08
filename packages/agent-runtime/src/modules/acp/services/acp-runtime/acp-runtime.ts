@@ -15,6 +15,9 @@ import {
   PROMPT_NOT_QUEUED_MESSAGE,
   promptBlockSchema,
   SessionType,
+  STEER_METHOD,
+  steerResponseSchema,
+  steeringSupported,
   type PromptBlock,
   type PlatformTurnEndedParams,
   type PlatformUpdateQueuedParams,
@@ -65,7 +68,11 @@ import {
   type HarnessTeardownReason,
 } from "./harness-lease.js";
 import { createPendingAgentRequests } from "./pending-agent-requests.js";
-import { createPromptScheduler } from "./prompt-scheduler.js";
+import {
+  createPromptScheduler,
+  type PromptSubmission,
+  type SteerOutcome,
+} from "./prompt-scheduler.js";
 import { createSessionBootstrap } from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
 
@@ -153,6 +160,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     deps.harnessLoadTimeoutMs ?? DEFAULT_HARNESS_LOAD_TIMEOUT_MS;
   let sessionCloseSupported = true;
   let sessionResumeSupported = false;
+  let harnessSteers = false;
+  const steerReplies = new Map<number, (outcome: SteerOutcome) => void>();
   let initializeAnswer: { result?: unknown; error?: unknown } | null = null;
   let initializeWaiters: { channel: ClientChannel; id: unknown }[] | null =
     null;
@@ -196,6 +205,22 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const at = deps.sessionMetadata?.startRun(sessionId);
         if (at) announceRunStart(sessionId, at);
       }
+    },
+    canSteer: () => harnessSteers,
+    steer: (entry) => steerIntoTurn(entry),
+    onSteered: (
+      { sessionId, typed, channel, promptId, outboundId, originalId, queuedAt },
+      turnEnded,
+    ) => {
+      outboundIdToClient.delete(outboundId);
+      appendUserPromptToLog(
+        sessionId,
+        typed,
+        queuedAt === undefined ? channel : null,
+        promptId ?? randomUUID(),
+        { steered: true },
+      );
+      if (turnEnded) answerSteered({ channel, originalId }, null);
     },
     onQueueChanged: (sessionId) => announceQueue(sessionId),
     onTurnEnded: (sessionId) => {
@@ -479,6 +504,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydratingSessions.clear();
     sessionCloseSupported = true;
     sessionResumeSupported = false;
+    harnessSteers = false;
+    for (const reply of steerReplies.values()) reply("refused");
+    steerReplies.clear();
     initializeAnswer = null;
     initializeWaiters = null;
     deps.backgroundWork?.clear();
@@ -612,6 +640,41 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     );
   }
 
+  function answerSteered(
+    { channel, originalId }: Pick<PromptSubmission, "channel" | "originalId">,
+    stopReason: string | null,
+  ): void {
+    sendToChannel(
+      channel,
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: originalId,
+        result: { stopReason: stopReason ?? "end_turn" },
+      }),
+    );
+  }
+
+  function steerIntoTurn(entry: PromptSubmission): Promise<SteerOutcome> {
+    return new Promise((resolve) => {
+      const outboundId = nextOutboundId++;
+      const params = (entry.frame as { params?: { prompt?: unknown } }).params;
+      steerReplies.set(outboundId, resolve);
+      const sent = lease.send({
+        jsonrpc: "2.0",
+        id: outboundId,
+        method: STEER_METHOD,
+        params: {
+          sessionId: entry.sessionId,
+          prompt: params?.prompt ?? [],
+          _meta: { steering: { idleBehavior: "promptRequired" } },
+        },
+      });
+      if (sent) return;
+      steerReplies.delete(outboundId);
+      resolve("refused");
+    });
+  }
+
   function announceQueue(sessionId: string): void {
     const line = JSON.stringify(
       buildPlatformQueueChangedNotification({
@@ -632,6 +695,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     prompt: unknown,
     originator: ClientChannel | null,
     messageId: string,
+    meta?: { steered: true },
   ): void {
     if (!Array.isArray(prompt)) return;
     for (const block of prompt) {
@@ -640,6 +704,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         sessionUpdate: "user_message_chunk",
         content: block,
         messageId,
+        ...(meta !== undefined && { _meta: meta }),
       };
       const line = JSON.stringify({
         jsonrpc: "2.0",
@@ -767,6 +832,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     if (frame && isResponse(frame)) {
       const outboundId = frame.id as number;
+      const steerReply = steerReplies.get(outboundId);
+      if (steerReply) {
+        steerReplies.delete(outboundId);
+        steerReply(steerOutcomeOf(frame));
+        return;
+      }
       const mapping = outboundIdToClient.get(outboundId);
       if (mapping) {
         outboundIdToClient.delete(outboundId);
@@ -776,6 +847,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (mapping.method === "initialize") {
           sessionCloseSupported = hasSessionCapability(frame, "close");
           sessionResumeSupported = hasSessionCapability(frame, "resume");
+          harnessSteers = steeringSupported(
+            (frame as { result?: unknown }).result,
+          );
           const { result, error } = frame as {
             result?: unknown;
             error?: unknown;
@@ -838,8 +912,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
         if (mapping.promptSessionId !== null) {
           const sid = mapping.promptSessionId;
-          const { turnEnded, promptId, runPrompt } =
+          const { turnEnded, promptId, runPrompt, steered } =
             promptScheduler.onPromptResponse(sid, outboundId);
+          for (const follower of steered)
+            answerSteered(follower, extractStopReason(frame));
           deps.sessionMetadata?.recordActivity(sid);
           if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
           const stopReason = extractStopReason(frame);
@@ -1149,6 +1225,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           typed: typedPrompt,
           blocks: queueableBlocks(typedPrompt),
           editable: surface === "ui",
+          steerable: surface === "ui",
           unattended:
             nonViewerChannels.has(channel) && isMachineSession(promptSessionId),
         });
@@ -1377,6 +1454,15 @@ function hasSessionCapability(
   const session = caps.sessionCapabilities;
   if (!isNonNullObject(session)) return false;
   return isNonNullObject(session[name]);
+}
+
+function steerOutcomeOf(frame: unknown): SteerOutcome {
+  const parsed = steerResponseSchema.safeParse(
+    (frame as { result?: unknown }).result,
+  );
+  return parsed.success && parsed.data.outcome === "injected"
+    ? "injected"
+    : "refused";
 }
 
 function queueableBlocks(prompt: unknown): PromptBlock[] {

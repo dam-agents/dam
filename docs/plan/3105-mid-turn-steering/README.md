@@ -73,7 +73,7 @@ Add to `packages/api-server-api/src/modules/acp/types.ts` (schemas + builders, l
 | `platform/rewriteFrom` | client → runtime (request) | `{ sessionId, upToMessageId: string \| null, prompt: PromptBlock[], promptId }` → `{ sessionId: newId }` | 04 |
 | `session/prompt` `_meta.platform.steer` | channel → runtime | `{ prompt: PromptBlock[] }` — the text to inject if steered; presence marks the prompt steerable | 06 |
 
-`QueuedPrompt = { promptId: string | null, prompt: PromptBlock[], queuedAt: string, editable: boolean }`
+`QueuedPrompt = { promptId: string | null, blocks: PromptBlock[], queuedAt: string, editable: boolean }`
 — `editable` is true only for prompts with a `promptId` sent from the UI surface.
 
 ### Rules every slice keeps
@@ -81,7 +81,8 @@ Add to `packages/api-server-api/src/modules/acp/types.ts` (schemas + builders, l
 - **One delivery.** A message reaches the agent once: queued, steered or started, never two of
   them. A steer that the harness refuses (`promptRequired`, failure, or the turn ended during the
   round trip) puts the prompt back at the **head** of the queue.
-- **Order.** Nothing is reordered: a prompt behind a queued one queues too, even if it could steer.
+- **Order.** Nothing is reordered: a prompt behind a queued one queues too. While a turn runs, the
+  queue drains into it from its head, one steer at a time; a refused head waits for the next turn.
 - **Steering scope.** Only prompts from the UI surface (`_meta.platform.surface === "ui"`) steer in
   03; scheduled fires, invocation outcomes and CLI runs keep queueing. 06 adds channel prompts.
 - **Correction is UI only.** Editing (02, 04) exists in the web UI; Slack and Telegram get no
@@ -96,7 +97,7 @@ Add to `packages/api-server-api/src/modules/acp/types.ts` (schemas + builders, l
 |----|-------|-------|------------|------|
 | 01 | [The queue is shared and truthful](01-shared-queue.md) | Broadcast + load snapshot of the queue, echo at start, UI renders queue state inline, Stop/disconnect stop ending queued bubbles | — | ✓ |
 | 02 | [Edit and delete a queued message](02-edit-queued.md) | `updateQueued`/`removeQueued`, inline Edit/Delete on a queued bubble | 01 | ✓ |
-| 03 | [Steer a mid-turn message](03-native-steer.md) | Runtime steers UI prompts via `_session/steering`, steered echo, composer wording | 01 | |
+| 03 | [Steer a mid-turn message](03-native-steer.md) | Runtime steers UI prompts via `_session/steering`, steered echo, composer wording | 01 |✓ |
 | 04 | [Edit an earlier message and rerun](04-rewrite-from.md) | `rewriteFrom` via harness fork, replace in place, Edit on user bubbles when idle | 01 | |
 | 05 | [pi steers](05-pi-steering.md) | pi-acp `_session/steering` from upstream PR #115, carried in the pi-agent image | 03 | |
 | 06 | [One steering point for every surface](06-channel-steering-in-runtime.md) | Channel queue submits steerable prompts; runtime steers; channel steer path removed | 03 | |

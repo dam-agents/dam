@@ -8,6 +8,23 @@ export const PROMPT_NOT_QUEUED_CODE = "PROMPT_NOT_QUEUED";
 
 export const PROMPT_NOT_QUEUED_MESSAGE = "prompt is no longer queued";
 
+export const STEER_METHOD = "_session/steering";
+
+export const steerResponseSchema = z.object({
+  outcome: z.string().optional(),
+});
+
+export function steeringSupported(initializeResult: unknown): boolean {
+  const parsed = z
+    .object({
+      _meta: z.object({
+        steering: z.object({ supported: z.literal(true) }),
+      }),
+    })
+    .safeParse(initializeResult);
+  return parsed.success;
+}
+
 export function jsonRpcErrorDetails(data: unknown): string | undefined {
   if (typeof data === "string" && data) return data;
   if (data && typeof data === "object") {
@@ -131,6 +148,7 @@ export const platformPromptAcceptedParamsSchema = z.object({
   sessionId: z.string().min(1),
   promptId: z.string().min(1),
   queued: z.boolean(),
+  steered: z.literal(true).optional(),
 });
 export type PlatformPromptAcceptedParams = z.infer<
   typeof platformPromptAcceptedParamsSchema

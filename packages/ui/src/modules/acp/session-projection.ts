@@ -142,6 +142,7 @@ function applyUpdateOf(
       );
 
     case "platform_prompt_accepted":
+      if (update.steered) return withSteeredSend(messages, update.promptId);
       return update.queued && waitsBehindAnotherReply(messages, update.promptId)
         ? setQueuedByPromptId(messages, update.promptId, true)
         : messages;
@@ -194,6 +195,20 @@ function setQueuedByPromptId(
       ? { ...m, queued }
       : m,
   );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A steered prompt joins the running turn where it
+ * was injected, so the sender's view takes the shape every other viewer and a
+ * replay give it: the reply so far ends above the message, and the turn's
+ * output continues in the reply bubble below it.
+ */
+function withSteeredSend(messages: Message[], promptId: string): Message[] {
+  return messages.flatMap((m): Message[] => {
+    if (m.role !== "assistant" || !m.streaming || m.queued) return [m];
+    if (m.promptId === promptId) return [m];
+    return hasAgentContent(m) ? [{ ...m, streaming: false }] : [];
+  });
 }
 
 /**

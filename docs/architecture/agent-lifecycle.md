@@ -112,6 +112,8 @@ A session runs one turn at a time, and one scheduler is the only place a prompt 
 
 The runtime therefore reports them, over the same channel extension as the end-of-turn signal — which is logged and replayed, and names the ending turn's prompt id and stop reason: one notification on acceptance (and whether the prompt queued), one when it starts. Both ride a sender-minted prompt id as platform metadata, stripped before the agent sees it; channel workers and older clients mint none and get none. Both are **sender-only and ephemeral**; the queue is the conversation's: every viewer sees each change and can edit or remove a prompt until it starts, and a load returns it. A prompt's echo enters the log only when it starts. Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api/).
 
+A harness that can **steer** takes a prompt into the turn it is running rather than after it. A web UI prompt sent mid-turn is then **steered** — a fourth fate, reported in place of a start — and queued prompts drain into a running turn the same way. A refused steer queues again at the head, so the agent receives each prompt once and in order. Scheduled fires, invocation outcomes and CLI runs always queue.
+
 This makes **the server authoritative about delivery**, which is the point: watching for content cannot separate "parked behind a running turn" from "never arrived". A client fails a prompt on evidence instead:
 
 - **No acceptance within a bounded wait** — the true delivery check, normally a matter of milliseconds. Unacknowledged this long means it never arrived, and the failure carries the socket's stated cause when it gave one.
@@ -154,18 +156,12 @@ SSH sessions are unrelated to the session machinery above: they carry no session
 Beyond per-session children, agent-runtime supervises at most one **pod
 service** — an optional
 background process the agent image provides at a well-known path, running for
-the life of the pod. The runtime spawns it once the runtime-channel env is
-first materialized (it typically consumes credentials/URLs from that env),
-restarts crashes with capped backoff, and interprets a clean exit as
-"nothing to do for this env" — the service then stays down until the env
-next changes. When the env driver rewrites the env, the runtime refreshes a
-well-known env snapshot file and sends SIGHUP: a service that handles it
-reloads in place (in-flight work finishes, new work uses the fresh env); one
-that doesn't dies by the signal's default action and is respawned with the
-fresh env. Its output joins the pod log stream. The pod's
-PID 1 is a minimal init (catatonit) wrapping agent-runtime, so descendants
-the runtime did not spawn — processes orphaned by a dying harness or service
-— are reaped rather than left as zombies. claude-code uses the hook to front
+the life of the pod. The runtime starts it once the runtime-channel env
+exists, restarts it when it crashes, and after a clean exit leaves it down
+until the env next changes. When the env changes, the service is asked to
+reload in place, and one that cannot is restarted with the fresh env. Its
+output joins the pod log stream. The pod's init reaps processes orphaned by a
+dying harness or service, so none linger as zombies. claude-code uses the hook to front
 custom Anthropic-compatible upstreams with a local model gateway;
 images without a pod service are unaffected.
 
