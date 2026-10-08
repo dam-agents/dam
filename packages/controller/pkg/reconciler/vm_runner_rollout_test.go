@@ -389,3 +389,31 @@ func TestARunnerThatStaysUnreachableAfterANewReleaseRollsThePod(t *testing.T) {
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"))
 }
+
+// TEST_SCENARIO: a runner that took its new release well keeps its pod's old image for good, so it must not be rolled for a later blip in its answers. Once it has answered that it runs the release, an unreachable runner long after is left alone.
+func TestARunnerThatTookItsReleaseIsNotRolledForALaterBlip(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t)
+	r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
+	createRolloutRunner(t, r, "owner-a")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	settleRunnerPod(t, r, "owner-a")
+	r.config.VM.Runner.Image = runnerV2
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	cms := r.client.CoreV1().ConfigMaps("test-agents")
+	cm, err := cms.Get(ctx, r.runnerReleaseName("owner-a"), metav1.GetOptions{})
+	require.NoError(t, err)
+	cm.Annotations[annRunnerReleaseNamedAt] = time.Now().Add(-runnerReleaseUnreachableRoll - time.Minute).UTC().Format(time.RFC3339)
+	_, err = cms.Update(ctx, cm, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	nodes["owner-a"].release = vmrunner.RunnerRelease{Running: runnerV2, Target: runnerV2}
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	cm, err = cms.Get(ctx, r.runnerReleaseName("owner-a"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotContains(t, cm.Annotations, annRunnerReleaseNamedAt)
+
+	r.runnerEndpoint = func(string) string { return "https://127.0.0.1:1" }
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"))
+}

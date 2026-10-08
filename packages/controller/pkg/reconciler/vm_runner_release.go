@@ -62,6 +62,19 @@ func (r *AgentReconciler) applyRunnerRelease(ctx context.Context, owner string) 
 	return err
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: forgets when the runner's release was named, once the runner has answered that it runs it. The stamp stands only for a hand-off not yet confirmed; left in place, any later blip in a runner that took its release well — a crash and restart — would read as a hand-off that never came back, and roll the pod.
+func (r *AgentReconciler) clearRunnerReleaseNamed(ctx context.Context, owner string) {
+	cms := r.client.CoreV1().ConfigMaps(r.config.Namespace)
+	cm, err := cms.Get(ctx, r.runnerReleaseName(owner), metav1.GetOptions{})
+	if err != nil || cm.Annotations[annRunnerReleaseNamedAt] == "" {
+		return
+	}
+	delete(cm.Annotations, annRunnerReleaseNamedAt)
+	if _, err := cms.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+		slog.Warn("vm runner: clearing the time its release was named", "owner", owner, "error", err)
+	}
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: whether the runner's release was named more than runnerReleaseUnreachableRoll ago. A ConfigMap that is missing, or whose time cannot be read, says nothing, so it never rolls a pod.
 func (r *AgentReconciler) runnerReleaseNamedLongAgo(ctx context.Context, owner string) bool {
 	cm, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).Get(ctx, r.runnerReleaseName(owner), metav1.GetOptions{})
@@ -90,7 +103,7 @@ func runnerRollSpec(spec appsv1.DeploymentSpec, releases bool) appsv1.Deployment
 	return spec
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a runner pod whose shape is unchanged must still roll to take the configured release. Only a release built for another pod needs a new one — its runner does not load against this pod's libc, or the install keeps one VM runtime per pod — since its loader can never hand the machines to it. A runner that has not answered since it was named the release, for longer than a hand-off ever takes, rolls too. A release that is merely not staged yet comes by itself, and one that failed right after it took over is left to the next release rather than rolled onto, since a pod on it would fail the same way and take the machines down with it.
+// UNIT_BOUNDARY_DESCRIPTION: whether a runner pod whose shape is unchanged must still roll to take the configured release. Only a release built for another pod needs a new one — its runner does not load against this pod's libc, or the install keeps one VM runtime per pod — since its loader can never hand the machines to it. A runner that has not answered since it was named the release, for longer than a hand-off ever takes, rolls too; once it answers that it runs the release, that clock is cleared. A release that is merely not staged yet comes by itself, and one that failed right after it took over is left to the next release rather than rolled onto, since a pod on it would fail the same way and take the machines down with it.
 func (r *AgentReconciler) runnerNeedsPodForRelease(ctx context.Context, owner string, existing *appsv1.Deployment) bool {
 	want := r.config.VM.Runner.Image
 	containers := existing.Spec.Template.Spec.Containers
@@ -109,7 +122,11 @@ func (r *AgentReconciler) runnerNeedsPodForRelease(ctx context.Context, owner st
 		}
 		return false
 	}
-	if release.Running == want || release.Target != want {
+	if release.Running == want {
+		r.clearRunnerReleaseNamed(ctx, owner)
+		return false
+	}
+	if release.Target != want {
 		return false
 	}
 	switch release.Held {
