@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-05
+Last verified: 2026-10-08
 
 ## Overview
 
@@ -117,7 +117,7 @@ The same record is the disconnect story: a `dam run` that loses its socket mid-t
 
 The transport is an in-pod OpenSSH `sshd` spawned per connection and tunneled over the agent WebSocket; the SSH wire protocol is opaque to the CLI and api-server, which relay bytes verbatim. SSH terminates at the in-pod sshd, which reuses the same upgrade auth (token → ownership → terms) as `dam chat`. Authentication to sshd is public-key via a dedicated dam keypair under `$XDG_STATE_HOME/dam/` — the user's real identity is the bearer token verified at the WebSocket upgrade, and the SSH key is only the transport credential. Host-key checking is disabled deliberately: the TLS-encrypted upgrade is the real trust boundary, so the in-pod host key authenticates nothing extra and only broke connections when a volume rotated it.
 
-A single `--exec` flag selects the client and how it is invoked (`ssh`, or an editor in `code`/`zed` mode). Editor modes write a managed host block to dam's own ssh_config and pull it into `~/.ssh/config` via one `Include` line — the reliable cross-client hook, since editors are often already-running singletons that ignore a launch-time environment — then launch the editor against the agent alias; `dam ssh configure` writes those blocks without launching and can reconcile them to the host's current agents or clear them. `code` mode additionally pre-allows the VS Code server-download hosts as egress rules so the connect doesn't trip a mid-flight approval prompt. `dam ssh` depends on the OpenSSH client locally; `sshd` ships in the shared agent base image, so every agent supports it.
+Arguments after `--` go to `ssh` verbatim, after the agent host, so `dam ssh connect <agent> -- -L 8080:localhost:8080 -N` forwards a port without a shell and `-- uname -a` runs a remote command; editor modes reject them. A single `--exec` flag selects the client and how it is invoked (`ssh`, or an editor in `code`/`zed` mode). Editor modes write a managed host block to dam's own ssh_config and pull it into `~/.ssh/config` via one `Include` line — the reliable cross-client hook, since editors are often already-running singletons that ignore a launch-time environment — then launch the editor against the agent alias; `dam ssh configure` writes those blocks without launching and can reconcile them to the host's current agents or clear them. `code` mode additionally pre-allows the VS Code server-download hosts as egress rules so the connect doesn't trip a mid-flight approval prompt. `dam ssh` depends on the OpenSSH client locally; `sshd` ships in the shared agent base image, so every agent supports it.
 
 ## Files and import
 
