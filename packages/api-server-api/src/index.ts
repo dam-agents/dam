@@ -66,6 +66,7 @@ export type {
   AgentsService,
   AgentCreateInput,
   AgentUpdateInput,
+  AgentBackgroundWork,
   BackgroundWorkItemView,
   SessionBackgroundWork,
   TemplateUpdate,

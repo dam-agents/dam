@@ -27,9 +27,11 @@ Reporting is optional: a harness that never reports behaves exactly as it did be
 contract. Claude Code reports from a Stop hook that its launcher writes into the user
 settings on every start, not into the image's managed settings: an account that receives
 server-managed settings replaces the managed file whole, which would drop the hook. What
-is held is published on the runtime's status surface, and the user sees
-it in the [process inventory](#process-inventory), so an agent that stays awake can be
-explained by the work holding it.
+is held is published on the runtime's status surface, together with how many
+[kept Detached Processes](#keeping-work) run. The user sees it in the
+[process inventory](#process-inventory), and an agent whose status would otherwise say
+*Idle* says *Background work* instead, so an agent that stays awake can be explained by
+the work holding it.
 
 Holding the session and keeping the agent awake are **two separate holds**. Every
 reported task holds its session open, because closing the session would kill it. Only a

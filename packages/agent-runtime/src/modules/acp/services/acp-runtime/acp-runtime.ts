@@ -92,6 +92,7 @@ const TURN_ERROR_TEXT_CAP = 4 * 1024;
 export interface AcpRuntimeStatus {
   idle: boolean;
   backgroundWork: HeldSession[];
+  keptProcesses: number;
 }
 
 export interface AcpRuntime {
@@ -1300,6 +1301,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       return {
         idle: !runtimeBusy(),
         backgroundWork: deps.backgroundWork?.held() ?? [],
+        keptProcesses: deps.keptProcesses?.count() ?? 0,
       };
     },
 

@@ -21,7 +21,7 @@ import {
   type ConnectSlackResult,
   type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
-  type SessionBackgroundWork,
+  type AgentBackgroundWork,
   type TemplateUpdate,
   type UpgradeAgentError,
   ChannelType,
@@ -227,18 +227,23 @@ export function executeTelegramBind(deps: {
   };
 }
 
+const NO_BACKGROUND_WORK: AgentBackgroundWork = {
+  sessions: [],
+  keptProcesses: 0,
+};
+
 export function executeBackgroundWorkRead(deps: {
   getAgent: (id: string) => Promise<Pick<InfraAgent, "hibernated"> | null>;
   podStatus: PodStatusClient;
 }) {
-  return async (id: string): Promise<SessionBackgroundWork[] | null> => {
+  return async (id: string): Promise<AgentBackgroundWork | null> => {
     const infra = await deps.getAgent(id);
     if (!infra) return null;
-    if (infra.hibernated) return [];
+    if (infra.hibernated) return NO_BACKGROUND_WORK;
     try {
       return await deps.podStatus.backgroundWork(id);
     } catch {
-      return [];
+      return NO_BACKGROUND_WORK;
     }
   };
 }

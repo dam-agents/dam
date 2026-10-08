@@ -758,6 +758,7 @@ const server = http.createServer((req, res) => {
     const status = {
       idle: acp.idle && ptySlots.size === 0 && !kbPublish.isBusy(),
       backgroundWork: acp.backgroundWork,
+      keptProcesses: acp.keptProcesses,
     };
     res
       .writeHead(200, { "Content-Type": "application/json", ...CORS })
