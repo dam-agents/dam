@@ -91,6 +91,7 @@ export interface Message {
   loadOlderBefore?: string;
   at?: string;
   telemetryPromptId?: string;
+  stopped?: boolean;
   error?: {
     message: string;
     retryWith?: RetryPayload;

@@ -1,3 +1,4 @@
+import { StopFilledAlt } from "@carbon/icons-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { Tooltip } from "@/components/ui/tooltip";
@@ -114,7 +115,7 @@ export const ChatMessage = memo(function ChatMessage({
     );
   }
 
-  const { role, parts, streaming, queued, error } = message;
+  const { role, parts, streaming, queued, error, stopped } = message;
   const isAssistant = role === "assistant";
   const undelivered = !isAssistant && error !== undefined;
 
@@ -181,6 +182,15 @@ export const ChatMessage = memo(function ChatMessage({
               <WorkingDots size="md" className="text-accent" />
               <span className="sr-only">Working</span>
             </span>
+          )}
+          {isAssistant && stopped && !streaming && (
+            <p
+              data-testid="reply-stopped-marker"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              <StopFilledAlt size={12} className="shrink-0" />
+              Stopped
+            </p>
           )}
           {undelivered && (
             <UndeliveredNotice

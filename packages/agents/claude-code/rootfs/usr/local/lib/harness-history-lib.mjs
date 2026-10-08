@@ -71,6 +71,21 @@ function isToolResultOnly(content) {
   );
 }
 
+const INTERRUPT_MARKER = /^\[Request interrupted by user[^\]]*\]$/;
+
+function isInterruptMarker(content) {
+  const texts =
+    typeof content === "string"
+      ? [content]
+      : Array.isArray(content)
+        ? content.map((item) => (item?.type === "text" ? item.text : null))
+        : [];
+  return (
+    texts.length > 0 &&
+    texts.every((text) => typeof text === "string" && INTERRUPT_MARKER.test(text.trim()))
+  );
+}
+
 function withStamp(notification, at, telemetryPromptId) {
   if (at === null && telemetryPromptId === null) return notification;
   const meta = objectOr(notification._meta);
@@ -121,6 +136,20 @@ export async function loadHistory(sessionId) {
     const at = stampOf(message);
     let content = message.message.content;
     const parentToolUseId = parentToolUseIdOf(message);
+    if (
+      message.type === "user" &&
+      parentToolUseId === null &&
+      isInterruptMarker(content)
+    ) {
+      lines.push(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method: "platform/turnEnded",
+          params: { sessionId, stopReason: "cancelled" },
+        }),
+      );
+      continue;
+    }
     if (
       message.type === "user" &&
       parentToolUseId === null &&

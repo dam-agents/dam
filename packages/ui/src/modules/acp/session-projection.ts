@@ -135,6 +135,7 @@ function applyUpdateOf(
         telemetryPromptId,
         update.error &&
           describeJsonRpcError(update.error.message, update.error.details),
+        update.stopReason === "cancelled",
       );
 
     case "platform_prompt_accepted":
@@ -598,9 +599,10 @@ function closeActiveAssistant(
   at?: string,
   telemetryPromptId?: string,
   interruption?: string,
+  stopped = false,
 ): Message[] {
   const i = activeReplyIndex(messages);
-  if (i === -1) return messages;
+  if (i === -1) return stopped ? markLastReplyStopped(messages) : messages;
   return messages.map((x, j) =>
     j === i
       ? {
@@ -609,10 +611,18 @@ function closeActiveAssistant(
           ...(telemetryPromptId !== undefined && { telemetryPromptId }),
           ...(interruption !== undefined &&
             hasAgentContent(x) && { error: { message: interruption } }),
+          ...(stopped && { stopped: true }),
           streaming: false,
         }
       : x,
   );
+}
+
+function markLastReplyStopped(messages: Message[]): Message[] {
+  const last = messages.length - 1;
+  const tail = messages[last];
+  if (tail?.role !== "assistant" || tail.notice) return messages;
+  return messages.map((m, i) => (i === last ? { ...m, stopped: true } : m));
 }
 
 /**
