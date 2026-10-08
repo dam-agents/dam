@@ -17,6 +17,7 @@ import {
   type SurfaceAttribution,
   type WsAuthSite,
 } from "../admission/auth.js";
+import { watchApiKey } from "../admission/api-key-watch.js";
 import { emit, EventType } from "../../../events.js";
 
 export type RelayDenialKind = "not-owner" | "not-permitted" | "terms-stale";
@@ -34,7 +35,12 @@ const upgradeDenial: Record<RelayAdmissionDenialKind, string> = {
 };
 
 export type RelayAdmissionResult =
-  | { ok: true; user: UserIdentity; surface: string }
+  | {
+      ok: true;
+      user: UserIdentity;
+      surface: string;
+      watchKey: (onDead: () => void) => () => void;
+    }
   | { ok: false; kind: RelayAdmissionDenialKind };
 
 export interface RelayAdmissionDeps {
@@ -60,10 +66,8 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
       sourceIp: upgradeSourceIp(req),
     };
 
-    const admitted = await deps.authenticate(
-      url.searchParams.get("token"),
-      site,
-    );
+    const token = url.searchParams.get("token");
+    const admitted = await deps.authenticate(token, site);
     if (!admitted.ok) return admitted;
     const { user } = admitted.principal;
 
@@ -111,7 +115,15 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
         relay: relayKind,
       });
     }
-    return { ok: true, user, surface };
+    return {
+      ok: true,
+      user,
+      surface,
+      watchKey: (onDead) =>
+        user.keyId === undefined
+          ? () => {}
+          : watchApiKey(deps.authenticate, token, site, onDead),
+    };
   };
 }
 
@@ -207,6 +219,10 @@ export function relayRoute(
     if (!admitted.ok) return deny(admitted.kind);
     if (agentAllows && !(await agentAllows(agentId)))
       return deny("not-permitted");
+    socket.once(
+      "close",
+      admitted.watchKey(() => socket.destroy()),
+    );
     relay.handleUpgrade(req, socket, head, agentId, {
       sub: admitted.user.sub,
       surface: admitted.surface,
