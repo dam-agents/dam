@@ -97,7 +97,7 @@ pub struct RunnerRelease {
     pub message: String,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Not yet staged passes once the node's stager has copied the release. The other two never pass in this pod: a release built against another VM runtime cannot adopt the machines running, and one that exited right after it took over is not tried again until the controller names another.
+// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Not yet staged passes once the node's stager has copied the release. The other two never pass in this pod: a release built for another pod — one whose runner does not load against this pod's libc, or one built against another VM runtime where the install keeps one runtime per pod — runs only in a new pod, and one that exited right after it took over is not tried again until the controller names another.
 pub const HELD_UNSTAGED: &str = "unstaged";
 pub const HELD_RUNTIME: &str = "runtime";
 pub const HELD_FAILED: &str = "failed";

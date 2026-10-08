@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use clap::{Parser, Subcommand};
 use tokio::process::{Child, Command};
 use tokio::signal::unix::{signal, SignalKind};
-use vm_runner::api::{RunnerRelease, HELD_FAILED, HELD_UNSTAGED};
+use vm_runner::api::{RunnerRelease, HELD_FAILED, HELD_RUNTIME, HELD_UNSTAGED};
 use vm_runner::release::{self, Choice, Releases, RUNNER};
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner pod's entrypoint, and the node's stager. The pod's image is fixed for as long as the pod lives, and the runner's machines are processes of the pod, so a new runner release would otherwise reboot every machine with the pod. Run, the loader supervises one runner process and replaces it with the release the controller names, which the stager has copied onto the node; the machines outlive the runner process and the next one adopts them. Stage, it is the DaemonSet that does that copying.
@@ -26,6 +26,9 @@ enum Mode {
     Run {
         #[arg(long)]
         builtin: PathBuf,
+        // UNIT_BOUNDARY_DESCRIPTION: the smolvm runtime the pod's image carries, which the runner's own arguments name. A staged release built against another runtime runs against the pod's copy of that one instead.
+        #[arg(long = "builtin-runtime")]
+        builtin_runtime: PathBuf,
         #[arg(last = true)]
         args: Vec<String>,
     },
@@ -33,6 +36,8 @@ enum Mode {
     Stage {
         #[arg(long)]
         builtin: PathBuf,
+        #[arg(long)]
+        runtime: PathBuf,
         #[arg(long)]
         into: PathBuf,
         #[arg(long)]
@@ -63,16 +68,21 @@ async fn main() -> anyhow::Result<()> {
     match Args::parse().command {
         Mode::Stage {
             builtin,
+            runtime,
             into,
             release,
             keep,
         } => {
-            let dest = release::stage(&builtin, &into, &release, keep)?;
+            let dest = release::stage(&builtin, &runtime, &into, &release, keep)?;
             tracing::info!(release, dir = %dest.display(), "staged the runner release");
             signal(SignalKind::terminate())?.recv().await;
             Ok(())
         }
-        Mode::Run { builtin, args } => {
+        Mode::Run {
+            builtin,
+            builtin_runtime,
+            args,
+        } => {
             let staged = env(release::RELEASES_ENV);
             if staged.is_empty() {
                 return Err(std::process::Command::new(builtin.join(RUNNER))
@@ -82,18 +92,25 @@ async fn main() -> anyhow::Result<()> {
             }
             let loader_dir = PathBuf::from(env(release::LOADER_DIR_ENV));
             let copies = loader_dir.join("releases");
-            std::fs::create_dir_all(&copies)?;
+            let runtimes = loader_dir.join("runtimes");
+            for dir in [&copies, &runtimes] {
+                std::fs::create_dir_all(dir)?;
+            }
             let code = Loader {
                 releases: Releases {
                     builtin,
+                    builtin_runtime,
                     builtin_release: env(release::BUILTIN_RELEASE_ENV),
                     staged: PathBuf::from(staged),
+                    same_runtime_only: env(release::SAME_RUNTIME_ONLY_ENV) == "true",
                 },
                 args,
                 target_file: PathBuf::from(env(release::RELEASE_FILE_ENV)),
                 status_file: release::status_file(&loader_dir),
                 copies,
+                runtimes,
                 failed: None,
+                unloadable: None,
             }
             .run()
             .await?;
@@ -108,16 +125,28 @@ struct Loader {
     target_file: PathBuf,
     status_file: PathBuf,
     copies: PathBuf,
+    runtimes: PathBuf,
     failed: Option<String>,
+    unloadable: Option<(String, String)>,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a release the loader can run: its name, the directory of its binaries and the runtime it runs against, both in the pod.
+#[derive(Clone)]
+struct Release {
+    name: String,
+    dir: PathBuf,
+    runtime: PathBuf,
 }
 
 struct Running {
-    release: String,
-    dir: PathBuf,
+    release: Release,
     child: Child,
     started: Instant,
-    replaced: Option<(String, PathBuf)>,
+    replaced: Option<Release>,
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: how long the check that a release loads in this pod may take. It only prints the runner's usage.
+const LOAD_CHECK: Duration = Duration::from_secs(10);
 
 impl Loader {
     fn target(&self) -> String {
@@ -126,41 +155,84 @@ impl Loader {
             .unwrap_or_default()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the release to run for `target`, from the pod's own copy of it, so a release the stager removes from the node never leaves a runner without its guest binaries. After each hand-off the loader keeps only the copies of the release it runs and the one it would go back to.
-    fn choose(&self, target: &str) -> Choice {
-        if self.failed.as_deref() == Some(target) {
-            return Choice::Held {
-                held: HELD_FAILED,
-                message: format!("{target} exited right after it took over"),
-            };
-        }
-        match self.releases.choose(target) {
-            Choice::Run { release, dir } if dir != self.releases.builtin => {
-                match release::stage(&dir, &self.copies, &release, usize::MAX) {
-                    Ok(dir) => Choice::Run { release, dir },
-                    Err(e) => Choice::Held {
-                        held: HELD_UNSTAGED,
-                        message: format!("copying {release} into the pod: {e:#}"),
-                    },
-                }
-            }
-            choice => choice,
+    fn builtin(&self) -> Release {
+        Release {
+            name: self.releases.builtin_release.clone(),
+            dir: self.releases.builtin.clone(),
+            runtime: self.releases.builtin_runtime.clone(),
         }
     }
 
-    fn spawn(
-        &self,
-        release: String,
-        dir: PathBuf,
-        replaced: Option<(String, PathBuf)>,
-    ) -> anyhow::Result<Running> {
-        let child = Command::new(dir.join(RUNNER))
-            .args(release::args_for(&self.args, &self.releases.builtin, &dir))
+    // UNIT_BOUNDARY_DESCRIPTION: the release to run for `target`, from the pod's own copies of it and its runtime, so a release the stager removes from the node never leaves a runner without its guest binaries or a VMM without its runtime. A release whose runner cannot even load in this pod — one linked against a newer libc than the pod's image has — is held as built for another pod, which the controller answers by rolling the pod, and is not checked again until the controller names another.
+    async fn choose(&mut self, target: &str) -> Result<Release, (&'static str, String)> {
+        if self.failed.as_deref() == Some(target) {
+            return Err((
+                HELD_FAILED,
+                format!("{target} exited right after it took over"),
+            ));
+        }
+        if let Some((_, message)) = self.unloadable.as_ref().filter(|(name, _)| name == target) {
+            return Err((HELD_RUNTIME, message.clone()));
+        }
+        let (name, dir, runtime) = match self.releases.choose(target) {
+            Choice::Held { held, message } => return Err((held, message)),
+            Choice::Run { dir, .. } if dir == self.releases.builtin => return Ok(self.builtin()),
+            Choice::Run {
+                release,
+                dir,
+                runtime,
+            } => (release, dir, runtime),
+        };
+        let copied = release::stage_files(&dir, &self.copies, &name).and_then(|dir| {
+            let runtime = match runtime {
+                None => self.releases.builtin_runtime.clone(),
+                Some(staged) => {
+                    let id = release::runtime_id(&dir).unwrap_or_default();
+                    let copy = self.runtimes.join(&id);
+                    release::copy_tree(&staged, &copy)?;
+                    copy
+                }
+            };
+            Ok(Release {
+                name: name.clone(),
+                dir,
+                runtime,
+            })
+        });
+        let release =
+            copied.map_err(|e| (HELD_UNSTAGED, format!("copying {name} into the pod: {e:#}")))?;
+        let loads = Command::new(release.dir.join(RUNNER))
+            .arg("--help")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .status();
+        match tokio::time::timeout(LOAD_CHECK, loads).await {
+            Ok(Ok(status)) if status.success() => Ok(release),
+            outcome => {
+                let message = format!(
+                    "{name} does not load in this pod ({outcome:?}), so only a new pod runs it"
+                );
+                self.unloadable = Some((name, message.clone()));
+                Err((HELD_RUNTIME, message))
+            }
+        }
+    }
+
+    fn spawn(&self, release: Release, replaced: Option<Release>) -> anyhow::Result<Running> {
+        let builtin = self.builtin();
+        let child = Command::new(release.dir.join(RUNNER))
+            .args(release::args_for(
+                &self.args,
+                &[
+                    (&builtin.dir, &release.dir),
+                    (&builtin.runtime, &release.runtime),
+                ],
+            ))
             .spawn()?;
-        tracing::info!(release, dir = %dir.display(), "started the runner");
+        tracing::info!(release = release.name, dir = %release.dir.display(), runtime = %release.runtime.display(), "started the runner");
         Ok(Running {
             release,
-            dir,
             child,
             started: Instant::now(),
             replaced,
@@ -168,29 +240,47 @@ impl Loader {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: starts `release` in place of `fallback`. A release that cannot even be started is held as failed and the fallback started again, because the loader exiting would end the pod and every machine in it.
-    fn take_over(
-        &mut self,
-        release: String,
-        dir: PathBuf,
-        fallback: (String, PathBuf),
-    ) -> anyhow::Result<Running> {
-        match self.spawn(release.clone(), dir, Some(fallback.clone())) {
+    fn take_over(&mut self, release: Release, fallback: Release) -> anyhow::Result<Running> {
+        let name = release.name.clone();
+        match self.spawn(release, Some(fallback.clone())) {
             Ok(running) => Ok(running),
             Err(e) => {
-                tracing::error!(release, error = %format!("{e:#}"), "the runner release could not be started; going back to the one it replaced");
-                self.failed = Some(release);
-                self.spawn(fallback.0, fallback.1, None)
+                tracing::error!(release = name, error = %format!("{e:#}"), "the runner release could not be started; going back to the one it replaced");
+                self.failed = Some(name);
+                self.spawn(fallback, None)
             }
         }
     }
 
-    fn report(&self, running: &Running, target: &str, choice: Option<&Choice>) {
-        let (held, message) = match choice {
-            Some(Choice::Held { held, message }) => (held.to_string(), message.clone()),
-            _ => (String::new(), String::new()),
-        };
+    // UNIT_BOUNDARY_DESCRIPTION: removes the pod's copies the loader no longer needs: every release but the one running and the one it would go back to, and every runtime none of those runs against and no VMM still maps. A machine booted before a hand-off keeps the runtime it booted until it stops.
+    fn prune(&self, running: &Running) {
+        let kept: Vec<&Release> = std::iter::once(&running.release)
+            .chain(running.replaced.as_ref())
+            .collect();
+        let releases: Vec<&Path> = kept.iter().map(|r| r.dir.as_path()).collect();
+        let mut runtimes: Vec<PathBuf> = kept.iter().map(|r| r.runtime.clone()).collect();
+        runtimes.extend(
+            std::fs::read_dir(&self.runtimes)
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|dir| release::mapped(Path::new("/proc"), dir)),
+        );
+        let runtimes: Vec<&Path> = runtimes.iter().map(PathBuf::as_path).collect();
+        for (dir, keep) in [(&self.copies, &releases), (&self.runtimes, &runtimes)] {
+            if let Err(e) = release::prune(dir, keep) {
+                tracing::warn!(error = %format!("{e:#}"), dir = %dir.display(), "removing the pod's copies it no longer needs");
+            }
+        }
+    }
+
+    fn report(&self, running: &Running, target: &str, held: Option<(&str, String)>) {
+        let (held, message) = held.map_or_else(Default::default, |(held, message)| {
+            (held.to_string(), message)
+        });
         let status = RunnerRelease {
-            running: running.release.clone(),
+            running: running.release.name.clone(),
             target: target.to_string(),
             held,
             message,
@@ -205,15 +295,10 @@ impl Loader {
     async fn run(mut self) -> anyhow::Result<i32> {
         let mut term = signal(SignalKind::terminate())?;
         let mut interrupt = signal(SignalKind::interrupt())?;
-        let builtin = (
-            self.releases.builtin_release.clone(),
-            self.releases.builtin.clone(),
-        );
-        let mut running = match self.choose(&self.target()) {
-            Choice::Run { release, dir } if dir != builtin.1 => {
-                self.take_over(release, dir, builtin)?
-            }
-            _ => self.spawn(builtin.0, builtin.1, None)?,
+        let builtin = self.builtin();
+        let mut running = match self.choose(&self.target()).await {
+            Ok(release) if release.dir != builtin.dir => self.take_over(release, builtin)?,
+            _ => self.spawn(builtin, None)?,
         };
         let mut backoff = Duration::from_secs(1);
         let mut tick = tokio::time::interval(POLL);
@@ -223,16 +308,16 @@ impl Loader {
                     let exited = exited?;
                     let ran = running.started.elapsed();
                     running = match running.replaced.take() {
-                        Some((release, dir)) if ran < SETTLE => {
-                            tracing::error!(release = running.release, status = %exited, "the runner release exited right after it took over; going back to the one it replaced");
-                            self.failed = Some(running.release.clone());
-                            self.spawn(release, dir, None)?
+                        Some(replaced) if ran < SETTLE => {
+                            tracing::error!(release = running.release.name, status = %exited, "the runner release exited right after it took over; going back to the one it replaced");
+                            self.failed = Some(running.release.name.clone());
+                            self.spawn(replaced, None)?
                         }
                         _ => {
                             backoff = if ran < SETTLE { (backoff * 2).min(RESTART_BACKOFF_MAX) } else { Duration::from_secs(1) };
-                            tracing::warn!(release = running.release, status = %exited, backoff_secs = backoff.as_secs(), "the runner exited; starting it again");
+                            tracing::warn!(release = running.release.name, status = %exited, backoff_secs = backoff.as_secs(), "the runner exited; starting it again");
                             tokio::time::sleep(backoff).await;
-                            self.spawn(running.release.clone(), running.dir.clone(), None)?
+                            self.spawn(running.release.clone(), None)?
                         }
                     };
                 }
@@ -243,25 +328,20 @@ impl Loader {
                         running.replaced = None;
                     }
                     let target = self.target();
-                    if target.is_empty() || target == running.release {
+                    if target.is_empty() || target == running.release.name {
                         self.report(&running, &target, None);
                         continue;
                     }
-                    let choice = self.choose(&target);
-                    if let Choice::Run { release, dir } = choice {
-                        tracing::info!(from = running.release, to = release, "handing the machines off to another runner release");
-                        hand_off(&mut running.child).await;
-                        let replaced = (running.release.clone(), running.dir.clone());
-                        running = self.take_over(release, dir, replaced)?;
-                        let kept: Vec<&Path> = std::iter::once(running.dir.as_path())
-                            .chain(running.replaced.as_ref().map(|(_, dir)| dir.as_path()))
-                            .collect();
-                        if let Err(e) = release::prune(&self.copies, &kept) {
-                            tracing::warn!(error = %format!("{e:#}"), "removing the pod's copies of releases it no longer runs");
+                    match self.choose(&target).await {
+                        Ok(release) => {
+                            tracing::info!(from = running.release.name, to = release.name, "handing the machines off to another runner release");
+                            hand_off(&mut running.child).await;
+                            let replaced = running.release.clone();
+                            running = self.take_over(release, replaced)?;
+                            self.prune(&running);
+                            self.report(&running, &target, None);
                         }
-                        self.report(&running, &target, None);
-                    } else {
-                        self.report(&running, &target, Some(&choice));
+                        Err(held) => self.report(&running, &target, Some(held)),
                     }
                 }
             }
@@ -334,7 +414,12 @@ mod tests {
         let words: Vec<String> = serde_json::from_str(line.trim()).unwrap();
         let loader = words.iter().position(|w| w == "vm-runner-loader").unwrap();
         match Args::try_parse_from(&words[loader..]).map(|a| a.command) {
-            Ok(Mode::Run { builtin, args }) => {
+            Ok(Mode::Run {
+                builtin,
+                builtin_runtime,
+                args,
+            }) => {
+                assert_eq!(builtin_runtime, PathBuf::from("/opt/smolvm"));
                 assert_eq!(builtin, PathBuf::from("/usr/local/libexec/vm-runner"));
                 assert!(args.contains(&"--smolvm".to_string()), "{args:?}");
             }

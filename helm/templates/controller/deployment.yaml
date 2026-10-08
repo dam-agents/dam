@@ -84,7 +84,7 @@ spec:
                   "devices" $devices
                   "reserveMiB" $r.reserveMiB "headroomMiB" $r.headroomMiB "nestedVirtualization" ($r.nestedVirtualization | default false) "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
                   "imageArchiveHostPath" $r.imageArchiveHostPath
-                  "releaseHostPath" ($r.releaseHostPath | default "")
+                  "releaseHostPath" ($r.releaseHostPath | default "") "releaseSameRuntimeOnly" ($r.releaseSameRuntimeOnly | default false)
                   "dnsPolicy" ($r.dnsPolicy | default "Default")
                   "dnsCidrs" ($r.dnsCidrs | default list) "clusterDns" ($r.clusterDns | default dict)
                   "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "" | toString)
