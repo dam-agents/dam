@@ -22,6 +22,7 @@ import {
 } from "../../infrastructure/sub-agent-spawn.js";
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
+  isNonNullObject,
   isRequest,
   isResponse,
   parseFrame,
@@ -1188,10 +1189,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       lease.shutdown();
     },
   };
-}
-
-function isNonNullObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
 }
 
 function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
