@@ -13,12 +13,17 @@
 --   status and reports the same out-of-memory restart, so the log keeps one
 --   agent_oom row per Agent and UTC day.
 --
--- The Starter Kit an Agent was created from, and when its onboarding checklist
--- was first completed, kept on the Agent's usage record. Both were known only
--- from activity rows, which the retention job deletes after 180 days: an old kit
--- Agent would then read as built from scratch and its completion would vanish.
--- The record is never pruned and keeps both after the Agent is deleted. The
--- views migration that follows fills them in for existing Agents.
+-- Three facts about an Agent kept on its usage record, because the activity
+-- rows that carried them are deleted after 180 days and the other records that
+-- held them go with the Agent or its invocation:
+-- * starter_kit: the Starter Kit the Agent was created from. Without it an old
+--   kit Agent reads as built from scratch.
+-- * onboarded_at: when the Agent first declared its onboarding complete.
+-- * spawned_by_agent_id: the Agent that started this one as a sub-agent. The
+--   invocation row is deleted when the sub-agent is reaped, after which the
+--   sub-agent would count as something a user built.
+-- The record is never pruned and keeps all three after the Agent is deleted.
+-- The views migration that follows fills them in for existing Agents.
 
 CREATE TABLE "external_actor_links" (
 	"provider" text NOT NULL,
@@ -31,4 +36,5 @@ CREATE TABLE "external_actor_links" (
 ALTER TABLE "actor_roles" ADD COLUMN "first_seen_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
 ALTER TABLE "agents" ADD COLUMN "starter_kit" text;--> statement-breakpoint
 ALTER TABLE "agents" ADD COLUMN "onboarded_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "agents" ADD COLUMN "spawned_by_agent_id" text;--> statement-breakpoint
 CREATE UNIQUE INDEX "activity_events_agent_oom_dedup_idx" ON "activity_events" USING btree ("agent_id",date_trunc('day', "occurred_at" AT TIME ZONE 'UTC')) WHERE "activity_events"."type" = 'agent_oom';

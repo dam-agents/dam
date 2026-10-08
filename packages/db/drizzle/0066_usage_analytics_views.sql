@@ -6,11 +6,12 @@
 -- cannot take. Every view leaves out the core team, so a panel built on them
 -- cannot count core-team traffic by mistake.
 
--- Fill in the Starter Kit each existing Agent came from, and when its checklist
--- was completed, from the activity rows that still hold them. Starter Kits are
--- newer than the 180-day retention, so every kit Agent still has its row.
--- Completions recorded before this release live only on the live Agent; the
--- api-server copies those at startup.
+-- Fill in the Starter Kit each existing Agent came from, when its checklist was
+-- completed, and which Agent spawned it, from the rows that still hold them.
+-- Starter Kits are newer than the 180-day retention, so every kit Agent still
+-- has its row. Completions recorded before this release live only on the live
+-- Agent; the api-server copies those at startup. A sub-agent whose invocation
+-- was reaped and whose spawn row aged out stays unmarked.
 UPDATE agents AS a
 SET starter_kit = k.kit_id
 FROM (
@@ -31,6 +32,23 @@ FROM (
 ) AS o
 WHERE o.agent_id = a.id AND a.onboarded_at IS NULL;
 --> statement-breakpoint
+UPDATE agents AS a
+SET spawned_by_agent_id = i.driver_agent_id
+FROM invocations AS i
+WHERE i.id = a.id AND a.spawned_by_agent_id IS NULL;
+--> statement-breakpoint
+UPDATE agents AS a
+SET spawned_by_agent_id = s.driver_agent_id
+FROM (
+  SELECT DISTINCT ON (payload ->> 'targetAgentId')
+    payload ->> 'targetAgentId' AS target_agent_id,
+    agent_id AS driver_agent_id
+  FROM activity_events
+  WHERE type = 'invocation_spawned' AND agent_id IS NOT NULL
+  ORDER BY payload ->> 'targetAgentId', occurred_at
+) AS s
+WHERE s.target_agent_id = a.id AND a.spawned_by_agent_id IS NULL;
+--> statement-breakpoint
 
 -- Users the report counts: everyone who has signed in, minus the core team.
 -- first_seen_at is the day of the first sign-in and defines the user's cohort.
@@ -43,9 +61,11 @@ CREATE VIEW "usage_users" AS
 -- Every message a user sent to an agent, from any surface. A session turn names
 -- its sender. A Slack or Telegram turn names only the messenger user, so it is
 -- attributed through external_actor_links; a sender who never linked an account
--- stays unattributed and is left out. An ambient turn is a message people posted
--- in a channel an agent listens to without being addressed, so it is not a
--- message sent to the agent and is left out too.
+-- stays unattributed and is left out. Two kinds of channel turn are not a
+-- message the user sent and are left out too: an ambient turn, a message people
+-- posted in a channel an agent listens to without being addressed; and a
+-- recovery nudge, the platform prompting the agent again after a silent reply,
+-- which carries the original sender's id.
 CREATE VIEW "usage_user_messages" AS
   SELECT m.actor_sub, m.agent_id, m.occurred_at
   FROM (
@@ -61,6 +81,7 @@ CREATE VIEW "usage_user_messages" AS
      AND l.external_actor_hash = e.payload ->> 'externalActorId'
     WHERE e.type = 'channel_turn'
       AND (e.payload ->> 'ambient') IS NULL
+      AND (e.payload ->> 'reason') IS DISTINCT FROM 'recovery-nudge'
   ) m
   JOIN usage_users u ON u.actor_sub = m.actor_sub;
 --> statement-breakpoint
@@ -145,12 +166,7 @@ CREATE VIEW "usage_agents_created" AS
   SELECT a.id AS agent_id, a.owner_sub, a.created_at, a.starter_kit AS kit_id
   FROM agents a
   JOIN usage_users u ON u.actor_sub = a.owner_sub
-  WHERE NOT EXISTS (SELECT 1 FROM invocations i WHERE i.id = a.id)
-    AND NOT EXISTS (
-      SELECT 1 FROM activity_events s
-      WHERE s.type = 'invocation_spawned'
-        AND s.payload ->> 'targetAgentId' = a.id
-    );
+  WHERE a.spawned_by_agent_id IS NULL;
 --> statement-breakpoint
 
 -- One row per agent and UTC day on which it restarted after running out of memory.

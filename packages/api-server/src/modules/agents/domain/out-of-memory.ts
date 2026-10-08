@@ -10,7 +10,6 @@ export function isNewOutOfMemoryRestart(
   next: PodRestartState,
 ): boolean {
   if (!previous) return false;
-  return (
-    next.reason === OUT_OF_MEMORY_REASON && next.restarts > previous.restarts
-  );
+  if (next.reason !== OUT_OF_MEMORY_REASON || next.restarts === 0) return false;
+  return next.restarts !== previous.restarts;
 }

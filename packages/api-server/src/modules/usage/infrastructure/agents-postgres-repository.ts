@@ -1,9 +1,11 @@
-import { and, eq, isNotNull, isNull, agents, sql, type Db } from "db";
+import { and, eq, isNull, agents, sql, type Db } from "db";
 import type { SubPseudonymizer } from "../../../core/sub-pseudonymizer.js";
 import type {
   AgentRegistryRow,
   AgentStarterKitFacts,
 } from "../domain/types.js";
+
+const CREATION_STAMP_GRACE_MIN = 2;
 
 const CLEARED_RUNTIME_STATE = {
   runtimeProtocolVersion: null,
@@ -71,6 +73,22 @@ export function recordAgentStarterKit(db: Db, pseudo: SubPseudonymizer) {
   };
 }
 
+export function recordAgentSpawnedBy(db: Db, pseudo: SubPseudonymizer) {
+  return async (row: AgentRegistryRow & { spawnedByAgentId: string }) => {
+    await db
+      .insert(agents)
+      .values({
+        id: row.id,
+        ownerSub: pseudo.hashSub(row.ownerSub),
+        spawnedByAgentId: row.spawnedByAgentId,
+      })
+      .onConflictDoUpdate({
+        target: agents.id,
+        set: { spawnedByAgentId: row.spawnedByAgentId },
+      });
+  };
+}
+
 export function recordAgentOnboarded(db: Db) {
   return async (id: string, at: Date): Promise<void> => {
     await db
@@ -97,7 +115,7 @@ export function fillAgentStarterKitFacts(db: Db) {
           and(
             eq(agents.id, facts.id),
             isNull(agents.onboardedAt),
-            isNotNull(agents.onboardingChecklist),
+            sql`${agents.createdAt} + make_interval(mins => ${CREATION_STAMP_GRACE_MIN}) < ${onboardedAt.toISOString()}::timestamptz`,
           ),
         );
     }

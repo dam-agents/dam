@@ -1,5 +1,5 @@
 {
-  "id": "5839d861-39f2-4bf2-8731-2663b52a1ea7",
+  "id": "10c691c4-f0ab-4f7a-9ffb-d76807a270cb",
   "prevId": "9175baa7-8940-4308-92f1-d45e56cebdf1",
   "version": "7",
   "dialect": "postgresql",
@@ -875,6 +875,12 @@
         "onboarded_at": {
           "name": "onboarded_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spawned_by_agent_id": {
+          "name": "spawned_by_agent_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         }

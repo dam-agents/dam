@@ -41,6 +41,7 @@ export type LiveAgentFact = {
 export type AgentSizing = {
   slot: { cpu: string; memory: string };
   defaultStorage: string;
+  idleTimeoutMin: number;
 };
 
 export type AnalyticsFacts = {

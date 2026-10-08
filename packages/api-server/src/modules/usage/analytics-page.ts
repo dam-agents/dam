@@ -1,4 +1,5 @@
 import type { AnalyticsReport } from "./domain/analytics-report.js";
+import { escapeHtml } from "../../core/escape-html.js";
 
 const FONTS =
   "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap";
@@ -242,7 +243,7 @@ const PAGE_BODY = `<header class="top">
         <p class="q">How often are users using the platform?</p>
         <div class="chart" id="activity"></div>
         <div class="legend" id="activityLeg"></div>
-        <div class="base">Active 1+ · Regular 3+ · Super 5+ active days in the week · Abandoned: logged in before, 0 active days</div>
+        <div class="base">Active 1+ · Regular 3+ · Super 5+ active days in the week · Abandoned: logged in at least once, 0 active days</div>
       </div>
       <div class="card c5">
         <h3>Longitudinal activity</h3>
@@ -383,7 +384,7 @@ function renderTiles() {
   const L = R.last7;
   const tiles = [
     { label: "Weekly active users", t: L.weeklyActive, good: "up", sub: [["3+ days", L.weeklyActive.regular], ["5+ days", L.weeklyActive.super]], def: "1+ active days" },
-    { label: "Weekly abandoned", t: L.weeklyAbandoned, good: "down", def: "Logged in before, 0 active days in the last 7" },
+    { label: "Weekly abandoned", t: L.weeklyAbandoned, good: "down", def: "Logged in at least once, 0 active days in the last 7" },
     { label: "Longitudinally active", t: L.longitudinallyActive, of: L.longitudinallyActive.eligible, good: "up", def: "1+ active days in each of the last 3 weeks, of users 21+ days past first login" },
     { label: "Agents created", t: L.agentsCreated, good: "up", sub: [["from kits", L.agentsCreated.fromKits], ["other", L.agentsCreated.other]] },
     { label: "Starter kit adoption", t: L.starterKitAdoption, unit: "%", pp: true, good: "up", def: "Share of new agents created from a starter kit" },
@@ -712,12 +713,8 @@ export function renderAnalyticsPage(report: AnalyticsReport): string {
 }
 
 export function renderAnalyticsErrorPage(reason: string): string {
-  const escaped = reason
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
   return page(
-    `<main class="wrap"><h1>Usage analytics</h1><p class="error">The report could not be built: ${escaped}</p></main>`,
+    `<main class="wrap"><h1>Usage analytics</h1><p class="error">The report could not be built: ${escapeHtml(reason)}</p></main>`,
     "",
   );
 }

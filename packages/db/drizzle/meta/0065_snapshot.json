@@ -1,6 +1,6 @@
 {
-  "id": "25bc24e6-ce9f-4ff7-88c7-48f009c63e14",
-  "prevId": "5839d861-39f2-4bf2-8731-2663b52a1ea7",
+  "id": "63a0c345-f830-46cf-94f5-5bf2d498966c",
+  "prevId": "10c691c4-f0ab-4f7a-9ffb-d76807a270cb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -875,6 +875,12 @@
         "onboarded_at": {
           "name": "onboarded_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spawned_by_agent_id": {
+          "name": "spawned_by_agent_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         }

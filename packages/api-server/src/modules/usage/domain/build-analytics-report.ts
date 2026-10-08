@@ -1,7 +1,6 @@
 import {
   dayFromIsoDate,
   dayOf,
-  elapsedDays,
   isoDateOf,
   lastCompleteWeekStart,
   latestEligibleCohortStart,
@@ -22,7 +21,8 @@ import {
   type Tile,
   type WeeklySeries,
 } from "./analytics-report.js";
-import { parseCpuMilli, parseMemoryBytes } from "./quantities.js";
+import { parseCpuMilli, parseMemoryBytes } from "../../../core/quantities.js";
+import { resolveEffectiveHibernationTimeoutMin } from "../../agents/domain/spec-assembly.js";
 
 const TREND_WINDOWS = 8;
 const TREND_WEEKS = 8;
@@ -221,7 +221,8 @@ function cohortPanel(
   };
 }
 
-function lagBucket(lagDays: number): number {
+function lagBucket(from: Date, to: Date): number {
+  const lagDays = dayOf(to) - dayOf(from);
   if (lagDays < 1) return 0;
   if (lagDays < 7) return 1;
   return 2;
@@ -363,7 +364,7 @@ function buildOnboarding(
       ["Day one", "Within week one", "Later", "Not yet"],
       (u) => {
         const at = slackFirst.get(u.sub);
-        return at ? lagBucket(elapsedDays(u.firstSeenAt, at)) : 3;
+        return at ? lagBucket(u.firstSeenAt, at) : 3;
       },
     ),
     checklistCompletion: cohortPanel(
@@ -383,8 +384,7 @@ function buildOnboarding(
           .filter((a) => a.onboardedAt)
           .sort((a, b) => a.onboardedAt!.getTime() - b.onboardedAt!.getTime());
         const first = completed[0];
-        if (first)
-          return lagBucket(elapsedDays(first.createdAt, first.onboardedAt!));
+        if (first) return lagBucket(first.createdAt, first.onboardedAt!);
         return agents.some((a) => a.checklistStarted) ? 3 : 4;
       },
     ),
@@ -515,10 +515,11 @@ function sizeOf(
   return "custom";
 }
 
-function neverHibernates(timeout: string | undefined): boolean {
-  return (
-    timeout !== undefined && /^[0.hms]+$/.test(timeout) && /0/.test(timeout)
-  );
+function neverHibernates(
+  timeout: string | undefined,
+  idleTimeoutMin: number,
+): boolean {
+  return resolveEffectiveHibernationTimeoutMin(timeout, idleTimeoutMin) === 0;
 }
 
 function buildAgentsNow(facts: AnalyticsFacts): AnalyticsReport["agentsNow"] {
@@ -535,7 +536,8 @@ function buildAgentsNow(facts: AnalyticsFacts): AnalyticsReport["agentsNow"] {
   for (const a of agents) {
     const row = sizes.find((s) => s.size === sizeOf(a, facts.sizing.slot))!;
     row.agents++;
-    if (neverHibernates(a.hibernationTimeout)) row.alwaysOn++;
+    if (neverHibernates(a.hibernationTimeout, facts.sizing.idleTimeoutMin))
+      row.alwaysOn++;
     if (facts.oomAgentIds.has(a.id)) row.outOfMemory++;
   }
   const gi = 1024 ** 3;

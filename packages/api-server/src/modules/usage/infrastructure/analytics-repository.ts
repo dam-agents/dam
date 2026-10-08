@@ -76,7 +76,7 @@ export function createAnalyticsRepository(db: Db): AnalyticsRepository {
       const rows = await db.execute<{
         agent_id: string;
         sub: string;
-        kit_id: string | null;
+        kit_id: string;
         created_at: number;
         onboarded_at: number | null;
         checklist_started: boolean;
@@ -89,7 +89,7 @@ export function createAnalyticsRepository(db: Db): AnalyticsRepository {
       return rows.map((r) => ({
         agentId: r.agent_id,
         sub: r.sub,
-        kitId: r.kit_id ?? "unknown",
+        kitId: r.kit_id,
         createdAt: toDate(r.created_at),
         onboardedAt: toDateOrNull(r.onboarded_at),
         checklistStarted: r.checklist_started,

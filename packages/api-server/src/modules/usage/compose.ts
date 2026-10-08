@@ -15,6 +15,7 @@ import {
   markAgentDeleted,
   recordAgentStarterKit,
   recordAgentOnboarded,
+  recordAgentSpawnedBy,
   fillAgentStarterKitFacts,
 } from "./infrastructure/agents-postgres-repository.js";
 import { startPersistActivitySaga } from "./sagas/persist-activity.js";
@@ -107,6 +108,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
       upsertAgent: registerCreatedAgent,
       recordStarterKit: recordAgentStarterKit(deps.db, deps.subPseudonymizer),
       recordOnboarded: recordAgentOnboarded(deps.db),
+      recordSpawnedBy: recordAgentSpawnedBy(deps.db, deps.subPseudonymizer),
     });
     persistActorRolesSub = startPersistActorRolesSaga({
       upsertActorRole: upsertRole,

@@ -26,7 +26,11 @@ function facts(overrides: Partial<AnalyticsFacts> = {}): AnalyticsFacts {
     liveAgents: [],
     oomAgentIds: new Set(),
     knowledgeBaseConnectionIds: new Set(),
-    sizing: { slot: { cpu: "1", memory: "2Gi" }, defaultStorage: "10Gi" },
+    sizing: {
+      slot: { cpu: "1", memory: "2Gi" },
+      defaultStorage: "10Gi",
+      idleTimeoutMin: 30,
+    },
     ...overrides,
   };
 }
@@ -48,9 +52,9 @@ describe("usage analytics report", () => {
     expect(r.onboarding.cohortWeeks.at(-1)).toBe("2026-09-21");
   });
 
-  // TEST_SCENARIO: an abandoned user is one who signed in before the window
-  // TEST_SCENARIO: and had no active day in it; a user whose first sign-in is today is not
-  // TEST_SCENARIO: counted in a window that ends before today.
+  // TEST_SCENARIO: an abandoned user is one who has signed in at least once and
+  // TEST_SCENARIO: had no active day in the window; a user whose first sign-in is today
+  // TEST_SCENARIO: is not counted in a window that ends before today.
   it("counts active, regular, super and abandoned users in the last 7 days", () => {
     const r = buildAnalyticsReport(
       facts({

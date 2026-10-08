@@ -105,18 +105,12 @@ export function startAgentStateCache(deps: {
     restartDelay = Math.min(restartDelay * 2, MAX_RESTART_DELAY_MS);
   }
 
-  deps.informer.on("add", (obj) => {
-    onObject(obj);
-    deps.observe?.("add", obj);
-  });
-  deps.informer.on("update", (obj) => {
-    onObject(obj);
-    deps.observe?.("update", obj);
-  });
-  deps.informer.on("delete", (obj) => {
-    onObject(obj);
-    deps.observe?.("delete", obj);
-  });
+  for (const kind of ["add", "update", "delete"] as const) {
+    deps.informer.on(kind, (obj) => {
+      onObject(obj);
+      deps.observe?.(kind, obj);
+    });
+  }
   deps.informer.on("error", (err) => {
     abandon(`agent cache desynced: ${String(err)}`);
   });

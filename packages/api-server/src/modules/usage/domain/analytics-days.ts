@@ -19,10 +19,6 @@ export function mondayOf(day: DayNumber): DayNumber {
   return day - sinceMonday;
 }
 
-export function elapsedDays(from: Date, to: Date): number {
-  return (to.getTime() - from.getTime()) / MS_PER_DAY;
-}
-
 export type DayWindow = { from: DayNumber; to: DayNumber };
 
 export function rollingWindow(today: DayNumber, back: number): DayWindow {
@@ -34,7 +30,7 @@ export function lastCompleteWeekStart(today: DayNumber): DayNumber {
 }
 
 export function latestEligibleCohortStart(today: DayNumber): DayNumber {
-  return mondayOf(today - 14);
+  return mondayOf(today - 13);
 }
 
 export function weekStartsEndingAt(
