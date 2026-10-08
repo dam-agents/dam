@@ -2,6 +2,8 @@ package telemetry
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -37,7 +39,9 @@ func TestSetupDisabledByOtelSdkDisabled(t *testing.T) {
 
 func TestSetupEnabledWithEndpoint(t *testing.T) {
 	t.Setenv("OTEL_SDK_DISABLED", "")
-	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector.invalid:4318")
+	collector := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer collector.Close()
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", collector.URL)
 
 	shutdown, enabled, err := Setup(context.Background())
 	require.NoError(t, err)
