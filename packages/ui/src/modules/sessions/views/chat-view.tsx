@@ -530,6 +530,12 @@ export function ChatView() {
   const columnsDoNotFit =
     columnsW !== null && columnsW < leftW + CHAT_MIN_W + SIDE_PANEL_MIN_W;
   const sidePanelFills = browserFills || (sidePanelOpen && columnsDoNotFit);
+  const sidePanelMaxW =
+    columnsW === null ? null : columnsW - leftW - CHAT_MIN_W;
+  const sidePanelW =
+    rightW !== null && sidePanelMaxW !== null
+      ? Math.min(rightW, Math.max(SIDE_PANEL_MIN_W, sidePanelMaxW))
+      : rightW;
   const surfaceCopy = {
     actionsAria: "Agent actions",
     configure: "Configure agent",
@@ -944,9 +950,14 @@ export function ChatView() {
               <ResizeHandle
                 side="right"
                 onResize={(d) => {
-                  const base =
-                    rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0;
-                  const max = Math.min(960, window.innerWidth - 500);
+                  const max = Math.min(
+                    960,
+                    sidePanelMaxW ?? window.innerWidth - 500,
+                  );
+                  const base = Math.min(
+                    rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0,
+                    max,
+                  );
                   const v = Math.max(240, Math.min(max, base + d));
                   rightWRef.current = v;
                   writePersistedNumber(FILE_PANEL_WIDTH_KEY, v);
@@ -957,15 +968,15 @@ export function ChatView() {
             <div
               ref={filePanelRef}
               style={
-                rightW !== null
-                  ? ({ "--file-w": `${rightW}px` } as CSSProperties)
+                sidePanelW !== null
+                  ? ({ "--file-w": `${sidePanelW}px` } as CSSProperties)
                   : undefined
               }
               className={cn(
                 "flex flex-col overflow-hidden bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
                 sidePanelFills
                   ? "md:flex-1 md:min-w-0"
-                  : rightW !== null
+                  : sidePanelW !== null
                     ? "md:shrink-0 md:w-[var(--file-w)]"
                     : "md:flex-1 md:basis-0 md:min-w-0",
                 "md:border-l md:border-border",
