@@ -19,11 +19,9 @@ export function createSessionTypeSpend(deps: {
     agentIds: readonly string[],
     sessionIds: readonly string[],
   ) => Promise<ReadonlyMap<string, SessionCategory>>;
-  isEnabled: () => Promise<boolean>;
 }): SessionTypeSpend {
   return {
     async breakdown(agentIds, window) {
-      if (!(await deps.isEnabled())) return [];
       const sessions = await deps.readSpend(agentIds, window);
       const categories = await deps.categorizeSessions(
         agentIds,

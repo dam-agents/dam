@@ -34,23 +34,32 @@ const timeBounds = (w: MetricsWindow): string[] => [
 const ownedCallRows = (w: MetricsWindow): string =>
   [API_REQUEST, AGENT_GATE, ...timeBounds(w)].join(" AND ");
 
-const literalSessionTraceIds = (w: MetricsWindow): string =>
+const sessionMatch = (w: MetricsWindow): string | undefined => {
+  if (w.sessionId !== undefined)
+    return "LogAttributes['session.id'] = {sessionId:String}";
+  if (w.sessionIds !== undefined)
+    return "LogAttributes['session.id'] IN {sessionIds:Array(String)}";
+  return undefined;
+};
+
+const literalSessionTraceIds = (w: MetricsWindow, match: string): string =>
   `SELECT DISTINCT TraceId FROM otel_logs
        WHERE ${ownedCallRows(w)}
-         AND LogAttributes['session.id'] = {sessionId:String}
+         AND ${match}
          AND TraceId != ''`;
 
 const ownedLogRows = (w: MetricsWindow, body: string[]): string => {
   const base = [...body, AGENT_GATE, ...timeBounds(w)];
-  if (w.sessionId === undefined) return base.join("\n  AND ");
+  const match = sessionMatch(w);
+  if (match === undefined) return base.join("\n  AND ");
   const owned = ownedCallRows(w);
   return [
     ...base,
-    `(LogAttributes['session.id'] = {sessionId:String}
+    `(${match}
    OR LogAttributes['session.id'] IN (
      SELECT DISTINCT LogAttributes['session.id'] FROM otel_logs
      WHERE ${owned} AND LogAttributes['session.id'] != '' AND TraceId IN (
-       ${literalSessionTraceIds(w)})))`,
+       ${literalSessionTraceIds(w, match)})))`,
   ].join("\n  AND ");
 };
 
@@ -61,7 +70,7 @@ export const ownedAgentLogs = (w: MetricsWindow): string => ownedLogRows(w, []);
 
 export const ownedAgentSpans = (w: MetricsWindow): string => {
   const base = [AGENT_GATE, ...timeBounds(w)];
-  if (w.sessionId === undefined) return base.join("\n  AND ");
+  if (sessionMatch(w) === undefined) return base.join("\n  AND ");
   return [
     ...base,
     `TraceId IN (\n       SELECT DISTINCT TraceId FROM otel_logs
@@ -76,6 +85,7 @@ const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
   ...(w.fromIso === undefined ? {} : { fromIso: w.fromIso }),
   ...(w.toIso === undefined ? {} : { toIso: w.toIso }),
   ...(w.sessionId === undefined ? {} : { sessionId: w.sessionId }),
+  ...(w.sessionIds === undefined ? {} : { sessionIds: w.sessionIds }),
 });
 
 const IN = (a: string) => `toInt64OrZero(LogAttributes[${a}])`;
@@ -221,7 +231,11 @@ export function createClickhouseReader(
     },
 
     async runtimeBySession(agentIds, window) {
-      const base = ownedApiRequests({ ...window, sessionId: undefined });
+      const base = ownedApiRequests({
+        ...window,
+        sessionId: undefined,
+        sessionIds: undefined,
+      });
       const r = await rows(
         `WITH trace_root AS (
            SELECT TraceId,
