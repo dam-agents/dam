@@ -79,9 +79,7 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
       <Card className="hover:bg-muted">
         <button
           type="button"
-          onClick={() =>
-            navigateToSandboxHome(schedule.agentId, "schedules")
-          }
+          onClick={() => navigateToSandboxHome(schedule.agentId, "schedules")}
           className="flex w-full items-center gap-3 p-4 text-left"
         >
           <div className="min-w-0 flex-1">

@@ -47,7 +47,11 @@ describe("ownerScheduleRows", () => {
   it("lists active schedules by next run, then paused and finished ones by last run", () => {
     const rows = ownerScheduleRows(
       [
-        sched({ id: "paused-old", enabled: false, status: { lastRun: "2026-10-01T09:00:00Z" } }),
+        sched({
+          id: "paused-old",
+          enabled: false,
+          status: { lastRun: "2026-10-01T09:00:00Z" },
+        }),
         sched({ id: "later", status: { nextRun: "2026-10-09T09:00:00Z" } }),
         sched({
           id: "done-once",
@@ -72,7 +76,11 @@ describe("ownerScheduleRows", () => {
   it("flags a stopped schedule and a failing precheck", () => {
     const [stopped, failing, fine] = ownerScheduleRows(
       [
-        sched({ id: "stopped", name: "a", status: { stopReason: "the rule never fires again" } }),
+        sched({
+          id: "stopped",
+          name: "a",
+          status: { stopReason: "the rule never fires again" },
+        }),
         sched({
           id: "failing",
           name: "b",
