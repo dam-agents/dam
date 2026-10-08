@@ -65,7 +65,9 @@ export function createUsageRoutes(deps: UsageRoutesDeps) {
       return c.html(renderAnalyticsPage(await deps.analytics.report()));
     } catch (err) {
       return c.html(
-        renderAnalyticsErrorPage(err instanceof Error ? err.message : String(err)),
+        renderAnalyticsErrorPage(
+          err instanceof Error ? err.message : String(err),
+        ),
         500,
       );
     }

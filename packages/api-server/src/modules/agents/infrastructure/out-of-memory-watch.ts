@@ -36,7 +36,9 @@ export function createOutOfMemoryWatch(): (
     };
     const next: PodRestartState = {
       restarts:
-        typeof status.agentPodRestarts === "number" ? status.agentPodRestarts : 0,
+        typeof status.agentPodRestarts === "number"
+          ? status.agentPodRestarts
+          : 0,
       reason: status.agentPodRestartReason || undefined,
     };
     const previous = seen.get(id);

@@ -248,7 +248,10 @@ function buildOnboarding(
 
   const slackFirst = new Map(facts.slackSetups.map((s) => [s.sub, s.firstAt]));
 
-  const kitAgentsBySub = new Map<string, AnalyticsFacts["kitAgents"][number][]>();
+  const kitAgentsBySub = new Map<
+    string,
+    AnalyticsFacts["kitAgents"][number][]
+  >();
   for (const k of facts.kitAgents) {
     const list = kitAgentsBySub.get(k.sub) ?? [];
     list.push(k);
@@ -313,8 +316,7 @@ function buildOnboarding(
       cohorts,
       starts,
       ["None", "1 day", "2 days", "3+ days"],
-      (u) =>
-        Math.min(3, activeIn(u, { from: u.firstDay, to: u.firstDay + 7 })),
+      (u) => Math.min(3, activeIn(u, { from: u.firstDay, to: u.firstDay + 7 })),
     ),
     firstDayFeatureCount: cohortPanel(
       cohorts,
@@ -326,7 +328,10 @@ function buildOnboarding(
       {
         label: "No feature",
         percents: cohorts.map((c) =>
-          percentOrZero(c.filter((u) => featuresOnDayOne(u) === 0).length, c.length),
+          percentOrZero(
+            c.filter((u) => featuresOnDayOne(u) === 0).length,
+            c.length,
+          ),
         ),
       },
       ...CORE_FEATURES.map((feature) => ({
@@ -360,7 +365,13 @@ function buildOnboarding(
     checklistCompletion: cohortPanel(
       cohorts,
       starts,
-      ["Day one", "Within week one", "Later", "Currently incomplete", "Not started"],
+      [
+        "Day one",
+        "Within week one",
+        "Later",
+        "Currently incomplete",
+        "Not started",
+      ],
       (u) => {
         const agents = kitAgentsBySub.get(u.sub);
         if (!agents) return null;
@@ -368,7 +379,8 @@ function buildOnboarding(
           .filter((a) => a.onboardedAt)
           .sort((a, b) => a.onboardedAt!.getTime() - b.onboardedAt!.getTime());
         const first = completed[0];
-        if (first) return lagBucket(elapsedDays(first.createdAt, first.onboardedAt!));
+        if (first)
+          return lagBucket(elapsedDays(first.createdAt, first.onboardedAt!));
         return agents.some((a) => a.checklistStarted) ? 3 : 4;
       },
     ),
@@ -407,7 +419,9 @@ function buildAllUse(
     { label: "Super", values: rows.map((r) => r.super) },
     { label: "Abandoned", values: rows.map((r) => r.abandoned) },
   ];
-  const agentsPerWeek = weeks.map((m) => agentsIn(facts, { from: m, to: m + 7 }));
+  const agentsPerWeek = weeks.map((m) =>
+    agentsIn(facts, { from: m, to: m + 7 }),
+  );
 
   const agentsByOwner = new Map<string, number>();
   for (const a of facts.agentsCreated) {
@@ -427,7 +441,11 @@ function buildAllUse(
   for (const k of facts.kitAgents) {
     kitCounts.set(k.kitId, (kitCounts.get(k.kitId) ?? 0) + 1);
     const prev = kitUserState.get(k.sub) ?? "none";
-    const next = k.onboardedAt ? "completed" : k.checklistStarted ? "started" : "none";
+    const next = k.onboardedAt
+      ? "completed"
+      : k.checklistStarted
+        ? "started"
+        : "none";
     const rank = { none: 0, started: 1, completed: 2 } as const;
     kitUserState.set(k.sub, rank[next] > rank[prev] ? next : prev);
   }
@@ -461,18 +479,31 @@ function buildAllUse(
       .map(([label, count]) => ({ label, count }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
     checklistState: [
-      { label: "Completed", count: states.filter((s) => s === "completed").length },
-      { label: "Started, not complete", count: states.filter((s) => s === "started").length },
-      { label: "Not started", count: states.filter((s) => s === "none").length },
+      {
+        label: "Completed",
+        count: states.filter((s) => s === "completed").length,
+      },
+      {
+        label: "Started, not complete",
+        count: states.filter((s) => s === "started").length,
+      },
+      {
+        label: "Not started",
+        count: states.filter((s) => s === "none").length,
+      },
     ],
   };
 }
 
-function sizeOf(agent: LiveAgentFact, slot: AnalyticsFacts["sizing"]["slot"]): SizeRow["size"] {
+function sizeOf(
+  agent: LiveAgentFact,
+  slot: AnalyticsFacts["sizing"]["slot"],
+): SizeRow["size"] {
   if (!agent.cpu && !agent.memory) return "1x";
   const cpu = parseCpuMilli(agent.cpu ?? slot.cpu) / parseCpuMilli(slot.cpu);
   const memory =
-    parseMemoryBytes(agent.memory ?? slot.memory) / parseMemoryBytes(slot.memory);
+    parseMemoryBytes(agent.memory ?? slot.memory) /
+    parseMemoryBytes(slot.memory);
   if (cpu !== memory) return "custom";
   if (cpu === 1) return "1x";
   if (cpu === 2) return "2x";
@@ -481,18 +512,22 @@ function sizeOf(agent: LiveAgentFact, slot: AnalyticsFacts["sizing"]["slot"]): S
 }
 
 function neverHibernates(timeout: string | undefined): boolean {
-  return timeout !== undefined && /^[0.hms]+$/.test(timeout) && /0/.test(timeout);
+  return (
+    timeout !== undefined && /^[0.hms]+$/.test(timeout) && /0/.test(timeout)
+  );
 }
 
 function buildAgentsNow(facts: AnalyticsFacts): AnalyticsReport["agentsNow"] {
   const counted = new Set(facts.agentsCreated.map((a) => a.agentId));
   const agents = facts.liveAgents.filter((a) => counted.has(a.id));
-  const sizes: SizeRow[] = (["1x", "2x", "4x", "custom"] as const).map((size) => ({
-    size,
-    agents: 0,
-    alwaysOn: 0,
-    outOfMemory: 0,
-  }));
+  const sizes: SizeRow[] = (["1x", "2x", "4x", "custom"] as const).map(
+    (size) => ({
+      size,
+      agents: 0,
+      alwaysOn: 0,
+      outOfMemory: 0,
+    }),
+  );
   for (const a of agents) {
     const row = sizes.find((s) => s.size === sizeOf(a, facts.sizing.slot))!;
     row.agents++;
@@ -505,7 +540,9 @@ function buildAgentsNow(facts: AnalyticsFacts): AnalyticsReport["agentsNow"] {
     sizes,
     disk: bucketCounts(
       agents.map((a) =>
-        Math.round(parseMemoryBytes(a.storageSize || facts.sizing.defaultStorage) / gi),
+        Math.round(
+          parseMemoryBytes(a.storageSize || facts.sizing.defaultStorage) / gi,
+        ),
       ),
       [
         { label: "≤ 4 Gi", max: 4 },
@@ -526,8 +563,9 @@ function buildAgentsNow(facts: AnalyticsFacts): AnalyticsReport["agentsNow"] {
     knowledgeBases: bucketCounts(
       agents.map(
         (a) =>
-          a.grantedConnectionIds.filter((id) => facts.knowledgeBaseConnectionIds.has(id))
-            .length,
+          a.grantedConnectionIds.filter((id) =>
+            facts.knowledgeBaseConnectionIds.has(id),
+          ).length,
       ),
       [
         { label: "0", max: 0 },

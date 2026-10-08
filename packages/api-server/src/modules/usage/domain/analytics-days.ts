@@ -41,5 +41,8 @@ export function weekStartsEndingAt(
   lastStart: DayNumber,
   count: number,
 ): DayNumber[] {
-  return Array.from({ length: count }, (_, i) => lastStart - 7 * (count - 1 - i));
+  return Array.from(
+    { length: count },
+    (_, i) => lastStart - 7 * (count - 1 - i),
+  );
 }

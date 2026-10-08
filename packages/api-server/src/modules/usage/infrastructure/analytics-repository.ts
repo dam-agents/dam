@@ -38,7 +38,10 @@ export function createAnalyticsRepository(db: Db): AnalyticsRepository {
       const rows = await db.execute<{ sub: string; first_seen: number }>(sql`
         SELECT actor_sub AS sub, ${epochMs("first_seen_at")} AS first_seen
         FROM usage_users`);
-      return rows.map((r) => ({ sub: r.sub, firstSeenAt: toDate(r.first_seen) }));
+      return rows.map((r) => ({
+        sub: r.sub,
+        firstSeenAt: toDate(r.first_seen),
+      }));
     },
 
     async activeDays() {

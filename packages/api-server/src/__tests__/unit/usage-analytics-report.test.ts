@@ -36,8 +36,8 @@ const days = (sub: string, ...isoDays: string[]) =>
 
 describe("usage analytics report", () => {
   // TEST_SCENARIO: every window is fixed by today's date, so the same report
-  // read twice in a day gives the same numbers and today never shows as a
-  // half-filled day.
+  // TEST_SCENARIO: read twice in a day gives the same numbers and today never shows as a
+  // TEST_SCENARIO: half-filled day.
   it("places the windows on whole UTC days and complete weeks", () => {
     const r = buildAnalyticsReport(facts(), NOW);
     expect(r.last7.from).toBe("2026-10-01");
@@ -49,8 +49,8 @@ describe("usage analytics report", () => {
   });
 
   // TEST_SCENARIO: an abandoned user is one who signed in before the window
-  // and had no active day in it; a user whose first sign-in is today is not
-  // counted in a window that ends before today.
+  // TEST_SCENARIO: and had no active day in it; a user whose first sign-in is today is not
+  // TEST_SCENARIO: counted in a window that ends before today.
   it("counts active, regular, super and abandoned users in the last 7 days", () => {
     const r = buildAnalyticsReport(
       facts({
@@ -60,7 +60,14 @@ describe("usage analytics report", () => {
           { sub: "c", firstSeenAt: at("2026-10-08") },
         ],
         activeDays: [
-          ...days("a", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"),
+          ...days(
+            "a",
+            "2026-10-01",
+            "2026-10-02",
+            "2026-10-03",
+            "2026-10-04",
+            "2026-10-05",
+          ),
           ...days("a", "2026-09-30"),
           ...days("c", "2026-10-08"),
         ],
@@ -75,7 +82,7 @@ describe("usage analytics report", () => {
   });
 
   // TEST_SCENARIO: conversion looks at users whose first week ended within the
-  // last 7 days, so every one of them had the full week to reach 3 active days.
+  // TEST_SCENARIO: last 7 days, so every one of them had the full week to reach 3 active days.
   it("measures onboarding conversion on first weeks that ended in the window", () => {
     const r = buildAnalyticsReport(
       facts({
@@ -97,7 +104,7 @@ describe("usage analytics report", () => {
   });
 
   // TEST_SCENARIO: the funnel counts everyone in its first columns, but "active
-  // in week 3" only counts users who have had three weeks, with its own base.
+  // TEST_SCENARIO: in week 3" only counts users who have had three weeks, with its own base.
   it("gives the last funnel stage its own base of users 21 days in", () => {
     const r = buildAnalyticsReport(
       facts({
@@ -121,8 +128,8 @@ describe("usage analytics report", () => {
   });
 
   // TEST_SCENARIO: a user with several starter-kit agents counts once, by their
-  // first completed checklist, measured from that agent's creation; a user who
-  // never opened a checklist is "not started".
+  // TEST_SCENARIO: first completed checklist, measured from that agent's creation; a user who
+  // TEST_SCENARIO: never opened a checklist is "not started".
   it("buckets checklist completion per user", () => {
     const r = buildAnalyticsReport(
       facts({
@@ -167,9 +174,12 @@ describe("usage analytics report", () => {
   });
 
   // TEST_SCENARIO: the agents panels read live agents but count only those a
-  // non-core user created, and size an agent by whole slots.
+  // TEST_SCENARIO: non-core user created, and size an agent by whole slots.
   it("sizes live agents and leaves out agents nobody counted", () => {
-    const live = (id: string, extra: Partial<LiveAgentFact> = {}): LiveAgentFact => ({
+    const live = (
+      id: string,
+      extra: Partial<LiveAgentFact> = {},
+    ): LiveAgentFact => ({
       id,
       cpu: undefined,
       memory: undefined,
@@ -189,7 +199,11 @@ describe("usage analytics report", () => {
         liveAgents: [
           live("x1"),
           live("x2", { cpu: "2", memory: "4Gi", hibernationTimeout: "0s" }),
-          live("x3", { cpu: "2", memory: "2Gi", grantedConnectionIds: ["kb", "c"] }),
+          live("x3", {
+            cpu: "2",
+            memory: "2Gi",
+            grantedConnectionIds: ["kb", "c"],
+          }),
           live("core-agent", { cpu: "4", memory: "8Gi" }),
         ],
         oomAgentIds: new Set(["x2"]),
@@ -204,7 +218,9 @@ describe("usage analytics report", () => {
       { size: "4x", agents: 0, alwaysOn: 0, outOfMemory: 0 },
       { size: "custom", agents: 1, alwaysOn: 0, outOfMemory: 0 },
     ]);
-    expect(r.agentsNow.knowledgeBases.map((s) => s.count)).toEqual([2, 1, 0, 0]);
+    expect(r.agentsNow.knowledgeBases.map((s) => s.count)).toEqual([
+      2, 1, 0, 0,
+    ]);
     expect(r.agentsNow.connections.map((s) => s.count)).toEqual([2, 0, 1, 0]);
   });
 });

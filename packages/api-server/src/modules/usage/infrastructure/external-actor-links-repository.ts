@@ -20,7 +20,10 @@ export function upsertExternalActorLinks(db: Db, pseudo: SubPseudonymizer) {
         })),
       )
       .onConflictDoUpdate({
-        target: [externalActorLinks.provider, externalActorLinks.externalActorHash],
+        target: [
+          externalActorLinks.provider,
+          externalActorLinks.externalActorHash,
+        ],
         set: { actorSub: sql`excluded.actor_sub` },
         setWhere: sql`${externalActorLinks.actorSub} IS DISTINCT FROM excluded.actor_sub`,
       });
