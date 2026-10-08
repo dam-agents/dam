@@ -1,64 +1,63 @@
-// TEST_OVERVIEW: Each avatar is built once per agent name as an SVG string and cached, so a long chat or agent list renders a single cached image per name instead of rebuilding the figure. The markup must be well formed and deterministic.
-import { avatarDataUri, avatarSvg } from "api-server-api/avatar/svg";
-import { AVATAR_SCLERA } from "api-server-api/avatar/traits";
+// TEST_OVERVIEW: Every agent shows one of a fixed set of characters: the one its owner chose, or else one picked from a hash of its owner and name, so the same agent looks the same everywhere. A new agent is offered the character its owner uses least. One SVG string serves the UI and the Slack PNG, so the mood must already be right without page CSS: a working character shows open eyes, an idle one closed eyes in colour, and an asleep one closed eyes in grey.
+import {
+  ASLEEP_FILL,
+  AVATAR_CHARACTERS,
+  avatarCharacter,
+  avatarSvg,
+  leastUsedCharacter,
+} from "api-server-api/avatar/svg";
 import { describe, expect, it } from "vitest";
 
 const NAMES = Array.from({ length: 500 }, (_, i) => `agent-${i}`);
+const picked = (name: string) => avatarCharacter(undefined, "owner-1", name);
+
+function hidden(svg: string, group: string): boolean {
+  return new RegExp(`class="${group}" display="none"`).test(svg);
+}
+
+describe("avatarCharacter", () => {
+  // TEST_SCENARIO: The same name must draw the same character everywhere it appears, and a few hundred names must reach every character, so no character is dead weight.
+  it("is deterministic and reaches every character", () => {
+    expect(picked("velvet-comet")).toBe(picked("velvet-comet"));
+    expect(new Set(NAMES.map(picked))).toEqual(new Set(AVATAR_CHARACTERS));
+  });
+});
 
 describe("avatarSvg", () => {
-  // TEST_SCENARIO: A figure that computed a bad number would render as a broken image, so no generated attribute may be NaN or undefined.
-  it("emits finite, fully specified attributes", () => {
-    for (const name of NAMES) {
-      const svg = avatarSvg(name);
-      expect(svg, name).not.toMatch(/NaN|undefined|Infinity/);
-      expect(svg.startsWith("<svg xmlns=")).toBe(true);
-      expect(svg.endsWith("</svg>")).toBe(true);
-    }
+  // TEST_SCENARIO: Each character is well formed in every mood, so the browser and the Slack renderer parse the whole figure.
+  it("emits well-formed markup for every character and mood", () => {
+    for (const character of AVATAR_CHARACTERS)
+      for (const mood of ["working", "idle", "asleep"] as const) {
+        const svg = avatarSvg(character, mood);
+        expect(svg, character).not.toMatch(/NaN|undefined|Infinity/);
+        const opened = svg.match(/<[a-z][^>]*[^/]>/g)?.length ?? 0;
+        const closed = svg.match(/<\/[a-z]+>/g)?.length ?? 0;
+        expect(opened, character).toBe(closed);
+      }
   });
 
-  // TEST_SCENARIO: Every opened element is closed, so the browser parses the whole figure rather than dropping the tail.
-  it("balances its elements", () => {
-    for (const name of NAMES.slice(0, 50)) {
-      const svg = avatarSvg(name);
-      const opened = svg.match(/<[a-zA-Z][^>]*[^/]>/g)?.length ?? 0;
-      const closed = svg.match(/<\/[a-zA-Z]+>/g)?.length ?? 0;
-      expect(opened, name).toBe(closed);
-    }
-  });
-
-  // TEST_SCENARIO: The same name must draw the same figure everywhere it appears.
-  it("is deterministic per name", () => {
-    expect(avatarSvg("velvet-comet")).toBe(avatarSvg("velvet-comet"));
-    expect(avatarSvg("velvet-comet")).not.toBe(avatarSvg("code-reviewer"));
-  });
-});
-
-describe("sleeping avatar", () => {
-  // TEST_SCENARIO: A hibernating agent keeps its own figure with its eyes closed, and every figure has a face to close. Open sclera eyes never show, and the sleeping markup is as well formed as the awake one.
-  it("closes the eyes of a hibernating agent", () => {
-    for (const name of NAMES) {
-      const awake = avatarSvg(name);
-      const asleep = avatarSvg(name, true);
-      expect(asleep, name).not.toMatch(/NaN|undefined|Infinity/);
-      expect(asleep, name).not.toContain(AVATAR_SCLERA);
-      expect(asleep, name).not.toBe(awake);
-    }
-  });
-
-  // TEST_SCENARIO: The awake and sleeping images of one name are cached apart, so waking an agent swaps its image back.
-  it("caches the sleeping image apart from the awake one", () => {
-    const awake = avatarDataUri("velvet-comet");
-    const asleep = avatarDataUri("velvet-comet", true);
-    expect(asleep).not.toBe(awake);
-    expect(avatarDataUri("velvet-comet", true)).toBe(asleep);
+  // TEST_SCENARIO: The mood alone decides which eyes a static render shows, and only an asleep character turns grey.
+  it("shows the eyes and colour of the mood", () => {
+    const working = avatarSvg("spark", "working");
+    const idle = avatarSvg("spark", "idle");
+    const asleep = avatarSvg("spark", "asleep");
+    expect(hidden(working, "avatar-eyes-closed")).toBe(true);
+    expect(hidden(working, "avatar-eyes-open")).toBe(false);
+    expect(hidden(idle, "avatar-eyes-open")).toBe(true);
+    expect(idle).not.toContain(ASLEEP_FILL);
+    expect(hidden(asleep, "avatar-eyes-open")).toBe(true);
+    expect(asleep).toContain(ASLEEP_FILL);
+    expect(asleep).not.toMatch(/#(?!a2a9b0)[0-9a-fA-F]{6}/);
   });
 });
 
-describe("avatarDataUri", () => {
-  // TEST_SCENARIO: A second render of the same name reuses the cached image instead of building the figure again.
-  it("reuses the cached image for a repeated name", () => {
-    const first = avatarDataUri("triage-bot");
-    expect(avatarDataUri("triage-bot")).toBe(first);
-    expect(first.startsWith("data:image/svg+xml,")).toBe(true);
+describe("leastUsedCharacter", () => {
+  // TEST_SCENARIO: An owner with no agents gets the first character, and each next agent gets one the owner does not use yet, so eight agents get eight different characters before any repeats.
+  it("offers the character the owner uses least", () => {
+    const used: (typeof AVATAR_CHARACTERS)[number][] = [];
+    for (let i = 0; i < AVATAR_CHARACTERS.length; i++)
+      used.push(leastUsedCharacter(used));
+    expect(new Set(used)).toEqual(new Set(AVATAR_CHARACTERS));
+    expect(leastUsedCharacter([...used, "stack"])).toBe("shield");
   });
 });

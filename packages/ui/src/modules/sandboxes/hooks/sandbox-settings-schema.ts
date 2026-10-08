@@ -1,3 +1,4 @@
+import { AVATAR_CHARACTERS } from "api-server-api/avatar/svg";
 import { z } from "zod";
 
 import { allEnvVarsValid } from "../../../components/env-vars-editor.js";
@@ -6,6 +7,7 @@ const envVarSchema = z.object({ name: z.string(), value: z.string() });
 
 export const settingsSchema = z.object({
   name: z.string().trim().min(1, "Required"),
+  avatar: z.enum(AVATAR_CHARACTERS),
   assignedAppIds: z.array(z.string()),
   envVars: z
     .array(envVarSchema)

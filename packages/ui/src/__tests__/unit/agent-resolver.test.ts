@@ -11,6 +11,7 @@ import type { AgentView } from "../../types.js";
 const agent = (id: string, state: AgentView["state"]): AgentView => ({
   id,
   name: id,
+  avatar: null,
   templateId: null,
   templateUpdate: null,
   features: { liveUpdates: true },

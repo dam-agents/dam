@@ -123,8 +123,14 @@ export function AgentUnavailableOverlay({
       onBack={onBack}
       footer={waiting ? <SkipTheWait agent={agent} /> : undefined}
     >
-      {state === "starting" && <AgentAvatar name={agent.name} size={128} />}
-      {Icon ? (
+      {waiting ? (
+        <AgentAvatar
+          name={agent.name}
+          avatar={agent.avatar}
+          size={128}
+          playing
+        />
+      ) : Icon ? (
         <Icon size={40} className="text-muted-foreground" />
       ) : (
         <Spinner size={40} />

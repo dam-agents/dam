@@ -20,6 +20,7 @@ interface Props {
   approval: ApprovalView;
   agentName: string;
   avatarName: string | undefined;
+  avatar: string | null | undefined;
   meta: string;
   onDismiss: () => void;
   resolvedLabel?: string | null;
@@ -30,6 +31,7 @@ export function FeedApprovalCard({
   approval,
   agentName,
   avatarName,
+  avatar,
   meta,
   onDismiss,
   resolvedLabel = null,
@@ -61,7 +63,7 @@ export function FeedApprovalCard({
               <span className="size-2 shrink-0 rounded-full bg-warning" />
             )}
             {avatarName !== undefined && (
-              <AgentAvatar name={avatarName} size={20} />
+              <AgentAvatar name={avatarName} avatar={avatar} size={20} />
             )}
             <span className="truncate">{agentName}</span>
           </div>

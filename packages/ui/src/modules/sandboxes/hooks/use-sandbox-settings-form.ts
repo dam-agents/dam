@@ -1,11 +1,16 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { isProtectedAgentEnvName } from "api-server-api";
+import {
+  AVATAR_CHARACTERS,
+  type AvatarCharacter,
+} from "api-server-api/avatar/svg";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
 import { useStore } from "../../../store.js";
 import { useAgentConnections, useAgents } from "../../agents/api/queries.js";
+import { resolveCharacter } from "../../agents/components/avatar/agent-avatar.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import {
   useCurrentPreset,
@@ -65,6 +70,7 @@ export function useSandboxSettingsForm() {
     mode: "onChange",
     defaultValues: {
       name: "",
+      avatar: AVATAR_CHARACTERS[0],
       assignedAppIds: [],
       envVars: [],
       hibernationTimeoutMin: 60,
@@ -94,6 +100,7 @@ export function useSandboxSettingsForm() {
     baselinedRef.current = true;
     reset({
       name: agent.name,
+      avatar: resolveCharacter(agent.name, agent.avatar),
       assignedAppIds: connectionsQuery.data.connections
         .map((c) => c.connectionId)
         .sort(),
@@ -204,7 +211,9 @@ export function useSandboxSettingsForm() {
     egressStaged,
     inheritedEnvs,
     hibernationTimeoutMin,
-    draftName: watch("name"),
+    avatar: watch("avatar"),
+    setAvatar: (next: AvatarCharacter) =>
+      setValue("avatar", next, { shouldDirty: true }),
     sizeCpuMilli: watch("sizeCpuMilli"),
     sizeMemoryMi: watch("sizeMemoryMi"),
     requireConnectionAddress: watch("requireConnectionAddress"),
