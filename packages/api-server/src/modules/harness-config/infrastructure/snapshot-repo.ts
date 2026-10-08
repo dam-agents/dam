@@ -1,5 +1,4 @@
-import { eq, type Db, agents as agentsTable } from "db";
-import { createXactLock } from "../../../core/xact-lock.js";
+import { eq, sql, type Db, type DbTx, agents as agentsTable } from "db";
 import {
   harnessConfigSnapshotSchema,
   type HarnessConfigSnapshot,
@@ -30,11 +29,11 @@ const NEVER_CAPTURED = new Date(0).toISOString();
 export function createHarnessConfigSnapshotRepo(
   db: Db,
 ): HarnessConfigSnapshotRepo {
-  const lock = createXactLock(db);
   async function readStored(
     agentId: string,
+    q: Db | DbTx = db,
   ): Promise<HarnessConfigSnapshot | null> {
-    const rows = await db
+    const rows = await q
       .select({ snapshot: agentsTable.harnessConfigSnapshot })
       .from(agentsTable)
       .where(eq(agentsTable.id, agentId));
@@ -52,8 +51,11 @@ export function createHarnessConfigSnapshotRepo(
     },
 
     merge: (agentId, patch, opts) =>
-      lock(`harness-config-snapshot:${agentId}`, async () => {
-        const stored = await readStored(agentId);
+      db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(pg_catalog.hashtext(${`harness-config-snapshot:${agentId}`}))`,
+        );
+        const stored = await readStored(agentId, tx);
         const { harnesses: _others, ...ownStored } = stored ?? {};
         const current =
           opts.harness === undefined
@@ -91,7 +93,7 @@ export function createHarnessConfigSnapshotRepo(
                 }),
                 harnesses: { ...stored?.harnesses, [opts.harness]: own },
               };
-        await db
+        await tx
           .update(agentsTable)
           .set({ harnessConfigSnapshot: next })
           .where(eq(agentsTable.id, agentId));

@@ -30,7 +30,7 @@ function fakeDb(): Db {
       }),
     }),
     transaction: <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
-      const run = held.then(() => fn({ execute: async () => {} }));
+      const run = held.then(() => fn({ ...db, execute: async () => {} }));
       held = run.catch(() => {});
       return run;
     },
