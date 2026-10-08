@@ -131,6 +131,8 @@ for a probe; the IBM proxy's `rits/*` models (the same RITS backend Curve Bender
   Pi, so no wrapper ran on main; this also turns on the reasoning-order split from #4360.
 - **`azure/gpt-5.3-codex` gets no notice.** LiteLLM reports `stop` at the cap, so Pi keeps the
   reply, but nothing can mark it as cut.
+- **The sending tab marks the cut from its prompt response.** It closes the reply on that
+  response, which arrives before `platform/turnEnded`, so the notification alone never marked it.
 
 ### Out of scope
 
@@ -145,7 +147,7 @@ for a probe; the IBM proxy's `rits/*` models (the same RITS backend Curve Bender
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
 | 01 | ✅ [Pi keeps a reply cut at the output limit](./01-pi-keeps-cut-reply.md) | Pi image: streamed usage on `openai-proxy`, a `length` stop reports the cap; pi-acp patch reports `max_tokens` and stamps the replayed reply | — |
-| 02 | [The chat marks a reply cut at the output limit](./02-chat-marks-cut-reply.md) | `platformFrameMetaSchema.stopReason`; UI projection and muted line | 01 (for the Pi smoke test only) |
+| 02 | ✅ [The chat marks a reply cut at the output limit](./02-chat-marks-cut-reply.md) | `platformFrameMetaSchema.stopReason`; UI projection and muted line | 01 (for the Pi smoke test only) |
 | 03 | [Pi's output limit on LiteLLM](./03-pi-output-limit-litellm.md) | IBM LiteLLM `MAX_TOKENS` 8192 → 32768 plus data migration; `openai-proxy` sends `max_completion_tokens` | 01 |
 
 03 comes last on purpose: with the 8192 limit still in place, the smoke tests of 01 and 02 reach

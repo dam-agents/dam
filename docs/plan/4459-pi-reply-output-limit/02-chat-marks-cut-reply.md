@@ -53,6 +53,10 @@ Apply `/react-ui-engineering` to `packages/ui` and `/typescript-engineering` to 
      active reply the way `model` is.
    - Check that the flag survives `settleReplay`, `finalizeAllStreaming` and `dropSuperseded`.
      They spread messages, so it should.
+   - The tab that sent the prompt also sets the flag from its own prompt response, in
+     `use-acp-prompt.ts`'s `finalizeBubble`. The runtime sends that response before
+     `platform/turnEnded`, so the sending tab has already closed the reply when the notification
+     arrives, and `closeActiveAssistant` finds no active reply (found during implementation).
 
 5. **Draw the line**,
    [`modules/sessions/components/chat-message.tsx`](../../../packages/ui/src/modules/sessions/components/chat-message.tsx):

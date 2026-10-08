@@ -11,6 +11,7 @@ import { modelDisplayName } from "../lib/model-name.js";
 import type { MessageTime } from "../lib/thread-items.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
+import { QuietNotice } from "./quiet-notice.js";
 import { SendErrorCard } from "./send-error-card.js";
 import { type OnRetry, UndeliveredNotice } from "./undelivered-notice.js";
 import { WorkingDots } from "./working-dots.js";
@@ -217,6 +218,11 @@ export const ChatMessage = memo(function ChatMessage({
             {modelDisplayName(message.model)}
           </span>
         </Tooltip>
+      )}
+      {isAssistant && !streaming && message.stoppedAtOutputLimit && (
+        <QuietNotice testId="reply-output-limit-notice">
+          Reply stopped at the output limit.
+        </QuietNotice>
       )}
       {error && isAssistant && (
         <SendErrorCard
