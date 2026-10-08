@@ -14,7 +14,6 @@ export interface ClassifyInput {
   harnessPid: number | null;
   turnSince: number | null;
   tasks: ReportedTask[];
-  taskMatches: ReadonlyMap<string, string>;
   skipTasks: ReadonlySet<string>;
 }
 
@@ -87,15 +86,14 @@ export function platformOwnPids(
  * processes are never listed: PID 1, agent-runtime and its ancestors, and
  * agent-runtime's direct children (the chat harness, the pod service, PTYs,
  * sshd). A Harness Task is a chat-harness descendant matched to a task the
- * harness reported: first by the output file the harness names after the task
- * id, then by its command. The match sticks to the process it found while that
- * process lives, so a later process with the same command cannot take it over.
- * A Turn Process is a chat-harness descendant outside every Harness Task tree,
- * started at or after the earliest running turn, so helpers the harness started
- * before the turn (MCP servers and the like) stay out, and so do children of
- * older work that writes to a file, which is unreported background work rather
- * than the turn's. A Detached Process is a
- * child of the reaper an orphan is re-parented to: PID 1, or an ancestor of
+ * harness reported, by the output file the harness names after the task id.
+ * Never by command: two tasks can run the same command, and a guess could hand
+ * one task the other's process. A Turn Process is a chat-harness descendant
+ * outside every Harness Task tree, started at or after the earliest running
+ * turn, so helpers the harness started before the turn (MCP servers and the
+ * like) stay out, and so do children of older work that writes to a file,
+ * which is unreported background work rather than the turn's. A Detached
+ * Process is a child of the reaper an orphan is re-parented to: PID 1, or an ancestor of
  * agent-runtime acting as subreaper (catatonit when it is not PID 1). When
  * its root is only a forked copy of a tool shell, the row shows the command
  * below it. Work under an attached PTY or SSH shell is not listed until it
@@ -128,7 +126,6 @@ export function classifyProcesses(input: ClassifyInput): ProcessTree[] {
   const harness =
     input.harnessPid === null ? undefined : byPid.get(input.harnessPid);
   const harnessDescendants = harness ? descendantsOf(harness) : [];
-  const harnessKeys = new Set(harnessDescendants.map(procKey));
 
   const topmost = (matches: ScannedProcess[]): ScannedProcess[] => {
     const pids = new Set(matches.map((p) => p.pid));
@@ -145,34 +142,16 @@ export function classifyProcesses(input: ClassifyInput): ProcessTree[] {
     });
   };
 
-  const claimed = new Set<string>();
-  const unclaimed = (p: ScannedProcess) => !claimed.has(procKey(p));
-  const single = (matches: ScannedProcess[]): ScannedProcess | null => {
-    const tops = topmost(matches.filter(unclaimed));
+  const taskRoot = (task: ReportedTask): ScannedProcess | null => {
+    const outputName = `/${task.taskId}.output`;
+    const tops = topmost(
+      harnessDescendants.filter((p) => p.outputPath?.endsWith(outputName)),
+    );
     return tops.length === 1 ? tops[0]! : null;
   };
 
-  const taskRoot = (task: ReportedTask): ScannedProcess | null => {
-    const sticky = input.taskMatches.get(taskIdentity(task));
-    if (sticky !== undefined && harnessKeys.has(sticky)) {
-      const found = harnessDescendants.find((p) => procKey(p) === sticky);
-      if (found && unclaimed(found)) return found;
-    }
-    const outputName = `/${task.taskId}.output`;
-    const byOutput = single(
-      harnessDescendants.filter((p) => p.outputPath?.endsWith(outputName)),
-    );
-    if (byOutput) return byOutput;
-    const needle =
-      task.command === undefined ? "" : normalizeCommand(task.command);
-    if (needle === "") return null;
-    return single(
-      harnessDescendants.filter((p) =>
-        normalizeCommand(p.cmdline).includes(needle),
-      ),
-    );
-  };
-
+  const claimed = new Set<string>();
+  const unclaimed = (p: ScannedProcess) => !claimed.has(procKey(p));
   const trees: ProcessTree[] = [];
 
   for (const task of input.tasks) {

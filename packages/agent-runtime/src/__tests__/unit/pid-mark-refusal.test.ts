@@ -6,7 +6,12 @@ import type { ScannedProcess } from "../../modules/processes/domain/snapshot.js"
 const RUNTIME = 8;
 const HARNESS = 1176;
 
-function proc(pid: number, ppid: number, cmdline: string): ScannedProcess {
+function proc(
+  pid: number,
+  ppid: number,
+  cmdline: string,
+  outputPath: string | null = null,
+): ScannedProcess {
   return {
     pid,
     ppid,
@@ -17,7 +22,7 @@ function proc(pid: number, ppid: number, cmdline: string): ScannedProcess {
     cpuTicks: 0,
     rssBytes: 0,
     cmdline,
-    outputPath: null,
+    outputPath,
     keepMark: null,
   };
 }
@@ -47,7 +52,6 @@ function judge(
       command: t.command,
       description: undefined,
     })),
-    taskMatches: new Map(),
     skipTasks: new Set(),
   });
   const target = processes.find((p) => p.pid === targetPid)!;
@@ -64,8 +68,13 @@ describe("pidMarkRefusal", () => {
   it("refuses a Harness Task, which is kept by default", () => {
     const refusal = judge(
       [
-        proc(1237, HARNESS, "bash -c eval 'sleep 300 && echo done'"),
-        proc(1238, 1237, "sleep 300"),
+        proc(
+          1237,
+          HARNESS,
+          "bash -c eval 'sleep 300 && echo done'",
+          "/tmp/s1/tasks/bwmlsb9mj.output",
+        ),
+        proc(1238, 1237, "sleep 300", "/tmp/s1/tasks/bwmlsb9mj.output"),
         proc(1300, HARNESS, "bash -c eval 'platform-keep --pid 1238'"),
       ],
       1238,

@@ -242,11 +242,6 @@ export function createProcessesService(
     const tasks = deps.reportedTasks();
     const reported = new Set(tasks.map(taskIdentity));
     exitedTasks = new Set([...exitedTasks].filter((id) => reported.has(id)));
-    const taskMatches = new Map<string, string>();
-    for (const row of tracked) {
-      if (row.kind === "harness-task" && row.procKey !== null)
-        taskMatches.set(row.identity, row.procKey);
-    }
     const trees = withoutStopping(
       classifyProcesses({
         snapshot,
@@ -254,7 +249,6 @@ export function createProcessesService(
         harnessPid: deps.harnessPid(),
         turnSince: deps.activeTurnSince(),
         tasks,
-        taskMatches,
         skipTasks: exitedTasks,
       }),
       snapshot,

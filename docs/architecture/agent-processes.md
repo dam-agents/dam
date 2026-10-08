@@ -69,9 +69,10 @@ its command, start time, and the CPU and memory of the whole tree:
   began, so helpers the harness keeps (MCP servers and the like) never show. Children of
   older work that writes to a file are not the turn's either.
 - **Harness Task** — a reported background job, matched to the harness descendant that
-  runs it: by the output file the harness names after the task, else by its command. A
-  match holds while its process lives. A task that matches no single process is still
-  listed, without a process to act on.
+  runs it by the output file the harness names after the task. Never by command: two
+  tasks can run the same command, and a wrong match would point Stop at the other
+  task's process. A task that matches no single process is still listed, without a
+  process to act on.
 - **Detached Process** — a process re-parented to the reaper of orphans: PID 1, or the
   init that wraps agent-runtime and adopts orphans as a subreaper. Work under an attached
   terminal or SSH shell is not listed until it detaches.
