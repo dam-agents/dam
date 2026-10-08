@@ -1,8 +1,13 @@
 [tools]
 "npm:@earendil-works/pi-coding-agent" = "1.0.4"
 "npm:pi-acp" = "0.0.34"
+# Offline pi installs no settings package, so pi-platform loads this one.
+# aube refuses it by default for its few weekly downloads; 1.0.2 was reviewed.
+"npm:@zhafron/pi-memory" = { version = "1.0.2", allow_low_downloads = true }
 
 [oci.env]
 PLATFORM_HARNESS = "pi"
-PI_SKIP_VERSION_CHECK = "1"
+# No startup calls to pi.dev (model catalog, version check, install telemetry)
+# for the gateway to hold for approval.
+PI_OFFLINE = "1"
 PI_ACP_PI_COMMAND = "/usr/local/bin/pi-platform"
