@@ -1,4 +1,9 @@
 const SEARCH_URL = "https://duckduckgo.com/?q=";
+const EMPTY_PAGES = new Set([
+  "about:blank",
+  "chrome://newtab/",
+  "chrome://new-tab-page/",
+]);
 
 const looksLikeHost = (text: string) => {
   const host = text.split(/[/?#]/, 1)[0] ?? "";
@@ -22,4 +27,8 @@ export function addressUrl(raw: string): string | null {
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return text;
   if (!/\s/.test(text) && looksLikeHost(text)) return `http://${text}`;
   return `${SEARCH_URL}${encodeURIComponent(text)}`;
+}
+
+export function shownAddress(url: string): string {
+  return EMPTY_PAGES.has(url) ? "" : url;
 }

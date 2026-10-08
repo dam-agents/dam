@@ -6,6 +6,7 @@ import type { WatchPages } from "../../modules/browser-cdp.js";
 import type { BrowserSnapshot } from "agent-runtime-api";
 import {
   LAUNCH,
+  NEW_TAB_PAGE,
   commandTimeoutMs,
   createCommandQueue,
   displayAvailable,
@@ -209,7 +210,7 @@ describe("browser preview", () => {
     await until(launched);
     expect(isLaunch(fake.calls[0]!)).toBe(true);
     await until(() => panel.states().includes("ready"));
-    expect(panel.page()?.url).toBe("about:blank");
+    expect(panel.page()?.url).toBe(NEW_TAB_PAGE);
     expect(await browser.navigate("http://127.0.0.1:5173")).toEqual({
       ok: true,
       value: undefined,
@@ -220,6 +221,56 @@ describe("browser preview", () => {
       "navigate",
       "http://127.0.0.1:5173/",
     ]);
+  });
+
+  // TEST_SCENARIO: agent-browser launches the browser on a blank page. A fresh panel shows Chromium's new tab page there instead of an empty white one — on the first launch, after Restart browser and after Clear browser data — so the browser looks ready to use.
+  it("opens the new tab page on a fresh browser", async () => {
+    const fake = fakeBrowser();
+    const browser = preview(fake, {
+      stopBrowser: async () => {
+        fake.browser.alive = false;
+        fake.browser.url = "about:blank";
+      },
+    });
+    closers.push(() => browser.close());
+    const navigations = () =>
+      fake.calls.filter((c) => c[0] === "page" && c[1] === "navigate");
+    const panel = watching(browser);
+    await until(() => navigations().length === 1);
+    for (const action of ["restart", "clearData"] as const) {
+      expect((await browser.act(action)).ok).toBe(true);
+      await until(
+        () => navigations().length === (action === "restart" ? 2 : 3),
+      );
+    }
+    await until(() => panel.states().at(-1) === "ready");
+    expect(panel.page()?.url).toBe(NEW_TAB_PAGE);
+    expect(fake.calls.filter(isLaunch)).toHaveLength(3);
+    expect(navigations()).toEqual(
+      Array(3).fill(["page", "navigate", NEW_TAB_PAGE]),
+    );
+  });
+
+  // TEST_SCENARIO: the new tab page only replaces a blank page. A browser the agent already opened a page in keeps it, and an address the panel asked for before the browser was up opens instead of the new tab page.
+  it("keeps a page that is already open or asked for", async () => {
+    const shown = fakeBrowser();
+    shown.browser.url = "http://127.0.0.1:3000/";
+    const first = preview(shown);
+    closers.push(() => first.close());
+    const panel = watching(first);
+    await until(() => panel.states().includes("ready"));
+    expect(panel.page()?.url).toBe("http://127.0.0.1:3000/");
+
+    const asked = fakeBrowser();
+    const second = preview(asked);
+    closers.push(() => second.close());
+    expect((await second.navigate("http://127.0.0.1:5173")).ok).toBe(true);
+    const other = watching(second);
+    await until(() => other.states().includes("ready"));
+    expect(other.page()?.url).toBe("http://127.0.0.1:5173/");
+
+    for (const { calls } of [shown, asked])
+      expect(calls).not.toContainEqual(["page", "navigate", NEW_TAB_PAGE]);
   });
 
   // TEST_SCENARIO: the CDP watcher reports the page's state as soon as it attaches, before it has returned to the supervisor. That early report must not break the launch: reading the watcher before it was assigned threw, failed every launch and, from the watcher's event handlers, crashed the runtime.
