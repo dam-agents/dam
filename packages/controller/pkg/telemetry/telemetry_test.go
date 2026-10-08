@@ -37,10 +37,9 @@ func TestSetupDisabledByOtelSdkDisabled(t *testing.T) {
 	assert.False(t, enabled)
 }
 
+// TEST_SCENARIO: With an OTLP endpoint set, telemetry turns on and its exporters flush on shutdown. The collector is a local server, because a remote address would send that flush through the proxy of whatever runs the tests.
 func TestSetupEnabledWithEndpoint(t *testing.T) {
 	t.Setenv("OTEL_SDK_DISABLED", "")
-	// A local collector: the exporters flush on shutdown, and a remote address
-	// would send that through the proxy of whatever runs the tests.
 	collector := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer collector.Close()
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", collector.URL)
