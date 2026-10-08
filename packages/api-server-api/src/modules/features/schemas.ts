@@ -9,6 +9,8 @@ export const featureIdSchema = z.enum([
   "strict-connection-addressing",
 ]);
 
+export const featureModeSchema = z.enum(["off", "experimental", "on"]);
+
 export const featureSetFlagInputSchema = z.object({
   feature: featureIdSchema,
   enabled: z.boolean(),

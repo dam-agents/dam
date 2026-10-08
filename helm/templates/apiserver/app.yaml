@@ -248,6 +248,8 @@ spec:
             - name: E2E_ENABLED
               value: "true"
             {{- end }}
+            - name: FEATURE_MODES
+              value: {{ include "platform.featureModes" . | quote }}
             {{- if .Values.virtualization.enabled }}
             - name: VIRTUALIZATION_ENABLED
               value: "true"
