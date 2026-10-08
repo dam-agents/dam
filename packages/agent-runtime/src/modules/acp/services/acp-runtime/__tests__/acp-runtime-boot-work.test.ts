@@ -2,17 +2,18 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { createWorld } from "./acp-world.js";
 
 /**
- * TEST_OVERVIEW: boot work that has to land before the harness first starts.
+ * TEST_OVERVIEW: spawn work that has to land before the harness starts.
  *
  * A harness reads its own config file once, at spawn, so anything the
  * platform must put there — a seeded model — has to be written before the
- * first process exists. The pod's environment is recorded on disk and
- * survives a restart, so the runtime cannot hang that work on the moment it
- * first learns the environment is ready: on every boot after the first that
- * moment never comes. It also cannot wait forever, or a hook that never
+ * first process exists, and again before the process that follows an env
+ * change, since the env is how a provider switch reaches the pod. The pod's
+ * environment is recorded on disk and survives a restart, so the runtime
+ * cannot hang that work on the moment it first learns the environment is
+ * ready: on every boot after the first that moment never comes. It also cannot wait forever, or a hook that never
  * settles would leave the pod unable to start at all.
  */
-describe("acp-runtime: boot work before the first spawn", () => {
+describe("acp-runtime: spawn work before the harness starts", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -32,7 +33,7 @@ describe("acp-runtime: boot work before the first spawn", () => {
 
     const world = createWorld({
       envReadyAtBoot: true,
-      beforeFirstSpawn: () => {
+      beforeSpawn: () => {
         calls += 1;
         return held;
       },
@@ -46,6 +47,38 @@ describe("acp-runtime: boot work before the first spawn", () => {
     await held;
     await Promise.resolve();
     expect(world.harnessStarted()).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: The agent is switched to another provider while running.
+   * The env change recycles the harness, and the model written for the old
+   * provider is useless on the new one, so the spawn work has to run again
+   * before the replacement process starts, not only once per pod.
+   */
+  it("runs the spawn work again before the spawn that follows an env change", async () => {
+    let calls = 0;
+    const world = createWorld({
+      envReadyAtBoot: true,
+      beforeSpawn: () => {
+        calls += 1;
+        return Promise.resolve();
+      },
+    });
+
+    world.connect();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toBe(1);
+    expect(world.harnessCount()).toBe(1);
+
+    world.runtime.refreshEnv({ force: false });
+    expect(world.harness().killed()).toBe(true);
+
+    world.connect();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toBe(2);
+    expect(world.harnessCount()).toBe(2);
   });
 
   /**
@@ -65,7 +98,7 @@ describe("acp-runtime: boot work before the first spawn", () => {
     const world = createWorld({
       envReadyAtBoot: false,
       warmStartTimeoutMs: 1_000,
-      beforeFirstSpawn: () => held,
+      beforeSpawn: () => held,
     });
 
     world.connect();
@@ -91,7 +124,7 @@ describe("acp-runtime: boot work before the first spawn", () => {
     const world = createWorld({
       envReadyAtBoot: true,
       warmStartTimeoutMs: 1_000,
-      beforeFirstSpawn: () => new Promise<void>(() => {}),
+      beforeSpawn: () => new Promise<void>(() => {}),
     });
 
     world.connect();
