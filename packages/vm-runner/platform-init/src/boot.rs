@@ -1,4 +1,4 @@
-// UNIT_BOUNDARY_DESCRIPTION: the entrypoint of every vm-backend machine. It claims the machine's storage disk, moves the image onto a root of its own that lasts as long as the image does, mounts the agent's home from the disk, puts the temporary and cache folders in memory, and starts the image's own entrypoint, which it then supervises. It exists so persistence is the platform's to guarantee rather than the image's to implement: the runner supplies this binary, so an image that has never heard of this platform still keeps its agent's home across a stop, and a machine that cannot mount its disk does not boot at all rather than losing its work at the first stop.
+// UNIT_BOUNDARY_DESCRIPTION: the entrypoint of every vm-backend machine. It claims the machine's storage disk, moves the image onto a root of its own that lasts as long as the image does, mounts the agent's home from the disk, puts the temporary folders on the disk, and starts the image's own entrypoint, which it then supervises. It exists so persistence is the platform's to guarantee rather than the image's to implement: the runner supplies this binary, so an image that has never heard of this platform still keeps its agent's home across a stop, and a machine that cannot mount its disk does not boot at all rather than losing its work at the first stop.
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Seek, SeekFrom, Write};
@@ -94,7 +94,7 @@ pub fn run(command: Vec<OsString>) -> ! {
         fs::metadata(guest::SEEDED_PATH).is_ok(),
         expected.as_ref(),
     );
-    mount_scratch();
+    mount_scratch(&root);
     let trust = offer_trust_cache(&root);
     leave_disk(&root);
     share_mounts();
@@ -108,6 +108,7 @@ pub fn run(command: Vec<OsString>) -> ! {
         ),
     };
     std::thread::spawn(reclaim_cold_cache);
+    std::thread::spawn(evict_scratch);
     supervise(&binary, &command, trust.as_deref())
 }
 
@@ -467,7 +468,7 @@ struct MountPlan {
     left_behind: Vec<PathBuf>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm's /tmp is a tmpfs. mount_scratch mounts the platform's own there, beside the other temporary folders, so smolvm's is left with the old root.
+// UNIT_BOUNDARY_DESCRIPTION: smolvm's /tmp is a tmpfs. mount_scratch binds the platform's own there from the disk, beside the other temporary folders, so smolvm's is left with the old root.
 const DISCARDED_MOUNTS: [&str; 1] = ["/tmp"];
 
 fn plan_mounts(table: &[MountEntry], disk: &Path) -> Result<MountPlan, String> {
@@ -721,71 +722,72 @@ fn bind_ca() {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the folders that only ever hold temporary files or caches, each a tmpfs of its own, so they are empty on every boot and never fill the disk or a root that is kept. The system ones get the mode the image expects of them and root as owner. In the agent's home, npm's whole cache directory and the XDG cache directory get the home's owner. A tmpfs mounted without a size is capped by the kernel at half the guest's memory, and what it holds counts as the machine's memory.
+// UNIT_BOUNDARY_DESCRIPTION: the folders that only ever hold temporary files or caches. The system ones are each a directory of the disk bound in place, empty on every boot, owned by root with the mode the image expects of them. Being plain directories of the disk rather than part of the root, they are bounded by the disk and not by the guest's memory, and nothing under them is the image's own. In the agent's home, npm's cache directory and the XDG cache directory are ordinary directories of the home and last as it does. evict_scratch deletes from all of them when the disk runs short.
 const SCRATCH_DIRS: [(&str, u32); 3] = [
     ("/tmp", 0o1777),
     ("/var/tmp", 0o1777),
     ("/var/cache", 0o755),
 ];
 const HOME_CACHES: [&str; 2] = [".cache", ".npm"];
-const HOME_CACHE_MODE: u32 = 0o755;
+const SCRATCH_STORE: &str = "scratch";
 
-// UNIT_BOUNDARY_DESCRIPTION: puts every scratch folder on a tmpfs. It runs once the root is in place and the home is mounted, so a home cache sits on top of the persisted home, and before the trust cache, which is bound under /var/cache. A home cache that is a symlink — a home moved here from a container has ~/.cache pointing at /tmp/agent-cache — or that already holds files on the disk is moved aside and deleted in the background, so the disk gets its space back without holding up the boot. A tmpfs that cannot be mounted is a warning: the folder then stays on the disk, as it was before, and the agent still runs.
-fn mount_scratch() {
-    for (dir, mode) in SCRATCH_DIRS {
-        scratch(Path::new(dir), mode, (0, 0));
-    }
-    let home = Path::new(guest::AGENT_HOME);
-    let owner = match fs::metadata(home) {
-        Ok(info) => (info.uid(), info.gid()),
-        Err(e) => {
-            logf!(
-                "WARNING: reading the owner of {} ({e}); its caches stay on the disk",
-                home.display()
-            );
-            return;
-        }
-    };
+// UNIT_BOUNDARY_DESCRIPTION: binds every system scratch folder from its store on the disk. It runs once the root is in place and the home is mounted, and before the trust cache, which is bound under /var/cache. The last boot's folders are moved aside and deleted in the background, so the disk gets its space back without holding up the boot. A home cache that is a symlink — a home moved here from a container may have ~/.cache pointing at /tmp/agent-cache — is removed, so the tool makes a directory of the home there. Home caches that earlier boots moved aside are deleted the same way. A bind that fails is a warning: the folder then stays on the root, and the agent still runs.
+fn mount_scratch(root: &Path) {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_secs());
+    let store = guest::system_store(root, SCRATCH_STORE);
+    for (dir, mode) in SCRATCH_DIRS {
+        let from = store.join(scratch_name(dir));
+        match discard(&from, stamp) {
+            Ok(Some(aside)) => logf!("discarding the last boot's {dir} at {}", aside.display()),
+            Ok(None) => {}
+            Err(e) => logf!("WARNING: moving the last boot's {dir} aside ({e}); it is kept"),
+        }
+        let bound = mkdir_all(&from)
+            .and_then(|()| std::os::unix::fs::chown(&from, Some(0), Some(0)))
+            .and_then(|()| fs::set_permissions(&from, fs::Permissions::from_mode(mode)))
+            .and_then(|()| mkdir_all(Path::new(dir)))
+            .and_then(|()| mount(&from, Path::new(dir), libc::MS_BIND));
+        if let Err(e) = bound {
+            logf!("WARNING: binding {dir} from the disk ({e}); it stays on the root");
+        }
+    }
+    let home = PathBuf::from(guest::AGENT_HOME);
     for name in HOME_CACHES {
         let path = home.join(name);
-        match discard_cache(&path, stamp) {
-            Ok(Some(aside)) => logf!("discarding the old {} from the disk", aside.display()),
-            Ok(None) => {}
-            Err(e) => {
-                logf!(
-                    "WARNING: moving the old {} aside ({e}); it stays on the disk",
-                    path.display()
-                );
-                continue;
+        if fs::symlink_metadata(&path).is_ok_and(|info| info.file_type().is_symlink()) {
+            if let Err(e) = fs::remove_file(&path) {
+                logf!("WARNING: removing the link at {} ({e})", path.display());
             }
         }
-        scratch(&path, HOME_CACHE_MODE, owner);
     }
-    let home = home.to_path_buf();
-    std::thread::spawn(move || purge_discarded(&home));
+    // UNIT_BOUNDARY_DESCRIPTION: leave_disk detaches the disk's root before the delete is done, so the store is reached through a descriptor opened now, which keeps the detached mount alive.
+    let store = File::open(&store);
+    std::thread::spawn(move || {
+        purge_discarded(&home, &HOME_CACHES);
+        match store {
+            Err(e) => logf!("WARNING: opening the scratch store ({e}); the last boot's folders stay on the disk until a later boot"),
+            Ok(store) => {
+            let names = SCRATCH_DIRS.map(|(dir, _)| scratch_name(dir));
+            purge_discarded(
+                Path::new(&format!("/proc/self/fd/{}", store.as_raw_fd())),
+                &names,
+            );
+            }
+        }
+    });
 }
 
-fn scratch(path: &Path, mode: u32, (uid, gid): (u32, u32)) {
-    let mounted = mkdir_all(path)
-        .and_then(|()| std::os::unix::fs::chown(path, Some(uid), Some(gid)))
-        .and_then(|()| fs::set_permissions(path, fs::Permissions::from_mode(mode)))
-        .and_then(|()| mount_tmpfs(path, &format!("mode={mode:o},uid={uid},gid={gid}")));
-    if let Err(e) = mounted {
-        logf!(
-            "WARNING: no tmpfs at {} ({e}); it stays on the disk",
-            path.display()
-        );
-    }
+fn scratch_name(dir: &str) -> String {
+    dir.trim_start_matches('/').replace('/', "-")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the name a discarded home cache is moved to, beside itself, so the move is a rename on the same disk however many files the cache holds. The background delete finds discarded caches by this name, so one a stop cut short is deleted on the next boot. It is the agent image entrypoint's own pattern for its discarded caches.
+// UNIT_BOUNDARY_DESCRIPTION: the name a discarded folder is moved to, beside itself, so the move is a rename on the same disk however many files it holds. The background delete finds discarded folders by this name, so one a stop cut short is deleted on the next boot. It is the agent image entrypoint's own pattern for its discarded caches.
 const DISCARDED_INFIX: &str = ".discarded.";
 
-// UNIT_BOUNDARY_DESCRIPTION: makes a home cache path ready to mount over: nothing there, or an empty directory, is left as it is. Anything else — a symlink, a file, a directory with files — is renamed aside and its new name returned. The rename never follows a symlink, so a link to /tmp moves and its target is not touched.
-fn discard_cache(path: &Path, stamp: u64) -> io::Result<Option<PathBuf>> {
+// UNIT_BOUNDARY_DESCRIPTION: makes a path ready to start empty: nothing there, or an empty directory, is left as it is. Anything else is renamed aside and its new name returned. The rename never follows a symlink.
+fn discard(path: &Path, stamp: u64) -> io::Result<Option<PathBuf>> {
     match fs::symlink_metadata(path) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e),
@@ -798,21 +800,107 @@ fn discard_cache(path: &Path, stamp: u64) -> io::Result<Option<PathBuf>> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: deletes the home caches moved aside by this boot or an earlier one. Only the names discard_cache gives are touched, so nothing else in the home is. A delete that fails is left for the next boot.
-fn purge_discarded(home: &Path) {
-    let Ok(entries) = fs::read_dir(home) else {
+// UNIT_BOUNDARY_DESCRIPTION: deletes the entries of `dir` that discard moved aside from one of `names`, by this boot or an earlier one. Only those names are touched, so nothing else in the directory is. A delete that fails is left for the next boot.
+fn purge_discarded(dir: &Path, names: &[impl AsRef<str>]) {
+    let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if HOME_CACHES
+        if names
             .iter()
-            .any(|cache| name.starts_with(&format!("{cache}{DISCARDED_INFIX}")))
+            .any(|kept| name.starts_with(&format!("{}{DISCARDED_INFIX}", kept.as_ref())))
         {
             let _ = remove_all(&entry.path());
         }
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free, the scratch folders lose their files least recently used first, in passes of decreasing age, until EVICT_UNTIL_PERCENT is free or only files used within the last pass's age are left — so a file a running tool is writing is never taken. Only files on the disk are deleted: the walk stays on the disk's device, follows no symlink and leaves the image's trust cache alone. A deleted file that is still open frees its space only when it is closed.
+const EVICT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+const EVICT_BELOW_PERCENT: u64 = 10;
+const EVICT_UNTIL_PERCENT: u64 = 20;
+const EVICT_AGES: [u64; 4] = [7 * 86_400, 86_400, 3_600, 600];
+
+fn evict_scratch() {
+    let home = Path::new(guest::AGENT_HOME);
+    let disk = match fs::metadata(home) {
+        Ok(info) => info.dev(),
+        Err(e) => {
+            logf!("WARNING: reading the disk of {} ({e}); scratch is not evicted when the disk runs short", home.display());
+            return;
+        }
+    };
+    let dirs: Vec<PathBuf> = SCRATCH_DIRS
+        .iter()
+        .map(|(dir, ..)| PathBuf::from(dir))
+        .chain(HOME_CACHES.iter().map(|name| home.join(name)))
+        .collect();
+    loop {
+        std::thread::sleep(EVICT_INTERVAL);
+        if free_percent(home).is_none_or(|free| free >= EVICT_BELOW_PERCENT) {
+            continue;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs());
+        for age in EVICT_AGES {
+            let freed: u64 = dirs
+                .iter()
+                .map(|dir| evict_older(dir, now.saturating_sub(age), disk))
+                .sum();
+            if freed > 0 {
+                logf!("the disk is short of room: deleted {freed} bytes of scratch unused for {age} s");
+            }
+            if free_percent(home).is_some_and(|free| free >= EVICT_UNTIL_PERCENT) {
+                break;
+            }
+        }
+    }
+}
+
+fn free_percent(path: &Path) -> Option<u64> {
+    let path = cstring(path.as_os_str()).ok()?;
+    // SAFETY: statvfs is plain old data, and all-zero bytes are a valid value of it.
+    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: `path` is NUL-terminated and lives for the call, and `stat` is a live, writable statvfs.
+    let rc = unsafe { libc::statvfs(path.as_ptr(), &mut stat) };
+    #[allow(clippy::unnecessary_cast)]
+    (rc == 0 && stat.f_blocks > 0).then(|| stat.f_bavail as u64 * 100 / stat.f_blocks as u64)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: deletes the files under `dir` last used before `cutoff`, in seconds since the epoch, and returns the bytes they held. Only regular files and symlinks are deleted, never a socket or fifo a running process may still be listening on. A file counts as used at the latest of its access, modification and change times. A directory left empty is removed only if it too was unused before the cutoff, so one a tool just made stays. The walk holds one directory open per level of the tree.
+fn evict_older(dir: &Path, cutoff: u64, disk: u64) -> u64 {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut freed = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(info) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if info.dev() != disk || path == Path::new(TRUST_CACHE_PATH) {
+            continue;
+        }
+        let used = [info.atime(), info.mtime(), info.ctime()]
+            .into_iter()
+            .max()
+            .map_or(0, |time| u64::try_from(time).unwrap_or(0));
+        if info.is_dir() {
+            freed += evict_older(&path, cutoff, disk);
+            if used < cutoff {
+                let _ = fs::remove_dir(&path);
+            }
+        } else if (info.is_file() || info.is_symlink())
+            && used < cutoff
+            && fs::remove_file(&path).is_ok()
+        {
+            freed += info.blocks() * 512;
+        }
+    }
+    freed
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the image's own boot may keep its extracted CA trust store here rather than rebuilding it every time. The variable is set only on this backend, so an image that honors it caches on a machine and silently does without in a container, where there is no disk to cache on. The store is bound to a path of its own because the disk itself is detached before the image runs.
@@ -1653,22 +1741,6 @@ fn mount(source: &Path, target: &Path, flags: libc::c_ulong) -> io::Result<()> {
     succeeded(rc == 0)
 }
 
-fn mount_tmpfs(target: &Path, options: &str) -> io::Result<()> {
-    let target = cstring(target.as_os_str())?;
-    let options = CString::new(options).map_err(io::Error::from)?;
-    // SAFETY: the source, target, type and options are NUL-terminated strings that outlive the call, and tmpfs reads its options as a string.
-    let rc = unsafe {
-        libc::mount(
-            c"tmpfs".as_ptr(),
-            target.as_ptr(),
-            c"tmpfs".as_ptr(),
-            libc::MS_NOSUID | libc::MS_NODEV,
-            options.as_ptr().cast(),
-        )
-    };
-    succeeded(rc == 0)
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: a close that fails is a write that did not land, so a copy reports it rather than letting the drop discard it.
 fn close(file: File) -> io::Result<()> {
     // SAFETY: into_raw_fd hands over the only owner of the descriptor, so nothing closes it twice.
@@ -2409,7 +2481,7 @@ mod tests {
         assert_eq!(plan.left_behind, [Path::new("/storage")]);
     }
 
-    // TEST_SCENARIO: smolvm's /tmp is a tmpfs, and platform-init mounts its own there with the other scratch folders. smolvm's is neither carried onto the platform's root nor left behind, since a left-behind mount's directory is removed and /tmp is where the platform's tmpfs goes.
+    // TEST_SCENARIO: smolvm's /tmp is a tmpfs, and platform-init binds its own there from the disk with the other scratch folders. smolvm's is neither carried onto the platform's root nor left behind, since a left-behind mount's directory is removed and /tmp is where the platform's bind goes.
     #[test]
     fn smolvms_tmp_gives_way_to_the_platforms_own() {
         let plan = plan_mounts(&parse_mountinfo(SMOLVM_TABLE), Path::new("/mnt/platform")).unwrap();
@@ -2446,49 +2518,71 @@ mod tests {
         assert_eq!(image_record(&path).as_deref(), Some("quay.io/x/vm:1"));
     }
 
-    // TEST_SCENARIO: a home moved here from a container has ~/.cache as a link to /tmp/agent-cache, and a home from an earlier machine boot may hold a full ~/.npm on the disk. Both are moved aside so an empty tmpfs can go over the path, and the background delete reclaims them by name, without following the link and without touching anything else in the home. An empty cache directory, or none, is mounted over as it is.
+    // TEST_SCENARIO: the last boot's /tmp is moved aside so the boot starts on an empty one, and the background delete reclaims it and a home cache an earlier boot moved aside by name, without following a link and without touching anything else. An empty folder, or none, is left as it is.
     #[test]
-    fn an_old_home_cache_is_moved_aside_and_deleted() {
-        let home = TempDir::new("home");
-        let target = TempDir::new("agent-cache");
+    fn a_discarded_folder_is_moved_aside_and_deleted() {
+        let store = TempDir::new("scratch");
+        let target = TempDir::new("target");
         fs::write(target.path().join("kept"), b"x").unwrap();
-        std::os::unix::fs::symlink(target.path(), home.path().join(".cache")).unwrap();
-        fs::create_dir_all(home.path().join(".npm/_cacache")).unwrap();
-        fs::write(home.path().join(".npm/_cacache/blob"), b"x").unwrap();
-        fs::create_dir(home.path().join("work")).unwrap();
-        fs::write(home.path().join(".cache.notes"), b"x").unwrap();
+        fs::create_dir(store.path().join("tmp")).unwrap();
+        std::os::unix::fs::symlink(target.path(), store.path().join("tmp/link")).unwrap();
+        fs::write(store.path().join("tmp.notes"), b"x").unwrap();
+        fs::write(store.path().join(".cache.discarded.3"), b"x").unwrap();
 
-        let link = discard_cache(&home.path().join(".cache"), 7)
-            .unwrap()
-            .unwrap();
-        assert_eq!(link, home.path().join(".cache.discarded.7"));
-        assert!(fs::symlink_metadata(&link)
-            .unwrap()
-            .file_type()
-            .is_symlink());
-        let npm = discard_cache(&home.path().join(".npm"), 7)
-            .unwrap()
-            .unwrap();
-        assert!(npm.join("_cacache/blob").is_file());
-        assert!(fs::symlink_metadata(home.path().join(".cache")).is_err());
+        let tmp = discard(&store.path().join("tmp"), 7).unwrap().unwrap();
+        assert_eq!(tmp, store.path().join("tmp.discarded.7"));
+        assert!(fs::symlink_metadata(store.path().join("tmp")).is_err());
+        fs::create_dir(store.path().join("tmp")).unwrap();
+        assert_eq!(discard(&store.path().join("tmp"), 8).unwrap(), None);
+        assert_eq!(discard(&store.path().join("absent"), 8).unwrap(), None);
 
-        fs::create_dir(home.path().join(".cache")).unwrap();
-        assert_eq!(discard_cache(&home.path().join(".cache"), 8).unwrap(), None);
-        assert_eq!(
-            discard_cache(&home.path().join(".absent"), 8).unwrap(),
-            None
+        purge_discarded(store.path(), &["tmp".to_string()]);
+        assert!(!tmp.exists());
+        assert!(
+            store.path().join(".cache.discarded.3").exists(),
+            "another name is not purged"
         );
-
-        purge_discarded(home.path());
-        assert!(fs::symlink_metadata(&link).is_err());
-        assert!(!npm.exists());
+        purge_discarded(store.path(), &HOME_CACHES);
+        assert!(!store.path().join(".cache.discarded.3").exists());
         assert!(
             target.path().join("kept").is_file(),
             "the link was not followed"
         );
-        assert!(home.path().join("work").is_dir());
-        assert!(home.path().join(".cache.notes").is_file());
-        assert!(home.path().join(".cache").is_dir());
+        assert!(store.path().join("tmp.notes").is_file());
+        assert!(store.path().join("tmp").is_dir());
+    }
+
+    // TEST_SCENARIO: under pressure everything unused before the cutoff goes — files and links, and directories emptied — while a link's target, a socket a process may still listen on, and a directory that keeps a file stay. A cutoff in the future stands for files long unused, since a change time cannot be set back.
+    #[test]
+    fn eviction_deletes_only_unused_files_and_links() {
+        let scratch = TempDir::new("evict");
+        let target = TempDir::new("evict-target");
+        fs::write(target.path().join("kept"), b"x").unwrap();
+        fs::create_dir_all(scratch.path().join("npm/_cacache")).unwrap();
+        fs::write(scratch.path().join("npm/_cacache/blob"), vec![1u8; 8192]).unwrap();
+        std::os::unix::fs::symlink(target.path(), scratch.path().join("link")).unwrap();
+        fs::create_dir(scratch.path().join("live")).unwrap();
+        let socket =
+            std::os::unix::net::UnixListener::bind(scratch.path().join("live/sock")).unwrap();
+        let disk = fs::metadata(scratch.path()).unwrap().dev();
+
+        assert_eq!(
+            evict_older(scratch.path(), 0, disk),
+            0,
+            "nothing is older than the epoch"
+        );
+        let freed = evict_older(scratch.path(), u64::MAX, disk);
+        assert!(freed >= 8192);
+        assert!(!scratch.path().join("npm").exists());
+        assert!(fs::symlink_metadata(scratch.path().join("link")).is_err());
+        assert!(target.path().join("kept").is_file());
+        assert!(scratch.path().join("live/sock").exists());
+        assert_eq!(
+            evict_older(scratch.path(), u64::MAX, disk + 1),
+            0,
+            "another device is not walked"
+        );
+        drop(socket);
     }
 
     // TEST_SCENARIO: when the kernel refused to move the disk, it stays at the path the VMM gave it. That path is then the one name the platform's root keeps, and /storage still goes.
