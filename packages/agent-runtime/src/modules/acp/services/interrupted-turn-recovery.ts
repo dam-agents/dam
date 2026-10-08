@@ -15,16 +15,20 @@ const INTERRUPTION_NOTICE = [
   "</turn-interrupted>",
 ].join("\n");
 
+export const MAX_RESUME_ATTEMPTS = 5;
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: On boot, resumes every Session whose turn an
  * abnormal pod death interrupted, so work continues unattended instead of
  * silently stopping until someone notices — a scheduled fire and a person's
- * chat alike. It reads the leftover Active-Turn markers and, for each still on
- * its first attempt and not deleted, resumes the Session through the Trigger
+ * chat alike. It reads the leftover Active-Turn markers and, for each with
+ * attempts left and not deleted, resumes the Session through the Trigger
  * Session Driver with an injected interruption notice as the prompt; the
  * running harness picks the resumed turn up the way it would a message sent
- * mid-task. The attempt is counted before the resume is tried, so a
- * continuation that runs out of memory again cannot crash-loop the pod. This is
+ * mid-task. A continuation that dies again is resumed again, up to
+ * MAX_RESUME_ATTEMPTS times for one interruption. The attempt is counted before
+ * the resume is tried, so a continuation that keeps running out of memory
+ * cannot crash-loop the pod. This is
  * not the no-auto-resend case: an Active-Turn marker is written only once the
  * harness has *taken* the prompt, so resuming continues a turn the agent
  * already saw — it never re-sends a queued prompt the agent never received
@@ -47,7 +51,7 @@ export async function recoverInterruptedTurns(deps: {
       deps.log(`not resuming ${sessionId}: a live turn took it over`);
       continue;
     }
-    if (marker.attempts > 0) {
+    if (marker.attempts >= MAX_RESUME_ATTEMPTS) {
       deps.log(
         `not resuming ${marker.sessionId}: already attempted ${String(marker.attempts)}x`,
       );

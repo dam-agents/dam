@@ -20,7 +20,7 @@ export interface ExtAuthzGrpcAppDeps {
 
 export async function startExtAuthzGrpcApp(
   deps: ExtAuthzGrpcAppDeps,
-): Promise<{ server: grpc.Server }> {
+): Promise<{ server: grpc.Server; port: number }> {
   const server = new grpc.Server({
     "grpc.keepalive_time_ms": Math.min(60_000, deps.holdSeconds * 1000),
     "grpc.keepalive_timeout_ms": 20_000,
@@ -115,23 +115,23 @@ export async function startExtAuthzGrpcApp(
 
   server.addService(AuthorizationService, impl);
 
-  await new Promise<void>((res, rej) => {
+  const port = await new Promise<number>((res, rej) => {
     server.bindAsync(
       `0.0.0.0:${deps.port}`,
       grpc.ServerCredentials.createInsecure(),
-      (err) => {
+      (err, boundPort) => {
         if (err) {
           rej(err);
           return;
         }
         process.stderr.write(
-          `ext-authz gRPC listening on 0.0.0.0:${deps.port}\n`,
+          `ext-authz gRPC listening on 0.0.0.0:${boundPort}\n`,
         );
-        res();
+        res(boundPort);
       },
     );
   });
-  return { server };
+  return { server, port };
 }
 
 function parseInstanceFromAuthority(

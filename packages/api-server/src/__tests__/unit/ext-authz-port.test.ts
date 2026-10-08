@@ -28,20 +28,21 @@ describe("rulePortCovers", () => {
   });
 });
 
+type CheckClient = grpc.Client & {
+  check(
+    req: CheckRequest,
+    cb: (err: grpc.ServiceError | null, res: CheckResponse) => void,
+  ): void;
+};
+
 describe("ext-authz gRPC Check: requested port and scheme", () => {
   const seen: Array<{ host: string; port: number; tls: boolean }> = [];
-  const port = 40_000 + Math.floor(Math.random() * 20_000);
-  let server: grpc.Server;
-  let client: grpc.Client & {
-    check(
-      req: CheckRequest,
-      cb: (err: grpc.ServiceError | null, res: CheckResponse) => void,
-    ): void;
-  };
+  let server: grpc.Server | undefined;
+  let client: CheckClient | undefined;
 
   beforeAll(async () => {
-    ({ server } = await startExtAuthzGrpcApp({
-      port,
+    const app = await startExtAuthzGrpcApp({
+      port: 0,
       holdSeconds: 30,
       releaseName: "rel",
       gate: {
@@ -50,27 +51,30 @@ describe("ext-authz gRPC Check: requested port and scheme", () => {
           return "allow";
         },
       },
-    }));
+    });
+    server = app.server;
     const Client = grpc.makeGenericClientConstructor(
       AuthorizationService,
       "Authorization",
     );
     client = new Client(
-      `127.0.0.1:${port}`,
+      `127.0.0.1:${app.port}`,
       grpc.credentials.createInsecure(),
       { "grpc.default_authority": "rel-extauthz-agent-1" },
-    ) as unknown as typeof client;
+    ) as unknown as CheckClient;
   });
 
   afterAll(() => {
-    client.close();
-    server.forceShutdown();
+    client?.close();
+    server?.forceShutdown();
   });
 
   async function check(attributes: DeepPartial<CheckRequest>["attributes"]) {
     seen.length = 0;
+    const started = client;
+    if (!started) throw new Error("ext-authz client did not start");
     const res = await new Promise<CheckResponse>((resolve, reject) =>
-      client.check(CheckRequest.fromPartial({ attributes }), (err, r) =>
+      started.check(CheckRequest.fromPartial({ attributes }), (err, r) =>
         err ? reject(err) : resolve(r),
       ),
     );

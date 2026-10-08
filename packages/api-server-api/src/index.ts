@@ -366,6 +366,7 @@ export {
 export type {
   MetricsService,
   MetricsQuery,
+  MetricsSessionCostsQuery,
   MetricsOverview,
   TokenSpendByModel,
   SpendByAgent,
@@ -426,6 +427,7 @@ export {
   OP_OUTPUT,
   OP_RESIZE,
   OP_EXIT,
+  OP_SESSION,
   encodeDataFrame,
   encodeResize,
   encodeExit,

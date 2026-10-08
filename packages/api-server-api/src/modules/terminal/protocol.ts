@@ -2,14 +2,16 @@ export const OP_INPUT = 0x00;
 export const OP_OUTPUT = 0x01;
 export const OP_RESIZE = 0x02;
 export const OP_EXIT = 0x03;
+export const OP_SESSION = 0x04;
 
 type TerminalFrame =
   | { op: typeof OP_INPUT | typeof OP_OUTPUT; data: Uint8Array }
   | { op: typeof OP_RESIZE; cols: number; rows: number }
-  | { op: typeof OP_EXIT; code: number };
+  | { op: typeof OP_EXIT; code: number }
+  | { op: typeof OP_SESSION; sessionId: string };
 
 export function encodeDataFrame(
-  op: typeof OP_INPUT | typeof OP_OUTPUT,
+  op: typeof OP_INPUT | typeof OP_OUTPUT | typeof OP_SESSION,
   data: Uint8Array | string,
 ): Uint8Array<ArrayBuffer> {
   const payload =
@@ -53,6 +55,8 @@ export function decodeFrame(buf: Uint8Array): TerminalFrame {
   }
   if (op === OP_EXIT)
     return { op, code: payload.byteLength > 0 ? payload[0]! : 0 };
+  if (op === OP_SESSION)
+    return { op, sessionId: new TextDecoder().decode(payload) };
   throw new Error(
     `unknown terminal opcode: 0x${op.toString(16).padStart(2, "0")}`,
   );

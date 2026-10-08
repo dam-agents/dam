@@ -1,4 +1,5 @@
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import { existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -24,10 +25,12 @@ import {
   OP_INPUT,
   OP_OUTPUT,
   OP_RESIZE,
+  OP_SESSION,
   decodeFrame,
   encodeDataFrame,
   encodeExit,
 } from "api-server-api";
+import { z } from "zod";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { readCgroupBytes, startMemReaper } from "./core/mem-reaper.js";
 import { expandHome } from "./core/expand-home.js";
@@ -39,6 +42,7 @@ import { composeSkills, resolveGitHubToken } from "./modules/skills/index.js";
 import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.js";
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
+import { moveTerminalSlot } from "./modules/terminal-slots.js";
 import {
   agentBrowserCommand,
   createBrowserPreview,
@@ -329,6 +333,8 @@ function isPtySessionActive(sessionId: string): boolean {
 }
 
 interface PtySlot {
+  sessionId: string;
+  terminalId: string;
   pty: nodePty.IPty | null;
   headless: InstanceType<typeof HeadlessTerminal>;
   serialize: InstanceType<typeof SerializeAddon>;
@@ -430,7 +436,7 @@ function reapPtySlotIfIdle(sessionId: string): void {
     return;
   }
   slot.graceTimer = setTimeout(
-    () => reapPtySlotIfIdle(sessionId),
+    () => reapPtySlotIfIdle(slot.sessionId),
     PTY_IDLE_REAP_MS - quietMs,
   );
 }
@@ -443,17 +449,19 @@ function attachPty(
   if (opts.reset) killPtySlot(sessionId);
   let initialized = false;
   ws.binaryType = "nodebuffer";
+  const attached = () =>
+    [...ptySlots.values()].find((slot) => slot.client === ws);
 
   const detach = () => {
-    const slot = ptySlots.get(sessionId);
-    if (!slot || slot.client !== ws) return;
+    const slot = attached();
+    if (!slot) return;
     slot.client = null;
     slot.detachedAt = Date.now();
-    markTerminalSeen(sessionId);
+    markTerminalSeen(slot.sessionId);
     if (!slot.pty) return;
     if (slot.graceTimer) clearTimeout(slot.graceTimer);
     slot.graceTimer = setTimeout(
-      () => reapPtySlotIfIdle(sessionId),
+      () => reapPtySlotIfIdle(slot.sessionId),
       PTY_DETACH_GRACE_MS,
     );
   };
@@ -506,6 +514,7 @@ function attachPty(
       });
       const serialize = new SerializeAddon();
       headless.loadAddon(serialize);
+      const terminalId = randomUUID();
       const pty = nodePty.spawn("/usr/local/bin/harness-terminal", [], {
         name: "xterm-256color",
         cols,
@@ -524,9 +533,12 @@ function attachPty(
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
           HARNESS_SESSION_ID: sessionId,
+          PLATFORM_TERMINAL_ID: terminalId,
         },
       });
       const slot: PtySlot = {
+        sessionId,
+        terminalId,
         pty,
         headless,
         serialize,
@@ -562,7 +574,7 @@ function attachPty(
           now - slot.lastSeenStampAt > PTY_SEEN_STAMP_DEBOUNCE_MS
         ) {
           slot.lastSeenStampAt = now;
-          markTerminalSeen(sessionId);
+          markTerminalSeen(slot.sessionId);
         }
         if (
           !slot.client &&
@@ -570,14 +582,14 @@ function attachPty(
           now - slot.lastActivityStampAt > PTY_ACTIVITY_STAMP_DEBOUNCE_MS
         ) {
           slot.lastActivityStampAt = now;
-          markTerminalActivity(sessionId);
+          markTerminalActivity(slot.sessionId);
         }
         slot.headless.write(data);
         if (slot.client?.readyState === 1)
           slot.client.send(encodeDataFrame(OP_OUTPUT, data));
       });
       pty.onExit(({ exitCode }) => {
-        ptyLog(sessionId, `exited ${exitCode}`);
+        ptyLog(slot.sessionId, `exited ${exitCode}`);
         if (slot.graceTimer) clearTimeout(slot.graceTimer);
         if (slot.client?.readyState === 1) {
           slot.client.send(encodeExit(exitCode));
@@ -585,12 +597,12 @@ function attachPty(
         }
         slot.pty = null;
         slot.headless.dispose();
-        ptySlots.delete(sessionId);
+        ptySlots.delete(slot.sessionId);
       });
       return;
     }
 
-    const slot = ptySlots.get(sessionId);
+    const slot = attached();
     if (!slot) return;
     if (frame.op === OP_INPUT) {
       const now = Date.now();
@@ -653,6 +665,34 @@ const server = http.createServer((req, res) => {
   if (sessionResetMatch) {
     acpRuntime.resetSession(decodeURIComponent(sessionResetMatch[1]!));
     res.writeHead(204, CORS).end();
+    return;
+  }
+
+  const terminalSessionMatch =
+    req.method === "POST" &&
+    req.url?.match(/^\/api\/terminals\/([^/]+)\/session$/);
+  if (terminalSessionMatch) {
+    void readJsonBody(req)
+      .then((body) => {
+        const { sessionId } = z.object({ sessionId: z.uuid() }).parse(body);
+        const slot = moveTerminalSlot(
+          ptySlots,
+          decodeURIComponent(terminalSessionMatch[1]!),
+          sessionId,
+        );
+        if (slot) {
+          ptyLog(sessionId, "harness moved its PTY here");
+          markTerminalSeen(sessionId);
+          if (slot.client?.readyState === 1)
+            slot.client.send(encodeDataFrame(OP_SESSION, sessionId));
+        }
+        res.writeHead(204, CORS).end();
+      })
+      .catch((err: unknown) => {
+        res
+          .writeHead(400, { "Content-Type": "application/json", ...CORS })
+          .end(JSON.stringify({ error: String(err) }));
+      });
     return;
   }
 

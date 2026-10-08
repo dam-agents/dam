@@ -10,6 +10,7 @@ import {
   OP_EXIT,
   OP_INPUT,
   OP_OUTPUT,
+  OP_SESSION,
 } from "api-server-api";
 import { useEffect, useRef, useState } from "react";
 
@@ -28,6 +29,7 @@ export function Terminal({
   onFirstOutput,
   onFirstSubmit,
   onSubmit,
+  onSessionMoved,
   autoConnect = true,
 }: {
   agentId: string;
@@ -37,6 +39,7 @@ export function Terminal({
   onFirstOutput?: () => void;
   onFirstSubmit?: () => void;
   onSubmit?: () => void;
+  onSessionMoved?: (sessionId: string) => void;
   autoConnect?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -134,6 +137,8 @@ export function Terminal({
         } else if (frame.op === OP_EXIT) {
           setExitCode(frame.code);
           setState("exited");
+        } else if (frame.op === OP_SESSION) {
+          onSessionMoved?.(frame.sessionId);
         }
       };
 
