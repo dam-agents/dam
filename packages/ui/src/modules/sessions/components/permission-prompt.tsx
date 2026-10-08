@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import type { VerdictPart } from "../../../types.js";
 import type { PermissionOption } from "../store/permissions.js";
-import { ChatColumn } from "./chat-column.js";
+import { CHAT_GUTTER, ChatColumn } from "./chat-column.js";
 
 export type PermissionVerdict = Omit<VerdictPart, "kind">;
 
@@ -195,7 +195,7 @@ export function PermissionPrompt({
   const location = toolLocation(current.toolCall);
 
   return (
-    <div className="px-4 md:px-8 pt-3 pb-4">
+    <div className={`${CHAT_GUTTER} pt-3 pb-4`}>
       <ChatColumn className="flex flex-col gap-2">
         <div className="rounded-xl border border-border bg-muted/30 px-4 py-3.5 flex flex-col gap-3">
           <div className="flex items-start gap-2 text-sm font-semibold text-foreground">

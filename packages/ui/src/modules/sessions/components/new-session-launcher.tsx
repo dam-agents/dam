@@ -29,7 +29,7 @@ export function NewSessionLauncher({
 
   return (
     <>
-      <div className="mt-5 grid w-full max-w-[640px] grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="mt-5 grid w-full max-w-[640px] grid-cols-1 gap-3 @lg/chat:grid-cols-2">
         <LauncherTile
           icon={<Terminal size={18} />}
           title="Browser Terminal"
@@ -97,7 +97,7 @@ function LauncherTile({
     <button
       type="button"
       onClick={onClick}
-      className="flex flex-col items-start gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex min-w-0 flex-col items-start gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span className="flex size-9 items-center justify-center rounded-md border border-border text-foreground">
         {icon}

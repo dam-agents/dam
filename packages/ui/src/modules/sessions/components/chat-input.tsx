@@ -21,7 +21,7 @@ import { useStore } from "../../../store.js";
 import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
 import { draftKey, EMPTY_DRAFT } from "../lib/draft-key.js";
-import { ChatColumn } from "./chat-column.js";
+import { CHAT_GUTTER, ChatColumn } from "./chat-column.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
@@ -177,7 +177,7 @@ export function ChatInput({
 
   return (
     <div
-      className="px-4 md:px-8 pt-3 pb-1"
+      className={`${CHAT_GUTTER} pt-3 pb-1`}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
@@ -222,7 +222,7 @@ export function ChatInput({
             </Button>
             <Textarea
               ref={textareaRef}
-              className="flex-1 bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="flex-1 min-w-0 bg-transparent border-0 pl-0 pr-2 py-[17px] text-sm leading-[22px] text-foreground resize-none min-h-0 max-h-[50vh] overflow-hidden placeholder:whitespace-nowrap disabled:opacity-40 focus-visible:ring-0 focus-visible:ring-offset-0"
               value={input}
               onChange={(e) => key && setDraft(key, { text: e.target.value })}
               onKeyDown={onKeyDown}

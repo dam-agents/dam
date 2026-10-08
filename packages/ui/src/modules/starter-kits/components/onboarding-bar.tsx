@@ -11,7 +11,10 @@ import {
   onboardingBadge,
   onboardingProgress,
 } from "../../agents/utils/agent-kind.js";
-import { ChatColumn } from "../../sessions/components/chat-column.js";
+import {
+  CHAT_GUTTER,
+  ChatColumn,
+} from "../../sessions/components/chat-column.js";
 import { useKitName } from "../hooks/use-kit-name.js";
 import { OnboardingChecklistCard } from "./onboarding-checklist-card.js";
 
@@ -25,7 +28,7 @@ export function OnboardingBar({ agentId }: { agentId: string | null }) {
   const progress = onboardingProgress(agent.onboardingSteps);
 
   return (
-    <div className="px-4 md:px-8" data-testid="onboarding-bar">
+    <div className={CHAT_GUTTER} data-testid="onboarding-bar">
       <ChatColumn>
         <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-kit-line bg-kit-surface px-4 py-2">
           <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-kit">
