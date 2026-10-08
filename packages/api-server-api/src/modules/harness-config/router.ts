@@ -1,4 +1,8 @@
-import { manageAgentsProcedure } from "../../auth-procedures.js";
+import {
+  checkAgentBinding,
+  manageAgentsProcedure,
+  readAgentProcedure,
+} from "../../auth-procedures.js";
 import { t } from "../../trpc.js";
 import {
   harnessConfigApplyInputSchema,
@@ -29,10 +33,13 @@ export const harnessConfigRouter = t.router({
       ctx.harnessConfig.snapshot(input.agentId, input.harness),
     ),
 
-  sessionPair: t.procedure
+  sessionPair: readAgentProcedure
     .input(harnessConfigStatusInputSchema)
     .output(sessionPairSchema.nullable())
-    .query(({ ctx, input }) => ctx.harnessConfig.sessionPair(input.agentId)),
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.harnessConfig.sessionPair(input.agentId);
+    }),
 
   rememberSessionPair: manageAgentsProcedure
     .input(rememberSessionPairInputSchema)
