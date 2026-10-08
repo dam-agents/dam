@@ -331,6 +331,8 @@ export const agents = pgTable(
     sessionPair: jsonb("session_pair"),
     skillsSnapshot: jsonb("skills_snapshot"),
     onboardingChecklist: jsonb("onboarding_checklist"),
+    starterKit: text("starter_kit"),
+    onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
   },
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );

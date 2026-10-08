@@ -12,6 +12,13 @@
 -- * activity_events_agent_oom_dedup_idx: every api-server replica watches Agent
 --   status and reports the same out-of-memory restart, so the log keeps one
 --   agent_oom row per Agent and UTC day.
+--
+-- The Starter Kit an Agent was created from, and when its onboarding checklist
+-- was first completed, kept on the Agent's usage record. Both were known only
+-- from activity rows, which the retention job deletes after 180 days: an old kit
+-- Agent would then read as built from scratch and its completion would vanish.
+-- The record is never pruned and keeps both after the Agent is deleted. The
+-- views migration that follows fills them in for existing Agents.
 
 CREATE TABLE "external_actor_links" (
 	"provider" text NOT NULL,
@@ -22,4 +29,6 @@ CREATE TABLE "external_actor_links" (
 );
 --> statement-breakpoint
 ALTER TABLE "actor_roles" ADD COLUMN "first_seen_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
+ALTER TABLE "agents" ADD COLUMN "starter_kit" text;--> statement-breakpoint
+ALTER TABLE "agents" ADD COLUMN "onboarded_at" timestamp with time zone;--> statement-breakpoint
 CREATE UNIQUE INDEX "activity_events_agent_oom_dedup_idx" ON "activity_events" USING btree ("agent_id",date_trunc('day', "occurred_at" AT TIME ZONE 'UTC')) WHERE "activity_events"."type" = 'agent_oom';

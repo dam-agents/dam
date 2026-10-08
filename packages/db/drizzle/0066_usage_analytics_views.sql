@@ -6,6 +6,32 @@
 -- cannot take. Every view leaves out the core team, so a panel built on them
 -- cannot count core-team traffic by mistake.
 
+-- Fill in the Starter Kit each existing Agent came from, and when its checklist
+-- was completed, from the activity rows that still hold them. Starter Kits are
+-- newer than the 180-day retention, so every kit Agent still has its row.
+-- Completions recorded before this release live only on the live Agent; the
+-- api-server copies those at startup.
+UPDATE agents AS a
+SET starter_kit = k.kit_id
+FROM (
+  SELECT DISTINCT ON (agent_id) agent_id, payload ->> 'kitId' AS kit_id
+  FROM activity_events
+  WHERE type = 'starter_kit_applied' AND agent_id IS NOT NULL
+  ORDER BY agent_id, occurred_at
+) AS k
+WHERE k.agent_id = a.id AND a.starter_kit IS NULL;
+--> statement-breakpoint
+UPDATE agents AS a
+SET onboarded_at = o.onboarded_at
+FROM (
+  SELECT agent_id, MIN(occurred_at) AS onboarded_at
+  FROM activity_events
+  WHERE type = 'starter_kit_onboarded' AND agent_id IS NOT NULL
+  GROUP BY agent_id
+) AS o
+WHERE o.agent_id = a.id AND a.onboarded_at IS NULL;
+--> statement-breakpoint
+
 -- Users the report counts: everyone who has signed in, minus the core team.
 -- first_seen_at is the day of the first sign-in and defines the user's cohort.
 CREATE VIEW "usage_users" AS
@@ -54,27 +80,21 @@ CREATE VIEW "usage_active_days" AS
   ) a;
 --> statement-breakpoint
 
--- Agents created from a starter kit, with the time the user first completed the
--- onboarding checklist and whether a checklist was ever started. Kits that skip
--- onboarding never emit starter_kit_onboarded, so they never count as completed.
+-- Agents created from a starter kit, deleted ones included, with the time the
+-- user first completed the onboarding checklist and whether a checklist was ever
+-- started. Kits that skip onboarding never record a completion, so they never
+-- count as completed.
 CREATE VIEW "usage_kit_agents" AS
   SELECT
-    k.agent_id,
-    k.actor_sub,
-    k.payload ->> 'kitId' AS kit_id,
-    k.occurred_at AS created_at,
-    o.onboarded_at,
+    a.id AS agent_id,
+    a.owner_sub AS actor_sub,
+    a.starter_kit AS kit_id,
+    a.created_at,
+    a.onboarded_at,
     (a.onboarding_checklist IS NOT NULL) AS checklist_started
-  FROM activity_events k
-  JOIN usage_users u ON u.actor_sub = k.actor_sub
-  LEFT JOIN (
-    SELECT agent_id, MIN(occurred_at) AS onboarded_at
-    FROM activity_events
-    WHERE type = 'starter_kit_onboarded'
-    GROUP BY agent_id
-  ) o ON o.agent_id = k.agent_id
-  LEFT JOIN agents a ON a.id = k.agent_id
-  WHERE k.type = 'starter_kit_applied';
+  FROM agents a
+  JOIN usage_users u ON u.actor_sub = a.owner_sub
+  WHERE a.starter_kit IS NOT NULL;
 --> statement-breakpoint
 
 -- The first time each user used each core feature.
@@ -122,10 +142,9 @@ CREATE VIEW "usage_slack_setup_firsts" AS
 -- from. Sub-agents that another agent started are not something a user built,
 -- so they are left out.
 CREATE VIEW "usage_agents_created" AS
-  SELECT a.id AS agent_id, a.owner_sub, a.created_at, k.kit_id
+  SELECT a.id AS agent_id, a.owner_sub, a.created_at, a.starter_kit AS kit_id
   FROM agents a
   JOIN usage_users u ON u.actor_sub = a.owner_sub
-  LEFT JOIN usage_kit_agents k ON k.agent_id = a.id
   WHERE NOT EXISTS (SELECT 1 FROM invocations i WHERE i.id = a.id)
     AND NOT EXISTS (
       SELECT 1 FROM activity_events s

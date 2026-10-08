@@ -1,6 +1,6 @@
 {
-  "id": "ea865944-d327-4654-99c2-adba078ca240",
-  "prevId": "058a5684-5f5d-4fad-a9a3-bdd83420e88a",
+  "id": "25bc24e6-ce9f-4ff7-88c7-48f009c63e14",
+  "prevId": "5839d861-39f2-4bf2-8731-2663b52a1ea7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -863,6 +863,18 @@
         "onboarding_checklist": {
           "name": "onboarding_checklist",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "starter_kit": {
+          "name": "starter_kit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "onboarded_at": {
+          "name": "onboarded_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         }

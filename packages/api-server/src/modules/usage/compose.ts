@@ -13,6 +13,9 @@ import {
   upsertAgent,
   listLiveAgentIds,
   markAgentDeleted,
+  recordAgentStarterKit,
+  recordAgentOnboarded,
+  fillAgentStarterKitFacts,
 } from "./infrastructure/agents-postgres-repository.js";
 import { startPersistActivitySaga } from "./sagas/persist-activity.js";
 import { startPersistActorRolesSaga } from "./sagas/persist-actor-roles.js";
@@ -36,7 +39,14 @@ export interface UsageModuleDeps {
   subPseudonymizer: SubPseudonymizer;
   activityTrackingEnabled: boolean;
   inspectorRole: string;
-  listK8sAgents: () => Promise<{ id: string; owner: string }[]>;
+  listK8sAgents: () => Promise<
+    Array<{
+      id: string;
+      owner: string;
+      starterKit: string | null;
+      onboardedAt: string | null;
+    }>
+  >;
   listLiveAgents: () => Promise<
     Array<{ metadata?: { name?: string }; spec?: unknown }>
   >;
@@ -66,6 +76,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   const insert = insertActivityEvent(deps.db, deps.subPseudonymizer);
   const upsertRole = upsertActorRole(deps.db, deps.subPseudonymizer);
   const upsertAgentRow = upsertAgent(deps.db, deps.subPseudonymizer);
+  const fillKitFacts = fillAgentStarterKitFacts(deps.db);
   const registerCreatedAgent = upsertAgent(deps.db, deps.subPseudonymizer, {
     resetRuntimeState: true,
   });
@@ -94,6 +105,8 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   function start(): void {
     persistAgentsSub = startPersistAgentsSaga({
       upsertAgent: registerCreatedAgent,
+      recordStarterKit: recordAgentStarterKit(deps.db, deps.subPseudonymizer),
+      recordOnboarded: recordAgentOnboarded(deps.db),
     });
     persistActorRolesSub = startPersistActorRolesSaga({
       upsertActorRole: upsertRole,
@@ -101,6 +114,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
     (async () => {
       for (const a of await deps.listK8sAgents()) {
         await upsertAgentRow({ id: a.id, ownerSub: a.owner });
+        await fillKitFacts(a);
       }
     })().catch((err) => {
       process.stderr.write(

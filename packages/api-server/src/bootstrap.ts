@@ -14,6 +14,7 @@ import {
 import { createKitUpdateMarks } from "./modules/agents/infrastructure/kit-update-marks.js";
 import {
   AGENTS_PLURAL,
+  ANN_STARTER_KIT,
   ANN_STARTER_KIT_ONBOARDED,
   INVOCATIONS_ACTIVE_KEY,
   LABEL_OWNER,
@@ -208,6 +209,7 @@ import {
   createKitUpdateReporter,
   createResolvedCatalogRepository,
   parseCatalogSeeds,
+  parseKitRef,
 } from "./modules/starter-kits/index.js";
 import {
   composeInvocationLivenessSweep,
@@ -779,10 +781,16 @@ export async function bootstrap() {
       const agents = await k8sClient.listCustomObjects(AGENTS_PLURAL);
       return agents
         .filter((a) => a.metadata?.name && a.metadata?.labels?.[LABEL_OWNER])
-        .map((a) => ({
-          id: a.metadata!.name!,
-          owner: a.metadata!.labels![LABEL_OWNER]!,
-        }));
+        .map((a) => {
+          const annotations = a.metadata?.annotations ?? {};
+          const kitRef = annotations[ANN_STARTER_KIT];
+          return {
+            id: a.metadata!.name!,
+            owner: a.metadata!.labels![LABEL_OWNER]!,
+            starterKit: kitRef ? (parseKitRef(kitRef)?.kitId ?? null) : null,
+            onboardedAt: annotations[ANN_STARTER_KIT_ONBOARDED] ?? null,
+          };
+        });
     },
     listLiveAgents: () => agentStateCache.list(),
     agentSizing: {

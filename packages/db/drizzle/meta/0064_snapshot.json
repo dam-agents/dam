@@ -1,5 +1,5 @@
 {
-  "id": "058a5684-5f5d-4fad-a9a3-bdd83420e88a",
+  "id": "5839d861-39f2-4bf2-8731-2663b52a1ea7",
   "prevId": "9175baa7-8940-4308-92f1-d45e56cebdf1",
   "version": "7",
   "dialect": "postgresql",
@@ -863,6 +863,18 @@
         "onboarding_checklist": {
           "name": "onboarding_checklist",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "starter_kit": {
+          "name": "starter_kit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "onboarded_at": {
+          "name": "onboarded_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         }
