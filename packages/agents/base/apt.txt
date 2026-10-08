@@ -2,14 +2,16 @@
 # the base's own apt-get into the root config's base_image_debian, the layer
 # every image is packed onto (//packages/agents:oci).
 
-# libatomic1 for node 26, libnss-extrausers for the agent account,
-# libnss3-tools for Chromium's trust store, sqlite3 for shinkaevolve's run
-# progress, xvfb, i3-wm and x11-xserver-utils (the browser panel's display, its
+# build-essential for the native dependencies agents build (node-gyp, cgo,
+# Python sdists, cargo build scripts), libatomic1 for node 26,
+# libnss-extrausers for the agent account, libnss3-tools for Chromium's trust
+# store, sqlite3 for shinkaevolve's run progress, xvfb, i3-wm and x11-xserver-utils (the browser panel's display, its
 # kiosk window manager and the xrandr Selkies resizes it with), pipewire,
 # pipewire-pulse and wireplumber (its sound, which Selkies captures through the
 # PulseAudio protocol), and the VA-API and pixman libraries pixelflux's wheel
 # takes from the system (base/selkies), and from libasound2t64 on, what
 # Playwright lists for its Chromium on trixie.
+build-essential
 ca-certificates
 catatonit
 curl
