@@ -60,6 +60,7 @@ import { createPendingAgentRequests } from "./pending-agent-requests.js";
 import { createPromptScheduler } from "./prompt-scheduler.js";
 import { createSessionBootstrap } from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
+import { MAX_RESUME_ATTEMPTS } from "../interrupted-turn-recovery.js";
 
 const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
 
@@ -931,7 +932,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const response = promptScheduler.hasWork(paramsSid)
           ? { status: "pending" }
           : leftover !== undefined
-            ? leftover.attempts > 0
+            ? leftover.attempts >= MAX_RESUME_ATTEMPTS
               ? { status: "interrupted" }
               : { status: "pending" }
             : record === null
