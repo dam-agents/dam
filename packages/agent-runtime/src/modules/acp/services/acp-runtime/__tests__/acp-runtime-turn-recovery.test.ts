@@ -9,7 +9,10 @@ import {
 } from "../../../../../core/document-store.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
 import type { SessionMetadataStore } from "../../../infrastructure/session-metadata-store.js";
-import { recoverInterruptedTurns } from "../../interrupted-turn-recovery.js";
+import {
+  MAX_RESUME_ATTEMPTS,
+  recoverInterruptedTurns,
+} from "../../interrupted-turn-recovery.js";
 import { createTriggerSessionDriver } from "../../trigger-session-driver.js";
 import {
   createSessionMetadata,
@@ -83,24 +86,27 @@ describe("acp-runtime: interrupted-turn recovery across boots", () => {
   });
 
   /**
-   * TEST_SCENARIO: a turn dies and the turn recovery resumes dies too, so the
-   * boot after that gives up rather than crash-loop. The attempt it spent
-   * belongs to that interruption alone: when a person later starts a new turn
+   * TEST_SCENARIO: a turn dies and every turn recovery resumes dies too. Each
+   * boot resumes the continuation again, up to MAX_RESUME_ATTEMPTS times, and
+   * the boot after that gives up rather than crash-loop. The attempts spent
+   * belong to that interruption alone: when a person later starts a new turn
    * in the Session and that one dies, the next boot resumes it.
    */
   it("resumes a person's new turn after recovery gave up on an earlier one", async () => {
-    const second = await boot(true);
-    expect(promptTextsOf(second.harness())).toHaveLength(1);
+    for (let i = 0; i < MAX_RESUME_ATTEMPTS; i++) {
+      const resumed = await boot(true);
+      expect(promptTextsOf(resumed.harness())).toHaveLength(1);
+    }
 
-    const third = await boot(false);
-    expect(third.harnessStarted()).toBe(false);
-    const client = openSession(third);
-    third.harness().replyTo("initialize");
-    third.harness().replyTo("session/load");
+    const givenUp = await boot(false);
+    expect(givenUp.harnessStarted()).toBe(false);
+    const client = openSession(givenUp);
+    givenUp.harness().replyTo("initialize");
+    givenUp.harness().replyTo("session/load");
     client.send(frames.prompt(3, SESSION, "try again"));
-    expect(promptTextsOf(third.harness())).toEqual(["try again"]);
+    expect(promptTextsOf(givenUp.harness())).toEqual(["try again"]);
 
-    const fourth = await boot(true);
-    expect(promptTextsOf(fourth.harness())).toHaveLength(1);
+    const resumedAgain = await boot(true);
+    expect(promptTextsOf(resumedAgain.harness())).toHaveLength(1);
   });
 });
