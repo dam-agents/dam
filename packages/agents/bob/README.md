@@ -10,6 +10,7 @@ The harness ships in the default image every harness Template boots, built by `/
 |---|---|---|
 | Harness | `bobshell` 2.0.3 (the `bob-shell` COS bucket release tarball, as a mise `http:` tool) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions |
 | Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs) | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json`, and re-asserts the platform instructions rules link and the terminal-session pin hook; runs before either surface starts |
+| Session spend | [`bob-session-spend`](rootfs/usr/local/bin/bob-session-spend) | Prints each root task's cost in Bobcoins from `~/.bob/db/bob.db`; the runtime manifest's `sessionSpend` runs it so the sessions list and the Usage section show it |
 | Storage | `/home/agent` PVC | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives pod restarts |
 
 ## ACP
