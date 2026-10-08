@@ -110,6 +110,7 @@ async fn main() -> anyhow::Result<()> {
                 copies,
                 runtimes,
                 failed: None,
+                unloadable: None,
             }
             .run()
             .await?;
@@ -126,6 +127,7 @@ struct Loader {
     copies: PathBuf,
     runtimes: PathBuf,
     failed: Option<String>,
+    unloadable: Option<(String, String)>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a release the loader can run: its name, the directory of its binaries and the runtime it runs against, both in the pod.
@@ -161,13 +163,16 @@ impl Loader {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the release to run for `target`, from the pod's own copies of it and its runtime, so a release the stager removes from the node never leaves a runner without its guest binaries or a VMM without its runtime. A release whose runner cannot even load in this pod — one linked against a newer libc than the pod's image has — is held as built for another pod, which the controller answers by rolling the pod.
-    async fn choose(&self, target: &str) -> Result<Release, (&'static str, String)> {
+    // UNIT_BOUNDARY_DESCRIPTION: the release to run for `target`, from the pod's own copies of it and its runtime, so a release the stager removes from the node never leaves a runner without its guest binaries or a VMM without its runtime. A release whose runner cannot even load in this pod — one linked against a newer libc than the pod's image has — is held as built for another pod, which the controller answers by rolling the pod, and is not checked again until the controller names another.
+    async fn choose(&mut self, target: &str) -> Result<Release, (&'static str, String)> {
         if self.failed.as_deref() == Some(target) {
             return Err((
                 HELD_FAILED,
                 format!("{target} exited right after it took over"),
             ));
+        }
+        if let Some((_, message)) = self.unloadable.as_ref().filter(|(name, _)| name == target) {
+            return Err((HELD_RUNTIME, message.clone()));
         }
         let (name, dir, runtime) = match self.releases.choose(target) {
             Choice::Held { held, message } => return Err((held, message)),
@@ -204,12 +209,13 @@ impl Loader {
             .status();
         match tokio::time::timeout(LOAD_CHECK, loads).await {
             Ok(Ok(status)) if status.success() => Ok(release),
-            outcome => Err((
-                HELD_RUNTIME,
-                format!(
+            outcome => {
+                let message = format!(
                     "{name} does not load in this pod ({outcome:?}), so only a new pod runs it"
-                ),
-            )),
+                );
+                self.unloadable = Some((name, message.clone()));
+                Err((HELD_RUNTIME, message))
+            }
         }
     }
 
