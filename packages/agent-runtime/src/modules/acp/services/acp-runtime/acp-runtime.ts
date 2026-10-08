@@ -58,6 +58,7 @@ import {
   type HarnessTeardownReason,
 } from "./harness-lease.js";
 import { createPendingAgentRequests } from "./pending-agent-requests.js";
+import { createAutonomousTurns } from "./autonomous-turns.js";
 import { createPromptScheduler } from "./prompt-scheduler.js";
 import { createSessionBootstrap } from "./session-bootstrap.js";
 import { createSessionTranscript } from "./session-transcript.js";
@@ -185,9 +186,20 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   let shuttingDown = false;
 
+  const autonomousTurns = createAutonomousTurns({
+    onEnded: (sessionId, turnId) =>
+      transcript.append(
+        sessionId,
+        JSON.stringify(
+          buildPlatformTurnEndedNotification({ sessionId, turnId }),
+        ),
+      ),
+  });
+
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
     onTurnStarted: ({ sessionId, unattended }) => {
+      autonomousTurns.end(sessionId);
       deps.activeTurns.record(sessionId);
       if (unattended === true) {
         const at = deps.sessionMetadata?.startRun(sessionId);
@@ -497,6 +509,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateLoadIds.clear();
     orphanedHarnessLoads.clear();
     promptScheduler.clear();
+    autonomousTurns.clear();
     runTextBuffers.clear();
     harnessColdSessions.clear();
     rehydratingSessions.clear();
@@ -668,6 +681,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     transcript.forget(sessionId);
     supersededEchoes.delete(sessionId);
     promptScheduler.forget(sessionId);
+    autonomousTurns.end(sessionId);
     runTextBuffers.delete(sessionId);
     pendingRequests.forget(sessionId);
     deps.backgroundWork?.forget(sessionId);
@@ -806,7 +820,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             );
             harnessColdSessions.add(sid);
           }
-          const { turnEnded, promptId, runPrompt } =
+          const { turnEnded, promptId, turnId, runPrompt } =
             promptScheduler.onPromptResponse(sid, outboundId);
           if (
             lost &&
@@ -824,6 +838,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               buildPlatformTurnEndedNotification({
                 sessionId: sid,
                 ...(promptId !== null && { promptId }),
+                ...(turnId !== null && { turnId }),
                 ...(stopReason !== null && { stopReason }),
                 ...(error !== undefined && { error }),
               }),
@@ -871,7 +886,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           (promptScheduler.isRunTurn(sessionId) || isRunSession(sessionId))
         )
           accumulateRunText(sessionId, text);
-        transcript.append(sessionId, line);
+        const update = sessionUpdateKind(frame);
+        const promptTurn = promptScheduler.activeTurnId(sessionId);
+        transcript.append(
+          sessionId,
+          line,
+          promptTurn ?? autonomousTurns.turnFor(sessionId, update),
+        );
+        if (promptTurn === null) autonomousTurns.afterFrame(sessionId, update);
       }
     } else {
       broadcastToAll(line);
@@ -1377,6 +1399,14 @@ function capped(text: string): string {
   return text.length > TURN_ERROR_TEXT_CAP
     ? `${text.slice(0, TURN_ERROR_TEXT_CAP)}…`
     : text;
+}
+
+function sessionUpdateKind(frame: unknown): string | null {
+  if (!isNonNullObject(frame) || frame.method !== "session/update") return null;
+  const params = frame.params;
+  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return null;
+  const kind = params.update.sessionUpdate;
+  return typeof kind === "string" ? kind : null;
 }
 
 function extractAgentTextChunk(frame: unknown): string | null {

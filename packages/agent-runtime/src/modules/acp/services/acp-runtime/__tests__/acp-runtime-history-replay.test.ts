@@ -394,9 +394,9 @@ describe("acp-runtime: history replay", () => {
    * the viewer must not be offered a "load more" that cannot load.
    */
   it("should mark the eviction floor as clipped without a cursor", () => {
-    const entryBytes = JSON.stringify(
-      frames.agentMessage(SESSION, "m1", "m1"),
-    ).length;
+    const entryBytes =
+      JSON.stringify(frames.agentMessage(SESSION, "m1", "m1")).length +
+      JSON.stringify({ turnId: crypto.randomUUID() }).length;
     const world = createWorld({
       replayTailEvents: 2,
       logBytesCap: entryBytes * 4,
