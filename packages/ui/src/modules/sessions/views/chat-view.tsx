@@ -319,6 +319,14 @@ export function ChatView() {
     el.scrollTop = el.scrollHeight;
   }, []);
 
+  const sendAndFollow = useCallback(
+    (...args: Parameters<typeof sendPrompt>) => {
+      scrollToBottom();
+      return sendPrompt(...args);
+    },
+    [scrollToBottom, sendPrompt],
+  );
+
   const pendingPrependRef = useRef<{
     height: number;
     before: string;
@@ -361,7 +369,7 @@ export function ChatView() {
     const inner = el.firstElementChild;
 
     const FOLLOW_WITHIN_PX = 60;
-    const JUMP_BEYOND_PX = 120;
+    const JUMP_BEYOND_PX = 200;
     const fromBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight;
 
     const onScroll = () => {
@@ -881,7 +889,7 @@ export function ChatView() {
                   textareaRef={textareaRef}
                   busy={busy}
                   loadingSession={loadingSession}
-                  onSend={sendPrompt}
+                  onSend={sendAndFollow}
                   onStop={stopAgent}
                 />
                 {!hasPendingPermission && indicatorModel && (
