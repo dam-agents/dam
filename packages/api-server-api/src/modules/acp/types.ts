@@ -21,6 +21,7 @@ const platformTurnErrorSchema = z.object({
 export const platformTurnEndedParamsSchema = z.object({
   sessionId: z.string().min(1),
   promptId: z.string().min(1).optional(),
+  turnId: z.string().min(1).optional(),
   stopReason: z.string().min(1).optional(),
   error: platformTurnErrorSchema.optional(),
   model: z.string().min(1).optional(),

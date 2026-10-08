@@ -52,6 +52,7 @@ export function useAcpUpdateHandler(): () => UpdateHandler {
           frame?.at,
           frame?.telemetryPromptId,
           frame?.model,
+          frame?.turnId,
         ),
       );
     };

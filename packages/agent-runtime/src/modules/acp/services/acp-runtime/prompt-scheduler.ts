@@ -5,6 +5,8 @@ import {
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
 
+import { randomUUID } from "node:crypto";
+
 import type { JsonRpcId } from "../../domain/frames.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 
@@ -33,7 +35,13 @@ export interface PromptScheduler {
   onPromptResponse(
     sessionId: string,
     outboundId: number,
-  ): { turnEnded: boolean; promptId: string | null; runPrompt: boolean };
+  ): {
+    turnEnded: boolean;
+    promptId: string | null;
+    turnId: string | null;
+    runPrompt: boolean;
+  };
+  activeTurnId(sessionId: string): string | null;
   hasTurnInFlight(sessionId: string): boolean;
   isRunTurn(sessionId: string): boolean;
   hasWork(sessionId: string): boolean;
@@ -106,7 +114,12 @@ export function createPromptScheduler(
 ): PromptScheduler {
   const activeTurns = new Map<
     string,
-    { outboundId: number; promptId: string | null; runPrompt: boolean }
+    {
+      outboundId: number;
+      promptId: string | null;
+      turnId: string;
+      runPrompt: boolean;
+    }
   >();
   const queues = new Map<string, PromptSubmission[]>();
   const pendingSettings = new Map<string, PromptSubmission[]>();
@@ -187,6 +200,7 @@ export function createPromptScheduler(
     activeTurns.set(entry.sessionId, {
       outboundId: entry.outboundId,
       promptId: entry.promptId,
+      turnId: entry.promptId ?? randomUUID(),
       runPrompt: entry.runPrompt ?? false,
     });
     deps.onTurnStarted?.(entry);
@@ -273,7 +287,12 @@ export function createPromptScheduler(
     onPromptResponse(sessionId, outboundId) {
       const active = activeTurns.get(sessionId);
       if (active === undefined || active.outboundId !== outboundId) {
-        return { turnEnded: false, promptId: null, runPrompt: false };
+        return {
+          turnEnded: false,
+          promptId: null,
+          turnId: null,
+          runPrompt: false,
+        };
       }
       activeTurns.delete(sessionId);
       deps.onTurnEnded?.(sessionId);
@@ -282,8 +301,13 @@ export function createPromptScheduler(
       return {
         turnEnded: true,
         promptId: active.promptId,
+        turnId: active.turnId,
         runPrompt: active.runPrompt,
       };
+    },
+
+    activeTurnId(sessionId) {
+      return activeTurns.get(sessionId)?.turnId ?? null;
     },
 
     hasTurnInFlight(sessionId) {

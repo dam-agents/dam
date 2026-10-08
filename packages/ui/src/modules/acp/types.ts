@@ -21,6 +21,7 @@ export interface FrameMeta {
   at?: string;
   telemetryPromptId?: string;
   model?: string;
+  turnId?: string;
 }
 
 export type UpdateHandler = (

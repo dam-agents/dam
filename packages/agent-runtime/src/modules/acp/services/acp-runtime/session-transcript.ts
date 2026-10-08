@@ -35,7 +35,7 @@ export interface ReplayOpts {
 }
 
 export interface SessionTranscript {
-  append(sessionId: string, line: string): void;
+  append(sessionId: string, line: string, turnId?: string | null): void;
   appendEcho(sessionId: string, line: string, originator: ClientChannel): void;
   appendReplay(sessionId: string, line: string): void;
   catchUp(
@@ -209,10 +209,13 @@ export function createSessionTranscript(
   }
 
   return {
-    append(sessionId, line) {
+    append(sessionId, line, turnId) {
       fanOut(
         sessionId,
-        withPlatformMeta(line, { at: new Date().toISOString() }),
+        withPlatformMeta(line, {
+          at: new Date().toISOString(),
+          turnId: turnId ?? undefined,
+        }),
         () => true,
       );
     },
