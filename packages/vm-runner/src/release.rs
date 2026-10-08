@@ -140,6 +140,16 @@ pub fn stage(builtin: &Path, into: &Path, release: &str, keep: usize) -> anyhow:
     Ok(dest)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: removes every release under `dir` but those in `keep`. The loader keeps exactly the release it runs and the one it would go back to, whatever was copied last.
+pub fn prune(dir: &Path, keep: &[&Path]) -> anyhow::Result<()> {
+    for entry in std::fs::read_dir(dir)?.filter_map(Result::ok) {
+        if !keep.contains(&entry.path().as_path()) {
+            remove_if_present(&entry.path())?;
+        }
+    }
+    Ok(())
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: whether two release directories hold the same bytes, hashed as streams: the runner binary is tens of MiB and the stager runs in a few.
 fn same_release(a: &Path, b: &Path) -> bool {
     let digest = |path: PathBuf| -> Option<Vec<u8>> {

@@ -1,5 +1,5 @@
 use std::os::unix::process::{CommandExt, ExitStatusExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
 use std::time::{Duration, Instant};
 
@@ -126,7 +126,7 @@ impl Loader {
             .unwrap_or_default()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the release to run for `target`, from the pod's own copy of it. The copy keeps the release the runner runs and the one it replaced, so a release the stager removes from the node never leaves a runner without its guest binaries.
+    // UNIT_BOUNDARY_DESCRIPTION: the release to run for `target`, from the pod's own copy of it, so a release the stager removes from the node never leaves a runner without its guest binaries. After each hand-off the loader keeps only the copies of the release it runs and the one it would go back to.
     fn choose(&self, target: &str) -> Choice {
         if self.failed.as_deref() == Some(target) {
             return Choice::Held {
@@ -136,7 +136,7 @@ impl Loader {
         }
         match self.releases.choose(target) {
             Choice::Run { release, dir } if dir != self.releases.builtin => {
-                match release::stage(&dir, &self.copies, &release, 2) {
+                match release::stage(&dir, &self.copies, &release, usize::MAX) {
                     Ok(dir) => Choice::Run { release, dir },
                     Err(e) => Choice::Held {
                         held: HELD_UNSTAGED,
@@ -167,6 +167,23 @@ impl Loader {
         })
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: starts `release` in place of `fallback`. A release that cannot even be started is held as failed and the fallback started again, because the loader exiting would end the pod and every machine in it.
+    fn take_over(
+        &mut self,
+        release: String,
+        dir: PathBuf,
+        fallback: (String, PathBuf),
+    ) -> anyhow::Result<Running> {
+        match self.spawn(release.clone(), dir, Some(fallback.clone())) {
+            Ok(running) => Ok(running),
+            Err(e) => {
+                tracing::error!(release, error = %format!("{e:#}"), "the runner release could not be started; going back to the one it replaced");
+                self.failed = Some(release);
+                self.spawn(fallback.0, fallback.1, None)
+            }
+        }
+    }
+
     fn report(&self, running: &Running, target: &str, choice: Option<&Choice>) {
         let (held, message) = match choice {
             Some(Choice::Held { held, message }) => (held.to_string(), message.clone()),
@@ -194,7 +211,7 @@ impl Loader {
         );
         let mut running = match self.choose(&self.target()) {
             Choice::Run { release, dir } if dir != builtin.1 => {
-                self.spawn(release, dir, Some(builtin))?
+                self.take_over(release, dir, builtin)?
             }
             _ => self.spawn(builtin.0, builtin.1, None)?,
         };
@@ -235,7 +252,13 @@ impl Loader {
                         tracing::info!(from = running.release, to = release, "handing the machines off to another runner release");
                         hand_off(&mut running.child).await;
                         let replaced = (running.release.clone(), running.dir.clone());
-                        running = self.spawn(release, dir, Some(replaced))?;
+                        running = self.take_over(release, dir, replaced)?;
+                        let kept: Vec<&Path> = std::iter::once(running.dir.as_path())
+                            .chain(running.replaced.as_ref().map(|(_, dir)| dir.as_path()))
+                            .collect();
+                        if let Err(e) = release::prune(&self.copies, &kept) {
+                            tracing::warn!(error = %format!("{e:#}"), "removing the pod's copies of releases it no longer runs");
+                        }
                         self.report(&running, &target, None);
                     } else {
                         self.report(&running, &target, Some(&choice));

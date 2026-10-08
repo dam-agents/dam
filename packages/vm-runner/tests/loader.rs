@@ -83,7 +83,7 @@ impl Drop for Pod {
     }
 }
 
-// TEST_SCENARIO: a new release takes over without the machine the old runner started going down; a release that exits right after it took over is held as failed while the machines go back to the release it replaced; and the pod's stop reaches the runner and ends the loader.
+// TEST_SCENARIO: a new release takes over without the machine the old runner started going down; a release that exits right after it took over, or cannot be started at all, is held as failed while the machines go back to the release it replaced; and the pod's stop reaches the runner and ends the loader.
 #[test]
 fn a_release_takes_over_the_machines_and_a_broken_one_gives_them_back() {
     let dir = std::env::temp_dir().join(format!("vm-runner-loader-{}", std::process::id()));
@@ -136,12 +136,26 @@ fn a_release_takes_over_the_machines_and_a_broken_one_gives_them_back() {
     );
     assert!(alive(&first_machine));
 
+    pod.stage("runner:4", RUNS);
+    let staged = dir
+        .join("releases")
+        .join(release::key("runner:4"))
+        .join(RUNNER);
+    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o644)).unwrap();
+    pod.name("runner:4");
+    wait_for("runner:4, which cannot start, to be held as failed", || {
+        let status = pod.status();
+        status.target == "runner:4" && status.held == HELD_FAILED
+    });
+    assert_eq!(pod.status().running, "runner:2");
+    assert!(alive(&first_machine));
+
     // SAFETY: kill(2) takes plain integers and touches no memory of this process.
     unsafe { libc::kill(i32::try_from(pod.loader.id()).unwrap(), libc::SIGTERM) };
     let exited = pod.loader.wait().unwrap();
     assert!(exited.success(), "the loader exited with {exited}");
     let runners = lines(&dir.join("runners"));
-    assert_eq!(runners.len(), 4, "{runners:?}");
+    assert_eq!(runners.len(), 5, "{runners:?}");
     let copies = dir.join("loader").join("releases");
     assert_eq!(
         runners[1],

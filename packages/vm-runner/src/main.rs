@@ -361,6 +361,10 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     };
     tokio::join!(draining, closing);
     tracing::info!("VM runner stopped");
+    if handing_off {
+        // UNIT_BOUNDARY_DESCRIPTION: smolvm keeps an attached handle for every VMM this runner started, and dropping one stops its VM. A runner that hands off exits here, before the runtime is dropped, so the machines outlive it for the next runner to adopt.
+        std::process::exit(0);
+    }
     Ok(())
 }
 
