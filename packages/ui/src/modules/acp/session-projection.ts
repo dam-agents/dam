@@ -653,10 +653,15 @@ function closeTurn(
     (m.turnId === turnId || (m.promptId === turnId && m.parts.length === 0));
   const last = lastIndexOf(messages, owned);
   if (last === -1) return messages;
+  const toolStatus = endedToolStatus(end);
   return messages.map((m, i) => {
+    const settled =
+      toolStatus !== null && owned(m)
+        ? { ...m, parts: settleRunningTools(m.parts, toolStatus) }
+        : m;
     if (i === last)
       return {
-        ...m,
+        ...settled,
         ...(end.at !== undefined && { at: end.at }),
         ...(end.telemetryPromptId !== undefined && {
           telemetryPromptId: end.telemetryPromptId,
@@ -667,7 +672,7 @@ function closeTurn(
         streaming: false,
         queued: false,
       };
-    return owned(m) && m.streaming ? { ...m, streaming: false } : m;
+    return owned(m) && m.streaming ? { ...settled, streaming: false } : settled;
   });
 }
 
@@ -756,6 +761,7 @@ function closeActiveAssistant(
 ): Message[] {
   const i = activeReplyIndex(messages);
   if (i === -1) return stopped ? markLastReplyStopped(messages) : messages;
+  const toolStatus = endedToolStatus({ interruption, stopped });
   return messages.map((x, j) =>
     j === i
       ? {
@@ -765,10 +771,32 @@ function closeActiveAssistant(
           ...(interruption !== undefined &&
             hasAgentContent(x) && { error: { message: interruption } }),
           ...(stopped && { stopped: true }),
+          ...(toolStatus !== null && {
+            parts: settleRunningTools(x.parts, toolStatus),
+          }),
           streaming: false,
         }
       : x,
   );
+}
+
+function settleRunningTools(
+  parts: MessagePart[],
+  status: "failed" | "cancelled",
+): MessagePart[] {
+  return parts.map((p) =>
+    p.kind === "tool" && (p.status === "in_progress" || p.status === "pending")
+      ? { ...p, status }
+      : p,
+  );
+}
+
+function endedToolStatus(end: {
+  interruption?: string;
+  stopped: boolean;
+}): "failed" | "cancelled" | null {
+  if (end.interruption !== undefined) return "failed";
+  return end.stopped ? "cancelled" : null;
 }
 
 function markLastReplyStopped(messages: Message[]): Message[] {
