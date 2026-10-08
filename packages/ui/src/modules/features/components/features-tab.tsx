@@ -64,12 +64,6 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "Shows what each turn of a conversation actually did — its spans, its records and what the call cost — under the reply itself, and adds a telemetry export to the session menu.",
   },
-  {
-    id: "agent-avatars",
-    label: "Agent avatars",
-    description:
-      "Gives every agent one of eight characters, chosen when you create it or later in its settings, shown in the agents list, the chat and the Home feed. Its eyes show whether it is working, idle or hibernating.",
-  },
 ];
 
 function FeatureRowCard({

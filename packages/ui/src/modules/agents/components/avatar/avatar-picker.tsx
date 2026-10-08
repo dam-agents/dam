@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-import { CharacterAvatar } from "./agent-avatar.js";
+import { AgentAvatar } from "./agent-avatar.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The owner chooses one of the fixed avatar
@@ -39,7 +39,7 @@ export function AvatarPicker({
         data-testid="avatar-picker"
         className="group relative flex size-12 shrink-0 items-center justify-center rounded-lg border border-border bg-card transition-colors hover:bg-muted/40 disabled:opacity-50"
       >
-        <CharacterAvatar name="" avatar={value} size={36} />
+        <AgentAvatar name="" avatar={value} size={36} />
         <span className="absolute -right-1.5 -bottom-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm group-hover:text-foreground">
           <Edit size={12} />
         </span>
@@ -67,7 +67,7 @@ export function AvatarPicker({
                   : "border-border hover:bg-muted/40",
               )}
             >
-              <CharacterAvatar name="" avatar={character} size={36} />
+              <AgentAvatar name="" avatar={character} size={36} />
             </button>
           ))}
         </div>

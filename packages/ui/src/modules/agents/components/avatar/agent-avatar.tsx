@@ -11,7 +11,6 @@ import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 
 import { getUser } from "../../../../auth.js";
-import { useAgentAvatars } from "../../hooks/use-agent-avatars.js";
 import type { AgentDisplayState } from "../../utils/agent-resolver.js";
 
 export function avatarMood(
@@ -44,7 +43,7 @@ interface Props {
   className?: string;
 }
 
-export function CharacterAvatar({
+export function AgentAvatar({
   name,
   avatar,
   size = 24,
@@ -69,8 +68,4 @@ export function CharacterAvatar({
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );
-}
-
-export function AgentAvatar(props: Props) {
-  return useAgentAvatars() ? <CharacterAvatar {...props} /> : null;
 }

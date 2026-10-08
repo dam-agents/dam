@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
-import { CharacterAvatar } from "../../agents/components/avatar/agent-avatar.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { modelDisplayName } from "../lib/model-name.js";
 import type { MessageTime } from "../lib/thread-items.js";
 import { ChatMessagePart } from "./chat-message-part.js";
@@ -139,7 +139,7 @@ export const ChatMessage = memo(function ChatMessage({
         )}
       >
         {isAssistant && avatarAgent !== undefined && (
-          <CharacterAvatar
+          <AgentAvatar
             name={avatarAgent.name}
             avatar={avatarAgent.avatar}
             size={24}

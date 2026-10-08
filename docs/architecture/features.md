@@ -8,21 +8,12 @@ Last verified: 2026-10-08
 feature defaults **off**; a user opts in through a hidden "Experimental
 features" settings tab (revealed by five taps on the version string). The
 current features are advanced connection types, the new sandbox runtime,
-interactive artifacts, addressed credential injection (a create-page and agent-settings switch for an agent whose gateway injects only requests that name a connection; a starter kit sets the same field whatever the flag says; the flag also shows the [browser panel](browser-panel.md) on such agents), agent telemetry (a per-reply timeline
-in the conversation) and agent avatars (one of eight fixed characters built from
-the Eye-Bee-M rebus; the owner picks it on the create page or in the agent's
-settings and it is stored on the Agent spec, the create page offering the
-character the owner uses least; an agent with none stored shows one picked by
-a hash of its name and its owner's identity, which renaming can change; its eyes
-are open while it works on a prompt, closed between prompts, and closed and
-greyed while it hibernates, and the waking screen loops its gesture; the flag also names the agent on its chat messages, which
-otherwise say "Agent"). Slack replies are the one place an avatar leaves the
-browser: where a workspace grants the persona scope, the api-server uploads a
-PNG copy to a public image host for the message icon, whatever the owner's
-flag says ([channels](channels.md#slack-scopes-required-vs-optional)). Graduating a feature to always-on is deletion: drop its
+interactive artifacts, addressed credential injection (a create-page and agent-settings switch for an agent whose gateway injects only requests that name a connection; a starter kit sets the same field whatever the flag says; the flag also shows the [browser panel](browser-panel.md) on such agents), and agent telemetry (a per-reply timeline
+in the conversation). Graduating a feature to always-on is deletion: drop its
 id from the enum and its gates from the UI — stored rows for a dropped id are
 simply never read again (Knowledge Bases, the
-[starter kit](starter-kits.md) catalog and session costs graduated this way).
+[starter kit](starter-kits.md) catalog, session costs and
+[agent avatars](agent-lifecycle.md#agent-avatar) graduated this way).
 
 An operator can take a feature out of users' hands: the chart's `features`
 value gives each feature a mode, `experimental` (the default, and what an

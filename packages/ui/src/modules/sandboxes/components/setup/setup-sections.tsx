@@ -8,7 +8,6 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 
 import { AvatarPicker } from "../../../agents/components/avatar/avatar-picker.js";
-import { useAgentAvatars } from "../../../agents/hooks/use-agent-avatars.js";
 import type { SizeMi } from "../../../budgets/lib/slots.js";
 import { useAppConnections } from "../../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../../connections/components/connection-catalog-modal.js";
@@ -36,7 +35,6 @@ export function NameSection({
   avatar: AvatarCharacter;
   onAvatarChange: (avatar: AvatarCharacter) => void;
 }) {
-  const avatars = useAgentAvatars();
   return (
     <section className="mb-8">
       <FormField label="Name">
@@ -47,7 +45,7 @@ export function NameSection({
             onChange={(event) => onChange(event.target.value)}
             placeholder="my-agent"
           />
-          {avatars && <AvatarPicker value={avatar} onChange={onAvatarChange} />}
+          <AvatarPicker value={avatar} onChange={onAvatarChange} />
         </div>
       </FormField>
     </section>

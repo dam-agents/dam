@@ -5,10 +5,9 @@ import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
 import {
+  AgentAvatar,
   avatarMood,
-  CharacterAvatar,
 } from "../../agents/components/avatar/agent-avatar.js";
-import { useAgentAvatars } from "../../agents/hooks/use-agent-avatars.js";
 import type { ArtifactTouched } from "../api/queries.js";
 import { channelTypeFor } from "../lib/activity-filter.js";
 import type { FeedItem } from "../lib/feed-item.js";
@@ -89,12 +88,7 @@ function RowIdentity({
   }
   return (
     <div className="relative size-10">
-      <CharacterAvatar
-        name={avatarName}
-        avatar={avatar}
-        size={40}
-        mood={mood}
-      />
+      <AgentAvatar name={avatarName} avatar={avatar} size={40} mood={mood} />
       {kind !== "agent" && (
         <span
           className={cn(
@@ -133,7 +127,7 @@ export function NotificationRow({
   const kind = rowKind(item);
   const running = item.kind === "in-progress";
   const unread = isUnreadItem(item);
-  const avatars = useAgentAvatars() && avatarName !== undefined;
+  const avatars = avatarName !== undefined;
   const agent = agents.find((a) => a.id === item.agentId);
 
   return (

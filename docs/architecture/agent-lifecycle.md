@@ -10,6 +10,10 @@ An **Agent** is the durable, owned, runnable resource. It is a custom resource w
 - The **api-server's scheduler** fires triggers on RRULE occurrences, delivers them durably over the runtime channel's outbox, and pokes the Agent awake so a fire lands even on a hibernated Agent ([schedules](schedules.md)).
 - The **controller's idle checker** hibernates running Agents that go quiet.
 
+## Agent avatar
+
+Every Agent shows one of eight fixed characters built from the Eye-Bee-M rebus, beside its name wherever it appears, and its chat messages carry its name. The owner picks the character on the create page or in the agent's settings, and it is stored on the Agent spec; the create page offers the character the owner uses least. An Agent with none stored shows one picked by a hash of its name and its owner's identity, which renaming can change. The character's eyes follow the lifecycle: open while it works on a prompt, closed between prompts, closed and greyed while it hibernates, and the waking screen loops its gesture. Slack replies are the one place an avatar leaves the browser: where a workspace grants the persona scope, the api-server uploads a PNG of the character to a public image host for the message icon ([channels](channels.md#slack-scopes-required-vs-optional)).
+
 ## Diagram
 
 ```mermaid

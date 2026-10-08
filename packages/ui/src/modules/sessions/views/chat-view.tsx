@@ -63,7 +63,6 @@ import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
 import { VmRuntimeBadge } from "../../agents/components/vm-runtime-badge.js";
 import { WorkspaceFailureNotice } from "../../agents/components/workspace-failure-notice.js";
-import { useAgentAvatars } from "../../agents/hooks/use-agent-avatars.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
@@ -284,7 +283,6 @@ export function ChatView() {
   const features = useFeatures().data;
   const telemetryEnabled = features?.["agent-telemetry"] ?? false;
   const delegationOwners = useDelegationOwners(messages);
-  const avatarsEnabled = useAgentAvatars();
   const telemetryLive = useMemo(() => {
     if (messages.some((m) => m.role === "assistant" && m.streaming))
       return true;
@@ -597,7 +595,7 @@ export function ChatView() {
             <ArrowLeft size={14} />
           </Button>
           <div className="flex items-center gap-3 min-w-0">
-            {avatarsEnabled && agentView ? (
+            {agentView ? (
               <>
                 <AgentAvatar
                   name={agentView.name}
@@ -829,11 +827,7 @@ export function ChatView() {
                           <Fragment key={item.message.id}>
                             <ChatMessage
                               message={item.message}
-                              avatarAgent={
-                                avatarsEnabled
-                                  ? (agentView ?? undefined)
-                                  : undefined
-                              }
+                              avatarAgent={agentView ?? undefined}
                               isLast={item.index === messages.length - 1}
                               showModel={runStarts.length > 0}
                               {...timeProps(item.message.at, now)}

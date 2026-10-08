@@ -15,7 +15,6 @@ import { StatusBadge } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useUpdateAgent } from "../api/mutations.js";
-import { useAgentAvatars } from "../hooks/use-agent-avatars.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
 import { workspaceFailureSentence } from "../lib/workspace-failure.js";
@@ -23,7 +22,7 @@ import type {
   AgentDisplay,
   AgentDisplayState,
 } from "../utils/agent-resolver.js";
-import { CharacterAvatar } from "./avatar/agent-avatar.js";
+import { AgentAvatar } from "./avatar/agent-avatar.js";
 import { OverlayFrame } from "./overlay-frame.js";
 import { StartupTip } from "./startup-tip.js";
 import { VmRuntimeBadge } from "./vm-runtime-badge.js";
@@ -76,7 +75,6 @@ export function AgentUnavailableOverlay({
 }) {
   const { wake } = useWakeAgent();
   const { restart, isPending: restarting } = useRestartAgent();
-  const avatars = useAgentAvatars();
 
   if (!agent || !display) {
     return (
@@ -125,8 +123,8 @@ export function AgentUnavailableOverlay({
       onBack={onBack}
       footer={waiting ? <SkipTheWait agent={agent} /> : undefined}
     >
-      {waiting && avatars ? (
-        <CharacterAvatar
+      {waiting ? (
+        <AgentAvatar
           name={agent.name}
           avatar={agent.avatar}
           size={128}

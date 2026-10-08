@@ -10,7 +10,6 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useStore } from "../../../store.js";
 import { AvatarPicker } from "../../agents/components/avatar/avatar-picker.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
-import { useAgentAvatars } from "../../agents/hooks/use-agent-avatars.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { KnowledgeSection } from "../../knowledge-bases/components/knowledge-section.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
@@ -29,7 +28,6 @@ interface Props {
 export function SandboxSetupSection({ f }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
   const { agent } = f;
-  const avatars = useAgentAvatars();
   if (!agent) return null;
 
   const confirmSwitch = () =>
@@ -51,7 +49,7 @@ export function SandboxSetupSection({ f }: Props) {
         <FormField label="Name" error={f.errors.name?.message}>
           <div className="flex items-center gap-3">
             <Input disabled={f.saving} {...f.register("name")} />
-            {avatars && f.formReady && (
+            {f.formReady && (
               <AvatarPicker
                 value={f.avatar}
                 onChange={f.setAvatar}
