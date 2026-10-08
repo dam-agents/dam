@@ -298,6 +298,18 @@ virtualization:
     # runners their agent image; empty means runners fetch images from the
     # registry.
     imageArchiveHostPath: ""
+    # A directory on each node where a stager DaemonSet copies the runner
+    # release this chart's runner image carries: the runner and the two guest
+    # binaries it hands every machine. Set, a runner pod keeps the image it was
+    # created with, and a new runner image reaches it without a restart: the
+    # pod's loader drains the old runner, starts the new one from this
+    # directory, and the new runner adopts every machine still running, so no
+    # machine reboots. Only a release built against another VM runtime (a new
+    # smolvm, crane or base image) still rolls the pods, through `rollout`, as
+    # every runner image does when this is empty. The stager is the only
+    # writer; runners mount it read-only. Not supported on OpenShift yet: the
+    # directory would need an SELinux label the confined runners can read.
+    releaseHostPath: ""
     # Local dev on macOS only. Set, the controller creates no runner pods:
     # every vm machine, whatever its owner, runs on one vm-runner process on
     # the host, which uses the host's own hypervisor instead of one nested in

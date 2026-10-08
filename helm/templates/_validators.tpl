@@ -229,6 +229,9 @@ signal that this is an OpenShift cluster.
 {{- if and $v.runner.imageArchiveHostPath (not $v.runner.scc) -}}
 {{- fail "on OpenShift, virtualization.runner.imageArchiveHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume that value mounts. Set an SCC that admits a hostPath, or drop imageArchiveHostPath and give the runner a registry to pull from." -}}
 {{- end -}}
+{{- if $v.runner.releaseHostPath -}}
+{{- fail "virtualization.runner.releaseHostPath is not supported on OpenShift yet: the directory the kubelet creates for it carries the host's SELinux label, which the confined runners cannot read their release from. Leave it empty; every new runner image then rolls the runner pods." -}}
+{{- end -}}
 {{- if and ($v.imageCache | default dict).hostPath (not $v.runner.scc) -}}
 {{- fail "on OpenShift, virtualization.imageCache.hostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume the node cache mounts. Set an SCC that admits a hostPath, or clear imageCache.hostPath and let each runner cache on its own claim." -}}
 {{- end -}}

@@ -47,6 +47,7 @@ type fakeNode struct {
 	puts     []vmrunner.MachineSpec
 	version  uint64
 	waits    int
+	release  vmrunner.RunnerRelease
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long the fake holds a waiting status read before answering with no change. It is far below the real runner's wait, so a test's server closes promptly under a watch that is still reading.
@@ -61,6 +62,10 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 		}
 		n.mu.Lock()
 		defer n.mu.Unlock()
+		if r.URL.Path == "/release" {
+			require.NoError(t, json.NewEncoder(w).Encode(n.release))
+			return
+		}
 		if r.URL.Path == "/machines" {
 			ids := []string{}
 			for id := range n.specs {

@@ -22,6 +22,7 @@ use crate::server::{Rejected, Server};
 
 pub fn router(server: Arc<Server>, token: Arc<Token>) -> Router {
     let machines = Router::new()
+        .route("/release", get(release))
         .route("/machines", get(list))
         .route("/machines/{id}", get(status).put(ensure).delete(remove))
         .route(
@@ -237,6 +238,14 @@ async fn blocking(work: impl FnOnce() -> Response + Send + 'static) -> Response 
     tokio::task::spawn_blocking(work)
         .await
         .unwrap_or_else(|e| plain(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the release the pod's loader runs, as it last wrote it into the loader directory the controller names. A runner with no loader, or one whose loader has not written yet, answers an empty status.
+async fn release() -> Response {
+    let status = std::env::var_os(crate::release::LOADER_DIR_ENV)
+        .map(|dir| crate::release::read_status(&crate::release::status_file(dir.as_ref())))
+        .unwrap_or_default();
+    Json(status).into_response()
 }
 
 async fn list(State(server): State<Arc<Server>>) -> Response {
@@ -572,6 +581,7 @@ mod tests {
             StatusCode::OK
         );
         for (method, path) in [
+            ("GET", "/release"),
             ("GET", "/machines"),
             ("GET", "/machines/m1"),
             ("PUT", "/machines/m1"),
@@ -590,6 +600,27 @@ mod tests {
                 "{method} {path}"
             );
         }
+    }
+
+    // TEST_SCENARIO: the controller reads which release the pod runs from the runner, which serves what the loader last wrote, and an empty status from a pod with no loader rather than an error.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_release_the_loader_wrote_is_served() {
+        let api = api("release");
+        let (code, body) = call(&api, "GET", "/release", Some("secret"), "").await;
+        assert_eq!((code, body.as_str()), (StatusCode::OK, r#"{"running":""}"#));
+        let status = crate::api::RunnerRelease {
+            running: "runner:1".into(),
+            ..Default::default()
+        };
+        crate::release::write_status(&crate::release::status_file(api.dir.path()), &status)
+            .unwrap();
+        std::env::set_var(crate::release::LOADER_DIR_ENV, api.dir.path());
+        let (code, body) = call(&api, "GET", "/release", Some("secret"), "").await;
+        std::env::remove_var(crate::release::LOADER_DIR_ENV);
+        assert_eq!(
+            (code, body.as_str()),
+            (StatusCode::OK, r#"{"running":"runner:1"}"#)
+        );
     }
 
     // TEST_SCENARIO: a machine id becomes a directory name, so one that could leave the state directory is refused with 400 before anything reads the disk, with the wording the controller has always surfaced for it.

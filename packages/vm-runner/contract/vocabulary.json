@@ -7,5 +7,6 @@
     "MachineBootFailed",
     "MachineSeedMissing"
   ],
-  "seedExitPermanent": 3
+  "seedExitPermanent": 3,
+  "releaseHolds": ["unstaged", "runtime", "failed"]
 }

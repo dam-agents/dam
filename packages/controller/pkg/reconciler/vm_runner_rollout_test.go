@@ -320,3 +320,48 @@ func TestAnUnchangedRunnerGetsItsLabelsAndOwnerBack(t *testing.T) {
 	require.Len(t, pvc.OwnerReferences, 1)
 	assert.Equal(t, types.UID("sa-now"), pvc.OwnerReferences[0].UID)
 }
+
+// TEST_SCENARIO: with releases staged on the node, a new runner image is not a changed pod. Every owner's pod keeps its image and every machine on it, and each owner's release ConfigMap names the new image, which the pod's loader takes in place.
+func TestANewRunnerImageReachesEveryOwnerWithoutAPodRoll(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t)
+	r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
+	for _, owner := range []string{"owner-a", "owner-b"} {
+		createRolloutRunner(t, r, owner)
+		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+	}
+	r.config.VM.Runner.Image = runnerV2
+
+	for _, owner := range []string{"owner-a", "owner-b"} {
+		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+		assert.Equal(t, runnerV1, runnerImageOf(t, r, owner), "the pod keeps the image it started with")
+		cm, err := r.client.CoreV1().ConfigMaps("test-agents").Get(ctx, r.runnerReleaseName(owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, runnerV2, cm.Data[runnerReleaseKey])
+		require.Len(t, cm.OwnerReferences, 1)
+		assert.Equal(t, r.runnerName(owner), cm.OwnerReferences[0].Name)
+	}
+}
+
+// TEST_SCENARIO: a runner release built against another VM runtime cannot adopt the machines, so the pod's loader holds on to the release it runs. The controller reads that hold from the runner and rolls the pod onto the new image, through the same roll as any changed pod. A release that is only not staged yet is waited for instead.
+func TestARunnerReleaseTheLoaderCannotTakeRollsThePod(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t)
+	r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
+	createRolloutRunner(t, r, "owner-a")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	settleRunnerPod(t, r, "owner-a")
+	r.config.VM.Runner.Image = runnerV2
+
+	nodes["owner-a"].release = vmrunner.RunnerRelease{Running: runnerV1, Target: runnerV2, Held: vmrunner.HeldUnstaged}
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"))
+
+	nodes["owner-a"].release.Held = vmrunner.HeldFailed
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "a release that failed to take over is not rolled onto")
+
+	nodes["owner-a"].release.Held = vmrunner.HeldRuntime
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"))
+}

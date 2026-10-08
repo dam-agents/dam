@@ -1038,6 +1038,18 @@ async fn ports_are_unique_and_a_delete_waits_for_work_in_flight() {
     );
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: binds a published port on loopback, retrying for a few seconds while the closed runner's listener lets go of it.
+fn retrying_listen() -> Arc<Listen> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    Arc::new(move |p| loop {
+        match TcpListener::bind(("127.0.0.1", p)) {
+            Ok(l) => return Ok(l),
+            Err(e) if Instant::now() > deadline => return Err(e),
+            Err(_) => std::thread::sleep(Duration::from_millis(20)),
+        }
+    })
+}
+
 // TEST_SCENARIO: a restarted runner has lost its listeners, but the machines' ports are still on disk. It publishes each of them again as it starts, so the agents' Services keep reaching them.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_restarted_runner_republishes_its_ports() {
@@ -1046,15 +1058,8 @@ async fn a_restarted_runner_republishes_its_ports() {
     h.settle("m1").await;
     h.server.close().await;
     assert!(!h.server.forwarder.is_published("m1"));
-    let deadline = Instant::now() + Duration::from_secs(5);
     let port = h.base;
-    let listen: Arc<Listen> = Arc::new(move |p| loop {
-        match TcpListener::bind(("127.0.0.1", p)) {
-            Ok(l) => return Ok(l),
-            Err(e) if Instant::now() > deadline => return Err(e),
-            Err(_) => std::thread::sleep(Duration::from_millis(20)),
-        }
-    });
+    let listen = retrying_listen();
     let again = Server::start(
         Config {
             state_dir: h.dir.join("machines"),
@@ -1905,6 +1910,41 @@ async fn closing_the_runner_stops_the_machines_it_runs() {
     assert_eq!(h.fake.state("agent-a").unwrap(), State::Stopped);
 }
 
+// TEST_SCENARIO: the loader replaces the runner with another release inside the same pod, and the VMMs are the pod's processes, not the runner's. A hand-off closes the runner without stopping any machine, so the next runner finds every machine still running and publishes its port again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hand_off_leaves_every_machine_running_for_the_next_runner() {
+    let h = Harness::new("hand-off");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+
+    h.server.hand_off().await;
+
+    let calls = h.fake.calls();
+    assert!(!calls.iter().any(|c| c == "stop m1"), "{calls:?}");
+    assert_eq!(h.fake.state("m1").unwrap(), State::Running);
+    assert!(!h.server.forwarder.is_published("m1"));
+    let next = Server::start(
+        Config {
+            state_dir: h.dir.join("machines"),
+            image_dir: h.dir.join("images"),
+            image_cache_socket: None,
+            image_budget: 1 << 40,
+            crane: String::new(),
+            init: None,
+            runc: None,
+            ports: h.base..=h.base + 1,
+            memory_mib: 1 << 20,
+            reserve_mib: 0,
+            headroom_mib: 0,
+            listen: Some(retrying_listen()),
+        },
+        h.fake.clone(),
+    )
+    .unwrap();
+    assert!(next.forwarder.is_published("m1"));
+    next.close().await;
+}
+
 // TEST_SCENARIO: the pod's grace ends in a SIGKILL whatever the runner is doing, so a guest slow to stop must not hold the close past its window: the close returns when the window ends, and the kill of the pod is what ends that guest.
 #[tokio::test(flavor = "multi_thread")]
 async fn closing_the_runner_waits_for_a_slow_stop_only_within_its_window() {
@@ -1915,7 +1955,7 @@ async fn closing_the_runner_waits_for_a_slow_stop_only_within_its_window() {
 
     let started = Instant::now();
     h.server
-        .close_within(Duration::from_secs(1), Duration::from_millis(200))
+        .close_within(Duration::from_secs(1), Some(Duration::from_millis(200)))
         .await;
     assert!(
         started.elapsed() < Duration::from_secs(2),
