@@ -6,6 +6,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useMonthlySpend } from "../hooks/use-monthly-spend.js";
 import { fillMonthDays, monthLabel, monthRange } from "../lib/month-range.js";
 import { totalCostUsd } from "../lib/totals.js";
+import { HarnessSpendCard } from "./harness-spend-card.js";
 import { ModelSpendBars } from "./model-spend-bars.js";
 import { MonthSwitcher } from "./month-switcher.js";
 import { CHART_HEIGHT_CLASS, SpendByDayChart } from "./spend-by-day-chart.js";
@@ -66,6 +67,8 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
       <p className="mb-4 text-sm text-muted-foreground">
         LLM spend for this agent, including work it delegated to other agents.
       </p>
+
+      <HarnessSpendCard agentId={agentId} month={month} />
 
       {}
       {(state === "failed" || state === "unavailable") && (

@@ -12,12 +12,21 @@ import type {
   sessionDirectoryEntrySchema,
   sessionListCursorSchema,
   sessionListInputSchema,
+  sessionSpendInputSchema,
+  sessionSpendSchema,
   setSessionTitleInputSchema,
 } from "./schemas.js";
 
 export type PodSessionMode = z.infer<typeof podSessionModeSchema>;
 export type PodSessionType = z.infer<typeof podSessionTypeSchema>;
 export type PodSession = z.infer<typeof podSessionSchema>;
+export type SessionSpend = z.infer<typeof sessionSpendSchema>;
+export type SessionSpendInput = z.infer<typeof sessionSpendInputSchema>;
+
+export interface SessionSpendTotal extends SessionSpend {
+  sessions: number;
+}
+
 export type PodSessionNotice = z.infer<typeof podSessionNoticeSchema>;
 export type SessionCategory = z.infer<typeof sessionCategorySchema>;
 export type SessionListCursor = z.infer<typeof sessionListCursorSchema>;
@@ -48,6 +57,7 @@ export interface SessionsService {
     input: StoreDelegationFramesInput,
   ): Promise<{ truncated: boolean }>;
   delegationFrames(invocationId: string): Promise<DelegationFrames | null>;
+  spend(input: SessionSpendInput): Promise<SessionSpendTotal | null>;
 }
 
 export type SessionDirectoryEntry = z.infer<typeof sessionDirectoryEntrySchema>;

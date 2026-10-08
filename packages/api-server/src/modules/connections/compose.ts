@@ -16,6 +16,9 @@ import {
 import { createS3CredentialProbe } from "./infrastructure/s3-credential-probe.js";
 import { createAcceptingS3CredentialProbe } from "./infrastructure/accepting-s3-credential-probe.js";
 import type { S3CredentialProbe } from "./domain/s3-credential-probe.js";
+import { createProviderKeyProbe } from "./infrastructure/provider-key-probe.js";
+import { createAcceptingProviderKeyProbe } from "./infrastructure/accepting-provider-key-probe.js";
+import type { ProviderKeyProbe } from "./domain/provider-key-probe.js";
 import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
 import { buildCatalog, type OperatorCredentials } from "./domain/catalog.js";
 import { createConnectionsService } from "./services/connections-service.js";
@@ -42,6 +45,7 @@ export interface ConnectionsBootCompose {
   oauthEngine: OAuthEngine;
   githubAppEngine: GitHubAppEngine;
   s3CredentialProbe: S3CredentialProbe;
+  providerKeyProbe: ProviderKeyProbe;
   refreshLoop: OAuthRefreshLoop;
   accountLabelBackfill: AccountLabelBackfill;
 }
@@ -71,6 +75,9 @@ export function composeConnectionsAtBoot(
   const s3CredentialProbe = opts.e2eEnabled
     ? createAcceptingS3CredentialProbe()
     : createS3CredentialProbe();
+  const providerKeyProbe = opts.e2eEnabled
+    ? createAcceptingProviderKeyProbe()
+    : createProviderKeyProbe();
   const refreshLoop = createOAuthRefreshLoop({
     db: opts.db,
     engine: oauthEngine,
@@ -91,6 +98,7 @@ export function composeConnectionsAtBoot(
     oauthEngine,
     githubAppEngine,
     s3CredentialProbe,
+    providerKeyProbe,
     refreshLoop,
     accountLabelBackfill,
   };
@@ -114,6 +122,7 @@ export function composeConnectionsForOwner(opts: {
   oauthEngine: OAuthEngine;
   githubAppEngine: GitHubAppEngine;
   s3CredentialProbe: S3CredentialProbe;
+  providerKeyProbe: ProviderKeyProbe;
   secretStore: SecretStore;
   runtimeMutator: RuntimeMutator;
   agentsRepo: AgentsRepository;
@@ -163,6 +172,7 @@ export function composeConnectionsForOwner(opts: {
     oauthEngine: opts.oauthEngine,
     githubAppEngine: opts.githubAppEngine,
     s3CredentialProbe: opts.s3CredentialProbe,
+    providerKeyProbe: opts.providerKeyProbe,
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
     connectionLock,

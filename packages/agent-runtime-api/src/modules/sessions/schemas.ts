@@ -11,6 +11,11 @@ export const podSessionTypeSchema = z.enum([
   "cli_run",
 ]);
 
+export const sessionSpendSchema = z.object({
+  unit: z.string().min(1),
+  cost: z.number(),
+});
+
 export const podSessionSchema = z.object({
   sessionId: z.string().min(1),
   mode: podSessionModeSchema,
@@ -26,6 +31,7 @@ export const podSessionSchema = z.object({
   runTotalMs: z.number().nullable(),
   runCount: z.number().nullable(),
   running: z.boolean(),
+  spend: sessionSpendSchema.optional(),
 });
 
 export const SESSION_CATEGORIES = [
@@ -70,6 +76,11 @@ export const setSessionTitleInputSchema = z.union([
   }),
   z.object({ ref: z.string().min(1), title: sessionTitleSchema.nullable() }),
 ]);
+
+export const sessionSpendInputSchema = z.object({
+  from: z.string().datetime({ offset: true }),
+  to: z.string().datetime({ offset: true }),
+});
 
 export const sessionHistoryInputSchema = z.object({
   sessionId: z.string().min(1),

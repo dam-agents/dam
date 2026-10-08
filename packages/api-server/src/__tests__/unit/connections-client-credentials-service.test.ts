@@ -125,6 +125,7 @@ function makeService(
         throw new Error("Unexpected dependency: s3CredentialProbe");
       },
     },
+    providerKeyProbe: { probe: async () => ({ ok: true }) },
     oauthCallbackUrl: "https://cb.example/oauth/callback",
     brandName: "Test",
     connectionLock: (_key, fn) => fn(),

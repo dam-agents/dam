@@ -1,0 +1,7 @@
+#!/bin/sh
+# Prints what each Bob session cost, for agent-runtime's session list. A
+# session is a root task; its costs include the subagents it ran.
+db="$HOME/.bob/db/bob.db"
+[ -f "$db" ] || exit 0
+exec sqlite3 -readonly -json "$db" \
+  "SELECT id AS sessionId, COALESCE(json_extract(costs, '\$.cost'), 0) AS cost, created_at AS startedAt FROM tasks WHERE parent_id IS NULL"
