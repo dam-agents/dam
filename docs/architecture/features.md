@@ -13,7 +13,7 @@ in the conversation). Graduating a feature to always-on is deletion: drop its
 id from the enum and its gates from the UI — stored rows for a dropped id are
 simply never read again (Knowledge Bases, the
 [starter kit](starter-kits.md) catalog, session costs and
-[agent avatars](agent-lifecycle.md#agent-avatar) graduated this way).
+[agent avatars](agent-avatars.md) graduated this way).
 
 An operator can take a feature out of users' hands: the chart's `features`
 value gives each feature a mode, `experimental` (the default, and what an
