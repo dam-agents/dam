@@ -1,6 +1,6 @@
 # 07 — Chat UI bug bash on both Backends
 
-**Depends on:** 01–06
+**Depends on:** 01–04
 **Part of:** Mid-turn steering and message correction — see [README](./README.md)
 
 ## Context
@@ -28,7 +28,7 @@ Apply `/react-ui-engineering` (UI) and `/typescript-engineering` (runtime) for f
    one Codex (or Bob) agent on vm, and the same pair on container.
 2. **Scenario list** — run each on every agent, in one tab and in two tabs, and after a reload:
    - send, reply streams, send again (no queue);
-   - send mid-turn: steered (Claude Code, pi) or queued (Codex/Bob); several in a row;
+   - send mid-turn: steered (Claude Code) or queued (Codex, Bob, Pi until #4474); several in a row;
    - edit and delete a queued message; edit as it starts;
    - Stop mid-turn with and without a queue;
    - rewrite from an earlier message (04);

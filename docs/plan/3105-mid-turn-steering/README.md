@@ -54,9 +54,9 @@ Read first: [sessions — Session inside the pod, Prompt delivery](../../archite
 4. Idle sessions can be **rewound** or **forked** from a message, the action chosen up front (as
    in Claude Code): both copy the session up to the reply before it and send the edited text;
    rewind moves the session's identity to the copy and deletes the original, fork keeps both.
-5. pi gains steering through a pi-acp patch (upstream PR svkozak/pi-acp#115).
-6. Channel steering moves into the runtime: the channel queue submits prompts that may be steered,
-   and its own steer path goes away. The runtime is then the one steering point for every surface.
+
+Moved out of this feature: steering on Pi, Codex and Bob (#4474, under #4458), and one steering
+point for every surface, Slack and Telegram included (#4475).
 
 ### Pinned contract (runtime ↔ clients)
 
@@ -72,7 +72,6 @@ Add to `packages/api-server-api/src/modules/acp/types.ts` (schemas + builders, l
 | `platform/promptAccepted` | runtime → sender | adds `steered?: true` (then no `promptStarted` follows) | 03 |
 | user echo `_meta` | transcript | `{ steered: true }` on a steered echo; `queued` no longer written | 01, 03 |
 | `platform/rewriteFrom` | client → runtime (request) | `{ sessionId, mode: "rewind" \| "fork", upToMessageId: string \| null, prompt: PromptBlock[], promptId, title? }` → `{ sessionId: newId }`, answered before the new session's first frame | 04 |
-| `session/prompt` `_meta.platform.steer` | channel → runtime | `{ prompt: PromptBlock[] }` — the text to inject if steered; presence marks the prompt steerable | 06 |
 
 `QueuedPrompt = { promptId: string | null, blocks: PromptBlock[], queuedAt: string, editable: boolean }`
 — `editable` is true only for prompts with a `promptId` sent from the UI surface.
@@ -85,7 +84,8 @@ Add to `packages/api-server-api/src/modules/acp/types.ts` (schemas + builders, l
 - **Order.** Nothing is reordered: a prompt behind a queued one queues too. While a turn runs, the
   queue drains into it from its head, one steer at a time; a refused head waits for the next turn.
 - **Steering scope.** Only prompts from the UI surface (`_meta.platform.surface === "ui"`) steer in
-  03; scheduled fires, invocation outcomes and CLI runs keep queueing. 06 adds channel prompts.
+  03; scheduled fires, invocation outcomes and CLI runs keep queueing. Slack and Telegram keep
+  the api-server's own steer path until #4475.
 - **Correction is UI only.** Editing (02, 04) exists in the web UI; Slack and Telegram get no
   correction in this feature. On a steering harness a mid-turn message is read at once, so it is
   corrected by another (steered) message, or by Stop and then a rewrite (04).
@@ -100,29 +100,17 @@ Add to `packages/api-server-api/src/modules/acp/types.ts` (schemas + builders, l
 | 02 | [Edit and delete a queued message](02-edit-queued.md) | `updateQueued`/`removeQueued`, inline Edit/Delete on a queued bubble | 01 | ✓ |
 | 03 | [Steer a mid-turn message](03-native-steer.md) | Runtime steers UI prompts via `_session/steering`, steered echo, composer wording | 01 | ✓ |
 | 04 | [Rewind or fork from an earlier message](04-rewrite-from.md) | `rewriteFrom` via harness fork; Rewind replaces in place, Fork keeps the original; actions chosen up front | 01 | ✓ |
-| 05 | [pi steers](05-pi-steering.md) | pi-acp `_session/steering` from upstream PR #115, carried in the pi-agent image | 03 | |
-| 06 | [One steering point for every surface](06-channel-steering-in-runtime.md) | Channel queue submits steerable prompts; runtime steers; channel steer path removed | 03 | |
-| 07 | [Chat UI bug bash on both Backends](07-chat-bug-bash.md) | Smoke the whole chat on the vm Backend (virtualization + sandbox runtime) and on container; reproduce and fix message-handling bugs | 01–06 | |
+| 07 | [Chat UI bug bash on both Backends](07-chat-bug-bash.md) | Smoke the whole chat on the vm Backend (virtualization + sandbox runtime) and on container; reproduce and fix message-handling bugs | 01–04 | |
 
 ```mermaid
 graph LR
   01 --> 02
   01 --> 03
   01 --> 04
-  03 --> 05
-  03 --> 06
   02 --> 07
+  03 --> 07
   04 --> 07
-  05 --> 07
-  06 --> 07
 ```
-
-## Open decision (outside this plan)
-
-**Platform-level steering for harnesses without it** (Codex, Bob): at the next completed tool
-call, cancel the turn and send "You were interrupted by the user. Their new message: …". Works
-with any harness, but cancel semantics differ per harness and a long tool call delays the steer.
-The team decides whether it is needed; if so, it becomes a follow-up issue.
 
 ## Conventions & glossary
 
@@ -152,8 +140,8 @@ On the local cluster with a Claude Code agent, in two browser tabs on the same s
    transcript stays on screen, the later messages go, the session keeps its place and title, and
    the agent answers the new text. Fork from the same message: a new "(fork)" conversation opens
    and the original is unchanged.
-5. On a pi agent: step 1 behaves the same as on Claude Code.
-6. Slack DM to a Claude Code agent: send a task, then a follow-up mid-turn. One reply covers both.
+5. Slack DM to a Claude Code agent: send a task, then a follow-up mid-turn. One reply covers both
+   (unchanged by this feature; a regression check).
 
 ## Delivery
 
