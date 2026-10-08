@@ -1,4 +1,4 @@
-import { ONCE_DELIVERY_WINDOW_MS } from "api-server-api";
+import { ONCE_DELIVERY_WINDOW_MS, OnceResult } from "api-server-api";
 import type { ScheduleSpecOnce, ScheduleStatus } from "api-server-api";
 import { localToInstant } from "./recurrences.js";
 
@@ -28,4 +28,22 @@ export function resolveOnceMoment(
   if (at.getTime() < now.getTime() - CREATE_SKEW_MS)
     throw new Error(`${local} ${timezone} is in the past`);
   return at;
+}
+
+export type OnceFireAction =
+  | { kind: "drop" }
+  | { kind: "poke" }
+  | { kind: "missed" }
+  | { kind: "commit"; expiresAt: Date };
+
+export function onceFireAction(
+  spec: ScheduleSpecOnce,
+  status: ScheduleStatus | undefined,
+  now: Date,
+): OnceFireAction {
+  const result = status?.lastResult;
+  if (result === OnceResult.Delivering) return { kind: "poke" };
+  if (result !== undefined) return { kind: "drop" };
+  const expiresAt = onceExpiry(spec);
+  return expiresAt <= now ? { kind: "missed" } : { kind: "commit", expiresAt };
 }
