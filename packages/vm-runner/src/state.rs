@@ -33,6 +33,22 @@ pub const PORT_FILE: &str = "port";
 // UNIT_BOUNDARY_DESCRIPTION: the digest a machine was created from, kept beside its spec. The spec keeps the reference the controller asked for, and a tag no longer says which tree a machine has mounted once it has moved, so the runner reads this file to know which digest it holds against the cache's eviction, including after a restart.
 pub const IMAGE_DIGEST_FILE: &str = "image-digest";
 
+// UNIT_BOUNDARY_DESCRIPTION: the VM runtime the machine's running VMM booted, written at each start. A runner release may bring another runtime than the one that started a machine still running, and a machine on another runtime is managed on the assumption that the two are compatible, with any failure ending in a reboot onto the runner's own (see Server::foreign).
+pub const RUNTIME_FILE: &str = "runtime";
+
+pub fn runtime(state_dir: &Path, id: &str) -> Option<String> {
+    let dir = machine_dir(state_dir, id)?;
+    fs::read_to_string(dir.join(RUNTIME_FILE))
+        .ok()
+        .map(|text| text.trim().to_string())
+}
+
+pub fn write_runtime(state_dir: &Path, id: &str, runtime: &str) -> anyhow::Result<()> {
+    let dir = require_machine_dir(state_dir, id)?;
+    files::write(&dir.join(RUNTIME_FILE), runtime.as_bytes(), PORT_MODE)?;
+    Ok(())
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the mode the port file is written with. Stated rather than left to the umask so a machine's state reads the same whatever umask the runner was started under.
 pub const PORT_MODE: u32 = 0o644;
 

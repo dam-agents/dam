@@ -8,6 +8,9 @@ use crate::state::is_image_ref;
 // UNIT_BOUNDARY_DESCRIPTION: how long a machine that once answered may stay quiet before it is restarted. A machine that has never answered is still booting, and one that answered a moment ago is between checks, so both halves of the condition are needed.
 pub const UNHEALTHY_RESTART: Duration = Duration::from_secs(10 * 60);
 
+// UNIT_BOUNDARY_DESCRIPTION: the same, for a machine whose VMM another VM runtime booted. The runner assumes it manages such a machine as well as its own, and treats a guest gone quiet as the sign that it does not: a reboot onto its own runtime costs seconds, where waiting out the ordinary grace would leave the agent down for minutes on a failure the reboot fixes. Three steady probes.
+pub const FOREIGN_UNHEALTHY_RESTART: Duration = Duration::from_secs(30);
+
 // UNIT_BOUNDARY_DESCRIPTION: how long a machine that has answered stays ready through missed probes: one interval of the prober's steady cadence, so the machine reads unready on the second consecutive miss and not the first. The probe is bounded to two seconds and a guest under nested virtualization, or on a busy node, takes one to two to answer, so a single miss says nothing about the guest — reporting it would flap the Agent's readiness and fail the deliveries riding on it. Quiet longer than UNHEALTHY_RESTART restarts.
 pub const READY_GRACE: Duration = crate::server::STEADY_PROBE;
 
@@ -70,14 +73,11 @@ impl Health {
             })
     }
 
-    pub fn dead_for_long(&self, now: SystemTime) -> bool {
+    pub fn quiet_beyond(&self, now: SystemTime, limit: Duration) -> bool {
         let Some(since) = self.quiet_since else {
             return false;
         };
-        self.ever_ready
-            && now
-                .duration_since(since)
-                .is_ok_and(|quiet| quiet > UNHEALTHY_RESTART)
+        self.ever_ready && now.duration_since(since).is_ok_and(|quiet| quiet > limit)
     }
 }
 
@@ -448,22 +448,28 @@ mod tests {
 
         let mut never_answered = Health::default();
         never_answered.observed_running(false, start);
-        assert!(!never_answered.dead_for_long(later(UNHEALTHY_RESTART * 10)));
+        assert!(!never_answered.quiet_beyond(later(UNHEALTHY_RESTART * 10), UNHEALTHY_RESTART));
 
         let mut quiet = Health::default();
         quiet.observed_running(true, start);
         quiet.observed_running(false, later(Duration::from_secs(1)));
-        assert!(!quiet.dead_for_long(later(UNHEALTHY_RESTART)));
-        assert!(quiet.dead_for_long(later(UNHEALTHY_RESTART + Duration::from_secs(2))));
+        assert!(!quiet.quiet_beyond(later(UNHEALTHY_RESTART), UNHEALTHY_RESTART));
+        assert!(quiet.quiet_beyond(
+            later(UNHEALTHY_RESTART + Duration::from_secs(2)),
+            UNHEALTHY_RESTART
+        ));
 
         quiet.observed_running(false, later(Duration::from_secs(5)));
         assert!(
-            quiet.dead_for_long(later(UNHEALTHY_RESTART + Duration::from_secs(2))),
+            quiet.quiet_beyond(
+                later(UNHEALTHY_RESTART + Duration::from_secs(2)),
+                UNHEALTHY_RESTART
+            ),
             "the window restarted at a later silence instead of the first"
         );
 
         quiet.observed_running(true, later(UNHEALTHY_RESTART));
-        assert!(!quiet.dead_for_long(later(UNHEALTHY_RESTART * 3)));
+        assert!(!quiet.quiet_beyond(later(UNHEALTHY_RESTART * 3), UNHEALTHY_RESTART));
     }
 
     // TEST_SCENARIO: a machine that answered is still ready for one steady probe interval of silence and not a moment longer; one that never answered gets no grace at all.
@@ -498,18 +504,18 @@ mod tests {
         health.observed_running(true, start);
         health.observed_running(false, later(Duration::from_secs(1)));
         let gave_up = later(UNHEALTHY_RESTART + Duration::from_secs(2));
-        assert!(health.dead_for_long(gave_up));
+        assert!(health.quiet_beyond(gave_up, UNHEALTHY_RESTART));
 
         health.action_started();
 
-        assert!(!health.dead_for_long(gave_up));
+        assert!(!health.quiet_beyond(gave_up, UNHEALTHY_RESTART));
         assert_eq!(
             step(
                 Some(&want),
                 &want,
                 State::Running,
                 false,
-                health.dead_for_long(gave_up)
+                health.quiet_beyond(gave_up, UNHEALTHY_RESTART)
             ),
             None
         );
@@ -517,7 +523,10 @@ mod tests {
 
         health.observed_running(false, later(UNHEALTHY_RESTART * 2));
         assert!(
-            health.dead_for_long(later(UNHEALTHY_RESTART * 3 + Duration::from_secs(2))),
+            health.quiet_beyond(
+                later(UNHEALTHY_RESTART * 3 + Duration::from_secs(2)),
+                UNHEALTHY_RESTART
+            ),
             "the window runs again from the silence after the restart"
         );
     }

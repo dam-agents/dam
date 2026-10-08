@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt;
@@ -14,6 +14,7 @@ use crate::cacheapi;
 use crate::imagecache::{CacheConfig, ImageCache};
 use crate::launch::{ImageLaunch, LAUNCH_FILE};
 use crate::plan::{READY_GRACE, UNHEALTHY_RESTART};
+use crate::state::RUNTIME_FILE;
 use std::path::Path;
 
 // UNIT_BOUNDARY_DESCRIPTION: what one update asked of the fake runtime: the image it moved the machine to, if any, and the allowlist and disk size it wrote.
@@ -38,6 +39,7 @@ struct Fake {
     console: Mutex<String>,
     panic_on_state: AtomicBool,
     nests: AtomicBool,
+    state_fails_until_start: Mutex<HashSet<String>>,
 }
 
 impl Fake {
@@ -64,6 +66,9 @@ impl Runtime for Fake {
             !self.panic_on_state.load(Ordering::SeqCst),
             "the fake was told to panic"
         );
+        if locked(&self.state_fails_until_start).contains(id) {
+            anyhow::bail!("the runtime cannot read the machine's record");
+        }
         Ok(locked(&self.states)
             .get(id)
             .copied()
@@ -100,6 +105,7 @@ impl Runtime for Fake {
         if let Some(message) = locked(&self.fail_start_once).take() {
             anyhow::bail!(message);
         }
+        locked(&self.state_fails_until_start).remove(id);
         locked(&self.states).insert(id.to_string(), State::Running);
         Ok(())
     }
@@ -185,6 +191,7 @@ impl Harness {
                 Some(listener) => Ok(listener),
                 None => TcpListener::bind(("127.0.0.1", port)),
             })),
+            runtime: None,
         };
         tune(&mut config);
         let fake = Arc::new(Fake::default());
@@ -1074,6 +1081,7 @@ async fn a_restarted_runner_republishes_its_ports() {
             reserve_mib: 0,
             headroom_mib: 0,
             listen: Some(listen),
+            runtime: None,
         },
         h.fake.clone(),
     )
@@ -1937,12 +1945,51 @@ async fn a_hand_off_leaves_every_machine_running_for_the_next_runner() {
             reserve_mib: 0,
             headroom_mib: 0,
             listen: Some(retrying_listen()),
+            runtime: None,
         },
         h.fake.clone(),
     )
     .unwrap();
     assert!(next.forwarder.is_published("m1"));
     next.close().await;
+}
+
+// TEST_SCENARIO: a runner release may bring another VM runtime than the one that booted a machine it adopts, and manages that machine assuming the two are compatible. A runtime error on such a machine is taken as the sign they are not: the machine is rebooted at once onto the runner's own runtime, and its record then names that runtime. A machine this runner's own runtime booted is left as it is through the same error, as before.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_another_runtime_booted_is_rebooted_at_its_first_runtime_error() {
+    let h = Harness::with("foreign", |c| c.runtime = Some("runtime-b".into()));
+    let record =
+        |id: &str| fs::read_to_string(h.dir.join("machines").join(id).join(RUNTIME_FILE)).unwrap();
+    for id in ["own", "adopted"] {
+        h.server.put(id, spec(true)).unwrap();
+        h.settle(id).await;
+        assert_eq!(
+            record(id),
+            "runtime-b",
+            "a start records the runtime it booted"
+        );
+    }
+    fs::write(
+        h.dir.join("machines/adopted").join(RUNTIME_FILE),
+        "runtime-a",
+    )
+    .unwrap();
+    for id in ["own", "adopted"] {
+        locked(&h.fake.state_fails_until_start).insert(id.to_string());
+        h.server.put(id, spec(true)).unwrap();
+        h.settle(id).await;
+    }
+
+    let calls = h.fake.calls();
+    let starts = |id: &str| {
+        calls
+            .iter()
+            .filter(|c| **c == format!("start {id}"))
+            .count()
+    };
+    assert_eq!(starts("adopted"), 2, "{calls:?}");
+    assert_eq!(record("adopted"), "runtime-b");
+    assert_eq!(starts("own"), 1, "{calls:?}");
 }
 
 // TEST_SCENARIO: the pod's grace ends in a SIGKILL whatever the runner is doing, so a guest slow to stop must not hold the close past its window: the close returns when the window ends, and the kill of the pod is what ends that guest.

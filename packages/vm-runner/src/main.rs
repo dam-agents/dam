@@ -265,6 +265,9 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             reserve_mib: i32::try_from(args.reserve_mib)?,
             headroom_mib: i32::try_from(args.headroom_mib)?,
             listen: publisher(&args.publish_address)?,
+            runtime: std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().and_then(vm_runner::release::runtime_id)),
         },
         runtime,
     )?;
