@@ -304,12 +304,19 @@ virtualization:
     # created with, and a new runner image reaches it without a restart: the
     # pod's loader drains the old runner, starts the new one from this
     # directory, and the new runner adopts every machine still running, so no
-    # machine reboots. Only a release built against another VM runtime (a new
-    # smolvm, crane or base image) still rolls the pods, through `rollout`, as
+    # machine reboots. A release built against another VM runtime (a new
+    # smolvm, libkrun or crane) brings its runtime along: machines already
+    # running keep the runtime they booted, and machines started after the
+    # hand-off boot the new one. Only a release that cannot load in the pod
+    # (a newer base image's libc) still rolls the pods, through `rollout`, as
     # every runner image does when this is empty. The stager is the only
     # writer; runners mount it read-only. Not supported on OpenShift yet: the
     # directory would need an SELinux label the confined runners can read.
     releaseHostPath: ""
+    # Roll the pods for every release built against another VM runtime, rather
+    # than letting a new runtime manage machines an older one started. The
+    # switch back if a runtime turns out not to.
+    releaseSameRuntimeOnly: false
     # Local dev on macOS only. Set, the controller creates no runner pods:
     # every vm machine, whatever its owner, runs on one vm-runner process on
     # the host, which uses the host's own hypervisor instead of one nested in

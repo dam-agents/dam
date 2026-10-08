@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"strconv"
 	"strings"
 
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -48,6 +49,8 @@ const (
 	vmRunnerReleaseFileEnv = "VM_RUNNER_RELEASE_FILE"
 	vmRunnerLoaderDirEnv   = "VM_RUNNER_LOADER_DIR"
 	vmRunnerBuiltinEnv     = "VM_RUNNER_BUILTIN_RELEASE"
+
+	vmRunnerSameRuntimeOnlyEnv = "VM_RUNNER_SAME_RUNTIME_ONLY"
 
 	// UNIT_BOUNDARY_DESCRIPTION: the runner's scrape port, apart from the machine API because it carries no token, and the component of the one pod its NetworkPolicy admits to it. The collector is the platform's own and scrapes the runners because they cannot push to it: a runner is off the mesh, and the collector admits only mesh identities.
 	vmRunnerMetricsPort    = 4601
@@ -688,6 +691,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			corev1.EnvVar{Name: vmRunnerReleaseFileEnv, Value: vmRunnerReleaseFilePath + "/" + runnerReleaseKey},
 			corev1.EnvVar{Name: vmRunnerLoaderDirEnv, Value: vmRunnerLoaderPath},
 			corev1.EnvVar{Name: vmRunnerBuiltinEnv, Value: spec.Image},
+			corev1.EnvVar{Name: vmRunnerSameRuntimeOnlyEnv, Value: strconv.FormatBool(spec.ReleaseSameRuntimeOnly)},
 		)
 	}
 	dep := &appsv1.Deployment{

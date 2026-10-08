@@ -11,9 +11,14 @@ its machines to it. Runner pods mount the directory read-only, so a guest that
 escapes into its runner cannot replace the release another owner's runner
 takes next.
 
+It also stages the VM runtime the release was built against — the smolvm
+release with its libkrun and guest agent — once per runtime, so a release
+built against another runtime than a pod's image brings its own.
+
 It runs wherever a runner can, on the runner's own nodeSelector and
 tolerations. A runner on a node it has not reached yet keeps its release until
-it does. It needs no capability: it is root writing a directory root owns.
+it does. It is root writing a directory root owns, and holds DAC_READ_SEARCH
+alone, to read guest-agent files whose mode keeps even their owner out.
 */}}
 {{- $name := printf "%s-vm-runner-releases" (include "platform.fullname" .) }}
 apiVersion: apps/v1
@@ -54,11 +59,13 @@ spec:
           {{- /*
           The runner image, whose ENTRYPOINT starts a runner pod's loader —
           replaced here. The release is named by the very reference the
-          controller writes into each runner's release ConfigMap.
+          controller writes into each runner's release ConfigMap. The runtime
+          is the smolvm tree the image installs.
           */}}
           command: ["vm-runner-loader", "stage"]
           args:
             - --builtin=/usr/local/libexec/vm-runner
+            - --runtime=/opt/smolvm
             - --into=/var/lib/platform/releases
             - --release={{ include "platform.vmRunner.image" $ }}
           securityContext:
@@ -67,6 +74,7 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+              add: ["DAC_READ_SEARCH"]
             seccompProfile:
               type: RuntimeDefault
           resources:
@@ -74,7 +82,7 @@ spec:
               cpu: 10m
               memory: 16Mi
             limits:
-              memory: 64Mi
+              memory: 128Mi
           volumeMounts:
             - name: releases
               mountPath: /var/lib/platform/releases

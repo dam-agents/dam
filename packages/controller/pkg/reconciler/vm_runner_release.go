@@ -68,7 +68,7 @@ func runnerRollSpec(spec appsv1.DeploymentSpec, releases bool) appsv1.Deployment
 	return spec
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a runner pod whose shape is unchanged must still roll to take the configured release. Only a release built against another VM runtime than the pod's image needs a new pod: its loader can never hand the machines to it. A release that is merely not staged yet comes by itself, and one that failed right after it took over is left to the next release rather than rolled onto, since a pod on it would fail the same way and take the machines down with it.
+// UNIT_BOUNDARY_DESCRIPTION: whether a runner pod whose shape is unchanged must still roll to take the configured release. Only a release built for another pod needs a new one — its runner does not load against this pod's libc, or the install keeps one VM runtime per pod — since its loader can never hand the machines to it. A release that is merely not staged yet comes by itself, and one that failed right after it took over is left to the next release rather than rolled onto, since a pod on it would fail the same way and take the machines down with it.
 func (r *AgentReconciler) runnerNeedsPodForRelease(ctx context.Context, owner string, existing *appsv1.Deployment) bool {
 	want := r.config.VM.Runner.Image
 	containers := existing.Spec.Template.Spec.Containers

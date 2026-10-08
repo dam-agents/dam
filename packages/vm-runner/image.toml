@@ -37,7 +37,7 @@
 [oci]
 workdir = "/"
 cmd = []
-entrypoint = ["/usr/bin/catatonit", "--", "vm-runner-loader", "run", "--builtin", "/usr/local/libexec/vm-runner", "--", "--smolvm", "/opt/smolvm/smolvm", "--crane", "/usr/local/bin/crane", "--platform-init", "/usr/local/libexec/vm-runner/platform-init", "--platform-runc", "/usr/local/libexec/vm-runner/platform-runc", "--publish-address", ""]
+entrypoint = ["/usr/bin/catatonit", "--", "vm-runner-loader", "run", "--builtin", "/usr/local/libexec/vm-runner", "--builtin-runtime", "/opt/smolvm", "--", "--smolvm", "/opt/smolvm/smolvm", "--crane", "/usr/local/bin/crane", "--platform-init", "/usr/local/libexec/vm-runner/platform-init", "--platform-runc", "/usr/local/libexec/vm-runner/platform-runc", "--publish-address", ""]
 
 [oci.env]
 HOME = "/var/lib/platform/disks"
