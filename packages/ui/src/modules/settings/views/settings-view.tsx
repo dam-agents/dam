@@ -17,6 +17,7 @@ import { FeaturesTab } from "../../features/components/features-tab.js";
 import { UsageView } from "../../metrics/views/usage-view.js";
 import type { SettingsTab } from "../../platform/lib/routes.js";
 import { ProviderSection } from "../../providers/components/provider-section.js";
+import { OwnerSchedulesView } from "../../schedules/views/owner-schedules-view.js";
 import { useSlackInstallAvailability } from "../../slack/api/queries.js";
 import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
 import { AppVersionRow } from "../components/app-version-row.js";
@@ -28,6 +29,7 @@ const baseTabs: readonly TabDef<SettingsTab>[] = [
   { value: "connections", label: "Connections" },
   { value: "api-keys", label: "API keys" },
   { value: "usage", label: "Usage" },
+  { value: "schedules", label: "Schedules" },
 ];
 
 const themeOptions = [
@@ -206,6 +208,8 @@ export function SettingsView() {
             <UsageView />
           </div>
         )}
+
+        {activeTab === "schedules" && <OwnerSchedulesView />}
 
         {activeTab === "slack-workspaces" && <SlackWorkspacesView />}
 

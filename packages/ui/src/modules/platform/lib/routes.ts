@@ -8,6 +8,7 @@ const settingsTabSchema = z.enum([
   "connections",
   "api-keys",
   "usage",
+  "schedules",
   "slack-workspaces",
   "features",
 ]);

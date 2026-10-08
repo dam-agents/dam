@@ -8,6 +8,7 @@ const canonicalPaths = [
   "/chat/agent-1/sess-1",
   "/settings",
   "/settings/connections",
+  "/settings/schedules",
   "/terms",
   "/telegram/bind",
   "/slack/bind",
