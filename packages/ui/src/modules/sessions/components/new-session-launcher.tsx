@@ -29,7 +29,7 @@ export function NewSessionLauncher({
 
   return (
     <>
-      <div className="mt-5 grid w-full max-w-[640px] grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="mt-5 grid w-full max-w-[640px] grid-cols-1 gap-3 @md/chat:grid-cols-2">
         <LauncherTile
           icon={<Terminal size={18} />}
           title="Browser Terminal"

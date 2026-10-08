@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { avatarCharacter } from "api-server-api/avatar/svg";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
 import {
@@ -1698,16 +1699,27 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   }
 
   const AGENT_NAME_TTL_MS = 30_000;
-  const agentNameCache = new Map<string, { name: string; expiresAt: number }>();
+  const agentNameCache = new Map<
+    string,
+    { name: string; avatar: string | undefined; expiresAt: number }
+  >();
 
   async function resolveAgentName(instanceName: string): Promise<string> {
+    return (await resolveAgentIdentity(instanceName)).name;
+  }
+
+  async function resolveAgentIdentity(
+    instanceName: string,
+  ): Promise<{ name: string; avatar: string | undefined }> {
     const now = Date.now();
     const cached = agentNameCache.get(instanceName);
-    if (cached && cached.expiresAt > now) return cached.name;
+    if (cached && cached.expiresAt > now) return cached;
     let name: string;
+    let avatar: string | undefined;
     try {
       const agent = await agents().get(instanceName);
       name = agent?.name?.trim() || instanceName;
+      avatar = agent?.spec?.avatar;
     } catch {
       name = instanceName;
     }
@@ -1718,9 +1730,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     agentNameCache.set(instanceName, {
       name,
+      avatar,
       expiresAt: now + AGENT_NAME_TTL_MS,
     });
-    return name;
+    return { name, avatar };
   }
 
   const THREAD_SEEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -1882,12 +1895,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ): Promise<Pick<SlackPostMessage, "username" | "iconUrl">> {
     const scopes = await grantedScopes(gw, teamId);
     if (!scopes?.has("chat:write.customize")) return {};
-    const [username, owner] = await Promise.all([
-      resolveAgentName(instanceName),
+    const [{ name: username, avatar }, owner] = await Promise.all([
+      resolveAgentIdentity(instanceName),
       getInstanceOwner(instanceName).catch(() => null),
     ]);
     const iconUrl =
-      agentIcon && owner ? await agentIcon(owner, username) : null;
+      agentIcon && owner
+        ? await agentIcon(avatarCharacter(avatar, owner, username))
+        : null;
     return { username, ...(iconUrl ? { iconUrl } : {}) };
   }
 

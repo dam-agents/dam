@@ -1,5 +1,6 @@
 import { Box, Close } from "@carbon/icons-react";
 import { formatEgressRuleInline, type StarterKitView } from "api-server-api";
+import { leastUsedCharacter } from "api-server-api/avatar/svg";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -82,6 +83,7 @@ import {
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
+import { resolveCharacter } from "../components/avatar/agent-avatar.js";
 import { VmRuntimeNotice } from "../components/vm-runtime-notice.js";
 import {
   buildCodingAgentSetupInput,
@@ -148,6 +150,11 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     features.data?.["strict-connection-addressing"] === true;
   const agentsQ = useAgents();
   const availableChannels = agentsQ.data?.availableChannels;
+  const avatar =
+    form.avatar ??
+    leastUsedCharacter(
+      (agentsQ.data?.list ?? []).map((a) => resolveCharacter(a.name, a.avatar)),
+    );
   const { openCatalog, catalogNode } = useSetupConnectionCatalog({
     connectionIds: form.connectionIds,
     onToggle: toggleConnection,
@@ -327,9 +334,10 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     if (!canApply) return;
     if (!kit) {
       try {
-        const agent = await createAgent.mutateAsync(
-          buildCodingAgentSetupInput(plainDraft),
-        );
+        const agent = await createAgent.mutateAsync({
+          ...buildCodingAgentSetupInput(plainDraft),
+          avatar,
+        });
         await grantSatellites(agent.id);
         recordBindIntent(
           agent.id,
@@ -343,9 +351,10 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       return;
     }
     try {
-      const result = await apply.mutateAsync(
-        buildStarterKitApplyInput(kit, draft, owned, templateById),
-      );
+      const result = await apply.mutateAsync({
+        ...buildStarterKitApplyInput(kit, draft, owned, templateById),
+        avatar,
+      });
       await grantSatellites(result.agent.id);
       reset();
       const skipped = result.skills?.skipped.length ?? 0;
@@ -488,7 +497,12 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         </section>
       )}
 
-      <NameSection value={form.name} onChange={(name) => update({ name })} />
+      <NameSection
+        value={form.name}
+        onChange={(name) => update({ name })}
+        avatar={avatar}
+        onAvatarChange={(picked) => update({ avatar: picked })}
+      />
 
       {!kit && (
         <ImageSection

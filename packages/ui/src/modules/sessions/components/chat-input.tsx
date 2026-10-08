@@ -196,12 +196,12 @@ export function ChatInput({
 
   return (
     <div
-      className="px-4 md:px-8 pt-3 pb-1"
+      className="px-2 @xs/chat:px-4 @xl/chat:px-8 pt-3 pb-1"
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <ChatColumn className="flex flex-col gap-1.5">
+      <ChatColumn className="flex flex-col gap-1.5 px-0 @xs/chat:px-4">
         <input
           ref={fileInputRef}
           type="file"

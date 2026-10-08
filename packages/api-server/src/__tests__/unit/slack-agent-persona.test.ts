@@ -1,5 +1,6 @@
-// TEST_OVERVIEW: With the chat:write.customize scope, an agent's Slack posts carry the agent's name as username and its avatar as icon_url, so a channel with several agents shows who said what. Without the scope, or when the granted set is unknown, posts go out under the app's own identity. The avatar is uploaded to ImgBB as a PNG named by a hash, once per owner and name, and a failed upload is retried on the next post.
+// TEST_OVERVIEW: With the chat:write.customize scope, an agent's Slack posts carry the agent's name as username and its avatar as icon_url, so a channel with several agents shows who said what. Without the scope, or when the granted set is unknown, posts go out under the app's own identity. The icon is the agent's chosen character, or the one picked from its owner and name when none is chosen. Each character is uploaded to ImgBB once, as a PNG named by a hash, and a failed upload is retried after a pause.
 import { describe, it, expect, vi } from "vitest";
+import { avatarCharacter } from "api-server-api/avatar/svg";
 import type { AgentsService } from "api-server-api";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { configureLogger } from "../../core/logger.js";
@@ -18,12 +19,16 @@ const BOUND = "C-BOUND";
 const ICON = "https://i.ibb.co/abc/icon.png";
 configureLogger({ level: "error", write: () => {} });
 
-function harness(scopes: string[] | null, agentIcon: AgentIconUrl | null) {
+function harness(
+  scopes: string[] | null,
+  agentIcon: AgentIconUrl | null,
+  avatar?: string,
+) {
   const gw = createFakeSlackGateway();
   gw.setChannels([{ id: BOUND, name: "agent-home", botIsMember: true }]);
   gw.setGrantedScopes(scopes);
   const agents = {
-    get: async () => ({ name: "Scout" }),
+    get: async () => ({ name: "Scout", spec: { avatar } }),
   } as unknown as AgentsService;
   const worker = createSlackWorker({
     makeAcpClient: () => ({}) as AcpClient,
@@ -72,11 +77,11 @@ function harness(scopes: string[] | null, agentIcon: AgentIconUrl | null) {
 }
 
 describe("slack agent persona", () => {
-  // TEST_SCENARIO: The scope is granted, so both agent-authored paths name the agent and show the avatar seeded by its owner and name.
+  // TEST_SCENARIO: The scope is granted and the agent chose no character, so both agent-authored paths name the agent and show the character picked from its owner and name.
   it("posts and replies as the agent when chat:write.customize is granted", async () => {
     const seen: string[] = [];
-    const icon: AgentIconUrl = async (owner, name) => {
-      seen.push(`${owner}/${name}`);
+    const icon: AgentIconUrl = async (character) => {
+      seen.push(character);
       return ICON;
     };
 
@@ -91,7 +96,23 @@ describe("slack agent persona", () => {
 
     expect(post).toMatchObject({ username: "Scout", iconUrl: ICON });
     expect(reply).toMatchObject({ username: "Scout", iconUrl: ICON });
-    expect(seen).toEqual([`${OWNER}/Scout`, `${OWNER}/Scout`]);
+    const hashed = avatarCharacter(undefined, OWNER, "Scout");
+    expect(seen).toEqual([hashed, hashed]);
+  });
+
+  // TEST_SCENARIO: A character the owner chose wins over the one picked from the name, so Slack shows the same character as the UI.
+  it("shows the agent's chosen character", async () => {
+    const seen: string[] = [];
+    const icon: AgentIconUrl = async (character) => {
+      seen.push(character);
+      return ICON;
+    };
+    const chosen =
+      avatarCharacter(undefined, OWNER, "Scout") === "lens" ? "wave" : "lens";
+
+    await harness(["chat:write.customize"], icon, chosen).post();
+
+    expect(seen).toEqual([chosen]);
   });
 
   // TEST_SCENARIO: Without the scope Slack may refuse or ignore the override, and with an unknown granted set nothing proves it is allowed, so the post keeps the app's identity.
@@ -124,15 +145,17 @@ describe("imgbb agent icons", () => {
   }
   const ok = () => Response.json({ data: { url: ICON } });
 
-  // TEST_SCENARIO: The first post uploads a PNG under a hashed filename that leaks neither the owner nor the agent name, and later posts reuse the URL without another upload.
-  it("uploads a hashed PNG once per owner and name", async () => {
-    const imgbb = fakeImgbb([ok]);
+  // TEST_SCENARIO: The first post with a character uploads its PNG under a hashed filename, later posts with that character reuse the URL, and another character gets its own upload.
+  it("uploads a hashed PNG once per character", async () => {
+    const imgbb = fakeImgbb([ok, ok]);
     const icons = createImgbbAgentIcons("secret", imgbb.fetchImpl);
 
-    expect(await icons(OWNER, "Scout")).toBe(ICON);
-    expect(await icons(OWNER, "Scout")).toBe(ICON);
-
+    expect(await icons("lens")).toBe(ICON);
+    expect(await icons("lens")).toBe(ICON);
     expect(imgbb.uploads).toHaveLength(1);
+    expect(await icons("wave")).toBe(ICON);
+
+    expect(imgbb.uploads).toHaveLength(2);
     const form = imgbb.uploads[0]!;
     expect(form.get("key")).toBe("secret");
     const image = form.get("image") as File;
@@ -153,14 +176,14 @@ describe("imgbb agent icons", () => {
       ]);
       const icons = createImgbbAgentIcons("secret", imgbb.fetchImpl);
 
-      expect(await icons(OWNER, "Scout")).toBeNull();
-      expect(await icons(OWNER, "Scout")).toBeNull();
+      expect(await icons("lens")).toBeNull();
+      expect(await icons("lens")).toBeNull();
       expect(imgbb.uploads).toHaveLength(1);
 
       vi.advanceTimersByTime(10 * 60_000);
-      expect(await icons(OWNER, "Scout")).toBeNull();
+      expect(await icons("lens")).toBeNull();
       vi.advanceTimersByTime(10 * 60_000);
-      expect(await icons(OWNER, "Scout")).toBe(ICON);
+      expect(await icons("lens")).toBe(ICON);
       expect(imgbb.uploads).toHaveLength(3);
     } finally {
       vi.useRealTimers();
@@ -177,10 +200,10 @@ describe("imgbb agent icons", () => {
     }) as unknown as typeof fetch;
     const icons = createImgbbAgentIcons("secret", fetchImpl, 5);
 
-    expect(await icons(OWNER, "Scout")).toBeNull();
+    expect(await icons("lens")).toBeNull();
     answer(ok());
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(await icons(OWNER, "Scout")).toBe(ICON);
+    expect(await icons("lens")).toBe(ICON);
     expect(calls).toBe(1);
   });
 });

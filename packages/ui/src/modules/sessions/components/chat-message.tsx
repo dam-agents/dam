@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
-import { LazyRobotHead } from "../../agents/components/avatar/lazy-robot-head.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { modelDisplayName } from "../lib/model-name.js";
 import type { MessageTime } from "../lib/thread-items.js";
 import { ChatMessagePart } from "./chat-message-part.js";
@@ -21,7 +21,7 @@ type Props = BaseProps & MessageTime;
 
 interface BaseProps {
   message: Message;
-  avatarAgentName?: string;
+  avatarAgent?: { name: string; avatar: string | null };
   userLabel?: string;
   readOnly?: boolean;
   showModel?: boolean;
@@ -87,7 +87,7 @@ function LoadOlderMarker({
 
 export const ChatMessage = memo(function ChatMessage({
   message,
-  avatarAgentName,
+  avatarAgent,
   userLabel = "You",
   readOnly = false,
   showModel = false,
@@ -135,14 +135,18 @@ export const ChatMessage = memo(function ChatMessage({
       <div
         className={cn(
           "flex gap-1.5 mb-0.5",
-          avatarAgentName === undefined ? "items-baseline" : "items-center",
+          avatarAgent === undefined ? "items-baseline" : "items-center",
         )}
       >
-        {isAssistant && avatarAgentName !== undefined && (
-          <LazyRobotHead name={avatarAgentName} size={20} />
+        {isAssistant && avatarAgent !== undefined && (
+          <AgentAvatar
+            name={avatarAgent.name}
+            avatar={avatarAgent.avatar}
+            size={24}
+          />
         )}
         <span className="text-[11px] font-medium text-muted-foreground">
-          {isAssistant ? (avatarAgentName ?? "Agent") : userLabel}
+          {isAssistant ? (avatarAgent?.name ?? "Agent") : userLabel}
         </span>
         {timeLabel !== undefined && (
           <Tooltip side="top" content={timeTitle}>

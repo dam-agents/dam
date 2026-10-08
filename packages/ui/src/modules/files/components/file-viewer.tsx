@@ -32,6 +32,8 @@ interface Props {
   onOpenFile: (path: string) => void;
 }
 
+const TOOLBAR_LABEL = "hidden @xl/file-toolbar:inline";
+
 export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const { path, content, binary, mimeType: mime, tooLarge } = file;
   const isMarkdown = mime === "text/markdown";
@@ -178,11 +180,17 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     />
   );
 
+  const promotionLabel = promotion.pending
+    ? "Publishing…"
+    : promotion.linked
+      ? "Sync to artifact"
+      : "Create artifact";
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex items-center gap-2 px-4 h-12 border-b border-border shrink-0">
+      <div className="@container/file-toolbar flex items-center gap-2 px-4 h-12 border-b border-border shrink-0">
         <TruncateStart
-          className="text-sm font-medium text-foreground flex-1"
+          className="text-sm font-medium text-foreground flex-1 min-w-0"
           title={path}
         >
           {dirty ? `● ${path}` : path}
@@ -214,20 +222,17 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               variant="outline"
               size="xs"
               className="text-sm font-normal"
+              aria-label={promotionLabel}
               disabled={!promotion.promotable || promotion.pending}
               tooltip={
                 promotion.promotable || !promotion.linkReady
-                  ? undefined
+                  ? promotionLabel
                   : "Binary and oversized files can't be promoted from the panel"
               }
               onClick={() => void promotion.promote()}
             >
               <DocumentExport size={14} />
-              {promotion.pending
-                ? "Publishing…"
-                : promotion.linked
-                  ? "Sync to artifact"
-                  : "Create artifact"}
+              <span className={TOOLBAR_LABEL}>{promotionLabel}</span>
             </Button>
             {editable && (
               <Button
@@ -235,8 +240,10 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 size="xs"
                 className="text-sm font-normal"
                 onClick={() => setEditMode(true)}
+                aria-label="Edit"
+                tooltip="Edit"
               >
-                <Edit size={14} /> Edit
+                <Edit size={14} /> <span className={TOOLBAR_LABEL}>Edit</span>
               </Button>
             )}
             {!tooLarge && (
@@ -245,8 +252,11 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 size="xs"
                 className="text-sm font-normal"
                 onClick={() => downloadFileContent(file)}
+                aria-label="Download"
+                tooltip="Download"
               >
-                <Download size={14} /> Download
+                <Download size={14} />{" "}
+                <span className={TOOLBAR_LABEL}>Download</span>
               </Button>
             )}
             {isSvg && (
@@ -254,6 +264,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 rendered={renderSvg}
                 onToggle={() => setRenderSvg((p) => !p)}
                 className="text-sm"
+                labelClassName={TOOLBAR_LABEL}
               />
             )}
             {isMarkdown && (
@@ -261,6 +272,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 rendered={renderMd}
                 onToggle={() => setRenderMd((p) => !p)}
                 className="text-sm"
+                labelClassName={TOOLBAR_LABEL}
               />
             )}
             {isHtml && (
@@ -268,6 +280,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 rendered={renderHtml}
                 onToggle={() => setRenderHtml((p) => !p)}
                 className="text-sm"
+                labelClassName={TOOLBAR_LABEL}
               />
             )}
             {isRenderedPreview && (
@@ -290,6 +303,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           className="shrink-0"
           onClick={onClose}
           aria-label="Close"
+          tooltip="Close"
         >
           <Close size={16} />
         </Button>

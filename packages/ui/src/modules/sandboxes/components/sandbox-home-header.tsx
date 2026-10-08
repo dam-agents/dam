@@ -20,7 +20,7 @@ import type { AgentView } from "../../../types.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
   AgentAvatar,
-  isAsleep,
+  avatarMood,
 } from "../../agents/components/avatar/agent-avatar.js";
 import { FreeUpComputeItems } from "../../agents/components/power-menu-items.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
@@ -35,10 +35,10 @@ import { useFeed } from "../../home/api/queries.js";
 interface Props {
   agent: AgentView;
   display: AgentDisplay;
-  avatarName?: string;
+  avatar?: string | null;
 }
 
-export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
+export function SandboxHomeHeader({ agent, display, avatar }: Props) {
   const working = useFeed().workingByAgent.get(agent.id);
   const setView = useStore((s) => s.setView);
   const selectAgent = useStore((s) => s.selectAgent);
@@ -74,10 +74,14 @@ export function SandboxHomeHeader({ agent, display, avatarName }: Props) {
     <PageHeader
       leading={
         <AgentAvatar
-          name={avatarName ?? agent.name}
+          name={agent.name}
+          avatar={avatar ?? agent.avatar}
           size={44}
-          sleeping={isAsleep(display.state)}
-          stopped={agent.stopRequested}
+          mood={avatarMood(
+            display.state,
+            agent.stopRequested,
+            working ?? false,
+          )}
         />
       }
       title={agent.name}

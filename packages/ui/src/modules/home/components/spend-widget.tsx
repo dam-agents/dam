@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useSpendBreakdown } from "../../metrics/api/queries.js";
 import { totalCostUsd } from "../../metrics/lib/totals.js";
@@ -17,6 +18,7 @@ const ROUNDS_TO_A_VISIBLE_CENT_USD = 0.005;
 
 export function SpendWidget() {
   const [period, setPeriod] = useState<SpendPeriod>("1m");
+  const agents = useAgentsList();
   const timeZone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
     [],
@@ -72,7 +74,13 @@ export function SpendWidget() {
             <div key={spender.agentId}>
               <div className="mb-1 flex items-center justify-between">
                 <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-                  <AgentAvatar name={spender.agentName} size={16} />
+                  <AgentAvatar
+                    name={spender.agentName}
+                    avatar={
+                      agents.find((a) => a.id === spender.agentId)?.avatar
+                    }
+                    size={16}
+                  />
                   <span className="truncate">{spender.agentName}</span>
                 </span>
                 <span className="ml-2 shrink-0 text-sm text-muted-foreground tabular-nums">

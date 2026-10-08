@@ -72,7 +72,6 @@ features:
   vm-sandboxes: experimental
   interactive-artifacts: experimental
   agent-telemetry: experimental
-  agent-avatars: experimental
   strict-connection-addressing: experimental
 
 # -- Base domain for the app. UI and API share this host; the ingress

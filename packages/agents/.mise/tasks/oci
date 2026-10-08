@@ -242,9 +242,7 @@ build_default() (
   cd "$stage"
   mise -E "$envs" install
   # Playwright's browsers: the node installer puts them in the tools, beside
-  # other Playwrights' own, and the image names this one's. agent-browser runs
-  # the headless shell: full Chrome calls Google's services at startup, which
-  # the gateway would hold for approval.
+  # other Playwrights' own, and the image names this one's.
   PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "$envs" exec -- playwright install chromium
   for d in "$work"/ms-playwright/*/; do
     d="${d%/}"

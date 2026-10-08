@@ -143,6 +143,7 @@ export interface AgentView {
   features: { liveUpdates: boolean | null };
   image: string;
   description?: string;
+  avatar: string | null;
   env?: EnvVar[];
   hibernationTimeoutMin: number;
   requireConnectionAddress: boolean;
