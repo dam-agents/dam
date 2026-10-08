@@ -5,7 +5,10 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
 
 import type { Schedule } from "../../../types.js";
-import { useSessionModelChoices } from "../api/session-model.js";
+import {
+  useHasHarnessDefault,
+  useSessionModelChoices,
+} from "../api/session-model.js";
 import {
   clampText,
   declinedSummary,
@@ -125,7 +128,8 @@ function ScheduleModel({
   model: string | null;
 }) {
   const choices = useSessionModelChoices(agentId);
-  if (!model) return <>Default</>;
+  const hasDefault = useHasHarnessDefault(agentId);
+  if (!model) return <>{hasDefault ? "Default" : "Same as agent"}</>;
   const choice = choices.find((c) => c.value === model);
   return (
     <>
