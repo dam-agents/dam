@@ -10,13 +10,20 @@ export interface SessionCostPage {
 interface ListedSession {
   sessionId: string;
   createdAt: string;
+  updatedAt?: string | null;
+}
+
+function knownStart(s: ListedSession): number | undefined {
+  if (!s.updatedAt || s.updatedAt === s.createdAt) return undefined;
+  const at = Date.parse(s.createdAt);
+  return Number.isNaN(at) ? undefined : at;
 }
 
 function earliestStart(sessions: readonly ListedSession[]): string | undefined {
   let earliest = Infinity;
   for (const s of sessions) {
-    const at = Date.parse(s.createdAt);
-    if (Number.isNaN(at)) return undefined;
+    const at = knownStart(s);
+    if (at === undefined) return undefined;
     earliest = Math.min(earliest, at);
   }
   return new Date(earliest - CLOCK_SKEW_MS).toISOString();

@@ -76,7 +76,11 @@ function costsBySession(
 
 export function useSessionCosts(
   agentId: string | null,
-  sessions: readonly { sessionId: string; createdAt: string }[],
+  sessions: readonly {
+    sessionId: string;
+    createdAt: string;
+    updatedAt?: string | null;
+  }[],
 ) {
   const pages = useMemo(() => sessionCostPages(sessions), [sessions]);
   return useQueries({
