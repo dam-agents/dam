@@ -115,6 +115,11 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
         <DetailCard label="Model">
           <ScheduleModel agentId={schedule.agentId} model={model} />
         </DetailCard>
+        {schedule.sessionTitle && (
+          <DetailCard label="Session title">
+            <span className="break-words">{schedule.sessionTitle}</span>
+          </DetailCard>
+        )}
       </div>
     </div>
   );

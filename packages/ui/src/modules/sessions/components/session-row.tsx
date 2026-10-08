@@ -56,6 +56,7 @@ interface Props {
   cost?: SessionRuntime;
   conversation?: string;
   onResume: () => void;
+  onRename: () => void;
   onDelete: () => void;
   onExportTimeline?: () => void;
 }
@@ -71,6 +72,7 @@ export function SessionRow({
   cost,
   conversation,
   onResume,
+  onRename,
   onDelete,
   onExportTimeline,
 }: Props) {
@@ -218,6 +220,12 @@ export function SessionRow({
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem
+                data-testid="session-rename-button"
+                onSelect={onRename}
+              >
+                <Edit size={13} /> Rename session
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 data-testid="session-delete-button"
                 tone="danger"
                 onSelect={onDelete}
@@ -255,6 +263,18 @@ export function SessionRow({
           ref={menuRef}
           className="absolute right-3 top-2 z-popover rounded-lg border border-border bg-popover py-1 anim-scale-in shadow-md"
         >
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen(false);
+              onRename();
+            }}
+          >
+            <Edit size={13} /> Rename session
+          </Button>
           <Button
             variant="ghost"
             tone="danger"

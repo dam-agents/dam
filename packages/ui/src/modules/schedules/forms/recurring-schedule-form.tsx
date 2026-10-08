@@ -21,6 +21,7 @@ import {
   ScheduleModelField,
   SchedulePrecheckField,
   ScheduleRecurrenceFields,
+  ScheduleSessionTitleField,
   ScheduleSessionTypeField,
 } from "./schedule-fields.js";
 import {
@@ -89,6 +90,7 @@ export function RecurringScheduleForm({
   const onSubmit = handleSubmit((v) => {
     const precheck = v.precheck.trim();
     const model = v.model.trim();
+    const sessionTitle = v.sessionTitle.trim();
     const common = {
       name: v.name,
       rrule: buildRRuleParts(v).body,
@@ -113,6 +115,7 @@ export function RecurringScheduleForm({
           ...common,
           precheck: precheck || null,
           model: model || null,
+          sessionTitle: sessionTitle || null,
         },
         { onSuccess },
       );
@@ -123,6 +126,7 @@ export function RecurringScheduleForm({
           ...common,
           ...(precheck ? { precheck } : {}),
           ...(model ? { model } : {}),
+          ...(sessionTitle ? { sessionTitle } : {}),
         },
         { onSuccess },
       );
@@ -190,6 +194,11 @@ export function RecurringScheduleForm({
         />
 
         <ScheduleSessionTypeField layout="stacked" control={control} />
+
+        <ScheduleSessionTitleField
+          registration={register("sessionTitle")}
+          error={errors.sessionTitle?.message}
+        />
       </DialogBody>
 
       <DialogActions

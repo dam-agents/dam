@@ -20,6 +20,7 @@ export interface ScheduleSpecCron {
   task?: string;
   precheck?: string;
   model?: string;
+  sessionTitle?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
   createdBy: ScheduleCreator;
@@ -34,6 +35,7 @@ export interface ScheduleSpecRRule {
   task?: string;
   precheck?: string;
   model?: string;
+  sessionTitle?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
   createdBy: ScheduleCreator;
@@ -53,6 +55,7 @@ export interface ScheduleSpecOnce {
   timezone: string;
   origin?: ScheduleOnceOrigin;
   model?: string;
+  sessionTitle?: string;
   task?: string;
   precheck?: undefined;
   sessionMode?: undefined;

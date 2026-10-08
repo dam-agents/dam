@@ -56,6 +56,7 @@ export function createTriggerPlugin(deps: {
       type: payload.once ? SessionType.ScheduleOnce : SessionType.ScheduleCron,
       mode: SessionMode.Chat,
       scheduleId: payload.scheduleId,
+      ...(payload.sessionTitle && { title: payload.sessionTitle }),
     };
     const origin = payload.origin;
     if (origin?.mode === "continue") {

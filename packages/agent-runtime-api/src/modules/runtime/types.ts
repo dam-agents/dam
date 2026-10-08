@@ -157,6 +157,7 @@ export const triggerEventPayload = z.object({
   once: z.literal(true).optional(),
   origin: onceOrigin.optional(),
   model: z.string().min(1).optional(),
+  sessionTitle: z.string().min(1).optional(),
   mcpServers: z.array(z.unknown()).optional(),
   precheck: z.string().min(1).optional(),
   fireAt: z.string().datetime({ offset: true }).optional(),

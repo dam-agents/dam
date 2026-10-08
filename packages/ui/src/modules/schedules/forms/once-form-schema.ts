@@ -1,3 +1,4 @@
+import { SESSION_TITLE_MAX_LENGTH } from "agent-runtime-api";
 import { detectTimezone } from "api-server-api";
 import { z } from "zod";
 
@@ -15,6 +16,13 @@ export const onceFormSchema = z
     time: z.string(),
     timezone: z.string().trim().min(1, "Required"),
     model: z.string(),
+    sessionTitle: z
+      .string()
+      .trim()
+      .max(
+        SESSION_TITLE_MAX_LENGTH,
+        `Max ${SESSION_TITLE_MAX_LENGTH} characters`,
+      ),
   })
   .superRefine((v, ctx) => {
     if (v.when !== "at") return;
@@ -40,6 +48,7 @@ export function onceFormDefaults(existing?: Schedule): OnceFormValues {
     time,
     timezone,
     model: existing?.model ?? "",
+    sessionTitle: existing?.sessionTitle ?? "",
   };
 }
 

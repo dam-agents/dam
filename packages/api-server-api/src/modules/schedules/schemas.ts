@@ -1,3 +1,4 @@
+import { sessionTitleSchema } from "agent-runtime-api";
 import { z } from "zod";
 
 const scheduleSessionModeSchema = z.enum(["continuous", "fresh"]);
@@ -38,6 +39,7 @@ export const scheduleCreateCronInputSchema = z.object({
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.optional(),
   model: scheduleModelSchema.optional(),
+  sessionTitle: sessionTitleSchema.optional(),
 });
 
 export const scheduleCreateRRuleInputSchema = z.object({
@@ -50,6 +52,7 @@ export const scheduleCreateRRuleInputSchema = z.object({
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.optional(),
   model: scheduleModelSchema.optional(),
+  sessionTitle: sessionTitleSchema.optional(),
 });
 
 export const scheduleUpdateRRuleInputSchema = z.object({
@@ -62,6 +65,7 @@ export const scheduleUpdateRRuleInputSchema = z.object({
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.nullable().optional(),
   model: scheduleModelSchema.nullable().optional(),
+  sessionTitle: sessionTitleSchema.nullable().optional(),
 });
 
 const localDateTimeSchema = z
@@ -79,6 +83,7 @@ export const scheduleCreateOnceInputSchema = z
     timezone: z.string().min(1),
     task: z.string().min(1),
     model: z.string().min(1).optional(),
+    sessionTitle: sessionTitleSchema.optional(),
   })
   .strict();
 
@@ -90,6 +95,7 @@ export const scheduleUpdateOnceInputSchema = z
     timezone: z.string().min(1),
     task: z.string().min(1),
     model: z.string().min(1).optional(),
+    sessionTitle: sessionTitleSchema.optional(),
   })
   .strict();
 
@@ -125,6 +131,7 @@ const scheduleSpecCronSchema = z
     task: z.string().optional(),
     precheck: precheckSchema.optional(),
     model: scheduleModelSchema.optional(),
+    sessionTitle: sessionTitleSchema.optional(),
     enabled: z.boolean(),
     sessionMode: scheduleSessionModeSchema.optional(),
     createdBy: scheduleCreatorSchema,
@@ -141,6 +148,7 @@ const scheduleSpecRRuleSchema = z
     task: z.string().optional(),
     precheck: precheckSchema.optional(),
     model: scheduleModelSchema.optional(),
+    sessionTitle: sessionTitleSchema.optional(),
     enabled: z.boolean(),
     sessionMode: scheduleSessionModeSchema.optional(),
     createdBy: scheduleCreatorSchema,
@@ -160,6 +168,7 @@ const scheduleSpecOnceSchema = z
       })
       .optional(),
     model: z.string().optional(),
+    sessionTitle: z.string().optional(),
     task: z.string().optional(),
     enabled: z.boolean(),
     createdBy: scheduleCreatorSchema,

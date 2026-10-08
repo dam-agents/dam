@@ -34,6 +34,15 @@ describe("composeSessionList", () => {
     ]);
   });
 
+  it("prefers a title the platform set over the harness's own", () => {
+    const out = composeSessionList(
+      [{ sessionId: "s1", title: "harness title", updatedAt: null }],
+      { s1: entry({ mode: "chat", title: "Daily brief" }) },
+      { isTombstoned: notTombstoned, isRunning: notRunning },
+    );
+    expect(out[0]?.title).toBe("Daily brief");
+  });
+
   it("lists a store-only session with a null title", () => {
     const out = composeSessionList(
       [],

@@ -73,6 +73,7 @@ export function kitScheduleFormValues(
     quietHours: override?.quietHours ?? [],
     precheck: declaredPrecheck(schedule, override),
     model: "",
+    sessionTitle: "",
   };
 }
 

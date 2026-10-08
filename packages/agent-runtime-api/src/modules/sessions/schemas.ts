@@ -55,6 +55,22 @@ export const sessionListInputSchema = z
   })
   .optional();
 
+export const SESSION_TITLE_MAX_LENGTH = 200;
+
+export const sessionTitleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(SESSION_TITLE_MAX_LENGTH);
+
+export const setSessionTitleInputSchema = z.union([
+  z.object({
+    sessionId: z.string().min(1),
+    title: sessionTitleSchema.nullable(),
+  }),
+  z.object({ ref: z.string().min(1), title: sessionTitleSchema.nullable() }),
+]);
+
 export const sessionHistoryInputSchema = z.object({
   sessionId: z.string().min(1),
 });

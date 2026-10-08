@@ -34,6 +34,7 @@ function toView(sched: Schedule) {
     task: sched.spec.task ?? null,
     precheck: sched.spec.precheck ?? null,
     model: sched.spec.model ?? null,
+    sessionTitle: sched.spec.sessionTitle ?? null,
     enabled: sched.spec.enabled,
     sessionMode: sched.spec.sessionMode,
     createdBy: sched.spec.createdBy,

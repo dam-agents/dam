@@ -5,7 +5,7 @@ import {
   SessionMode,
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
-import { type CSSProperties, type Ref, useMemo } from "react";
+import { type CSSProperties, type Ref, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import { setSessionSeen, useSessionPages } from "../api/queries.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
 import { SESSION_CATEGORY_LABELS } from "../lib/session-category.js";
 import { useSessionConversations } from "../lib/use-session-conversations.js";
+import { RenameSessionDialog } from "./rename-session-dialog.js";
 import { SessionListSkeleton } from "./session-list-skeleton.js";
 import { SessionRow } from "./session-row.js";
 import { SidebarSection } from "./sidebar-section.js";
@@ -62,6 +63,7 @@ export function SessionsSidebar({
   const deleteSession = useStore((s) => s.deleteSession);
   const showConfirm = useStore((s) => s.showConfirm);
   const goBack = useStore((s) => s.goBack);
+  const [renaming, setRenaming] = useState<SessionView | null>(null);
 
   const agentOperable = useIsAgentOperable(selectedAgent);
   const conversationOf = useSessionConversations(selectedAgent);
@@ -147,6 +149,7 @@ export function SessionsSidebar({
           if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);
           onResumeSession(s.sessionId, s.mode);
         }}
+        onRename={() => setRenaming(s)}
         onDelete={() => confirmDelete(s.sessionId, s.title)}
         {...(telemetryEnabled && selectedAgent
           ? {
@@ -249,6 +252,13 @@ export function SessionsSidebar({
           </div>
         )}
       </div>
+      {renaming && selectedAgent && (
+        <RenameSessionDialog
+          agentId={selectedAgent}
+          session={renaming}
+          onClose={() => setRenaming(null)}
+        />
+      )}
     </SidebarSection>
   );
 }

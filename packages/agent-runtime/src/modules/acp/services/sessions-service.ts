@@ -131,6 +131,24 @@ export function createSessionsService(deps: {
       return stored ? { frames: stored, truncated: false } : EMPTY_HISTORY;
     },
 
+    async setTitle(input) {
+      const sessionId =
+        "ref" in input
+          ? deps.sessionMetadata.findByRef(input.ref)
+          : input.sessionId;
+      const entry =
+        sessionId !== undefined
+          ? deps.sessionMetadata.get(sessionId)
+          : undefined;
+      if (sessionId === undefined || !entry) return false;
+      const { title: _previous, ...meta } = entry.meta;
+      deps.sessionMetadata.set(
+        sessionId,
+        input.title === null ? meta : { ...meta, title: input.title },
+      );
+      return true;
+    },
+
     async storeDelegationFrames(input) {
       return deps.delegations.store(input);
     },

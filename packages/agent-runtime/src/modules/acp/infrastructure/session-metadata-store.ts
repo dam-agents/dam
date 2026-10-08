@@ -10,6 +10,7 @@ export const platformSessionMetaSchema = z.object({
   ref: z.string().optional(),
   reportTo: z.string().optional(),
   reportName: z.string().optional(),
+  title: z.string().optional(),
 });
 
 const sessionMetaEntrySchema = z.object({
