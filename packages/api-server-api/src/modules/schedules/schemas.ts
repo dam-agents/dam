@@ -168,7 +168,7 @@ const scheduleSpecOnceSchema = z
       })
       .optional(),
     model: z.string().optional(),
-    sessionTitle: z.string().optional(),
+    sessionTitle: sessionTitleSchema.optional(),
     task: z.string().optional(),
     enabled: z.boolean(),
     createdBy: scheduleCreatorSchema,

@@ -1,6 +1,6 @@
 import { SESSION_TITLE_MAX_LENGTH } from "agent-runtime-api";
 import type { SessionView } from "api-server-api";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import {
   DialogActions,
@@ -23,14 +23,6 @@ export function RenameSessionDialog({ agentId, session, onClose }: Props) {
   const rename = useRenameSession(agentId);
   const pending = rename.isPending;
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !pending) onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [pending, onClose]);
-
   const save = () => {
     if (pending) return;
     const trimmed = title.trim();
@@ -45,7 +37,11 @@ export function RenameSessionDialog({ agentId, session, onClose }: Props) {
   };
 
   return (
-    <Modal>
+    <Modal
+      onClose={() => {
+        if (!pending) onClose();
+      }}
+    >
       <DialogHeader
         onClose={onClose}
         closeDisabled={pending}
