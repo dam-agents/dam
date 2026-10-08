@@ -167,10 +167,10 @@ export function ChatInput({
   }, [key, clearDraft, onSend]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !isMobile()) {
-      e.preventDefault();
-      send();
-    }
+    if (e.key !== "Enter" || e.shiftKey || isMobile()) return;
+    e.preventDefault();
+    if (e.altKey) document.execCommand("insertText", false, "\n");
+    else send();
   };
 
   const placeholder = isComputing ? "Queue a message..." : "Message...";
