@@ -24,7 +24,7 @@ export function useHarnessSpend(agentId: string, from: string, to: string) {
   const query = useQuery({
     queryKey: ["harness-spend", agentId, from, to],
     queryFn:
-      operable && !lacksLiveUpdates
+      operable && !lacksLiveUpdates && reportsOwnSpend
         ? () => agentTrpc(agentId).sessions.spend.query({ from, to })
         : skipToken,
     staleTime: 30_000,
