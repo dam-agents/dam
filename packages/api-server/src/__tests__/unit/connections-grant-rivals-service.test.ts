@@ -101,6 +101,7 @@ function setup(initialGrants: string[] = []) {
     githubAppEngine: unused(),
     s3CredentialProbe: unused(),
     providerBalance: unused(),
+    providerKeyProbe: unused(),
     oauthCallbackUrl: "https://example.com/callback",
     brandName: "Test",
     connectionLock: (_key, fn) => fn(),

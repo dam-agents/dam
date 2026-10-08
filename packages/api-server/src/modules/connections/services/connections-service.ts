@@ -5,6 +5,7 @@ import {
   PROVIDER_TEMPLATE_IDS,
   type ConnectionStatus,
   SHARED_KB_TEMPLATE_ID,
+  IBM_LITELLM_HOST,
   type AgentConnections,
   type Connection,
   type ConnectionCreateInput,
@@ -68,6 +69,7 @@ import type {
   S3CredentialProbe,
   S3CredentialProbeFailure,
 } from "../domain/s3-credential-probe.js";
+import type { ProviderKeyProbe } from "../domain/provider-key-probe.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
@@ -125,6 +127,7 @@ export function createConnectionsService(deps: {
   githubAppEngine: GitHubAppEngine;
   s3CredentialProbe: S3CredentialProbe;
   providerBalance: ProviderBalanceSource;
+  providerKeyProbe: ProviderKeyProbe;
   oauthCallbackUrl: string;
   brandName: string;
   connectionLock: XactLock;
@@ -523,6 +526,33 @@ export function createConnectionsService(deps: {
     });
   }
 
+  async function assertProviderKeyAccepted(
+    templateId: string,
+    key: string,
+    connectionId: string,
+  ): Promise<void> {
+    const outcome = await deps.providerKeyProbe.probe(templateId, key);
+    if (outcome.ok) return;
+    securityLog("warn", "connection.provider_key_probe_failed", {
+      category: "credential",
+      actor: deps.ownerId,
+      actorKind: "user",
+      target: connectionId,
+      result: "failure",
+      reason: outcome.reason,
+      detail: { templateId, probe: outcome.detail },
+    });
+    if (outcome.reason !== "refused") return;
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        `The provider refused this key (${outcome.detail}). Check that it is complete and still valid.` +
+        (templateId === "ibm-litellm"
+          ? ` There are two ETE LiteLLM instances, and only keys from https://${IBM_LITELLM_HOST}/ui?page=api-keys work with ${deps.brandName}.`
+          : ""),
+    });
+  }
+
   async function rotateSigv4Keys(
     conn: Connection,
     auth: Extract<Connection["auth"], { kind: "sigv4" }>,
@@ -703,9 +733,12 @@ export function createConnectionsService(deps: {
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
 
       switch (conn.auth.kind) {
-        case "header":
-          await rotateHeaderValue(conn, conn.auth, singleValueOf(credential));
+        case "header": {
+          const value = singleValueOf(credential);
+          await assertProviderKeyAccepted(conn.templateId, value, conn.id);
+          await rotateHeaderValue(conn, conn.auth, value);
           break;
+        }
         case "client-credentials":
           await rotateClientSecret(conn, conn.auth, singleValueOf(credential));
           break;
@@ -1119,6 +1152,14 @@ export function createConnectionsService(deps: {
         );
       }
 
+      const headerValue =
+        auth.kind === "header" && secretPath
+          ? built.secrets.get(secretPath)?.["value"]
+          : undefined;
+      if (headerValue) {
+        await assertProviderKeyAccepted(template.id, headerValue, id);
+      }
+
       if (secretPath) {
         const placeholderSds = buildConnectionSdsFields(
           contributions,
@@ -1182,10 +1223,6 @@ export function createConnectionsService(deps: {
           kind: template.category === "mcp" ? "mcp" : "oauth_app",
         });
       }
-      const headerValue =
-        auth.kind === "header" && secretPath
-          ? built.secrets.get(secretPath)?.["value"]
-          : undefined;
       if (headerValue) {
         await recordAccountLabel(record, headerValue, deps);
       }

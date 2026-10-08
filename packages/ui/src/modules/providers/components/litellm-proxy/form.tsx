@@ -1,6 +1,6 @@
 import { Launch } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CURVE_BENDER_HOST, PROVIDERS } from "api-server-api";
+import { CURVE_BENDER_HOST, IBM_LITELLM_HOST, PROVIDERS } from "api-server-api";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -28,6 +28,9 @@ const liteLlmProxyCredentialSchema = z
   });
 
 type FormValues = z.infer<typeof liteLlmProxyCredentialSchema>;
+
+const MARK =
+  "rounded-sm bg-yellow-200 px-0.5 text-foreground dark:bg-yellow-400/30";
 
 const LITELLM_PROVIDERS = {
   "ibm-litellm": {
@@ -110,6 +113,21 @@ export function LiteLlmProxyForm({
           {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
         </Button>
       </div>
+
+      {provider === "ibm-litellm" && (
+        <p className="text-sm text-muted-foreground">
+          There are two ETE LiteLLM instances. Only keys created at{" "}
+          <a
+            href={`https://${IBM_LITELLM_HOST}/ui?page=api-keys`}
+            {...externalLinkProps}
+            className="underline hover:text-primary"
+          >
+            ete-litellm.ai-models.<mark className={MARK}>vpc</mark>.res.ibm.com
+          </a>{" "}
+          work here; keys from ete-litellm.ai-models.
+          <mark className={MARK}>vpc-int</mark>.res.ibm.com do not.
+        </p>
+      )}
     </ProviderFormShell>
   );
 }
