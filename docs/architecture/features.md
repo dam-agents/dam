@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-10-01
+Last verified: 2026-10-08
 
 ## Overview
 
@@ -8,7 +8,7 @@ Last verified: 2026-10-01
 feature defaults **off**; a user opts in through a hidden "Experimental
 features" settings tab (revealed by five taps on the version string). The
 current features are advanced connection types, the new sandbox runtime,
-interactive artifacts, session costs, addressed credential injection (a create-page and agent-settings switch for an agent whose gateway injects only requests that name a connection; a starter kit sets the same field whatever the flag says), agent telemetry (a per-reply timeline
+interactive artifacts, addressed credential injection (a create-page and agent-settings switch for an agent whose gateway injects only requests that name a connection; a starter kit sets the same field whatever the flag says; the flag also shows the [browser panel](browser-panel.md) on such agents), agent telemetry (a per-reply timeline
 in the conversation) and agent avatars (a robot head drawn in the browser from
 a hash of the agent's name and its owner's identity, so nothing is stored,
 two people's default-named agents look different, and renaming an agent
@@ -18,8 +18,17 @@ browser: where a workspace grants the persona scope, the api-server uploads a
 PNG copy to a public image host for the message icon, whatever the owner's
 flag says ([channels](channels.md#slack-scopes-required-vs-optional)). Graduating a feature to always-on is deletion: drop its
 id from the enum and its gates from the UI — stored rows for a dropped id are
-simply never read again (Knowledge Bases and the
-[starter kit](starter-kits.md) catalog graduated this way).
+simply never read again (Knowledge Bases, the
+[starter kit](starter-kits.md) catalog and session costs graduated this way).
+
+An operator can take a feature out of users' hands: the chart's `features`
+value gives each feature a mode, `experimental` (the default, and what an
+omitted feature reads as) leaving the per-user switch, `on` or `off` deciding
+for every user whatever they stored. A pinned feature's switch is hidden from
+the settings tab, and the api-server answers its flag from the mode, so every
+surface that reads flags — the UI and agent surfaces alike — sees the same
+answer. Stored rows are kept, so returning a feature to `experimental` restores
+each user's own choice.
 
 A per-user flag says what a user wants to see; it cannot say what the install
 can do. The same module therefore answers a second, install-wide question —
@@ -99,8 +108,9 @@ where a feature *appears*:
   section is computed. The gate is a cost decision, not an access one: the
   section rides in a procedure nobody can opt out of, so leaving it ungated
   would charge every user its backing queries to render nothing. Off, the
-  field comes back empty; the procedure itself stays open. The spend-by-
-  session-kind rollup in [metrics](metrics.md) is the first of these.
+  field comes back empty; the procedure itself stays open. No current
+  feature gates a rollup (the spend-by-session-kind rollup in
+  [metrics](metrics.md) did before it graduated).
 
 What none of these do is **gate an endpoint**: the feature's tRPC procedures
 remain callable by the authenticated owner regardless of the flag, and a

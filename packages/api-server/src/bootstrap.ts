@@ -119,6 +119,7 @@ import {
 import {
   createHarnessConfigSnapshotWriter,
   harnessConfigSupportOf,
+  composeSessionModelChoices,
 } from "./modules/harness-config/index.js";
 import {
   composeSchedulesAtBoot,
@@ -1068,6 +1069,9 @@ export async function bootstrap() {
       `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
   });
 
+  const objectStoreAgentUrl = config.objectStorageAgentEndpoint
+    ? new URL(config.objectStorageAgentEndpoint)
+    : null;
   const {
     relay: approvalsRelay,
     gate: extAuthzGate,
@@ -1088,8 +1092,10 @@ export async function bootstrap() {
     attendance: turnAttendance,
     wrapperFrameSender,
     holdSeconds: config.approvalHoldSeconds,
-    platformAllowedHosts: config.objectStorageAgentEndpoint
-      ? [new URL(config.objectStorageAgentEndpoint).hostname]
+    platformAllowedAuthorities: objectStoreAgentUrl
+      ? [
+          `${objectStoreAgentUrl.hostname}:${objectStoreAgentUrl.port || (objectStoreAgentUrl.protocol === "https:" ? 443 : 80)}`,
+        ]
       : [],
   });
   if (config.slackAppToken) {
@@ -1105,6 +1111,16 @@ export async function bootstrap() {
 
   const schedulesBoot = composeSchedulesAtBoot({
     db,
+    agentOnceLimits: {
+      maxOpen: config.onceScheduleAgentMaxOpen,
+      maxPerHour: config.onceScheduleAgentMaxPerHour,
+    },
+    sessionModelChoices: composeSessionModelChoices({
+      db,
+      getCapabilities: async (agentId) =>
+        (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+          ?.runtimeCapabilities ?? null,
+    }),
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
@@ -1125,16 +1141,34 @@ export async function bootstrap() {
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
     async (event, input) => {
-      const { scheduleId, precheck } =
+      const { scheduleId, precheck, once } =
         event.payload as Partial<TriggerEventPayload>;
-      if (!scheduleId || !precheck) return;
+      if (!scheduleId) return;
+      if (once) {
+        if (input.outcome === "failed")
+          await schedulesBoot.runner.recordOnceFailure(
+            scheduleId,
+            input.detail ?? "the one-time task could not start",
+          );
+        return;
+      }
+      if (!precheck && input.stage !== "run") return;
       await schedulesBoot.runner.reportFire({
         scheduleId,
         eventId: input.eventId,
-        ranPrecheck: precheck,
+        ranPrecheck: precheck ?? null,
         outcome: input.outcome,
+        ...(input.stage ? { stage: input.stage } : {}),
         ...(input.detail ? { detail: input.detail } : {}),
       });
+    },
+  );
+  runtimeDelivery.registerEventLifecycleListener(
+    "trigger",
+    async (event, transition) => {
+      const { scheduleId } = event.payload as Partial<TriggerEventPayload>;
+      if (!scheduleId) return;
+      await schedulesBoot.runner.recordDelivery(scheduleId, transition);
     },
   );
 
@@ -1301,6 +1335,11 @@ export async function bootstrap() {
   });
   await periodicJobs.register("schedules-reconcile", 5 * 60_000, () =>
     schedulesBoot.runner.restoreAll(),
+  );
+  await periodicJobs.register(
+    "schedules-once-retention",
+    24 * 60 * 60 * 1000,
+    () => schedulesBoot.retentionTick(),
   );
 
   const wakeAgentFor = async (agentId: string) => {

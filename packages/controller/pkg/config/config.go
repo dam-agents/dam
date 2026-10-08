@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -65,6 +66,7 @@ type Config struct {
 
 	GatewayUpstreamTrustBundle string
 	ExtraTrustedCAs            string
+	GatewayEgress              GatewayEgress
 }
 
 const otelEnvPrefix = "OTEL_"
@@ -213,6 +215,14 @@ func LoadFromEnv() (*Config, error) {
 	if err := decodeJSONEnv("AGENT_VM", &cfg.VM); err != nil {
 		return nil, err
 	}
+	if err := decodeJSONEnv("GATEWAY_EGRESS", &cfg.GatewayEgress); err != nil {
+		return nil, err
+	}
+	for _, c := range cfg.GatewayEgress.ExtraCIDRs {
+		if _, err := netip.ParsePrefix(c); err != nil {
+			return nil, fmt.Errorf("GATEWAY_EGRESS: extraCidrs entry %q is not a CIDR: %w", c, err)
+		}
+	}
 	if cfg.VM.Enabled && (cfg.VM.Runner.Image == "" || cfg.VM.Runner.Storage == "") {
 		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.image and runner.storage")
 	}
@@ -238,7 +248,7 @@ func LoadFromEnv() (*Config, error) {
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentProbesEnabled = envOrDefaultBool("AGENT_PROBES_ENABLED", true)
-	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1")
+	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.2")
 	cfg.MachineDNSImage = envOrDefault("MACHINE_DNS_IMAGE", "mirror.gcr.io/coredns/coredns:1.14.7")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { createWorld, frames, type Client, type Frame } from "./acp-world.js";
 
 /**
@@ -63,6 +63,14 @@ function olderOf(client: Client, id: number): string {
   return clipped.older!;
 }
 
+function startTurn(world: ReturnType<typeof createWorld>): Client {
+  const alice = world.connect();
+  alice.send(frames.newSession(1));
+  world.harness().replyTo("session/new", { sessionId: "sess-busy" });
+  alice.send(frames.prompt(2, "sess-busy", "run for a while"));
+  return alice;
+}
+
 function loadTail(id: number, sessionId: string, loadToken?: string): Frame {
   return {
     jsonrpc: "2.0",
@@ -106,6 +114,17 @@ function loadPage(
   };
 }
 
+function toolFrame(
+  sessionUpdate: "tool_call" | "tool_call_update",
+  toolCallId: string,
+): Frame {
+  return {
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: { sessionId: SESSION, update: { sessionUpdate, toolCallId } },
+  };
+}
+
 async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -118,12 +137,16 @@ function warmTranscript(
   alice.send(frames.newSession(1));
   world.harness().replyTo("session/new", { sessionId: SESSION });
   for (const text of texts) {
-    world.harness().emit(frames.agentMessage(SESSION, text));
+    world.harness().emit(frames.agentMessage(SESSION, text, text));
   }
   return alice;
 }
 
 describe("acp-runtime: history replay", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   /**
    * TEST_SCENARIO: Six messages have accumulated and the tail cap is three.
    * A viewer that opts into the tail must receive exactly the newest three,
@@ -220,6 +243,80 @@ describe("acp-runtime: history replay", () => {
   });
 
   /**
+   * TEST_SCENARIO: A harness streams one reply as many small chunks, and the
+   * tail cap falls inside that run. The viewer must get the whole reply, not
+   * one that starts mid-word, and the older page must end where it starts.
+   */
+  it("should start the tail where a chunked reply starts", () => {
+    const world = createWorld({ replayTailEvents: 2 });
+    warmTranscript(world, ["m1"]);
+    for (const chunk of ["It fits with room to sp", "are", "."]) {
+      world.harness().emit(frames.agentMessage(SESSION, chunk));
+    }
+
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+    expect(replayedUpdates(bob).map((u) => u.text)).toEqual([
+      "It fits with room to sp",
+      "are",
+      ".",
+    ]);
+
+    bob.send(loadPage(2, SESSION, olderOf(bob, 1)));
+    expect(
+      replayedUpdates(bob)
+        .slice(3)
+        .map((u) => u.text),
+    ).toEqual(["m1"]);
+  });
+
+  /**
+   * TEST_SCENARIO: Two tool calls run side by side and the tail cap falls
+   * between their tool_call frames and their updates. The tail must include
+   * both tool_call frames, because a client drops an update for a tool call
+   * it never saw.
+   */
+  it("should keep tool calls with their updates in the tail", () => {
+    const world = createWorld({ replayTailEvents: 2 });
+    warmTranscript(world, ["m1"]);
+    world.harness().emit(toolFrame("tool_call", "tc-a"));
+    world.harness().emit(toolFrame("tool_call", "tc-b"));
+    world.harness().emit(toolFrame("tool_call_update", "tc-a"));
+    world.harness().emit(toolFrame("tool_call_update", "tc-b"));
+
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+
+    expect(replayedUpdates(bob).map((u) => u.kind)).toEqual([
+      "tool_call",
+      "tool_call",
+      "tool_call_update",
+      "tool_call_update",
+    ]);
+    olderOf(bob, 1);
+  });
+
+  /**
+   * TEST_SCENARIO: An update names a tool call whose tool_call frame is not
+   * in the log. Nothing can bring that frame back, so the update must not
+   * pull the whole log into the tail.
+   */
+  it("should not widen the tail for an update whose tool call is not in the log", () => {
+    const world = createWorld({ replayTailEvents: 2 });
+    warmTranscript(world, ["m1", "m2", "m3"]);
+    world.harness().emit(toolFrame("tool_call_update", "tc-gone"));
+    world.harness().emit(frames.agentMessage(SESSION, "m4", "m4"));
+
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+
+    expect(replayedUpdates(bob).map((u) => u.kind)).toEqual([
+      "tool_call_update",
+      "agent_message_chunk",
+    ]);
+  });
+
+  /**
    * TEST_SCENARIO: Paging must not disturb the live view. A page request
    * replays old entries to the asking channel only, and that channel's live
    * cursor stays where it was — new messages still arrive exactly once.
@@ -297,9 +394,9 @@ describe("acp-runtime: history replay", () => {
    * the viewer must not be offered a "load more" that cannot load.
    */
   it("should mark the eviction floor as clipped without a cursor", () => {
-    const entryBytes = JSON.stringify(
-      frames.agentMessage(SESSION, "m1"),
-    ).length;
+    const entryBytes =
+      JSON.stringify(frames.agentMessage(SESSION, "m1", "m1")).length +
+      JSON.stringify({ turnId: crypto.randomUUID() }).length;
     const world = createWorld({
       replayTailEvents: 2,
       logBytesCap: entryBytes * 4,
@@ -407,6 +504,137 @@ describe("acp-runtime: history replay", () => {
   });
 
   /**
+   * TEST_SCENARIO: A cold load runs past its budget while a turn is running,
+   * so the recycle of the seemingly wedged harness waits for the turn, with a
+   * grace period. Then the load answers, a moment late: the harness is alive.
+   * Killing it anyway would end the running turn for nothing, and the
+   * harness would record that turn's tool call as rejected by the user.
+   */
+  it("should call off the recycle when the abandoned load answers late", () => {
+    vi.useFakeTimers();
+    const world = createWorld({
+      harnessLoadTimeoutMs: 30_000,
+      envForceRecycleMs: 60_000,
+    });
+    const alice = startTurn(world);
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+    const abandoned = world.harness().received("session/load")[0]!.id;
+
+    vi.advanceTimersByTime(30_000);
+    expect(bob.reply(1)).toMatchObject({ error: { code: -32000 } });
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: abandoned,
+      result: { sessionId: SESSION, modes: null },
+    });
+    vi.advanceTimersByTime(60_000);
+
+    expect(world.harness().killed()).toBe(false);
+    expect(alice.closes).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: An env change is already waiting for the running turn
+   * when a cold load runs past its budget and then answers late. The late
+   * answer clears the harness of being wedged, but not of the credentials it
+   * still holds: the env recycle stays owed and goes through when its grace
+   * period ends.
+   */
+  it("should keep an owed env recycle when the abandoned load answers late", () => {
+    vi.useFakeTimers();
+    const world = createWorld({
+      harnessLoadTimeoutMs: 30_000,
+      envForceRecycleMs: 60_000,
+    });
+    const alice = startTurn(world);
+    world.runtime.refreshEnv({ force: true });
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+    const abandoned = world.harness().received("session/load")[0]!.id;
+
+    vi.advanceTimersByTime(30_000);
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: abandoned,
+      result: { sessionId: SESSION, modes: null },
+    });
+    vi.advanceTimersByTime(30_000);
+
+    expect(world.harness().killed()).toBe(true);
+    expect(alice.closes[0]).toMatchObject({
+      code: 1011,
+      reason: "agent recycled for env change",
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: A cold load runs past its budget while a turn is running,
+   * and only then does an env change arrive, before the load answers late.
+   * The change came while the harness was thought wedged, but it is owed all
+   * the same: the late answer must not call it off with the unresponsive
+   * recycle, or the harness would keep the old credentials.
+   */
+  it("should keep an env recycle that arrives before the late answer", () => {
+    vi.useFakeTimers();
+    const world = createWorld({
+      harnessLoadTimeoutMs: 30_000,
+      envForceRecycleMs: 60_000,
+    });
+    const alice = startTurn(world);
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+    const abandoned = world.harness().received("session/load")[0]!.id;
+
+    vi.advanceTimersByTime(30_000);
+    world.runtime.refreshEnv({ force: true });
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: abandoned,
+      result: { sessionId: SESSION, modes: null },
+    });
+    vi.advanceTimersByTime(60_000);
+
+    expect(world.harness().killed()).toBe(true);
+    expect(alice.closes[0]).toMatchObject({
+      code: 1011,
+      reason: "agent recycled for env change",
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: Two cold loads run past their budget while a turn is
+   * running, and only one of them ever answers. The harness still owes the
+   * other, so it stays wedged and is recycled when the grace period ends.
+   */
+  it("should still recycle when another abandoned load stays unanswered", () => {
+    vi.useFakeTimers();
+    const world = createWorld({
+      harnessLoadTimeoutMs: 30_000,
+      envForceRecycleMs: 60_000,
+    });
+    const alice = startTurn(world);
+    const bob = world.connect();
+    bob.send(loadTail(1, SESSION));
+    bob.send(loadTail(2, "sess-other"));
+    const [answered] = world.harness().received("session/load");
+
+    vi.advanceTimersByTime(30_000);
+    world.harness().emit({
+      jsonrpc: "2.0",
+      id: answered!.id,
+      result: { sessionId: SESSION, modes: null },
+    });
+    vi.advanceTimersByTime(60_000);
+
+    expect(world.harness().killed()).toBe(true);
+    expect(alice.closes[0]).toMatchObject({
+      code: 1011,
+      reason: "agent restarted after it stopped answering",
+    });
+  });
+
+  /**
    * TEST_SCENARIO: First open after a pod restart. The runtime asks the
    * harness once, the harness replays the whole conversation, and none of
    * that replay may reach the viewer live — every opted-in viewer gets the
@@ -427,7 +655,7 @@ describe("acp-runtime: history replay", () => {
     expect((forwarded?.params as { cwd?: string }).cwd).toBe("/workspace");
 
     for (const text of ["m1", "m2", "m3", "m4"]) {
-      world.harness().emit(frames.agentMessage(SESSION, text));
+      world.harness().emit(frames.agentMessage(SESSION, text, text));
     }
     expect(replayedUpdates(bob)).toEqual([]);
     expect(replayedUpdates(carol)).toEqual([]);

@@ -99,16 +99,14 @@ is one of:
 
 ### Limits
 
-Text bodies only, no binary and no streaming. At most 1 MiB each way, 30 seconds
-per request, and 8 requests at once per page. Only `content-type` passes through:
+Text bodies only, no binary and no streaming. At most 1 MiB each way. Only `content-type` passes through:
 the platform drops every other request and response header, so do not rely on
 cookies, auth headers or custom headers.
 
 ### Where it works
 
 The same rules as `sendPrompt`: only in the owner's docked preview beside a chat
-with the publishing agent, on the latest version, with the feature enabled. It
-never works on shared pages, library previews or historical versions. There, the
+with the publishing agent, on the latest version, with the feature enabled. Elsewhere, the
 call rejects with `timeout` after 3 minutes. The wait is that long because waking a
 hibernated agent can take up to 2 minutes. Show a loading state while you wait.
 

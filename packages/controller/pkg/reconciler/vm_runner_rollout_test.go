@@ -279,7 +279,7 @@ func TestTheRunnerTemplateHashIsPinned(t *testing.T) {
 
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "00d946a8d6900595", dep.Annotations[annRunnerTemplate])
+	assert.Equal(t, "17a6921af08fc832", dep.Annotations[annRunnerTemplate])
 }
 
 // TEST_SCENARIO: a runner's pod is unchanged, but its labels were edited by hand and its owner reference points at nothing — the runner ServiceAccount was recreated. Both are restored without touching the pod, so no machine restarts and no roll starts.
@@ -319,4 +319,110 @@ func TestAnUnchangedRunnerGetsItsLabelsAndOwnerBack(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, pvc.OwnerReferences, 1)
 	assert.Equal(t, types.UID("sa-now"), pvc.OwnerReferences[0].UID)
+}
+
+// TEST_SCENARIO: with releases staged on the node, a new runner image is not a changed pod. Every owner's pod keeps its image and every machine on it, and each owner's release ConfigMap names the new image, which the pod's loader takes in place.
+func TestANewRunnerImageReachesEveryOwnerWithoutAPodRoll(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t)
+	r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
+	for _, owner := range []string{"owner-a", "owner-b"} {
+		createRolloutRunner(t, r, owner)
+		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+	}
+	r.config.VM.Runner.Image = runnerV2
+
+	for _, owner := range []string{"owner-a", "owner-b"} {
+		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+		assert.Equal(t, runnerV1, runnerImageOf(t, r, owner), "the pod keeps the image it started with")
+		cm, err := r.client.CoreV1().ConfigMaps("test-agents").Get(ctx, r.runnerReleaseName(owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, runnerV2, cm.Data[runnerReleaseKey])
+		require.Len(t, cm.OwnerReferences, 1)
+		assert.Equal(t, r.runnerName(owner), cm.OwnerReferences[0].Name)
+	}
+}
+
+// TEST_SCENARIO: a runner release built against another VM runtime cannot adopt the machines, so the pod's loader holds on to the release it runs. The controller reads that hold from the runner and rolls the pod onto the new image, through the same roll as any changed pod. A release that is only not staged yet is waited for instead.
+func TestARunnerReleaseTheLoaderCannotTakeRollsThePod(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t)
+	r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
+	createRolloutRunner(t, r, "owner-a")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	settleRunnerPod(t, r, "owner-a")
+	r.config.VM.Runner.Image = runnerV2
+
+	nodes["owner-a"].release = vmrunner.RunnerRelease{Running: runnerV1, Target: runnerV2, Held: vmrunner.HeldUnstaged}
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"))
+
+	nodes["owner-a"].release.Held = vmrunner.HeldFailed
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "a release that failed to take over is not rolled onto")
+
+	nodes["owner-a"].release.Held = vmrunner.HeldRuntime
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"))
+}
+
+// TEST_SCENARIO: a runner that does not answer right after it was named a new release is mid hand-off, and its pod is left alone. One that still does not answer long after has a loader that brings up neither the new release nor the old one, and the pod is rolled onto the configured image, the only way its machines get a working runner again.
+func TestARunnerThatStaysUnreachableAfterANewReleaseRollsThePod(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t)
+	r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
+	createRolloutRunner(t, r, "owner-a")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	settleRunnerPod(t, r, "owner-a")
+	r.config.VM.Runner.Image = runnerV2
+	r.runnerEndpoint = func(string) string { return "https://127.0.0.1:1" }
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "a runner mid hand-off is not rolled")
+
+	cms := r.client.CoreV1().ConfigMaps("test-agents")
+	cm, err := cms.Get(ctx, r.runnerReleaseName("owner-a"), metav1.GetOptions{})
+	require.NoError(t, err)
+	cm.Annotations[annRunnerReleaseNamedAt] = time.Now().Add(-runnerReleaseUnreachableRoll - time.Minute).UTC().Format(time.RFC3339)
+	_, err = cms.Update(ctx, cm, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"))
+}
+
+// TEST_SCENARIO: a runner whose hand-off has an outcome keeps its pod's old image for good, so it must not be rolled for a later blip in its answers — least of all onto a release that failed. Once it has answered that it runs the release, or holds it as failed, an unreachable runner long after is left alone.
+func TestARunnerThatTookItsReleaseIsNotRolledForALaterBlip(t *testing.T) {
+	for _, outcome := range []vmrunner.RunnerRelease{
+		{Running: runnerV2, Target: runnerV2},
+		{Running: runnerV1, Target: runnerV2, Held: vmrunner.HeldFailed},
+	} {
+		t.Run(outcome.Held, func(t *testing.T) { aRunnerWithAnOutcomeIsNotRolled(t, outcome) })
+	}
+}
+
+func aRunnerWithAnOutcomeIsNotRolled(t *testing.T, outcome vmrunner.RunnerRelease) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t)
+	r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
+	createRolloutRunner(t, r, "owner-a")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	settleRunnerPod(t, r, "owner-a")
+	r.config.VM.Runner.Image = runnerV2
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	cms := r.client.CoreV1().ConfigMaps("test-agents")
+	cm, err := cms.Get(ctx, r.runnerReleaseName("owner-a"), metav1.GetOptions{})
+	require.NoError(t, err)
+	cm.Annotations[annRunnerReleaseNamedAt] = time.Now().Add(-runnerReleaseUnreachableRoll - time.Minute).UTC().Format(time.RFC3339)
+	_, err = cms.Update(ctx, cm, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	nodes["owner-a"].release = outcome
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	cm, err = cms.Get(ctx, r.runnerReleaseName("owner-a"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotContains(t, cm.Annotations, annRunnerReleaseNamedAt)
+
+	r.runnerEndpoint = func(string) string { return "https://127.0.0.1:1" }
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"))
 }

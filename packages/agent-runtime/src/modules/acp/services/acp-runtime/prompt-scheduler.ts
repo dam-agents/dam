@@ -6,6 +6,8 @@ import {
 } from "api-server-api";
 import type { PromptBlock, QueuedPrompt } from "api-server-api";
 
+import { randomUUID } from "node:crypto";
+
 import type { JsonRpcId } from "../../domain/frames.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 
@@ -38,15 +40,18 @@ export interface PromptSubmission {
 
 export interface PromptScheduler {
   submit(submission: PromptSubmission): PromptFate;
+  submitSetting(submission: PromptSubmission): PromptFate;
   onPromptResponse(
     sessionId: string,
     outboundId: number,
   ): {
     turnEnded: boolean;
     promptId: string | null;
+    turnId: string | null;
     runPrompt: boolean;
     steered: PromptSubmission[];
   };
+  activeTurnId(sessionId: string): string | null;
   hasTurnInFlight(sessionId: string): boolean;
   isRunTurn(sessionId: string): boolean;
   hasWork(sessionId: string): boolean;
@@ -72,6 +77,7 @@ export interface PromptScheduler {
 export interface PromptSchedulerDeps {
   sendToAgent: (frame: unknown) => boolean;
   canStart: (entry: PromptSubmission) => boolean;
+  sessionLoaded?: (sessionId: string) => boolean;
   onQueueDropped: (
     sessionId: string,
     dropped: PromptSubmission[],
@@ -130,6 +136,12 @@ export interface PromptSchedulerDeps {
  * outside this module ever removes a queue itself. refuseQueue is the one
  * exception and answers each sender with an error instead, so the loss is
  * reported to the client that is still there to hear it rather than recorded.
+ * A setting change for a session (its model or mode) waits in the same place
+ * but is not a turn: it waits only for the session to be loaded back into
+ * the harness, never for a turn in flight or an engaged reader, goes out
+ * ahead of the queued prompts once it can, is dropped unsent once its sender
+ * has gone, and on every route a queue leaves by is answered with an error
+ * rather than written down, since nothing replays a setting.
  */
 export function createPromptScheduler(
   deps: PromptSchedulerDeps,
@@ -139,12 +151,14 @@ export function createPromptScheduler(
     {
       outboundId: number;
       promptId: string | null;
+      turnId: string;
       runPrompt: boolean;
       steered: PromptSubmission[];
     }
   >();
   const steering = new Map<string, PromptSubmission>();
   const queues = new Map<string, PromptSubmission[]>();
+  const pendingSettings = new Map<string, PromptSubmission[]>();
   const parkTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const queueParkMs = deps.queueParkMs ?? DEFAULT_QUEUE_PARK_MS;
 
@@ -154,7 +168,43 @@ export function createPromptScheduler(
     parkTimers.delete(sessionId);
   }
 
+  function refuseSettings(sessionId: string, message: string): void {
+    const settings = pendingSettings.get(sessionId);
+    pendingSettings.delete(sessionId);
+    for (const entry of settings ?? []) refuse(entry, message);
+  }
+
+  const sessionLoaded = (entry: PromptSubmission): boolean =>
+    deps.sessionLoaded
+      ? deps.sessionLoaded(entry.sessionId)
+      : deps.canStart(entry);
+
+  function dropAbandonedSettings(sessionId: string): void {
+    const settings = pendingSettings.get(sessionId);
+    if (settings === undefined) return;
+    const live = settings.filter((entry) => entry.channel.isOpen());
+    if (live.length === 0) pendingSettings.delete(sessionId);
+    else pendingSettings.set(sessionId, live);
+  }
+
+  function flushSettings(sessionId: string): void {
+    dropAbandonedSettings(sessionId);
+    const settings = pendingSettings.get(sessionId);
+    const head = settings?.[0];
+    if (settings === undefined || head === undefined) return;
+    if (!sessionLoaded(head)) return;
+    for (const entry of [...settings]) {
+      if (!deps.sendToAgent(entry.frame)) break;
+      settings.shift();
+    }
+    if (settings.length === 0) pendingSettings.delete(sessionId);
+  }
+
   function dropQueue(sessionId: string, cause: QueueDropCause): void {
+    refuseSettings(
+      sessionId,
+      `the setting was not applied: the session's queue was dropped (${cause})`,
+    );
     clearParkTimer(sessionId);
     const inFlight = steering.get(sessionId);
     steering.delete(sessionId);
@@ -256,6 +306,7 @@ export function createPromptScheduler(
     activeTurns.set(entry.sessionId, {
       outboundId: entry.outboundId,
       promptId: entry.promptId,
+      turnId: entry.promptId ?? randomUUID(),
       runPrompt: entry.runPrompt ?? false,
       steered: [],
     });
@@ -275,6 +326,8 @@ export function createPromptScheduler(
   }
 
   function maybeStartNext(sessionId: string): void {
+    flushSettings(sessionId);
+    if (pendingSettings.has(sessionId)) return;
     if (activeTurns.has(sessionId) || steering.has(sessionId)) return;
     const queue = queues.get(sessionId);
     const next = queue?.[0];
@@ -337,12 +390,28 @@ export function createPromptScheduler(
       return "queued";
     },
 
+    submitSetting(submission) {
+      const sessionId = submission.sessionId;
+      if (
+        !pendingSettings.has(sessionId) &&
+        sessionLoaded(submission) &&
+        deps.sendToAgent(submission.frame)
+      )
+        return "started";
+      pendingSettings.set(sessionId, [
+        ...(pendingSettings.get(sessionId) ?? []),
+        submission,
+      ]);
+      return "queued";
+    },
+
     onPromptResponse(sessionId, outboundId) {
       const active = activeTurns.get(sessionId);
       if (active === undefined || active.outboundId !== outboundId) {
         return {
           turnEnded: false,
           promptId: null,
+          turnId: null,
           runPrompt: false,
           steered: [],
         };
@@ -354,9 +423,14 @@ export function createPromptScheduler(
       return {
         turnEnded: true,
         promptId: active.promptId,
+        turnId: active.turnId,
         runPrompt: active.runPrompt,
         steered: active.steered,
       };
+    },
+
+    activeTurnId(sessionId) {
+      return activeTurns.get(sessionId)?.turnId ?? null;
     },
 
     hasTurnInFlight(sessionId) {
@@ -371,12 +445,18 @@ export function createPromptScheduler(
       return (
         activeTurns.has(sessionId) ||
         steering.has(sessionId) ||
-        queues.has(sessionId)
+        queues.has(sessionId) ||
+        pendingSettings.has(sessionId)
       );
     },
 
     anyWork() {
-      return activeTurns.size > 0 || steering.size > 0 || queues.size > 0;
+      return (
+        activeTurns.size > 0 ||
+        steering.size > 0 ||
+        queues.size > 0 ||
+        pendingSettings.size > 0
+      );
     },
 
     activeTurnCount() {
@@ -393,6 +473,7 @@ export function createPromptScheduler(
     },
 
     refuseQueue(sessionId, message) {
+      refuseSettings(sessionId, message);
       const queue = queues.get(sessionId);
       if (queue === undefined) return;
       queues.delete(sessionId);
@@ -437,6 +518,7 @@ export function createPromptScheduler(
     },
 
     onDetached(sessionId) {
+      dropAbandonedSettings(sessionId);
       const queue = queues.get(sessionId) ?? [];
       const head = queue[0];
       if (head === undefined) return;
@@ -462,6 +544,11 @@ export function createPromptScheduler(
     clear() {
       for (const timer of parkTimers.values()) clearTimeout(timer);
       parkTimers.clear();
+      for (const sessionId of [...pendingSettings.keys()])
+        refuseSettings(
+          sessionId,
+          "the setting was not applied: the harness went down",
+        );
       const active = [...activeTurns.entries()];
       activeTurns.clear();
       for (const sessionId of new Set([...queues.keys(), ...steering.keys()]))

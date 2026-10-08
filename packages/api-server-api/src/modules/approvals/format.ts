@@ -6,7 +6,7 @@ export function describeApprovalPayload(payload: ApprovalPayload): {
 } {
   if (payload.kind === "ext_authz") {
     return {
-      title: `${payload.method} ${payload.host}`,
+      title: `${payload.method} ${payload.host}${payload.port ? `:${payload.port}` : ""}`,
       subtitle: payload.viaAgentId
         ? `${payload.path} · via ${payload.viaAgentId}`
         : payload.path,

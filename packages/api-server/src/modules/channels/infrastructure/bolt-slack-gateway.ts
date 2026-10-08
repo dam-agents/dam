@@ -24,6 +24,7 @@ type ChatPostEphemeralArgs = Parameters<
 type FilesCompleteUploadExternalArgs = Parameters<
   BoltApp["client"]["files"]["completeUploadExternal"]
 >[0];
+type FilesUploadV2Args = Parameters<BoltApp["client"]["files"]["uploadV2"]>[0];
 type ViewsOpenArgs = Parameters<BoltApp["client"]["views"]["open"]>[0];
 type ChatStopStreamArgs = Parameters<
   BoltApp["client"]["chat"]["stopStream"]
@@ -81,6 +82,7 @@ function toSlackMessage(m: {
   latest_reply?: string;
   subtype?: string;
   metadata?: { event_type?: string; event_payload?: Record<string, unknown> };
+  files?: Array<{ id?: string }>;
 }): SlackMessage {
   const metadata = m.metadata?.event_type
     ? {
@@ -88,6 +90,7 @@ function toSlackMessage(m: {
         payload: m.metadata.event_payload ?? {},
       }
     : null;
+  const fileIds = (m.files ?? []).flatMap((f) => (f.id ? [f.id] : []));
   return {
     ts: m.ts,
     user: m.user,
@@ -99,6 +102,7 @@ function toSlackMessage(m: {
     ...(m.latest_reply ? { latestReplyTs: m.latest_reply } : {}),
     ...(m.subtype ? { subtype: m.subtype } : {}),
     ...(metadata ? { metadata } : {}),
+    ...(fileIds.length ? { fileIds } : {}),
   };
 }
 
@@ -632,10 +636,12 @@ export function createBoltSlackGateway(
         file: args.file,
         filename: args.filename,
         title: args.title,
-        initial_comment: args.initialComment,
+        ...(args.blocks ? { blocks: args.blocks } : {}),
       };
       await app.client.files.uploadV2(
-        args.threadTs ? { ...upload, thread_ts: args.threadTs } : upload,
+        (args.threadTs
+          ? { ...upload, thread_ts: args.threadTs }
+          : upload) as FilesUploadV2Args,
       );
     },
 

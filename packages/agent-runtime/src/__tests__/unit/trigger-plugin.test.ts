@@ -21,7 +21,7 @@ function fakeDriver() {
   const driver: TriggerSessionDriver = {
     async start(opts) {
       calls.push(opts);
-      return { sessionId: "new-session" };
+      return { sessionId: "new-session", openedOn: null };
     },
   };
   return { driver, calls };
@@ -46,6 +46,7 @@ const handlerFor = (
 ) =>
   createTriggerPlugin({
     runPrecheck: allows,
+    harnessDefault: async () => null,
     log: () => {},
     reporter: { report: async () => {} },
     ...deps,
@@ -208,10 +209,84 @@ describe("trigger plugin precheck", () => {
     )(payload, ctx);
 
     await vi.waitFor(() => expect(calls).toHaveLength(1));
+    await vi.waitFor(() => expect(reports).toHaveLength(1));
     expect(reports[0]).toEqual({
       eventId: ctx.eventId,
       outcome: "failed",
       detail: "precheck exited 127",
     });
+  });
+});
+
+describe("trigger plugin one-time tasks", () => {
+  const idleStore = (): TriggerStateStore => ({
+    getSessionForSchedule: () => undefined,
+    setSessionForSchedule: vi.fn(),
+    clearSessionForSchedule: vi.fn(),
+  });
+  const origin = {
+    sessionRef: "ref-1",
+    mode: "continue" as const,
+    name: "check back",
+  };
+
+  // TEST_SCENARIO: a task that continues its scheduling Session is a new unattended turn in that Session, found by the reference the platform tool recorded; when that Session is gone the task runs fresh rather than being lost.
+  it("continues the scheduling session by its reference, or runs fresh when it is gone", async () => {
+    const { driver, calls } = fakeDriver();
+    const plugin = (found: string | undefined) =>
+      createTriggerPlugin({
+        driver,
+        stateStore: idleStore(),
+        runPrecheck: allows,
+        log: () => {},
+        reporter: { report: async () => {} },
+        findSessionByRef: () => found,
+      }).bindEvent!("trigger", { impl: "trigger" });
+    const payload = {
+      scheduleId: "sch-1",
+      task: "do it",
+      once: true as const,
+      origin,
+    };
+
+    await plugin("origin-session")(payload, ctx);
+    await plugin(undefined)(payload, ctx);
+
+    expect(calls[0]).toMatchObject({
+      resumeSessionId: "origin-session",
+      unattended: true,
+      task: expect.stringContaining("do it"),
+    });
+    expect(calls[0]?.platformMeta).toBeUndefined();
+    expect(calls[1]?.resumeSessionId).toBeUndefined();
+    expect(calls[1]?.platformMeta).toMatchObject({
+      type: SessionType.ScheduleOnce,
+      scheduleId: "sch-1",
+    });
+  });
+
+  // TEST_SCENARIO: a task that reports back runs fresh and carries the scheduling Session's reference in its metadata, which is what the runtime reads when the turn ends to hand the result over.
+  it("marks a report-back task's fresh session with where its result goes", async () => {
+    const { driver, calls } = fakeDriver();
+    await handlerFor({ driver, stateStore: idleStore() }, "trigger")(
+      {
+        scheduleId: "sch-2",
+        task: "do it",
+        once: true,
+        model: "haiku",
+        origin: { ...origin, mode: "report" },
+      },
+      ctx,
+    );
+    expect(calls[0]).toMatchObject({
+      model: "haiku",
+      platformMeta: {
+        type: SessionType.ScheduleOnce,
+        scheduleId: "sch-2",
+        reportTo: "ref-1",
+        reportName: "check back",
+      },
+    });
+    expect(calls[0]?.resumeSessionId).toBeUndefined();
   });
 });

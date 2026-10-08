@@ -218,13 +218,11 @@ fn check_ports(min: u16, max: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm and /dev/net/tun, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, and so does a node cache, whose service is its only writer; a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, and so does a node cache, whose service is its only writer; a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
 fn prepare_host(args: &Args) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    for device in ["/dev/kvm", "/dev/net/tun"] {
-        if let Err(e) = std::fs::set_permissions(device, std::fs::Permissions::from_mode(0o666)) {
-            tracing::warn!(path = device, error = %e, "device not writable for machine uids");
-        }
+    if let Err(e) = std::fs::set_permissions("/dev/kvm", std::fs::Permissions::from_mode(0o666)) {
+        tracing::warn!(path = "/dev/kvm", error = %e, "device not writable for machine uids");
     }
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -267,6 +265,9 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             reserve_mib: i32::try_from(args.reserve_mib)?,
             headroom_mib: i32::try_from(args.headroom_mib)?,
             listen: publisher(&args.publish_address)?,
+            runtime: std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().and_then(vm_runner::release::runtime_id)),
         },
         runtime,
     )?;
@@ -281,6 +282,24 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         .unwrap_or_default();
     let kept = (!home.as_os_str().is_empty()).then(|| home.join(templates::KEPT_DIR));
     server.background(move |cancel| templates::warm(&install, kept.as_deref(), &home, &cancel));
+    let logs = server.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(vm_runner::console::TRIM_EVERY);
+        loop {
+            tick.tick().await;
+            let logs = logs.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                for id in logs.list().unwrap_or_default() {
+                    vm_runner::console::trim_logs(
+                        &id,
+                        &smolvm::agent::vm_data_dir(&id),
+                        vm_runner::console::LOG_CAP_BYTES,
+                    );
+                }
+            })
+            .await;
+        }
+    });
     // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped.
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(REAP_EVERY);
@@ -330,14 +349,17 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     };
     tokio::pin!(serving);
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-    tokio::select! {
+    let mut hand_off =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined1())?;
+    let handing_off = tokio::select! {
         result = &mut serving => {
             server.close().await;
             return result.map_err(|e| anyhow::anyhow!("serving: {e}"));
         }
-        _ = term.recv() => tracing::info!(signal = "SIGTERM", "VM runner stopping"),
-        _ = tokio::signal::ctrl_c() => tracing::info!(signal = "SIGINT", "VM runner stopping"),
-    }
+        _ = term.recv() => { tracing::info!(signal = "SIGTERM", "VM runner stopping"); false }
+        _ = tokio::signal::ctrl_c() => { tracing::info!(signal = "SIGINT", "VM runner stopping"); false }
+        _ = hand_off.recv() => { tracing::info!(signal = "SIGUSR1", "VM runner handing its machines off to the next release"); true }
+    };
     server.stop_taking_work();
     let draining = async {
         handle.graceful_shutdown(Some(SHUTDOWN_GRACE));
@@ -349,8 +371,19 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             let _ = serving.await;
         }
     };
-    tokio::join!(draining, server.close());
+    let closing = async {
+        if handing_off {
+            server.hand_off().await;
+        } else {
+            server.close().await;
+        }
+    };
+    tokio::join!(draining, closing);
     tracing::info!("VM runner stopped");
+    if handing_off {
+        // UNIT_BOUNDARY_DESCRIPTION: smolvm keeps an attached handle for every VMM this runner started, and dropping one stops its VM. A runner that hands off exits here, before the runtime is dropped, so the machines outlive it for the next runner to adopt.
+        std::process::exit(0);
+    }
     Ok(())
 }
 
@@ -434,7 +467,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&install);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the arguments the image's entrypoint passes ahead of the controller's, read from the image.toml this binary's image is built from, which sits beside this crate.
+    // UNIT_BOUNDARY_DESCRIPTION: the arguments the image's entrypoint has its loader pass the runner ahead of the controller's, read from the image.toml this binary's image is built from, which sits beside this crate.
     fn entrypoint_args() -> Vec<String> {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/image.toml");
         let config = std::fs::read_to_string(path)
@@ -446,10 +479,15 @@ mod tests {
         let words: Vec<String> =
             serde_json::from_str(line.trim_start_matches("entrypoint = ").trim())
                 .expect("the entrypoint is one line of strings");
-        let runner = words
+        let loader = words
             .iter()
-            .position(|word| word == "vm-runner")
-            .expect("the ENTRYPOINT runs vm-runner");
+            .position(|word| word == "vm-runner-loader")
+            .expect("the ENTRYPOINT runs vm-runner-loader");
+        let runner = loader
+            + words[loader..]
+                .iter()
+                .position(|word| word == "--")
+                .expect("the loader passes the runner every argument after --");
         words[runner + 1..].to_vec()
     }
 

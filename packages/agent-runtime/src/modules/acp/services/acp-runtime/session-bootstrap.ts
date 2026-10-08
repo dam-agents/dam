@@ -69,6 +69,7 @@ export interface SessionBootstrapDeps {
   supersededFor(sessionId: string): string[];
   runStartsOf(sessionId: string): string[];
   onLoadOrphaned(sessionId: string, outboundId: number): void;
+  mcpServersFor(sessionId: string): unknown[];
 }
 
 /**
@@ -214,7 +215,11 @@ export function createSessionBootstrap(
       jsonrpc: "2.0",
       id: outboundId,
       method: "session/load",
-      params: { sessionId, cwd: ".", mcpServers: [] },
+      params: {
+        sessionId,
+        cwd: ".",
+        mcpServers: deps.mcpServersFor(sessionId),
+      },
     };
     deps.sendToAgent(rewriteCwd(loadFrame, deps.workingDir));
   }

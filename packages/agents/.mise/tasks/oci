@@ -1,5 +1,5 @@
 #!/usr/bin/env -S usage bash
-#MISE description="Build agent images, or reuse them from the registry while their source is unchanged, as dist/oci/<agent>.tar in each agent's directory, named platform-<agent>:latest: all of packages/agents, or the ones named (the e2e mock too). The default image is packed onto the shared apt base with image:pack, and every workload and the mock onto the default image; the apt base is the Debian base with its own apt-get run in it under chroot. Off Linux the build runs in the dev cluster's Lima VM ($AGENT_BUILD_VM, default platform-k3s, else $LIMA_INSTANCE), whichever cluster imports them."
+#MISE description="Build agent images as dist/oci/<agent>.tar, or reuse them from the registry while their source is unchanged"
 #MISE dir="{{vars.repo_root}}"
 #USAGE flag "--build" help="Never reuse an image from the registry"
 #USAGE flag "--no-tar" help="Linux only: keep an image as its OCI layout"
@@ -7,6 +7,13 @@
 #USAGE flag "--bump" help="With --lock, re-resolve `latest` pins"
 #USAGE flag "--warm" help="Install every image's tools for CI's cache; builds nothing"
 #USAGE arg "[agent]..." var=#true
+# All of packages/agents, or the ones named (the e2e mock too), each named
+# platform-<agent>:latest. The default image is packed onto the shared apt
+# base with image:pack, and every workload and the mock onto the default
+# image; the apt base is the Debian base with its own apt-get run in it under
+# chroot. Off Linux the build runs in the dev cluster's Lima VM
+# ($AGENT_BUILD_VM, default platform-k3s, else $LIMA_INSTANCE), whichever
+# cluster imports them.
 set -euo pipefail
 # What the build creates is the image's, not the build user's: a umask of 002
 # would make root's paths writable to group 0, the agent's group.
@@ -82,7 +89,11 @@ lockfile="$agents/base/image.lock" deplocks="$agents/base/image-locks"
 isolate_mise() {
   unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT "${!MISE_TASK_@}"
   mkdir -p "$work"/{data,cache,config,state}
+  # MISE_SYSTEM_DATA_DIR too: tools the build host has installed system-wide
+  # would otherwise resolve there, and the default image's PATH would name them
+  # where its tools volume does not put them.
   export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$work/state" \
+    MISE_SYSTEM_DATA_DIR="$work/system" \
     MISE_CONFIG_DIR="$work/config" MISE_GLOBAL_CONFIG_FILE="$work/config/none.toml" \
     MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" \
     MISE_TRUSTED_CONFIG_PATHS="$stage" MISE_EXPERIMENTAL=1 MISE_LOCKFILE=1 \
@@ -242,6 +253,14 @@ build_default() (
   set -- "$work"/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell
   [ $# -eq 1 ] || { echo "want one Playwright headless shell, found: $*" >&2; exit 1; }
   ln -s "${1#"$work"/ms-playwright/}" build/opt/ms-playwright/headless-shell
+  # The browser panel's shared browser runs Playwright's full Chromium headed,
+  # on a virtual display that Selkies streams to the panel.
+  set -- "$work"/ms-playwright/chromium-*/chrome-linux*/chrome
+  [ $# -eq 1 ] || { echo "want one Playwright Chromium, found: $*" >&2; exit 1; }
+  ln -s "${1#"$work"/ms-playwright/}" build/opt/ms-playwright/chromium
+  # The browser panel's stream server, Selkies, with its Python packages
+  # installed for the image's Python.
+  PLATFORM_SELKIES_PYTHON="$(mise -E "$envs" which python3)" "$root/$agents/base/selkies/build.sh" build
   # docker finds a CLI plugin in its plugin directory, not on PATH.
   for p in buildx compose; do
     ln -s "$(realpath -m --relative-to=/usr/local/lib/docker/cli-plugins "$tools_root/$(realpath --relative-to="$MISE_DATA_DIR" "$(mise -E "$envs" where "github:docker/$p")")")/docker-$p" \
@@ -273,6 +292,9 @@ full_copy_venv() {
   home="$(sed -n 's/^home = //p' "$venv/pyvenv.cfg")"
   mkdir -p "$dest"
   cp -a "${home%/bin}/." "$dest/"
+  # The interpreter's own pip vendors libraries it never updates, each a scan
+  # finding; the workloads install with `uv pip --python`.
+  rm -rf "$dest"/bin/pip "$dest"/bin/pip3* "$dest"/lib/python3.*/site-packages/pip "$dest"/lib/python3.*/site-packages/pip-*.dist-info
   sp="$(ls -d "$venv"/lib/python3.*/site-packages)"
   cp -a "$sp/." "$dest/lib/$(basename "$(dirname "$sp")")/site-packages/"
   for f in "$venv"/bin/*; do
@@ -329,7 +351,7 @@ build_thin() (
 
 sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
 
-# base/apt.toml's packages on the root config's Debian base, as a one-layer
+# base/apt.txt's packages on the root config's Debian base, as a one-layer
 # image layout every agent image is packed onto: rebuilt when either changes
 # and once a day for updates. The base's root is exported, and its own apt-get
 # runs in it under chroot, in a mount namespace of its own, as a Dockerfile's
@@ -339,14 +361,14 @@ build_apt_base() {
   local key from r packages layer d config manifest
   apt_base="$state/apt-base"
   from="$(mise config get -f .mise/config.toml vars.base_image_debian)"
-  key="$({ cat "$agents/base/apt.toml"; echo "$from"; } | sha256sum | cut -c1-16)-$(date -u +%F)"
+  key="$({ cat "$agents/base/apt.txt"; echo "$from"; } | sha256sum | cut -c1-16)-$(date -u +%F)"
   [ "$(cat "$apt_base.key" 2>/dev/null)" != "$key" ] || return 0
   r="$work/apt-root"
   ${sudo[@]+"${sudo[@]}"} rm -rf "$r" "$apt_base"
   mkdir -p "$r" "$apt_base/blobs/sha256"
   crane export --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" "$from" - |
     ${sudo[@]+"${sudo[@]}"} tar -xf - -C "$r"
-  packages="$(sed -n 's/^"apt:\([^"]*\)".*/\1/p' "$agents/base/apt.toml" | paste -sd' ' -)"
+  packages="$(grep -v '^#' "$agents/base/apt.txt" | xargs)"
   # policy-rc.d keeps a package's postinst from starting its service here. The
   # trust store is the agent's, which the entrypoint fills; the host keys
   # openssh-server's postinst generated would be every image's.

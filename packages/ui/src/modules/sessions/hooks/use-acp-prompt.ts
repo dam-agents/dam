@@ -36,6 +36,9 @@ import type {
 
 type PromptInitiator = "user" | "system";
 
+// UNIT_BOUNDARY_DESCRIPTION: Stop leaves the reply to the turn's end, which the harness sends once it has flushed what it was streaming; past this wait the reply is closed locally, for a turn that never reports an end.
+const STOP_SETTLE_MS = 10_000;
+
 export interface SendPromptOptions {
   hidden?: boolean;
   initiator?: PromptInitiator;
@@ -365,11 +368,34 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
     const started = startedRef.current;
     const conn = connectionRef.current?.connection ?? started?.connection;
     const sid = engagedSessionIdRef.current ?? started?.sessionId;
-    setMessages((p) => finalizeRunningReply(p));
-    if (!conn || !sid) return;
+    const finalizeLocally = () => setMessages((p) => finalizeRunningReply(p));
+    if (!conn || !sid) {
+      finalizeLocally();
+      return;
+    }
     try {
       await conn.agent.notify("session/cancel", { sessionId: sid });
-    } catch {}
+    } catch {
+      finalizeLocally();
+      return;
+    }
+    const stopping = new Set(
+      useStore
+        .getState()
+        .messages.filter(
+          (m) => m.role === "assistant" && m.streaming && !m.queued,
+        )
+        .map((m) => m.id),
+    );
+    setTimeout(() => {
+      setMessages((p) =>
+        p.map((m) =>
+          stopping.has(m.id) && m.streaming
+            ? { ...m, streaming: false, queued: false }
+            : m,
+        ),
+      );
+    }, STOP_SETTLE_MS);
   }, [engagedSessionIdRef, connectionRef, setMessages]);
 
   return { sendPrompt, stopAgent };

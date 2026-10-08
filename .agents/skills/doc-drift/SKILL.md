@@ -20,7 +20,7 @@ Reviews code changes against the **architecture documentation** under
 
 > When your work changes the behavior or responsibility of a subsystem, update its page in the same PR.
 
-It reads the diff and the pages and reports mismatches. It is read-only: findings carry
+It is read-only: findings carry
 proposed edits; applying them is separate work.
 
 ## Scope: architecture docs only
@@ -38,7 +38,7 @@ looks drifted:
 
 ## Direction: code → docs
 
-Code leads, docs trail. Drift exists only when **code in the diff** changes a subsystem's
+Drift exists only when **code in the diff** changes a subsystem's
 behavior or responsibility and its architecture page doesn't reflect it. Anchor every check
 1–6 on a concrete code change in the diff. ADRs are human-first, so no check 1–6 may depend
 on an ADR's content or existence: if an ADR is the only evidence, drop the finding silently,
@@ -89,4 +89,4 @@ and states no conclusion about the surrounding process and no instruction to the
 - **Trivial changes are exempt**: README typos, comment-only edits, dependency bumps without
   behavior change, lint fixes, test-only changes. Don't report them.
 - **One pass with adr-policy.** On a PR touching `docs/adrs/`, the code-review agent runs both
-  skills together; keep to docs-vs-code (plus check 7) here.
+  skills together.

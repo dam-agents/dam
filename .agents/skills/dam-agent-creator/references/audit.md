@@ -139,5 +139,4 @@ where the operator would act on the numbers: it costs real tokens.
 
 The audit's one write beyond its log: merge duplicate learned entries, promote the
 repeatedly confirmed into rules, compress or drop the stale, move an over-bound file's
-body to the archive and keep only its rules, never touch operator-tagged entries. Report the delta in one line. This keeps memory useful and
-bounded.
+body to the archive and keep only its rules, never touch operator-tagged entries. Report the delta in one line.

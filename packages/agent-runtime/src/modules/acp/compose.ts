@@ -12,6 +12,10 @@ import {
   type HistoryProvider,
 } from "./infrastructure/history-provider.js";
 import { createRunResultStore } from "./infrastructure/run-result-store.js";
+import {
+  createPlatformMcpEntryStore,
+  type PlatformMcpEntryStore,
+} from "./infrastructure/platform-mcp-entry-store.js";
 import { createUndeliveredPromptStore } from "./infrastructure/undelivered-prompt-store.js";
 import {
   createActiveTurnStore,
@@ -24,7 +28,9 @@ import {
 import {
   createAcpRuntime,
   type AcpRuntime,
+  type ReportableTurn,
 } from "./services/acp-runtime/acp-runtime.js";
+import { createOnceReporter } from "./services/once-reporter.js";
 import {
   createBackgroundWorkRegistry,
   type BackgroundWorkRegistry,
@@ -41,6 +47,7 @@ import {
 } from "./services/session-changes.js";
 import { createInProcessCaller } from "./infrastructure/in-process-request.js";
 import { createSessionsService } from "./services/sessions-service.js";
+import { readTerminalSessionPins } from "./infrastructure/terminal-session-pins.js";
 import { createDelegationFramesStore } from "./infrastructure/delegation-frames-store.js";
 import {
   createSubAgentSessionStore,
@@ -58,6 +65,7 @@ export interface ComposeAcpOptions {
     exportName?: string;
     command?: string[];
   };
+  terminalSessionPins?: string;
   isTerminalSessionActive: (sessionId: string) => boolean;
   backgroundWorkHolds: boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
@@ -96,8 +104,11 @@ export function composeAcp(opts: ComposeAcpOptions): {
   sessionChanges: SessionChanges;
   activeTurns: ActiveTurnStore;
   subAgentSessions: SubAgentSessionStore;
+  platformMcpEntry: PlatformMcpEntryStore;
 } {
   const sessionChanges = createSessionChanges();
+  const platformMcpEntry = createPlatformMcpEntryStore(opts.stateBackend);
+  let reportTurn: (report: ReportableTurn) => void = () => {};
   const sessionMetadata = notifyingSessionMetadataStore(
     createSessionMetadataStore(opts.stateBackend),
     sessionChanges,
@@ -113,10 +124,16 @@ export function composeAcp(opts: ComposeAcpOptions): {
   const activeTurns = createActiveTurnStore(opts.stateBackend);
   const subAgentSessions = createSubAgentSessionStore(opts.stateBackend);
   const historyProvider = historyProviderOf(opts);
+  const pinsDir = opts.terminalSessionPins;
+  const terminalSessionPins = pinsDir
+    ? () => readTerminalSessionPins(pinsDir)
+    : undefined;
   const runtime = createAcpRuntime({
     undeliveredPrompts,
     activeTurns,
     runResults: createRunResultStore(opts.stateBackend),
+    sessionMcpServers: (ref) => platformMcpEntry.sessionServers(ref),
+    onReportableTurnEnded: (report) => reportTurn(report),
     spawnAgent: () =>
       createChildAgentProcess({
         command: opts.command,
@@ -131,6 +148,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
       subAgentSessions.record(sessionId, subAgentIds),
     ...(historyProvider ? { historyProvider } : {}),
+    ...(terminalSessionPins ? { terminalSessionPins } : {}),
     log: opts.log,
     envReadyAtBoot: opts.envReader.ready(),
     beforeFirstSpawn: opts.beforeFirstSpawn,
@@ -140,6 +158,11 @@ export function composeAcp(opts: ComposeAcpOptions): {
       : {}),
   });
   const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
+  reportTurn = createOnceReporter({
+    driver: triggerDriver,
+    findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
+    log: (msg) => opts.log?.(msg),
+  });
   const sessions = createSessionsService({
     openCaller: () =>
       createInProcessCaller((channel) =>
@@ -151,6 +174,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionFrames: (sessionId) => runtime.sessionFrames(sessionId),
     delegations: createDelegationFramesStore(opts.agentHome),
     ...(historyProvider ? { historyProvider } : {}),
+    ...(terminalSessionPins ? { terminalSessionPins } : {}),
     log: opts.log,
   });
 
@@ -163,5 +187,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionChanges,
     activeTurns,
     subAgentSessions,
+    platformMcpEntry,
   };
 }

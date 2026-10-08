@@ -22,6 +22,54 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.termsRequired" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
 {{- include "platform.validate.unenforcedMeshOnlyOnALocalCluster" . -}}
+{{- include "platform.validate.gatewayEgressCidrs" . -}}
+{{- include "platform.validate.featureModes" . -}}
+{{- end -}}
+
+{{/*
+The api-server refuses to start on a feature mode it cannot read.
+*/}}
+{{- define "platform.validate.featureModes" -}}
+{{- range $id, $mode := fromJson (include "platform.featureModes" $) -}}
+{{- if not (has $mode (list "off" "experimental" "on")) -}}
+{{- fail (printf "features.%s must be off, experimental or on, got %v." $id $mode) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`features` as JSON. YAML 1.1 reads an unquoted on/off as a boolean, so a
+boolean is taken as the mode it was written as.
+*/}}
+{{- define "platform.featureModes" -}}
+{{- $modes := dict -}}
+{{- range $id, $mode := .Values.features | default dict -}}
+{{- if kindIs "bool" $mode -}}
+{{- $_ := set $modes $id (ternary "on" "off" $mode) -}}
+{{- else -}}
+{{- $_ := set $modes $id $mode -}}
+{{- end -}}
+{{- end -}}
+{{- toJson $modes -}}
+{{- end -}}
+
+{{/*
+controller.gatewayEgress.extraCidrs opens private ranges to every agent
+gateway. The controller renders them into each gateway's NetworkPolicy, which
+Kubernetes rejects outright when an entry is not a CIDR — and a rejected policy
+fails every agent's reconcile. A /0 entry would reopen every private range the
+policy exists to close.
+*/}}
+{{- define "platform.validate.gatewayEgressCidrs" -}}
+{{- $cidr := `^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$` -}}
+{{- range ((.Values.controller.gatewayEgress | default dict).extraCidrs | default list) -}}
+{{- if not (regexMatch $cidr (toString .)) -}}
+{{- fail (printf "controller.gatewayEgress.extraCidrs entry %q is not a CIDR (address/prefix, e.g. 10.20.0.0/16)." (toString .)) -}}
+{{- end -}}
+{{- if hasSuffix "/0" (toString .) -}}
+{{- fail (printf "controller.gatewayEgress.extraCidrs entry %q opens every private range to agent gateways, which is what their egress policy closes. Name the enterprise service's own range instead." (toString .)) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -208,6 +256,9 @@ signal that this is an OpenShift cluster.
 {{- end -}}
 {{- if and $v.runner.imageArchiveHostPath (not $v.runner.scc) -}}
 {{- fail "on OpenShift, virtualization.runner.imageArchiveHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume that value mounts. Set an SCC that admits a hostPath, or drop imageArchiveHostPath and give the runner a registry to pull from." -}}
+{{- end -}}
+{{- if $v.runner.releaseHostPath -}}
+{{- fail "virtualization.runner.releaseHostPath is not supported on OpenShift yet: the directory the kubelet creates for it carries the host's SELinux label, which the confined runners cannot read their release from. Leave it empty; every new runner image then rolls the runner pods." -}}
 {{- end -}}
 {{- if and ($v.imageCache | default dict).hostPath (not $v.runner.scc) -}}
 {{- fail "on OpenShift, virtualization.imageCache.hostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume the node cache mounts. Set an SCC that admits a hostPath, or clear imageCache.hostPath and let each runner cache on its own claim." -}}

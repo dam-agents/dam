@@ -77,7 +77,9 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
         <Card className="overflow-hidden">
           {}
           <div className="-mt-px">
-            {groupArtifactsByFolder(artifacts, folders).map((group) => (
+            {groupArtifactsByFolder(artifacts, folders, {
+              omitEmptyFolders: true,
+            }).map((group) => (
               <FolderGroup
                 key={group.key}
                 folder={group.folder}

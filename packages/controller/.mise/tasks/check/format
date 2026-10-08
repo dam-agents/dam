@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="Go sources are gofmt -s formatted"
+#MISE sources=["**/*.go"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+unformatted=$(gofmt -s -l .)
+if [ -n "$unformatted" ]; then
+  echo "Files not formatted:" >&2
+  echo "$unformatted" >&2
+  exit 1
+fi

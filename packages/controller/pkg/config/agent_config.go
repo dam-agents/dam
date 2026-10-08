@@ -108,12 +108,22 @@ type VMRunnerSpec struct {
 	Rollout              VMRunnerRollout               `json:"rollout,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: set, every vm machine runs on one runner outside the cluster, reached at this address, instead of on per-owner runner pods. It is for a local cluster on a laptop, whose hypervisor the runner uses directly rather than nesting one inside the cluster's VM; the chart renders that runner's token and certificate, and the install starts it.
 	HostAddress string `json:"hostAddress,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the node directory a stager DaemonSet copies each runner release into. Set, a runner pod keeps the image it was created with and its loader takes a new release from here without restarting the machines; empty, every new runner image rolls the pod and reboots its machines.
+	ReleaseHostPath string `json:"releaseHostPath,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: set, a runner release built against another VM runtime than the pod's is not taken in place but rolls the pod, as before runtimes travelled with releases. It is the switch back for a runtime that turns out not to manage machines another one started.
+	ReleaseSameRuntimeOnly bool `json:"releaseSameRuntimeOnly,omitempty"`
 }
 
 type VMRunnerClusterDNS struct {
 	Namespace string            `json:"namespace,omitempty"`
 	PodLabels map[string]string `json:"podLabels,omitempty"`
 	Ports     []int32           `json:"ports,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where a gateway may go inside the network, beyond the public internet and the platform's own pods. ExtraCIDRs are private ranges an install opens for its own enterprise services; the cloud metadata endpoints stay closed inside them. ClusterDNS selects the cluster DNS pods the gateway resolves upstream names through.
+type GatewayEgress struct {
+	ExtraCIDRs []string           `json:"extraCidrs,omitempty"`
+	ClusterDNS VMRunnerClusterDNS `json:"clusterDns,omitempty"`
 }
 
 type VMRunnerRollout struct {
@@ -138,6 +148,8 @@ type AgentTemplateDefaults struct {
 	Env          []EnvVar      `json:"env,omitempty"`
 	SkillSources []SkillSource `json:"skillSources,omitempty"`
 	Init         string        `json:"init,omitempty"`
+
+	NestedVirtualization bool `json:"nestedVirtualization,omitempty"`
 }
 
 type WarmPool struct {

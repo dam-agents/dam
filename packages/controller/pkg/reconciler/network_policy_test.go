@@ -110,3 +110,72 @@ func TestGatewayIngressAdmitsTheMachinesTransparentPortsFromItsRunnerOnly(t *tes
 	container := BuildGatewayIngressNetworkPolicy("my-instance", testOwner, false, testConfig, configMapOwnerRef(testOwnerCM))
 	require.Len(t, container.Spec.Ingress, 1, "a container agent's gateway keeps the proxy port alone")
 }
+
+func gatewayEgressFor(t *testing.T, extra []string) *networkingv1.NetworkPolicy {
+	t.Helper()
+	cfg := *testConfig
+	cfg.APIServerInstanceLabel = "platform"
+	cfg.ObjectStoreHost, cfg.ObjectStorePort = "platform-seaweedfs.default.svc.cluster.local", 8333
+	cfg.TelemetryCollectorHost, cfg.TelemetryCollectorPort = "platform-clickstack-collector.default.svc.cluster.local", 4318
+	cfg.GatewayEgress.ExtraCIDRs = extra
+	cfg.GatewayEgress.ClusterDNS.Namespace = "kube-system"
+	cfg.GatewayEgress.ClusterDNS.PodLabels = map[string]string{"k8s-app": "kube-dns"}
+	return BuildGatewayEgressNetworkPolicy("my-instance", &cfg, configMapOwnerRef(testOwnerCM))
+}
+
+func ipBlocks(np *networkingv1.NetworkPolicy) map[string][]string {
+	out := map[string][]string{}
+	for _, rule := range np.Spec.Egress {
+		for _, peer := range rule.To {
+			if peer.IPBlock != nil {
+				out[peer.IPBlock.CIDR] = peer.IPBlock.Except
+			}
+		}
+	}
+	return out
+}
+
+func TestGatewayEgressSelectsOnlyThePairedGateway(t *testing.T) {
+	np := gatewayEgressFor(t, nil)
+	assert.Equal(t, "my-instance-gateway-egress", np.Name)
+	assert.Equal(t, map[string]string{LabelPair: "my-instance", LabelRole: RoleGateway}, np.Spec.PodSelector.MatchLabels)
+	assert.Equal(t, []networkingv1.PolicyType{networkingv1.PolicyTypeEgress}, np.Spec.PolicyTypes)
+}
+
+func TestGatewayEgressReachesThePublicInternetButNoPrivateRange(t *testing.T) {
+	blocks := ipBlocks(gatewayEgressFor(t, nil))
+	require.Len(t, blocks, 2, "only the two public blocks without operator ranges")
+	assert.ElementsMatch(t, []string{"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16"}, blocks["0.0.0.0/0"])
+	assert.ElementsMatch(t, []string{"::1/128", "fc00::/7", "fe80::/10"}, blocks["::/0"])
+}
+
+func TestGatewayEgressAdmitsThePlatformPodsItDialsOnTheirPortsOnly(t *testing.T) {
+	np := gatewayEgressFor(t, nil)
+	ports := map[string][]int32{}
+	for _, rule := range np.Spec.Egress {
+		for _, peer := range rule.To {
+			if peer.PodSelector == nil {
+				continue
+			}
+			key := fmt.Sprint(peer.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"], "/", peer.PodSelector.MatchLabels)
+			for _, p := range rule.Ports {
+				ports[key] = append(ports[key], p.Port.IntVal)
+			}
+		}
+	}
+	assert.Equal(t, map[string][]int32{
+		"default/map[app.kubernetes.io/component:apiserver app.kubernetes.io/instance:platform]":            {4002, 4001, 15008},
+		"default/map[gateway.networking.k8s.io/gateway-name:apiserver-waypoint]":                            {15008},
+		"default/map[app.kubernetes.io/component:seaweedfs app.kubernetes.io/instance:platform]":            {8333, 15008},
+		"default/map[app.kubernetes.io/component:clickstack-collector app.kubernetes.io/instance:platform]": {4318, 15008},
+		"kube-system/map[k8s-app:kube-dns]":                                                                 {53, 53},
+	}, ports)
+}
+
+func TestGatewayEgressOpensOperatorRangesButNeverTheMetadataEndpoint(t *testing.T) {
+	blocks := ipBlocks(gatewayEgressFor(t, []string{"10.20.0.0/16", "169.254.0.0/16", "fd00::/8", "169.254.169.254/32"}))
+	assert.Empty(t, blocks["10.20.0.0/16"])
+	assert.Equal(t, []string{"169.254.169.254/32"}, blocks["169.254.0.0/16"])
+	assert.Equal(t, []string{"fd00:ec2::254/128"}, blocks["fd00::/8"])
+	assert.NotContains(t, blocks, "169.254.169.254/32", "a range that is only the metadata endpoint is dropped")
+}

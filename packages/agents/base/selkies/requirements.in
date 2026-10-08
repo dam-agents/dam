@@ -1,0 +1,6 @@
+# The browser panel's stream server: released Selkies with its released pixelflux and pcmflux,
+# pinned exactly; their other dependencies come from Selkies' own metadata. requirements.txt is
+# compiled from this file, as build.sh says.
+selkies==2.0.0
+pixelflux==2.1.0
+pcmflux==2.1.0

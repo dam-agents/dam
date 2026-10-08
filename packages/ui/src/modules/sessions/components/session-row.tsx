@@ -24,7 +24,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { HOVER_ACTION, HOVER_YIELD } from "@/components/ui/hover-action";
+import {
+  HOVER_ACTION,
+  HOVER_ROOM,
+  HOVER_YIELD,
+} from "@/components/ui/hover-action";
 import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
@@ -119,7 +123,10 @@ export function SessionRow({
       ? "font-semibold text-foreground"
       : "font-normal text-foreground";
 
-  const scheduled = s.type === SessionType.ScheduleCron || !!s.scheduleId;
+  const scheduled =
+    s.type === SessionType.ScheduleCron ||
+    s.type === SessionType.ScheduleOnce ||
+    !!s.scheduleId;
   const agents = useAgentsList();
   const agent = agents.find((a) => a.id === s.agentId);
   const onboarding =
@@ -132,6 +139,14 @@ export function SessionRow({
       : s.type === SessionType.ChannelTelegram
         ? ChannelType.Telegram
         : null;
+  const hasIndicators =
+    scheduled ||
+    terminal ||
+    !!messenger ||
+    needsApproval ||
+    working ||
+    draft ||
+    backgroundWork.length > 0;
 
   return (
     <div
@@ -152,7 +167,12 @@ export function SessionRow({
       }}
     >
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-        <div className="relative flex items-center gap-1.5">
+        <div
+          className={cn(
+            "relative flex items-center gap-1.5",
+            onboarding && !hasIndicators && HOVER_ROOM,
+          )}
+        >
           {}
           <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
             {titleLabel}

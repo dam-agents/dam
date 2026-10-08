@@ -18,8 +18,6 @@ description: >
 
 # TypeScript Engineering
 
-Opinionated architecture for TypeScript client-server projects, built for long-term maintenance.
-
 ## 1. Pick the mode
 
 | Mode | Signal |
@@ -28,7 +26,7 @@ Opinionated architecture for TypeScript client-server projects, built for long-t
 | **code** | writing or changing a specific file or feature: "add a service for X", "wire this up", "implement Y", "is this right" with a file open |
 | **review** | "review", "audit", "check architecture", "is this codebase clean", "what's wrong with this", over an area or the whole project |
 
-When modes overlap (designing a small feature in place, auditing one file), pick the dominant intent and announce it in one sentence so the user can redirect; ask only if genuinely ambiguous.
+When modes overlap (designing a small feature in place, auditing one file), pick the dominant intent and announce it in one sentence so the user can redirect.
 
 ## 2. Load only that mode's file
 

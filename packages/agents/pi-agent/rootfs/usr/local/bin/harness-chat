@@ -1,2 +1,5 @@
 #!/bin/sh
-PI_PLATFORM_REPORT_ERRORS=1 exec pi-acp "$@"
+# pi-acp-patch.mjs: temporary fix for svkozak/pi-acp#152, see the pi-agent README.
+PI_PLATFORM_REPORT_ERRORS=1 \
+  NODE_OPTIONS="--import=/usr/local/share/pi-platform/pi-acp-patch.mjs${NODE_OPTIONS:+ $NODE_OPTIONS}" \
+  exec pi-acp "$@"

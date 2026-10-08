@@ -63,7 +63,6 @@ $AB open http://localhost:5555/ && $AB snapshot -i
 - **Clicks that silently do nothing:** the app scrolls inside its own containers, which agent-browser doesn't scroll before a click, so below-the-fold elements get clicked off-screen (e.g. "Create agent", the lower scopes in the API key dialog). Run `$AB scrollintoview @eN` before `$AB click @eN`; check `$AB get url` or a snapshot after each click.
 - **No API calls in the network log:** tRPC runs over a WebSocket, invisible to `$AB network requests`; read `mise run cluster:kubectl -- logs deploy/platform-apiserver` instead.
 - **Hidden Experimental features tab:** click the version string under Settings → Account five times.
-- Screenshots belong in the scratchpad, not the repo.
 
 ## Acting as an agent
 

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Format Go sources with gofmt -s"
+#MISE depends=[":fix:crds"]
+set -euo pipefail
+gofmt -s -w . "$@"

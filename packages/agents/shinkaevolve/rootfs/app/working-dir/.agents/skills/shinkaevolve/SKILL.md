@@ -40,8 +40,7 @@ up front, not just the initial program's imports.
 
 The pod-level workflow — the mandatory pre-launch gate, per-run directories,
 backgrounding runs, resume-on-wake, and the hard guardrails — is defined in
-this pod's system context (`AGENTS.md`). **This skill is the setup-and-CLI
-reference**; follow `AGENTS.md` for *how* to operate a run in this environment.
+this pod's system context (`AGENTS.md`).
 
 ## Step 1 — set up the evolution models
 
@@ -154,8 +153,7 @@ if __name__ == "__main__":
     main(a.program_path, a.results_dir)
 ```
 
-`combined_score` (higher = better) is what selection ranks on; extra metrics
-are fine for visibility but only `combined_score` drives the archive.
+`combined_score` (higher = better) is what selection ranks on.
 
 ## Step 3 — smoke-eval, then launch (see the pre-launch gate in AGENTS.md)
 

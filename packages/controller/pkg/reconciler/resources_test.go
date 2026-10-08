@@ -20,7 +20,7 @@ var testConfig = &config.Config{
 	ReleaseName:       "platform",
 	HarnessServerPort: 4001,
 	ExtAuthzPort:      4002,
-	EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1",
+	EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.2",
 	EnvoyPort:         10000,
 	IstioTrustDomain:  "cluster.local",
 	IstioWaypointName: "apiserver-waypoint",
@@ -531,6 +531,30 @@ func TestBuildAgentStatefulSet_MountsTheNodesHarnessToolsReadOnly(t *testing.T) 
 	for _, m := range pod.Containers[0].VolumeMounts {
 		assert.NotEqual(t, "harness-tools", m.Name)
 	}
+}
+
+// TEST_SCENARIO: the agent runtime offers the browser panel only on an Agent that requires named connections, since its user would otherwise browse with the agent's injected credentials, so the container is told which with PLATFORM_REQUIRE_CONNECTION_ADDRESS, always set: as an explicit env it wins over the template defaults and over the owner's secretRef, which Kubernetes applies beneath it, so neither can claim the panel for an Agent that does not require named connections.
+func TestBuildAgentStatefulSet_TellsTheAgentWhetherItRequiresNamedConnections(t *testing.T) {
+	agent := *testAgent
+	agent.SecretRef = "my-secrets"
+	c := BuildAgentStatefulSet("my-instance", &agent, testConfig, configMapOwnerRef(testOwnerCM), "").Spec.Template.Spec.Containers[0]
+	assert.Equal(t, "false", envToMap(c.Env)["PLATFORM_REQUIRE_CONNECTION_ADDRESS"])
+
+	agent.RequireConnectionAddress = true
+	c = BuildAgentStatefulSet("my-instance", &agent, testConfig, configMapOwnerRef(testOwnerCM), "").Spec.Template.Spec.Containers[0]
+	assert.Equal(t, "true", envToMap(c.Env)["PLATFORM_REQUIRE_CONNECTION_ADDRESS"])
+
+	cfg := *testConfig
+	cfg.AgentTemplateDefaults.Env = append(cfg.AgentTemplateDefaults.Env, config.EnvVar{Name: "PLATFORM_REQUIRE_CONNECTION_ADDRESS", Value: "true"})
+	agent.RequireConnectionAddress = false
+	c = BuildAgentStatefulSet("my-instance", &agent, &cfg, configMapOwnerRef(testOwnerCM), "").Spec.Template.Spec.Containers[0]
+	var last string
+	for _, e := range c.Env {
+		if e.Name == "PLATFORM_REQUIRE_CONNECTION_ADDRESS" {
+			last = e.Value
+		}
+	}
+	assert.Equal(t, "false", last)
 }
 
 // TEST_SCENARIO: the default image carries every harness and picks one from PLATFORM_HARNESS, so a container agent's spec.harness reaches the agent container as that env, as it reaches a vm guest. The secretRef stays envFrom beside it, where Kubernetes lets the explicit env win. An Agent with no harness sets nothing, leaving the image's default.

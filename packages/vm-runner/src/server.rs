@@ -25,7 +25,10 @@ use crate::imagecache::{
 use crate::launch::{launch_from_archive, read_launch, ImageLaunch};
 use crate::locked;
 use crate::metrics::{Gauges, Metrics};
-use crate::plan::{admissible, gateway_port_admissible, reads_ready, step, Action, Health};
+use crate::plan::{
+    admissible, gateway_port_admissible, reads_ready, step, Action, Health,
+    FOREIGN_UNHEALTHY_RESTART, UNHEALTHY_RESTART,
+};
 use crate::runtime::{redact, Machine, Runtime, Update};
 use crate::share::{self, write_share, SeedFile, SHARE_DIR};
 use crate::state::{
@@ -72,6 +75,8 @@ pub struct Config {
     pub reserve_mib: i32,
     pub headroom_mib: i32,
     pub listen: Option<Arc<Listen>>,
+    // UNIT_BOUNDARY_DESCRIPTION: the VM runtime this runner's release was built against, which every machine it starts boots. None where the runner's release names none, which makes no machine foreign.
+    pub runtime: Option<String>,
 }
 
 #[derive(Clone)]
@@ -303,10 +308,15 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: stops taking work, cancels what is running, waits up to CLOSE_GRACE for it, and then stops every machine still running within STOP_ON_CLOSE. Cancelling first is what makes the wait short: a fetch allowed twenty minutes ends now and removes its own scratch tree. The machines are stopped as the controller's stop does it, so a runner going away quiesces each guest's disk instead of leaving the pod's kill to cut its power. Ports are dropped last, so an action that finished inside the wait does not leave one bound.
     pub async fn close(self: &Arc<Self>) {
-        self.close_within(CLOSE_GRACE, STOP_ON_CLOSE).await;
+        self.close_within(CLOSE_GRACE, Some(STOP_ON_CLOSE)).await;
     }
 
-    async fn close_within(self: &Arc<Self>, grace: Duration, stopping: Duration) {
+    // UNIT_BOUNDARY_DESCRIPTION: closes the runner as close does, but leaves every machine running, for the next runner process in the same pod to adopt. The loader asks for this when it replaces the runner with another release: the VMMs are processes of the pod, not of this process, and a new runner reads their records and republishes their ports as any restarted runner does.
+    pub async fn hand_off(self: &Arc<Self>) {
+        self.close_within(CLOSE_GRACE, None).await;
+    }
+
+    async fn close_within(self: &Arc<Self>, grace: Duration, stopping: Option<Duration>) {
         self.stop_taking_work();
         if tokio::time::timeout(grace, self.work.wait()).await.is_err() {
             tracing::warn!(
@@ -314,8 +324,10 @@ impl Server {
                 "vm runner: machine actions were still running when the runner closed"
             );
         }
-        let server = self.clone();
-        let _ = tokio::task::spawn_blocking(move || server.stop_running(stopping)).await;
+        if let Some(stopping) = stopping {
+            let server = self.clone();
+            let _ = tokio::task::spawn_blocking(move || server.stop_running(stopping)).await;
+        }
         self.forwarder.unpublish_all();
     }
 
@@ -412,13 +424,7 @@ impl Server {
                 self.observe(id, true);
             }
             let (state, mut status) = self.report(id);
-            let action = step(
-                read_spec(&self.config.state_dir, id).as_ref(),
-                &spec,
-                state,
-                status.ready,
-                self.dead_for_long(id),
-            );
+            let action = self.next_action(id, &spec, state, status.ready);
             let converging = self.converging(id);
             let boots = spec.running && (converging || action.is_some_and(|a| a != Action::Stop));
             let _admitting = boots.then(|| locked(&self.admission));
@@ -748,21 +754,35 @@ impl Server {
             (entry.desired.clone().ok_or(entry.asked)?, entry.asked)
         };
         let seen = self.observe(id, false);
-        if seen.error.is_some() {
-            return Err(asked);
-        }
-        let state = seen.state;
+        let state = if seen.error.is_some() {
+            State::Unknown
+        } else {
+            seen.state
+        };
         let ready = state == State::Running && seen.ready;
-        let applied = read_spec(&self.config.state_dir, id);
+        self.next_action(id, &desired, state, ready)
+            .map(|action| (action, asked))
+            .ok_or(asked)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the next action for a machine, as plan::step decides it, except that a machine another VM runtime booted is rebooted onto this runner's own when the runtime cannot say what state it is in (see foreign). For any other machine an unknown state is no reason to act.
+    fn next_action(
+        &self,
+        id: &str,
+        desired: &MachineSpec,
+        state: State,
+        ready: bool,
+    ) -> Option<Action> {
+        if state == State::Unknown && desired.running && self.foreign(id) {
+            return Some(Action::Restart { unhealthy: true });
+        }
         step(
-            applied.as_ref(),
-            &desired,
+            read_spec(&self.config.state_dir, id).as_ref(),
+            desired,
             state,
             ready,
             self.dead_for_long(id),
         )
-        .map(|action| (action, asked))
-        .ok_or(asked)
     }
 
     fn run(&self, id: &str, action: Action, mut spec: MachineSpec) {
@@ -1017,6 +1037,9 @@ impl Server {
         );
         self.metrics
             .start(action, started.elapsed(), result.is_ok());
+        if let (Ok(()), Some(own)) = (&result, &self.config.runtime) {
+            state::write_runtime(&self.config.state_dir, id, own)?;
+        }
         result
     }
 
@@ -1249,10 +1272,23 @@ impl Server {
     }
 
     fn dead_for_long(&self, id: &str) -> bool {
+        let limit = if self.foreign(id) {
+            FOREIGN_UNHEALTHY_RESTART
+        } else {
+            UNHEALTHY_RESTART
+        };
         locked(&self.machines)
             .entries
             .get(id)
-            .is_some_and(|e| e.health.dead_for_long(SystemTime::now()))
+            .is_some_and(|e| e.health.quiet_beyond(SystemTime::now(), limit))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine's running VMM was booted by another VM runtime than this runner's — an older release's, which handed the machine over. A machine with no record of its runtime was started before runtimes were recorded, and counts as foreign. Such a machine is managed as if the two runtimes were compatible; a runtime error on it, or a guest gone quiet past FOREIGN_UNHEALTHY_RESTART, reboots it onto this runner's runtime instead of waiting.
+    fn foreign(&self, id: &str) -> bool {
+        self.config
+            .runtime
+            .as_ref()
+            .is_some_and(|own| state::runtime(&self.config.state_dir, id).as_ref() != Some(own))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what the runtime and the guest say about the machine now. The guest is asked only in a state its answer may be believed in.

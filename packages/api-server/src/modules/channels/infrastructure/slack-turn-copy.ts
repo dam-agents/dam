@@ -155,9 +155,7 @@ export function slackTurnContract(ctx: {
         "alsoSendToChannel when that message is old enough that people " +
         "watching the channel would miss a thread-only reply."
       : `• ${TOOL}reply — post a message into this thread ` +
-        `(threadTs="${ctx.replyThreadTs}"). The thread is where your answer ` +
-        "belongs: leave alsoSendToChannel off unless you are asked to " +
-        "surface the answer to the whole channel.";
+        `(threadTs="${ctx.replyThreadTs}").`;
   const reactIds = multi
     ? "messageTs = the [ts …] tag of the message you are reacting to"
     : `messageTs="${ctx.eventTs}"`;
@@ -171,9 +169,8 @@ export function slackTurnContract(ctx: {
       ? []
       : [
           `• ${TOOL}react — add a fitting emoji reaction to the message you're ` +
-            "answering: a quiet acknowledgement that notifies no one — pick an " +
-            "emoji that suits the message (e.g. eyes on a bug report, tada on good " +
-            `news) (${reactIds}). Pass the Slack emoji short name, no colons.`,
+            "answering: a quiet acknowledgement that notifies no one (e.g. eyes on " +
+            `a bug report, tada on good news) (${reactIds}).`,
         ]),
     `• ${TOOL}no_reply_needed — end your turn without posting anything, when ` +
       "the message doesn't call for a response. Pass the same threadTs you " +
@@ -214,7 +211,6 @@ export function slackTurnContract(ctx: {
       "that arrives with no such block didn't come from Slack: answer it " +
       "where it arrived, in plain text, and post to Slack for it only if " +
       "you're asked to.",
-    "If a tool is deferred, load it via ToolSearch first.",
     "</how-to-respond>",
     channelNetworkAccessGuidance(ctx.identity.brand.name),
   ].join("\n");

@@ -14,7 +14,8 @@ export function sessionCategoryOf(session: {
   if (session.mode === "terminal") return "terminal";
   if (session.type === "channel_slack" || session.type === "channel_telegram")
     return "channels";
-  if (session.type === "schedule_cron") return "scheduled";
+  if (session.type === "schedule_cron" || session.type === "schedule_once")
+    return "scheduled";
   if (session.type === "cli_run") return "runs";
   return "chats";
 }

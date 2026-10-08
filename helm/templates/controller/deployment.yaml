@@ -74,9 +74,9 @@ spec:
             {{- $r := .Values.virtualization.runner }}
             {{- $dp := .Values.virtualization.devicePlugin }}
             {{- $cache := .Values.virtualization.imageCache | default dict }}
-            {{- $devices := $r.devices | default (ternary (dict (printf "%s/kvm" $dp.domain) "1" (printf "%s/tun" $dp.domain) "1") (dict "devices.kubevirt.io/kvm" "1" "devices.kubevirt.io/tun" "1") $dp.enabled) }}
+            {{- $devices := $r.devices | default (ternary (dict (printf "%s/kvm" $dp.domain) "1") (dict "devices.kubevirt.io/kvm" "1") $dp.enabled) }}
             {{- $runner := dict
-                  "image" (printf "%s:%s" $r.image.repository ($r.image.tag | default .Chart.AppVersion))
+                  "image" (include "platform.vmRunner.image" .)
                   "imagePullPolicy" ($r.image.pullPolicy | default "IfNotPresent")
                   "imagePullSecrets" (.Values.imagePullSecrets | default list)
                   "serviceAccountName" (include "platform.vmRunner.serviceAccountName" .)
@@ -84,6 +84,7 @@ spec:
                   "devices" $devices
                   "reserveMiB" $r.reserveMiB "headroomMiB" $r.headroomMiB "nestedVirtualization" ($r.nestedVirtualization | default false) "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
                   "imageArchiveHostPath" $r.imageArchiveHostPath
+                  "releaseHostPath" ($r.releaseHostPath | default "") "releaseSameRuntimeOnly" ($r.releaseSameRuntimeOnly | default false)
                   "dnsPolicy" ($r.dnsPolicy | default "Default")
                   "dnsCidrs" ($r.dnsCidrs | default list) "clusterDns" ($r.clusterDns | default dict)
                   "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "" | toString)
@@ -176,6 +177,10 @@ spec:
             - name: PLATFORM_GATEWAY_UPSTREAM_EXTRA_CAS
               value: {{ . | quote }}
             {{- end }}
+            # Where gateways may send traffic beyond the public internet; see
+            # controller.gatewayEgress.
+            - name: GATEWAY_EGRESS
+              value: {{ .Values.controller.gatewayEgress | toJson | quote }}
             - name: MACHINE_DNS_IMAGE
               value: {{ .Values.controller.machineDNSImage | quote }}
             - name: ENVOY_PORT

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Every registered event has an emit site and a subscriber"
 #MISE sources=["src/**/*.ts", "tsconfig.json", "scripts/event-coverage.mjs"]
 #MISE outputs=[]
 #MISE cache.enabled=true

@@ -39,8 +39,11 @@ export interface ActiveTurnStore {
  * So a surviving marker names precisely a turn whose in-process end agent-
  * runtime never saw — the process went down (an OOM group-kill, an eviction)
  * with the turn still running. `attempts` counts recovery resumes so a
- * continuation that dies again cannot crash-loop the pod; a re-record of a
- * still-marked session preserves its count. Only a marker inherited from the
+ * continuation that dies again cannot crash-loop the pod. The count belongs to
+ * one interruption: only the turn recovery itself starts, right after bumping
+ * it, keeps it on record. Any other turn is a new interruption to come and
+ * starts again at zero, or one resume that died would leave the Session
+ * unrecoverable for good. Only a marker inherited from the
  * previous process is a leftover. Recovery reads leftovers a few seconds after
  * boot, and a turn this process starts before that, such as the first chat
  * message after a restart, is live work: counting its marker would resume the
@@ -58,21 +61,22 @@ export function createActiveTurnStore(
     initial: () => ({ sessions: {} }),
   });
   const inherited = new Set(Object.keys(store.read().sessions));
+  const resuming = new Set<string>();
 
   return {
     record(sessionId) {
       inherited.delete(sessionId);
       const { sessions } = store.read();
-      const existing = sessions[sessionId];
+      const attempts = resuming.delete(sessionId)
+        ? (sessions[sessionId]?.attempts ?? 0)
+        : 0;
       store.write({
-        sessions: {
-          ...sessions,
-          [sessionId]: { startedAt: now(), attempts: existing?.attempts ?? 0 },
-        },
+        sessions: { ...sessions, [sessionId]: { startedAt: now(), attempts } },
       });
     },
     remove(sessionId) {
       inherited.delete(sessionId);
+      resuming.delete(sessionId);
       const { sessions } = store.read();
       if (sessions[sessionId] === undefined) return;
       const next = { ...sessions };
@@ -83,6 +87,7 @@ export function createActiveTurnStore(
       const { sessions } = store.read();
       const existing = sessions[sessionId];
       if (existing === undefined) return;
+      resuming.add(sessionId);
       store.write({
         sessions: {
           ...sessions,

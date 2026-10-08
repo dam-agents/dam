@@ -28,6 +28,7 @@ export const createInvocationsSlice: StateCreator<
             openFileDirty: false,
             openArtifactId: null,
             openArtifactDirty: false,
+            openBrowserAgentId: null,
           }
         : { openDelegation: null },
     ),

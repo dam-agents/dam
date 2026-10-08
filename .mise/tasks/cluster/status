@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Show cluster and pod status. Options: --watch (continuous refresh every 2s). Honors LIMA_INSTANCE."
+#MISE description="Show cluster and pod status (--watch refreshes every 2s)"
 #MISE raw=true
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"

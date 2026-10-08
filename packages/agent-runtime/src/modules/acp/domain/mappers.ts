@@ -1,5 +1,6 @@
 import {
   capInlineImages,
+  jsonRpcErrorDetails,
   promptBlockSchema,
   type PlatformUndeliveredPrompt,
 } from "api-server-api";
@@ -40,6 +41,23 @@ export function rewriteAuthError(line: string): string {
     }
   } catch {}
   return line;
+}
+
+const LOST_SESSION_MARKERS = [
+  "Session not found",
+  "process exited unexpectedly",
+];
+
+export function harnessLostSession(frame: unknown): boolean {
+  const error = (frame as { error?: { message?: unknown; data?: unknown } })
+    ?.error;
+  if (typeof error !== "object" || error === null) return false;
+  const texts = [error.message, jsonRpcErrorDetails(error.data)];
+  return texts.some(
+    (text) =>
+      typeof text === "string" &&
+      LOST_SESSION_MARKERS.some((marker) => text.includes(marker)),
+  );
 }
 
 export function rewriteCwd<T>(frame: T, workingDir: string): T {

@@ -1,4 +1,7 @@
-export { composeHarnessConfigModule } from "./compose.js";
+export {
+  composeHarnessConfigModule,
+  composeSessionModelChoices,
+} from "./compose.js";
 export {
   harnessConfigSupported,
   harnessConfigSupportOf,

@@ -26,8 +26,6 @@ allowed-tools:
 
 Mode: `$ARGUMENTS`
 
-The mode picks which steps of the workflow run:
-
 - **sec-only** (default): empty argument or any word for security (`sec`, `security`, `vuln`, `vulnerable`, `cve`, …). Fixes known vulnerabilities; skips steps marked so.
 - **full**: any word for every dependency (`all`, `feat`, `feature`, `full`, …). Runs every step.
 
@@ -36,7 +34,7 @@ Ask with AskUserQuestion only if the word fits neither. Never ask which dependen
 ## Rules
 
 - **Direct dependencies only.** Transitives move when their lockfile refreshes. Never override or resolve a transitive to bump it, except for a known vulnerability: bump the direct dependency pulling it in, and add a `pnpm-workspace.yaml` override only when no release of it fixes it. Remove an override once the direct deps resolve at or above its target without it.
-- **7-day release age.** Every ecosystem refuses releases younger than 7 days: pnpm `minimumReleaseAge` (`pnpm-workspace.yaml`), pinact `min_age` (`.pinact.yaml`), the agent images' `minimum_release_age` (`packages/agents/base/rootfs/etc/mise/conf.d/settings.toml`), and `--minimum-release-age 7d` on `mise lock` / `mise upgrade`. Exclude a release only when it fixes a known vulnerability and is too young, with a comment naming the date the exclusion can go; other young releases wait for the next run. Remove exclusions `git blame` shows are older than 7 days. Exception: smolvm (`packages/vm-runner/smolvm.pin`) always moves to its newest release, however young, because the runner tracks it closely.
+- **7-day release age.** Every ecosystem refuses releases younger than 7 days: pnpm `minimumReleaseAge` (`pnpm-workspace.yaml`), pinact `min_age` (`.pinact.yaml`), the agent images' `minimum_release_age` (`packages/agents/base/rootfs/etc/mise/conf.d/settings.toml`), and `--minimum-release-age 7d` on `mise lock` / `mise upgrade`. Exclude a release only when it fixes a known vulnerability and is too young, with a comment naming the date the exclusion can go; other young releases wait for the next run. Remove exclusions `git blame` shows are older than 7 days. Exceptions: smolvm (`packages/vm-runner/smolvm.pin`) always moves to its newest release, however young, because the runner tracks it closely; the upstream skills track their repo's branch head, which is ours.
 - **Keep the pin style.** An exact pin stays exact. `latest` stays `latest` and is re-locked. A release-line pin (`node = "26"`, `go = "1.27"`, `nodejs:26` in a base tag) moves to a new line only as a major bump.
 - **Move coupled pins together.** Change one only with its partners:
   - Node: mise `nodejs`, the api-server base `hi/nodejs:<n>`, and the `node_modules_<n>` whiteout in `packages/api-server/.mise/tasks/oci`.
@@ -46,7 +44,7 @@ Ask with AskUserQuestion only if the word fits neither. Never ask which dependen
   - mise: `min_version` in `.mise/config.toml` and `version:` in `.github/actions/setup-mise/action.yml`.
   - Go: mise `go` and the `toolchain` line in `packages/controller/go.mod`. Raise its `go` directive only when a dependency requires it.
   - k3s and Gateway API: `GATEWAY_API_VERSION` in `.mise/tasks/cluster/install` is exactly the bundle k3s's `gateway-api-crd` chart ships for `INSTALL_K3S_VERSION`, never newer (the comment above the pin says why).
-- **Always through mise**: `mise run` for tasks, `mise x -- <tool>` for a one-off command. Never call a tool directly.
+- **Always through mise**: `mise run` for tasks, `mise x -- <tool>` for a one-off command.
 - **Never skip or disable a test** to make a bump pass.
 
 ## Ecosystems
@@ -61,15 +59,15 @@ Ask with AskUserQuestion only if the word fits neither. Never ask which dependen
 | crane in the VM runner | `crane_version` and per-arch `crane_sha` in `packages/vm-runner/.mise/tasks/oci` | go-containerregistry releases | Trivy | Version plus both release tarball digests |
 | Python | `packages/driver-sdk-py/pyproject.toml`; its `uv.lock` | `mise x -- uv tree --outdated --depth 1` there | Dependabot | Edit the bound, then `mise x -- uv lock --upgrade-package <pkg>` |
 | Base images | `base_image_*` in `.mise/config.toml` `[vars]` | the registry's tags (`mise x -- crane ls <repo>`) | the nightly "Base image pins are behind" issue, Trivy | The image:pack bases (controller, ui, api-server, keycloak) are pinned by tag and digest: a new tag is edited by hand, then `mise run image:bump-bases` pins its digest; a digest behind its tag needs `image:bump-bases` alone. `base_image_debian` (agents, vm-runner) is a tag alone: a rebuild picks up its updates. |
-| Agent image tools | `packages/agents/base/base.toml`, each `packages/agents/*/image.toml`, `packages/e2e/agents/mock/image.toml`; resolved in `packages/agents/base/image.lock` and `image-locks/` (see `docs/architecture/agent-images.md`) | compare each pin to its registry | Trivy | Edit the pin, then `mise run //packages/agents:oci --lock`. `--lock --bump` re-resolves every `latest`. A vulnerable npm transitive is fixed by bumping its tool. A `pipx:` tool with `uvx_args` is pinned only in its `image.toml`, `uvx_args` included. A k-search source tree is pinned by commit and checksum. `apt.toml` is `latest` and rebuilt daily: nothing to do. |
+| Agent image tools | `packages/agents/base/base.toml`, each `packages/agents/*/image.toml`, `packages/e2e/agents/mock/image.toml`; resolved in `packages/agents/base/image.lock` and `image-locks/` (see `docs/architecture/agent-images.md`) | compare each pin to its registry | Trivy | Edit the pin, then `mise run //packages/agents:oci --lock`. `--lock --bump` re-resolves every `latest`. A vulnerable npm transitive is fixed by bumping its tool. A `pipx:` tool with `uvx_args` is pinned only in its `image.toml`, `uvx_args` included. A k-search source tree is pinned by commit and checksum. `base/apt.txt` is unpinned and rebuilt daily: nothing to do. |
 | Runtime images | `helm/values.yaml` (`image:`, `repository:`/`tag:`, `jobImage`, `envoyImage`, `configCliImage`); `.mise/tasks/cluster/install`; `.mise/tasks/image/mirror` | each image's registry or releases | Trivy | Edit the tag. A digest pin (the device plugin) moves with its tag. A mirrored image lands on quay once `image:mirror` runs in CI. |
 | Helm chart deps | `helm/Chart.yaml` `dependencies`; `helm/Chart.lock` | the chart repo's index | upstream advisories | Edit the version, then `mise x -- helm dependency update helm` to re-lock it. The `helm/` deps provider only builds from `Chart.lock`. |
 | Cluster add-ons | `ISTIO_VERSION`, `CERT_MANAGER_VERSION`, `GATEWAY_API_VERSION` and the ClickStack operator chart in `.mise/tasks/cluster/install`; `INSTALL_K3S_VERSION` in `etc/lima/k3s.yaml` and `etc/lima/k3s-test.yaml` | upstream releases | upstream advisories | Edit the version |
+| Upstream skills | `.agents/upstream-skills.json` (repo, tracked `ref`, `commit`, file hashes) | `git ls-remote <repo> <ref>` differs from `commit` | — | `mise run skills:update`. Never edit the vendored skill directories by hand: `check:upstream-skills` fails on any local change. |
 | GitHub Actions | `uses:` in `.github/workflows/*.yml` and `.github/actions/*/action.yml`; `.pinact.yaml` | `mise x -- pinact run --check -u` | Dependabot, the nightly security issue | `mise x -- pinact run -u` |
 
 ## Workflow
 
-Steps marked **Skip in sec-only mode.** run only in full mode.
 
 ### 1. Collect the vulnerabilities
 
@@ -210,4 +208,4 @@ plus the blocked list with reasons. Wait for approval, then commit on a `chore/u
 - one commit per adopted feature;
 - one `refactor(deps): drop <dependency>` commit per removed dependency.
 
-Open one PR whose body is the table and the blocked list, referencing the scan issues with `Refs #N`, not `Closes`: CI closes them once a scan of `main` is clean.
+Open one PR with the `pr-open` skill, its body the table and the blocked list, referencing the scan issues with `Refs #N`, not `Closes`: CI closes them once a scan of `main` is clean.

@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
+#MISE description="Apply pending migrations with drizzle-kit migrate"
 set -euo pipefail
 pnpm exec drizzle-kit migrate "$@"

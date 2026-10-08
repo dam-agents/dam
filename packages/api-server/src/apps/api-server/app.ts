@@ -16,6 +16,10 @@ import { createAgentTrpcRelay } from "./agent-proxies/agent-trpc-relay.js";
 import { createAgentTrpcProxy } from "./agent-proxies/trpc-proxy.js";
 import { createImportProxy } from "./agent-proxies/import-proxy.js";
 import { createSshRelay } from "./agent-proxies/ssh-relay.js";
+import {
+  createBrowserStreamRelay,
+  requiresConnectionAddress,
+} from "./agent-proxies/browser-stream-relay.js";
 import { createTerminalRelay } from "./agent-proxies/terminal-relay.js";
 import {
   createRelayAdmission,
@@ -34,7 +38,8 @@ export const securityHeaders: MiddlewareHandler = async (c, next) => {
   if (c.res.status !== 304 && !c.res.headers.has("Cache-Control"))
     c.header("Cache-Control", "no-cache, no-store, must-revalidate");
   c.header("X-Content-Type-Options", "nosniff");
-  c.header("X-Frame-Options", "DENY");
+  if (!c.res.headers.has("X-Frame-Options"))
+    c.header("X-Frame-Options", "DENY");
   c.header("Referrer-Policy", "no-referrer");
   c.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
 };
@@ -146,6 +151,12 @@ export function startApiServerApp(deps: ApiServerDeps) {
     deps.agentsRepo,
     deps.sessionPresence,
   );
+  const browserStreamRelay = createBrowserStreamRelay(
+    config.namespace,
+    deps.agentsRepo,
+    deps.sessionPresence,
+    "/api/browser/display",
+  );
   const agentTrpcRelay = createAgentTrpcRelay(
     config.namespace,
     deps.agentsRepo,
@@ -162,6 +173,12 @@ export function startApiServerApp(deps: ApiServerDeps) {
         "terminal",
       ),
       "/api/agents/:id/ssh": relayRoute(relayAdmission, sshRelay, "ssh"),
+      "/api/public/browser-stream/:id/api/websockets": relayRoute(
+        relayAdmission,
+        browserStreamRelay,
+        "browser",
+        (agentId) => requiresConnectionAddress(deps.agentsRepo, agentId),
+      ),
       "/api/agents/:id/trpc-ws": relayRoute(
         relayAdmission,
         agentTrpcRelay,
@@ -177,6 +194,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
       acpRelay.close();
       terminalRelay.close();
       sshRelay.close();
+      browserStreamRelay.close();
     },
   };
 }

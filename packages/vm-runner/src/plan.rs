@@ -8,6 +8,9 @@ use crate::state::is_image_ref;
 // UNIT_BOUNDARY_DESCRIPTION: how long a machine that once answered may stay quiet before it is restarted. A machine that has never answered is still booting, and one that answered a moment ago is between checks, so both halves of the condition are needed.
 pub const UNHEALTHY_RESTART: Duration = Duration::from_secs(10 * 60);
 
+// UNIT_BOUNDARY_DESCRIPTION: the same, for a machine whose VMM another VM runtime booted. The runner assumes it manages such a machine as well as its own, and treats a guest gone quiet as the sign that it does not: a reboot onto its own runtime costs seconds, where waiting out the ordinary grace would leave the agent down for minutes on a failure the reboot fixes. Three steady probes.
+pub const FOREIGN_UNHEALTHY_RESTART: Duration = Duration::from_secs(30);
+
 // UNIT_BOUNDARY_DESCRIPTION: how long a machine that has answered stays ready through missed probes: one interval of the prober's steady cadence, so the machine reads unready on the second consecutive miss and not the first. The probe is bounded to two seconds and a guest under nested virtualization, or on a busy node, takes one to two to answer, so a single miss says nothing about the guest — reporting it would flap the Agent's readiness and fail the deliveries riding on it. Quiet longer than UNHEALTHY_RESTART restarts.
 pub const READY_GRACE: Duration = crate::server::STEADY_PROBE;
 
@@ -70,14 +73,11 @@ impl Health {
             })
     }
 
-    pub fn dead_for_long(&self, now: SystemTime) -> bool {
+    pub fn quiet_beyond(&self, now: SystemTime, limit: Duration) -> bool {
         let Some(since) = self.quiet_since else {
             return false;
         };
-        self.ever_ready
-            && now
-                .duration_since(since)
-                .is_ok_and(|quiet| quiet > UNHEALTHY_RESTART)
+        self.ever_ready && now.duration_since(since).is_ok_and(|quiet| quiet > limit)
     }
 }
 
@@ -142,6 +142,10 @@ pub const OPEN_EGRESS: &str = "a running machine needs allowCidrs, none of them 
 // UNIT_BOUNDARY_DESCRIPTION: a gateway on the host's loopback is the machine's whole egress, so an allowlist beside it would widen what the guest reaches rather than narrow it.
 pub const MIXED_EGRESS: &str = "gatewayHostPort replaces allowCidrs; send one of them";
 
+// UNIT_BOUNDARY_DESCRIPTION: smolvm's gateway hands a guest connection to the gateway's own address on to the runner's loopback, and its floor keeps out only link-local and loopback ranges, so the allowlist alone keeps a guest off the runner: off its machine API, its metrics and every sibling machine's published agent port. The paired gateway is one remote host, so an entry naming more than one address, or a loopback, unspecified, link-local, shared (100.64/10, where smolvm's gateway lives) or multicast one, or an address of the runner's own pod, is refused.
+pub const LOCAL_EGRESS: &str =
+    "each allowCidrs entry must name one remote host, not a range, a local or link-local address, or this runner";
+
 pub fn admissible(spec: &MachineSpec) -> Result<(), &'static str> {
     if spec.running && !shaped(spec) {
         return Err(REQUIRED);
@@ -154,6 +158,9 @@ pub fn admissible(spec: &MachineSpec) -> Result<(), &'static str> {
         && (spec.allow_cidrs.is_empty() || spec.allow_cidrs.iter().any(|c| opens_everything(c)))
     {
         return Err(OPEN_EGRESS);
+    }
+    if !spec.allow_cidrs.iter().all(|c| one_remote_host(c)) {
+        return Err(LOCAL_EGRESS);
     }
     if !spec.image.is_empty() && (!is_image_ref(&spec.image) || spec.image.contains("..")) {
         return Err(BAD_IMAGE);
@@ -180,6 +187,36 @@ pub fn gateway_port_admissible(
         return Err(GATEWAY_ON_A_MACHINE);
     }
     Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an address the runner can bind is one of its pod's own, which is how its pod IP is told apart without listing interfaces.
+fn one_remote_host(cidr: &str) -> bool {
+    let (addr, bits) = cidr.split_once('/').unwrap_or((cidr, ""));
+    let Ok(ip) = addr.trim().parse::<std::net::IpAddr>() else {
+        return false;
+    };
+    let ip = ip.to_canonical();
+    let host_bits = if ip.is_ipv4() { "32" } else { "128" };
+    let local = match ip {
+        std::net::IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            a == 0
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_multicast()
+                || v4.is_broadcast()
+                || (a == 100 && b & 0xc0 == 64)
+        }
+        std::net::IpAddr::V6(v6) => {
+            v6.is_unspecified()
+                || v6.is_loopback()
+                || v6.is_multicast()
+                || v6.segments()[0] & 0xffc0 == 0xfe80
+        }
+    };
+    (bits.is_empty() || bits.trim() == host_bits)
+        && !local
+        && std::net::UdpSocket::bind((ip, 0)).is_err()
 }
 
 fn opens_everything(cidr: &str) -> bool {
@@ -411,22 +448,28 @@ mod tests {
 
         let mut never_answered = Health::default();
         never_answered.observed_running(false, start);
-        assert!(!never_answered.dead_for_long(later(UNHEALTHY_RESTART * 10)));
+        assert!(!never_answered.quiet_beyond(later(UNHEALTHY_RESTART * 10), UNHEALTHY_RESTART));
 
         let mut quiet = Health::default();
         quiet.observed_running(true, start);
         quiet.observed_running(false, later(Duration::from_secs(1)));
-        assert!(!quiet.dead_for_long(later(UNHEALTHY_RESTART)));
-        assert!(quiet.dead_for_long(later(UNHEALTHY_RESTART + Duration::from_secs(2))));
+        assert!(!quiet.quiet_beyond(later(UNHEALTHY_RESTART), UNHEALTHY_RESTART));
+        assert!(quiet.quiet_beyond(
+            later(UNHEALTHY_RESTART + Duration::from_secs(2)),
+            UNHEALTHY_RESTART
+        ));
 
         quiet.observed_running(false, later(Duration::from_secs(5)));
         assert!(
-            quiet.dead_for_long(later(UNHEALTHY_RESTART + Duration::from_secs(2))),
+            quiet.quiet_beyond(
+                later(UNHEALTHY_RESTART + Duration::from_secs(2)),
+                UNHEALTHY_RESTART
+            ),
             "the window restarted at a later silence instead of the first"
         );
 
         quiet.observed_running(true, later(UNHEALTHY_RESTART));
-        assert!(!quiet.dead_for_long(later(UNHEALTHY_RESTART * 3)));
+        assert!(!quiet.quiet_beyond(later(UNHEALTHY_RESTART * 3), UNHEALTHY_RESTART));
     }
 
     // TEST_SCENARIO: a machine that answered is still ready for one steady probe interval of silence and not a moment longer; one that never answered gets no grace at all.
@@ -461,18 +504,18 @@ mod tests {
         health.observed_running(true, start);
         health.observed_running(false, later(Duration::from_secs(1)));
         let gave_up = later(UNHEALTHY_RESTART + Duration::from_secs(2));
-        assert!(health.dead_for_long(gave_up));
+        assert!(health.quiet_beyond(gave_up, UNHEALTHY_RESTART));
 
         health.action_started();
 
-        assert!(!health.dead_for_long(gave_up));
+        assert!(!health.quiet_beyond(gave_up, UNHEALTHY_RESTART));
         assert_eq!(
             step(
                 Some(&want),
                 &want,
                 State::Running,
                 false,
-                health.dead_for_long(gave_up)
+                health.quiet_beyond(gave_up, UNHEALTHY_RESTART)
             ),
             None
         );
@@ -480,7 +523,10 @@ mod tests {
 
         health.observed_running(false, later(UNHEALTHY_RESTART * 2));
         assert!(
-            health.dead_for_long(later(UNHEALTHY_RESTART * 3 + Duration::from_secs(2))),
+            health.quiet_beyond(
+                later(UNHEALTHY_RESTART * 3 + Duration::from_secs(2)),
+                UNHEALTHY_RESTART
+            ),
             "the window runs again from the silence after the restart"
         );
     }
@@ -567,6 +613,32 @@ mod tests {
                 ..running_spec()
             };
             assert_eq!(admissible(&spec), Err(OPEN_EGRESS), "{what} was admitted");
+        }
+        for local in [
+            "10.0.0.0/24",
+            "127.0.0.1/32",
+            "127.0.0.1",
+            "0.0.0.0/32",
+            "169.254.169.254/32",
+            "100.96.0.1/32",
+            "224.0.0.1/32",
+            "::1/128",
+            "fe80::1/128",
+            "::ffff:127.0.0.1/128",
+            "not-an-address/32",
+        ] {
+            let spec = MachineSpec {
+                allow_cidrs: vec!["10.96.0.7/32".into(), local.into()],
+                ..running_spec()
+            };
+            assert_eq!(admissible(&spec), Err(LOCAL_EGRESS), "{local} was admitted");
+        }
+        for remote in ["10.96.0.7", "172.30.4.1/32", "fd00:10:96::a/128"] {
+            let spec = MachineSpec {
+                allow_cidrs: vec![remote.into()],
+                ..running_spec()
+            };
+            assert_eq!(admissible(&spec), Ok(()), "{remote} was refused");
         }
         let loopback_gateway = MachineSpec {
             allow_cidrs: vec![],

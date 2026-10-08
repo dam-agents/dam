@@ -6,6 +6,10 @@ import { formatDateTime, timeUntil } from "@/lib/format-time";
 
 import type { Schedule } from "../../../types.js";
 import {
+  useHasHarnessDefault,
+  useSessionModelChoices,
+} from "../api/session-model.js";
+import {
   clampText,
   declinedSummary,
   formatRunTime,
@@ -28,14 +32,17 @@ function DetailCard({
 }
 
 export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
-  const { task, precheck, timezone, sessionMode, enabled, status } = schedule;
+  const { task, precheck, model, timezone, sessionMode, enabled, status } =
+    schedule;
   const stopReason = enabled ? status?.stopReason : undefined;
   const nextRun =
     enabled && status?.nextRun
       ? timeUntil(status.nextRun)
-      : stopReason
-        ? "Stopped"
-        : "Paused";
+      : schedule.type === "once"
+        ? "—"
+        : stopReason
+          ? "Stopped"
+          : "Paused";
   const lastStatus = lastRunStatus(status?.lastResult);
   const declined = precheck ? declinedSummary(status ?? undefined) : null;
 
@@ -100,10 +107,38 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
           </div>
         </DetailCard>
         <DetailCard label="Timezone">{timezone ?? "—"}</DetailCard>
-        <DetailCard label="Session mode">
-          <span className="capitalize">{sessionMode ?? "fresh"}</span>
+        {schedule.type !== "once" && (
+          <DetailCard label="Session mode">
+            <span className="capitalize">{sessionMode ?? "fresh"}</span>
+          </DetailCard>
+        )}
+        <DetailCard label="Model">
+          <ScheduleModel agentId={schedule.agentId} model={model} />
         </DetailCard>
       </div>
     </div>
+  );
+}
+
+function ScheduleModel({
+  agentId,
+  model,
+}: {
+  agentId: string;
+  model: string | null;
+}) {
+  const choices = useSessionModelChoices(agentId);
+  const hasDefault = useHasHarnessDefault(agentId);
+  if (!model) return <>{hasDefault ? "Default" : "Same as agent"}</>;
+  const choice = choices.find((c) => c.value === model);
+  return (
+    <>
+      {choice?.name ?? model}
+      {choice?.description && (
+        <p className="mt-1 text-xs font-normal text-muted-foreground">
+          {choice.description}
+        </p>
+      )}
+    </>
   );
 }

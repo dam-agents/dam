@@ -199,11 +199,15 @@ export function createRunService(deps: RunServiceDeps): RunService {
     onPromptStarted?: () => void,
   ): Promise<RunConnection | null> {
     let conn: RunConnection;
+    const stalls = new Set<string>();
     try {
       conn = await connectRun({
         url: acpUrl(ctx.host, ctx.agentId, ctx.token),
         onPermissionRequest: (request) => {
-          deps.errOut(stallLine(ctx.agentId, request));
+          const line = stallLine(ctx.agentId, request);
+          if (stalls.has(line)) return;
+          stalls.add(line);
+          deps.errOut(line);
         },
         onNotification: (method, params) => {
           const sid = sessionIdOf(params);

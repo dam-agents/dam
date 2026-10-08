@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 //MISE dir="{{vars.repo_root}}"
-//MISE description="The ADR log is append-only: an accepted ADR body is never rewritten, deleted, or renamed. Precommit diffs the staged tree against HEAD (fast local loop); CI diffs the branch against its origin/main merge-base (authoritative, survives amends and rebases)."
+//MISE description="Accepted ADR bodies are never rewritten, deleted or renamed"
+/* UNIT_BOUNDARY_DESCRIPTION: Precommit diffs the staged tree against HEAD (fast local loop); CI diffs
+the branch against its origin/main merge-base (authoritative, survives
+amends and rebases). */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
-import { splitFrontmatter, parseFrontmatter } from "../generate/adr-index";
+import { splitFrontmatter, parseFrontmatter } from "../fix/adr-index";
 
 const ADR_DIR = "docs/adrs";
 

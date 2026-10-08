@@ -46,6 +46,7 @@ export type ModelDiscoverySources = z.infer<typeof modelDiscoverySources>;
 
 export const harnessConfigBinding = z.object({
   file: z.string().min(1),
+  sessionModel: z.boolean().optional(),
   format: z.enum(["json", "toml"]).default("json"),
   keys: z
     .object({
@@ -70,6 +71,7 @@ export const harnessConfigBinding = z.object({
     ),
   catalog: harnessConfigCatalog.optional(),
   modelDiscovery: modelDiscoverySources.optional(),
+  defaultModel: z.string().min(1).optional(),
 });
 export type HarnessConfigBinding = z.infer<typeof harnessConfigBinding>;
 
@@ -88,6 +90,10 @@ export const runtimeManifestSchema = z.object({
       message: "sessionHistory needs exactly one of module or command",
     })
     .optional(),
+
+  terminalSessionPins: z.string().min(1).optional(),
+
+  agentProcesses: z.array(z.string().min(1).max(15)).default([]),
 
   extensions: z
     .object({

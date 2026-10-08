@@ -1,3 +1,4 @@
+import { match } from "ts-pattern";
 import { basename } from "node:path";
 import type { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -6,6 +7,7 @@ import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import {
   AGENT_HOME_DIR,
   AGENT_WORK_DIR,
+  SESSION_REF_HEADER,
   type AppRouter,
 } from "agent-runtime-api";
 import type { SatelliteView } from "api-server-api";
@@ -13,7 +15,9 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
   ChannelType,
+  onceState,
   precheckSchema,
+  scheduleModelSchema,
   quietWindowSchema,
   type SchedulesService,
   type SkillsService,
@@ -152,6 +156,7 @@ export interface McpSessionDeps {
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
+  sessionRef?: string;
   satellites?: {
     ops: SatelliteAgentOpsImpl;
     granted: SatelliteView[];
@@ -278,7 +283,7 @@ export function createMcpSession(
 
   server.tool(
     "send_channel_message",
-    `Post a NEW top-level message to a connected channel (slack or telegram) — for announcements, cross-posting to another channel, or starting a new thread. On Slack this is NOT how you answer a message you are currently handling: use reply for that, so the answer stays in the thread it arrived in. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on. Pass chatId to address a specific chat: an id from describe_channel, or on Slack a user id (U…) to send that person a direct message. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards; omit both for Slack's default previews. Optionally attach a single file by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md). 50 MB cap.`,
+    `Post a NEW top-level message to a connected channel (slack or telegram) — for announcements, cross-posting to another channel, or starting a new thread. On Slack this is NOT how you answer a message you are currently handling: use reply for that, so the answer stays in the thread it arrived in. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file by setting attachment.path. 50 MB cap.`,
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       text: z.string(),
@@ -405,7 +410,7 @@ export function createMcpSession(
 
   server.tool(
     "describe_message_reactions",
-    "Look up who reacted to a message and with what emoji — reactions are otherwise invisible to you; nothing in the message text or conversation history reveals them. Returns { reactions: [{ name, count, users }], conversationId, messageTs }, one reaction entry per emoji used (name is the Slack short name, users the ids who used it) plus the chat and message actually inspected (useful when you omitted one or both), or an error if the message can't be found. Defaults to the message you're currently answering, in the channel you're bound to; pass chatId for another chat the bot can reach (see describe_channel) and messageTs for a specific message — e.g. one you posted earlier and want to check on later, like a weekly signup thread. Slack only.",
+    "Look up who reacted to a message and with what emoji — reactions are otherwise invisible to you; nothing in the message text or conversation history reveals them. Returns { reactions: [{ name, count, users }], conversationId, messageTs }, one reaction entry per emoji used (name is the Slack short name, users the ids who used it) plus the chat and message actually inspected (useful when you omitted one or both), or an error if the message can't be found. Pass chatId for another chat the bot can reach (see describe_channel) and messageTs for a specific message — e.g. one you posted earlier and want to check on later, like a weekly signup thread. Slack only.",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       chatId: z
@@ -511,7 +516,7 @@ export function createMcpSession(
 
   server.tool(
     "reply",
-    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Omit threadTs to reply in the current thread; the thread is where the answer belongs, so leave alsoSendToChannel off unless you were asked to surface the answer to the whole channel. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards; omit both for Slack's default previews. Optionally attach a single file to the reply by setting attachment.path — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
+    `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
     {
       text: z.string(),
       attachment: attachmentInput,
@@ -602,7 +607,7 @@ export function createMcpSession(
 
   server.tool(
     "react",
-    "React in Slack: add an emoji reaction to a message in the Slack conversation you are answering — a quiet acknowledgement that notifies no one (e.g. eyes on a reported bug, white_check_mark when a task is done). Omit messageTs to react to the message you're currently answering.",
+    "React in Slack: add an emoji reaction to a message in the Slack conversation you are answering — a quiet acknowledgement that notifies no one (e.g. eyes on a reported bug, white_check_mark when a task is done).",
     {
       emoji: z
         .string()
@@ -685,14 +690,12 @@ export function createMcpSession(
 
   server.tool(
     "no_reply_needed",
-    "End your turn without sending anything to the channel. Call this when the message doesn't need a response from you — routine chatter that isn't aimed at you, or something another person already handled. Nothing is posted; it just records that you deliberately stayed silent.",
+    "End your turn without sending anything to the channel. Call this when the message doesn't need a response from you — routine chatter that isn't aimed at you, or something another person already handled. It just records that you deliberately stayed silent.",
     {
       reason: z
         .string()
         .optional()
-        .describe(
-          "Optional short note on why no reply was needed (not posted).",
-        ),
+        .describe("Short note on why no reply was needed (not posted)."),
       threadTs: z
         .string()
         .optional()
@@ -770,7 +773,7 @@ export function createMcpSession(
 
   server.tool(
     "publish_skill",
-    "Open a pull request that adds an existing on-disk skill from THIS agent to a connected source. PRECONDITION: the skill directory (SKILL.md + supporting files) must already exist under one of your configured skill paths — author the files first using your normal file-writing tools, then call this. This tool only ships an already-authored skill upstream; it does not create or scaffold one. Requires the source to have a publish credential configured. Returns the PR URL on success.",
+    "Open a pull request that adds an existing on-disk skill from THIS agent to a connected source. PRECONDITION: the skill directory (SKILL.md + supporting files) must already exist under one of your configured skill paths — author the files first using your normal file-writing tools, then call this. Requires the source to have a publish credential configured. Returns the PR URL on success.",
     {
       sourceId: z.string().min(1),
       name: z.string().min(1),
@@ -864,14 +867,19 @@ export function createMcpSession(
 
   server.tool(
     "list_schedules",
-    "List all platform schedules registered for this agent. These are persistent cron schedules visible in the host UI (not in-session or in-process cron tools).",
+    'List all platform schedules registered for this agent. These are persistent schedules visible in the host UI (not in-session or in-process cron tools). A one-time schedule (`spec.type` "once") also carries its `state`: pending, delivering, completed, missed or failed.',
     {},
-    async () => json(await schedules.list(agentId)),
+    async () =>
+      json(
+        (await schedules.list(agentId)).map((s) =>
+          s.spec.type === "once" ? { ...s, state: onceState(s.status) } : s,
+        ),
+      ),
   );
 
   server.tool(
     "create_schedule",
-    "Register a PERSISTENT recurring schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator. Pass exactly one of `cron` or `rrule`+`timezone`: prefer `rrule`+`timezone` whenever the user gives you a time in their own local terms ('every weekday at 9am', 'Mondays at 6pm Europe/Prague') — it fires at that local wall-clock time year-round, correctly adjusting across DST. `cron` is a legacy, UTC-only fallback: a 9am-local ask has to be hand-converted to UTC and silently drifts by an hour whenever DST flips, so only use it when the user explicitly wants a fixed UTC time.",
+    "Register a PERSISTENT recurring schedule on this agent. The schedule runs on the platform Kubernetes controller, survives Claude process restarts, shows up in the host UI, and fires the given prompt as a new trigger. PREFER THIS over any in-process / session-only / built-in CronCreate tool whenever the user asks to schedule recurring work on this agent — those in-process schedules die when Claude exits and are invisible to the human operator. For work that should happen exactly once — a check-back, a retry, a hand-off to a fresh session — use `schedule_once` instead. Pass exactly one of `cron` or `rrule`+`timezone`: prefer `rrule`+`timezone` whenever the user gives you a time in their own local terms ('every weekday at 9am', 'Mondays at 6pm Europe/Prague') — it fires at that local wall-clock time year-round, correctly adjusting across DST. `cron` is a legacy, UTC-only fallback: a 9am-local ask has to be hand-converted to UTC and silently drifts by an hour whenever DST flips, so only use it when the user explicitly wants a fixed UTC time.",
     {
       name: z
         .string()
@@ -895,14 +903,12 @@ export function createMcpSession(
         .string()
         .min(1)
         .optional()
-        .describe(
-          "IANA timezone the rrule fires in, e.g. 'Europe/Prague'. Required with rrule.",
-        ),
+        .describe("IANA timezone the rrule fires in, e.g. 'Europe/Prague'."),
       quietHours: z
         .array(quietWindowSchema)
         .optional()
         .describe(
-          "Optional windows (in `timezone`) during which an rrule occurrence is skipped rather than fired, e.g. to avoid a night-time run.",
+          "Windows (in `timezone`) during which an rrule occurrence is skipped rather than fired, e.g. to avoid a night-time run.",
         ),
       task: z
         .string()
@@ -917,7 +923,12 @@ export function createMcpSession(
       precheck: precheckSchema
         .optional()
         .describe(
-          "Optional shell command run before each fire, deciding whether the run happens at all. Runs under `bash -lc` from the workspace root (/home/agent/work) in this pod's environment, so relative paths resolve there — a script in a repo cloned into the workspace is ./<repo>/scripts/check.sh, and a path that does not resolve exits 127, which counts as the check breaking. Exit 0 runs the task, exit 1 skips this occurrence without any model call, and any other exit (or a two-minute timeout) means the check itself broke and the task runs anyway. Whatever it prints on stdout is appended to the task prompt. Use it for a cheap deterministic 'did anything change?' test so a frequent schedule only costs a turn when there is work: PLATFORM_LAST_RUN_AT (ISO timestamp of the last fire that actually ran, empty if never), PLATFORM_FIRE_AT and PLATFORM_SCHEDULE_ID are in the environment.",
+          "Shell command run before each fire, deciding whether the run happens at all. Runs under `bash -lc` from the workspace root (/home/agent/work) in this pod's environment, so relative paths resolve there — a script in a repo cloned into the workspace is ./<repo>/scripts/check.sh, and a path that does not resolve exits 127, which counts as the check breaking. Exit 0 runs the task, exit 1 skips this occurrence without any model call, and any other exit (or a two-minute timeout) means the check itself broke and the task runs anyway. Whatever it prints on stdout is appended to the task prompt. Use it for a cheap deterministic 'did anything change?' test so a frequent schedule only costs a turn when there is work: PLATFORM_LAST_RUN_AT (ISO timestamp of the last fire that actually ran, empty if never), PLATFORM_FIRE_AT and PLATFORM_SCHEDULE_ID are in the environment.",
+        ),
+      model: scheduleModelSchema
+        .optional()
+        .describe(
+          "Optional model this schedule's sessions run on, instead of the default, e.g. a cheap model for a frequent routine check. Use a name from this agent's model settings (for Claude Code: fable, opus, sonnet or haiku). Omit it to run on the harness's own default, what the agent's Default model setting gives, not on whatever model the agent is currently set to. On a harness with no such default (no provider pin and none declared by the harness), a schedule without a model follows the agent's current model instead. A model the harness cannot switch to fails the run with the reason rather than running on the default.",
         ),
     },
     async ({
@@ -929,6 +940,7 @@ export function createMcpSession(
       task,
       sessionMode,
       precheck,
+      model,
     }) => {
       if ((cron === undefined) === (rrule === undefined)) {
         return errorResult(
@@ -956,20 +968,116 @@ export function createMcpSession(
                   task,
                   sessionMode,
                   precheck,
+                  model,
                 },
                 "agent",
               )
             : await schedules.createCron(
-                { name, agentId, cron: cron!, task, sessionMode, precheck },
+                {
+                  name,
+                  agentId,
+                  cron: cron!,
+                  task,
+                  sessionMode,
+                  precheck,
+                  model,
+                },
                 "agent",
               );
         return json({
           id: sched.id,
           name: sched.name,
-          ...(sched.spec.type === "rrule"
-            ? { rrule: sched.spec.rrule, timezone: sched.spec.timezone }
-            : { cron: sched.spec.cron }),
+          ...match(sched.spec)
+            .with({ type: "rrule" }, (spec) => ({
+              rrule: spec.rrule,
+              timezone: spec.timezone,
+            }))
+            .with({ type: "cron" }, (spec) => ({ cron: spec.cron }))
+            .with({ type: "once" }, (spec) => ({
+              at: spec.at,
+              timezone: spec.timezone,
+            }))
+            .exhaustive(),
           enabled: sched.spec.enabled,
+        });
+      });
+    },
+  );
+
+  server.tool(
+    "schedule_once",
+    "Run a task EXACTLY ONCE on this agent: at a given local time, or immediately when `at` is omitted. By default it runs in a fresh session of its own; `inSession` can instead continue THIS session when it is due (a check-back that keeps your context), or run fresh and report its result back into THIS session as a new turn when it finishes. PREFER THIS over `create_schedule` for anything that should happen once — checking back on something still in flight, retrying after a transient failure, handing a task to a fresh session now — so no recurring schedule is left behind to delete. The moment is always absolute: work out the local date and time from the current time yourself, then check the resolved instant this tool returns. It shows up in the host UI as a one-time task, and the user can cancel it there (or you can, with `delete_schedule`). The number of one-time schedules you may hold and create per hour is limited.",
+    {
+      name: z
+        .string()
+        .min(1)
+        .describe("Human-readable name shown in the host UI"),
+      task: z
+        .string()
+        .min(1)
+        .describe("Prompt the new session will receive when it runs"),
+      at: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+        .optional()
+        .describe(
+          "Local wall-clock time in `timezone`, as YYYY-MM-DDTHH:mm, e.g. '2026-10-05T08:30'. Omit to run immediately.",
+        ),
+      timezone: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "IANA timezone `at` is expressed in, e.g. 'Europe/Prague'. Required with `at`.",
+        ),
+      inSession: z
+        .enum(["fresh", "continue", "report"])
+        .optional()
+        .describe(
+          "fresh (default): a new session of its own. continue: a new turn in THIS session, with its context. report: a new session whose result comes back into THIS session as a new turn.",
+        ),
+      model: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Model the new session runs on, e.g. 'haiku' for a routine check or 'opus' for a hard one; omit to run on the harness's own default (what the agent's Default model setting gives), not on whatever model the agent is currently set to. Not with inSession continue, which keeps this session's model. An unknown value is refused with the list of choices.",
+        ),
+    },
+    async ({ name, task, at, timezone, inSession, model }) => {
+      if (at !== undefined && !timezone)
+        return errorResult("`at` requires `timezone`.");
+      const zone = timezone ?? "UTC";
+      const mode = inSession ?? "fresh";
+      if (mode !== "fresh" && !deps.sessionRef)
+        return errorResult(
+          `inSession "${mode}" needs to know which session is calling, and this harness does not identify it; use "fresh".`,
+        );
+      return run(async () => {
+        const sched = await schedules.createOnce(
+          {
+            name,
+            agentId,
+            task,
+            timezone: zone,
+            ...(at ? { at } : {}),
+            ...(model ? { model } : {}),
+          },
+          "agent",
+          mode !== "fresh" && deps.sessionRef
+            ? { sessionRef: deps.sessionRef, mode }
+            : undefined,
+        );
+        const fireAt =
+          sched.spec.type === "once" ? sched.spec.at : sched.status?.nextRun;
+        return json({
+          id: sched.id,
+          name: sched.name,
+          fireAt,
+          fireAtLocal: fireAt ? localTime(fireAt, zone) : null,
+          timezone: zone,
+          inSession: mode,
+          model: model ?? null,
         });
       });
     },
@@ -1032,7 +1140,7 @@ export function createMcpSession(
 
   server.tool(
     "report_result",
-    "Report this invocation's final result. Pass a single `result` argument: a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
+    "Report this invocation's final result. Pass a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
     {
       result: z
         .unknown()
@@ -1069,6 +1177,20 @@ export function createMcpSession(
   });
 
   return { transport, server };
+}
+
+function localTime(iso: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const f = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${f.year}-${f.month}-${f.day}T${f.hour}:${f.minute}`;
 }
 
 export interface MountMcpDeps {
@@ -1127,8 +1249,10 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
         },
       ),
     ]);
+    const sessionRef = c.req.header(SESSION_REF_HEADER);
     const session = createMcpSession(agentId, {
       owner: verified.owner,
+      ...(sessionRef ? { sessionRef } : {}),
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,

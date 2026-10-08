@@ -5,9 +5,11 @@ import { toast as sonner } from "sonner";
 import { useStore } from "../../../store.js";
 import { useFeed } from "../api/queries.js";
 import { approvalHeadline } from "../lib/approval-copy.js";
+import { approvalToastChanges } from "../lib/approval-toasts.js";
 import type { FeedItem } from "../lib/feed-item.js";
 
 function fireApprovalToast(
+  approvalId: string,
   agentName: string,
   headline: string,
   onReview: () => void,
@@ -31,7 +33,7 @@ function fireApprovalToast(
         </p>
       </button>
     ),
-    { duration: 6000 },
+    { id: approvalId, duration: 6000 },
   );
 }
 
@@ -47,13 +49,18 @@ export function useApprovalToasts(): void {
         item.kind === "approval",
     );
     const previous = seen.current;
-    seen.current = new Set(approvals.map((item) => item.id));
+    const current = new Set(approvals.map((item) => item.id));
+    seen.current = current;
     if (previous === null) return;
 
+    const { raise, clear } = approvalToastChanges(previous, current);
+    for (const id of clear) sonner.dismiss(id);
     const names = new Map(agents.map((agent) => [agent.id, agent.name]));
+    const raised = new Set(raise);
     for (const item of approvals) {
-      if (previous.has(item.id)) continue;
+      if (!raised.has(item.id)) continue;
       fireApprovalToast(
+        item.id,
         names.get(item.agentId) ?? "An agent",
         approvalHeadline(item.approval),
         () => setActivityView("approvals"),

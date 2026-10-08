@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { rewriteAuthError } from "../../domain/mappers.js";
+import { tailStart } from "../../domain/replay-tail.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 
 interface LogEntry {
@@ -34,7 +35,7 @@ export interface ReplayOpts {
 }
 
 export interface SessionTranscript {
-  append(sessionId: string, line: string): void;
+  append(sessionId: string, line: string, turnId?: string | null): void;
   appendEcho(
     sessionId: string,
     line: string,
@@ -125,10 +126,13 @@ function withPlatformMeta(
  * far every attached channel has read it, so a channel that joins late or
  * reconnects receives only what it missed. Sequence numbers, the size cap,
  * eviction, and the clip accounting all stay inside. A fresh viewer that opts
- * into the tail gets only the newest replayTailEvents entries; catchUp and
- * replayPage report what was cut — and an opaque cursor naming where the cut
- * ends, when the older range is still in the log — so the caller can put that
- * on the load response. A viewer that does not opt in replays everything the
+ * into the tail gets only the newest replayTailEvents entries, moved back so
+ * the cut never splits a run of one message's chunks or parts a tool call
+ * from its updates, since the client would show half a sentence or drop the
+ * updates; a page is cut the same way. catchUp and replayPage report what
+ * was cut — and an opaque cursor naming where the cut ends, when the older
+ * range is still in the log — so the caller can put that on the load
+ * response. A viewer that does not opt in replays everything the
  * log holds, clipped only by eviction. replayPage serves older ranges on
  * demand without moving any cursor; the cursor embeds the log generation, so
  * a cursor minted before this log was (re)built is refused rather than
@@ -209,10 +213,13 @@ export function createSessionTranscript(
   }
 
   return {
-    append(sessionId, line) {
+    append(sessionId, line, turnId) {
       fanOut(
         sessionId,
-        withPlatformMeta(line, { at: new Date().toISOString() }),
+        withPlatformMeta(line, {
+          at: new Date().toISOString(),
+          turnId: turnId ?? undefined,
+        }),
         () => true,
       );
     },
@@ -234,11 +241,12 @@ export function createSessionTranscript(
       if (!log) return { clipped: false };
       const current = cursorFor(channel, sessionId);
       let pending = log.entries.filter((entry) => entry.seq > current);
-      const capped =
-        current === 0 &&
-        (opts?.tail ?? false) &&
-        pending.length > deps.replayTailEvents;
-      if (capped) pending = pending.slice(-deps.replayTailEvents);
+      const start =
+        current === 0 && (opts?.tail ?? false)
+          ? tailStart(pending, deps.replayTailEvents)
+          : 0;
+      const capped = start > 0;
+      if (capped) pending = pending.slice(start);
       let lastSeq = current;
       for (const entry of pending) {
         if (!channel.isOpen()) break;
@@ -267,7 +275,7 @@ export function createSessionTranscript(
         return { ok: false };
       }
       const older = log.entries.filter((entry) => entry.seq < decoded.seq);
-      const page = older.slice(-deps.replayTailEvents);
+      const page = older.slice(tailStart(older, deps.replayTailEvents));
       const first = page[0];
       if (first === undefined)
         return { ok: true, clip: { clipped: log.truncated } };

@@ -5,8 +5,6 @@ description: Build multi-platform chat bots with Chat SDK (`chat` npm package). 
 
 # Chat SDK
 
-Unified TypeScript SDK for building chat bots across Slack, Teams, Google Chat, Discord, Telegram, GitHub, Linear, and WhatsApp. Write bot logic once, deploy everywhere.
-
 ## Start with published sources
 
 When Chat SDK is installed in a user project, inspect the published files that ship in `node_modules`:
@@ -18,8 +16,6 @@ node_modules/chat/dist/jsx-runtime.d.ts    # JSX runtime types
 node_modules/chat/docs/contributing/       # adapter-authoring docs
 node_modules/chat/docs/guides/             # framework/platform guides
 ```
-
-If one of the paths below does not exist, that package is not installed in the project yet.
 
 Read these before writing code:
 - `node_modules/chat/docs/getting-started.mdx` — install and setup
@@ -95,8 +91,6 @@ bot.onSubscribedMessage(async (thread, message) => {
 | `onAssistantContextChanged` | Slack assistant context changed |
 | `onAppHomeOpened` | Slack App Home opened |
 | `onMemberJoinedChannel` | Slack member joined channel event |
-
-Read `node_modules/chat/docs/handling-events.mdx`, `node_modules/chat/docs/actions.mdx`, `node_modules/chat/docs/modals.mdx`, and `node_modules/chat/docs/slash-commands.mdx` before wiring handlers. `onDirectMessage` behavior is documented in `node_modules/chat/docs/direct-messages.mdx`.
 
 ## Streaming
 

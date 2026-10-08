@@ -1,3 +1,4 @@
+import { StopFilledAlt } from "@carbon/icons-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { Tooltip } from "@/components/ui/tooltip";
@@ -6,6 +7,7 @@ import { cn } from "@/lib/utils";
 import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
 import { LazyRobotHead } from "../../agents/components/avatar/lazy-robot-head.js";
+import { modelDisplayName } from "../lib/model-name.js";
 import type { MessageTime } from "../lib/thread-items.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
@@ -22,6 +24,7 @@ interface BaseProps {
   avatarAgentName?: string;
   userLabel?: string;
   readOnly?: boolean;
+  showModel?: boolean;
   isLast: boolean;
   hasPendingPermission: boolean;
   onRetry: OnRetry;
@@ -87,6 +90,7 @@ export const ChatMessage = memo(function ChatMessage({
   avatarAgentName,
   userLabel = "You",
   readOnly = false,
+  showModel = false,
   isLast,
   timeLabel,
   timeTitle,
@@ -114,7 +118,7 @@ export const ChatMessage = memo(function ChatMessage({
     );
   }
 
-  const { role, parts, streaming, queued, error } = message;
+  const { role, parts, streaming, queued, error, stopped } = message;
   const isAssistant = role === "assistant";
   const undelivered = !isAssistant && error !== undefined;
 
@@ -182,6 +186,15 @@ export const ChatMessage = memo(function ChatMessage({
               <span className="sr-only">Working</span>
             </span>
           )}
+          {isAssistant && stopped && !streaming && (
+            <p
+              data-testid="reply-stopped-marker"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              <StopFilledAlt size={12} className="shrink-0" />
+              Stopped
+            </p>
+          )}
           {undelivered && (
             <UndeliveredNotice
               message={message}
@@ -190,6 +203,16 @@ export const ChatMessage = memo(function ChatMessage({
             />
           )}
         </div>
+      )}
+      {isAssistant && showModel && !streaming && message.model && (
+        <Tooltip side="top" content={message.model}>
+          <span
+            data-testid="reply-model"
+            className="text-[11px] text-muted-foreground cursor-default"
+          >
+            {modelDisplayName(message.model)}
+          </span>
+        </Tooltip>
       )}
       {error && isAssistant && (
         <SendErrorCard

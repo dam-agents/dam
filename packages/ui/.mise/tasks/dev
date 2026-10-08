@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Run the Vite dev server"
+set -euo pipefail
+pnpm exec vite "$@"

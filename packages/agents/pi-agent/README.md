@@ -20,8 +20,10 @@ usr/local/bin/
   harness-chat           ← chat-mode entrypoint (pi-acp, which runs pi through pi-platform)
   harness-terminal       ← terminal-mode entrypoint (pi-platform)
   pi-platform            ← runs pi with the platform's extensions loaded from the image
-usr/local/share/pi-platform/extensions/pi-dynamic-providers/
-  index.ts               ← loaded with -e on every start; registers any of {rits, openai-proxy, amazon-bedrock} whose env vars are set
+usr/local/share/pi-platform/
+  pi-acp-patch.mjs       ← temporary pi-acp fix, loaded by harness-chat (see "pi-acp concurrent sessions")
+  extensions/pi-dynamic-providers/
+    index.ts             ← loaded with -e on every start; registers any of {rits, openai-proxy, amazon-bedrock} whose env vars are set
 app/
   runtime-manifest.yaml  ← runtime driver config; the platform writes ~/.pi/agent/mcp.json at runtime (not seeded)
   working-dir/           ← seeds /home/agent/ on first boot
@@ -99,7 +101,7 @@ These providers have additional configuration shapes (per-resource URLs, AWS cre
 
 | Provider | pi `provider` id | Auth env vars | Notes |
 |---|---|---|---|
-| Azure OpenAI Responses | `azure-openai-responses` | `AZURE_OPENAI_API_KEY` plus `AZURE_OPENAI_BASE_URL` (or `AZURE_OPENAI_RESOURCE_NAME`), optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` | Host is your Azure resource (e.g. `<resource>.openai.azure.com`). Should work with the placeholder-env + generic-secret pattern, but not validated. |
+| Azure OpenAI | `azure` | `AZURE_OPENAI_API_KEY` plus `AZURE_OPENAI_BASE_URL` (or `AZURE_OPENAI_RESOURCE_NAME`), optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` | Host is your Azure resource (e.g. `<resource>.openai.azure.com`). Should work with the placeholder-env + generic-secret pattern, but not validated. |
 | Amazon Bedrock | `amazon-bedrock` | One of: `AWS_PROFILE`; `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`; `AWS_BEARER_TOKEN_BEDROCK`; `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` / `_FULL_URI`; `AWS_WEB_IDENTITY_TOKEN_FILE`. Optional: `AWS_REGION`, `AWS_BEDROCK_FORCE_CACHE`, `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, `AWS_BEDROCK_SKIP_AUTH`, `AWS_BEDROCK_FORCE_HTTP1` | Host: `bedrock-runtime.<region>.amazonaws.com`. Supported through the platform's **AWS Bedrock** provider with a Bedrock API key: the gateway injects it as `Authorization: Bearer`, and the agent holds only a placeholder `AWS_BEARER_TOKEN_BEDROCK`. The `pi-dynamic-providers` extension selects `amazon-bedrock` and the connection's model pin, adding the pin to `models.json` only when Pi's built-in list lacks it, and narrows Pi's model list to the region's active inference profiles, listed through the same gateway (`AWS_ENDPOINT_URL_BEDROCK`). IAM access keys and assumed roles (SigV4, computed in-pod against the secret) are not supported. |
 | Google Vertex AI | `google-vertex` | `GOOGLE_CLOUD_API_KEY` **or** `GOOGLE_APPLICATION_CREDENTIALS` (SA key file) **or** ADC + `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION` | Host: `<location>-aiplatform.googleapis.com`. The API-key path may work with a generic secret; SA-key / ADC paths require a file mount and aren't a generic-secret shape. Untested. |
 | GitHub Copilot | `github-copilot` | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN` | Host: `api.individual.githubcopilot.com`. pi's documented path is OAuth via `/login`, with tokens stored in `~/.pi/agent/auth.json`. Untested with a generic secret. |
@@ -173,6 +175,19 @@ Pi system prompt conventions:
 > **`app/working-dir/`** seeds `/home/agent/` on first boot.  
 > **`app/working-dir/work/`** seeds `/home/agent/work/` — the cwd where pi-acp spawns.  
 > **`app/working-dir/.pi/agent/`** seeds `~/.pi/agent/` — pi's global config directory.
+
+## pi-acp concurrent sessions
+
+pi-acp 0.0.34 keeps one live pi process per connection: every `session/new` and `session/load` kills the pi of every other session, and a turn already running there never gets its `session/prompt` answer, because pi-acp ends a turn only on pi's `agent_settled` event (upstream [svkozak/pi-acp#152](https://github.com/svkozak/pi-acp/issues/152)). The agent-runtime runs every session of an Agent through one pi-acp, so a schedule firing, a new chat, a Slack turn, a sub-agent or opening an old session froze whatever turn was running, and the platform kept showing it as running. Stop did not help: pi-acp had already forgotten the session.
+
+Until upstream fixes it, [`pi-acp-patch.mjs`](rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs) edits pi-acp's bundle in memory as it loads. `harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so pi and its tools do not inherit it. It patches four things:
+
+- `session/new` and `session/load` no longer close other sessions.
+- pi-acp advertises `session/close`, so the agent-runtime closes idle sessions and their pi processes instead of letting them pile up.
+- A pi process that exits fails its running and queued turns with an error instead of leaving them unanswered.
+- The next prompt to a session whose pi died starts a new pi on the same session file.
+
+The hook patches only pi-acp 0.0.34 and only when every edit matches the bundle exactly. Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` to the pod log. **To remove it** once a pi-acp release fixes #152: bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`. That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
 
 ## Memory scopes
 

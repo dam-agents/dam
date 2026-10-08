@@ -1,3 +1,5 @@
+import { isNonNullObject } from "./frames.js";
+
 const DIRECT_SURFACES = new Set(["ui", "cli"]);
 
 export function isDirectSurface(surface: string | null): boolean {
@@ -16,10 +18,6 @@ export function directTurnContract(): string {
       "messenger on this turn only if you're asked to.",
     "</how-to-respond>",
   ].join("\n");
-}
-
-function isNonNullObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
 }
 
 function isTextBlock(

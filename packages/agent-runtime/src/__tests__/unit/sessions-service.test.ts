@@ -19,6 +19,7 @@ function fakeStore(): SessionMetadataStore {
     adopt: () => {},
     tombstone: () => {},
     isTombstoned: () => false,
+    findByRef: () => undefined,
   };
 }
 

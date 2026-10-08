@@ -5,11 +5,9 @@ import type { OnboardingStep } from "../../../types.js";
 export function OnboardingChecklistCard({
   title,
   steps,
-  onDismiss,
 }: {
   title: string;
   steps: readonly OnboardingStep[] | undefined;
-  onDismiss?: () => void;
 }) {
   const listed = steps ?? [];
   return (
@@ -44,15 +42,6 @@ export function OnboardingChecklistCard({
             </li>
           ))}
         </ul>
-      )}
-      {onDismiss && (
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="mt-3 text-sm text-muted-foreground/60 transition-colors hover:text-muted-foreground"
-        >
-          Dismiss
-        </button>
       )}
     </>
   );

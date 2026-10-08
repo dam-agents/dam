@@ -38,7 +38,13 @@ function makeFakeRepo(): FakeRepo {
       return true;
     },
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
-    findActivePendingExtAuthz: async ({ agentId, host, method, path }) => {
+    findActivePendingExtAuthz: async ({
+      agentId,
+      host,
+      port,
+      method,
+      path,
+    }) => {
       return (
         rows.find(
           (r) =>
@@ -47,6 +53,7 @@ function makeFakeRepo(): FakeRepo {
             r.type === "ext_authz" &&
             r.payload.kind === "ext_authz" &&
             r.payload.host === host &&
+            r.payload.port === port &&
             r.payload.method === method &&
             r.payload.path === path,
         ) ?? null
@@ -155,12 +162,14 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: { match: async () => ({ verdict: "allow" }) },
       holdSeconds: 30,
-      platformAllowedHosts: [],
+      platformAllowedAuthorities: [],
     });
 
     const verdict = await gate.gateRequest({
       agentId: "inst-1",
       host: "api.x",
+      port: 443,
+      tls: true,
       method: "GET",
       path: "/",
     });
@@ -180,12 +189,14 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
-      platformAllowedHosts: [],
+      platformAllowedAuthorities: [],
     });
 
     const verdict = await gate.gateRequest({
       agentId: "missing",
       host: "x",
+      port: 443,
+      tls: true,
       method: "GET",
       path: "/",
     });
@@ -204,12 +215,14 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
-      platformAllowedHosts: [],
+      platformAllowedAuthorities: [],
     });
 
     const inflight = gate.gateRequest({
       agentId: "inst-1",
       host: "h",
+      port: 443,
+      tls: true,
       method: "GET",
       path: "/p",
     });
@@ -236,12 +249,14 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
-      platformAllowedHosts: [],
+      platformAllowedAuthorities: [],
     });
 
     const inflight = gate.gateRequest({
       agentId: "inst-1",
       host: "h",
+      port: 443,
+      tls: true,
       method: "GET",
       path: "/p",
     });
@@ -263,12 +278,14 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
-      platformAllowedHosts: [],
+      platformAllowedAuthorities: [],
     });
 
     const first = gate.gateRequest({
       agentId: "inst-1",
       host: "h",
+      port: 443,
+      tls: true,
       method: "GET",
       path: "/p",
     });
@@ -280,18 +297,73 @@ describe("ext-authz gate", () => {
     const retry = gate.gateRequest({
       agentId: "inst-1",
       host: "h",
+      port: 443,
+      tls: true,
       method: "GET",
       path: "/p",
     });
     await flushMicrotasks();
 
     expect(repo.inserts).toBe(1);
-    expect(bus.publishes).toHaveLength(1);
+    expect(bus.publishes).toHaveLength(2);
+    expect(bus.publishes[1].payload).toBe(bus.publishes[0].payload);
 
     repo.resolve(id, "allow");
     bus.fire(`approval:${id}`, "");
     expect(await first).toBe("allow");
     expect(await retry).toBe("allow");
+  });
+
+  it("raises the prompt of a hold opened before the current session attached (#4327)", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    repo.setInitial({
+      id: "held-earlier",
+      type: "ext_authz",
+      agentId: "agent-1",
+      ownerSub: "user-1",
+      sessionId: null,
+      payload: { kind: "ext_authz", host: "h", method: "GET", path: "/p" },
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 1_800_000),
+      resolvedAt: null,
+      verdict: null,
+      decidedBy: null,
+      status: "pending",
+      deliveredAt: null,
+    });
+    const gate = createExtAuthzGate({
+      repo: repo.repo,
+      bus: bus.bus,
+      attendance: attended,
+      identityResolver,
+      ruleMatcher: noMatchRules,
+      holdSeconds: 1800,
+      platformAllowedAuthorities: [],
+    });
+
+    const inflight = gate.gateRequest({
+      agentId: "inst-1",
+      host: "h",
+      port: 443,
+      tls: true,
+      method: "GET",
+      path: "/p",
+    });
+    await flushMicrotasks();
+
+    expect(repo.inserts).toBe(0);
+    expect(bus.publishes).toHaveLength(1);
+    expect(bus.publishes[0].channel).toBe("inject:agent-1");
+    expect(JSON.parse(bus.publishes[0].payload)).toMatchObject({
+      id: "held-earlier",
+      method: "session/request_permission",
+      params: { toolCall: { rawInput: { approvalId: "held-earlier" } } },
+    });
+
+    repo.resolve("held-earlier", "allow");
+    bus.fire("approval:held-earlier", "");
+    expect(await inflight).toBe("allow");
   });
 
   it("allows a platform-provided host without consulting rules or holding", async () => {
@@ -305,12 +377,16 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: { match: ruleMatch },
       holdSeconds: 30,
-      platformAllowedHosts: ["platform-seaweedfs.platform.svc.cluster.local"],
+      platformAllowedAuthorities: [
+        "platform-seaweedfs.platform.svc.cluster.local:8333",
+      ],
     });
 
     const verdict = await gate.gateRequest({
       agentId: "inst-1",
       host: "platform-seaweedfs.platform.svc.cluster.local",
+      port: 8333,
+      tls: false,
       method: "PUT",
       path: "/platform-artifacts/exp/agent/u/c.bin",
     });
@@ -331,17 +407,92 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
-      platformAllowedHosts: ["store.internal"],
+      platformAllowedAuthorities: ["store.internal:443"],
     });
 
     const verdict = await gate.gateRequest({
       agentId: "missing",
       host: "store.internal",
+      port: 443,
+      tls: true,
       method: "PUT",
       path: "/b/k",
     });
 
     expect(verdict).toBe("deny");
+  });
+
+  // TEST_SCENARIO: the object store is allowed on its own port only; the same host on another port must reach the rules like any other request.
+  it("allows the platform host only on its own port, and asks the rules with port and scheme", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    const ruleMatch = vi.fn(async () => ({ verdict: "deny" as const }));
+    const gate = createExtAuthzGate({
+      repo: repo.repo,
+      bus: bus.bus,
+      attendance: attended,
+      identityResolver,
+      ruleMatcher: { match: ruleMatch },
+      holdSeconds: 30,
+      platformAllowedAuthorities: ["store.internal:8333"],
+    });
+
+    const verdict = await gate.gateRequest({
+      agentId: "inst-1",
+      host: "store.internal",
+      port: 9000,
+      tls: false,
+      method: "PUT",
+      path: "/b/k",
+    });
+
+    expect(verdict).toBe("deny");
+    expect(ruleMatch).toHaveBeenCalledWith(
+      "agent-1",
+      "store.internal",
+      9000,
+      false,
+      "PUT",
+      "/b/k",
+    );
+  });
+
+  // TEST_SCENARIO: approving a held request writes a rule from its payload, so a hold on a non-default port must carry that port or the approved rule would never match it.
+  it("records a non-default port on the held request, and leaves a default port out", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    const gate = createExtAuthzGate({
+      repo: repo.repo,
+      bus: bus.bus,
+      attendance: attended,
+      identityResolver,
+      ruleMatcher: noMatchRules,
+      holdSeconds: 30,
+      platformAllowedAuthorities: [],
+    });
+
+    void gate.gateRequest({
+      agentId: "inst-1",
+      host: "api.x",
+      port: 8080,
+      tls: true,
+      method: "GET",
+      path: "/",
+    });
+    void gate.gateRequest({
+      agentId: "inst-1",
+      host: "api.x",
+      port: 443,
+      tls: true,
+      method: "GET",
+      path: "/",
+    });
+    await flushMicrotasks();
+
+    expect(repo.rows.map((r) => r.payload)).toEqual([
+      expect.objectContaining({ host: "api.x", port: 8080 }),
+      expect.not.objectContaining({ port: expect.anything() }),
+    ]);
   });
 
   describe("unattended channel turns", () => {
@@ -360,12 +511,14 @@ describe("ext-authz gate", () => {
         identityResolver,
         ruleMatcher: noMatchRules,
         holdSeconds: 1800,
-        platformAllowedHosts: [],
+        platformAllowedAuthorities: [],
       });
 
       const verdict = await gate.gateRequest({
         agentId: "inst-1",
         host: "h",
+        port: 443,
+        tls: true,
         method: "GET",
         path: "/p",
       });
@@ -386,12 +539,14 @@ describe("ext-authz gate", () => {
         identityResolver,
         ruleMatcher: noMatchRules,
         holdSeconds: 1800,
-        platformAllowedHosts: [],
+        platformAllowedAuthorities: [],
       });
 
       await gate.gateRequest({
         agentId: "inst-1",
         host: "h",
+        port: 443,
+        tls: true,
         method: "GET",
         path: "/p",
       });
@@ -409,12 +564,14 @@ describe("ext-authz gate", () => {
         identityResolver,
         ruleMatcher: noMatchRules,
         holdSeconds: 1800,
-        platformAllowedHosts: [],
+        platformAllowedAuthorities: [],
       });
 
       const request = {
         agentId: "inst-1",
         host: "h",
+        port: 443,
+        tls: true,
         method: "GET",
         path: "/p",
       };
@@ -438,12 +595,14 @@ describe("ext-authz gate", () => {
         identityResolver,
         ruleMatcher: noMatchRules,
         holdSeconds: 30,
-        platformAllowedHosts: [],
+        platformAllowedAuthorities: [],
       });
 
       const inflight = gate.gateRequest({
         agentId: "inst-1",
         host: "h",
+        port: 443,
+        tls: true,
         method: "GET",
         path: "/p",
       });
@@ -472,13 +631,15 @@ describe("ext-authz gate", () => {
         identityResolver,
         ruleMatcher: { match: async () => ({ verdict: "allow" }) },
         holdSeconds: 1800,
-        platformAllowedHosts: [],
+        platformAllowedAuthorities: [],
       });
 
       expect(
         await gate.gateRequest({
           agentId: "inst-1",
           host: "allowed.example",
+          port: 443,
+          tls: true,
           method: "GET",
           path: "/",
         }),

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Generate a migration from schema.ts changes"
 # Generate a migration for table/index/enum changes by diffing schema.ts against
 # the latest snapshot. Edit schema.ts, run this, commit. See packages/db/README.md.
 set -euo pipefail

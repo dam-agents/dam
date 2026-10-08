@@ -30,7 +30,9 @@ import {
   useToggleSchedule,
 } from "../api/mutations.js";
 import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
+import { scheduleOnceState } from "../lib/once-schedule.js";
 import {
+  lastRunStatus,
   precheckAlert,
   runNowConfirmText,
   runNowStartedText,
@@ -67,6 +69,11 @@ export function ScheduleCard({
   const nextRunHint =
     enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
   const stopReason = enabled ? status?.stopReason : undefined;
+  const onceState = scheduleOnceState(schedule);
+  const onceOutcome =
+    onceState && onceState !== "pending"
+      ? lastRunStatus(status?.lastResult)
+      : null;
 
   const handleEdit = () => void guardEdit(schedule, sandboxName, onEdit);
 
@@ -140,6 +147,14 @@ export function ScheduleCard({
               </>
             )}
             {cadence && <span className="truncate">{cadence}</span>}
+            {onceOutcome && (
+              <>
+                <span aria-hidden>·</span>
+                <span className={cn("truncate", onceOutcome.className)}>
+                  {onceOutcome.label}
+                </span>
+              </>
+            )}
             {nextRunHint && (
               <>
                 <span aria-hidden>·</span>
@@ -172,11 +187,13 @@ export function ScheduleCard({
           <Launch size={14} /> View results
         </Button>
 
-        <Switch
-          checked={enabled}
-          onCheckedChange={() => toggleSchedule.mutate({ id })}
-          label={enabled ? "Disable schedule" : "Enable schedule"}
-        />
+        {onceState === null && (
+          <Switch
+            checked={enabled}
+            onCheckedChange={() => toggleSchedule.mutate({ id })}
+            label={enabled ? "Disable schedule" : "Enable schedule"}
+          />
+        )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -190,10 +207,16 @@ export function ScheduleCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <DropdownMenuItem onSelect={handleRunNow}>Run now</DropdownMenuItem>
-            <DropdownMenuItem onSelect={handleEdit}>
-              Edit schedule
-            </DropdownMenuItem>
+            {onceState === null && (
+              <DropdownMenuItem onSelect={handleRunNow}>
+                Run now
+              </DropdownMenuItem>
+            )}
+            {(onceState === null || onceState === "pending") && (
+              <DropdownMenuItem onSelect={handleEdit}>
+                Edit schedule
+              </DropdownMenuItem>
+            )}
             {sessionMode === "continuous" && (
               <DropdownMenuItem onSelect={handleReset}>
                 Reset session

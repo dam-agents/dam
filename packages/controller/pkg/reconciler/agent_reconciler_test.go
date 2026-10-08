@@ -71,7 +71,7 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		ReleaseNamespace:  "default",
 		ReleaseName:       "platform",
 		HarnessServerPort: 4001,
-		EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1",
+		EnvoyImage:        "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.2",
 		EnvoyPort:         10000,
 		IstioTrustDomain:  "cluster.local",
 		IstioWaypointName: "apiserver-waypoint",
@@ -348,6 +348,35 @@ func TestReconcile_UpdateReplicas(t *testing.T) {
 
 	ss, _ := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
 	assert.Equal(t, int32(1), *ss.Spec.Replicas)
+}
+
+func TestReconcile_ReplacesAgentPodStuckOnSupersededRevision(t *testing.T) {
+	ctx := context.Background()
+	agent := agentCR()
+	r, client := setupReconciler(t, agent, readyPod("my-agent-gateway-0"))
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	ss, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	ss.Status.CurrentRevision, ss.Status.UpdateRevision = "rev-1", "rev-2"
+	_, err = client.AppsV1().StatefulSets("test-agents").UpdateStatus(ctx, ss, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	labels := map[string]string{"controller-revision-hash": "rev-1"}
+	for k, v := range ss.Spec.Selector.MatchLabels {
+		labels[k] = v
+	}
+	_, err = client.CoreV1().Pods("test-agents").Create(ctx, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-agent-0", Namespace: "test-agents", Labels: labels},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}},
+		},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
+
+	_, err = client.CoreV1().Pods("test-agents").Get(ctx, "my-agent-0", metav1.GetOptions{})
+	assert.True(t, errors.IsNotFound(err), "an agent pod that cannot pull its old image must be replaced; got err=%v", err)
 }
 
 func TestForceRollStuckPod_DeletesNotReadyPodAtOldRev(t *testing.T) {

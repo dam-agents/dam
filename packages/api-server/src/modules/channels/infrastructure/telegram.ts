@@ -496,13 +496,13 @@ export function createTelegramWorker(deps: {
     const context = (
       thread.isDM
         ? `This is a 1:1 direct message from ${author.fullName} (@${author.userName}, id=${author.userId}). Every message here is directed at you — always reply.`
-        : `This is a group conversation. The message is from ${author.fullName} (@${author.userName}, id=${author.userId}). Other participants may follow up; only respond when it makes sense — stay quiet when the conversation isn't for you.`
+        : `This is a group conversation. The message is from ${author.fullName} (@${author.userName}, id=${author.userId}). Other participants may follow up; stay quiet when the conversation isn't for you.`
     ).concat(who ? ` ${who}` : "");
 
     const freshPrompt = [
       `You are participating in a Telegram conversation (chatId="${thread.id}").`,
       context,
-      `To reply, call the \`${OUTBOUND_TOOL_PREFIX}send_channel_message\` tool with channel="telegram" and chatId="${thread.id}". If the tool is deferred, load it via ToolSearch first.`,
+      `To reply, call the \`${OUTBOUND_TOOL_PREFIX}send_channel_message\` tool with channel="telegram" and chatId="${thread.id}".`,
       "IMPORTANT: Your text output is NOT delivered to Telegram — only tool calls reach the user.",
       `To deliberately stay silent — a group message that isn't for you, or one already handled — call \`${OUTBOUND_TOOL_PREFIX}no_reply_needed\` instead of replying.`,
       "These instructions apply to messages that arrive from Telegram, not to this conversation as a whole. A message that arrives without them came from somewhere else: answer it where it arrived, in plain text, and post to Telegram for it only if you're asked to.",

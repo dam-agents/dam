@@ -160,6 +160,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		return r.setError(ctx, name, err.Error())
 	}
 	timer.mark("gatewayIngressNetworkPolicy")
+	if err := applyNetworkPolicy(ctx, r.client, BuildGatewayEgressNetworkPolicy(name, r.config, ownerRef)); err != nil {
+		return r.setError(ctx, name, err.Error())
+	}
+	timer.mark("gatewayEgressNetworkPolicy")
 
 	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, r.config.AgentBase.IdleTimeout.AsDuration())
 	running := shouldRunMigrating(agent.Annotations, migration, idleTimeout, time.Now().UTC())
@@ -304,6 +308,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		stampRollRev(agentSS, rollRev)
 		if err := r.applyStatefulSet(ctx, agentSS, running && !migration.containerDown()); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
+		}
+		if err := r.forceRollStuckPod(ctx, agentSS.Namespace, agentSS.Name); err != nil {
+			slog.Warn("force-rolling stuck agent pod failed; rollout may be deadlocked",
+				"namespace", agentSS.Namespace, "statefulset", agentSS.Name, "error", err)
 		}
 		if migration.containerDown() {
 			if err := r.stopContainerForRuntimeMigration(ctx, name); err != nil {

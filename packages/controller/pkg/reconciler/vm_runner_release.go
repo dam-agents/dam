@@ -1,0 +1,140 @@
+package reconciler
+
+import (
+	"context"
+	"log/slog"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
+)
+
+const runnerReleaseKey = "release"
+
+// UNIT_BOUNDARY_DESCRIPTION: when the controller last named a new release in a runner's ConfigMap, so it can tell a runner that is restarting onto the release from one that has not come back.
+const annRunnerReleaseNamedAt = "agent-platform.ai/runner-release-named-at"
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a runner may stay unreachable after the controller named it a new release before the pod is rolled. A hand-off leaves the machine API down for seconds; one still down after this is a loader that cannot bring up the new release or the one it replaced, for example after a runtime changed state the old one cannot read, and only a new pod gets the machines a working runner again.
+const runnerReleaseUnreachableRoll = 10 * time.Minute
+
+func (r *AgentReconciler) runnerReleaseName(owner string) string {
+	return r.runnerName(owner) + "-release"
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: names the runner release an owner's runner pod should run: the runner image this controller is configured with. The pod's loader reads it from the mounted ConfigMap and hands the machines to that release once the node's stager has staged it, so a new runner image reaches every owner without a pod restart. The ConfigMap is owned by the runner's Deployment, so it goes wherever the Deployment goes.
+func (r *AgentReconciler) applyRunnerRelease(ctx context.Context, owner string) error {
+	ns, name, release := r.config.Namespace, r.runnerReleaseName(owner), r.config.VM.Runner.Image
+	dep, err := r.client.AppsV1().Deployments(ns).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	cms := r.client.CoreV1().ConfigMaps(ns)
+	existing, err := cms.Get(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		_, err = cms.Create(ctx, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            name,
+				Namespace:       ns,
+				Labels:          vmRunnerLabels(owner, r.config.ReleaseName),
+				Annotations:     map[string]string{annRunnerReleaseNamedAt: time.Now().UTC().Format(time.RFC3339)},
+				OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(dep, appsv1.SchemeGroupVersion.WithKind("Deployment"))},
+			},
+			Data: map[string]string{runnerReleaseKey: release},
+		}, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil || existing.Data[runnerReleaseKey] == release {
+		return err
+	}
+	existing.Data = map[string]string{runnerReleaseKey: release}
+	if existing.Annotations == nil {
+		existing.Annotations = map[string]string{}
+	}
+	existing.Annotations[annRunnerReleaseNamedAt] = time.Now().UTC().Format(time.RFC3339)
+	_, err = cms.Update(ctx, existing, metav1.UpdateOptions{})
+	return err
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: forgets when the runner's release was named, once the runner has answered with an outcome of the hand-off: that it runs the release, or that it holds it as failed and runs the one before. The stamp stands only for a hand-off whose outcome is not known yet; left in place, any later blip in such a runner — a crash and restart — would read as a hand-off that never came back and roll the pod, onto a release that failed in the second case. A release held as not staged yet has its hand-off still ahead, so it keeps the stamp.
+func (r *AgentReconciler) clearRunnerReleaseNamed(ctx context.Context, owner string) {
+	cms := r.client.CoreV1().ConfigMaps(r.config.Namespace)
+	cm, err := cms.Get(ctx, r.runnerReleaseName(owner), metav1.GetOptions{})
+	if err != nil || cm.Annotations[annRunnerReleaseNamedAt] == "" {
+		return
+	}
+	delete(cm.Annotations, annRunnerReleaseNamedAt)
+	if _, err := cms.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+		slog.Warn("vm runner: clearing the time its release was named", "owner", owner, "error", err)
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the runner's release was named more than runnerReleaseUnreachableRoll ago. A ConfigMap that is missing, or whose time cannot be read, says nothing, so it never rolls a pod.
+func (r *AgentReconciler) runnerReleaseNamedLongAgo(ctx context.Context, owner string) bool {
+	cm, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).Get(ctx, r.runnerReleaseName(owner), metav1.GetOptions{})
+	if err != nil {
+		return false
+	}
+	at, err := time.Parse(time.RFC3339, cm.Annotations[annRunnerReleaseNamedAt])
+	return err == nil && time.Since(at) > runnerReleaseUnreachableRoll
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the runner pod as the roll compares it. With releases staged on the node, the pod's image is only the release it started with — the loader runs whichever one the controller names — so the image, and the env that tells the loader which release it is, are left out: a new runner image alone changes no pod and restarts no machine.
+func runnerRollSpec(spec appsv1.DeploymentSpec, releases bool) appsv1.DeploymentSpec {
+	if !releases {
+		return spec
+	}
+	spec = *spec.DeepCopy()
+	for i := range spec.Template.Spec.Containers {
+		c := &spec.Template.Spec.Containers[i]
+		c.Image = ""
+		for j := range c.Env {
+			if c.Env[j].Name == vmRunnerBuiltinEnv {
+				c.Env[j].Value = ""
+			}
+		}
+	}
+	return spec
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a runner pod whose shape is unchanged must still roll to take the configured release. Only a release built for another pod needs a new one — its runner does not load against this pod's libc, or the install keeps one VM runtime per pod — since its loader can never hand the machines to it. A runner that has not answered since it was named the release, for longer than a hand-off ever takes, rolls too; once it answers that it runs the release, or holds it as failed, that clock is cleared. A release that is merely not staged yet comes by itself, and one that failed right after it took over is left to the next release rather than rolled onto, since a pod on it would fail the same way and take the machines down with it.
+func (r *AgentReconciler) runnerNeedsPodForRelease(ctx context.Context, owner string, existing *appsv1.Deployment) bool {
+	want := r.config.VM.Runner.Image
+	containers := existing.Spec.Template.Spec.Containers
+	if r.config.VM.Runner.ReleaseHostPath == "" || len(containers) == 0 || containers[0].Image == want {
+		return false
+	}
+	client, err := r.runnerFor(ctx, owner)
+	if err != nil {
+		return false
+	}
+	release, err := client.Release(ctx)
+	if err != nil {
+		if r.runnerReleaseNamedLongAgo(ctx, owner) {
+			slog.Warn("vm runner: the runner has not answered since it was named a new release; rolling the pod", "owner", owner, "release", want, "error", err)
+			return true
+		}
+		return false
+	}
+	if release.Running == want {
+		r.clearRunnerReleaseNamed(ctx, owner)
+		return false
+	}
+	if release.Target != want {
+		return false
+	}
+	switch release.Held {
+	case vmrunner.HeldRuntime:
+		return true
+	case vmrunner.HeldFailed:
+		r.clearRunnerReleaseNamed(ctx, owner)
+		slog.Warn("vm runner: the runner release exited right after it took over; the owner keeps the release it ran before", "owner", owner, "release", want, "running", release.Running)
+	}
+	return false
+}

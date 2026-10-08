@@ -3,12 +3,8 @@
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
-# Drain agent workloads BEFORE helm uninstall. On a transitional install
-# still running the deprecated NFS provisioner (#2988), removing it while a
-# pod mounts one of its PVCs leaves the pod hanging in Terminating (kubelet
-# can't unmount from the dead NFS server) and blocks namespace deletion
-# forever; on RWO-only installs the pre-drain is merely tidy. Prunable with
-# the nfsProvisioner block.
+# Drain agent workloads BEFORE helm uninstall, so their PVCs and namespace
+# go before the controller that owns them.
 if kubectl get ns platform-agents >/dev/null 2>&1; then
   echo "Draining platform-agents before uninstall..."
   kubectl -n platform-agents delete sts --all --wait=true --timeout=60s 2>/dev/null || true
@@ -19,8 +15,8 @@ fi
 
 helm uninstall platform || true
 
-# Clean up StatefulSet-managed PVCs in the release namespace (postgres, redis,
-# and on transitional installs the nfs-provisioner export). These aren't owned by the helm release, so helm
+# Clean up StatefulSet-managed PVCs in the release namespace (postgres,
+# redis). These aren't owned by the helm release, so helm
 # leaves them behind. Delete them AFTER helm uninstall — pods are gone now,
 # so pvc-protection finalizers clear immediately.
 kubectl delete pvc --all --ignore-not-found 2>/dev/null || true

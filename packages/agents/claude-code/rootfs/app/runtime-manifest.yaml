@@ -13,15 +13,26 @@ sessionHistory:
   module: "/usr/local/lib/harness-history-lib.mjs"
   exportName: "loadHistory"
 
+# claude-agent-acp is an adapter: each session's conversation runs in a
+# `claude` process under it, usually the pod's largest. The memory reaper must
+# never take one of those for a tool the agent started.
+agentProcesses: ["claude"]
+
 drivers:
   harness-config:
     file: "$HOME/.claude/settings.json"
+    # A session can be switched to another model over ACP without touching this file.
+    sessionModel: true
     keys:
       model: "model"
       mode: "permissions.defaultMode"
       configOptions:
         effort: "effortLevel"
         cacheTtl: ["promptCacheTtl", "subagentPromptCacheTtl"]
+    # The model value that switches one session to what the agent's own
+    # Default gives (Claude Code's built-in default), which a schedule with no
+    # model runs on.
+    defaultModel: default
     catalog:
       options:
         - id: model
@@ -31,13 +42,13 @@ drivers:
           choices:
             - value: fable
               name: "Fable"
-              description: "Fable 5 · Most capable for the hardest, longest-running tasks"
+              description: "Fable 5.1 · Most capable for the hardest, longest-running tasks"
             - value: opus
               name: "Opus"
-              description: "Opus 5 · Best for everyday, complex tasks"
+              description: "Opus 5.5 · Best for everyday, complex tasks"
             - value: sonnet
               name: "Sonnet"
-              description: "Sonnet 4.6 · Efficient for routine tasks"
+              description: "Sonnet 5.5 · Efficient for routine tasks"
             - value: haiku
               name: "Haiku"
               description: "Haiku 4.5 · Fastest for quick answers"

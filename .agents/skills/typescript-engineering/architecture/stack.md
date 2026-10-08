@@ -1,17 +1,16 @@
 # Technology Stack
 
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| API | [tRPC](https://trpc.io/) | End-to-end typesafe APIs without codegen |
-| Validation | [Zod](https://zod.dev/) | Schema declaration and input validation |
-| Language | TypeScript (strict) | Type safety across the stack |
-| Packages | pnpm (default) | Fast, disk-efficient, native workspaces |
-| Events | [RxJS](https://rxjs.dev/) (recommended) | Reactive bus for domain events and sagas |
+| Layer | Technology |
+|-------|-----------|
+| API | [tRPC](https://trpc.io/) |
+| Validation | [Zod](https://zod.dev/) |
+| Language | TypeScript (strict) |
+| Packages | pnpm (default) |
+| Events | [RxJS](https://rxjs.dev/) (recommended) |
 
 ## Why
 
 - **tRPC over REST/GraphQL**: full server-to-client type inference with no codegen; router definitions double as API docs; pairs with Zod.
-- **Zod**: runtime validation that yields types via `z.infer`; composable schemas; first-class tRPC input validators.
 - **Strict TypeScript**: the base config sets `strict: true` (`strictNullChecks`, `noImplicitAny`, …), `noEmit: true` (type-check only; the bundler emits), and `paths` aliases for clean cross-layer imports.
 - **RxJS events**: Subject-based bus with typed `emit()` and `events$()`; `ofType<T>()` for type-safe filtering in subscribers and sagas; `mergeMap`/`switchMap` for async saga effects; subscriptions give clean teardown. Any reactive or EventEmitter approach works; RxJS is the default.
 

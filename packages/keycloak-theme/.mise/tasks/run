@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-#MISE description="Run the Keycloak image's server on the host with the theme (full-fidelity preview), no container runtime: http://localhost:8080 (or $KEYCLOAK_PORT), admin/admin, and keycloakify's test realm myrealm (testuser/password123) on the platform theme"
+#MISE description="Run the Keycloak server with the theme on the host at http://localhost:8080"
 #MISE depends=["//packages/keycloak-theme:oci"]
+# Full-fidelity preview without a container runtime. $KEYCLOAK_PORT moves the
+# port; admin/admin, and keycloakify's test realm myrealm
+# (testuser/password123) on the platform theme.
 # Keycloak is Java alone, so the server runs out of the image's /opt/keycloak on
 # the repo's Java: the digest-pinned upstream release with this theme's JAR in
 # its providers, exactly what the chart deploys. Each run starts from a fresh

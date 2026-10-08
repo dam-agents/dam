@@ -106,6 +106,7 @@ export type { AgentSpecCR } from "./crd-types.gen.js";
 export type {
   EventReportInput,
   EventOutcome,
+  EventStage,
   HelloInput,
   HelloResult,
 } from "agent-runtime-api";
@@ -113,16 +114,22 @@ export type {
 export {
   scheduleSpecSchema,
   precheckSchema,
+  scheduleModelSchema,
   PRECHECK_MAX_LENGTH,
 } from "./modules/schedules/schemas.js";
 export type {
   Schedule,
   ScheduleSpec,
+  ScheduleSpecOnce,
+  ScheduleOnceOrigin,
+  ScheduleStatus,
   QuietWindow,
   ScheduleCreator,
   ScheduleCreateCronInput,
   ScheduleCreateRRuleInput,
   ScheduleUpdateRRuleInput,
+  ScheduleCreateOnceInput,
+  ScheduleUpdateOnceInput,
   SchedulesService,
   PrecheckVerdict,
 } from "./modules/schedules/types.js";
@@ -229,10 +236,21 @@ export {
 export type {
   FeatureId,
   FeatureFlags,
+  FeatureModes,
   FeaturesService,
 } from "./modules/features/types.js";
-export { featureIdSchema } from "./modules/features/schemas.js";
+export {
+  featureIdSchema,
+  featureModeSchema,
+} from "./modules/features/schemas.js";
 export { quietWindowSchema } from "./modules/schedules/schemas.js";
+export {
+  ONCE_DELIVERY_WINDOW_MS,
+  OnceResult,
+  isOnceFinished,
+  onceState,
+} from "./modules/schedules/once.js";
+export type { OnceState } from "./modules/schedules/once.js";
 export {
   ALL_DAYS,
   buildRRule,
@@ -354,6 +372,7 @@ export {
 export type {
   MetricsService,
   MetricsQuery,
+  MetricsSessionCostsQuery,
   MetricsOverview,
   TokenSpendByModel,
   SpendByAgent,
@@ -414,6 +433,7 @@ export {
   OP_OUTPUT,
   OP_RESIZE,
   OP_EXIT,
+  OP_SESSION,
   encodeDataFrame,
   encodeResize,
   encodeExit,

@@ -81,6 +81,8 @@ import { sharesKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
+import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
+import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
@@ -161,6 +163,9 @@ function PanelDivider({
   return divider && <ResizeHandle orientation="vertical" {...divider} />;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a sent message lands in the transcript a render or two after the send, so the jump to the end repeats once it is laid out and once more after this wait.
+const SEND_SETTLE_MS = 300;
+
 export function ChatView() {
   const selectedAgent = useStore((s) => s.selectedAgent);
   const { data: agentsData } = useAgents();
@@ -207,6 +212,11 @@ export function ChatView() {
   const deleteSession = useStore((s) => s.deleteSession);
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
+  const openBrowserAgentId = useStore((s) =>
+    s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
+  );
+  const openBrowser = useOpenBrowser();
+  const browserMaximized = useStore((s) => s.browserMaximized);
   const openDelegation = useStore((s) =>
     s.openDelegation?.driverAgentId === s.selectedAgent
       ? s.openDelegation
@@ -286,7 +296,8 @@ export function ChatView() {
 
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
-  const telemetryEnabled = useFeatures().data?.["agent-telemetry"] ?? false;
+  const features = useFeatures().data;
+  const telemetryEnabled = features?.["agent-telemetry"] ?? false;
   const delegationOwners = useDelegationOwners(messages);
   const avatarsEnabled = useAgentAvatars();
   const telemetryLive = useMemo(() => {
@@ -344,6 +355,17 @@ export function ChatView() {
     el.scrollTop = el.scrollHeight;
   }, []);
 
+  const sendAndFollow = useCallback(
+    (...args: Parameters<typeof sendPrompt>) => {
+      scrollToBottom();
+      const sent = sendPrompt(...args);
+      requestAnimationFrame(() => requestAnimationFrame(scrollToBottom));
+      setTimeout(scrollToBottom, SEND_SETTLE_MS);
+      return sent;
+    },
+    [scrollToBottom, sendPrompt],
+  );
+
   const pendingPrependRef = useRef<{
     height: number;
     before: string;
@@ -385,14 +407,14 @@ export function ChatView() {
     if (!el) return;
     const inner = el.firstElementChild;
 
-    const THRESHOLD = 30;
-    const nearBottom = () =>
-      el.scrollHeight - el.scrollTop - el.clientHeight < THRESHOLD;
+    const FOLLOW_WITHIN_PX = 60;
+    const JUMP_BEYOND_PX = 200;
+    const fromBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight;
 
     const onScroll = () => {
-      const near = nearBottom();
-      stickRef.current = near;
-      setShowJump(!near);
+      const distance = fromBottom();
+      stickRef.current = distance < FOLLOW_WITHIN_PX;
+      setShowJump(distance > JUMP_BEYOND_PX);
     };
 
     const ro = new ResizeObserver(() => {
@@ -530,6 +552,11 @@ export function ChatView() {
 
   const canShareKnowledge =
     agentView !== null && sharesKnowledgeBase(agentView);
+  const canOpenBrowser =
+    features?.["strict-connection-addressing"] === true &&
+    agentView?.requireConnectionAddress === true;
+  const browserFills =
+    browserMaximized && openBrowserAgentId !== null && canOpenBrowser;
   const surfaceCopy = {
     actionsAria: "Agent actions",
     configure: "Configure agent",
@@ -657,6 +684,13 @@ export function ChatView() {
                     Share knowledge base
                   </DropdownMenuItem>
                 )}
+                {canOpenBrowser && selectedAgent && (
+                  <DropdownMenuItem
+                    onSelect={() => void openBrowser(selectedAgent)}
+                  >
+                    Open browser
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onSelect={handleRestartSandbox}>
                   Restart
                 </DropdownMenuItem>
@@ -688,7 +722,9 @@ export function ChatView() {
           style={leftPanelWidth}
           className={`shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content ${
             mobileScreen === "chat" ? "hidden md:flex" : "flex"
-          } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""}`}
+          } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""} ${
+            browserFills ? "md:!hidden" : ""
+          }`}
         >
           {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           <ContributionGapNotice agentId={selectedAgent} />
@@ -715,19 +751,21 @@ export function ChatView() {
             {...panelStack.panelProps("artifacts")}
           />
         </div>
-        <ResizeHandle
-          side="left"
-          onResize={(d) => {
-            const v = clampLeftWidth(leftWRef.current + d);
-            leftWRef.current = v;
-            writePersistedNumber(LEFT_WIDTH_KEY, v);
-            setLeftW(v);
-          }}
-        />
+        {!browserFills && (
+          <ResizeHandle
+            side="left"
+            onResize={(d) => {
+              const v = clampLeftWidth(leftWRef.current + d);
+              leftWRef.current = v;
+              writePersistedNumber(LEFT_WIDTH_KEY, v);
+              setLeftW(v);
+            }}
+          />
+        )}
 
         {}
         <div
-          className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"}`}
+          className={`relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} ${browserFills ? "md:!hidden" : ""}`}
         >
           {}
           {sessionMode === SessionMode.Terminal &&
@@ -755,6 +793,7 @@ export function ChatView() {
                 });
               }}
               onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}
+              onSessionMoved={setSessionId}
             />
           ) : (
             <>
@@ -822,6 +861,7 @@ export function ChatView() {
                               avatarsEnabled ? agentView?.name : undefined
                             }
                             isLast={item.index === messages.length - 1}
+                            showModel={runStarts.length > 0}
                             {...timeProps(item.message.at, now)}
                             hasPendingPermission={hasPendingPermission}
                             onRetry={sendPrompt}
@@ -927,7 +967,7 @@ export function ChatView() {
                   textareaRef={textareaRef}
                   busy={busy}
                   loadingSession={loadingSession}
-                  onSend={sendPrompt}
+                  onSend={sendAndFollow}
                   onStop={stopAgent}
                 />
                 {!hasPendingPermission && indicatorModel && (
@@ -964,9 +1004,12 @@ export function ChatView() {
         </div>
 
         {}
-        {(openDelegation || openFilePath || openArtifactId) && (
+        {(openDelegation ||
+          openFilePath ||
+          openArtifactId ||
+          (openBrowserAgentId && canOpenBrowser)) && (
           <>
-            <div className="hidden md:flex">
+            <div className={browserFills ? "hidden" : "hidden md:flex"}>
               <ResizeHandle
                 side="right"
                 onResize={(d) => {
@@ -989,13 +1032,21 @@ export function ChatView() {
               }
               className={cn(
                 "flex flex-col overflow-hidden bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
-                rightW !== null
-                  ? "md:shrink-0 md:w-[var(--file-w)]"
-                  : "md:flex-1 md:basis-0 md:min-w-0",
+                browserFills
+                  ? "md:flex-1 md:min-w-0"
+                  : rightW !== null
+                    ? "md:shrink-0 md:w-[var(--file-w)]"
+                    : "md:flex-1 md:basis-0 md:min-w-0",
                 "md:border-l md:border-border",
               )}
             >
-              {openDelegation ? (
+              {openBrowserAgentId && canOpenBrowser ? (
+                <DockedBrowserPanel
+                  key={openBrowserAgentId}
+                  agentId={openBrowserAgentId}
+                  agentName={selectedAgentName ?? openBrowserAgentId}
+                />
+              ) : openDelegation ? (
                 <DockedDelegationPanel
                   key={openDelegation.id}
                   driverAgentId={openDelegation.driverAgentId}

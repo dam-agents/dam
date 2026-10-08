@@ -1,0 +1,94 @@
+{{- $v := .Values.virtualization }}
+{{- if and $v.enabled $v.runner.releaseHostPath (not $v.runner.hostAddress) }}
+{{- /*
+The per-node runner release stager: the only writer of the node directory that
+`runner.releaseHostPath` names. It runs this chart's runner image and copies the
+runner release that image carries — the runner, platform-init and
+platform-runc — into the directory under the image reference the controller
+names the release by, keeping the newest few. A chart upgrade rolls this
+DaemonSet, which stages the new release; each runner pod's loader then hands
+its machines to it. Runner pods mount the directory read-only, so a guest that
+escapes into its runner cannot replace the release another owner's runner
+takes next.
+
+It also stages the VM runtime the release was built against — the smolvm
+release with its libkrun and guest agent — once per runtime, so a release
+built against another runtime than a pod's image brings its own.
+
+It runs wherever a runner can, on the runner's own nodeSelector and
+tolerations. A runner on a node it has not reached yet keeps its release until
+it does. It is root writing a directory root owns, and holds DAC_READ_SEARCH
+alone, to read guest-agent files whose mode keeps even their owner out.
+*/}}
+{{- $name := printf "%s-vm-runner-releases" (include "platform.fullname" .) }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-runner-releases
+spec:
+  selector:
+    matchLabels:
+      {{- include "platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: vm-runner-releases
+  template:
+    metadata:
+      labels:
+        {{- include "platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: vm-runner-releases
+        istio.io/dataplane-mode: none
+    spec:
+      enableServiceLinks: false
+      {{- include "platform.imagePullSecrets" . | nindent 6 }}
+      automountServiceAccountToken: false
+      {{- with $v.runner.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $v.runner.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: stage
+          image: {{ include "platform.vmRunner.image" $ | quote }}
+          imagePullPolicy: {{ $v.runner.image.pullPolicy | default "IfNotPresent" }}
+          {{- /*
+          The runner image, whose ENTRYPOINT starts a runner pod's loader —
+          replaced here. The release is named by the very reference the
+          controller writes into each runner's release ConfigMap. The runtime
+          is the smolvm tree the image installs.
+          */}}
+          command: ["vm-runner-loader", "stage"]
+          args:
+            - --builtin=/usr/local/libexec/vm-runner
+            - --runtime=/opt/smolvm
+            - --into=/var/lib/platform/releases
+            - --release={{ include "platform.vmRunner.image" $ }}
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              add: ["DAC_READ_SEARCH"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: releases
+              mountPath: /var/lib/platform/releases
+      volumes:
+        - name: releases
+          hostPath:
+            path: {{ $v.runner.releaseHostPath }}
+            type: DirectoryOrCreate
+{{- end }}

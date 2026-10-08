@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-#MISE description="Run a lima template's provision scripts on this host: in sandbox mode, the stand-in for creating the VM. cluster:install runs it by path; CI runs it at the top of the e2e job, before the tools the rest of the install needs are set up."
+#MISE description="Run a lima template's provision scripts on this host, standing in for the VM in sandbox mode"
 #MISE hide=true
+# cluster:install runs it by path; CI runs it at the top of the e2e job,
+# before the tools the rest of the install needs are set up.
 # Needs root (directly, or through sudo), and yq on PATH. The scripts are idempotent, so re-running over a
 # partial provision heals it.
 set -eo pipefail

@@ -2,8 +2,10 @@
 Namespace-scoped deny-all egress baseline for agent pods. Per-pair
 NetworkPolicies (controller-rendered) layer allow rules on top — agent
 pods have no egress unless a per-pair NP admits the destination.
-Role-scoped to `agent` so the paired gateway pod (which needs broad
-outbound for credential injection) is untouched.
+Role-scoped to `agent`: the paired gateway pod needs broad outbound for
+credential injection, and the controller renders its own per-pair egress
+policy (public internet, the platform pods it dials, cluster DNS, and
+controller.gatewayEgress.extraCidrs).
 */}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

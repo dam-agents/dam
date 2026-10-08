@@ -6,6 +6,7 @@ import {
   AGENT_TELEMETRY_MAX_LIMIT,
   METRICS_DEFAULT_LIMIT,
   METRICS_MAX_LIMIT,
+  METRICS_MAX_SESSION_IDS,
   METRICS_MAX_SINCE_HOURS,
 } from "./constants.js";
 
@@ -26,6 +27,12 @@ export const metricsOverviewInputSchema = z.object({
     .default(METRICS_DEFAULT_LIMIT),
 });
 
+export const metricsSessionCostsInputSchema = z.object({
+  agentId: z.string().min(1),
+  sessionIds: z.array(z.string().min(1)).min(1).max(METRICS_MAX_SESSION_IDS),
+  from: z.string().datetime().optional(),
+});
+
 const agentTelemetryShape = {
   days: z
     .number()
@@ -33,9 +40,7 @@ const agentTelemetryShape = {
     .min(1)
     .max(AGENT_TELEMETRY_MAX_DAYS)
     .default(AGENT_TELEMETRY_DEFAULT_DAYS)
-    .describe(
-      `Window length in days, counted back from now (default ${AGENT_TELEMETRY_DEFAULT_DAYS}, max ${AGENT_TELEMETRY_MAX_DAYS}).`,
-    ),
+    .describe(`Window length in days, counted back from now.`),
   sessionId: z
     .string()
     .min(1)
@@ -50,7 +55,7 @@ const agentTelemetryShape = {
     .max(AGENT_TELEMETRY_MAX_LIMIT)
     .default(AGENT_TELEMETRY_DEFAULT_LIMIT)
     .describe(
-      `Most rows to return, newest first (default ${AGENT_TELEMETRY_DEFAULT_LIMIT}, max ${AGENT_TELEMETRY_MAX_LIMIT}). Bounds the row list only; a result's own totalsCover states what its totals span.`,
+      `Most rows to return, newest first. Bounds the row list only; a result's own totalsCover states what its totals span.`,
     ),
 };
 

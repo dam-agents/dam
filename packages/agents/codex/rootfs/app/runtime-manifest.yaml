@@ -6,6 +6,12 @@
 # defaults of the base manifest.
 manifestVersion: 1
 
+# Codex mints its own thread id for a terminal session's conversation. The
+# SessionStart hook in /etc/codex/requirements.toml pins it here under the
+# platform session id, so the session list shows that conversation once, under
+# the terminal session.
+terminalSessionPins: "$HOME/.codex/platform-sessions"
+
 drivers:
   mcp-entry:
     path: "$HOME/.codex/config.toml"

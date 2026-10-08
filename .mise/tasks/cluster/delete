@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Delete the entire k3s cluster (destroys all data). Honors LIMA_INSTANCE."
+#MISE description="Delete the k3s cluster and all its data"
 #MISE raw=true
 #USAGE flag "--force" help="Skip the confirmation prompt"
 set -eo pipefail

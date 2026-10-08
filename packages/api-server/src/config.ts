@@ -1,4 +1,4 @@
-import { brandSchema, linksSchema } from "api-server-api";
+import { brandSchema, featureModeSchema, linksSchema } from "api-server-api";
 import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
@@ -56,6 +56,20 @@ const defaultMountsSchema = z
     ),
   );
 
+// UNIT_BOUNDARY_DESCRIPTION: the chart's per-feature mode. An id the api-server no longer knows is ignored rather than refused, so values that still name a graduated feature keep the install starting.
+const featureModesSchema = z
+  .string()
+  .default("{}")
+  .transform((raw, ctx) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be a JSON object" });
+      return z.NEVER;
+    }
+  })
+  .pipe(z.record(z.string(), featureModeSchema));
+
 const configSchema = z.object({
   serverVersion: z.string().min(1),
   appVersion: z.string().min(1),
@@ -96,6 +110,7 @@ const configSchema = z.object({
   telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
   virtualizationEnabled: z.stringbool().default(false),
+  featureModes: featureModesSchema,
   runtimeMigrationRetentionMs: z
     .string()
     .default("168h")
@@ -141,6 +156,8 @@ const configSchema = z.object({
   redisPassword: z.string().nullable().default(null),
   approvalHoldSeconds: z.coerce.number().int().positive().default(1800),
   acpTurnStallProbeSeconds: z.coerce.number().int().positive().default(1800),
+  onceScheduleAgentMaxOpen: z.coerce.number().int().positive().default(20),
+  onceScheduleAgentMaxPerHour: z.coerce.number().int().positive().default(30),
   minClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
@@ -269,6 +286,7 @@ export function loadConfig(): Config {
     telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
     e2eEnabled: process.env.E2E_ENABLED,
     virtualizationEnabled: process.env.VIRTUALIZATION_ENABLED,
+    featureModes: process.env.FEATURE_MODES,
     runtimeMigrationRetentionMs: process.env.RUNTIME_MIGRATION_RETENTION,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
@@ -316,6 +334,8 @@ export function loadConfig(): Config {
     redisPassword: process.env.REDIS_PASSWORD,
     approvalHoldSeconds: process.env.APPROVAL_HOLD_SECONDS,
     acpTurnStallProbeSeconds: process.env.ACP_TURN_STALL_PROBE_SECONDS,
+    onceScheduleAgentMaxOpen: process.env.ONCE_SCHEDULE_AGENT_MAX_OPEN,
+    onceScheduleAgentMaxPerHour: process.env.ONCE_SCHEDULE_AGENT_MAX_PER_HOUR,
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,

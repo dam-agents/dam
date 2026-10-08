@@ -258,6 +258,7 @@ export const createSessionsSlice: StateCreator<
         openFilePath: null,
         openArtifactId: null,
         openDelegation: null,
+        openBrowserAgentId: null,
         openFileDirty: false,
         openArtifactDirty: false,
         openFileEdit: false,

@@ -28,6 +28,12 @@ export type NextFire =
   { kind: "next"; at: Date } | { kind: "stopped"; reason: string };
 
 export function nextFire(spec: ScheduleSpec, from: Date): NextFire {
+  if (spec.type === "once") {
+    const at = new Date(spec.at);
+    return at > from
+      ? { kind: "next", at }
+      : { kind: "stopped", reason: "its moment has passed" };
+  }
   if (spec.type === "rrule")
     return nextRRuleFire(
       spec.rrule,
@@ -102,4 +108,14 @@ export function triggerExpiry(
     return new Date(byTtl);
   }
   return new Date(Math.min(byTtl, next.getTime()));
+}
+
+export function localToInstant(local: string, tz: string): Date {
+  let wall: Temporal.PlainDateTime;
+  try {
+    wall = Temporal.PlainDateTime.from(local);
+  } catch {
+    throw new Error(`invalid time: ${local}`);
+  }
+  return new Date(wall.toZonedDateTime(tz).epochMilliseconds);
 }

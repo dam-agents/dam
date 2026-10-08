@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#MISE description="Refresh the Nous wiki skills from the upstream repo's commands"
+#USAGE flag "--ref <ref>" help="Upstream git ref (tag|branch|sha) to sync from (default: main)"
+set -euo pipefail
+
+ref="${usage_ref:-main}"
+repo="AI-native-Systems-Research/agentic-strategy-evolution"
+src=".claude/commands"
+dst="rootfs/app/working-dir/.agents/skills"
+
+# List the upstream command files. `gh` handles GitHub auth and JSON parsing; it
+# is the managed tool the repo already uses for the GitHub API.
+names="$(gh api "repos/${repo}/contents/${src}?ref=${ref}" \
+  --jq '.[] | select(.type == "file") | .name')"
+
+if [ -z "$names" ]; then
+  echo "No command files found at ${repo}@${ref}:${src}" >&2
+  exit 1
+fi
+
+# Ship each upstream command as a skill, so every harness that reads
+# .agents/skills sees it: frontmatter from the file name and its first line,
+# then the command verbatim. Skills are replaced name-by-name, never wiped, so
+# local-only skills (`nous`) are left untouched. The heredoc
+# (not a pipe) keeps the loop in this shell so `count` survives — and avoids
+# `mapfile`, which the default macOS bash 3.2 lacks.
+count=0
+while IFS= read -r name; do
+  [ -z "$name" ] && continue
+  skill="${name%.md}"
+  echo "↻ ${skill}"
+  body="$(gh api "repos/${repo}/contents/${src}/${name}?ref=${ref}" \
+    -H "Accept: application/vnd.github.raw")"
+  mkdir -p "${dst}/${skill}"
+  printf -- '---\nname: %s\ndescription: >-\n  %s\n---\n\n%s\n' \
+    "$skill" "$(printf '%s\n' "$body" | head -1)" "$body" >"${dst}/${skill}/SKILL.md"
+  count=$((count + 1))
+done <<EOF
+${names}
+EOF
+
+echo "Synced ${count} skill(s) from ${repo}@${ref}:${src} into ${dst}"

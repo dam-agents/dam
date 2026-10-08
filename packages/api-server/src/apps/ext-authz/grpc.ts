@@ -20,7 +20,7 @@ export interface ExtAuthzGrpcAppDeps {
 
 export async function startExtAuthzGrpcApp(
   deps: ExtAuthzGrpcAppDeps,
-): Promise<{ server: grpc.Server }> {
+): Promise<{ server: grpc.Server; port: number }> {
   const server = new grpc.Server({
     "grpc.keepalive_time_ms": Math.min(60_000, deps.holdSeconds * 1000),
     "grpc.keepalive_timeout_ms": 20_000,
@@ -55,7 +55,18 @@ export async function startExtAuthzGrpcApp(
         const sni = call.request.attributes?.tlsSession?.sni ?? null;
         const rawHost = httpReq?.host || sni;
         const host = rawHost ? stripPort(rawHost) : null;
-        if (!host) {
+        const method = httpReq?.method?.toUpperCase() || "*";
+        const tls =
+          !httpReq || method === "CONNECT" || httpReq.scheme === "https";
+        const portText = rawHost?.slice(host?.length ?? 0).replace(/^:/, "");
+        const port = !portText
+          ? tls
+            ? 443
+            : 80
+          : /^\d{1,5}$/.test(portText)
+            ? Number(portText)
+            : 0;
+        if (!host || port < 1 || port > 65535) {
           securityLog("warn", "egress.decision", {
             category: "egress",
             actor: null,
@@ -65,14 +76,16 @@ export async function startExtAuthzGrpcApp(
             decision: "deny",
             reason: "missing-host",
           });
-          callback(null, denied("missing host/sni"));
+          callback(null, denied("missing or malformed host/sni"));
           return;
         }
 
         const verdict = await deps.gate.gateRequest({
           agentId,
           host,
-          method: httpReq?.method?.toUpperCase() || "*",
+          port,
+          tls,
+          method,
           path: httpReq?.path ? stripConnectionEgressPrefix(httpReq.path) : "*",
         });
         callback(
@@ -102,23 +115,23 @@ export async function startExtAuthzGrpcApp(
 
   server.addService(AuthorizationService, impl);
 
-  await new Promise<void>((res, rej) => {
+  const port = await new Promise<number>((res, rej) => {
     server.bindAsync(
       `0.0.0.0:${deps.port}`,
       grpc.ServerCredentials.createInsecure(),
-      (err) => {
+      (err, boundPort) => {
         if (err) {
           rej(err);
           return;
         }
         process.stderr.write(
-          `ext-authz gRPC listening on 0.0.0.0:${deps.port}\n`,
+          `ext-authz gRPC listening on 0.0.0.0:${boundPort}\n`,
         );
-        res();
+        res(boundPort);
       },
     );
   });
-  return { server };
+  return { server, port };
 }
 
 function parseInstanceFromAuthority(

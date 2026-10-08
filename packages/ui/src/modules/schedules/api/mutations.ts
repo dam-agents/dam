@@ -16,6 +16,7 @@ interface CreateScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck?: string;
+  model?: string;
 }
 
 export function useCreateSchedule() {
@@ -43,6 +44,7 @@ interface UpdateScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
+  model: string | null;
 }
 
 export function useUpdateSchedule() {
@@ -56,6 +58,46 @@ export function useUpdateSchedule() {
     meta: {
       ...invalidatesScheduleList,
       errorToast: "Failed to update schedule",
+    },
+  });
+}
+
+export interface CreateOnceScheduleInput {
+  agentId: string;
+  name: string;
+  task: string;
+  timezone: string;
+  at?: string;
+  model?: string;
+}
+
+export function useCreateOnceSchedule() {
+  return useMutation({
+    mutationFn: (input: CreateOnceScheduleInput) =>
+      api.schedules.createOnce.mutate(input),
+    meta: {
+      ...invalidatesScheduleList,
+      errorToast: "Failed to create one-time task",
+    },
+  });
+}
+
+export interface UpdateOnceScheduleInput {
+  id: string;
+  name: string;
+  task: string;
+  timezone: string;
+  at: string;
+  model?: string;
+}
+
+export function useUpdateOnceSchedule() {
+  return useMutation({
+    mutationFn: (input: UpdateOnceScheduleInput) =>
+      api.schedules.updateOnce.mutate(input),
+    meta: {
+      ...invalidatesScheduleList,
+      errorToast: "Failed to update one-time task",
     },
   });
 }

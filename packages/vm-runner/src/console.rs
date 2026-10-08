@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::Duration;
 
@@ -18,6 +18,11 @@ pub const SLOW_BOOT_AFTER: Duration = Duration::from_secs(60);
 
 pub const SLOW_BOOT: &str =
     "the guest is not answering its health check, and it was last asked to start more than 1m0s ago";
+
+// UNIT_BOUNDARY_DESCRIPTION: how large a machine's console or VMM log may grow before the runner cuts it back. The VMM writes both from the host side, onto the claim every machine of the owner keeps its disks on, as fast as the guest makes it: whatever the guest prints to its console, and a line for every connection it opens. The runner checks every TRIM_EVERY, so a log can pass the cap by what a guest writes in that time.
+pub const LOG_CAP_BYTES: u64 = 16 << 20;
+
+pub const TRIM_EVERY: Duration = Duration::from_secs(10);
 
 const CONSOLE_ENDS: &str = "\nthe guest console ends:\n";
 
@@ -116,6 +121,46 @@ fn cut_to(tail: &[u8], limit: usize) -> String {
         }
     }
     printable(&String::from_utf8_lossy(&tail[start..]))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: cuts each of a machine's logs that is over `cap` back to what a status reads of it: the kernel's last lines and the window at the end that tail_of reads. The VMM appends to both, so once the file is emptied it writes on at its new end; a line it writes between the emptying and the write-back lands before the kept lines, which a tail read at the end tolerates.
+pub fn trim_logs(id: &str, dir: &Path, cap: u64) {
+    for path in [dir.join(CONSOLE_LOG), dir.join(VMM_LOG)] {
+        let Ok(size) = fs::metadata(&path).map(|m| m.len()) else {
+            continue;
+        };
+        if size <= cap {
+            continue;
+        }
+        if let Err(e) = trim(&path, size) {
+            tracing::warn!(machine = %id, file = %path.display(), error = %e, "could not cut back a machine log over its cap");
+        }
+    }
+}
+
+fn trim(path: &Path, size: u64) -> std::io::Result<()> {
+    let window = CONSOLE_TAIL_BYTES.saturating_mul(16).min(size);
+    let mut kernel: std::collections::VecDeque<Vec<u8>> = Default::default();
+    let mut kept = 0;
+    for line in BufReader::new(fs::File::open(path)?.take(size - window)).split(b'\n') {
+        let mut line = line?;
+        if find(&line, KERNEL_TARGET).is_none() {
+            continue;
+        }
+        line.push(b'\n');
+        kept += line.len();
+        kernel.push_back(line);
+        while kept as u64 > CONSOLE_TAIL_BYTES * 2 {
+            kept -= kernel.pop_front().map_or(0, |l| l.len());
+        }
+    }
+    let mut file = fs::File::open(path)?;
+    file.seek(SeekFrom::Start(size - window))?;
+    let mut tail = Vec::new();
+    file.take(window).read_to_end(&mut tail)?;
+    let mut out = fs::OpenOptions::new().append(true).open(path)?;
+    out.set_len(0)?;
+    out.write_all(&kernel.into_iter().flatten().chain(tail).collect::<Vec<_>>())
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the console is on the runner's claim and outlives the runner, while the values that redact it are what this process was given: a restarted runner knows only the applied spec, and an earlier boot may have printed a value that spec no longer holds. So each start begins an empty console, and a tail then only shows the boot this runner started, with a spec it holds. It runs after the last VMM was waited out and, if it had to be, killed; it empties the console even if that VMM somehow still holds it, because a console that keeps an earlier boot is the leak this prevents, while a few lines lost from a VMM being killed are not. A console that cannot be emptied is removed, and one that cannot be removed either is reported, because its old lines would reach a status unredacted. Both of the console's sources are emptied: smolvm removes the VMM log before a start as well, but the runner does not leave to the runtime a guarantee its own status depends on.
@@ -255,6 +300,42 @@ mod tests {
             "{tail:?}"
         );
         assert_eq!(machine_tail(&dir.path().join("missing")), "");
+    }
+
+    // TEST_SCENARIO: a guest writing without end to its console, or opening connection after connection, grows two host files on the claim its siblings' disks are on. Each is cut back once it passes the cap, and what a status shows of the machine is the same after the cut as before it: the kernel's refusal from the start of the boot, and the last lines.
+    #[test]
+    fn a_log_over_its_cap_is_cut_back_to_what_a_status_reads() {
+        let dir = TempDir::new("console-trim");
+        let fatal = "[    0.4] platform-init: FATAL: refusing to boot";
+        let mut vmm = format!("[t ERROR init_or_kernel] {fatal}\n");
+        let mut console = String::new();
+        for i in 0..20_000 {
+            vmm.push_str("[t WARN  smolvm_network::stack] guest SYN to a denied address\n");
+            console.push_str(&format!("guest line {i}\n"));
+        }
+        fs::write(dir.path().join(VMM_LOG), &vmm).unwrap();
+        fs::write(dir.path().join(CONSOLE_LOG), &console).unwrap();
+        let before = machine_tail(dir.path());
+
+        trim_logs("m1", dir.path(), 64 * 1024);
+
+        for name in [VMM_LOG, CONSOLE_LOG] {
+            let size = fs::metadata(dir.path().join(name)).unwrap().len();
+            assert!(
+                size <= CONSOLE_TAIL_BYTES * 18,
+                "{name} is still {size} bytes"
+            );
+        }
+        assert_eq!(machine_tail(dir.path()), before);
+        assert!(before.starts_with(fatal), "{before:?}");
+
+        let small = fs::metadata(dir.path().join(CONSOLE_LOG)).unwrap().len();
+        trim_logs("m1", dir.path(), 64 * 1024);
+        assert_eq!(
+            fs::metadata(dir.path().join(CONSOLE_LOG)).unwrap().len(),
+            small,
+            "a log under its cap is left alone"
+        );
     }
 
     // TEST_SCENARIO: a line longer than the limit, with no newline in it or with a short line after it, keeps its end. The limit counts the console's bytes before any decoding, so bytes that are not UTF-8 and CRLF line ends give a tail of the stated size, cut at a character, and never a panic.

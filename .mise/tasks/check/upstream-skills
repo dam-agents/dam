@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#MISE description="Every skill vendored from upstream matches the files recorded in .agents/upstream-skills.json"
+set -euo pipefail
+source .mise/lib/upstream-skills.sh
+
+repo=$(jq -r .repo "$UPSTREAM_SKILLS_LOCK")
+commit=$(jq -r .commit "$UPSTREAM_SKILLS_LOCK")
+failed=0
+while IFS= read -r s; do
+  if ! d=$(diff <(jq -S --arg s "$s" '.skills[$s]' "$UPSTREAM_SKILLS_LOCK") <(skill_hashes "$s" | jq -S .)); then
+    echo "ERROR: .agents/skills/$s differs from $repo@$commit:" >&2
+    echo "$d" >&2
+    failed=1
+  fi
+done < <(jq -r '.skills | keys[]' "$UPSTREAM_SKILLS_LOCK")
+if ((failed)); then
+  echo "Vendored skills are not edited here: change them upstream, then run 'mise run skills:update'." >&2
+  exit 1
+fi
+echo "OK: vendored skills match $repo@$commit"

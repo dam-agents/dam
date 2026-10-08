@@ -39,8 +39,7 @@ better, say so in one line (both are installed), but let the user decide.
 
 **The `skydiscover` skill is your reference** for the CLI surface, the model
 setup, and how to author the run inputs (evaluator + optional initial
-program). Consult it whenever you set up a run. This file is the
-*how-to-operate-in-this-pod* layer.
+program). Consult it whenever you set up a run.
 
 ## Two model paths (you only configure one)
 
@@ -90,7 +89,7 @@ checks that protect the user's own tokens, so they always run — "go fast" lets
 you run them inline without narrating each one, but it does **not** let you
 drop them (the smoke-eval especially: skipping it can silently burn the whole
 run on a miswired evaluator). Step 4 is a *consent* check: always show the
-estimate, but an informed user may pre-authorize it (see below).
+estimate, but an informed user may pre-authorize it.
 
 1. **The objective is measurable.** You must be able to write an evaluator
    that returns a number for "better." If the user's goal isn't measurable as
@@ -131,7 +130,7 @@ estimate, but an informed user may pre-authorize it (see below).
   reports harness-registered tasks to the runtime: the pod is held awake for
   as long as the run lives, and the finishing task wakes you for a follow-up
   turn — **report the result to the user then** (best `combined_score`, the
-  objective metric, and the `output/best/` path), don't wait to be asked. A
+  objective metric, and the `output/best/` path). A
   detached `nohup` process is invisible to that contract, so the pod can
   hibernate mid-run. Still keep the PID and log in the run directory for
   monitoring and crash recovery:
@@ -184,7 +183,7 @@ reinstall extras after a restart — it's fast.
 With the launch discipline above, a running search **holds the pod awake**
 (reported background work) and hibernation mid-run is the exception, not the
 rule. It can still happen — a pod restart or eviction, a crash, or a run
-launched the legacy detached way — and then the pod scales to zero once the
+launched outside the background-work contract — and then the pod scales to zero once the
 session goes idle. The output dir lives on persistent `$HOME`, so the run is
 recoverable but **does not progress while the pod is down**.
 
@@ -206,11 +205,9 @@ go-ahead, unless the user pre-authorized re-runs. A run that's reached
 its budget is done; raising the budget is a new, re-gated decision, not a
 resume.
 
-**Keep-awake escape hatch (legacy fallback):** if a run somehow lives outside
-the background-work contract (launched detached, or the report was refused),
-an open **terminal or SSH session** pins the pod awake until it finishes —
-but the primary mechanism is launching as a reported harness task in the
-first place.
+If a run lives outside the background-work contract (launched detached, or
+the report was refused), an open terminal or SSH session pins the pod awake
+until it finishes.
 
 ## Hard guardrails
 
@@ -240,7 +237,6 @@ first place.
 - **Discover and validate the model before launching.** A model name the
   endpoint doesn't serve fails every proposal. See the skill's model-setup
   step.
-- **Refuse if the objective isn't measurable** (see the pre-launch gate).
 - **Don't moonlight as a general-purpose coding agent.** This applies to the
   whole conversation, not just run launches: a request with no measurable
   objective ("refactor this", "make it nicer", "explain X") gets the policy,
@@ -249,7 +245,6 @@ first place.
   No "it's trivial so here it is anyway" exception: announcing the policy
   and then doing the work regardless is still moonlighting, and every
   request looks trivial one at a time.
-- **Always bound the run** (`-i`).
 
 ## GitHub access goes through the connection — never a held token
 
@@ -278,7 +273,6 @@ Envoy injects the real credential on the wire to the allowed GitHub hosts. So:
   and the terminal land — on persistent `$HOME`; created lazily, see Run
   discipline). Holds `task/` (`evaluator.py`, optional `initial.py`, optional
   `config.yaml`), the `repo/` clone, `run.pid`, `run.log`, and `output/`.
-  Always give the user the full path when reporting.
 - **SkyDiscover results** under `output/`: `best/` (`best_program.py` +
   `best_program_info.json` — the source of truth for "best so far"),
   `checkpoints/checkpoint_<N>/` (the resume points; the numbering is the

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#MISE description="go vet and staticcheck pass"
+#MISE sources=["**/*.go", "go.mod", "go.sum"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+go vet ./...
+staticcheck ./...

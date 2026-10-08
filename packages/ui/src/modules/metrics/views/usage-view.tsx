@@ -2,7 +2,6 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { useFeatures } from "../../features/api/queries.js";
 import { AgentSpendBars } from "../components/agent-spend-bars.js";
 import { ModelSpendBars } from "../components/model-spend-bars.js";
 import { MonthSwitcher } from "../components/month-switcher.js";
@@ -39,8 +38,6 @@ export function UsageView() {
     state,
     freshness,
   } = useMonthlySpend();
-  const { data: features } = useFeatures();
-  const showSessionTypes = features?.["session-costs"] ?? false;
   const total = totalCostUsd(data?.byModel ?? []);
   const dailyDays = fillMonthDays(
     shownMonth,
@@ -78,9 +75,7 @@ export function UsageView() {
       {state === "failed" && (
         <UsageNotice>{readFailureMessage(false, label)}</UsageNotice>
       )}
-      {state === "loading" && (
-        <UsageSkeleton showSessionTypes={showSessionTypes} />
-      )}
+      {state === "loading" && <UsageSkeleton />}
       {state === "ready" && data && (
         <div aria-busy={freshness === "updating"} className="space-y-10">
           <section>
@@ -112,7 +107,7 @@ export function UsageView() {
               </section>
             </>
           )}
-          {showSessionTypes && data.bySessionType.length > 0 && (
+          {data.bySessionType.length > 0 && (
             <section>
               <SectionLabel spaced>Spend by session type</SectionLabel>
               <Card className="p-5">
@@ -134,7 +129,7 @@ export function UsageView() {
   );
 }
 
-function UsageSkeleton({ showSessionTypes }: { showSessionTypes: boolean }) {
+function UsageSkeleton() {
   return (
     <div className="space-y-10">
       <section>
@@ -149,12 +144,10 @@ function UsageSkeleton({ showSessionTypes }: { showSessionTypes: boolean }) {
         <SectionLabel spaced>Spend by model</SectionLabel>
         <BarsSkeleton />
       </section>
-      {showSessionTypes && (
-        <section>
-          <SectionLabel spaced>Spend by session type</SectionLabel>
-          <BarsSkeleton />
-        </section>
-      )}
+      <section>
+        <SectionLabel spaced>Spend by session type</SectionLabel>
+        <BarsSkeleton />
+      </section>
       <section>
         <SectionLabel spaced>Spend by agent</SectionLabel>
         <BarsSkeleton />

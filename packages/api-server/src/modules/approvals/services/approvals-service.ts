@@ -45,6 +45,7 @@ export interface EgressRuleWriter {
     id: string;
     agentId: string;
     host: string;
+    port?: number;
     method: string;
     pathPattern: string;
     verdict: "allow" | "deny";
@@ -208,11 +209,11 @@ export function createApprovalsService(
       const row = await loadOwned(deps, id);
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
-        const { host, method, path } = row.payload;
+        const { host, port, method, path } = row.payload;
         return writeRuleAndResolve(
           deps,
           row,
-          { host, method, pathPattern: path, verdict: "allow" },
+          { host, port, method, pathPattern: path, verdict: "allow" },
           { host, method, pathPattern: path },
         );
       }
@@ -223,11 +224,11 @@ export function createApprovalsService(
       const row = await loadOwned(deps, id);
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
-        const { host } = row.payload;
+        const { host, port } = row.payload;
         return writeRuleAndResolve(
           deps,
           row,
-          { host, method: "*", pathPattern: "*", verdict: "allow" },
+          { host, port, method: "*", pathPattern: "*", verdict: "allow" },
           { host, hostWide: true },
         );
       }
@@ -238,11 +239,11 @@ export function createApprovalsService(
       const row = await loadOwned(deps, id);
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
-        const { host, method, path } = row.payload;
+        const { host, port, method, path } = row.payload;
         return writeRuleAndResolve(
           deps,
           row,
-          { host, method, pathPattern: path, verdict: "deny" },
+          { host, port, method, pathPattern: path, verdict: "deny" },
           { host, method, pathPattern: path },
         );
       }
@@ -277,6 +278,7 @@ async function writeRuleAndResolve(
   row: PendingApprovalRow,
   rule: {
     host: string;
+    port: number | undefined;
     method: string;
     pathPattern: string;
     verdict: "allow" | "deny";

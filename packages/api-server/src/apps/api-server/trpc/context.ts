@@ -210,6 +210,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       db,
       owner: user.sub,
       surface,
+      modes: config.featureModes,
     });
     const skills = composeSkillsModule({
       agentStateCache: boot.agentStateCache,
@@ -326,8 +327,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
               metricsReader.spendBySession(agentIds, window),
             categorizeSessions: (agentIds, sessionIds) =>
               sessionDirectory.categorize(agentIds, sessionIds),
-            isEnabled: async () =>
-              (await features.flags())["session-costs"] ?? false,
           }),
         })
       : createDisabledMetricsService();
@@ -372,6 +371,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       user,
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,
+      featureModes: config.featureModes,
     };
   };
 }

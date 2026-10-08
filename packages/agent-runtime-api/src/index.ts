@@ -112,6 +112,10 @@ export {
   fileFormat,
   mergeMode,
   eventReportInput,
+  SESSION_REF_HEADER,
+  PLATFORM_MCP_ENTRY_NAME,
+  onceOrigin,
+  onceOriginMode,
   initializationEventPayload,
   subAgentOutcomeEventPayload,
   workspaceCommandEventPayload,
@@ -130,7 +134,10 @@ export type {
   MergeMode,
   FileFormat,
   TriggerEventPayload,
+  OnceOrigin,
+  OnceOriginMode,
   EventOutcome,
+  EventStage,
   EventReportInput,
   SatelliteOutcomeEventPayload,
   SubAgentOutcomeEventPayload,
@@ -172,3 +179,15 @@ export {
   type ArtifactApiRequestResult,
 } from "./modules/artifact-api/schemas.js";
 export type { ArtifactApiService } from "./modules/artifact-api/types.js";
+export {
+  browserSnapshotSchema,
+  pageStateSchema,
+} from "./modules/browser/schemas.js";
+export type {
+  BrowserAction,
+  BrowserDomainError,
+  BrowserService,
+  BrowserSnapshot,
+  BrowserState,
+  PageState,
+} from "./modules/browser/types.js";

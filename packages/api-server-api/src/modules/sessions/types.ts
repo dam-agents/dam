@@ -5,6 +5,7 @@ export const SessionType = {
   ChannelSlack: "channel_slack",
   ChannelTelegram: "channel_telegram",
   ScheduleCron: "schedule_cron",
+  ScheduleOnce: "schedule_once",
   CliRun: "cli_run",
 } as const;
 

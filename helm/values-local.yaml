@@ -44,16 +44,6 @@ controller:
     defaultCpu: "6"
     defaultMemory: "14Gi"
 
-# Transitional (#2988): keep the deprecated NFS server alive so an IN-PLACE
-# upgrade of an existing dev cluster doesn't delete it while unmigrated RWX
-# agent volumes still live on it — the storage migration needs the source
-# volumes readable to drain them. New agents never touch it (workspaces are
-# ReadWriteOnce); on a fresh cluster it just idles. values-e2e.yaml disables
-# it so the e2e cluster proves the no-shared-filesystem path. Drops together
-# with the chart's nfsProvisioner block once dev clusters are drained.
-nfsProvisioner:
-  enabled: true
-
 # The VM runner (vm backend) in the lima k3s VM: /dev/kvm comes from lima's
 # nested virtualization, handed to the pod by the chart's own device plugin.
 # Rendered only with virtualization.enabled.
@@ -74,6 +64,9 @@ virtualization:
     # No registry in the lima cluster: cluster:install drops the agent image
     # archives here and every runner mounts them read-only.
     imageArchiveHostPath: /var/lib/platform-vm-images
+    # Runner releases are staged on the node, so the loader takes a new runner
+    # build without rebooting the machines; ignored by the Mac's host runner.
+    releaseHostPath: /var/lib/platform-vm-runner-releases
     # Images come from the node, not a registry, so the runner needs nothing
     # outside the cluster — and the exclusions keep it out of the cluster too.
     # The paired gateways are admitted by selector regardless; DNS is not
@@ -174,7 +167,7 @@ keycloak:
     - "*"
   extraWebOrigins:
     - "*"
-  # Human-readable Keycloak logs for `mise run cluster:logs` during dev.
+  # Human-readable Keycloak logs during dev.
   log:
     consoleOutput: "default"
 

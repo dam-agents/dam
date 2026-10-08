@@ -79,6 +79,15 @@ func (c *Client) List(ctx context.Context) ([]string, error) {
 	return ids, json.Unmarshal(raw, &ids)
 }
 
+func (c *Client) Release(ctx context.Context) (RunnerRelease, error) {
+	var release RunnerRelease
+	raw, err := c.call(ctx, c.HTTP, http.MethodGet, "/release", nil)
+	if err != nil {
+		return release, fmt.Errorf("VM runner: release: %w", err)
+	}
+	return release, json.Unmarshal(raw, &release)
+}
+
 func (c *Client) Delete(ctx context.Context, id string) error {
 	_, err := c.machine(ctx, c.HTTP, http.MethodDelete, id, "", nil)
 	return err

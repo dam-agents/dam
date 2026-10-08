@@ -88,3 +88,82 @@ for (const { title, agentName, create } of cases) {
     }
   });
 }
+
+// TEST_SCENARIO: a one-time task, run now or at a moment two minutes out, reaches the harness once and records success only when its trigger settles on the pod, and Run now is refused for it since a run beside its own would do the task twice.
+test("one-time tasks fire once and record their delivery", async () => {
+  test.setTimeout(600_000);
+
+  const api = createApiClient(await getAccessToken());
+  await acceptTerms(api);
+
+  const agentName = "e2e-once-schedule-agent";
+  const { id: agentId } = await api.agents.create.mutate({
+    name: agentName,
+    templateId: harnessName,
+  });
+
+  const scheduleIds: string[] = [];
+  try {
+    await waitForAgentRunning(api, agentName);
+    await setMockAgentReply(api, agentId, "one-time reply");
+
+    const at = new Date(Date.now() + 2 * 60_000).toISOString().slice(0, 16);
+    const now = await api.schedules.createOnce.mutate({
+      name: "e2e-once-now",
+      agentId,
+      timezone: "UTC",
+      task: `${agentName}-now`,
+    });
+    const later = await api.schedules.createOnce.mutate({
+      name: "e2e-once-at",
+      agentId,
+      timezone: "UTC",
+      at,
+      task: `${agentName}-at`,
+    });
+    scheduleIds.push(now.id, later.id);
+
+    await expect(api.schedules.runNow.mutate({ id: now.id })).rejects.toThrow(
+      /runs only at its own moment/,
+    );
+
+    await expect
+      .poll(
+        async () => {
+          const { prompts } = await api.e2e.getReceivedPrompts.query({
+            agentId,
+          });
+          const seen = JSON.stringify(prompts);
+          return [`${agentName}-now`, `${agentName}-at`].filter((t) =>
+            seen.includes(t),
+          ).length;
+        },
+        {
+          timeout: 300_000,
+          intervals: [3_000],
+          message: "a one-time task never reached the mock",
+        },
+      )
+      .toBe(2);
+
+    for (const id of scheduleIds) {
+      await expect
+        .poll(
+          async () =>
+            (await api.schedules.get.query({ id })).status?.lastResult,
+          { timeout: 60_000, intervals: [2_000] },
+        )
+        .toBe("success");
+      const { status } = await api.schedules.get.query({ id });
+      expect(status?.nextRun ?? null).toBeNull();
+    }
+    const { prompts } = await api.e2e.getReceivedPrompts.query({ agentId });
+    const seen = JSON.stringify(prompts);
+    for (const task of [`${agentName}-now`, `${agentName}-at`])
+      expect(seen.split(task).length - 1).toBe(1);
+  } finally {
+    for (const id of scheduleIds)
+      await api.schedules.delete.mutate({ id }).catch(() => {});
+    await api.agents.delete.mutate({ id: agentId });
+  }
+});

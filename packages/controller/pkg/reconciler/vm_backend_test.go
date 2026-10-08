@@ -47,6 +47,7 @@ type fakeNode struct {
 	puts     []vmrunner.MachineSpec
 	version  uint64
 	waits    int
+	release  vmrunner.RunnerRelease
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long the fake holds a waiting status read before answering with no change. It is far below the real runner's wait, so a test's server closes promptly under a watch that is still reading.
@@ -61,6 +62,10 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 		}
 		n.mu.Lock()
 		defer n.mu.Unlock()
+		if r.URL.Path == "/release" {
+			require.NoError(t, json.NewEncoder(w).Encode(n.release))
+			return
+		}
 		if r.URL.Path == "/machines" {
 			ids := []string{}
 			for id := range n.specs {
@@ -444,6 +449,26 @@ func TestAVMAgentsHarnessReachesTheGuest(t *testing.T) {
 	r, node, _ = setupVMReconciler(t, bare)
 	require.NoError(t, r.Reconcile(context.Background(), bare))
 	assert.NotContains(t, node.spec("my-agent").Env, "PLATFORM_HARNESS")
+}
+
+// TEST_SCENARIO: the guest's runtime offers the browser panel only on an Agent that requires named connections, so the machine is told which with PLATFORM_REQUIRE_CONNECTION_ADDRESS. It is set after the owner's secretRef is applied, unlike PLATFORM_HARNESS, so the owner's own secret cannot claim the panel for an Agent that does not require named connections.
+func TestAVMAgentIsToldWhetherItRequiresNamedConnections(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.SecretRef = "mine"
+	r, node, _ := setupVMReconciler(t, agent)
+	_, err := r.client.CoreV1().Secrets("test-agents").Create(context.Background(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "mine", Namespace: "test-agents", Labels: map[string]string{envoyOwnerLabel: testOwner}},
+		Data:       map[string][]byte{"PLATFORM_REQUIRE_CONNECTION_ADDRESS": []byte("true")},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.Equal(t, "false", node.spec("my-agent").Env["PLATFORM_REQUIRE_CONNECTION_ADDRESS"])
+
+	addressed := vmAgentCR()
+	addressed.Spec.RequireConnectionAddress = true
+	r, node, _ = setupVMReconciler(t, addressed)
+	require.NoError(t, r.Reconcile(context.Background(), addressed))
+	assert.Equal(t, "true", node.spec("my-agent").Env["PLATFORM_REQUIRE_CONNECTION_ADDRESS"])
 }
 
 // TEST_SCENARIO: on a laptop the runner runs on the host, outside the cluster, and serves every owner. The guest reaches its gateway through a NodePort the cluster's VM forwards to the host's loopback, at the address smolvm gives the host, and at nothing else — so the machine carries that port instead of an allowlist, since allowing the host address would open every loopback port. The agent's Service has no runner pod to select and names the host and the machine's published port in its own EndpointSlice, and a delete reaches the host runner with no runner Deployment to look for.
@@ -1406,7 +1431,7 @@ func TestTheRunnerContainerIsConfinedToWhatItAdds(t *testing.T) {
 	sc := runnerSecurityContext(config.VMRunnerSpec{ImageCacheHostPath: "/var/lib/platform-images"})
 	require.NotNil(t, sc.Capabilities)
 	assert.Equal(t, []corev1.Capability{"ALL"}, sc.Capabilities.Drop)
-	assert.Equal(t, []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE"}, sc.Capabilities.Add)
+	assert.Equal(t, []corev1.Capability{"DAC_OVERRIDE"}, sc.Capabilities.Add)
 	require.NotNil(t, sc.AllowPrivilegeEscalation)
 	assert.False(t, *sc.AllowPrivilegeEscalation)
 	require.NotNil(t, sc.SeccompProfile)
@@ -1456,7 +1481,7 @@ func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
 	assert.True(t, queued, "and the agent is queued to try again when room frees")
 }
 
-// TEST_SCENARIO: a runner that caches images on its own claim unpacks them itself, and tar restores each file's owner and then sets a mode on a file it no longer owns, keeping a setgid bit only with FSETID — so that runner holds CHOWN, FOWNER and FSETID. A runner on the node cache or on staged archives unpacks nothing, so it holds neither. Every runner holds NET_ADMIN for the per-machine NAT and DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.
+// TEST_SCENARIO: a runner that caches images on its own claim unpacks them itself, and tar restores each file's owner and then sets a mode on a file it no longer owns, keeping a setgid bit only with FSETID — so that runner holds CHOWN, FOWNER and FSETID. A runner on the node cache or on staged archives unpacks nothing, so it holds neither. Every runner holds DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.
 func TestOnlyARunnerThatUnpacksImagesCanChownThem(t *testing.T) {
 	capsFor := func(configure func(*config.VMRunnerSpec)) []corev1.Capability {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
@@ -1470,12 +1495,12 @@ func TestOnlyARunnerThatUnpacksImagesCanChownThem(t *testing.T) {
 		return caps.Add
 	}
 
-	assert.ElementsMatch(t, []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE", "CHOWN", "FOWNER", "FSETID"},
+	assert.ElementsMatch(t, []corev1.Capability{"DAC_OVERRIDE", "CHOWN", "FOWNER", "FSETID"},
 		capsFor(func(*config.VMRunnerSpec) {}), "the runner that unpacks into its own claim")
-	assert.ElementsMatch(t, []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE"},
+	assert.ElementsMatch(t, []corev1.Capability{"DAC_OVERRIDE"},
 		capsFor(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" }),
 		"the node's image cache service unpacks, and this runner only reads")
-	assert.ElementsMatch(t, []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE"},
+	assert.ElementsMatch(t, []corev1.Capability{"DAC_OVERRIDE"},
 		capsFor(func(spec *config.VMRunnerSpec) { spec.ImageArchiveHostPath = "/var/lib/platform-archives" }),
 		"a staged archive is flattened inside the guest")
 }
@@ -1556,7 +1581,7 @@ func TestTheRunnerAsksSmolvmToAccountForItself(t *testing.T) {
 	assert.Equal(t, "json", env["SMOLVM_LOG_FORMAT"], "and the platform's logs stay machine-readable")
 }
 
-// TEST_SCENARIO: smolvm checks a VMM against the syscalls a running microVM needs only when its embedder asks, and the runner is the embedder. It asks for audit, which logs a call outside the allowlist rather than killing the VMM, until the runner's VMMs are shown to stay inside it.
+// TEST_SCENARIO: smolvm checks a VMM against the syscalls a running microVM needs only when its embedder asks, and the runner is the embedder. It asks for audit, so every call outside the allowlist is logged while the filter is not yet trusted to refuse it.
 func TestTheRunnerAuditsItsVMMsSyscalls(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -1569,8 +1594,23 @@ func TestTheRunnerAuditsItsVMMsSyscalls(t *testing.T) {
 	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
 		env[e.Name] = e.Value
 	}
-	assert.Equal(t, "audit", env["SMOLVM_SECCOMP"],
-		"unset applies nothing, and enforce waits until audit finds no call outside the allowlist")
+	assert.Equal(t, "audit", env["SMOLVM_SECCOMP"], "unset checks nothing, and enforce kills a VMM on a call outside the allowlist")
+}
+
+// TEST_SCENARIO: smolvm confines a VMM's filesystem only when its embedder asks, and the runner is the embedder. Unconfined, a guest writes through its root virtiofs export into the agent rootfs every sibling machine boots from.
+func TestTheRunnerConfinesItsVMMsFilesystem(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	env := map[string]string{}
+	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
+		env[e.Name] = e.Value
+	}
+	assert.Equal(t, "enforce", env["SMOLVM_LANDLOCK"], "unset leaves every VMM free to write the shared agent rootfs")
 }
 
 func envSecret(t *testing.T, r *AgentReconciler, name string, labels map[string]string) {

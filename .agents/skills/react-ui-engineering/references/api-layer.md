@@ -64,7 +64,7 @@ export async function disconnectMcp(connectionId: string) {
 ```
 
 - One exported function per endpoint, with typed parameters (no `any` or untyped records).
-- Zod-parse every response at the edge; only a 204 needs no schema.
+- Only a 204 needs no schema.
 - `encodeURIComponent` every user-supplied URL value; never concatenate raw input into paths.
 - Throw on non-OK; a returned error object can't be told apart from success.
 
@@ -133,14 +133,10 @@ Consumers call `useInstanceTrpc()` and pass its `queryOptions()` / `mutationOpti
 
 ## Migrating a fetch-site
 
-Target: every server call behind a `useXxx` hook in `modules/{domain}/api/`; raw `fetch` only in `src/auth.ts` and non-tRPC fetchers; errors flow through typed errors, `getErrorMessage` and the central handlers. When you touch a component doing `useEffect` + `useState` fetching: find its domain, add a typed fetcher (or use the tRPC procedure), add a query/mutation hook, replace the effect with the hook.
+When you touch a component doing `useEffect` + `useState` fetching: find its domain, add a typed fetcher (or use the tRPC procedure), add a query/mutation hook, replace the effect with the hook.
 
 ## Anti-patterns
 
-- `fetch` or `authFetch` in a component → fetcher + hook.
-- Unvalidated JSON → Zod.
-- Returning an error object → throw.
 - `catch {}` swallowing errors → let the QueryClient's `onError` handle it.
-- User input interpolated into URLs → `encodeURIComponent` or a structured client.
 - Per-call `try/catch` + toast → `meta.errorToast`.
 - Retry/cache logic in a store slice → TQ owns it.

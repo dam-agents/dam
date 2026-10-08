@@ -1,8 +1,8 @@
 # Phase 1 — Domain interview
 
-Goal: everything the Phase 2 proposal needs. A conversation in the user's language: batch
-related questions, propose defaults, skip what earlier answers settled, and push back when
-an answer conflicts with a platform constraint (cite `references/platform-dam.md`). Each
+Goal: everything the Phase 2 proposal needs. A conversation in the user's language; push
+back when an answer conflicts with a platform constraint (cite
+`references/platform-dam.md`). Each
 block lists **what its answers determine**; use that when assembling the design brief.
 
 ## 1. Mission & identity
@@ -163,4 +163,4 @@ fallback path rather than the normal one.
 Summarize into a short brief and get a "yes": mission, name, unit of work + lifecycle,
 integrations (read/write) with idempotency markers, run model + cadences, channels +
 proactive opt-ins + trust exceptions, state files + backup choice, config keys, the kit
-surface, cost notes. This brief feeds Phase 2.
+surface, cost notes.

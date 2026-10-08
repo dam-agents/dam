@@ -73,8 +73,9 @@ the branch convention (plan `docs/plan/344-egress-cli/` → `feat/344-egress-cli
 `implement-feature` derives the same name to find it.
 
 First commit: the plan files, `docs(plan): 344-egress-cli`, `git commit -s`, body line
-`Refs #NNN`. Push and open a **draft** PR (`gh pr create --draft`) titled with the feature
-title, body per the template below (product-level overview plus one checkbox per sub-issue).
+`Refs #NNN`. Push and open a **draft** PR with the `pr-open` skill (add `-F draft=true` to its
+POST), titled with the feature title, body per the template below (product-level overview plus one checkbox per sub-issue). Its
+`author-decisions` block records what the user decided while the plan was discussed.
 
 Plan changes requested after the user reads the files → amend and force-push (safe while the
 branch carries only the plan commit).

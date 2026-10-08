@@ -1,2 +1,12 @@
 [task_config]
 includes = ["{{vars.repo_root}}/.mise/ts-package.toml", ".mise/tasks"]
+
+# The generated src/crd-types.gen.ts is formatted and linted too: run after it
+# is written, never concurrently with the write.
+[tasks."fix:format"]
+extends = "ts:fix:format"
+depends = [":fix:crd-types"]
+
+[tasks."fix:lint"]
+extends = "ts:fix:lint"
+depends = [":fix:crd-types"]

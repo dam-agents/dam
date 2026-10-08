@@ -39,6 +39,7 @@ export interface SessionMetaLike {
 export interface SessionListPredicates {
   isTombstoned: (sessionId: string) => boolean;
   isRunning: (sessionId: string) => boolean;
+  platformSessionOf?: (harnessSessionId: string) => string | undefined;
 }
 
 function asMode(value: string | undefined): PodSessionMode {
@@ -97,32 +98,44 @@ function fromHarnessOnly(
   };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the one Session list both read paths serve. A
+ * harness session pinned to a terminal Session (`platformSessionOf`) is listed
+ * once, under the terminal Session's id: a harness that mints its own id for a
+ * terminal conversation would otherwise show it twice, and opening the
+ * harness-id row would start an empty terminal. A store entry under a pinned
+ * harness id is left out for the same reason: it is the record of such an
+ * opening, not a Session of its own.
+ */
 export function composeSessionList(
   listed: readonly ListedHarnessSession[],
   entries: Readonly<Record<string, SessionMetaLike>>,
-  { isTombstoned, isRunning }: SessionListPredicates,
+  { isTombstoned, isRunning, platformSessionOf }: SessionListPredicates,
 ): PodSession[] {
   const composed: PodSession[] = [];
-  const listedIds = new Set<string>();
+  const listedById = new Map<string, ListedHarnessSession>();
 
-  for (const session of listed) {
-    if (isTombstoned(session.sessionId)) continue;
-    listedIds.add(session.sessionId);
-    const entry = entries[session.sessionId];
+  for (const harnessSession of listed) {
+    const sessionId =
+      platformSessionOf?.(harnessSession.sessionId) ?? harnessSession.sessionId;
+    if (isTombstoned(sessionId) || listedById.has(sessionId)) continue;
+    const session = { ...harnessSession, sessionId };
+    listedById.set(sessionId, session);
+    const entry = entries[sessionId];
     composed.push(
       entry
-        ? fromEntry(
-            session.sessionId,
-            entry,
-            session,
-            isRunning(session.sessionId),
-          )
-        : fromHarnessOnly(session, isRunning(session.sessionId)),
+        ? fromEntry(sessionId, entry, session, isRunning(sessionId))
+        : fromHarnessOnly(session, isRunning(sessionId)),
     );
   }
 
   for (const [sessionId, entry] of Object.entries(entries)) {
-    if (listedIds.has(sessionId) || isTombstoned(sessionId)) continue;
+    if (
+      listedById.has(sessionId) ||
+      isTombstoned(sessionId) ||
+      platformSessionOf?.(sessionId) !== undefined
+    )
+      continue;
     composed.push(fromEntry(sessionId, entry, undefined, isRunning(sessionId)));
   }
 

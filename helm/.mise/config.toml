@@ -1,4 +1,5 @@
 [tasks.check]
+description = "Run this package's checks"
 depends = [":check:*"]
 
 # Chart dependencies build into charts/ before any task runs; see .mise/deps.

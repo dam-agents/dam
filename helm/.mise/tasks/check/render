@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="The chart renders, telemetry backend included"
 #MISE sources=["**/*.{yaml,yml,tpl}", "charts/*.tgz"]
 #MISE outputs=[]
 #MISE cache.enabled=true
@@ -30,6 +31,15 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
   --set virtualization.runner.scc=hostmount-anyuid \
   --set virtualization.imageCache.hostPath=/var/lib/platform-images \
+  --set agentNamespace=platform-agents \
+  | "${KUBECONFORM[@]}" "$@"
+# Staged runner releases add the stager DaemonSet, which only an install that
+# names a release directory renders.
+helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
+  --set virtualization.runner.resources.limits.memory=8Gi \
+  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
+  --set virtualization.runner.releaseHostPath=/var/lib/platform-runner-releases \
   --set agentNamespace=platform-agents \
   | "${KUBECONFORM[@]}" "$@"
 # With install default pull Secrets the cache service also mounts them as a

@@ -1,4 +1,5 @@
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import { existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -24,10 +25,12 @@ import {
   OP_INPUT,
   OP_OUTPUT,
   OP_RESIZE,
+  OP_SESSION,
   decodeFrame,
   encodeDataFrame,
   encodeExit,
 } from "api-server-api";
+import { z } from "zod";
 import { createFileDocumentStoreBackend } from "./core/document-store.js";
 import { readCgroupBytes, startMemReaper } from "./core/mem-reaper.js";
 import { expandHome } from "./core/expand-home.js";
@@ -39,6 +42,15 @@ import { composeSkills, resolveGitHubToken } from "./modules/skills/index.js";
 import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.js";
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
+import { moveTerminalSlot } from "./modules/terminal-slots.js";
+import {
+  agentBrowserCommand,
+  createBrowserPreview,
+  DISPLAY_COMMAND,
+  displayAvailable,
+  fileLog,
+} from "./modules/browser-preview.js";
+import { startDisplaySupervisor } from "./modules/browser-display.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
@@ -180,6 +192,7 @@ const {
   sessionChanges,
   activeTurns,
   subAgentSessions,
+  platformMcpEntry,
 } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
@@ -189,6 +202,12 @@ const {
   stateBackend,
   envReader: envStore,
   sessionHistory: runtimeManifest.sessionHistory,
+  ...(runtimeManifest.terminalSessionPins && {
+    terminalSessionPins: expandHome(
+      runtimeManifest.terminalSessionPins,
+      homeDir,
+    ),
+  }),
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   onArtifactTouch: artifactTouchReporter.report,
@@ -235,6 +254,7 @@ const runtimeChannel = await composeRuntimeChannel({
   stateBackend,
   harnessClient,
   triggerDriver,
+  findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
   readSessions: () =>
     sessionDirectoryEntries(sessionMetadata.all(), (sessionId) =>
       sessionMetadata.isTombstoned(sessionId),
@@ -250,7 +270,9 @@ const runtimeChannel = await composeRuntimeChannel({
       },
     }),
     createFilePlugin(),
-    createMcpEntryPlugin(),
+    createMcpEntryPlugin({
+      onPlatformEntry: (entry) => platformMcpEntry.set(entry),
+    }),
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
   onSnapshotProcessed: (contributions) => {
@@ -290,6 +312,7 @@ const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 
 const createTrpcContext = (): AgentRuntimeContext => ({
   artifactApi,
+  browser: browserPreview,
   files: filesService,
   kbPublish: kbPublish.service,
   sessions: sessionsService,
@@ -316,6 +339,8 @@ function isPtySessionActive(sessionId: string): boolean {
 }
 
 interface PtySlot {
+  sessionId: string;
+  terminalId: string;
   pty: nodePty.IPty | null;
   headless: InstanceType<typeof HeadlessTerminal>;
   serialize: InstanceType<typeof SerializeAddon>;
@@ -417,7 +442,7 @@ function reapPtySlotIfIdle(sessionId: string): void {
     return;
   }
   slot.graceTimer = setTimeout(
-    () => reapPtySlotIfIdle(sessionId),
+    () => reapPtySlotIfIdle(slot.sessionId),
     PTY_IDLE_REAP_MS - quietMs,
   );
 }
@@ -430,17 +455,19 @@ function attachPty(
   if (opts.reset) killPtySlot(sessionId);
   let initialized = false;
   ws.binaryType = "nodebuffer";
+  const attached = () =>
+    [...ptySlots.values()].find((slot) => slot.client === ws);
 
   const detach = () => {
-    const slot = ptySlots.get(sessionId);
-    if (!slot || slot.client !== ws) return;
+    const slot = attached();
+    if (!slot) return;
     slot.client = null;
     slot.detachedAt = Date.now();
-    markTerminalSeen(sessionId);
+    markTerminalSeen(slot.sessionId);
     if (!slot.pty) return;
     if (slot.graceTimer) clearTimeout(slot.graceTimer);
     slot.graceTimer = setTimeout(
-      () => reapPtySlotIfIdle(sessionId),
+      () => reapPtySlotIfIdle(slot.sessionId),
       PTY_DETACH_GRACE_MS,
     );
   };
@@ -493,6 +520,7 @@ function attachPty(
       });
       const serialize = new SerializeAddon();
       headless.loadAddon(serialize);
+      const terminalId = randomUUID();
       const pty = nodePty.spawn("/usr/local/bin/harness-terminal", [], {
         name: "xterm-256color",
         cols,
@@ -511,9 +539,12 @@ function attachPty(
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
           HARNESS_SESSION_ID: sessionId,
+          PLATFORM_TERMINAL_ID: terminalId,
         },
       });
       const slot: PtySlot = {
+        sessionId,
+        terminalId,
         pty,
         headless,
         serialize,
@@ -549,7 +580,7 @@ function attachPty(
           now - slot.lastSeenStampAt > PTY_SEEN_STAMP_DEBOUNCE_MS
         ) {
           slot.lastSeenStampAt = now;
-          markTerminalSeen(sessionId);
+          markTerminalSeen(slot.sessionId);
         }
         if (
           !slot.client &&
@@ -557,14 +588,14 @@ function attachPty(
           now - slot.lastActivityStampAt > PTY_ACTIVITY_STAMP_DEBOUNCE_MS
         ) {
           slot.lastActivityStampAt = now;
-          markTerminalActivity(sessionId);
+          markTerminalActivity(slot.sessionId);
         }
         slot.headless.write(data);
         if (slot.client?.readyState === 1)
           slot.client.send(encodeDataFrame(OP_OUTPUT, data));
       });
       pty.onExit(({ exitCode }) => {
-        ptyLog(sessionId, `exited ${exitCode}`);
+        ptyLog(slot.sessionId, `exited ${exitCode}`);
         if (slot.graceTimer) clearTimeout(slot.graceTimer);
         if (slot.client?.readyState === 1) {
           slot.client.send(encodeExit(exitCode));
@@ -572,12 +603,12 @@ function attachPty(
         }
         slot.pty = null;
         slot.headless.dispose();
-        ptySlots.delete(sessionId);
+        ptySlots.delete(slot.sessionId);
       });
       return;
     }
 
-    const slot = ptySlots.get(sessionId);
+    const slot = attached();
     if (!slot) return;
     if (frame.op === OP_INPUT) {
       const now = Date.now();
@@ -643,6 +674,34 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  const terminalSessionMatch =
+    req.method === "POST" &&
+    req.url?.match(/^\/api\/terminals\/([^/]+)\/session$/);
+  if (terminalSessionMatch) {
+    void readJsonBody(req)
+      .then((body) => {
+        const { sessionId } = z.object({ sessionId: z.uuid() }).parse(body);
+        const slot = moveTerminalSlot(
+          ptySlots,
+          decodeURIComponent(terminalSessionMatch[1]!),
+          sessionId,
+        );
+        if (slot) {
+          ptyLog(sessionId, "harness moved its PTY here");
+          markTerminalSeen(sessionId);
+          if (slot.client?.readyState === 1)
+            slot.client.send(encodeDataFrame(OP_SESSION, sessionId));
+        }
+        res.writeHead(204, CORS).end();
+      })
+      .catch((err: unknown) => {
+        res
+          .writeHead(400, { "Content-Type": "application/json", ...CORS })
+          .end(JSON.stringify({ error: String(err) }));
+      });
+    return;
+  }
+
   const backgroundWorkMatch =
     req.method === "POST" &&
     req.url?.match(/^\/api\/sessions\/([^/]+)\/background-work$/);
@@ -684,6 +743,30 @@ const acpWss = new WebSocketServer({ noServer: true });
 const termWss = new WebSocketServer({ noServer: true });
 const sshWss = new WebSocketServer({ noServer: true });
 const trpcWss = new WebSocketServer({ noServer: true });
+const browserWss = new WebSocketServer({ noServer: true });
+const browserLogFile = fileLog(
+  join(homeDir, ".local/share/platform/browser.log"),
+);
+const browserLog = (source: string) => (msg: string) => {
+  process.stderr.write(`[${source}] ${msg}\n`);
+  browserLogFile(`${source}: ${msg}`);
+};
+const browserDisplay = displayAvailable()
+  ? startDisplaySupervisor({
+      command: DISPLAY_COMMAND,
+      envReader: envStore,
+      log: browserLog("browser-display"),
+    })
+  : null;
+const browserPreview = createBrowserPreview({
+  run: agentBrowserCommand(envStore),
+  profileDir:
+    process.env.AGENT_BROWSER_PROFILE ??
+    join(homeDir, ".local/share/platform/browser"),
+  socketDir:
+    process.env.AGENT_BROWSER_SOCKET_DIR ?? join(homeDir, ".agent-browser"),
+  log: browserLog("browser-preview"),
+});
 
 applyWSSHandler({
   wss: trpcWss,
@@ -709,6 +792,10 @@ server.on("upgrade", (req, socket, head) => {
     const reset = url.searchParams.get("reset") === "1";
     termWss.handleUpgrade(req, socket, head, (ws) =>
       attachPty(sessionId, ws, { reset }),
+    );
+  } else if (url.pathname === "/api/browser/display") {
+    browserWss.handleUpgrade(req, socket, head, (ws) =>
+      browserPreview.attachDisplay(ws),
     );
   } else if (url.pathname === "/api/trpc-ws") {
     trpcWss.handleUpgrade(req, socket, head, (ws) =>
@@ -750,6 +837,7 @@ server.listen(config.PORT, () => {
 if (config.MEM_REAPER && !config.PLATFORM_DEV) {
   startMemReaper({
     thresholdFraction: config.MEM_REAPER_THRESHOLD,
+    agentProcesses: runtimeManifest.agentProcesses,
     log: (msg) => process.stderr.write(`[mem-reaper] ${msg}\n`),
   });
 }
@@ -806,6 +894,8 @@ function gracefulShutdown(signal: string): void {
   process.stderr.write(`[shutdown] ${signal} received, closing\n`);
   server.close();
   for (const sid of [...ptySlots.keys()]) killPtySlot(sid);
+  browserPreview.close();
+  browserDisplay?.stop();
   acpRuntime.shutdown();
   setTimeout(() => process.exit(0), 3_000).unref();
 }

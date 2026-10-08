@@ -121,5 +121,20 @@ const (
 	ReasonSeedMissing      = "MachineSeedMissing"
 )
 
+// UNIT_BOUNDARY_DESCRIPTION: which runner release a runner pod runs, as its loader last wrote it: the one running, the one the controller asked for, and, when the two differ, why the loader holds on to the one running.
+type RunnerRelease struct {
+	Running string `json:"running"`
+	Target  string `json:"target,omitempty"`
+	Held    string `json:"held,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other two never pass in that pod, so only a new pod takes the release.
+const (
+	HeldUnstaged = "unstaged"
+	HeldRuntime  = "runtime"
+	HeldFailed   = "failed"
+)
+
 // UNIT_BOUNDARY_DESCRIPTION: vm-seed's exit code for a copy that a fresh attempt cannot change — a home past a walk limit, or larger than the machine's disk.
 const SeedExitPermanent = 3

@@ -1,9 +1,5 @@
 Produce this agent's case study.
 
-## Usage
-
-`/agent-case-study`
-
 ## What to do
 
 Read `/usr/local/share/dam-skills/agent-case-study/SKILL.md` and follow it to

@@ -15,7 +15,7 @@ description: >
 
 Reviews changes to the **ADR log** under [`docs/adrs/`](../../../docs/adrs/), an
 immutable event log with two projections (architecture docs, generated index). This
-skill owns **log integrity and decision judgment** and is read-only: it outputs findings
+skill is read-only: it outputs findings
 and never edits ADRs. Fixes go through the [`/adr`](../adr/SKILL.md) flow as separate
 work.
 
@@ -45,8 +45,7 @@ LLM. Run it and relay the result verbatim as the first line of the ADR section:
 mise run //docs:check:adr-immutable -- --merge-base
 ```
 
-Never second-guess it, soften a failure, or re-derive the verdict from diffs. This skill
-is one surface of the check, not its owner.
+Never second-guess it, soften a failure, or re-derive the verdict from diffs.
 
 ### 2. Re-litigation (judgment)
 
@@ -81,5 +80,4 @@ Nothing wrong → the section is just the `✅` line.
 
 **One pass with doc-drift.** On a PR touching `docs/adrs/` or `docs/architecture/`, the
 code-review agent runs this skill and [`doc-drift`](../doc-drift/SKILL.md) together and
-folds both into one report. This skill covers the log, doc-drift the docs; they stay
-separate for single responsibility.
+folds both into one report.

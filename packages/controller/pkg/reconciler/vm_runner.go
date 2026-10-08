@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"strconv"
 	"strings"
 
 	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -37,6 +38,19 @@ const (
 	vmRunnerImagesPath   = vmRunnerStatePath + "/images"
 	vmRunnerToolsPath    = vmRunnerStatePath + "/tools"
 	vmRunnerPort         = 4600
+
+	// UNIT_BOUNDARY_DESCRIPTION: where a runner pod's loader finds the runner releases. The node's staged releases are read-only, the release the controller names is a ConfigMap, and the loader's own emptyDir holds its copies of the release it runs and the status the runner serves.
+	vmRunnerReleasesPath    = vmRunnerStatePath + "/releases"
+	vmRunnerReleaseFilePath = "/etc/vm-runner-release"
+	vmRunnerLoaderPath      = "/run/vm-runner-loader"
+
+	// UNIT_BOUNDARY_DESCRIPTION: the loader's environment, which contract/loader-env.json holds the loader to.
+	vmRunnerReleasesEnv    = "VM_RUNNER_RELEASES"
+	vmRunnerReleaseFileEnv = "VM_RUNNER_RELEASE_FILE"
+	vmRunnerLoaderDirEnv   = "VM_RUNNER_LOADER_DIR"
+	vmRunnerBuiltinEnv     = "VM_RUNNER_BUILTIN_RELEASE"
+
+	vmRunnerSameRuntimeOnlyEnv = "VM_RUNNER_SAME_RUNTIME_ONLY"
 
 	// UNIT_BOUNDARY_DESCRIPTION: the runner's scrape port, apart from the machine API because it carries no token, and the component of the one pod its NetworkPolicy admits to it. The collector is the platform's own and scrapes the runners because they cannot push to it: a runner is off the mesh, and the collector admits only mesh identities.
 	vmRunnerMetricsPort    = 4601
@@ -438,7 +452,7 @@ func runnerEgress(agentNS, owner string, envoyPort int, cidrs, except []string, 
 		Ports: append([]networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &proxy}}, machineGatewayPolicyPorts()...),
 	})
 	for _, cidr := range cidrs {
-		blockExcept, metadata := exceptMetadata(cidr, containedIn(cidr, except))
+		blockExcept, metadata := exceptMetadata(cidr, containedIn(cidr, except), metadataCIDRs)
 		if metadata {
 			continue
 		}
@@ -458,14 +472,14 @@ var metadataCIDRs = []netip.Prefix{
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: every egress block that contains a metadata range has that range subtracted, whatever the install listed, so a wide block such as 0.0.0.0/0 never opens the node's credentials by omission. A block lying wholly inside one names the endpoint itself, and is reported so the caller drops it rather than render the one destination this exists to close. An exception the install already wrote over the range is left to cover it.
-func exceptMetadata(cidr string, except []string) ([]string, bool) {
+func exceptMetadata(cidr string, except []string, metadata []netip.Prefix) ([]string, bool) {
 	block, err := netip.ParsePrefix(cidr)
 	if err != nil {
 		return except, false
 	}
 	block = block.Masked()
 	out := except
-	for _, m := range metadataCIDRs {
+	for _, m := range metadata {
 		if block.Addr().Is4() != m.Addr().Is4() {
 			continue
 		}
@@ -534,18 +548,19 @@ func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 	return corev1.DNSDefault
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner's env also has smolvm check every VMM against the syscalls a running microVM needs (SMOLVM_SECCOMP=audit), applied after the VMM's device setup and before it enters the guest. Audit logs a call outside the allowlist and lets it through, until the runner's VMMs are shown to stay inside it; enforce kills the VMM instead. smolvm applies the filter under its own serve by default, and an embedder only when asked.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's env also has smolvm audit every VMM against the syscalls a running microVM needs (SMOLVM_SECCOMP=audit), from after the VMM's device setup: a call outside the allowlist is logged, not refused. Enforced, the vm lane's runtime migration lost a migrated machine's sessions intermittently, so the filter only reports until the logs show which call it would have refused; the runtime's default profile still bounds every VMM. smolvm applies the filter under its own serve by default, and an embedder only when asked.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's env also confines every VMM's filesystem with Landlock (SMOLVM_LANDLOCK=enforce), applied before the VMM loads libkrun: the shared guest rootfs and the image tree are read-only to it, and it may write only its own machine's disks, sockets and logs and its own readiness marker. Without it a guest's root virtiofs export writes through to the agent rootfs every machine of the owner boots from. smolvm refuses to boot a VMM it fails to confine.
 // UNIT_BOUNDARY_DESCRIPTION: smolvm can give each machine's VMM its own unprivileged uid, and the runner's env turns that off (SMOLVM_VM_UID_DROP=off). A VMM with its own uid reaches the image tree through an idmapped mount that maps on-disk uid 0 to it, so every file the image gives another uid reaches the guest as nobody, and the workload exits as it starts.
-// UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. NET_ADMIN is for the per-machine NAT. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. CHOWN, FOWNER and FSETID are only for a runner that unpacks images into its own claim: tar restores each file's owner, then sets a mode on a file it no longer owns, and a setgid bit on a file whose group root is not in survives that mode only with FSETID. A runner on the node cache or on staged archives unpacks nothing, so it does not get them.
+// UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. None is for the network: smolvm runs each machine's network in user space, over a socket pair to its VMM, with no tun device, route or NAT of its own. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. CHOWN, FOWNER and FSETID are only for a runner that unpacks images into its own claim: tar restores each file's owner, then sets a mode on a file it no longer owns, and a setgid bit on a file whose group root is not in survives that mode only with FSETID. A runner on the node cache or on staged archives unpacks nothing, so it does not get them.
 func runnerCapabilities(spec config.VMRunnerSpec) []corev1.Capability {
-	caps := []corev1.Capability{"NET_ADMIN", "DAC_OVERRIDE"}
+	caps := []corev1.Capability{"DAC_OVERRIDE"}
 	if runnerOwnsImageCache(spec) {
 		caps = append(caps, "CHOWN", "FOWNER", "FSETID")
 	}
 	return caps
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner holds exactly the capabilities above and none of the runtime's defaults, cannot gain more through exec, and runs under the runtime's default seccomp profile — the shape the chart's OpenShift SCC already forces on it. None of the dropped defaults is used: every VMM runs as the runner's own uid, so signalling one needs no KILL, and smolvm's own default runs each VMM on a uid with no capabilities at all, so virtiofs needs no SETUID. The default seccomp profile allows every ioctl, so KVM and the tun device work; what it refuses without CAP_SYS_ADMIN is new namespaces, mounts and keyrings, which smolvm only reaches for when it gives each VMM a uid of its own, and the runner turns that off. AppArmor alone stays unconfined: the container runtime's default profile denies mount and more, and under it no guest boots.
+// UNIT_BOUNDARY_DESCRIPTION: the runner holds exactly the capabilities above and none of the runtime's defaults, cannot gain more through exec, and runs under the runtime's default seccomp profile — the shape the chart's OpenShift SCC already forces on it. None of the dropped defaults is used: every VMM runs as the runner's own uid, so signalling one needs no KILL, and smolvm's own default runs each VMM on a uid with no capabilities at all, so virtiofs needs no SETUID. The default seccomp profile allows every ioctl, so KVM works; what it refuses without CAP_SYS_ADMIN is new namespaces, mounts and keyrings, which smolvm only reaches for when it gives each VMM a uid of its own, and the runner turns that off. AppArmor alone stays unconfined: the container runtime's default profile denies mount and more, and under it no guest boots.
 func runnerSecurityContext(spec config.VMRunnerSpec) *corev1.SecurityContext {
 	root := int64(0)
 	return &corev1.SecurityContext{
@@ -638,6 +653,47 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			HostPath: &corev1.HostPathVolumeSource{Path: r.config.AgentBase.ToolsHostPath, Type: &dir},
 		}})
 	}
+	env := []corev1.EnvVar{{
+		Name: "SMOLVM_VM_UID_DROP", Value: "off",
+	}, {
+		Name: "SMOLVM_SECCOMP", Value: "audit",
+	}, {
+		Name: "SMOLVM_LANDLOCK", Value: "enforce",
+	}, {
+		Name: "RUST_LOG", Value: "info",
+	}, {
+		Name: "SMOLVM_LOG_FORMAT", Value: "json",
+	}, {
+		Name: "RUNNER_MEMORY_MIB",
+		ValueFrom: &corev1.EnvVarSource{ResourceFieldRef: &corev1.ResourceFieldSelector{
+			ContainerName: vmRunnerComponent, Resource: "limits.memory", Divisor: resource.MustParse("1Mi"),
+		}},
+	}}
+	if spec.ReleaseHostPath != "" {
+		dir := corev1.HostPathDirectoryOrCreate
+		mounts = append(mounts,
+			corev1.VolumeMount{Name: "releases", MountPath: vmRunnerReleasesPath, ReadOnly: true},
+			corev1.VolumeMount{Name: "release", MountPath: vmRunnerReleaseFilePath, ReadOnly: true},
+			corev1.VolumeMount{Name: "loader", MountPath: vmRunnerLoaderPath},
+		)
+		volumes = append(volumes,
+			corev1.Volume{Name: "releases", VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{Path: spec.ReleaseHostPath, Type: &dir},
+			}},
+			corev1.Volume{Name: "release", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: r.runnerReleaseName(owner)},
+				Optional:             new(true),
+			}}},
+			corev1.Volume{Name: "loader", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+		)
+		env = append(env,
+			corev1.EnvVar{Name: vmRunnerReleasesEnv, Value: vmRunnerReleasesPath},
+			corev1.EnvVar{Name: vmRunnerReleaseFileEnv, Value: vmRunnerReleaseFilePath + "/" + runnerReleaseKey},
+			corev1.EnvVar{Name: vmRunnerLoaderDirEnv, Value: vmRunnerLoaderPath},
+			corev1.EnvVar{Name: vmRunnerBuiltinEnv, Value: spec.Image},
+			corev1.EnvVar{Name: vmRunnerSameRuntimeOnlyEnv, Value: strconv.FormatBool(spec.ReleaseSameRuntimeOnly)},
+		)
+	}
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels, OwnerReferences: refs},
 		Spec: appsv1.DeploymentSpec{
@@ -676,20 +732,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							"--tls-cert=/etc/vm-runner/tls.crt",
 							"--tls-key=/etc/vm-runner/tls.key",
 						}, nestedRunnerArgs(spec)...),
-						Env: []corev1.EnvVar{{
-							Name: "SMOLVM_VM_UID_DROP", Value: "off",
-						}, {
-							Name: "SMOLVM_SECCOMP", Value: "audit",
-						}, {
-							Name: "RUST_LOG", Value: "info",
-						}, {
-							Name: "SMOLVM_LOG_FORMAT", Value: "json",
-						}, {
-							Name: "RUNNER_MEMORY_MIB",
-							ValueFrom: &corev1.EnvVarSource{ResourceFieldRef: &corev1.ResourceFieldSelector{
-								ContainerName: vmRunnerComponent, Resource: "limits.memory", Divisor: resource.MustParse("1Mi"),
-							}},
-						}},
+						Env: env,
 						Ports: []corev1.ContainerPort{
 							{Name: "machine-api", ContainerPort: vmRunnerPort},
 							{Name: "metrics", ContainerPort: vmRunnerMetricsPort},
@@ -711,7 +754,10 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			},
 		},
 	}
-	return r.rollRunnerDeployment(ctx, owner, dep, create)
+	if err := r.rollRunnerDeployment(ctx, owner, dep, create); err != nil || spec.ReleaseHostPath == "" {
+		return err
+	}
+	return r.applyRunnerRelease(ctx, owner)
 }
 
 type runnerRef struct {

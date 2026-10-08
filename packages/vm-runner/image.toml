@@ -23,8 +23,10 @@
 # smolvm keeps machines and their disks under $HOME/.cache, so HOME is where the
 # chart mounts the disks: one of three mounts under /var/lib/platform, beside the
 # per-machine bookkeeping and the image cache, each with a lifetime of its own.
-# catatonit reaps whatever is orphaned to PID 1; the runner reaps the VMMs it
-# spawned itself. The entrypoint names every path that is this image's layout
+# catatonit reaps whatever is orphaned to PID 1 — the VMMs of a runner the
+# loader replaced among them; the runner reaps the VMMs it spawned itself. The
+# loader runs the runner release the controller names and passes it every
+# argument after `--`. The entrypoint names every path that is this image's layout
 # and not the controller's to choose — the smolvm release's launcher, beside
 # which the runner finds the libraries its VMMs load, the guest agent and the
 # disk templates; crane; platform-init and platform-runc — so the runner relies
@@ -35,7 +37,7 @@
 [oci]
 workdir = "/"
 cmd = []
-entrypoint = ["/usr/bin/catatonit", "--", "vm-runner", "--smolvm", "/opt/smolvm/smolvm", "--crane", "/usr/local/bin/crane", "--platform-init", "/usr/local/libexec/platform-init", "--platform-runc", "/usr/local/libexec/platform-runc", "--publish-address", ""]
+entrypoint = ["/usr/bin/catatonit", "--", "vm-runner-loader", "run", "--builtin", "/usr/local/libexec/vm-runner", "--builtin-runtime", "/opt/smolvm", "--", "--smolvm", "/opt/smolvm/smolvm", "--crane", "/usr/local/bin/crane", "--platform-init", "/usr/local/libexec/vm-runner/platform-init", "--platform-runc", "/usr/local/libexec/vm-runner/platform-runc", "--publish-address", ""]
 
 [oci.env]
 HOME = "/var/lib/platform/disks"

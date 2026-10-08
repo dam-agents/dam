@@ -15,7 +15,7 @@ In a Claude Code on the web session (`CLAUDE_CODE_REMOTE=true`), read [ccweb](..
 - `cluster:build -- <controller|api-server|ui|keycloak|agents>…` — rebuild those images and restart just their pods (`agents`: every deployed agent image)
 - `cluster:status` — pods and cluster state
 - `cluster:install -- --no-mesh` — local-only install with no Istio dataplane, for kernels that cannot run ambient (see below)
-- `cluster:logs` — api-server pod logs
+- `cluster:kubectl -- logs -l app.kubernetes.io/component=apiserver --all-containers` — api-server pod logs
 - `cluster:fix-certs` — recover from expired dev-cluster certs (see below)
 - `cluster:stop` / `cluster:uninstall` / `cluster:delete`
 

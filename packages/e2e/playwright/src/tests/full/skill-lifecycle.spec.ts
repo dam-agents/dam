@@ -5,8 +5,7 @@
  * name, pulled to the current version when the image ships a newer one. Bytes
  * that match nothing shipped are the user's and are never touched, and a
  * user's deletion of an image skill is final. The spec plants historical
- * shipped bytes recovered from git — the same source the manifest backfill
- * hashed — through the product's own createLocal API, forces runtime-channel
+ * shipped bytes recovered from git history through the product's own createLocal API, forces runtime-channel
  * snapshots via user env updates, and asserts the reconciled skills.state.
  */
 import { execFileSync } from "node:child_process";

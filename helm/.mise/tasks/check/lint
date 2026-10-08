@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="helm lint passes"
 #MISE sources=["**/*.{yaml,yml,tpl}", "charts/*.tgz"]
 #MISE outputs=[]
 #MISE cache.enabled=true

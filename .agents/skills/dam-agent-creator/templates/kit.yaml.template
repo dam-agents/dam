@@ -1,8 +1,7 @@
 # kit.yaml — the platform's Starter Kit for {{AGENT_NAME}}.
 #
-# TODO(creator): fill every TODO from the approved design and delete the fields the
-# design does not need (all of them are optional except schemaVersion/id/name/
-# description/category). Delete every TODO comment. Keep this file in step with
+# TODO(creator): delete the fields the design does not need (all of them are
+# optional except schemaVersion/id/name/description/category). Keep this file in step with
 # README and ONBOARDING — the schedules here and the ones ONBOARDING checks for are
 # the same schedules, by the same names.
 #

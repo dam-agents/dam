@@ -100,6 +100,7 @@ test("deleting inactive and active sessions preserves the right navigation (#423
       activeSessionId ?? "",
     );
     await expect(page.getByText(secondPrompt, { exact: true })).toBeVisible();
+    await expect(page.getByText("Session deleted")).toBeHidden();
   });
 
   await test.step("(C) deleting the active session removes it without a refresh", async () => {

@@ -18,6 +18,7 @@ export const harnessConfigStatusInputSchema = z.object({
 export const harnessConfigStatusSchema = z.object({
   supported: z.boolean(),
   catalog: harnessConfigCatalog.nullable(),
+  sessionModel: z.boolean(),
 });
 
 export const harnessConfigSettledSchema = z.object({
@@ -31,6 +32,7 @@ export const harnessConfigSnapshotSchema = z.object({
   availableModels: z.array(harnessConfigChoice).nullable(),
   capturedAt: z.string().datetime(),
   modelAtDiscovery: z.string().nullable().optional(),
+  defaultModel: z.string().nullable().optional(),
   confirmed: z.boolean(),
 });
 

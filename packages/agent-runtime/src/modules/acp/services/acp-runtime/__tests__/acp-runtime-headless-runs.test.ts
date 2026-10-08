@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocumentStoreBackend } from "../../../../../core/document-store.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
 import { createRunResultStore } from "../../../infrastructure/run-result-store.js";
+import { MAX_RESUME_ATTEMPTS } from "../../interrupted-turn-recovery.js";
 import {
   createSessionMetadata,
   createWorld,
@@ -151,16 +152,20 @@ describe("acp-runtime: headless runs", () => {
 
   /**
    * TEST_SCENARIO: A leftover Active-Turn marker boot recovery has given up on
-   * (attempts > 0, nothing in flight) must answer `interrupted`, not
-   * `pending` — a watcher would wait forever on a turn this pod will never
-   * finish. A marker still on its first attempt keeps answering `pending`:
-   * boot recovery is about to resume that turn.
+   * (MAX_RESUME_ATTEMPTS spent, nothing in flight) must answer `interrupted`,
+   * not `pending` — a watcher would wait forever on a turn this pod will never
+   * finish. A marker with attempts left keeps answering `pending`, however
+   * many it has spent: boot recovery is about to resume that turn.
    */
   it("should answer interrupted for a leftover turn recovery gave up on", () => {
     const disk = inMemoryBackend();
     const previousBoot = createActiveTurnStore(disk);
     previousBoot.record("sess-dead");
-    previousBoot.bumpAttempts("sess-dead");
+    previousBoot.record("sess-retrying");
+    for (let i = 0; i < MAX_RESUME_ATTEMPTS; i++)
+      previousBoot.bumpAttempts("sess-dead");
+    for (let i = 1; i < MAX_RESUME_ATTEMPTS; i++)
+      previousBoot.bumpAttempts("sess-retrying");
     previousBoot.record("sess-fresh");
     const seeded = createWorld({
       sessionMetadata: createSessionMetadata().store,
@@ -174,6 +179,9 @@ describe("acp-runtime: headless runs", () => {
 
     client.send(runResultRequest(6, "sess-fresh"));
     expect(client.reply(6)?.result).toEqual({ status: "pending" });
+
+    client.send(runResultRequest(7, "sess-retrying"));
+    expect(client.reply(7)?.result).toEqual({ status: "pending" });
   });
 
   /**

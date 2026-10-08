@@ -46,6 +46,21 @@ function makeSchedule(
   };
 }
 
+const ONCE_SCHEDULE: Schedule = {
+  id: SCHEDULE_ID,
+  agentId: AGENT_ID,
+  name: "once",
+  spec: {
+    version: "1",
+    type: "once",
+    at: "2026-06-12T10:30:00.000Z",
+    timezone: "UTC",
+    task: "do the thing",
+    enabled: true,
+    createdBy: "agent",
+  },
+};
+
 function makeDeps(opts?: {
   wakeError?: Error;
   bumpError?: Error;
@@ -55,6 +70,8 @@ function makeDeps(opts?: {
   precheck?: string;
   lastRun?: string;
   onboardingPending?: boolean;
+  once?: boolean;
+  onceResult?: string;
   runtimeMigrating?: boolean;
   enabled?: boolean;
 }) {
@@ -69,10 +86,18 @@ function makeDeps(opts?: {
   const payloads: Record<string, unknown>[] = [];
   const patches: ScheduleStatusPatch[] = [];
   const restored: { previous: string | null; written: string }[] = [];
+  const replaced: { expected: string; next: string }[] = [];
   const stamps = createMemoryTtlStore<AgentActivityStamp>(60_000);
 
   const repo = {
     async getById(id: string) {
+      if (id === SCHEDULE_ID && opts?.once)
+        return opts.onceResult
+          ? {
+              ...ONCE_SCHEDULE,
+              status: { lastRun: WAKE_STAMP, lastResult: opts.onceResult },
+            }
+          : ONCE_SCHEDULE;
       return id === SCHEDULE_ID
         ? makeSchedule(
             opts?.storedNextRun,
@@ -86,8 +111,20 @@ function makeDeps(opts?: {
     async getOwnerById() {
       return "owner-sub";
     },
-    async recordFire(_id: string, result: string, nextRun: Date | null) {
+    async recordFire(
+      _id: string,
+      result: string,
+      nextRun: Date | null,
+      tx?: unknown,
+    ) {
+      if (tx) calls.push(`record:${result}`);
       fires.push({ result, nextRun });
+    },
+    async transaction<T>(fn: (tx: unknown) => Promise<T>) {
+      calls.push("begin");
+      const out = await fn({});
+      calls.push("commit");
+      return out;
     },
     async setNextRun(_id: string, nextRun: Date | null) {
       nextRuns.push(nextRun);
@@ -95,8 +132,13 @@ function makeDeps(opts?: {
     async stampFire(_id: string, result: string) {
       stampedFires.push(result);
     },
+    async stampResult() {},
     async applyStatusPatch(_id: string, patch: ScheduleStatusPatch) {
       patches.push(patch);
+    },
+    async replaceResult(_id: string, expected: string, next: string) {
+      replaced.push({ expected, next });
+      return true;
     },
     async listAllEnabled() {
       return [makeSchedule(opts?.storedNextRun, opts?.cron)];
@@ -167,6 +209,7 @@ function makeDeps(opts?: {
     payloads,
     patches,
     restored,
+    replaced,
   };
 }
 
@@ -238,6 +281,83 @@ describe("scheduler-runner fire", () => {
     ]);
     expect(fires).toHaveLength(1);
     expect(fires[0]!.result).toBe("success");
+  });
+
+  // TEST_SCENARIO: the delivery worker can settle the event before the fire returns; delivering must already be there for the settle listener to replace.
+  it("records a one-time fire as delivering in the transaction that commits its event", async () => {
+    const { runner, calls, fires } = makeDeps({ once: true });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(calls).toEqual([
+      "begin",
+      "record:delivering",
+      `bump:${AGENT_ID}`,
+      "commit",
+      `enqueue:${AGENT_ID}`,
+      `wake:${AGENT_ID}`,
+    ]);
+    expect(fires).toEqual([{ result: "delivering", nextRun: null }]);
+  });
+
+  // TEST_SCENARIO: once the event is committed the task will run when the Agent is Ready, so a poke that fails afterwards must not overwrite delivering with the error — the settle listener replaces delivering only, and a failed result would hide a task that ran.
+  it("keeps a one-time fire delivering when the poke fails after the commit", async () => {
+    const { runner, calls, fires } = makeDeps({
+      once: true,
+      wakeError: new Error("k8s api unreachable"),
+    });
+
+    await expect(
+      runner.buildFireHandler()(
+        SCHEDULE_ID,
+        new Date("2026-06-12T10:30:00Z"),
+        true,
+      ),
+    ).rejects.toThrow("k8s api unreachable");
+
+    expect(calls).toContain(`bump:${AGENT_ID}`);
+    expect(fires).toEqual([{ result: "delivering", nextRun: null }]);
+  });
+
+  // TEST_SCENARIO: a retry after a failed poke finds the fire already delivering; it owes the Agent only the poke, and a fire that settled or was missed meanwhile is dropped.
+  it("re-pokes a committed one-time fire and drops a finished one", async () => {
+    const committed = makeDeps({ once: true, onceResult: "delivering" });
+    await committed.runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+    expect(committed.calls).toEqual([
+      `enqueue:${AGENT_ID}`,
+      `wake:${AGENT_ID}`,
+    ]);
+    expect(committed.fires).toEqual([]);
+
+    const finished = makeDeps({ once: true, onceResult: "success" });
+    await finished.runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+    expect(finished.calls).toEqual([]);
+    expect(finished.fires).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a one-time fire's result comes from runtime delivery, not from the pod — a settled event is success, an expired one is missed, and each replaces delivering only.
+  it("resolves a one-time fire from its event's lifecycle", async () => {
+    const { runner, replaced } = makeDeps({
+      once: true,
+      onceResult: "delivering",
+    });
+
+    await runner.recordDelivery(SCHEDULE_ID, "settled");
+    await runner.recordDelivery(SCHEDULE_ID, "expired");
+
+    expect(replaced).toEqual([
+      { expected: "delivering", next: "success" },
+      { expected: "delivering", next: "missed" },
+    ]);
   });
 
   // TEST_SCENARIO: a redelivered fire must mint the same event id — BullMQ is at-least-once, and only a fireAt-derived id lets the agent dedup the rerun.

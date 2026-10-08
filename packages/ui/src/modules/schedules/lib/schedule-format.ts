@@ -1,4 +1,4 @@
-import { rruleToText } from "api-server-api";
+import { OnceResult, rruleToText } from "api-server-api";
 import cronstrue from "cronstrue";
 
 import { sameLocalDay } from "@/lib/format-time";
@@ -34,9 +34,22 @@ export function cronToText(cron: string): string {
 }
 
 export function scheduleCadenceText(schedule: Schedule): string {
-  if (schedule.type === "rrule" && schedule.rrule)
-    return rruleToText(schedule.rrule);
-  return schedule.cron ?? "";
+  switch (schedule.type) {
+    case "once": {
+      const when = schedule.at
+        ? `Once · ${formatRunTime(schedule.at)}`
+        : "Once";
+      if (schedule.inSession === "continue")
+        return `${when} · continues the session that scheduled it`;
+      if (schedule.inSession === "report")
+        return `${when} · reports back to the session that scheduled it`;
+      return when;
+    }
+    case "rrule":
+      return schedule.rrule ? rruleToText(schedule.rrule) : "";
+    case "cron":
+      return schedule.cron ?? "";
+  }
 }
 
 export function runNowConfirmText(schedule: Schedule): string {
@@ -62,8 +75,15 @@ interface LastRunStatus {
 
 export function lastRunStatus(lastResult?: string): LastRunStatus | null {
   if (!lastResult) return null;
-  if (lastResult === "success")
+  if (lastResult === OnceResult.Success)
     return { label: "Succeeded", className: "text-success" };
+  if (lastResult === OnceResult.Delivering)
+    return { label: "On its way", className: "text-muted-foreground" };
+  if (lastResult === OnceResult.Missed)
+    return {
+      label: "Missed: the agent could not take it in time",
+      className: "text-destructive",
+    };
   if (lastResult.startsWith("held:"))
     return {
       label: `Held: ${lastResult.slice("held:".length).trim()}`,

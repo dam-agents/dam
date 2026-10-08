@@ -14,6 +14,14 @@ import { cn } from "@/lib/utils";
 import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
 import {
+  type Choice,
+  OptionPicker,
+} from "../../sessions/components/model-settings-panel.js";
+import {
+  useHasHarnessDefault,
+  useSessionModelChoices,
+} from "../api/session-model.js";
+import {
   DAYS_ISO,
   formatTime12,
   RUN_OPTIONS,
@@ -385,5 +393,55 @@ export function SchedulePrecheckField({
       {input}
       <FormError message={errors.precheck?.message} />
     </div>
+  );
+}
+
+const MODEL_HINT =
+  "Default is the harness's own default; where the agent has none, a schedule without a model follows the agent's model.";
+
+export function ScheduleModelField({
+  agentId,
+  value,
+  onChange,
+}: {
+  agentId: string;
+  value: string;
+  onChange: (model: string) => void;
+}) {
+  const choices = useSessionModelChoices(agentId || null);
+  const hasDefault = useHasHarnessDefault(agentId || null);
+  const supported = choices.length > 0;
+  if (!supported && !value) return null;
+  const options: Choice[] = choices.map((c) => ({
+    id: c.value,
+    name: c.name,
+    description: c.description,
+  }));
+  if (value && !options.some((c) => c.id === value))
+    options.push({
+      id: value,
+      name: value,
+      description: supported
+        ? "Not in this agent's model list"
+        : "This agent can't switch a session's model; clear it so runs follow the agent",
+    });
+
+  return (
+    <FormField label="Model" hint={MODEL_HINT} disableInset>
+      <OptionPicker
+        title="Model"
+        choices={options}
+        value={value || null}
+        clearable
+        {...(hasDefault
+          ? {}
+          : {
+              placeholder: "Same as agent",
+              clearedLabel: "Same as agent",
+              clearedDescription: "Follows the model the agent is set to",
+            })}
+        onSelect={(id) => onChange(id ?? "")}
+      />
+    </FormField>
   );
 }

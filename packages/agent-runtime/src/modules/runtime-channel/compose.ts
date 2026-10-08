@@ -73,6 +73,7 @@ export interface ComposeRuntimeChannelOpts {
   harnessClient: HarnessClient;
   triggerDriver: TriggerSessionDriver;
   subAgentSessions: SubAgentSessionStore;
+  findSessionByRef?: (ref: string) => string | undefined;
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
   envReader: RuntimeEnvReader;
@@ -114,12 +115,20 @@ export async function composeRuntimeChannel(
     createTriggerPlugin({
       driver: opts.triggerDriver,
       stateStore: triggerStateStore,
+      harnessDefault: async () =>
+        harnessConfigPlugin.supported
+          ? ((await harnessConfigPlugin.readCurrent({ discover: false }))
+              .defaultModel ?? null)
+          : null,
       runPrecheck: createPrecheckRunner({
         workDir: opts.workDir,
         envReader: opts.envReader,
       }),
       log,
       reporter,
+      ...(opts.findSessionByRef
+        ? { findSessionByRef: opts.findSessionByRef }
+        : {}),
     }),
   );
   registry.register(createWorkspaceSeedPlugin({ workDir: opts.workDir, log }));
@@ -201,6 +210,7 @@ export async function composeRuntimeChannel(
         events: eventKinds as never,
         harnessConfig: harnessConfigPlugin.supported,
         harnessConfigCatalog: harnessConfigPlugin.catalog,
+        sessionModel: harnessConfigPlugin.sessionModel,
         kbPublish: 2,
         liveUpdates: true,
       };

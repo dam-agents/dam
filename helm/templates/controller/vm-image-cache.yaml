@@ -87,7 +87,7 @@ spec:
       {{- end }}
       containers:
         - name: vm-image-cache
-          image: "{{ $v.runner.image.repository }}:{{ $v.runner.image.tag | default $.Chart.AppVersion }}"
+          image: {{ include "platform.vmRunner.image" $ | quote }}
           imagePullPolicy: {{ $v.runner.image.pullPolicy | default "IfNotPresent" }}
           {{- /*
           The runner image, whose ENTRYPOINT starts a runner — replaced here,

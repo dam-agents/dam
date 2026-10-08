@@ -14,6 +14,7 @@ import {
 import type { DelegationFramesStore } from "../infrastructure/delegation-frames-store.js";
 import type { HistoryProvider } from "../infrastructure/history-provider.js";
 import type { InProcessCaller } from "../infrastructure/in-process-request.js";
+import type { PlatformSessionOf } from "../infrastructure/terminal-session-pins.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
 import type { SessionChanges } from "./session-changes.js";
 
@@ -71,6 +72,7 @@ export function createSessionsService(deps: {
   sessionFrames: (sessionId: string) => SessionHistory;
   delegations: DelegationFramesStore;
   historyProvider?: HistoryProvider;
+  terminalSessionPins?: () => PlatformSessionOf;
   log: (msg: string) => void;
   now?: () => number;
 }): SessionsService {
@@ -107,6 +109,7 @@ export function createSessionsService(deps: {
           isTombstoned: (sessionId) =>
             deps.sessionMetadata.isTombstoned(sessionId),
           isRunning: deps.isRunning,
+          platformSessionOf: deps.terminalSessionPins?.(),
         },
       );
       return pageSessions(composed, query);

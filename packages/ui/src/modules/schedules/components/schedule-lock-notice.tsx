@@ -34,6 +34,17 @@ export function scheduleLockNotice(
       ),
     };
   }
+  if (lock === "once-fired") {
+    return {
+      title: "This one-time task has already run",
+      body: (
+        <p>
+          A one-time task can be edited only before it runs. To run it again,
+          create a new one-time task.
+        </p>
+      ),
+    };
+  }
   return {
     title: "This schedule uses the older cron format",
     body: (

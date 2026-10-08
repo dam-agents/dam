@@ -58,8 +58,7 @@ reach for up front, not just the initial program's imports.
 
 The pod-level workflow — the mandatory pre-launch gate, per-run directories,
 backgrounding runs, resume-on-wake, and the hard guardrails — is defined in
-this pod's system context (`AGENTS.md`). **This skill is the setup-and-CLI
-reference**; follow `AGENTS.md` for *how* to operate a run in this environment.
+this pod's system context (`AGENTS.md`).
 
 ## Step 1 — set up the search model
 
@@ -173,8 +172,7 @@ def evaluate(program_path):
     }
 ```
 
-Extra metrics are fine for visibility, but only `combined_score` drives
-selection — every evaluator must return it.
+Every evaluator must return `combined_score`.
 
 **Keep the score discriminating across the whole range you care about.**
 `1/(1+MSE)` saturates once MSE ≪ 1 — every good candidate rounds to 1.0000,
@@ -229,7 +227,7 @@ skydiscover optimize [INITIAL_PROGRAM] EVALUATOR --search <type> \
 
 | Flag | Meaning |
 |---|---|
-| `INITIAL_PROGRAM` | optional on the CLI (omitting it takes the from-scratch path) — but author one anyway in this pod, even a minimal stub, so the smoke-eval has a baseline (`EVOLVE-BLOCK` markers) |
+| `INITIAL_PROGRAM` | optional on the CLI (omitting it takes the from-scratch path) |
 | `EVALUATOR` | required — the `evaluate(program_path)` file |
 | `--search` | strategy — default to `$SKYDISCOVER_SEARCH` (`adaevolve` or `evox`; unset → `adaevolve`); only those two work in this pod |
 | `-i, --iterations` | the run's iteration budget — always bound; on resume, set to the *remainder* of the approved total |
@@ -257,8 +255,7 @@ is a budget increase, a new re-gated decision.
 **Checkpoint cadence**: both strategies write one every
 `checkpoint_interval` iterations (default 10) plus one at run completion —
 so a *completed* short run has a resume point, but one interrupted
-mid-flight before iteration 10 does not. A run interrupted
-before its first checkpoint has nothing to resume from — relaunching
+mid-flight before iteration 10 does not. Relaunching such a run
 restarts from scratch and re-spends the lost iterations, which exceeds the
 originally approved spend: say so and get a fresh go-ahead. For short runs,
 warn up front that a hibernation before iteration 10 loses the run (a
@@ -275,8 +272,8 @@ run that died on them resumes from the latest checkpoint once the endpoint
 answers again. Never rewire models over a transient.
 
 **Monitoring:** tail `run.log`; read `output/best/best_program_info.json` and
-list `output/checkpoints/` to count completed iterations. Leave the live dashboard (`monitor.enabled`) off and skip
-`skydiscover viewer` — this pod exposes no UI ports. A run doesn't advance
+list `output/checkpoints/` to count completed iterations. Leave the live dashboard (`monitor.enabled`) off —
+this pod exposes no UI ports. A run doesn't advance
 faster because you look at it — poll infrequently, and if it stops advancing,
 follow the stall guardrail in `AGENTS.md`.
 
@@ -354,8 +351,7 @@ skydiscover optimize task/initial.py task/evaluator.py \
 ```
 
 `combined_score` climbs with every decade of MSE improvement (no
-saturation); pull the winner from `output/best/best_program.py` — and read
-it before trusting it, per the guard section.
+saturation); pull the winner from `output/best/best_program.py`.
 
 ## Reporting (and optional PR)
 

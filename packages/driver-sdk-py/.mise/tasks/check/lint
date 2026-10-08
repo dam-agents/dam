@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="ruff check passes"
 #MISE sources=["{src,tests}/**/*.py", "pyproject.toml", "uv.lock"]
 #MISE outputs=[]
 #MISE cache.enabled=true

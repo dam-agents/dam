@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-10-05
+Last verified: 2026-10-07
 
 ## Overview
 
@@ -183,7 +183,7 @@ If the handler ran but the apply response is lost, same path — redelivery sett
 
 ### Expiry
 
-Each event row carries `expires_at`, chosen by the producer so a stale backlog never replays — schedules, for instance, choose it per kind of fire ([schedules](schedules.md#fire), [on-demand run](schedules.md#on-demand-run)). The state-builder filters `expires_at > now() AND dispatched_at IS NULL`. The cron sweep deletes rows past expiry that were never dispatched, counted as `dropped-expired`. The agent applies the same TTL check on incoming events as defense in depth.
+Event rows carry a producer-set `expires_at` so a stale backlog never replays — schedules choose it per kind of fire ([schedules](schedules.md#fire), [on-demand run](schedules.md#on-demand-run)). The state-builder keeps live, undispatched events; the cron sweep deletes and counts expired ones `dropped-expired`, and notifies its kind listener. The agent checks incoming TTLs as defense in depth.
 
 ## Outbox + events
 

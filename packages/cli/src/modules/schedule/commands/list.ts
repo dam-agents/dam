@@ -1,5 +1,6 @@
 import { Command } from "commander";
-import { rruleToText } from "api-server-api";
+import { onceState, rruleToText } from "api-server-api";
+import { localTimeIn } from "../domain/once-flags.js";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
@@ -7,7 +8,26 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
-import type { ScheduleService } from "../services/schedule-service.js";
+import type {
+  ScheduleService,
+  ScheduleView,
+} from "../services/schedule-service.js";
+
+function recurrenceText(view: ScheduleView): string {
+  switch (view.type) {
+    case "once":
+      return `once at ${localTimeIn(view.at ?? "", view.timezone ?? "UTC")}`;
+    case "rrule":
+      return rruleToText(view.rrule ?? "");
+    case "cron":
+      return view.cron ?? "";
+  }
+}
+
+function resultText(view: ScheduleView): string {
+  if (view.type === "once") return onceState(view.status);
+  return view.status?.lastResult ?? "—";
+}
 
 export function buildListCommand(deps: {
   compatService: CompatService;
@@ -65,11 +85,11 @@ export function buildListCommand(deps: {
           ...result.value.map((v) => [
             v.id,
             v.createdBy === "agent" ? `${v.name} (agent)` : v.name,
-            v.rrule !== null ? rruleToText(v.rrule) : (v.cron ?? ""),
+            recurrenceText(v),
             v.timezone ?? "—",
             String(v.enabled),
             v.status?.nextRun ?? "—",
-            v.status?.lastResult ?? "—",
+            resultText(v),
           ]),
         ]),
       );

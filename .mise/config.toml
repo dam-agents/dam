@@ -1,4 +1,4 @@
-min_version = "2026.9.16"
+min_version = "2026.10.2"
 monorepo_root = true
 
 [monorepo]
@@ -15,10 +15,10 @@ CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "{{config_root}}/.mise/zig/cc"
 
 [vars]
 repo_root = "{{config_root}}"
-base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:cecbac9ab52b9670ef05a40b61bda09ba2119bcafdfe621e420d3d171175057d"
-base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:ea4830e9673b85d60f5a47a3390bb58a4a261b949b0a563f74538bb321737561"
+base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:33ba0eb07e5acb7da2469df46d09081a6e1079c7e4f3769198316f5efac5a218"
+base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:dbe63cc0af0d272c897f5e136173c9670f991deede43867f59876066dd6c4e5b"
 base_image_keycloak = "quay.io/keycloak/keycloak:26.8.0@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc"
-base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:e793ca0c2be85e5113b8732248b8100a795f412374434af36fd4cf665e32764b"
+base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:f9fc48eac6322872a373fedc5d1819ba3945f7bc18a3260b7612030f1bedefcb"
 base_image_debian = "mirror.gcr.io/library/debian:trixie-slim"
 
 [deps.pnpm]
@@ -66,6 +66,7 @@ lockfile_platforms = ["linux-arm64", "linux-x64", "macos-arm64"]
 task.disable_spec_from_run_scripts = true
 
 [task_templates."ts:check:tsc"]
+description = "TypeScript type-checks"
 depends = ["^check:tsc"]
 run = "pnpm exec tsc --noEmit"
 sources = ["src/**/*.{ts,tsx}", "tsconfig.json", "{{vars.repo_root}}/packages/dev-config/tsconfig.base.json", "{{vars.repo_root}}/pnpm-lock.yaml"]
@@ -75,6 +76,7 @@ deny_net = true
 deny_write = true
 
 [task_templates."ts:check:lint"]
+description = "ESLint passes"
 run = "pnpm exec eslint ."
 sources = ["src/**/*.{ts,tsx}", "eslint.config.js", "{{vars.repo_root}}/packages/dev-config/eslint.base.js", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
@@ -83,6 +85,7 @@ deny_net = true
 deny_write = true
 
 [task_templates."ts:check:format"]
+description = "Sources are Prettier-formatted"
 run = "pnpm exec prettier --check 'src/**/*.{ts,tsx,css}'"
 sources = ["src/**/*.{ts,tsx,css}", "{{vars.repo_root}}/.prettierrc", "{{vars.repo_root}}/pnpm-lock.yaml"]
 outputs = []
@@ -91,10 +94,12 @@ deny_net = true
 deny_write = true
 
 [task_templates."ts:fix:lint"]
+description = "Apply ESLint fixes"
 run = "pnpm exec eslint --fix ."
 deny_net = true
 
 [task_templates."ts:fix:format"]
+description = "Format sources with Prettier"
 run = "pnpm exec prettier --write 'src/**/*.{ts,tsx,css}'"
 deny_net = true
 
@@ -107,12 +112,16 @@ outputs = []
 cache.enabled = true
 
 [tasks.check]
+description = "Run every check"
 depends = ["check:*", "//...:check"]
 
 [tasks.fix]
-depends = ["//...:fix"]
+description = "Apply every fix: formatters, linters, generators"
+depends = ["fix:comment-types"]
+run = [{ tasks = ["fix:skill-manifest", "//docs:fix", "//packages/...:fix"] }]
 
 [tasks.test]
+description = "Run every test suite"
 depends = ["//...:test"]
 
 [tasks."check:task-files"]
@@ -126,20 +135,16 @@ deny_net = true
 deny_write = true
 
 [tasks."check:comment-types"]
-description = "Every code comment must carry a registered type prefix (see Code comments in CLAUDE.md)"
-run = { task = "strip-comments", args = ["--check"] }
+description = "Every code comment carries a registered type prefix (see Code comments in AGENTS.md)"
+run = { task = "fix:comment-types", args = ["--check"] }
 
 [tasks."check:skill-manifest"]
-description = "Every currently shipped image skill's content hash is in the shipped-skill manifest, and the manifest is append-only"
+description = "Every shipped image skill's content hash is in the append-only shipped-skill manifest"
 run = "pnpm --filter agent-runtime exec tsx scripts/skill-manifest.ts check"
 deny_net = true
 
-[tasks."skills:manifest:generate"]
-description = "Append the current image skills' content hashes to the shipped-skill manifest"
+[tasks."fix:skill-manifest"]
+description = "Append the shipped image skills' content hashes to the shipped-skill manifest"
 run = "pnpm --filter agent-runtime exec tsx scripts/skill-manifest.ts generate"
 deny_net = true
 
-[tasks."skills:manifest:backfill"]
-description = "Append every historical image-skill content hash from git history to the shipped-skill manifest"
-run = "pnpm --filter agent-runtime exec tsx scripts/skill-manifest.ts backfill"
-deny_net = true

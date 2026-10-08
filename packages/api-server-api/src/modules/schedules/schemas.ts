@@ -28,6 +28,8 @@ export const PRECHECK_MAX_LENGTH = 8_000;
 
 export const precheckSchema = z.string().trim().min(1).max(PRECHECK_MAX_LENGTH);
 
+export const scheduleModelSchema = z.string().trim().min(1).max(200);
+
 export const scheduleCreateCronInputSchema = z.object({
   name: z.string().min(1),
   agentId: z.string().min(1),
@@ -35,6 +37,7 @@ export const scheduleCreateCronInputSchema = z.object({
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.optional(),
+  model: scheduleModelSchema.optional(),
 });
 
 export const scheduleCreateRRuleInputSchema = z.object({
@@ -46,6 +49,7 @@ export const scheduleCreateRRuleInputSchema = z.object({
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.optional(),
+  model: scheduleModelSchema.optional(),
 });
 
 export const scheduleUpdateRRuleInputSchema = z.object({
@@ -57,7 +61,37 @@ export const scheduleUpdateRRuleInputSchema = z.object({
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.nullable().optional(),
+  model: scheduleModelSchema.nullable().optional(),
 });
+
+const localDateTimeSchema = z
+  .string()
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/,
+    "YYYY-MM-DDTHH:mm required",
+  );
+
+export const scheduleCreateOnceInputSchema = z
+  .object({
+    name: z.string().min(1),
+    agentId: z.string().min(1),
+    at: localDateTimeSchema.optional(),
+    timezone: z.string().min(1),
+    task: z.string().min(1),
+    model: z.string().min(1).optional(),
+  })
+  .strict();
+
+export const scheduleUpdateOnceInputSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    at: localDateTimeSchema,
+    timezone: z.string().min(1),
+    task: z.string().min(1),
+    model: z.string().min(1).optional(),
+  })
+  .strict();
 
 export const scheduleDeleteInputSchema = z.object({
   id: z.string().min(1),
@@ -90,6 +124,7 @@ const scheduleSpecCronSchema = z
     cron: z.string(),
     task: z.string().optional(),
     precheck: precheckSchema.optional(),
+    model: scheduleModelSchema.optional(),
     enabled: z.boolean(),
     sessionMode: scheduleSessionModeSchema.optional(),
     createdBy: scheduleCreatorSchema,
@@ -105,8 +140,28 @@ const scheduleSpecRRuleSchema = z
     quietHours: z.array(quietWindowConfigMapSchema).optional(),
     task: z.string().optional(),
     precheck: precheckSchema.optional(),
+    model: scheduleModelSchema.optional(),
     enabled: z.boolean(),
     sessionMode: scheduleSessionModeSchema.optional(),
+    createdBy: scheduleCreatorSchema,
+  })
+  .passthrough();
+
+const scheduleSpecOnceSchema = z
+  .object({
+    version: z.string(),
+    type: z.literal("once"),
+    at: z.string().datetime({ offset: true }),
+    timezone: z.string(),
+    origin: z
+      .object({
+        sessionRef: z.string().min(1),
+        mode: z.enum(["continue", "report"]),
+      })
+      .optional(),
+    model: z.string().optional(),
+    task: z.string().optional(),
+    enabled: z.boolean(),
     createdBy: scheduleCreatorSchema,
   })
   .passthrough();
@@ -114,6 +169,7 @@ const scheduleSpecRRuleSchema = z
 export const scheduleSpecSchema = z.discriminatedUnion("type", [
   scheduleSpecCronSchema,
   scheduleSpecRRuleSchema,
+  scheduleSpecOnceSchema,
 ]);
 
 export const precheckVerdictSchema = z.enum([

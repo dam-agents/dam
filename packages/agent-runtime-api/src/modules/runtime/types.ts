@@ -137,10 +137,26 @@ export const contribution = z.discriminatedUnion("kind", [
 ]);
 export type Contribution = z.infer<typeof contribution>;
 
+export const SESSION_REF_HEADER = "x-platform-session-ref";
+export const PLATFORM_MCP_ENTRY_NAME = "platform-outbound";
+
+export const onceOriginMode = z.enum(["continue", "report"]);
+export type OnceOriginMode = z.infer<typeof onceOriginMode>;
+
+export const onceOrigin = z.object({
+  sessionRef: z.string().min(1),
+  mode: onceOriginMode,
+  name: z.string().min(1),
+});
+export type OnceOrigin = z.infer<typeof onceOrigin>;
+
 export const triggerEventPayload = z.object({
   scheduleId: z.string().min(1),
   task: z.string().min(1),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
+  once: z.literal(true).optional(),
+  origin: onceOrigin.optional(),
+  model: z.string().min(1).optional(),
   mcpServers: z.array(z.unknown()).optional(),
   precheck: z.string().min(1).optional(),
   fireAt: z.string().datetime({ offset: true }).optional(),
@@ -159,10 +175,14 @@ export const triggerEvent = z.object({
 export const eventOutcome = z.enum(["ok", "declined", "failed"]);
 export type EventOutcome = z.infer<typeof eventOutcome>;
 
+export const eventStage = z.enum(["decide", "run"]);
+export type EventStage = z.infer<typeof eventStage>;
+
 export const eventReportInput = z.object({
   eventId: z.string().min(1),
   outcome: eventOutcome,
   detail: z.string().max(2_000).optional(),
+  stage: eventStage.optional(),
 });
 export type EventReportInput = z.infer<typeof eventReportInput>;
 
@@ -314,6 +334,7 @@ export const harnessConfigCurrent = z.object({
   mode: z.string().nullable(),
   configOptions: z.record(z.string().min(1), z.string()),
   availableModels: z.array(harnessConfigChoice).nullable().optional(),
+  defaultModel: z.string().nullable().optional(),
 });
 export type HarnessConfigCurrent = z.infer<typeof harnessConfigCurrent>;
 
@@ -331,6 +352,7 @@ export const capabilities = z.object({
   events: advertisedKinds(eventKind.options),
   harnessConfig: z.boolean().optional(),
   harnessConfigCatalog: harnessConfigCatalog.optional(),
+  sessionModel: z.boolean().optional(),
   kbPublish: z.number().int().optional(),
   liveUpdates: z.boolean().optional(),
 });

@@ -63,6 +63,18 @@ links:
   # Complete URL. Empty string hides that line; there is no bundled default.
   slackInstallRequest: ""
 
+# -- Experimental features, one mode each: `experimental` leaves the per-user
+# switch in the hidden settings tab; `on` or `off` hides the switch and decides
+# for every user, whatever they stored. An omitted feature is `experimental`.
+# `vm-sandboxes` also needs `virtualization.enabled`.
+features:
+  advanced-connections: experimental
+  vm-sandboxes: experimental
+  interactive-artifacts: experimental
+  agent-telemetry: experimental
+  agent-avatars: experimental
+  strict-connection-addressing: experimental
+
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
 # lives at `keycloak.{domain}`.
@@ -184,26 +196,26 @@ virtualization:
   enabled: false
   # The shape of every runner pod the controller creates (one per owner).
   runner:
-    # Published charts pin this to the image's content tag, so an upgrade that
-    # leaves the runner unchanged doesn't roll the pod and stop every machine.
+    # Published charts pin this by digest, which a rebuild that changes nothing
+    # in the image keeps, so an upgrade that leaves the runner unchanged doesn't
+    # roll the pod and stop every machine. A digest wins over the tag.
     image:
       repository: quay.io/dam-agents/vm-runner
-      tag: "" # @ci-pin vm-runner-image-tag
+      tag: ""
+      digest: "" # @ci-pin vm-runner-image-digest
       pullPolicy: IfNotPresent
-    # KVM (and the tun device smolvm's per-machine network needs) arrive as
-    # device-plugin resources, which is the only way the runner gets them —
-    # it is never a privileged pod. Empty = the chart's own plugin below when
-    # enabled, else KubeVirt's (`devices.kubevirt.io/kvm|tun`, present on
-    # every node virt-handler runs on). Any plugin exposing /dev/kvm and
-    # /dev/net/tun works; a cluster with none cannot host vm agents, and the
+    # KVM arrives as a device-plugin resource, which is the only way the
+    # runner gets it — it is never a privileged pod. Empty = the chart's own
+    # plugin below when enabled, else KubeVirt's (`devices.kubevirt.io/kvm`,
+    # present on every node virt-handler runs on). Any plugin exposing
+    # /dev/kvm works; a cluster with none cannot host vm agents, and the
     # controller says so at startup when no schedulable node matching
-    # `nodeSelector` advertises these.
+    # `nodeSelector` advertises it.
     devices: {}
     # OpenShift: name of a *built-in* SCC to bind to the runner's
     # ServiceAccount. Usually unnecessary — when `openshift.scc.anyuidCapNet`
     # is on, the chart binds its own SCC, which grants exactly what the
-    # runner needs and nothing else: uid 0, NET_ADMIN for the per-machine
-    # NAT, DAC_OVERRIDE so its VMMs can read the image files a guest is
+    # runner needs and nothing else: uid 0, DAC_OVERRIDE so its VMMs can read the image files a guest is
     # served even where the image keeps them from root, and — only when the
     # runner caches images on its own claim — CHOWN + FOWNER + FSETID so it
     # can restore each file's owner and mode, setgid bits included, as it
@@ -265,7 +277,8 @@ virtualization:
     # measured using, for its guest to grow into before the controller acts.
     headroomMiB: 256
     # true = runners may give the node's virtualization extensions to the
-    # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization),
+    # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization,
+    # or controller.agent.templateDefaults.nestedVirtualization for all),
     # so that guest can run KVM itself — e.g. a vm agent that hosts its own
     # vm-backend install. Every other machine boots without them. A runner
     # nests only where the node's KVM allows it, which is the kernel default
@@ -297,6 +310,25 @@ virtualization:
     # runners their agent image; empty means runners fetch images from the
     # registry.
     imageArchiveHostPath: ""
+    # A directory on each node where a stager DaemonSet copies the runner
+    # release this chart's runner image carries: the runner and the two guest
+    # binaries it hands every machine. Set, a runner pod keeps the image it was
+    # created with, and a new runner image reaches it without a restart: the
+    # pod's loader drains the old runner, starts the new one from this
+    # directory, and the new runner adopts every machine still running, so no
+    # machine reboots. A release built against another VM runtime (a new
+    # smolvm, libkrun or crane) brings its runtime along: machines already
+    # running keep the runtime they booted, and machines started after the
+    # hand-off boot the new one. Only a release that cannot load in the pod
+    # (a newer base image's libc) still rolls the pods, through `rollout`, as
+    # every runner image does when this is empty. The stager is the only
+    # writer; runners mount it read-only. Not supported on OpenShift yet: the
+    # directory would need an SELinux label the confined runners can read.
+    releaseHostPath: ""
+    # Roll the pods for every release built against another VM runtime, rather
+    # than letting a new runtime manage machines an older one started. The
+    # switch back if a runtime turns out not to.
+    releaseSameRuntimeOnly: false
     # Local dev on macOS only. Set, the controller creates no runner pods:
     # every vm machine, whatever its owner, runs on one vm-runner process on
     # the host, which uses the host's own hypervisor instead of one nested in
@@ -381,6 +413,9 @@ virtualization:
     # Instead the controller warns at startup when an entry above reaches the
     # API server's Service address or its own pod address with no exception
     # covering it.
+    # Except the nodes' own network too: the kubelet, the API server on its
+    # node addresses, NodePorts and node exporters listen there, an escaped
+    # guest is root in the runner pod, and nothing warns about that range.
     egressExceptCidrs: []
   # Moving a container agent onto a machine (the Migrate button). Once the
   # machine has booted from the copy, the home volume the copy was read from is
@@ -486,7 +521,7 @@ virtualization:
       limits:
         memory: 1Gi
   # A device plugin of our own (squat's generic-device-plugin) advertising
-  # /dev/kvm and /dev/net/tun as `<domain>/kvm` and `<domain>/tun` on the
+  # /dev/kvm as `<domain>/kvm` on the
   # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
   # privileged (kubelet socket dir + /dev from the host), so keep it on the
   # KVM-capable pool via nodeSelector/tolerations.
@@ -502,7 +537,7 @@ virtualization:
     domain: squat.ai
     # How many grants of each device the plugin advertises, which is the cap
     # on VM runners per node — and runners are per owner, so it is really a
-    # cap on owners per node. Neither /dev/kvm nor /dev/net/tun is consumed by
+    # cap on owners per node. /dev/kvm is not consumed by
     # opening it, so this is an accounting number the device-plugin API
     # requires rather than a real resource; raise it rather than let a runner
     # pend for want of a grant.
@@ -723,7 +758,7 @@ clickstack:
     deployment:
       image:
         repository: quay.io/dam-agents/hyperdx
-        tag: "2.39.1"
+        tag: "2.40.0"
       waitForMongodb:
         image: "quay.io/dam-agents/busybox:1.38.0"
 
@@ -1140,6 +1175,15 @@ apiServer:
   # egress approval is never probed before the hold resolves. Default 30
   # minutes.
   acpTurnStallProbeSeconds: 1800
+
+  # -- Bounds on the one-time schedules an agent creates for itself, so an
+  # agent that keeps scheduling itself cannot run turns without end. Users
+  # are not bound by these.
+  oneTimeSchedules:
+    # -- Most not-yet-delivered one-time schedules an agent may hold.
+    agentMaxOpen: 20
+    # -- Most one-time schedules an agent may create in a sliding hour.
+    agentMaxPerHour: 30
 
   # -- Hard ceiling for file-import bundle uploads, in bytes. Enforced at
   # the api-server proxy boundary (rejects oversized Content-Length AND
@@ -1626,6 +1670,13 @@ controller:
       # it shares. Set `MEM_REAPER=off` to disable.
       env: []
       skillSources: []
+      # true = every vm agent asks for nested virtualization, as if its Agent
+      # set spec.backend.vm.nestedVirtualization. It is only an ask: a machine
+      # nests only when `virtualization.runner.nestedVirtualization` lets the
+      # runners nest and the node's KVM allows it. Applied at reconcile, so
+      # turning it on or off also changes existing vm agents and restarts
+      # their machines. While it is on, an Agent cannot opt out.
+      nestedVirtualization: false
 
     # -- Size the controller materializes into any Agent spec that lacks a
     # limits dimension (#1900): fill-if-absent on reconcile, never touching
@@ -1701,7 +1752,7 @@ controller:
   # (content- and metadata-verified), re-points the StatefulSet, deletes the
   # old volume, and restores the agent's prior run state. Interrupt-safe and
   # resumable; a no-op once no RWX workspace volume remains. Keep the old
-  # storage backend (e.g. nfsProvisioner, or your managed shared filesystem)
+  # storage backend (e.g. your managed shared filesystem)
   # available until the controller stops logging migrations, then decommission
   # it.
   #
@@ -1790,8 +1841,8 @@ controller:
   # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
   # pull-through cache, higher anonymous rate limits) — byte-identical to
-  # envoyproxy/envoy:distroless-v1.39.1 (same manifest digest).
-  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.1
+  # envoyproxy/envoy:distroless-v1.39.2 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.2
   # -- PEM CA certificates every agent gateway trusts upstream, on top of the
   # public roots, and every agent trusts beside its gateway's CA, for the hosts
   # its gateway passes through untouched. Needed when something on the
@@ -1801,6 +1852,32 @@ controller:
   # leaves each gateway on its image's own roots. Set with --set-file, e.g.
   # `--set-file controller.gatewayUpstreamExtraCAs=proxy-ca.crt`.
   gatewayUpstreamExtraCAs: ""
+  # -- Where each agent gateway may send traffic. The controller renders a
+  # per-agent egress NetworkPolicy so an approved hostname that resolves to a
+  # private address (an owner's DNS record, or DNS rebinding after approval)
+  # cannot carry the agent into the cluster, the node, or the cloud metadata
+  # endpoint. A gateway reaches the public internet minus 10/8, 172.16/12,
+  # 192.168/16, 100.64/10, 127/8, 169.254/16, 0/8 (and ::1, fc00::/7,
+  # fe80::/10), plus the platform's own pods it dials (api-server, harness
+  # waypoint, object store, telemetry collector) and the cluster DNS pods.
+  gatewayEgress:
+    # Private ranges a gateway may also reach — enterprise services agents
+    # call through their gateway: an internal Git host, an in-house API, a
+    # Kubernetes API server a connection targets, a node-local DNS cache
+    # (169.254.20.10/32). The metadata endpoints (169.254.169.254,
+    # 100.100.100.200, fd00:ec2::254) stay closed even inside a range listed
+    # here.
+    extraCidrs: []
+    # The cluster DNS pods each gateway resolves upstream names through, on
+    # their own ports — policy applies after the DNS Service address is
+    # translated to a pod, so the pods are named, not the Service.
+    # OpenShift: namespace `openshift-dns`, podLabels
+    # `dns.operator.openshift.io/daemonset-dns: default`, ports [5353].
+    clusterDns:
+      namespace: kube-system
+      podLabels:
+        k8s-app: kube-dns
+      ports: [53]
   # -- Image for a vm Agent's machine resolver, beside Envoy in its gateway
   # pod: it answers every name with the gateway's address and resolves nothing
   # upstream. CoreDNS publishes to Docker Hub; pulled via mirror.gcr.io like
@@ -2141,43 +2218,3 @@ gitRepos:
     url: https://github.com/willallstet/arxiv-scanner.git
     description: "Onboards a GitHub repo and scans arXiv for related work"
     compatibleTemplates: [claude-code]
-
-# -- DEPRECATED in-cluster NFS server + external provisioner (#2988). Nothing
-# needs shared-writable storage any more: workspace volumes are ReadWriteOnce
-# and the storage migration (controller.storageMigration) drains existing RWX
-# volumes. Keep this enabled on an install whose agent volumes still live on
-# it, ONLY until the migration completes (no RWX PVC left in the agent
-# namespace) — then disable it. The whole block is removed in a future
-# release. The bundled nfs-ganesha image is archived upstream and breaks on
-# btrfs-backed exports.
-nfsProvisioner:
-  enabled: false
-  # Break-glass annotations for admission controllers (e.g. StackRox) since
-  # the upstream image is old and needs elevated capabilities.
-  annotations: {}
-  podAnnotations: {}
-  image: registry.k8s.io/sig-storage/nfs-provisioner:v4.0.8
-  # Name of the RWX StorageClass created here. Reference it from
-  # `controller.agent.base.storageClass`.
-  storageClassName: platform-rwx
-  # Immediate-binding RWX StorageClass for the warm PVC pool (#692). The default
-  # platform-rwx class binds WaitForFirstConsumer (correct for agent PVCs, which
-  # provision when their pod schedules) but useless for pre-warming, since a
-  # spare would sit Pending until mounted. This variant binds Immediate so
-  # spares provision the moment they're created. Reference its name from
-  # `controller.warmPool.storageClass`.
-  warmPoolClass:
-    enabled: false
-    name: platform-rwx-immediate
-  # Single backing volume that hosts all NFS exports; individual agent PVCs
-  # are carved out as subdirectories.
-  size: 20Gi
-  # StorageClass for the NFS server's own PVC. Empty = cluster default (RWO is fine).
-  storageClass: ""
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi

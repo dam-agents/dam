@@ -140,7 +140,6 @@ Call `mutate` when `onSuccess` handles everything; `mutateAsync` when the submit
 **[CRITICAL] Use `meta.invalidates`.** Don't call `queryClient.invalidateQueries()` in `onSuccess`; the default mutation handler does it for every mutation. When the key depends on the *response* (a server-returned id), extend the handler to accept `invalidates: (data) => [...]`, or call `invalidateQueries` in the mutation's own `onSuccess`.
 
 - **Invalidate narrowly.** After an agent create/update/delete, the list key is usually right; invalidate the domain root only when every query in it changed.
-- Overlapping invalidations in one tick refetch once (TQ dedupes), but keep each mutation's declared effect narrow and explicit.
 
 ### Optimistic updates
 
@@ -238,14 +237,3 @@ Queries yield render values (`data`, `isPending`) and stable callables that belo
 ✅ const { refetch } = useXxx();
    }, [fetchX, fetchY, refetch]);
 ```
-
-## Anti-patterns
-
-- `useEffect` + `fetch`/tRPC in a component → `useQuery`.
-- `loading`/`error`/`saving` `useState` trio → TQ state.
-- String-literal query keys → `queryKey()` or the domain factory.
-- `invalidateQueries` in `onSuccess` → `meta.invalidates`.
-- Shadow-copying TQ data for optimism → `onMutate`.
-- A Zustand slice holding a server list → TQ.
-- The whole query/mutation object in a deps array → destructure.
-- `eslint-disable react-hooks/exhaustive-deps` to silence the loop → destructure the stable field.

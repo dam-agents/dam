@@ -17,6 +17,8 @@ export const approvalChannelOf = (id: string) => `approval:${id}`;
 interface ExtAuthzGateInput {
   agentId: string;
   host: string;
+  port: number;
+  tls: boolean;
   method: string;
   path: string;
 }
@@ -35,6 +37,8 @@ export interface EgressRuleMatcher {
   match(
     agentId: string,
     host: string,
+    port: number,
+    tls: boolean,
     method: string,
     path: string,
   ): Promise<{ verdict: ExtAuthzVerdict } | null>;
@@ -52,12 +56,12 @@ interface CreateExtAuthzGateDeps {
   ruleMatcher: EgressRuleMatcher;
   attendance: EgressAttendance;
   holdSeconds: number;
-  platformAllowedHosts: readonly string[];
+  platformAllowedAuthorities: readonly string[];
 }
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
   return {
-    async gateRequest({ agentId, host, method, path }) {
+    async gateRequest({ agentId, host, port, tls, method, path }) {
       const identity = await deps.identityResolver.resolve(agentId);
       if (!identity) {
         securityLog("warn", "egress.decision", {
@@ -76,7 +80,7 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
 
       const via = identity.agentId !== agentId ? agentId : undefined;
 
-      if (deps.platformAllowedHosts.includes(host)) {
+      if (deps.platformAllowedAuthorities.includes(`${host}:${port}`)) {
         securityLog("info", "egress.decision", {
           category: "egress",
           actor: identity.ownerSub,
@@ -93,6 +97,8 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       const matched = await deps.ruleMatcher.match(
         identity.agentId,
         host,
+        port,
+        tls,
         method,
         path,
       );
@@ -118,9 +124,11 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         (await deps.attendance.hasOpenChannelTurn(identity.agentId)) &&
         !(await deps.attendance.hasInteractiveSession(identity.agentId));
 
+      const nonDefaultPort = port === (tls ? 443 : 80) ? undefined : port;
       const existing = await deps.repo.findActivePendingExtAuthz({
         agentId: identity.agentId,
         host,
+        port: nonDefaultPort,
         method,
         path,
       });
@@ -132,7 +140,14 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
           sessionId: null,
-          payload: { kind: "ext_authz", host, method, path, viaAgentId: via },
+          payload: {
+            kind: "ext_authz",
+            host,
+            ...(nonDefaultPort ? { port: nonDefaultPort } : {}),
+            method,
+            path,
+            viaAgentId: via,
+          },
           expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
         });
         emit({
@@ -141,26 +156,28 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
         });
-        if (!unattended) {
-          const frame = buildExtAuthzSynthFrame({
-            approvalId: pendingId,
-            host,
-            method,
-            path,
-          });
-          void deps.bus.publish(injectChannelOf(identity.agentId), frame);
-          securityLog("warn", "egress.hold", {
-            category: "egress",
-            actor: identity.ownerSub,
-            actorKind: "agent",
-            surface: "ext-authz",
-            agentId: identity.agentId,
-            target: host,
-            decision: "hold",
-            correlationId: pendingId,
-            detail: { method, path, via },
-          });
-        }
+      }
+
+      if (!unattended) {
+        const frame = buildExtAuthzSynthFrame({
+          approvalId: pendingId,
+          host,
+          port: nonDefaultPort,
+          method,
+          path,
+        });
+        void deps.bus.publish(injectChannelOf(identity.agentId), frame);
+        securityLog("warn", "egress.hold", {
+          category: "egress",
+          actor: identity.ownerSub,
+          actorKind: "agent",
+          surface: "ext-authz",
+          agentId: identity.agentId,
+          target: host,
+          decision: "hold",
+          correlationId: pendingId,
+          detail: { method, path, via, joined: existing !== null },
+        });
       }
 
       if (unattended) {

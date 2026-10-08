@@ -4,6 +4,11 @@
 # defaults of the base manifest.
 manifestVersion: 1
 
+# Bob mints its own task id for a terminal session's conversation. A pin here,
+# named by the platform session id and holding the task id, lists that
+# conversation once, under the terminal session.
+terminalSessionPins: "$HOME/.bob/platform-sessions"
+
 drivers:
   env:
     impl: env

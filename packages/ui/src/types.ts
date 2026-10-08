@@ -93,6 +93,9 @@ export interface Message {
   loadOlderBefore?: string;
   at?: string;
   telemetryPromptId?: string;
+  model?: string;
+  stopped?: boolean;
+  turnId?: string;
   error?: {
     message: string;
     retryWith?: RetryPayload;
@@ -216,9 +219,12 @@ export interface Schedule {
   id: string;
   name: string;
   agentId: string;
-  type: "cron" | "rrule";
+  type: "cron" | "rrule" | "once";
   cron: string | null;
   rrule: string | null;
+  at: string | null;
+  inSession: "fresh" | "continue" | "report" | null;
+  model: string | null;
   timezone: string | null;
   quietHours: QuietWindowView[];
   task: string | null;

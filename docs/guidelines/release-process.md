@@ -66,6 +66,7 @@ On every `v*` tag push, the release jobs in [`cd.yml`](../../.github/workflows/c
 - Builds and pushes container images (platform components + agents) to `quay.io/dam-agents/*`
 - Packages and pushes the Helm chart to `oci://quay.io/dam-agents/charts`
   - The keycloak image tag is pinned to a content tag (the commit that last touched its inputs) rather than the release version, so upgrading to a release that didn't change the image doesn't restart Keycloak
+  - The VM runner image is pinned by digest, and a rebuild whose content equals the image it would replace keeps that image and its digest, so a release that didn't change the runner doesn't reboot every vm machine
 - Publishes `@dam-agents/cli` to npm (stable tags get `latest`, RC tags get `rc`)
 
 A release waits for every image the chart names, so a `v*` chart never references

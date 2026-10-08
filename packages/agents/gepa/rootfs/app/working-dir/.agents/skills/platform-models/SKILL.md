@@ -43,15 +43,11 @@ it is what injects the credential and authorizes the destination.
 
 ## 1. Discover what the connection injected
 
-Present-but-empty counts as present:
-
 ```sh
 env | grep -iE '(_API_KEY|_BASE_URL)=' | sed -E 's/=.*/=<set>/'
 ```
 
 ## 2. Wire LiteLLM from what's actually there (first match wins)
-
-The `key or "placeholder"` idiom is the load-bearing part.
 
 - **`OPENAI_BASE_URL` (± `OPENAI_API_KEY`)** — an OpenAI-compatible endpoint
   (a LiteLLM-proxy-class connection, or OpenAI itself). Use
@@ -118,8 +114,7 @@ print(model, "->", resp.choices[0].message.content[:40])
 Triage:
 
 - **Auth error** → the wiring is wrong (wrong provider prefix for the
-  injected host, or a missing placeholder key) — fix the wiring; do **not**
-  drop to a raw HTTP client.
+  injected host, or a missing placeholder key) — fix the wiring.
 - **Rate-limit / model-not-found** → that model id isn't provisioned on this
   connection — pick another from discovery, or ask the user.
 
