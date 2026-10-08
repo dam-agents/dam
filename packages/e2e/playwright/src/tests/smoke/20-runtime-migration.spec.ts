@@ -187,11 +187,24 @@ test("keeps its id, HOME and sessions, and chats on the vm Backend", async ({
   expect(named[0]?.vm).toBe(true);
 
   await expectHomeFile(token, agentId, markerPath, marker);
+  console.log(`DEBUG-4444 sessionsBefore=${JSON.stringify(sessionsBefore)}`);
   await expect
-    .poll(() => listSessionIds(token, agentId), {
-      timeout: 120_000,
-      message: "a session from before the migration is missing",
-    })
+    .poll(
+      async () => {
+        try {
+          const ids = await listSessionIds(token, agentId);
+          console.log(`DEBUG-4444 ${new Date().toISOString()} sessions=${JSON.stringify(ids)}`);
+          return ids;
+        } catch (e) {
+          console.log(`DEBUG-4444 ${new Date().toISOString()} error=${String(e)}`);
+          throw e;
+        }
+      },
+      {
+        timeout: 120_000,
+        message: "a session from before the migration is missing",
+      },
+    )
     .toEqual(expect.arrayContaining(sessionsBefore));
   await chatTurn(page, "hello-after-migration", "reply-after-migration");
   await expect(
