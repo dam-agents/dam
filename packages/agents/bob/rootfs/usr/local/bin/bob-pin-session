@@ -1,0 +1,8 @@
+#!/bin/sh
+# SessionStart hook, registered by bob-settings.mjs. Bob mints the task id on
+# the first turn, so the terminal harness can't pass one in; this records it
+# under the platform session id for harness-terminal to resume. Chat sessions
+# carry no HARNESS_SESSION_ID: their session id already is the task id.
+[ -n "$HARNESS_SESSION_ID" ] || exit 0
+mkdir -p "$HOME/.bob/platform-sessions" &&
+  sed -n 's/.*"session_id":"\([^"]*\)".*/\1/p' > "$HOME/.bob/platform-sessions/$HARNESS_SESSION_ID"
