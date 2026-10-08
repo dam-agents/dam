@@ -7,7 +7,10 @@ import {
   createHarnessCatalog,
   harnessFits,
 } from "../../modules/templates/domain/harness-catalog.js";
-import { resolveFirePair } from "../../modules/harness-config/services/harness-config-service.js";
+import {
+  resolveFirePair,
+  resolveRememberedPair,
+} from "../../modules/harness-config/services/harness-config-service.js";
 
 const RUNS_ON: Record<string, SessionPairInputs["granted"][number]["type"][]> =
   {
@@ -198,6 +201,43 @@ describe("resolveFirePair on a harness outside the catalog", () => {
       {},
     );
     expect(pair).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: The chat's picker asks for the remembered pair too; for
+   * such an agent there is none, so a new session runs on the agent's own
+   * harness instead of on the catalog's default one its image may also carry. */
+  it("remembers no pair for an agent whose harness the catalog does not list", async () => {
+    expect(
+      await resolveRememberedPair(
+        {
+          pairRepo: {
+            read: async () => null,
+            write: async () => {},
+            grantedProviders: async () => [{ id: "lite", type: "ibm-litellm" }],
+          },
+          catalog: {
+            default: "claude-code",
+            harnesses: [
+              {
+                name: "claude-code",
+                displayName: "Claude",
+                tags: [],
+                experimental: false,
+              },
+            ],
+            telemetryEnv: () => [],
+          },
+          getCapabilities: async () => ({
+            defaultHarness: "mock",
+            harnesses: [
+              { name: "mock", harnessConfig: false, sessionModel: false },
+              { name: "claude-code", harnessConfig: true, sessionModel: true },
+            ],
+          }),
+        },
+        "agent-1",
+      ),
+    ).toBeNull();
   });
 });
 

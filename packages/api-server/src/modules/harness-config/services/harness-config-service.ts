@@ -254,10 +254,7 @@ export async function resolveFirePair(
   ]);
   if (requireLeases && !harnessesOf(capabilities)) return undefined;
   const agentHarness = defaultHarnessOf(capabilities) ?? deps.catalog.default;
-  if (
-    requireLeases &&
-    !deps.catalog.harnesses.some((h) => h.name === agentHarness)
-  )
+  if (!deps.catalog.harnesses.some((h) => h.name === agentHarness))
     return undefined;
   const remembered: SessionPair | null =
     preferred.harness !== undefined
