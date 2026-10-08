@@ -218,7 +218,7 @@ impl Runtime for Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and the image this boot runs is named in the share, so platform-init keeps the machine's root only for the image that wrote it. A start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is the one thing a start may only take away: the record holds what the machine's spec asked for, as its create or last update wrote it, and a start keeps it only while this runner still nests, so a machine never boots with more than the runner grants. The mounts are decided at every start too, from what this runner holds and what the image asks for now: runner pods roll across owners one at a time, so a machine moved to an image that asks for the node's tools before its runner had them still gets them on its next boot, and one whose runner or image stopped offering them boots without.
+    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and the image this boot runs is named in the share, so platform-init keeps the machine's root only for the image that wrote it. A record with no allowlist is never booted: smolvm reads none as no filter, and only a record edited or migrated outside the runner holds none, since every running spec the runner admits names one. A start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is the one thing a start may only take away: the record holds what the machine's spec asked for, as its create or last update wrote it, and a start keeps it only while this runner still nests, so a machine never boots with more than the runner grants. The mounts are decided at every start too, from what this runner holds and what the image asks for now: runner pods roll across owners one at a time, so a machine moved to an image that asks for the node's tools before its runner had them still gets them on its next boot, and one whose runner or image stopped offering them boots without.
     fn start(&self, id: &str) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
@@ -228,6 +228,9 @@ impl Runtime for Smolvm {
                 .map_err(|e| anyhow::anyhow!("smolvm machine start: {e:#}"))?;
         }
         let record = self.record(id)?;
+        if record.as_ref().is_some_and(|r| r.allowed_cidrs.is_none()) {
+            anyhow::bail!("smolvm machine start: {id} records no egress allowlist, which smolvm reads as no filter");
+        }
         let image_env = record
             .as_ref()
             .and_then(|r| recorded_image_env(r.image.as_deref()));
@@ -973,6 +976,39 @@ mod tests {
         let _ = smolvm.start("m1");
         assert_eq!(nested(&smolvm, "m1"), Some(false));
         assert!(!smolvm.nests());
+    }
+
+    // TEST_SCENARIO: a record whose allowlist is gone, by an edit or a migration outside the runner, would boot with no egress filter at all, so its start is refused before anything boots.
+    #[test]
+    fn a_record_without_an_allowlist_never_boots() {
+        let home = Home::new("open");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open(false, None).unwrap();
+        let launch = launch();
+        smolvm
+            .create(
+                "m1",
+                &Machine {
+                    spec: &spec(),
+                    image: "quay.io/x/vm:1",
+                    host_port: 32000,
+                    share: &share,
+                    launch: &launch,
+                },
+            )
+            .unwrap();
+        smolvm
+            .db
+            .update_vm("m1", |r| r.allowed_cidrs = None)
+            .unwrap();
+
+        let err = smolvm.start("m1").unwrap_err();
+
+        assert!(
+            format!("{err:#}").contains("no egress allowlist"),
+            "{err:#}"
+        );
     }
 
     // TEST_SCENARIO: a machine recorded by an earlier runner carries smolvm's default resolver and no name list, so its gateway would relay the guest's DNS to a real resolver — on a Mac, the one on its own loopback. Its next start pins the sink and the empty list before anything boots, even when, as here, the boot itself then fails, and the policy smolvm builds from that record, a gateway-port machine's included, forwards no name at all.

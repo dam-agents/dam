@@ -31,7 +31,7 @@ runs:
     # then restores.
     - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
       with:
-        version: "2026.9.16"
+        version: "2026.10.2"
         install_args: ${{ inputs.install_args }}
         cache: ${{ inputs.cache }}
         cache_save: ${{ github.event_name != 'pull_request' }}

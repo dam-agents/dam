@@ -5,7 +5,7 @@ pub mod cacheapi;
 mod capability;
 mod capacity;
 mod command;
-mod console;
+pub mod console;
 pub mod embedded;
 mod fetch;
 mod files;

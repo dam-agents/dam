@@ -7,8 +7,13 @@
 # tree that is not commit=, and the image build installs the release tarball of
 # the same tag, refusing one whose digest is not the sha256- line for its
 # architecture (the release's own checksums.sha256).
-tag=v1.23.4
-commit=8001327b314c132cba806429bbcdad837e5e71f6
-sha256-linux-x86_64=b8e0e89f6e7427424f4dfad09ef13c7d6802748c58ed5356163344f485e9ff9c
-sha256-linux-arm64=d07e83ce574840219fd08e7ff1e778990c9c23f0e5ccbb27872ad86f815f7227
-sha256-darwin-arm64=cadd607214c5f6ee9c18d216ffc94163176c05fabe08a3b2574f8689a6f3c888
+# libkrun-commit= is the libkrun the release's lib/libkrun.so was built from
+# (smolvm's libkrun submodule at commit=). The image build rebuilds it from that
+# commit with libkrun.patch applied, and refuses a build whose exported krun_*
+# symbols differ from the release's.
+tag=v1.24.1
+commit=4c386588a41686d277dda8b154815ee121c09439
+libkrun-commit=e1fa84a0d1ddffba99806961423bf9a2a688914b
+sha256-linux-x86_64=670f317626665902a4ec324d2a6b6fedcd7fe44453101ba62db6af62e2a5fe1f
+sha256-linux-arm64=e09bb49f595440b05fbdefee8e9a1dfc6f0426841bf36e9842982d9a24bfe18c
+sha256-darwin-arm64=afb20da3edb79cdde984f7d63f0f593533dbd31e80f71f74f51b2a33c0696b32
