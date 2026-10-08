@@ -562,7 +562,8 @@ export async function bootstrap() {
     ) => runtimeDelivery.runtimeMutator.bump(agentId, events),
     enqueue: (agentId: string) =>
       runtimeDelivery.runtimeMutator.enqueueAfterCommit(agentId),
-    wakeAgent: (agentId: string) => agentsRepo.wakeIfHibernated(agentId),
+    wakeUnlessStopped: (agentId: string) =>
+      agentsRepo.wakeUnlessStopped(agentId),
     spillLog: satellitesBoot.spillLog,
     log: (msg: string) => {
       process.stderr.write(`${msg}\n`);
