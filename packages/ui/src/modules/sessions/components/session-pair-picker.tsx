@@ -20,7 +20,6 @@ import {
   useProviderModels,
   useRememberedPair,
 } from "../api/session-pair.js";
-import { modelDisplayName } from "../lib/session-model.js";
 import {
   fittingProviders,
   harnessOptions,
@@ -80,7 +79,7 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
           className="flex items-center gap-1 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           {pair
-            ? `${pairName ?? ""} · ${pair.model ? modelDisplayName(pair.model) : "default model"}${provider ? ` · ${provider.name}` : ""}`
+            ? `${pairName ?? ""} · ${pair.model ?? "default model"}${provider ? ` · ${provider.name}` : ""}`
             : "Choose a harness and model"}
         </button>
       </PopoverTrigger>
