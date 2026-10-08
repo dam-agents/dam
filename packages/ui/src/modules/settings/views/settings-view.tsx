@@ -20,6 +20,8 @@ import { ProviderSection } from "../../providers/components/provider-section.js"
 import { OwnerSchedulesView } from "../../schedules/views/owner-schedules-view.js";
 import { useSlackInstallAvailability } from "../../slack/api/queries.js";
 import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
+import { useUsageInspectAvailability } from "../../usage/api/queries.js";
+import { UsageAnalyticsView } from "../../usage/views/usage-analytics-view.js";
 import { AppVersionRow } from "../components/app-version-row.js";
 
 const baseTabs: readonly TabDef<SettingsTab>[] = [
@@ -60,10 +62,15 @@ export function SettingsView() {
     featuresMenuRevealed || Object.values(flags ?? {}).some(Boolean);
   const slackInstall = useSlackInstallAvailability();
   const showSlackWorkspaces = slackInstall.data === true;
+  const usageInspect = useUsageInspectAvailability();
+  const showAnalytics = usageInspect.data === true;
   const tabs = [
     ...baseTabs,
     ...(showSlackWorkspaces
       ? [{ value: "slack-workspaces" as const, label: "Slack workspaces" }]
+      : []),
+    ...(showAnalytics
+      ? [{ value: "analytics" as const, label: "Analytics" }]
       : []),
     ...(showFeatures
       ? [{ value: "features" as const, label: "Experimental features" }]
@@ -72,7 +79,8 @@ export function SettingsView() {
   const rawTab = useStore((s) => s.settingsTab);
   const hiddenTab =
     (rawTab === "features" && !showFeatures) ||
-    (rawTab === "slack-workspaces" && !showSlackWorkspaces);
+    (rawTab === "slack-workspaces" && !showSlackWorkspaces) ||
+    (rawTab === "analytics" && !showAnalytics);
   const activeTab = hiddenTab ? "account" : rawTab;
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
@@ -212,6 +220,8 @@ export function SettingsView() {
         {activeTab === "schedules" && <OwnerSchedulesView />}
 
         {activeTab === "slack-workspaces" && <SlackWorkspacesView />}
+
+        {activeTab === "analytics" && <UsageAnalyticsView />}
 
         {activeTab === "features" && <FeaturesTab />}
       </div>

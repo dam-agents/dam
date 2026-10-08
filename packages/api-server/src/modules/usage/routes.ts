@@ -49,6 +49,11 @@ export function createUsageRoutes(deps: UsageRoutesDeps) {
     });
     await next();
   };
+  routes.get("/api/usage/inspect/status", (c) =>
+    c.json({
+      canInspect: (c.get("roles") ?? []).includes(deps.inspectorRole),
+    }),
+  );
   routes.use("/api/usage", inspectorOnly);
   routes.use("/api/usage/*", inspectorOnly);
 

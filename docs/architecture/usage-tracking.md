@@ -169,7 +169,7 @@ Four Keycloak-gated endpoints, all behind the `platform-inspector` realm role:
 | `GET /api/usage/analytics` | the usage analytics report as JSON | programmatic consumers, tests |
 | `GET /api/usage/report` | the usage analytics dashboard as one HTML page | human inspectors |
 
-The dashboard and its JSON are one report: the api-server computes every number, embeds the result in the page as escaped data, and a script in the page only draws it, so charts fit the window's width and carry hover detail without the browser doing any arithmetic. The page loads nothing but its fonts, and is dark-mode aware. There is no visible UI affordance; the UI exposes a `window.platformUsage.openReport()` function registered at bootstrap that inspectors call from the browser devtools console. The function fetches with the Bearer token, wraps the response in a Blob URL, and opens it in a new tab (a plain `<a href>` cannot send the Bearer token); the Blob is revoked a minute after open.
+The dashboard and its JSON are one report: the api-server computes every number, embeds the result in the page as escaped data, and a script in the page only draws it, so charts fit the window's width and carry hover detail without the browser doing any arithmetic. The page loads nothing but its fonts, and is dark-mode aware. Inspectors reach it from an **Analytics** tab in Settings that only they see: the UI asks a small status endpoint, open to every signed-in user, whether the caller holds the inspector role, the same way the Slack workspaces tab is gated. The tab's one button fetches the report with the Bearer token, wraps the response in a Blob URL and opens it in a new tab (a plain link cannot carry the token); the Blob is revoked a minute after open.
 
 When the inspector role is not configured at install time, the read endpoints are mounted as a no-op router. Activity writes continue independently — the read API is gated on inspector configuration, the writes on the activity-tracking toggle.
 
@@ -196,14 +196,7 @@ A second read surface serves an external usage-analytics pipeline, at the SQL la
 
 ### Opening the report
 
-For inspectors who have been granted the role:
-
-1. Sign in to the platform UI as you normally would.
-2. Open Chrome (or any Chromium-based browser) devtools — `Cmd+Option+I` on macOS, `Ctrl+Shift+I` on Windows / Linux, or right-click the page → **Inspect**.
-3. Switch to the **Console** tab.
-4. Type `platformUsage.openReport()` and press Enter. A new tab opens with the report.
-
-The function returns a `Promise`, so the console prints `Promise {<pending>}` next to the call — that's expected. If the call returns a 403, the signed-in user does not carry the inspector role; if it returns a network error, the api-server is unreachable. Type `platformUsage` on its own to confirm the global is registered (`{openReport: ƒ}`).
+For inspectors who have been granted the role: sign in to the platform UI, open **Settings**, pick the **Analytics** tab and press **Open the report**. The report opens in a new tab. A user without the role sees no Analytics tab; an install with no inspector role configured shows it to no one.
 
 ## Retention
 
