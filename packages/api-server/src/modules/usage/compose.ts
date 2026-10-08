@@ -17,6 +17,11 @@ import {
 import { startPersistActivitySaga } from "./sagas/persist-activity.js";
 import { startPersistActorRolesSaga } from "./sagas/persist-actor-roles.js";
 import { startPersistAgentsSaga } from "./sagas/persist-agents.js";
+import { startPersistExternalActorLinksSaga } from "./sagas/persist-external-actor-links.js";
+import {
+  listIdentityLinks,
+  upsertExternalActorLinks,
+} from "./infrastructure/external-actor-links-repository.js";
 import { ACTIVITY_RETENTION_DAYS } from "./domain/types.js";
 import { createReportService } from "./services/report-service.js";
 import { createUsageRoutes } from "./routes.js";
@@ -67,6 +72,8 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   let persistAgentsSub: Subscription | null = null;
   let persistActorRolesSub: Subscription | null = null;
   let persistActivitySub: Subscription | null = null;
+  let persistExternalActorLinksSub: Subscription | null = null;
+  const upsertLinks = upsertExternalActorLinks(deps.db, deps.subPseudonymizer);
 
   function start(): void {
     persistAgentsSub = startPersistAgentsSaga({
@@ -88,6 +95,16 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
       persistActivitySub = startPersistActivitySaga({
         insert,
       });
+      persistExternalActorLinksSub = startPersistExternalActorLinksSaga({
+        upsert: upsertLinks,
+      });
+      listIdentityLinks(deps.db)()
+        .then(upsertLinks)
+        .catch((err) => {
+          process.stderr.write(
+            `[usage/bootstrap-external-actor-links] backfill failed: ${err}\n`,
+          );
+        });
     } else {
       process.stderr.write(
         "[usage] activityTrackingEnabled=false — activity_events not being written\n",
@@ -104,6 +121,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
     persistAgentsSub?.unsubscribe();
     persistActorRolesSub?.unsubscribe();
     persistActivitySub?.unsubscribe();
+    persistExternalActorLinksSub?.unsubscribe();
   }
 
   function mount(app: Hono<AppEnv>): void {

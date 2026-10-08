@@ -255,6 +255,7 @@ import {
   startAgentStateCache,
   createLiveAgentStateCache,
 } from "./modules/agents/infrastructure/agent-state-cache.js";
+import { createOutOfMemoryWatch } from "./modules/agents/infrastructure/out-of-memory-watch.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import {
@@ -348,6 +349,7 @@ export async function bootstrap() {
     live: k8sClient,
     namespace: config.namespace,
     log: (m) => getLogger().warn(`[agents] ${m}`),
+    observe: createOutOfMemoryWatch(),
   });
   const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
   const delegationFrames = createPodSessionClient({

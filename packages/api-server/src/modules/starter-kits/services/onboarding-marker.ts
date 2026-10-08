@@ -26,6 +26,12 @@ export function createOnboardingMarker(
     if (agent.starterKitOnboarded) return;
     await deps.markAgentOnboarded(agentId, new Date().toISOString());
     emit({ type: EventType.AgentUpdated, agentId, ownerSub: owner });
+    emit({
+      type: EventType.StarterKitOnboarded,
+      agentId,
+      ownerSub: owner,
+      starterKit: agent.starterKit,
+    });
     securityLog("info", "starter_kit.onboarded", {
       category: "resource",
       actor: owner,

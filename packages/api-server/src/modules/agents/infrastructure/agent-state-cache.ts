@@ -45,6 +45,7 @@ export function startAgentStateCache(deps: {
   live: LiveReads;
   namespace: string;
   log: (message: string) => void;
+  observe?: (kind: "add" | "update" | "delete", obj: KubeObject) => void;
 }): RunningAgentStateCache {
   const waiters = new Map<string, Set<() => void>>();
   let synced = false;
@@ -104,9 +105,18 @@ export function startAgentStateCache(deps: {
     restartDelay = Math.min(restartDelay * 2, MAX_RESTART_DELAY_MS);
   }
 
-  deps.informer.on("add", onObject);
-  deps.informer.on("update", onObject);
-  deps.informer.on("delete", onObject);
+  deps.informer.on("add", (obj) => {
+    onObject(obj);
+    deps.observe?.("add", obj);
+  });
+  deps.informer.on("update", (obj) => {
+    onObject(obj);
+    deps.observe?.("update", obj);
+  });
+  deps.informer.on("delete", (obj) => {
+    onObject(obj);
+    deps.observe?.("delete", obj);
+  });
   deps.informer.on("error", (err) => {
     abandon(`agent cache desynced: ${String(err)}`);
   });
