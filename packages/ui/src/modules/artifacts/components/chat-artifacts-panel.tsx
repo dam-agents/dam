@@ -78,6 +78,7 @@ export function ChatArtifactsPanel({
     () =>
       groupArtifactsByFolder(artifacts, folders, {
         includeEmptyUngrouped: dragInProgress,
+        omitEmptyFolders: true,
       }),
     [artifacts, folders, dragInProgress],
   );
