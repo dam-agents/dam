@@ -83,7 +83,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [artifact-library](architecture/artifact-library.md) — agents and users publish work products into an owner-scoped library and share them by link — with anyone, or with a named list of viewers who sign in.
 - [case-studies](architecture/case-studies.md) — agents write sanitized weekly accounts of their own use case: the skill that produces them, and the edition store the owner releases them from.
 - [features](architecture/features.md) — per-user experimental-feature flags: server-stored, default off, gating pre-release surfaces (progressive disclosure, not authorization).
-- [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, inspector-role gating.
+- [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, the inspector-gated analytics dashboard.
 - [agent-telemetry](architecture/agent-telemetry.md) — the user-facing read path over raw agent traces and log records, scoped to the agents you own.
 - [metrics](architecture/metrics.md) — the user-facing spend read path behind the global and per-agent Usage surfaces: how much the agents you own have spent.
 - [logging](architecture/logging.md) — Pino structured logging to stdout, and the real-identity security audit trail built on it (the forensic counterpart to pseudonymized usage-tracking).
