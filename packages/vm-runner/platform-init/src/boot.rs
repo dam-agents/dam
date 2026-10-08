@@ -1483,6 +1483,7 @@ fn supervise(binary: &Path, command: &[OsString], trust: Option<&Path>) -> ! {
         ));
         end_the_rest(&mut stopping);
         if stopping {
+            flush_home_on_stop();
             exit(exit_code(status));
         }
         let wait = restart_delay(delay, started.elapsed());
@@ -1492,8 +1493,19 @@ fn supervise(binary: &Path, command: &[OsString], trust: Option<&Path>) -> ! {
             wait.as_secs()
         ));
         if pause(wait, &mut stopping) {
+            flush_home_on_stop();
             exit(exit_code(status));
         }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: writes the agent's home out to the disk once the workload has stopped, before the guest is quiesced and powered off. A stop asks smolvm to quiesce the disk, and a runner may be stopping a machine an older smolvm started, whose guest agent may not confirm it; the runner then powers the guest off. Flushing here makes that power-off cost at most a journal replay, never what the agent last wrote, whatever version the host runs.
+fn flush_home_on_stop() {
+    if let Err(e) = flush_filesystem(Path::new(guest::AGENT_HOME)) {
+        announce(&format!(
+            "flushing {} before the stop: {e}",
+            guest::AGENT_HOME
+        ));
     }
 }
 

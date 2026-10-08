@@ -527,6 +527,7 @@ mod tests {
                 reserve_mib: 0,
                 headroom_mib: 0,
                 listen: Some(Arc::new(|_| std::net::TcpListener::bind("127.0.0.1:0"))),
+                runtime: None,
             },
             runtime,
         )
