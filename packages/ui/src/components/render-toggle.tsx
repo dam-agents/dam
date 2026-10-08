@@ -6,18 +6,26 @@ interface Props {
   rendered: boolean;
   onToggle: () => void;
   className?: string;
+  labelClassName?: string;
 }
 
-export function RenderToggle({ rendered, onToggle, className }: Props) {
+export function RenderToggle({
+  rendered,
+  onToggle,
+  className,
+  labelClassName,
+}: Props) {
+  const label = rendered ? "Source" : "Preview";
   return (
     <Button
       variant="outline"
       size="xs"
       className={className}
       onClick={onToggle}
+      aria-label={label}
     >
       {rendered ? <Code size={14} /> : <View size={14} />}
-      {rendered ? "Source" : "Preview"}
+      <span className={labelClassName}>{label}</span>
     </Button>
   );
 }

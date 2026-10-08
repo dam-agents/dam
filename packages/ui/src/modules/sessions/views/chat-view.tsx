@@ -132,6 +132,8 @@ const LEFT_WIDTH_KEY = "platform-left-w";
 const LEFT_MIN_W = 240;
 const LEFT_MAX_W = 400;
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
+const CHAT_MIN_W = 320;
+const SIDE_PANEL_MIN_W = 320;
 const TELEMETRY_SETTLE_MS = 5 * 60_000;
 
 function clampLeftWidth(width: number): number {
@@ -228,6 +230,16 @@ export function ChatView() {
     readPersistedNumber(FILE_PANEL_WIDTH_KEY, null),
   );
   const rightWRef = useRef(rightW);
+  const [columnsEl, setColumnsEl] = useState<HTMLDivElement | null>(null);
+  const [columnsW, setColumnsW] = useState<number | null>(null);
+  useEffect(() => {
+    if (!columnsEl) return;
+    const ro = new ResizeObserver(([entry]) =>
+      setColumnsW(entry.contentRect.width),
+    );
+    ro.observe(columnsEl);
+    return () => ro.disconnect();
+  }, [columnsEl]);
   const filePanelRef = useRef<HTMLDivElement>(null);
   const panelStack = useSidebarPanels([
     { id: "sessions", open: sessionsSectionOpen },
@@ -510,6 +522,14 @@ export function ChatView() {
     agentView?.requireConnectionAddress === true;
   const browserFills =
     browserMaximized && openBrowserAgentId !== null && canOpenBrowser;
+  const sidePanelOpen =
+    openDelegation !== null ||
+    openFilePath !== null ||
+    openArtifactId !== null ||
+    (openBrowserAgentId !== null && canOpenBrowser);
+  const columnsDoNotFit =
+    columnsW !== null && columnsW < leftW + CHAT_MIN_W + SIDE_PANEL_MIN_W;
+  const sidePanelFills = browserFills || (sidePanelOpen && columnsDoNotFit);
   const surfaceCopy = {
     actionsAria: "Agent actions",
     configure: "Configure agent",
@@ -669,7 +689,7 @@ export function ChatView() {
       </header>
 
       {}
-      <div className="flex flex-1 min-h-0">
+      <div ref={setColumnsEl} className="flex flex-1 min-h-0">
         {}
         <div
           style={leftPanelWidth}
@@ -718,7 +738,7 @@ export function ChatView() {
 
         {}
         <div
-          className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} ${browserFills ? "md:!hidden" : ""}`}
+          className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
         >
           {}
           {sessionMode === SessionMode.Terminal &&
@@ -918,12 +938,9 @@ export function ChatView() {
         </div>
 
         {}
-        {(openDelegation ||
-          openFilePath ||
-          openArtifactId ||
-          (openBrowserAgentId && canOpenBrowser)) && (
+        {sidePanelOpen && (
           <>
-            <div className={browserFills ? "hidden" : "hidden md:flex"}>
+            <div className={sidePanelFills ? "hidden" : "hidden md:flex"}>
               <ResizeHandle
                 side="right"
                 onResize={(d) => {
@@ -946,7 +963,7 @@ export function ChatView() {
               }
               className={cn(
                 "flex flex-col overflow-hidden bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
-                browserFills
+                sidePanelFills
                   ? "md:flex-1 md:min-w-0"
                   : rightW !== null
                     ? "md:shrink-0 md:w-[var(--file-w)]"
