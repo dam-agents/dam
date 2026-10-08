@@ -77,6 +77,7 @@ export function useUpdateConnection(opts?: { silent?: boolean }) {
       invalidates: [
         trpc.connections.list.queryKey(),
         trpc.connections.getAgentConnections.queryKey(),
+        trpc.connections.getProviderBalance.queryKey(),
       ],
       ...(opts?.silent
         ? { suppressErrorToast: true }

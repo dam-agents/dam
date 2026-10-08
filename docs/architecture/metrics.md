@@ -37,6 +37,12 @@ Three read-only tRPC procedures make up the surface; all are query-only and all 
 
 The Overview session filter is **trace-aware**, not a literal session-id match: a queried session folds in every session that shares a trace with it, so a child harness run counts under "this session" even though it minted its own session id — the filter-side mirror of the per-session rollup's root grouping above. Both folds ride the same trace-context propagation [observability](observability.md#agent-export) describes, and neither crosses the ownership boundary — every side of a fold carries the same owner scope.
 
+## Provider budgets
+
+A second answer to *how much have I spent* comes from the model provider itself, not from telemetry: a provider that keeps a budget for a credential — Bob Shell per team, the LiteLLM proxies per key — reports how much of it is used, its limit and its next reset. The Providers page shows that beside the provider's key. It is read live through the Connections context, which asks the provider with the stored credential on each read, the same way it asks whose account a Connection acts as. Nothing is stored and nothing reaches the telemetry store.
+
+The figure is the provider's, not the platform's, and the two are deliberately kept apart. It covers everything the credential was used for, in or outside the platform, and comes in the provider's own unit (Bobcoins for Bob), so it is never summed with or reconciled against the Usage surfaces. A provider that does not answer reads as *unavailable*, never as zero, for the same reason the disabled backend fails loud. A key that may not read its own figures — a LiteLLM key without access to its key info — shows none, and so do providers that expose no budget to their credential at all, such as Anthropic and OpenAI.
+
 ## Harness-reported spend
 
 A harness that does not export telemetry can still keep its own account of what each conversation cost. Bob does, in Bobcoins. The pod's session list carries that figure beside each session ([platform-topology](platform-topology.md)), and the per-agent Usage section shows its total over the selected month for the sessions that started in it. It is read from the running agent and never reaches the telemetry store, so a hibernated agent shows nothing until it starts, and a deleted agent's figure is gone with its volume. It is in the harness's unit and stays apart from the LLM spend the rest of this page describes.

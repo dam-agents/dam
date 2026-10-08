@@ -200,6 +200,12 @@ export const PROVIDERS = {
   },
 } satisfies Record<ProviderPresetType, ProviderPreset>;
 
+export const BALANCE_PROVIDER_TYPES: ReadonlySet<ProviderPresetType> = new Set([
+  "bob",
+  "ibm-litellm",
+  "curve-bender",
+]);
+
 export const PROVIDER_PRESET_TYPES = Object.keys(
   PROVIDERS,
 ) as readonly ProviderPresetType[];

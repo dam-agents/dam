@@ -50,6 +50,7 @@ function makeService(outcome: ProviderKeyProbeOutcome) {
     oauthEngine: unused(),
     githubAppEngine: unused(),
     s3CredentialProbe: unused(),
+    providerBalance: unused(),
     providerKeyProbe: {
       probe: async (templateId, key) => {
         probed.push(`${templateId}:${key}`);

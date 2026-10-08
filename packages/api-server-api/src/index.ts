@@ -281,6 +281,7 @@ export {
 export {
   DEFAULT_ENV_PLACEHOLDER,
   PROVIDERS,
+  BALANCE_PROVIDER_TYPES,
   PROVIDER_PRESET_TYPES,
   ibmLitellmEnvMappings,
   curveBenderEnvMappings,
@@ -394,6 +395,7 @@ export type {
   ConnectionStatus,
   ConnectionView,
   ConnectionTemplateView,
+  ProviderBalance,
   TemplateInput as ConnectionTemplateInput,
   ConnectionCategory,
   AgentConnections,

@@ -1,3 +1,4 @@
+import { BALANCE_PROVIDER_TYPES } from "api-server-api";
 import { useState } from "react";
 
 import { useStore } from "../../../store.js";
@@ -5,6 +6,7 @@ import type { ProviderPresetType } from "../../../types.js";
 import { useDeleteConnection } from "../../connections/api/mutations.js";
 import { useProviderItems } from "../hooks/use-provider-items.js";
 import { PROVIDER_ROWS } from "../lib/provider-rows.js";
+import { ProviderBalance } from "./provider-balance.js";
 import { ProviderConnectDialog } from "./provider-connect-dialog.js";
 import type { ProviderItem } from "./provider-item.js";
 import { ProviderRow } from "./provider-row.js";
@@ -41,6 +43,12 @@ export function ProviderSection() {
                   type={row.type}
                   description={row.description}
                   connected={!!item}
+                  balance={
+                    item &&
+                    BALANCE_PROVIDER_TYPES.has(row.type) && (
+                      <ProviderBalance connectionId={item.id} />
+                    )
+                  }
                   onConnect={() => setDialog({ provider: row.type })}
                   onEditKey={() =>
                     item && setDialog({ provider: row.type, item })
