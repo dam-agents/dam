@@ -390,8 +390,17 @@ func TestARunnerThatStaysUnreachableAfterANewReleaseRollsThePod(t *testing.T) {
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"))
 }
 
-// TEST_SCENARIO: a runner that took its new release well keeps its pod's old image for good, so it must not be rolled for a later blip in its answers. Once it has answered that it runs the release, an unreachable runner long after is left alone.
+// TEST_SCENARIO: a runner whose hand-off has an outcome keeps its pod's old image for good, so it must not be rolled for a later blip in its answers — least of all onto a release that failed. Once it has answered that it runs the release, or holds it as failed, an unreachable runner long after is left alone.
 func TestARunnerThatTookItsReleaseIsNotRolledForALaterBlip(t *testing.T) {
+	for _, outcome := range []vmrunner.RunnerRelease{
+		{Running: runnerV2, Target: runnerV2},
+		{Running: runnerV1, Target: runnerV2, Held: vmrunner.HeldFailed},
+	} {
+		t.Run(outcome.Held, func(t *testing.T) { aRunnerWithAnOutcomeIsNotRolled(t, outcome) })
+	}
+}
+
+func aRunnerWithAnOutcomeIsNotRolled(t *testing.T, outcome vmrunner.RunnerRelease) {
 	ctx := context.Background()
 	r, nodes := setupRolloutReconciler(t)
 	r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
@@ -407,7 +416,7 @@ func TestARunnerThatTookItsReleaseIsNotRolledForALaterBlip(t *testing.T) {
 	_, err = cms.Update(ctx, cm, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
-	nodes["owner-a"].release = vmrunner.RunnerRelease{Running: runnerV2, Target: runnerV2}
+	nodes["owner-a"].release = outcome
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	cm, err = cms.Get(ctx, r.runnerReleaseName("owner-a"), metav1.GetOptions{})
 	require.NoError(t, err)
