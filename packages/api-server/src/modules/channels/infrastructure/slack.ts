@@ -121,7 +121,6 @@ import {
 import {
   agentContextBlock,
   agentFooterLabel,
-  agentFooterMrkdwn,
   catchUpLegend,
   formatSlackTs,
   historyLegend,
@@ -5002,7 +5001,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               file: attachment.data,
               filename: attachment.filename,
               title: attachment.title,
-              initialComment: agentFooterMrkdwn(footer),
+              blocks: [contextBlock],
             });
           } catch (err) {
             return { error: formatError(err) };
@@ -5216,7 +5215,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return { error: "no channel connected" };
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
-      if (!args.text) return { error: "nothing to send — reply needs text" };
+      const attachmentOnly = args.text.trim() ? undefined : args.attachment;
+      if (!args.text.trim() && !attachmentOnly)
+        return {
+          error: "nothing to send — reply needs text or an attachment",
+        };
+      if (attachmentOnly && args.alsoSendToChannel)
+        return {
+          error:
+            "a file-only reply cannot also be sent to the channel — add text " +
+            "or drop alsoSendToChannel",
+        };
 
       let threadTs = args.threadTs;
       let turn: TurnRef | undefined;
@@ -5262,6 +5271,27 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         agentFooter(instanceName, turn?.sessionId),
         agentPersona(gw, instanceName, target.teamId),
       ]);
+      if (attachmentOnly) {
+        try {
+          await gw.uploadFile({
+            channelId: target.id,
+            teamId: target.teamId,
+            threadTs,
+            file: attachmentOnly.data,
+            filename: attachmentOnly.filename,
+            title: attachmentOnly.title,
+            blocks: [agentContextBlock(footer)],
+          });
+        } catch (err) {
+          return { error: formatError(err) };
+        }
+        noteEngagedTurn(
+          instanceName,
+          (ref) => ref.threadTs === threadTs && ref.channel === target.id,
+          { messaged: true },
+        );
+        return { ok: true as const };
+      }
       try {
         const uploadError = await postWithAttachment(
           gw,
