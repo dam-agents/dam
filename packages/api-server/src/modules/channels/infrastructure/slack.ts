@@ -5220,6 +5220,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return {
           error: "nothing to send — reply needs text or an attachment",
         };
+      if (attachmentOnly && args.alsoSendToChannel)
+        return {
+          error:
+            "a file-only reply cannot also be sent to the channel — add text " +
+            "or drop alsoSendToChannel",
+        };
 
       let threadTs = args.threadTs;
       let turn: TurnRef | undefined;
@@ -5265,7 +5271,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         agentFooter(instanceName, turn?.sessionId),
         agentPersona(gw, instanceName, target.teamId),
       ]);
-      if (attachmentOnly && !args.alsoSendToChannel) {
+      if (attachmentOnly) {
         try {
           await gw.uploadFile({
             channelId: target.id,
