@@ -93,6 +93,8 @@ Continuing such a conversation here makes a session outlive the surface it start
 
 The session view shows a framed turn as the person would read it, which makes the frame a contract between the messenger and the view. Frame instructions are hidden by name, so a tag the view does not know stays visible rather than taking real text with it. Conversation history handed to the agent is shown collapsed, together with the note that explains it. Messages steered into a running turn show as one user message each: the view finds them by their speaker lines and treats everything before the first one as instructions for the agent. Changing the frame's shape therefore changes what the session view renders.
 
+The view places an agent's output by the turn it belongs to, which the runtime stamps on every frame it relays: the running prompt's turn, or — for work the harness does unprompted, such as resuming when a background task finishes — a turn the runtime opens for it and ends at the harness's next usage report or after a quiet minute, and that a prompt starting meanwhile ends first. Each turn's end names it. Output joins its turn's open reply only while nothing but waiting prompts came after it; otherwise it starts a new reply at the end. So a reply never lands above a newer message, unprompted work shows as the latest message, and Stop leaves the reply open until its turn ends, so the last words the harness flushes join it rather than starting another.
+
 ## Protocols
 
 | Edge | Protocol | Purpose |

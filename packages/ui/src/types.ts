@@ -92,6 +92,7 @@ export interface Message {
   at?: string;
   telemetryPromptId?: string;
   stopped?: boolean;
+  turnId?: string;
   error?: {
     message: string;
     retryWith?: RetryPayload;
