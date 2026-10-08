@@ -11,7 +11,10 @@ import {
 
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
-import { ChatColumn } from "../../sessions/components/chat-column.js";
+import {
+  CHAT_GUTTER,
+  ChatColumn,
+} from "../../sessions/components/chat-column.js";
 import { useSkipKitUpdate, useStartKitUpdate } from "../api/mutations.js";
 import { useKitUpdate } from "../api/queries.js";
 import { useKitName } from "../hooks/use-kit-name.js";
@@ -63,7 +66,7 @@ function KitUpdateBarContent({
     });
 
   return (
-    <div className="px-4 md:px-8" data-testid="kit-update-bar">
+    <div className={CHAT_GUTTER} data-testid="kit-update-bar">
       <ChatColumn>
         <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-kit-line bg-kit-surface px-4 py-2">
           <span className="min-w-0 truncate text-sm font-medium text-kit">

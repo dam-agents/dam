@@ -16,7 +16,7 @@ import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
 import { egressApprovalsWaiting } from "../../approvals/lib/waiting-egress.js";
 import { approvalDetail } from "../../home/lib/approval-copy.js";
-import { ChatColumn } from "./chat-column.js";
+import { CHAT_GUTTER, ChatColumn } from "./chat-column.js";
 
 const EXPIRY_TICK_MS = 15_000;
 
@@ -126,7 +126,7 @@ export function EgressApprovalPrompt() {
   if (!current) return null;
 
   return (
-    <div className="px-4 md:px-8 pt-3">
+    <div className={`${CHAT_GUTTER} pt-3`}>
       <ChatColumn>
         <EgressApprovalCard
           key={current.id}
