@@ -43,6 +43,10 @@ A second answer to *how much have I spent* comes from the model provider itself,
 
 The figure is the provider's, not the platform's, and the two are deliberately kept apart. It covers everything the credential was used for, in or outside the platform, and comes in the provider's own unit (Bobcoins for Bob), so it is never summed with or reconciled against the Usage surfaces. A provider that does not answer reads as *unavailable*, never as zero, for the same reason the disabled backend fails loud. A key that may not read its own figures — a LiteLLM key without access to its key info — shows none, and so do providers that expose no budget to their credential at all, such as Anthropic and OpenAI.
 
+## Harness-reported spend
+
+A harness that does not export telemetry can still keep its own account of what each conversation cost. Bob does, in Bobcoins. The pod's session list carries that figure beside each session ([platform-topology](platform-topology.md)), and the per-agent Usage section shows its total over the selected month for the sessions that started in it. It is read from the running agent and never reaches the telemetry store, so a hibernated agent shows nothing until it starts, and a deleted agent's figure is gone with its volume. It is in the harness's unit and stays apart from the LLM spend the rest of this page describes.
+
 ## Agent-facing read
 
 A second surface serves an agent rather than a signed-in user: three MCP tools over the same reader, each **pinned server-side to the calling agent** — the agent names no id, so it can only ever read its own runs. That pinning is the whole isolation model. It rests on the same gateway-stamped attribution every other read scopes by ([observability — trusted attribution](observability.md#trusted-attribution)), which an agent cannot forge and which platform telemetry never carries, so no widening of the body shapes below can reach another agent's records or the platform's own.

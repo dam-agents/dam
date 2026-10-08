@@ -202,6 +202,7 @@ const {
   stateBackend,
   envReader: envStore,
   sessionHistory: runtimeManifest.sessionHistory,
+  sessionSpend: runtimeManifest.sessionSpend,
   ...(runtimeManifest.terminalSessionPins && {
     terminalSessionPins: expandHome(
       runtimeManifest.terminalSessionPins,
@@ -211,7 +212,7 @@ const {
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   onArtifactTouch: artifactTouchReporter.report,
-  beforeFirstSpawn: () => {
+  beforeSpawn: () => {
     if (seedHarnessModel) return seedHarnessModel();
     process.stderr.write(
       "[acp] first spawn reached before the runtime channel was composed — no model seeded\n",

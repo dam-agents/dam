@@ -14,6 +14,17 @@ export function formatUsd(usd: number): string {
   return usd >= 0.01 ? `$${usd.toFixed(2)}` : `$${usd.toPrecision(2)}`;
 }
 
+const HARNESS_SPEND_UNITS: Record<string, string> = { bobcoins: "Bobcoins" };
+
+export function formatHarnessSpend(spend: { unit: string; cost: number }) {
+  const unit = HARNESS_SPEND_UNITS[spend.unit] ?? spend.unit;
+  const cost =
+    spend.cost > 0 && spend.cost < 0.01
+      ? "<0.01"
+      : spend.cost.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return `${cost} ${unit}`;
+}
+
 export function formatUsdCents(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }

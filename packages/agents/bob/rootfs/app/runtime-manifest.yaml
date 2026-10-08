@@ -9,6 +9,12 @@ manifestVersion: 1
 # conversation once, under the terminal session.
 terminalSessionPins: "$HOME/.bob/platform-sessions"
 
+# Bob keeps each task's cost, in Bobcoins, in its own SQLite store; the
+# sessions list shows it beside each session.
+sessionSpend:
+  command: ["/usr/local/bin/bob-session-spend"]
+  unit: "bobcoins"
+
 drivers:
   env:
     impl: env

@@ -27,7 +27,7 @@ export interface HarnessLeaseDeps {
   describeBusy: () => string;
   envReadyAtBoot: boolean;
   warmStartTimeoutMs: number;
-  beforeFirstSpawn?: () => Promise<void>;
+  beforeSpawn?: () => Promise<void>;
   envForceRecycleMs: number;
   log: (msg: string) => void;
 }
@@ -35,11 +35,13 @@ export interface HarnessLeaseDeps {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Holds the harness child process on loan. Spawns
  * it when the first client needs it, holds early callers back until the env
- * is ready at boot (bounded by a timeout, and covering the boot work that has
+ * is ready at boot (bounded by a timeout, and covering the spawn work that has
  * to precede the first spawn), and takes the process back when the env or the
  * harness's own config changes, or when a caller reports the process
  * unresponsive: right away when idle, after work drains when busy, or after a
- * grace period when forced. A caller that hears from the process again calls
+ * grace period when forced. An env change may have moved the agent to another
+ * provider, so the spawn work runs again, under the same ceiling, before the
+ * process that follows it. A caller that hears from the process again calls
  * its own request off, and a recycle owed for env or config still stands. Every way the process goes down runs the same
  * cleanup and reports one reason — agent-exited, config-recycle, env-recycle,
  * harness-unresponsive, or shutdown — so the cleanup steps cannot drift apart
@@ -58,7 +60,8 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   const readyWaiters = new Set<() => void>();
   let warmTimer: ReturnType<typeof setTimeout> | null = null;
   let bootWorkStarted = false;
-  let bootWorkDone = deps.beforeFirstSpawn === undefined;
+  let bootWorkDone = deps.beforeSpawn === undefined;
+  let bootCycle = 0;
   let gateOpen = envReady && bootWorkDone;
   let bootTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingRecycle:
@@ -99,13 +102,18 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   function startBootWork(): void {
     if (bootWorkStarted || bootWorkDone || !envReady) return;
     bootWorkStarted = true;
-    const hold = deps.beforeFirstSpawn?.();
+    const cycle = bootCycle;
+    const hold = deps.beforeSpawn?.();
     if (!hold) {
       finishBootWork();
       return;
     }
     bootTimer = setTimeout(openGate, deps.warmStartTimeoutMs);
-    void hold.catch(() => {}).then(finishBootWork);
+    void hold
+      .catch(() => {})
+      .then(() => {
+        if (cycle === bootCycle) finishBootWork();
+      });
   }
 
   function markEnvReady(): void {
@@ -164,6 +172,14 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
     deps.onTeardown(reason);
   }
 
+  function rearmSpawnWork(): void {
+    if (deps.beforeSpawn === undefined) return;
+    bootCycle += 1;
+    bootWorkStarted = false;
+    bootWorkDone = false;
+    gateOpen = false;
+  }
+
   function recycle(): void {
     const reason = pendingRecycle ?? "env-recycle";
     resetPendingRecycle();
@@ -172,6 +188,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
     deps.log(RECYCLE_LOG[reason] ?? "recycling unresponsive harness");
     agent = null;
     teardown(reason);
+    if (reason === "env-recycle") rearmSpawnWork();
     old.kill();
   }
 

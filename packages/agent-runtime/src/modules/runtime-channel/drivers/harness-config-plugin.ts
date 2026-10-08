@@ -23,6 +23,16 @@ import type { RuntimeEnvReader } from "../../../core/runtime-env.js";
 
 const IMPL_NAME = "harness-config";
 
+export interface SeedListingRetry {
+  attempts: number;
+  delayMs: number;
+}
+
+export const SEED_LISTING_RETRY: SeedListingRetry = {
+  attempts: 5,
+  delayMs: 2_000,
+};
+
 export type ApplyHarnessConfigFn = (
   payload: HarnessConfigEventPayload,
 ) => Promise<void>;
@@ -41,10 +51,12 @@ export function createHarnessConfigPlugin(deps: {
   agentHome: string;
   envReader: RuntimeEnvReader;
   discoverModels: ModelDiscovery;
+  seedListingRetry: SeedListingRetry;
   onApplied?: () => void;
   log: (msg: string) => void;
 }): HarnessConfigPlugin {
   const { binding, agentHome, envReader, discoverModels, log } = deps;
+  const seedRetry = deps.seedListingRetry;
 
   const apply: ApplyHarnessConfigFn = async (payload) => {
     if (!binding) {
@@ -159,30 +171,59 @@ export function createHarnessConfigPlugin(deps: {
     }
   };
 
+  const listUntilAnswered = async (
+    env: Record<string, string>,
+  ): Promise<ModelDiscoveryOutcome> => {
+    for (let attempt = 1; ; attempt++) {
+      const outcome = await discoverModels(binding?.modelDiscovery, env);
+      if (outcome.status !== "unavailable" || attempt >= seedRetry.attempts)
+        return outcome;
+      log(
+        `[harness-config] model listing unavailable — asking again in ${seedRetry.delayMs}ms (${attempt}/${seedRetry.attempts})`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, seedRetry.delayMs));
+    }
+  };
+
   const seedModel = async (): Promise<boolean> => {
     if (!binding?.modelDiscovery || !binding.keys.model) return false;
-    const current = readCurrentValues(binding, agentHome, log);
-    if (current.model) return false;
-
     const env = envReader.current();
     const source = selectDiscoverySource(binding.modelDiscovery, env);
-    const pinned = source?.spec.pinEnv?.find((name) => !!env[name]?.trim());
-    if (pinned) {
-      log(`[harness-config] no model seeded: ${pinned} pins one already`);
-      return false;
-    }
-
-    const outcome = await discoverModels(binding.modelDiscovery, env);
-    if (outcome.status !== "observed") return false;
-    if (!source?.spec.redirectEnv?.includes(outcome.via)) {
+    if (!source) return false;
+    if (!source.spec.redirectEnv?.includes(source.via)) {
       log(
-        `[harness-config] no model seeded: ${outcome.via} supplies the harness's own endpoint`,
+        `[harness-config] no model seeded: ${source.via} supplies the harness's own endpoint`,
       );
       return false;
     }
+    const pinned = source.spec.pinEnv?.find((name) => !!env[name]?.trim());
+    const current = readCurrentValues(binding, agentHome, log).model;
+    const standing = current ?? (pinned ? env[pinned]?.trim() : undefined);
+
+    const outcome = await listUntilAnswered(env);
+    if (outcome.status !== "observed" || outcome.via !== source.via)
+      return false;
+    const listed = (model: string | undefined): boolean =>
+      outcome.models.some((m) => m.value === model);
+    if (standing && listed(standing)) {
+      if (!current)
+        log(`[harness-config] no model seeded: ${pinned} pins one already`);
+      return false;
+    }
+    if (current && pinned && listed(env[pinned]?.trim())) {
+      log(
+        `[harness-config] ${current} is not served via ${outcome.via}; leaving the model to ${pinned}`,
+      );
+      await apply({ unset: ["model"] });
+      return true;
+    }
     const model = outcome.models[0]?.value;
     if (!model) return false;
-    log(`[harness-config] seeding model ${model} (via ${outcome.via})`);
+    log(
+      standing
+        ? `[harness-config] ${standing} is not served via ${outcome.via}; seeding model ${model}`
+        : `[harness-config] seeding model ${model} (via ${outcome.via})`,
+    );
     await apply({ model });
     return true;
   };

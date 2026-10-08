@@ -61,6 +61,7 @@ export interface SessionView {
   runStartedAt?: string | null;
   runTotalMs?: number | null;
   runCount?: number | null;
+  spend?: { unit: string; cost: number };
 }
 
 export {
