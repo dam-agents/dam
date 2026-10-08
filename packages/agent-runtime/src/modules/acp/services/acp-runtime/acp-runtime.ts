@@ -327,6 +327,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const harnessColdSessions = new Set<string>();
+  const turnModels = new Map<string, string>();
   const runTextBuffers = new Map<
     string,
     { text: string; truncated: boolean }
@@ -505,6 +506,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     orphanedHarnessLoads.clear();
     promptScheduler.clear();
     runTextBuffers.clear();
+    turnModels.clear();
     harnessColdSessions.clear();
     rehydratingSessions.clear();
     sessionCloseSupported = true;
@@ -825,6 +827,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (hasEngagedViewer(sid)) deps.sessionMetadata?.recordSeen(sid);
           const stopReason = extractStopReason(frame);
           const error = extractTurnError(frame);
+          const model = turnModels.get(sid);
+          turnModels.delete(sid);
           transcript.append(
             sid,
             JSON.stringify(
@@ -833,6 +837,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                 ...(promptId !== null && { promptId }),
                 ...(stopReason !== null && { stopReason }),
                 ...(error !== undefined && { error }),
+                ...(model !== undefined && { model }),
               }),
             ),
           );
@@ -872,6 +877,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (bootstrap.has(sessionId)) {
         transcript.appendReplay(sessionId, line);
       } else {
+        const reportedModel = extractReportedModel(frame);
+        if (reportedModel !== null) turnModels.set(sessionId, reportedModel);
         const text = extractAgentTextChunk(frame);
         if (
           text !== null &&
@@ -1408,6 +1415,21 @@ function capped(text: string): string {
   return text.length > TURN_ERROR_TEXT_CAP
     ? `${text.slice(0, TURN_ERROR_TEXT_CAP)}…`
     : text;
+}
+
+const REPORTED_MODEL_META_KEY = "_claude/model";
+
+function extractReportedModel(frame: unknown): string | null {
+  if (!isNonNullObject(frame)) return null;
+  if (frame.method !== "session/update") return null;
+  const params = frame.params;
+  if (!isNonNullObject(params)) return null;
+  const update = params.update;
+  if (!isNonNullObject(update) || !isNonNullObject(update._meta)) return null;
+  const model = update._meta[REPORTED_MODEL_META_KEY];
+  return typeof model === "string" && model !== "" && model !== "<synthetic>"
+    ? model
+    : null;
 }
 
 function extractAgentTextChunk(frame: unknown): string | null {

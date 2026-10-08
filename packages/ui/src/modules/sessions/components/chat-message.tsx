@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
 import { LazyRobotHead } from "../../agents/components/avatar/lazy-robot-head.js";
+import { modelDisplayName } from "../lib/model-name.js";
 import type { MessageTime } from "../lib/thread-items.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
@@ -22,6 +23,7 @@ interface BaseProps {
   avatarAgentName?: string;
   userLabel?: string;
   readOnly?: boolean;
+  showModel?: boolean;
   isLast: boolean;
   hasPendingPermission: boolean;
   onRetry: OnRetry;
@@ -87,6 +89,7 @@ export const ChatMessage = memo(function ChatMessage({
   avatarAgentName,
   userLabel = "You",
   readOnly = false,
+  showModel = false,
   isLast,
   timeLabel,
   timeTitle,
@@ -190,6 +193,16 @@ export const ChatMessage = memo(function ChatMessage({
             />
           )}
         </div>
+      )}
+      {isAssistant && showModel && !streaming && message.model && (
+        <Tooltip side="top" content={message.model}>
+          <span
+            data-testid="reply-model"
+            className="text-[11px] text-muted-foreground cursor-default"
+          >
+            {modelDisplayName(message.model)}
+          </span>
+        </Tooltip>
       )}
       {error && isAssistant && (
         <SendErrorCard

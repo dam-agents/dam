@@ -71,8 +71,17 @@ function isToolResultOnly(content) {
   );
 }
 
-function withStamp(notification, at, telemetryPromptId) {
-  if (at === null && telemetryPromptId === null) return notification;
+function modelOf(message, parentToolUseId) {
+  if (message.type !== "assistant" || parentToolUseId) return null;
+  const model = message.message.model;
+  return typeof model === "string" && model !== "" && model !== "<synthetic>"
+    ? model
+    : null;
+}
+
+function withStamp(notification, at, telemetryPromptId, model) {
+  if (at === null && telemetryPromptId === null && model === null)
+    return notification;
   const meta = objectOr(notification._meta);
   return {
     ...notification,
@@ -82,6 +91,7 @@ function withStamp(notification, at, telemetryPromptId) {
         ...objectOr(meta.platform),
         ...(at !== null ? { at } : {}),
         ...(telemetryPromptId !== null ? { telemetryPromptId } : {}),
+        ...(model !== null ? { model } : {}),
       },
     },
   };
@@ -154,7 +164,12 @@ export async function loadHistory(sessionId) {
         JSON.stringify({
           jsonrpc: "2.0",
           method: "session/update",
-          params: withStamp(notification, at, telemetryPromptId),
+          params: withStamp(
+            notification,
+            at,
+            telemetryPromptId,
+            modelOf(message, parentToolUseId),
+          ),
         }),
       );
     }

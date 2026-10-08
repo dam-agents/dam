@@ -194,6 +194,16 @@ export function OnceScheduleForm({
           </FormField>
         )}
 
+        <FormField label="Prompt" error={errors.task?.message} disableInset>
+          <Textarea
+            className="min-h-[80px] resize-y"
+            variant={errors.task ? "invalid" : undefined}
+            placeholder="Enter a task prompt"
+            rows={3}
+            {...register("task")}
+          />
+        </FormField>
+
         {existing?.inSession !== "continue" && (
           <Controller
             control={control}
@@ -207,16 +217,6 @@ export function OnceScheduleForm({
             )}
           />
         )}
-
-        <FormField label="Prompt" error={errors.task?.message} disableInset>
-          <Textarea
-            className="min-h-[80px] resize-y"
-            variant={errors.task ? "invalid" : undefined}
-            placeholder="Enter a task prompt"
-            rows={3}
-            {...register("task")}
-          />
-        </FormField>
       </DialogBody>
 
       <DialogActions

@@ -397,7 +397,7 @@ export function SchedulePrecheckField({
 }
 
 const MODEL_HINT =
-  "The model this schedule's runs use, without changing the agent's own model. Default is the harness's own default, as in the agent's model settings; on an agent with no default, a schedule without a model follows the agent's model. If the agent can't switch to the chosen model, the run fails with the reason instead of using another.";
+  "Default is the harness's own default; where the agent has none, a schedule without a model follows the agent's model.";
 
 export function ScheduleModelField({
   agentId,

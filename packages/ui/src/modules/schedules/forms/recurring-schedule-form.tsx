@@ -171,14 +171,6 @@ export function RecurringScheduleForm({
           />
         </FormField>
 
-        <SchedulePrecheckField
-          layout="stacked"
-          register={register}
-          errors={errors}
-        />
-
-        <ScheduleSessionTypeField layout="stacked" control={control} />
-
         <Controller
           control={control}
           name="model"
@@ -190,6 +182,14 @@ export function RecurringScheduleForm({
             />
           )}
         />
+
+        <SchedulePrecheckField
+          layout="stacked"
+          register={register}
+          errors={errors}
+        />
+
+        <ScheduleSessionTypeField layout="stacked" control={control} />
       </DialogBody>
 
       <DialogActions
