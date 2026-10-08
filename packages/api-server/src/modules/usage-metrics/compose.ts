@@ -1,10 +1,7 @@
 import type { Meter } from "@opentelemetry/api";
 import type { Subscription } from "rxjs";
 import { createActorDayLedger } from "./domain/actor-days.js";
-import {
-  createTemplateResolver,
-  type AgentTemplate,
-} from "./domain/template.js";
+import { createHarnessResolver, type AgentHarness } from "./domain/harness.js";
 import { createOtelUsageRecorder } from "./infrastructure/usage-recorder.js";
 import { startUsageMetricsSaga } from "./sagas/record-usage.js";
 
@@ -15,8 +12,8 @@ export interface UsageMetricsModule {
 
 export function composeUsageMetricsModule(deps: {
   meter: Meter;
-  templateOf: (agentId: string) => AgentTemplate;
-  knownTemplates: ReadonlySet<string>;
+  harnessOf: (agentId: string) => AgentHarness;
+  knownHarnesses: ReadonlySet<string>;
   now: () => number;
 }): UsageMetricsModule {
   let sub: Subscription | null = null;
@@ -24,9 +21,9 @@ export function composeUsageMetricsModule(deps: {
     start() {
       sub ??= startUsageMetricsSaga({
         recorder: createOtelUsageRecorder(deps.meter),
-        templateOf: createTemplateResolver({
-          templateOf: deps.templateOf,
-          known: deps.knownTemplates,
+        harnessOf: createHarnessResolver({
+          harnessOf: deps.harnessOf,
+          known: deps.knownHarnesses,
         }),
         actorDays: createActorDayLedger({ now: deps.now }),
       });

@@ -2,6 +2,7 @@ import {
   SESSION_CATEGORIES,
   type SessionCategory,
   type SessionMode,
+  type SessionPair,
 } from "api-server-api";
 import type { StateCreator } from "zustand";
 
@@ -35,6 +36,7 @@ export interface SessionsSlice {
   messages: Message[];
   runStarts: string[];
   sessionModel: SessionModel | null;
+  nextSessionPair: Record<string, SessionPair>;
   sessionError: SessionError | null;
   sessionFilter: SessionCategory[];
   drafts: Record<string, SessionDraft>;
@@ -56,6 +58,7 @@ export interface SessionsSlice {
   setRunStarts: (list: string[]) => void;
   addRunStart: (at: string) => void;
   setSessionModel: (model: SessionModel | null) => void;
+  setNextSessionPair: (agentId: string, pair: SessionPair) => void;
   setSessionError: (e: SessionError | null) => void;
   toggleSessionFilter: (category: SessionCategory) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
@@ -117,6 +120,7 @@ export const createSessionsSlice: StateCreator<
     sessionId: null,
     runStarts: [],
     sessionModel: null,
+    nextSessionPair: {},
     sessionMode: null,
     messages: [],
     sessionError: null,
@@ -146,6 +150,10 @@ export const createSessionsSlice: StateCreator<
       })),
     setRunStarts: (list) => set({ runStarts: list }),
     setSessionModel: (model) => set({ sessionModel: model }),
+    setNextSessionPair: (agentId, pair) =>
+      set((state) => ({
+        nextSessionPair: { ...state.nextSessionPair, [agentId]: pair },
+      })),
     addRunStart: (at) =>
       set((s) =>
         s.runStarts.includes(at) ? s : { runStarts: [...s.runStarts, at] },

@@ -21,7 +21,7 @@ interface JsonRpcRequest {
     sessionId?: string;
     options?: { optionId: string; kind?: string }[];
     toolCall?: { toolCallId?: string; title?: string; rawInput?: unknown };
-    _meta?: { platform?: { initiator?: string } };
+    _meta?: { platform?: { initiator?: string; harness?: unknown } };
   };
 }
 
@@ -164,11 +164,13 @@ export function createAcpRelay(
           parsed.params?._meta?.platform?.initiator === "system"
         )
           return;
+        const harness = parsed.params?._meta?.platform?.harness;
         emit({
           type: EventType.SessionTurnRelayed,
           agentId,
           actorSub: actor.sub,
           surface: actor.surface,
+          ...(typeof harness === "string" && { harness }),
         });
       }
 

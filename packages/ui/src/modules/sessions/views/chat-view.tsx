@@ -41,7 +41,10 @@ import {
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { useHarnessConfigCurrent } from "../../agents/api/harness-config.js";
+import {
+  useHarnessConfigCurrent,
+  useHarnessConfigStatus,
+} from "../../agents/api/harness-config.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
   useAgents,
@@ -95,14 +98,21 @@ import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { matchTurnsToReplies } from "../../telemetry/lib/align-turns.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import { acpSessionsKeys } from "../api/keys.js";
-import { optimisticInsertSession, setSessionRunning } from "../api/queries.js";
+import {
+  optimisticInsertSession,
+  setSessionRunning,
+  useAgentSession,
+} from "../api/queries.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
+import { OtherProviderModels } from "../components/other-provider-models.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
+import { SessionLeaseNote } from "../components/session-lease-note.js";
+import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
@@ -277,15 +287,32 @@ export function ChatView() {
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
+  const { data: harnessStatus } = useHarnessConfigStatus(selectedAgent);
+  const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
+  const pickable =
+    !sessionId && selectedAgent && harnessStatus?.harnesses?.length
+      ? {
+          agentId: selectedAgent,
+          carried: harnessStatus.harnesses,
+          defaultHarness:
+            harnessStatus.defaultHarness ?? harnessStatus.harnesses[0]!.name,
+        }
+      : null;
   const storedSessionModel = useStore((s) => s.sessionModel);
   const sessionModel =
     sessionId && storedSessionModel?.sessionId === sessionId
       ? storedSessionModel
       : null;
+  const onOtherHarness =
+    !!currentSession?.harness &&
+    !!harnessStatus?.defaultHarness &&
+    currentSession.harness !== harnessStatus.defaultHarness;
   const indicatorModel = sessionModel
     ? (sessionModel.choices.find((c) => c.value === sessionModel.current)
         ?.name ?? modelDisplayName(sessionModel.current))
-    : harnessCurrent?.model;
+    : onOtherHarness
+      ? (currentSession?.model ?? undefined)
+      : harnessCurrent?.model;
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
@@ -925,34 +952,63 @@ export function ChatView() {
                   onSend={sendAndFollow}
                   onStop={stopAgent}
                 />
-                {!hasPendingPermission && indicatorModel && (
+                {!hasPendingPermission && pickable && (
                   <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
                     <ChatColumn>
-                      <ModelIndicator
-                        model={indicatorModel}
-                        sessionChoices={
-                          sessionModel
-                            ? {
-                                current: sessionModel.current,
-                                choices: sessionModel.choices,
-                                onChoose: (value) =>
-                                  void chooseSessionModel(value),
-                              }
-                            : undefined
-                        }
-                        subject={surfaceCopy.modelSubject}
-                        settings={
-                          surfaceCopy.modelSettings
-                            ? {
-                                label: surfaceCopy.modelSettings,
-                                onConfigure: handleConfigureSandbox,
-                              }
-                            : undefined
-                        }
-                      />
+                      <SessionPairPicker {...pickable} />
                     </ChatColumn>
                   </div>
                 )}
+                {!hasPendingPermission &&
+                  !pickable &&
+                  (indicatorModel || currentSession?.harness) && (
+                    <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+                      <ChatColumn>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {indicatorModel && (
+                            <ModelIndicator
+                              model={indicatorModel}
+                              sessionChoices={
+                                sessionModel
+                                  ? {
+                                      current: sessionModel.current,
+                                      choices: sessionModel.choices,
+                                      onChoose: (value) =>
+                                        void chooseSessionModel(value),
+                                    }
+                                  : undefined
+                              }
+                              subject={surfaceCopy.modelSubject}
+                              extra={
+                                selectedAgent && currentSession?.harness ? (
+                                  <OtherProviderModels
+                                    agentId={selectedAgent}
+                                    harness={currentSession.harness}
+                                    provider={currentSession.provider ?? null}
+                                  />
+                                ) : undefined
+                              }
+                              settings={
+                                surfaceCopy.modelSettings
+                                  ? {
+                                      label: surfaceCopy.modelSettings,
+                                      onConfigure: handleConfigureSandbox,
+                                    }
+                                  : undefined
+                              }
+                            />
+                          )}
+                          {selectedAgent && currentSession?.harness && (
+                            <SessionLeaseNote
+                              agentId={selectedAgent}
+                              harness={currentSession.harness}
+                              provider={currentSession.provider ?? null}
+                            />
+                          )}
+                        </div>
+                      </ChatColumn>
+                    </div>
+                  )}
               </div>
             </>
           )}

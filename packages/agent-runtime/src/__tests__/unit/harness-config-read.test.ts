@@ -2,10 +2,17 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { RuntimeEnvReader } from "../../core/runtime-env.js";
+import type {
+  LeaseEnvReader,
+  RuntimeEnvReader,
+} from "../../core/runtime-env.js";
 import { createHarnessConfigPlugin } from "../../modules/runtime-channel/drivers/harness-config-plugin.js";
 import type { ModelDiscovery } from "../../modules/runtime-channel/infrastructure/model-discovery.js";
 import type { HarnessConfigBinding } from "../../modules/runtime-channel/manifest.js";
+
+function asLease(reader: RuntimeEnvReader): LeaseEnvReader {
+  return { ...reader, providers: () => [], forLease: () => reader.current() };
+}
 
 const noop = () => {};
 const noEnv: RuntimeEnvReader = { current: () => ({}), ready: () => true };
@@ -36,9 +43,10 @@ describe("createReadHarnessConfig", () => {
 
   const read = (discoverModels: ModelDiscovery, binding = BINDING) =>
     createHarnessConfigPlugin({
+      harness: "test",
       binding,
       agentHome: home,
-      envReader: noEnv,
+      envReader: asLease(noEnv),
       discoverModels,
       log: noop,
     }).readCurrent;
@@ -92,6 +100,7 @@ describe("createReadHarnessConfig", () => {
   // TEST_SCENARIO: Claude Code's catalog is its model tiers; a provider's listing adds to them rather than replacing them, so both stay pickable.
   it("lists the catalog's models ahead of discovered ones when the source extends the catalog", async () => {
     const out = await createHarnessConfigPlugin({
+      harness: "test",
       binding: {
         ...BINDING,
         catalog: {
@@ -107,7 +116,10 @@ describe("createReadHarnessConfig", () => {
         modelDiscovery: { urlEnv: ["U"], extendsCatalog: true },
       },
       agentHome: home,
-      envReader: { current: () => ({ U: "https://proxy" }), ready: () => true },
+      envReader: asLease({
+        current: () => ({ U: "https://proxy" }),
+        ready: () => true,
+      }),
       discoverModels: async () => ({
         status: "observed",
         models: [
@@ -127,9 +139,10 @@ describe("createReadHarnessConfig", () => {
   // TEST_SCENARIO: before the env rail has materialized once, a missing URL says nothing about the grant, so the read must not clear an established list.
   it("omits the model list until the runtime env has materialized", async () => {
     const out = await createHarnessConfigPlugin({
+      harness: "test",
       binding: { ...BINDING, modelDiscovery: { urlEnv: ["U"] } },
       agentHome: home,
-      envReader: { current: () => ({}), ready: () => false },
+      envReader: asLease({ current: () => ({}), ready: () => false }),
       discoverModels: noDiscovery,
       log: noop,
     }).readCurrent();
@@ -138,9 +151,10 @@ describe("createReadHarnessConfig", () => {
 
   it("returns all-null when the harness declares no binding", async () => {
     const out = await createHarnessConfigPlugin({
+      harness: "test",
       binding: undefined,
       agentHome: home,
-      envReader: noEnv,
+      envReader: asLease(noEnv),
       discoverModels: noDiscovery,
       log: noop,
     }).readCurrent();

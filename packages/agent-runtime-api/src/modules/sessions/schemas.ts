@@ -31,6 +31,9 @@ export const podSessionSchema = z.object({
   runTotalMs: z.number().nullable(),
   runCount: z.number().nullable(),
   running: z.boolean(),
+  harness: z.string().optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
   spend: sessionSpendSchema.optional(),
 });
 

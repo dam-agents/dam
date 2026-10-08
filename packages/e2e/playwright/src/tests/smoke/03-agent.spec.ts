@@ -39,24 +39,26 @@ test("create a mock agent with the connection attached", async ({ page }) => {
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
   });
 
+  await test.step("connect a provider the new agent is granted", async () => {
+    await api.connections.create.mutate({
+      templateId: "openai",
+      name: "openai",
+      authKind: "header",
+      value: "sk-e2e-dummy-key",
+    });
+  });
+
   await test.step("open the coding agent setup page", async () => {
     await page.goto(`${baseUrl}/agents/new`);
-    await expect(page.getByTestId("provider-select")).toBeVisible();
+    await expect(page.getByPlaceholder("my-agent")).toBeVisible();
   });
 
   await test.step("pick the mock image", async () => {
     await page.getByTestId(`template-card-${harnessName}`).click();
   });
 
-  await test.step("name the sandbox and connect a provider", async () => {
+  await test.step("name the sandbox", async () => {
     await page.getByPlaceholder("my-agent").fill(agentName);
-
-    const dialog = page.getByRole("dialog");
-    await page.getByTestId("provider-select").click();
-    await page.getByTestId("provider-option-openai").click();
-    await dialog.locator('input[type="password"]').fill("sk-e2e-dummy-key");
-    await dialog.getByRole("button", { name: "Save" }).click();
-    await expect(dialog).toBeHidden();
   });
 
   await test.step("grant the connection and create", async () => {
@@ -80,5 +82,18 @@ test("create a mock agent with the connection attached", async ({ page }) => {
 
   await test.step("agent reaches running", async () => {
     await waitForAgentRunning(api, agentName);
+  });
+
+  await test.step("the default provider was granted at create", async () => {
+    const agent = (await api.agents.list.query()).find(
+      (a) => a.name === agentName,
+    );
+    const openai = (await api.connections.list.query()).find(
+      (c) => c.templateId === "openai",
+    );
+    const { connections } = await api.connections.getAgentConnections.query({
+      agentId: agent!.id,
+    });
+    expect(connections.map((c) => c.connectionId)).toContain(openai!.id);
   });
 });

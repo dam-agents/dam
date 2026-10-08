@@ -31,6 +31,11 @@ export const templatesRouter = t.router({
     return templates.map(toView);
   }),
 
+  harnesses: readAgentProcedure.query(({ ctx }) => ({
+    default: ctx.harnesses.default,
+    harnesses: ctx.harnesses.harnesses,
+  })),
+
   get: readAgentProcedure
     .input(templateGetInputSchema)
     .query(async ({ ctx, input }) => {

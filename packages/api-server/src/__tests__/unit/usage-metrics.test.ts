@@ -10,7 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { emit, EventType } from "../../events.js";
 import { composeUsageMetricsModule } from "../../modules/usage-metrics/index.js";
-import type { AgentTemplate } from "../../modules/usage-metrics/index.js";
+import type { AgentHarness } from "../../modules/usage-metrics/index.js";
 
 const DAY_ONE = Date.parse("2026-09-14T09:00:00Z");
 const DAY_TWO = Date.parse("2026-09-15T01:00:00Z");
@@ -20,14 +20,13 @@ describe("usage metrics", () => {
   let meterProvider: MeterProvider;
   let usageMetrics: { start(): void; stop(): void };
   let clock = DAY_ONE;
-  let templates = new Map<string, AgentTemplate>();
+  let harnesses = new Map<string, AgentHarness>();
 
-  function start(knownTemplates: string[] = ["claude-code", "codex"]): void {
+  function start(knownHarnesses: string[] = ["claude-code", "codex"]): void {
     usageMetrics = composeUsageMetricsModule({
       meter: meterProvider.getMeter("test"),
-      templateOf: (agentId) =>
-        templates.get(agentId) ?? { agent: "unresolved" },
-      knownTemplates: new Set(knownTemplates),
+      harnessOf: (agentId) => harnesses.get(agentId) ?? { agent: "unresolved" },
+      knownHarnesses: new Set(knownHarnesses),
       now: () => clock,
     });
     usageMetrics.start();
@@ -64,8 +63,8 @@ describe("usage metrics", () => {
 
   beforeEach(() => {
     clock = DAY_ONE;
-    templates = new Map<string, AgentTemplate>([
-      ["agent-1", { agent: "resolved", templateId: "claude-code" }],
+    harnesses = new Map<string, AgentHarness>([
+      ["agent-1", { agent: "resolved", harness: "claude-code" }],
     ]);
     reader = new PeriodicExportingMetricReader({
       exporter: new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE),
@@ -134,16 +133,16 @@ describe("usage metrics", () => {
     ).toEqual(new Map([["other", 1]]));
   });
 
-  /** TEST_SCENARIO: the template answers which kind of agent the traffic went
-   *  to. Each way of not knowing it is its own bucket: an agent built from a
-   *  raw image has none, an agent the cache cannot resolve is unknown, and a
-   *  template this install does not carry folds to other — so cardinality
-   *  stays bounded by the install's own catalog. */
-  it("labels each turn with a bounded template", async () => {
-    templates.set("agent-image", { agent: "resolved" });
-    templates.set("agent-foreign", {
+  /** TEST_SCENARIO: the harness answers what the traffic ran on. A session
+   *  names its own; otherwise the agent's harness stands in. Each way of not
+   *  knowing it is its own bucket: an agent with none reads as none, an agent
+   *  the cache cannot resolve is unknown, and a harness this install does not
+   *  carry folds to other — so cardinality stays bounded by the catalog. */
+  it("labels each turn with a bounded harness", async () => {
+    harnesses.set("agent-image", { agent: "resolved" });
+    harnesses.set("agent-foreign", {
       agent: "resolved",
-      templateId: "retired-template",
+      harness: "retired-harness",
     });
     start();
 
@@ -159,15 +158,23 @@ describe("usage metrics", () => {
         actorSub: "user-1",
         surface: "ui",
       });
+    emit({
+      type: EventType.SessionTurnRelayed,
+      agentId: "agent-1",
+      actorSub: "user-1",
+      surface: "ui",
+      harness: "codex",
+    });
 
     expect(
-      await seriesOf("platform.turn.total", "platform.turn.template"),
+      await seriesOf("platform.turn.total", "platform.turn.harness"),
     ).toEqual(
       new Map([
         ["claude-code", 1],
         ["none", 1],
         ["other", 1],
         ["unknown", 1],
+        ["codex", 1],
       ]),
     );
   });
@@ -235,7 +242,7 @@ describe("usage metrics", () => {
 
   /** TEST_SCENARIO: a schedule fire carries whether the trigger reached the
    *  agent, which is the one outcome the platform actually knows. */
-  it("counts schedule fires with their mode, outcome and template", async () => {
+  it("counts schedule fires with their mode, outcome and harness", async () => {
     start();
 
     emit({
@@ -260,7 +267,7 @@ describe("usage metrics", () => {
         attributes: {
           "platform.schedule.mode": "fresh",
           "platform.schedule.outcome": "success",
-          "platform.schedule.template": "claude-code",
+          "platform.schedule.harness": "claude-code",
         },
         value: 1,
       },
@@ -268,7 +275,7 @@ describe("usage metrics", () => {
         attributes: {
           "platform.schedule.mode": "continuous",
           "platform.schedule.outcome": "failure",
-          "platform.schedule.template": "claude-code",
+          "platform.schedule.harness": "claude-code",
         },
         value: 1,
       },
@@ -527,15 +534,12 @@ describe("usage metrics", () => {
     });
 
     const declared: Record<string, string[]> = {
-      "platform.turn.total": [
-        "platform.turn.surface",
-        "platform.turn.template",
-      ],
+      "platform.turn.total": ["platform.turn.harness", "platform.turn.surface"],
       "platform.actor.active_day.total": ["platform.actor.surface"],
       "platform.schedule.fire.total": [
+        "platform.schedule.harness",
         "platform.schedule.mode",
         "platform.schedule.outcome",
-        "platform.schedule.template",
       ],
       "platform.connection.change.total": [
         "platform.connection.action",

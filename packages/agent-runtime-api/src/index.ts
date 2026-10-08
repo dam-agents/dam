@@ -112,6 +112,8 @@ export {
   harnessConfigChoice,
   harnessConfigCatalog,
   harnessConfigCurrent,
+  harnessConfigCurrentByHarness,
+  harnessCapability,
   fileFormat,
   mergeMode,
   eventReportInput,
@@ -127,6 +129,7 @@ export {
 } from "./modules/runtime/types.js";
 export type {
   HarnessConfigCurrent,
+  HarnessCapability,
   Contribution,
   ContributionKind,
   Event,

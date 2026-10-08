@@ -21,11 +21,11 @@ function harness(id: string): TemplateView {
   };
 }
 
-const CATALOGUE = [harness("codex"), harness("claude-code"), harness("bob")];
+const CATALOGUE = [harness("codex"), harness("default"), harness("bob")];
 
 describe("defaultHarnessId", () => {
-  test("prefers claude-code, else the first harness, else nothing", () => {
-    expect(defaultHarnessId(CATALOGUE)).toBe("claude-code");
+  test("prefers the default template, else the first harness, else nothing", () => {
+    expect(defaultHarnessId(CATALOGUE)).toBe("default");
     expect(defaultHarnessId([harness("codex"), harness("bob")])).toBe("codex");
     expect(defaultHarnessId([])).toBeNull();
   });
@@ -41,7 +41,7 @@ describe("reconcileHarnessSelection", () => {
   test("replaces a stale selection with the default", () => {
     expect(
       reconcileHarnessSelection(CATALOGUE, "retired", { allowNone: false }),
-    ).toEqual({ templateId: "claude-code" });
+    ).toEqual({ templateId: "default" });
   });
 
   test("clears a stale selection when a custom image makes none legitimate", () => {
@@ -53,7 +53,7 @@ describe("reconcileHarnessSelection", () => {
   test("fills an empty selection with the default unless none is allowed", () => {
     expect(
       reconcileHarnessSelection(CATALOGUE, null, { allowNone: false }),
-    ).toEqual({ templateId: "claude-code" });
+    ).toEqual({ templateId: "default" });
     expect(
       reconcileHarnessSelection(CATALOGUE, null, { allowNone: true }),
     ).toBeNull();

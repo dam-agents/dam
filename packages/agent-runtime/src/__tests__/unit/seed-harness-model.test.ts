@@ -8,10 +8,17 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { RuntimeEnvReader } from "../../core/runtime-env.js";
+import type {
+  LeaseEnvReader,
+  RuntimeEnvReader,
+} from "../../core/runtime-env.js";
 import { createHarnessConfigPlugin } from "../../modules/runtime-channel/drivers/harness-config-plugin.js";
 import type { ModelDiscovery } from "../../modules/runtime-channel/infrastructure/model-discovery.js";
 import type { HarnessConfigBinding } from "../../modules/runtime-channel/manifest.js";
+
+function asLease(reader: RuntimeEnvReader): LeaseEnvReader {
+  return { ...reader, providers: () => [], forLease: () => reader.current() };
+}
 
 const BINDING: HarnessConfigBinding = {
   file: "$HOME/.bob/settings/settings.json",
@@ -57,9 +64,10 @@ describe("seeding a discovered model", () => {
       ],
     });
     return createHarnessConfigPlugin({
+      harness: "test",
       binding: BINDING,
       agentHome: home,
-      envReader,
+      envReader: asLease(envReader),
       discoverModels,
       log: () => {},
     }).seedModel();
@@ -98,9 +106,10 @@ describe("seeding a discovered model", () => {
       OPENAI_MODEL: "gpt-unrelated",
     };
     const plugin = createHarnessConfigPlugin({
+      harness: "test",
       binding,
       agentHome: home,
-      envReader: { current: () => env, ready: () => true },
+      envReader: asLease({ current: () => env, ready: () => true }),
       discoverModels: async () => ({
         status: "observed",
         via: "BEDROCK_URL",
@@ -146,5 +155,58 @@ describe("seeding a discovered model", () => {
       await seedWith({ REDIRECT_URL: "https://proxy" }, "REDIRECT_URL"),
     ).toBe(false);
     expect(readModel()).toBe("chosen/model");
+  });
+});
+
+describe("the model a lease on another provider runs on", () => {
+  const leasePlugin = (byProvider: Record<string, Record<string, string>>) =>
+    createHarnessConfigPlugin({
+      harness: "bob",
+      binding: BINDING,
+      agentHome: mkdtempSync(join(tmpdir(), "lease-model-")),
+      envReader: {
+        current: () => ({}),
+        ready: () => true,
+        providers: () => Object.keys(byProvider),
+        forLease: ({ provider }) => byProvider[provider ?? ""] ?? {},
+      },
+      discoverModels: async (_spec, env) => ({
+        status: "observed",
+        via: env.REDIRECT_URL ? "REDIRECT_URL" : "OWN_GATEWAY_URL",
+        models: [
+          {
+            value: `${env.REDIRECT_URL ?? env.OWN_GATEWAY_URL}/model`,
+            name: "m",
+          },
+        ],
+      }),
+      log: () => {},
+    });
+
+  /** TEST_SCENARIO: Bob on a second provider gets that provider's first model,
+   * never the one the shared settings file holds for the first provider, which
+   * would not exist there. */
+  it("takes the first model the lease's own provider lists", async () => {
+    const plugin = leasePlugin({
+      a: { REDIRECT_URL: "https://a" },
+      b: { REDIRECT_URL: "https://b" },
+    });
+    expect(await plugin.leaseModel("b")).toBe("https://b/model");
+  });
+
+  /** TEST_SCENARIO: A provider that pins a model keeps it, so the pin beats a
+   * model the shared file holds. */
+  it("takes the provider's pin when it has one", async () => {
+    const plugin = leasePlugin({
+      b: { REDIRECT_URL: "https://b", PINNED_MODEL: "pinned" },
+    });
+    expect(await plugin.leaseModel("b")).toBe("pinned");
+  });
+
+  /** TEST_SCENARIO: On the harness's own endpoint its built-in default is the
+   * better answer, so no model is chosen for it. */
+  it("chooses none on the harness's own endpoint", async () => {
+    const plugin = leasePlugin({ b: { OWN_GATEWAY_URL: "https://own" } });
+    expect(await plugin.leaseModel("b")).toBeNull();
   });
 });

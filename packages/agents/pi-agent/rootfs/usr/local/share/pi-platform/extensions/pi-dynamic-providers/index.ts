@@ -45,6 +45,8 @@ const SPECS: ProviderSpec[] = [
 export default async function register(pi: ExtensionAPI): Promise<void> {
 	if (env("PI_PLATFORM_REPORT_ERRORS") === "1") reportProviderErrors(pi);
 	const state = loadState();
+	const platformModel = env("PLATFORM_MODEL");
+	if (platformModel) state.settings.defaultModel = platformModel;
 	const onBedrock = env("AWS_BEARER_TOKEN_BEDROCK") !== undefined;
 	const clearedBedrock = onBedrock ? false : clearBedrockDefaults(state);
 
@@ -330,7 +332,7 @@ async function discoverModels(url: string): Promise<DiscoveredModel[]> {
 }
 
 function loadState(): ConfigState {
-	const dir = join(homedir(), ".pi", "agent");
+	const dir = env("PI_CODING_AGENT_DIR") ?? join(homedir(), ".pi", "agent");
 	mkdirSync(dir, { recursive: true });
 	const paths = {
 		models: join(dir, "models.json"),

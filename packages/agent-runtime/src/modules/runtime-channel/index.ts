@@ -4,6 +4,7 @@ export { createHarnessClient, type HarnessClient } from "./harness-client.js";
 export {
   loadManifest,
   resolveDrivers,
+  sessionModelOf,
   type RuntimeManifest,
 } from "./manifest.js";
 

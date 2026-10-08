@@ -10,6 +10,10 @@ export const platformSessionMetaSchema = z.object({
   ref: z.string().optional(),
   reportTo: z.string().optional(),
   reportName: z.string().optional(),
+  harness: z.string().optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  title: z.string().optional(),
 });
 
 const sessionMetaEntrySchema = z.object({
@@ -98,13 +102,21 @@ export function createSessionMetadataStore(
     set(sessionId, meta) {
       const { sessions, tombstones } = store.read();
       const existing = sessions[sessionId];
+      const lease = existing?.meta;
       store.write({
         tombstones,
         sessions: {
           ...sessions,
           [sessionId]: {
             ...existing,
-            meta,
+            meta: {
+              ...(lease?.harness !== undefined && { harness: lease.harness }),
+              ...(lease?.provider !== undefined && {
+                provider: lease.provider,
+              }),
+              ...(lease?.model !== undefined && { model: lease.model }),
+              ...meta,
+            },
             createdAt: existing?.createdAt ?? now(),
             seenAt: existing?.seenAt ?? now(),
           },

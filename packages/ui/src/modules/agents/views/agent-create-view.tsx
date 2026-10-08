@@ -26,7 +26,6 @@ import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
-import { HarnessGrid } from "../../sandboxes/components/setup/harness-grid.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
 import { SetupChannelsSection } from "../../sandboxes/components/setup/setup-channels-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
@@ -35,7 +34,6 @@ import {
   ConnectionsSetupSection,
   LifecycleSetupSection,
   NameSection,
-  ProviderSection,
   useSetupConnectionCatalog,
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
@@ -44,10 +42,6 @@ import {
   offeredBindMessengers,
   recordBindIntent,
 } from "../../sandboxes/lib/bind-intent.js";
-import {
-  narrowPolicyToTemplate,
-  setupProviderPolicy,
-} from "../../sandboxes/lib/setup-policy.js";
 import { useGrantSatellite } from "../../satellites/api/mutations.js";
 import { useApplyStarterKit } from "../../starter-kits/api/mutations.js";
 import { useStarterKit } from "../../starter-kits/api/queries.js";
@@ -75,12 +69,10 @@ import {
   kitResourcesLine,
   ownAgentLine,
   preselectedGrants,
-  providerPolicyForKit,
   type StarterKitSetupDraft,
   toggleSkipped,
   withOverride,
 } from "../../starter-kits/lib/setup.js";
-import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { resolveCharacter } from "../components/avatar/agent-avatar.js";
@@ -186,7 +178,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
   const setView = useStore((s) => s.setView);
   const navigateToStarterKit = useStore((s) => s.navigateToStarterKit);
   const connections = useAppConnections();
-  const templates = useTemplates();
   const connectionTemplates = useConnectionTemplates();
   const templateById = useMemo(
     () => new Map((connectionTemplates.data ?? []).map((t) => [t.id, t])),
@@ -280,22 +271,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     form.connectionIds,
     toggleConnection,
   ]);
-  const providerSource =
-    kit && bringsImage
-      ? kit.image
-      : (templates.data?.find((t) => t.id === form.templateId) ?? null);
-  const providerPolicy = useMemo(
-    () =>
-      narrowPolicyToTemplate(
-        kit
-          ? providerPolicyForKit(kit, setupProviderPolicy("starter-kit"))
-          : setupProviderPolicy("coding-agent"),
-        providerSource,
-      ),
-    [kit, providerSource],
-  );
-  const noCompatibleProvider = (providerPolicy.allow?.length ?? 1) === 0;
-
   const plainDraft: CodingAgentSetupDraft = {
     name: form.name,
     vm: vmRuntime.vm,
@@ -321,11 +296,9 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
   const canApply = kit
     ? isStarterKitSetupComplete(kit, draft, owned, templateById) &&
       harnessAllowed &&
-      !noCompatibleProvider &&
       !blockingSchedule &&
       !pending
     : isCodingAgentSetupComplete(plainDraft) &&
-      !noCompatibleProvider &&
       !pending &&
       vmRuntime.answered &&
       (channelsAnswered || !wantsChannel);
@@ -376,7 +349,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
   return (
     <SetupPageShell
       title="Create an agent"
-      subtitle="Configure your agent with a name, harness, and connections."
+      subtitle="Configure your agent with a name and connections. On the default image, each session picks its harness and model."
       footer={
         <>
           {registryPartial && (
@@ -529,49 +502,26 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         />
       )}
 
-      {kit && (
+      {kit && bringsImage && (
         <section className="mb-8">
           <SectionLabel spaced>Harness</SectionLabel>
-          {bringsImage ? (
-            <Callout tone="default" inset>
-              <div>{ownAgentLine(kit)}. The harness is fixed by the kit.</div>
-              <div className="mt-1 font-mono text-xs text-muted-foreground">
-                {kit.image?.ref}
-              </div>
-            </Callout>
-          ) : noHarnessInstalled ? (
-            <Callout tone="warning" inset>
-              This kit runs on {harnessesLine(kit).replace(/^An agent on /, "")}
-              , and none of those is installed here.
-            </Callout>
-          ) : (
-            <HarnessGrid
-              harnesses={harnesses}
-              loading={catalogue.isLoading}
-              error={catalogue.isError}
-              onRetry={catalogue.refetch}
-              templateId={form.templateId}
-              onPick={(templateId) => update({ templateId })}
-            />
-          )}
+          <Callout tone="default" inset>
+            <div>{ownAgentLine(kit)}. The harness is fixed by the kit.</div>
+            <div className="mt-1 font-mono text-xs text-muted-foreground">
+              {kit.image?.ref}
+            </div>
+          </Callout>
         </section>
       )}
 
-      {noCompatibleProvider ? (
+      {noHarnessInstalled && (
         <section className="mb-8">
-          <SectionLabel spaced>Provider</SectionLabel>
+          <SectionLabel spaced>Harness</SectionLabel>
           <Callout tone="warning" inset>
-            {kit
-              ? "This kit asks for a provider that the chosen harness cannot run on. Pick another harness, or a kit whose provider fits."
-              : "The chosen harness declares no provider it can run on. Pick another harness."}
+            This kit runs on {harnessesLine(kit).replace(/^An agent on /, "")},
+            and none of those is installed here.
           </Callout>
         </section>
-      ) : (
-        <ProviderSection
-          selected={form.providerRef}
-          onSelect={(providerRef) => update({ providerRef })}
-          policy={providerPolicy}
-        />
       )}
 
       {kit?.seed && (

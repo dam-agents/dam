@@ -13,9 +13,11 @@ import {
 } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { openInitializedConnection } from "../../acp/acp.js";
+import { extractErrorMessage } from "../../acp/errors.js";
 import {
   appendInterruptedNotice,
   appendUndelivered,
@@ -28,12 +30,17 @@ import {
 import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
+import {
+  readNextSessionPair,
+  rememberSessionPair,
+} from "../api/session-pair.js";
 import { draftKey } from "../lib/draft-key.js";
 import {
   type PromptDelivery,
   withDeliveryTracking,
 } from "../lib/prompt-delivery.js";
 import { sessionModelFrom } from "../lib/session-model.js";
+import { pairMeta } from "../lib/session-pair-options.js";
 import { clearUndelivered, readUndelivered } from "../lib/undelivered-store.js";
 
 const REPLAY_IDLE_WINDOW_MS = 3000;
@@ -212,21 +219,45 @@ export function useAcpConnection(
 
       let startedSessionId: string;
       try {
+        const next = readNextSessionPair(agentId);
         const session = await connection.agent.request("session/new", {
           cwd: ".",
           mcpServers: [],
           _meta: {
-            platform: { mode: SessionMode.Chat, type: SessionType.Regular },
+            platform: {
+              mode: SessionMode.Chat,
+              type: SessionType.Regular,
+              ...(next && pairMeta(next.pair)),
+            },
           },
         });
         startedSessionId = session.sessionId;
+        let opened = sessionModelFrom(startedSessionId, session.configOptions);
+        const wanted = next?.pair.model;
+        let runsOnPair = true;
+        if (opened && wanted && opened.current !== wanted) {
+          try {
+            const switched = await connection.agent.request(
+              "session/set_config_option",
+              {
+                sessionId: startedSessionId,
+                configId: opened.configId,
+                value: wanted,
+              },
+            );
+            opened = sessionModelFrom(startedSessionId, switched.configOptions);
+          } catch (err) {
+            runsOnPair = false;
+            emitToast({
+              kind: "error",
+              message: `The session started on its default model: ${extractErrorMessage(err)}`,
+            });
+          }
+        }
+        if (next?.chosen && runsOnPair) rememberSessionPair(agentId, next.pair);
         const viewing = useStore.getState().sessionId;
         if (viewing === null || viewing === startedSessionId) {
-          useStore
-            .getState()
-            .setSessionModel(
-              sessionModelFrom(startedSessionId, session.configOptions),
-            );
+          useStore.getState().setSessionModel(opened);
         }
       } catch (err) {
         try {

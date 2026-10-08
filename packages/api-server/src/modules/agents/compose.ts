@@ -1,3 +1,4 @@
+import { PROVIDER_TEMPLATE_IDS, type HarnessCatalog } from "api-server-api";
 import type * as k8s from "@kubernetes/client-node";
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
@@ -55,13 +56,15 @@ import {
 } from "./services/public-agent-profile-reconcile-service.js";
 import { startPersistPublicAgentProfileSaga } from "./sagas/persist-public-agent-profile.js";
 import type { KeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
-import type { ReadTemplateSpec } from "../templates/index.js";
+import { harnessFits, type ReadTemplateSpec } from "../templates/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
 type AgentsServiceDeps = Parameters<typeof createAgentsService>[0];
 
 export interface AgentsInstallSettings {
   virtualizationEnabled: boolean;
+  defaultHarness: string;
+  telemetry: boolean;
   agentDefaultStorageSize: string;
   agentDefaultMounts: AgentsServiceDeps["agentDefaultMounts"];
   runtimeMigrationRetentionMs: number | null;
@@ -106,6 +109,8 @@ export function composeAgentsModule(deps: {
       agentDefaultStorageSize: deps.install.agentDefaultStorageSize,
       agentDefaultMounts: deps.install.agentDefaultMounts,
       virtualizationEnabled: deps.install.virtualizationEnabled,
+      defaultHarness: deps.install.defaultHarness,
+      telemetry: deps.install.telemetry,
       runtimeMigrationRetentionMs: deps.install.runtimeMigrationRetentionMs,
       resizeGate: deps.resizeGate,
       resizeLock: createXactLock(deps.db),
@@ -202,8 +207,13 @@ export function composePublicAgentPage(deps: {
 export function connectionGrantProvisioner(
   connections: Pick<
     ConnectionsService,
-    "validateProviderConnection" | "validateGrantSet" | "setAgentConnections"
+    | "validateProviderConnection"
+    | "validateGrantSet"
+    | "setAgentConnections"
+    | "defaultProviderConnection"
+    | "listConnections"
   >,
+  catalog: Pick<HarnessCatalog, "harnesses">,
 ): NonNullable<AgentsServiceDeps["grantProvisioner"]> {
   return {
     async resolveSpecGrants(sel) {
@@ -213,6 +223,20 @@ export function connectionGrantProvisioner(
       return {
         grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
       };
+    },
+    async defaultProvider(connectionIds, { harness, providers }) {
+      const chosen = new Set(connectionIds);
+      const holdsProvider = (await connections.listConnections()).some(
+        (c) => chosen.has(c.id) && PROVIDER_TEMPLATE_IDS.has(c.templateId),
+      );
+      return holdsProvider
+        ? null
+        : connections.defaultProviderConnection((type) =>
+            harness !== undefined &&
+            catalog.harnesses.some((h) => h.name === harness)
+              ? harnessFits(catalog, harness, type)
+              : !providers || providers.includes(type),
+          );
     },
     async applyAfterCreate(agentId, sel) {
       if (sel.connectionIds.length)

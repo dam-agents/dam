@@ -1,7 +1,7 @@
 #!/bin/sh
-model=
-# the provider's pin yields to a model chosen in config.toml (Config panel, /model, hand-edit)
-if [ -n "$OPENAI_MODEL" ] && ! codex-config-sets-model; then
+model="$PLATFORM_MODEL"
+# the provider's pin yields to a model chosen in config.toml (/model, hand-edit); the session's own choice outranks both
+if [ -z "$model" ] && [ -n "$OPENAI_MODEL" ] && ! codex-config-sets-model; then
   model="$OPENAI_MODEL"
 fi
 # codex-acp takes no -c flags: CODEX_CONFIG is merged into every session's config

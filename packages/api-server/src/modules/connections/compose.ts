@@ -176,6 +176,7 @@ export function composeConnectionsForOwner(opts: {
     oauthCallbackUrl: opts.oauthCallbackUrl,
     brandName: opts.brandName,
     connectionLock,
+    isOwnedAgent: (agentId) => opts.agentsRepo.isOwnedBy(agentId, opts.ownerId),
     resolveKbShare: createKbShareResolver(opts.db),
     ...(opts.maxSharedKbConnections !== undefined
       ? { maxSharedKbConnections: opts.maxSharedKbConnections }

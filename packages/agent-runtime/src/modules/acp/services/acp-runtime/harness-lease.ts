@@ -43,7 +43,8 @@ export interface HarnessLeaseDeps {
  * its own request off, and a recycle owed for env or config still stands. Every way the process goes down runs the same
  * cleanup and reports one reason — agent-exited, config-recycle, env-recycle,
  * harness-unresponsive, or shutdown — so the cleanup steps cannot drift apart
- * between the paths. A crash is final for the pod; a recycle respawns on the
+ * between the paths. A crash is final for this lease, which the pod's lease
+ * router then drops unless it is the default one; a recycle respawns on the
  * next attach.
  */
 const RECYCLE_LOG: Partial<Record<HarnessTeardownReason, string>> = {

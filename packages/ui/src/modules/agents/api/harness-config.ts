@@ -155,6 +155,10 @@ export function useApplyHarnessConfig() {
       invalidates: [trpc.harnessConfig.snapshot.queryKey()],
     },
     onMutate: async (change) => {
+      if (change.harness !== undefined) {
+        rollback.current = null;
+        return undefined;
+      }
       const key = harnessConfigCurrentKey(change.agentId);
       await queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient.getQueryData<HarnessConfigCurrent>(key);

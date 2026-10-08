@@ -113,6 +113,7 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     "AGENT_DEFAULT_STORAGE_SIZE",
     "VIRTUALIZATION_ENABLED",
     "AGENT_DEFAULT_MOUNTS",
+    "HARNESSES",
   ];
   const saved: Record<string, string | undefined> = {};
 
@@ -138,12 +139,34 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     process.env.VIRTUALIZATION_ENABLED = "true";
     expect(agentsInstallSettings(loadConfig())).toEqual({
       virtualizationEnabled: true,
+      defaultHarness: "claude-code",
+      telemetry: false,
       agentDefaultStorageSize: "20Gi",
       agentDefaultMounts: [
         { path: "/home/agent", persist: true },
         { path: "/tmp", persist: false },
       ],
       runtimeMigrationRetentionMs: 72 * 3600_000,
+    });
+  });
+
+  /** TEST_SCENARIO: The chart names the harness new agents start on, and any
+   * harness with an export rail means new agents carry their name for
+   * telemetry. */
+  it("carries the chart's default harness and whether telemetry is on", () => {
+    process.env.HARNESSES = JSON.stringify({
+      default: "codex",
+      catalog: {
+        codex: { displayName: "Codex" },
+        bob: {
+          displayName: "Bob",
+          telemetryEnv: [{ name: "BOB_TELEMETRY_URL", value: "https://c" }],
+        },
+      },
+    });
+    expect(agentsInstallSettings(loadConfig())).toMatchObject({
+      defaultHarness: "codex",
+      telemetry: true,
     });
   });
 

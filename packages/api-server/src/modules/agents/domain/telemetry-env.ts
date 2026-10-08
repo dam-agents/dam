@@ -16,8 +16,10 @@ function upsertNameAttr(value: string | undefined, agentName: string): string {
 export function seedTelemetryIdentity(
   env: EnvVar[],
   agentName: string,
+  telemetry: boolean,
 ): EnvVar[] {
-  if (!env.some((e) => e.name === TELEMETRY_MARKER_ENV)) return env;
+  if (!telemetry && !env.some((e) => e.name === TELEMETRY_MARKER_ENV))
+    return env;
   const existing = env.find((e) => e.name === RESOURCE_ATTRS_ENV);
   const next = {
     name: RESOURCE_ATTRS_ENV,

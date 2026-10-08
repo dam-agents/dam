@@ -96,10 +96,14 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
     const capabilities = runtimeState.runtimeCapabilities as {
       contributions: never;
       events: never;
+      harnesses?: { name: string }[];
     };
     const payload = await deps.stateBuilder.build(agentId, {
       contributions: capabilities.contributions,
       events: capabilities.events,
+      ...(capabilities.harnesses && {
+        harnesses: capabilities.harnesses.map((h) => h.name),
+      }),
     });
 
     if (payload.droppedContributionKinds.length > 0) {
@@ -205,9 +209,19 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
       await emitWorkspaceMutationSettled(agentId);
     }
 
-    if (reported) {
+    if (reported || outcome.harnessConfigCurrentByHarness) {
       try {
-        await deps.snapshotWriter.merge(agentId, reported, { confirmed: true });
+        if (reported)
+          await deps.snapshotWriter.merge(agentId, reported, {
+            confirmed: true,
+          });
+        for (const [harness, current] of Object.entries(
+          outcome.harnessConfigCurrentByHarness ?? {},
+        ))
+          await deps.snapshotWriter.merge(agentId, current, {
+            confirmed: true,
+            harness,
+          });
       } catch (err) {
         deps.log(
           `[runtime-worker] ${agentId}: harness-config snapshot write failed: ${(err as Error).message}`,

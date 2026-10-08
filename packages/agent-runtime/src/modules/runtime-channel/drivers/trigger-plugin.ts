@@ -52,10 +52,19 @@ export function createTriggerPlugin(deps: {
     payload: TriggerEventPayload,
     task: string,
   ): Promise<void> => {
+    const model =
+      payload.model ??
+      (payload.harness === undefined
+        ? await deps.harnessDefault?.()
+        : undefined) ??
+      undefined;
     const platformMeta = {
       type: payload.once ? SessionType.ScheduleOnce : SessionType.ScheduleCron,
       mode: SessionMode.Chat,
       scheduleId: payload.scheduleId,
+      ...(payload.harness !== undefined && { harness: payload.harness }),
+      ...(payload.provider !== undefined && { provider: payload.provider }),
+      ...(model !== undefined && { model }),
     };
     const origin = payload.origin;
     if (origin?.mode === "continue") {
@@ -73,7 +82,6 @@ export function createTriggerPlugin(deps: {
         `[trigger] ${payload.scheduleId}: the session that scheduled it is gone; running in a fresh session`,
       );
     }
-    const model = payload.model ?? (await deps.harnessDefault?.()) ?? undefined;
     if (origin?.mode === "report") {
       await deps.driver.start({
         task,

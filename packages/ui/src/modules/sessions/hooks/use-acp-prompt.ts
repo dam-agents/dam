@@ -20,6 +20,7 @@ import {
 import { buildPromptBlocks } from "../../acp/utils.js";
 import { acpSessionsKeys } from "../api/keys.js";
 import { optimisticInsertSession } from "../api/queries.js";
+import { harnessOfSession } from "../api/session-pair.js";
 import { draftKey } from "../lib/draft-key.js";
 import type { PromptDelivery } from "../lib/prompt-delivery.js";
 import { classifySendOutcome } from "../lib/send-outcome.js";
@@ -279,6 +280,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
                 text,
                 attachments,
               );
+        const harness = harnessOfSession(selectedAgent, sessionId, !!started);
         const turn = connection.agent.request("session/prompt", {
           sessionId,
           prompt: promptBlocks,
@@ -286,6 +288,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
             platform: {
               promptId,
               surface: "ui",
+              ...(harness ? { harness } : {}),
               ...(retryOf !== undefined ? { retryOf } : {}),
               ...(initiator ? { initiator } : {}),
             },

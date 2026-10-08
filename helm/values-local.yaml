@@ -90,25 +90,7 @@ harnessTools:
 # Merges over the values.yaml catalog. Every template gets a local image
 # override so enabling one later never pulls from quay.
 harnessTemplates:
-  claude-code:
-    image:
-      repository: platform-default
-      tag: latest
-
-  codex:
-    enabled: false
-    image:
-      repository: platform-default
-      tag: latest
-
-  pi-agent:
-    enabled: false
-    image:
-      repository: platform-default
-      tag: latest
-
-  bob:
-    enabled: false
+  default:
     image:
       repository: platform-default
       tag: latest

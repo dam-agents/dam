@@ -18,6 +18,11 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
 import { getAccessToken } from "../../../auth.js";
+import {
+  readNextSessionPair,
+  rememberSessionPair,
+} from "../api/session-pair.js";
+import { pairMeta } from "../lib/session-pair-options.js";
 
 type ConnectionState = "connecting" | "live" | "disconnected" | "exited";
 
@@ -48,10 +53,12 @@ export function Terminal({
     autoConnect ? "connecting" : "disconnected",
   );
   const [exitCode, setExitCode] = useState<number | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const [reconnectKey, setReconnectKey] = useState(0);
   const connectEnabled = useRef(autoConnect);
   const handleReconnect = () => {
     connectEnabled.current = true;
+    setRefusal(null);
     setState("connecting");
     setReconnectKey((k) => k + 1);
   };
@@ -108,13 +115,15 @@ export function Terminal({
       const token = await getAccessToken();
       if (cancelled) return;
 
+      const lease = fresh ? readNextSessionPair(agentId) : null;
       ws = new WebSocket(
-        `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/agents/${agentId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}`,
+        `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/agents/${agentId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}${lease ? `&${new URLSearchParams(pairMeta(lease.pair)).toString()}` : ""}`,
       );
       ws.binaryType = "arraybuffer";
 
       ws.onopen = () => {
         if (cancelled || !ws || !term) return;
+        if (lease?.chosen) rememberSessionPair(agentId, lease.pair);
         setState("live");
         ws.send(encodeResize(term.cols, term.rows).buffer);
         term.focus();
@@ -142,8 +151,15 @@ export function Terminal({
         }
       };
 
-      ws.onclose = () => {
-        if (!cancelled) setState((s) => (s === "exited" ? s : "disconnected"));
+      ws.onclose = (e) => {
+        if (cancelled) return;
+        if (e.code === 1008)
+          setRefusal(
+            e.reason === "provider-removed"
+              ? "This session's model provider was removed from the agent"
+              : e.reason,
+          );
+        setState((s) => (s === "exited" ? s : "disconnected"));
       };
       ws.onerror = () => {
         if (!cancelled) setState("disconnected");
@@ -198,7 +214,7 @@ export function Terminal({
           <div className="flex flex-col items-center gap-3 text-center">
             <ErrorFilled size={24} className="text-danger" />
             <p className="text-sm text-muted-foreground">
-              Session disconnected
+              {refusal ?? "Session disconnected"}
             </p>
             <Button variant="outline" onClick={handleReconnect}>
               Reconnect

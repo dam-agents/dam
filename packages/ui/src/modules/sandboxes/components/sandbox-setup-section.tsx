@@ -14,7 +14,9 @@ import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-ed
 import { KnowledgeSection } from "../../knowledge-bases/components/knowledge-section.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
 import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
+import { HarnessSettingsSections } from "./harness-settings-sections.js";
 import { LifecycleField } from "./lifecycle-field.js";
+import { ProviderGrantsSection } from "./provider-grants-section.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
 import { SandboxSizeSection } from "./sandbox-size-section.js";
 import { ConnectionAddressingSetupSection } from "./setup/setup-sections.js";
@@ -77,23 +79,27 @@ export function SandboxSetupSection({ f }: Props) {
         </FormField>
       </section>
 
-      <section className="mb-8">
-        <SectionLabel spaced>Provider</SectionLabel>
-        <Inset>
-          <ProviderSelect
-            selected={f.selectedProvider}
-            onSelect={f.selectProvider}
-            confirmSwitch={confirmSwitch}
-            disabled={f.saving}
-            required={f.formReady}
-          />
-        </Inset>
-        <p className="mt-3 text-xs text-muted-foreground">
-          Changing the provider swaps this agent's model credential. A
-          cross-family switch (e.g. Anthropic → OpenAI on a Claude image) can
-          break the agent and may need a restart.
-        </p>
-      </section>
+      {f.carriedHarnesses ? (
+        <ProviderGrantsSection agentId={agent.id} />
+      ) : (
+        <section className="mb-8">
+          <SectionLabel spaced>Provider</SectionLabel>
+          <Inset>
+            <ProviderSelect
+              selected={f.selectedProvider}
+              onSelect={f.selectProvider}
+              confirmSwitch={confirmSwitch}
+              disabled={f.saving}
+              required={f.formReady}
+            />
+          </Inset>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Changing the provider swaps this agent's model credential. A
+            cross-family switch (e.g. Anthropic → OpenAI on a Claude image) can
+            break the agent and may need a restart.
+          </p>
+        </section>
+      )}
 
       <section className="mb-8">
         <SectionLabel spaced>Availability</SectionLabel>
@@ -130,7 +136,14 @@ export function SandboxSetupSection({ f }: Props) {
         />
       )}
 
-      <SandboxModelSettings agentId={agent.id} draft={f.harnessDraft} />
+      {f.carriedHarnesses ? (
+        <HarnessSettingsSections
+          agentId={agent.id}
+          harnesses={f.carriedHarnesses}
+        />
+      ) : (
+        <SandboxModelSettings agentId={agent.id} draft={f.harnessDraft} />
+      )}
 
       <KnowledgeSection agent={agent} />
 

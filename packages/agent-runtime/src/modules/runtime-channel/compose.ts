@@ -3,13 +3,14 @@ import { eventKind } from "agent-runtime-api";
 import type {
   EventReportInput,
   ContributionKind,
+  HarnessConfigCurrent,
   HarnessConfigService,
   Plugin,
   RuntimeChannelService,
   SessionDirectoryEntry,
 } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
-import type { RuntimeEnvReader } from "../../core/runtime-env.js";
+import type { LeaseEnvReader } from "../../core/runtime-env.js";
 import {
   contributionDrivers,
   eventDrivers,
@@ -34,12 +35,16 @@ import {
   createDispatcher,
   createEventDispatcher,
   type ContextEnv,
+  type ScopedBinding,
 } from "./dispatcher.js";
 import { createPluginRegistry } from "./infrastructure/plugin-registry.js";
 import { loadExtensions } from "./infrastructure/extension-loader.js";
 import type { HarnessClient } from "./harness-client.js";
 import { createRuntimeChannelService } from "./service.js";
-import { createHarnessConfigPlugin } from "./drivers/harness-config-plugin.js";
+import {
+  createHarnessConfigPlugin,
+  type HarnessConfigPlugin,
+} from "./drivers/harness-config-plugin.js";
 import { createModelDiscovery } from "./infrastructure/model-discovery.js";
 import {
   createSessionDirectoryReporter,
@@ -60,13 +65,18 @@ export interface RuntimeChannelComposition {
   service: RuntimeChannelService;
   harnessConfig: HarnessConfigService;
   seedHarnessModel(): Promise<boolean>;
+  leaseModel(lease: {
+    harness: string;
+    provider: string | null;
+  }): Promise<string | null>;
   sessionDirectory: SessionDirectoryReporter;
   helloOnBoot(opts: { agentRuntimeVersion: string }): Promise<void>;
 }
 
 export interface ComposeRuntimeChannelOpts {
-  onHarnessConfigApplied: () => void;
-  manifest: RuntimeManifest;
+  onHarnessConfigApplied: (harness: string) => void;
+  manifests: Readonly<Record<string, RuntimeManifest>>;
+  defaultHarness: string;
   agentHome: string;
   workDir: string;
   stateBackend: DocumentStoreBackend;
@@ -76,7 +86,7 @@ export interface ComposeRuntimeChannelOpts {
   findSessionByRef?: (ref: string) => string | undefined;
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
-  envReader: RuntimeEnvReader;
+  envReader: LeaseEnvReader;
   onSnapshotProcessed?: ApplyStateDeps["onSnapshotProcessed"];
 }
 
@@ -87,12 +97,41 @@ export async function composeRuntimeChannel(
     process.stderr.write(`${new Date().toISOString()} [runtime] ${m}\n`);
   };
 
-  const { manifest, harnessClient } = opts;
-  const resolved = resolveDrivers(manifest);
-  const contributionBindings = contributionDrivers(resolved);
+  const { harnessClient, defaultHarness } = opts;
+  const manifest = opts.manifests[defaultHarness]!;
+  const resolvedByHarness = Object.entries(opts.manifests)
+    .sort(
+      ([a], [b]) => Number(b === defaultHarness) - Number(a === defaultHarness),
+    )
+    .map(([harness, m]) => ({ harness, resolved: resolveDrivers(m) }));
+  const resolved = resolvedByHarness[0]!.resolved;
+  const contributionBindings: Record<string, ScopedBinding[]> = {};
+  for (const { harness, resolved: own } of resolvedByHarness) {
+    for (const [kind, binding] of Object.entries(contributionDrivers(own))) {
+      const list = (contributionBindings[kind] ??= []);
+      const same = bindingsFingerprint({ binding });
+      if (
+        list.some((b) => bindingsFingerprint({ binding: b.binding }) === same)
+      )
+        continue;
+      list.push({
+        binding,
+        scope: harness === defaultHarness ? null : harness,
+      });
+    }
+  }
   const stateStore = createStateStore(opts.stateBackend, {
     envReady: opts.envReader.ready,
-    bindingsFingerprint: bindingsFingerprint(contributionBindings),
+    bindingsFingerprint: bindingsFingerprint(
+      Object.fromEntries(
+        Object.entries(contributionBindings).map(([kind, list]) => [
+          kind,
+          list.length === 1 && list[0]!.scope === null
+            ? list[0]!.binding
+            : list,
+        ]),
+      ),
+    ),
     log,
   });
   const triggerStateStore = createTriggerStateStore(
@@ -116,7 +155,7 @@ export async function composeRuntimeChannel(
       driver: opts.triggerDriver,
       stateStore: triggerStateStore,
       harnessDefault: async () =>
-        harnessConfigPlugin.supported
+        harnessConfigPlugin?.supported
           ? ((await harnessConfigPlugin.readCurrent({ discover: false }))
               .defaultModel ?? null)
           : null,
@@ -146,18 +185,57 @@ export async function composeRuntimeChannel(
     }),
   );
 
-  const harnessConfigRaw = resolved["harness-config"];
-  const harnessConfigPlugin = createHarnessConfigPlugin({
-    onApplied: opts.onHarnessConfigApplied,
-    binding: harnessConfigRaw
-      ? harnessConfigBinding.parse(harnessConfigRaw)
-      : undefined,
-    agentHome: opts.agentHome,
-    envReader: opts.envReader,
-    discoverModels: createModelDiscovery({ log }),
-    log,
-  });
-  if (harnessConfigPlugin.supported) registry.register(harnessConfigPlugin);
+  const discoverModels = createModelDiscovery({ log });
+  const harnessConfigs = new Map<string, HarnessConfigPlugin>();
+  for (const { harness, resolved: own } of resolvedByHarness) {
+    const raw = own["harness-config"];
+    if (!raw) continue;
+    harnessConfigs.set(
+      harness,
+      createHarnessConfigPlugin({
+        harness,
+        onApplied: () => opts.onHarnessConfigApplied(harness),
+        binding: harnessConfigBinding.parse(raw),
+        agentHome: opts.agentHome,
+        envReader: opts.envReader,
+        discoverModels,
+        log,
+      }),
+    );
+  }
+  const harnessConfigPlugin = harnessConfigs.get(defaultHarness);
+  const harnessConfigFor = (harness: string | undefined) =>
+    harnessConfigs.get(harness ?? defaultHarness);
+  if (harnessConfigs.size > 0)
+    registry.register({
+      name: "harness-config",
+      bindEvent: () => async (payload) => {
+        const { harness } = payload as { harness?: string };
+        const target = harnessConfigFor(harness);
+        if (!target)
+          throw new Error(
+            `harness ${harness ?? defaultHarness} has no harness-config driver`,
+          );
+        await target.apply(payload as never);
+      },
+    });
+  const eventBindings = {
+    ...eventDrivers(resolved),
+    ...(harnessConfigs.size > 0 && {
+      "harness-config": { impl: "harness-config" },
+    }),
+  };
+  const harnessConfigByHarness = async (): Promise<
+    Record<string, HarnessConfigCurrent>
+  > =>
+    Object.fromEntries(
+      await Promise.all(
+        [...harnessConfigs].map(
+          async ([harness, plugin]) =>
+            [harness, await plugin.readCurrent({ discover: false })] as const,
+        ),
+      ),
+    );
 
   await loadExtensions(manifest.extensions?.impls ?? [], registry);
 
@@ -167,7 +245,7 @@ export async function composeRuntimeChannel(
     env,
   });
   const eventDispatcher = createEventDispatcher({
-    drivers: eventDrivers(resolved),
+    drivers: eventBindings,
     registry,
     env,
   });
@@ -182,10 +260,14 @@ export async function composeRuntimeChannel(
     eventDispatcher,
     stateStore,
     reporter,
-    readHarnessConfig: async () =>
-      harnessConfigPlugin.supported
-        ? await harnessConfigPlugin.readCurrent()
-        : undefined,
+    readHarnessConfig: async () => ({
+      ...(harnessConfigPlugin && {
+        harnessConfigCurrent: await harnessConfigPlugin.readCurrent(),
+      }),
+      ...(harnessConfigs.size > 0 && {
+        harnessConfigCurrentByHarness: await harnessConfigByHarness(),
+      }),
+    }),
     ...(opts.onSnapshotProcessed
       ? { onSnapshotProcessed: opts.onSnapshotProcessed }
       : {}),
@@ -201,23 +283,46 @@ export async function composeRuntimeChannel(
 
   return {
     service,
-    harnessConfig: harnessConfigPlugin,
-    seedHarnessModel: harnessConfigPlugin.seedModel,
+    harnessConfig: {
+      readCurrent: async (input) => {
+        const target = harnessConfigFor(input?.harness);
+        return target
+          ? await target.readCurrent()
+          : { model: null, mode: null, configOptions: {} };
+      },
+      models: async ({ harness, provider }) =>
+        await harnessConfigFor(harness)?.models(provider),
+    },
+    seedHarnessModel: async () =>
+      (await harnessConfigPlugin?.seedModel()) ?? false,
+    leaseModel: async ({ harness, provider }) =>
+      (await harnessConfigs.get(harness)?.leaseModel(provider)) ?? null,
     sessionDirectory,
     async helloOnBoot({ agentRuntimeVersion }) {
       const capabilities = {
         contributions: contributionKinds as never,
         events: eventKinds as never,
-        harnessConfig: harnessConfigPlugin.supported,
-        harnessConfigCatalog: harnessConfigPlugin.catalog,
-        sessionModel: harnessConfigPlugin.sessionModel,
+        harnessConfig: harnessConfigPlugin?.supported ?? false,
+        harnessConfigCatalog: harnessConfigPlugin?.catalog,
+        sessionModel: harnessConfigPlugin?.sessionModel ?? false,
+        defaultHarness,
+        harnesses: Object.keys(opts.manifests).map((name) => {
+          const plugin = harnessConfigs.get(name);
+          return {
+            name,
+            harnessConfig: plugin !== undefined,
+            ...(plugin?.catalog && { harnessConfigCatalog: plugin.catalog }),
+            sessionModel: plugin?.sessionModel ?? false,
+          };
+        }),
         kbPublish: 2,
         liveUpdates: true,
       };
       for (let delay = 1_000; ; delay = Math.min(delay * 2, 30_000)) {
-        const harnessConfigCurrent = harnessConfigPlugin.supported
-          ? await harnessConfigPlugin.readCurrent({ discover: false })
-          : undefined;
+        const harnessConfigCurrent = await harnessConfigPlugin?.readCurrent({
+          discover: false,
+        });
+        const harnessConfigCurrentByHarness = await harnessConfigByHarness();
         const local = stateStore.read();
         log(
           `[runtime] hello → local v=${local.lastAppliedVersion} hash=${(local.lastAppliedHash ?? "<none>").slice(0, 8)} capabilities={contributions:${contributionKinds.join("|")}, events:${eventKinds.join("|")}}`,
@@ -230,6 +335,7 @@ export async function composeRuntimeChannel(
             agentRuntimeVersion,
             capabilities,
             harnessConfigCurrent,
+            harnessConfigCurrentByHarness,
           });
           sessionDirectory.report();
           return;

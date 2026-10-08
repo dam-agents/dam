@@ -1,6 +1,11 @@
 import type { DriverBinding, KindHandler, Plugin } from "agent-runtime-api";
 import { expandHome } from "../../../core/expand-home.js";
-import type { EnvStateStore } from "../infrastructure/env-state-store.js";
+import {
+  leaseEnvOf,
+  type EnvLayer,
+  type EnvStateStore,
+  type RuntimeEnvState,
+} from "../infrastructure/env-state-store.js";
 
 const IMPL_NAME = "env";
 const GH_TOKEN_ENV = "GH_TOKEN";
@@ -8,8 +13,16 @@ const GH_ENTERPRISE_TOKEN_ENV = "GH_ENTERPRISE_TOKEN";
 const GH_AVAILABLE_ENV = "PLATFORM_GH_TOKEN_AVAILABLE";
 const KUBECONFIG_ENV = "KUBECONFIG";
 
+export interface LayerChange {
+  id: string;
+  namesChanged: boolean;
+}
+
 export interface EnvChange {
   namesChanged: boolean;
+  base: { namesChanged: boolean } | null;
+  providers: LayerChange[];
+  harnesses: LayerChange[];
 }
 
 export interface EnvPluginDeps {
@@ -29,9 +42,19 @@ export function createEnvPlugin(deps: EnvPluginDeps): Plugin {
       }
       return async (contributions, ctx) => {
         const env: Record<string, string> = {};
+        const providerEnv = new Map<string, Record<string, string>>();
+        const harnessEnv = new Map<string, Record<string, string>>();
         for (const c of contributions) {
           if (c.kind !== "env") continue;
-          if (c.name === KUBECONFIG_ENV) {
+          const layer =
+            c.provider !== undefined
+              ? layerOf(providerEnv, c.provider)
+              : c.harness !== undefined
+                ? layerOf(harnessEnv, c.harness)
+                : null;
+          if (layer) {
+            if (!Object.hasOwn(layer, c.name)) layer[c.name] = c.placeholder;
+          } else if (c.name === KUBECONFIG_ENV) {
             env[c.name] = joinPathList(
               env[c.name],
               expandHome(c.placeholder, ctx.agentHome),
@@ -46,22 +69,70 @@ export function createEnvPlugin(deps: EnvPluginDeps): Plugin {
           env[GH_AVAILABLE_ENV] === "true"
             ? "true"
             : "false";
+        const next: RuntimeEnvState = {
+          env,
+          providers: layersOf(providerEnv),
+          harnesses: layersOf(harnessEnv),
+        };
 
-        const current = deps.store.current();
-        if (envEquals(current, env)) {
+        const prev = deps.store.state();
+        const base = envEquals(prev.env, next.env)
+          ? null
+          : { namesChanged: !sameNames(prev.env, next.env) };
+        const providers = changedLayers(prev.providers, next.providers);
+        const harnesses = changedLayers(prev.harnesses, next.harnesses);
+        const defaultMoved = prev.providers[0]?.id !== next.providers[0]?.id;
+        if (
+          !base &&
+          providers.length === 0 &&
+          harnesses.length === 0 &&
+          !defaultMoved
+        ) {
           ctx.log("env unchanged");
           return;
         }
-        const namesChanged = !sameNames(current, env);
-        deps.store.write(env);
+        deps.store.write(next);
+        const defaultEnv = (s: RuntimeEnvState): Record<string, string> =>
+          leaseEnvOf(s, {
+            harness: null,
+            provider: s.providers[0]?.id ?? null,
+          });
+        const namesChanged = !sameNames(defaultEnv(prev), defaultEnv(next));
         ctx.log(
-          `wrote ${Object.keys(env).length} env var(s)` +
+          `wrote ${Object.keys(env).length} env var(s), ` +
+            `${String(next.providers.length)} provider and ` +
+            `${String(next.harnesses.length)} harness layer(s)` +
             (namesChanged ? "" : " (values only)"),
         );
-        deps.onChange?.({ namesChanged });
+        deps.onChange?.({ namesChanged, base, providers, harnesses });
       };
     },
   };
+}
+
+function layerOf(
+  layers: Map<string, Record<string, string>>,
+  id: string,
+): Record<string, string> {
+  const layer = layers.get(id) ?? {};
+  layers.set(id, layer);
+  return layer;
+}
+
+function layersOf(layers: Map<string, Record<string, string>>): EnvLayer[] {
+  return [...layers].map(([id, env]) => ({ id, env }));
+}
+
+function changedLayers(prev: EnvLayer[], next: EnvLayer[]): LayerChange[] {
+  const ids = new Set([...prev, ...next].map((l) => l.id));
+  const out: LayerChange[] = [];
+  for (const id of ids) {
+    const before = prev.find((l) => l.id === id)?.env ?? {};
+    const after = next.find((l) => l.id === id)?.env ?? {};
+    if (envEquals(before, after)) continue;
+    out.push({ id, namesChanged: !sameNames(before, after) });
+  }
+  return out;
 }
 
 function joinPathList(existing: string | undefined, add: string): string {

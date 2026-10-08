@@ -1,5 +1,5 @@
 import { ArrowRight, Close } from "@carbon/icons-react";
-import { useId } from "react";
+import { type ReactNode, useId } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +12,7 @@ import {
 interface Props {
   model: string;
   subject: string;
+  extra?: ReactNode;
   settings?: {
     label: string;
     onConfigure: () => void;
@@ -26,6 +27,7 @@ interface Props {
 export function ModelIndicator({
   model,
   subject,
+  extra,
   settings,
   sessionChoices,
 }: Props) {
@@ -94,6 +96,7 @@ export function ModelIndicator({
             ))}
           </ul>
         )}
+        {extra}
         {settings && (
           <PopoverClose asChild>
             <button

@@ -72,11 +72,21 @@ export function createHelloHandler(deps: {
         emit({ type: EventType.RuntimeHelloReceived, agentId, ownerSub });
       }
 
-      if (input.harnessConfigCurrent) {
+      if (input.harnessConfigCurrent || input.harnessConfigCurrentByHarness) {
         try {
-          await deps.snapshotWriter.merge(agentId, input.harnessConfigCurrent, {
-            confirmed: true,
-          });
+          if (input.harnessConfigCurrent)
+            await deps.snapshotWriter.merge(
+              agentId,
+              input.harnessConfigCurrent,
+              { confirmed: true },
+            );
+          for (const [harness, current] of Object.entries(
+            input.harnessConfigCurrentByHarness ?? {},
+          ))
+            await deps.snapshotWriter.merge(agentId, current, {
+              confirmed: true,
+              harness,
+            });
         } catch (err) {
           deps.log(
             `[runtime-hello] ${agentId}: harness-config snapshot write failed: ${(err as Error).message}`,

@@ -217,3 +217,8 @@ function pickKinds(
     Object.entries(resolved).filter(([k]) => allow.has(k)),
   );
 }
+
+export function sessionModelOf(manifest: RuntimeManifest): boolean {
+  const raw = resolveDrivers(manifest)["harness-config"];
+  return raw ? harnessConfigBinding.parse(raw).sessionModel === true : false;
+}

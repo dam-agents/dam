@@ -58,6 +58,7 @@ export interface SessionTranscript {
   metadataOf(sessionId: string): CachedMetadata;
   lines(sessionId: string): { frames: string[]; truncated: boolean };
   forget(sessionId: string): void;
+  sessionCount(): number;
   dropChannel(channel: ClientChannel): void;
   clear(): void;
 }
@@ -330,6 +331,10 @@ export function createSessionTranscript(
 
     dropChannel(channel) {
       channelCursors.delete(channel);
+    },
+
+    sessionCount() {
+      return sessionLogs.size;
     },
 
     clear() {

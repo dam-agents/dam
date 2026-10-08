@@ -32,7 +32,10 @@ import type { StarterKitsService } from "./modules/starter-kits/types.js";
 import type { ReposService } from "./modules/repos/types.js";
 import type { MetricsService } from "./modules/metrics/types.js";
 import type { TelemetryService } from "./modules/telemetry/types.js";
-import type { TemplatesService } from "./modules/templates/types.js";
+import type {
+  HarnessCatalog,
+  TemplatesService,
+} from "./modules/templates/types.js";
 import type { TermsService } from "./modules/terms/types.js";
 import type { UsageService } from "./modules/usage/types.js";
 
@@ -46,6 +49,7 @@ export interface UserIdentity {
 
 export interface ApiContext {
   templates: TemplatesService;
+  harnesses: HarnessCatalog;
   repos: ReposService;
   agents: AgentsService;
   schedules: SchedulesService;

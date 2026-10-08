@@ -301,17 +301,21 @@ export function createStarterKitsService(
         });
       }
 
-      const harness =
-        kit.image?.harness ??
-        (input.templateId
-          ? (await deps.readTemplateSpec(input.templateId))?.spec.harness
-          : undefined);
+      const templateHarness = input.templateId
+        ? (await deps.readTemplateSpec(input.templateId))?.spec.harness
+        : undefined;
+      const kitHarness =
+        kit.image || templateHarness ? undefined : kit.harnesses?.[0];
+      const harness = kit.image?.harness ?? templateHarness ?? kitHarness;
       const createInput: AgentCreateInput = {
         name: input.name,
         ...(input.avatar ? { avatar: input.avatar } : {}),
         ...(kit.image
           ? { image: kit.image.ref }
-          : { templateId: input.templateId }),
+          : {
+              templateId: input.templateId,
+              ...(kitHarness ? { harness: kitHarness } : {}),
+            }),
         ...(kit.knowledgeBase
           ? { kbShareRoots: kit.knowledgeBase.shareRoots }
           : {}),
