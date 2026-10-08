@@ -29,6 +29,9 @@ const liteLlmProxyCredentialSchema = z
 
 type FormValues = z.infer<typeof liteLlmProxyCredentialSchema>;
 
+const MARK =
+  "rounded-sm bg-yellow-200 px-0.5 text-foreground dark:bg-yellow-400/30";
+
 const LITELLM_PROVIDERS = {
   "ibm-litellm": {
     description: IBM_LITELLM_DESCRIPTION,
@@ -117,9 +120,10 @@ export function LiteLlmProxyForm({
             {...externalLinkProps}
             className="underline hover:text-primary"
           >
-            {IBM_LITELLM_HOST}
+            ete-litellm.ai-models.<mark className={MARK}>vpc</mark>.res.ibm.com
           </a>{" "}
-          work here; keys from ete-litellm.ai-models.vpc-int.res.ibm.com do not.
+          work here; keys from ete-litellm.ai-models.
+          <mark className={MARK}>vpc-int</mark>.res.ibm.com do not.
         </p>
       )}
     </ProviderFormShell>
