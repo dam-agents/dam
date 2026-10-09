@@ -312,7 +312,7 @@ const PAGE_BODY = `<header class="top">
         <h3>Connections per agent</h3>
         <p class="q">How many connections does each agent hold?</p>
         <div class="chart" id="conns"></div>
-        <div class="base">Includes knowledge-base connections</div>
+        <div class="base">Includes knowledge-base connections · the provider key every agent needs is not counted</div>
       </div>
       <div class="card c6">
         <h3>Knowledge bases per agent</h3>

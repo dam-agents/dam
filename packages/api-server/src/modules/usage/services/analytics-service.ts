@@ -34,6 +34,7 @@ export function createAnalyticsService(
         agentsCreated,
         oomAgentIds,
         knowledgeBaseConnectionIds,
+        providerConnectionIds,
         liveAgents,
       ] = await Promise.all([
         deps.repo.users(),
@@ -44,6 +45,7 @@ export function createAnalyticsService(
         deps.repo.agentsCreated(),
         deps.repo.outOfMemoryAgentIds(OUT_OF_MEMORY_WINDOW_DAYS),
         deps.repo.knowledgeBaseConnectionIds(),
+        deps.repo.providerConnectionIds(),
         deps.listLiveAgents(),
       ]);
       return buildAnalyticsReport(
@@ -57,6 +59,7 @@ export function createAnalyticsService(
           liveAgents,
           oomAgentIds,
           knowledgeBaseConnectionIds,
+          providerConnectionIds,
           sizing: deps.sizing,
         },
         (deps.now ?? (() => new Date()))(),

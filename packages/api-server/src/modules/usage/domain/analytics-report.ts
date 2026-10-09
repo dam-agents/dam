@@ -54,6 +54,7 @@ export type AnalyticsFacts = {
   liveAgents: ReadonlyArray<LiveAgentFact>;
   oomAgentIds: ReadonlySet<string>;
   knowledgeBaseConnectionIds: ReadonlySet<string>;
+  providerConnectionIds: ReadonlySet<string>;
   sizing: AgentSizing;
 };
 

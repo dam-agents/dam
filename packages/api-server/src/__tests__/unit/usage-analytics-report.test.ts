@@ -26,6 +26,7 @@ function facts(overrides: Partial<AnalyticsFacts> = {}): AnalyticsFacts {
     liveAgents: [],
     oomAgentIds: new Set(),
     knowledgeBaseConnectionIds: new Set(),
+    providerConnectionIds: new Set(),
     sizing: {
       slot: { cpu: "1", memory: "2Gi" },
       defaultStorage: "10Gi",
@@ -181,7 +182,8 @@ describe("usage analytics report", () => {
   });
 
   // TEST_SCENARIO: the agents panels read live agents but count only those a
-  // TEST_SCENARIO: non-core user created, and size an agent by whole slots.
+  // TEST_SCENARIO: non-core user created, size an agent by whole slots, and do not
+  // TEST_SCENARIO: count the provider key every agent is granted as a connection.
   it("sizes live agents and leaves out agents nobody counted", () => {
     const live = (
       id: string,
@@ -209,12 +211,13 @@ describe("usage analytics report", () => {
           live("x3", {
             cpu: "2",
             memory: "2Gi",
-            grantedConnectionIds: ["kb", "c"],
+            grantedConnectionIds: ["kb", "c", "provider-key"],
           }),
           live("core-agent", { cpu: "4", memory: "8Gi" }),
         ],
         oomAgentIds: new Set(["x2"]),
         knowledgeBaseConnectionIds: new Set(["kb"]),
+        providerConnectionIds: new Set(["provider-key"]),
       }),
       NOW,
     );

@@ -558,7 +558,12 @@ function buildAgentsNow(facts: AnalyticsFacts): AnalyticsReport["agentsNow"] {
       ],
     ),
     connections: bucketCounts(
-      agents.map((a) => a.grantedConnectionIds.length),
+      agents.map(
+        (a) =>
+          a.grantedConnectionIds.filter(
+            (id) => !facts.providerConnectionIds.has(id),
+          ).length,
+      ),
       [
         { label: "0", max: 0 },
         { label: "1", max: 1 },

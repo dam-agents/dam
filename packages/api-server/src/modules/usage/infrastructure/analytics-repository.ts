@@ -1,5 +1,5 @@
 import { sql, type Db } from "db";
-import { SHARED_KB_TEMPLATE_ID } from "api-server-api";
+import { PROVIDER_TEMPLATE_IDS, SHARED_KB_TEMPLATE_ID } from "api-server-api";
 import {
   CORE_FEATURES,
   type ActiveDayFact,
@@ -30,6 +30,7 @@ export type AnalyticsRepository = {
   agentsCreated(): Promise<AgentCreatedFact[]>;
   outOfMemoryAgentIds(sinceDays: number): Promise<Set<string>>;
   knowledgeBaseConnectionIds(): Promise<Set<string>>;
+  providerConnectionIds(): Promise<Set<string>>;
 };
 
 export function createAnalyticsRepository(db: Db): AnalyticsRepository {
@@ -118,6 +119,13 @@ export function createAnalyticsRepository(db: Db): AnalyticsRepository {
         SELECT DISTINCT agent_id FROM usage_agent_oom_days
         WHERE day >= (now() AT TIME ZONE 'UTC')::date - ${sinceDays}::int`);
       return new Set(rows.map((r) => r.agent_id));
+    },
+
+    async providerConnectionIds() {
+      const rows = await db.execute<{ id: string }>(sql`
+        SELECT id FROM connections
+        WHERE template_id IN ${sql.raw(`(${[...PROVIDER_TEMPLATE_IDS].map((id) => `'${id.replace(/'/g, "''")}'`).join(", ")})`)}`);
+      return new Set(rows.map((r) => r.id));
     },
 
     async knowledgeBaseConnectionIds() {
