@@ -50,7 +50,11 @@ function ProviderSection({
   harness: string;
   provider: ProviderConnectionRef;
 }) {
-  const { data } = useProviderModels(agentId, harness, provider.id);
+  const { data, isFetching, isError, operable } = useProviderModels(
+    agentId,
+    harness,
+    provider.id,
+  );
   const models = data?.availableModels ?? [];
   return (
     <section aria-label={provider.name}>
@@ -71,7 +75,13 @@ function ProviderSection({
         ))}
         {models.length === 0 && (
           <li className="px-1 py-1 text-muted-foreground opacity-50">
-            Default model
+            {!operable
+              ? "Start the agent to list this provider's models."
+              : isFetching
+                ? "Loading models…"
+                : isError || data?.availableModels === undefined
+                  ? "Could not list this provider's models."
+                  : "No models available."}
           </li>
         )}
       </ul>

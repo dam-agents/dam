@@ -479,9 +479,14 @@ export function executeTemplateUpgrade(deps: {
     const update = templateImageUpdate(infra.spec.image, tmpl.spec.image);
     if (!update) return ok(infra);
 
+    const harness =
+      infra.spec.harness ??
+      (Object.hasOwn(RETIRED_TEMPLATE_HARNESS, infra.templateId)
+        ? RETIRED_TEMPLATE_HARNESS[infra.templateId]
+        : tmpl.spec.harness);
     const patched = await deps.patchSpec(id, {
       image: update.toImage,
-      ...(tmpl.spec.harness ? { harness: tmpl.spec.harness } : {}),
+      ...(harness ? { harness } : {}),
     });
     if (!patched) return err({ type: "AgentNotFound" as const });
     securityLog("info", "agent.upgrade", {

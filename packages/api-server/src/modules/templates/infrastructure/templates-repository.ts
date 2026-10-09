@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { loadYamlDocument } from "../../../core/yaml-document.js";
 import type { Template, TemplateSpec } from "api-server-api";
 import { templateSpecSchema } from "api-server-api";
+import {
+  DEFAULT_TEMPLATE_ID,
+  RETIRED_TEMPLATE_HARNESS,
+} from "../domain/harness-catalog.js";
 
 export interface TemplatesRepository {
   list(): Promise<Template[]>;
@@ -14,12 +18,15 @@ export type ReadTemplateSpec = TemplatesRepository["readSpec"];
 
 export function createTemplatesRepository(dir: string): TemplatesRepository {
   const byId = loadTemplates(dir);
+  for (const id of Object.keys(RETIRED_TEMPLATE_HARNESS)) byId.delete(id);
   const byAlias = new Map<string, Template>();
   for (const tmpl of byId.values())
     for (const alias of tmpl.spec.aliases ?? [])
       if (!byId.has(alias)) byAlias.set(alias, tmpl);
   const find = (id: string): Template | null =>
-    byId.get(id) ?? byAlias.get(id) ?? null;
+    Object.hasOwn(RETIRED_TEMPLATE_HARNESS, id)
+      ? (byId.get(DEFAULT_TEMPLATE_ID) ?? null)
+      : (byId.get(id) ?? byAlias.get(id) ?? null);
   return {
     async list() {
       return [...byId.values()];
