@@ -24,4 +24,9 @@ if [ -n "$PLATFORM_PROVIDER" ]; then
   export PI_CODING_AGENT_DIR="$lease"
 fi
 rm -rf "${PI_CODING_AGENT_DIR:-$shared}/extensions/pi-dynamic-providers"
+# Homes seeded before the image shipped pi-memory still load their own npm copy.
+# Pi exits on a missing -e path, so skip it while the node tools lack pi-memory.
+mem="$(mise where npm:@zhafron/pi-memory 2>/dev/null)/node_modules/@zhafron/pi-memory"
+[ -d "$shared/npm/node_modules/@zhafron/pi-memory" ] || [ ! -d "$mem" ] ||
+  set -- -e "$mem" "$@"
 exec pi -e /usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts "$@"

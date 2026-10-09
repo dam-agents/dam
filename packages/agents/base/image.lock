@@ -232,6 +232,12 @@ aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/1.0.4", digest =
 backend = "npm:@earendil-works/pi-coding-agent"
 specifiers = ["1.0.4"]
 
+[[tools."npm:@zhafron/pi-memory"]]
+version = "1.0.2"
+aube = { path = ".mise/locks/npm-zhafron-pi-memory/1.0.2", digest = "sha256:0dbbb549242b631b6fafcb2e57e7707f8d5c3405716ca3a723c3ecbc4525080a" }
+backend = "npm:@zhafron/pi-memory"
+specifiers = ["1.0.2"]
+
 [[tools."npm:agent-browser"]]
 version = "0.38.1"
 aube = { path = ".mise/locks/npm-agent-browser/0.38.1", digest = "sha256:71da2d3eacd2d671de6b4f1621c8eb49c1288cf86a6b33f55654a8ad3d0f8321" }

@@ -9,7 +9,9 @@ The harness ships in the default image every harness Template boots, built by `/
 | Component | Package | Purpose |
 |---|---|---|
 | Harness | `@earendil-works/pi-coding-agent` + `pi-acp` | pi runtime fork + ACP bridge to Platform UI |
-| Memory | `@zhafron/pi-memory` | git-free file-based memory, auto-injected at session start |
+| Memory | `@zhafron/pi-memory` | git-free file-based memory, auto-injected at session start; a tool of the image, loaded by `pi-platform` |
+
+The image sets `PI_OFFLINE=1`, so Pi makes no network call at startup: no model-catalog fetch from `pi.dev` (which the egress gateway would hold for approval on every new Pi process), no version check, no install telemetry, and no install or update of the packages in `settings.json`. That last one is why pi-memory is a tool of the image: `pi-platform` loads it with `-e`. A home seeded before the change keeps the npm copy it installed at first boot, and `pi-platform` then does not add the image's copy, so it never loads twice.
 
 Default model: `openai / gpt-5.4-mini`. Change in [`app/working-dir/.pi/agent/settings.json`](rootfs/app/working-dir/.pi/agent/settings.json).
 
@@ -19,7 +21,7 @@ Default model: `openai / gpt-5.4-mini`. Change in [`app/working-dir/.pi/agent/se
 usr/local/bin/
   harness-chat           ← chat-mode entrypoint (pi-acp, which runs pi through pi-platform)
   harness-terminal       ← terminal-mode entrypoint (pi-platform)
-  pi-platform            ← runs pi with the platform's extensions loaded from the image
+  pi-platform            ← runs pi with the platform's extensions and pi-memory loaded from the image
 usr/local/share/pi-platform/
   pi-acp-patch.mjs       ← temporary pi-acp fix, loaded by harness-chat (see "pi-acp concurrent sessions")
   extensions/pi-dynamic-providers/
