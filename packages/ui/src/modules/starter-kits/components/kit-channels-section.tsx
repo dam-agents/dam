@@ -66,7 +66,7 @@ export function KitChannelsSection({
                     </span>
                     {fromKit && (
                       <Badge variant="kit" size="sm">
-                        Starter Kit
+                        Starter kit
                       </Badge>
                     )}
                   </div>

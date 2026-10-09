@@ -112,7 +112,7 @@ export function KitScheduleCard({
               {schedule.name}
             </span>
             <Badge variant="kit" size="sm">
-              Starter Kit
+              Starter kit
             </Badge>
             {values.precheck.trim() !== "" && (
               <Badge variant="muted" size="sm">

@@ -35,7 +35,7 @@ export function KitRepositoryCard({
             <Launch size={12} aria-hidden />
           </a>
           <Badge variant="kit" size="sm">
-            Starter Kit
+            Starter kit
           </Badge>
         </div>
         <p className="mt-0.5 text-sm text-muted-foreground">

@@ -32,7 +32,7 @@ To point Codex at an OpenAI-compatible proxy or self-hosted endpoint, add `OPENA
 ]
 ```
 
-The harness scripts point the `openai-platform` provider's `base_url` at `OPENAI_BASE_URL`: `harness-terminal` with a `-c` override, `harness-chat` through codex-acp's `CODEX_CONFIG`, which it merges into every chat session's config. Update the secret's `hostPattern` to match the proxy host so the Envoy sidecar injects the credential on the right outbound requests.
+The harness scripts point the `openai-platform` provider's `base_url` at `OPENAI_BASE_URL` with a `-c` override. In chat mode, codex-acp starts `codex app-server` through [`codex-app-server`](rootfs/usr/local/bin/codex-app-server), which adds the override. The override must apply to the app-server process and not only to codex-acp's `CODEX_CONFIG`: codex-acp starts some threads without `CODEX_CONFIG`, for example the thread that makes a session's title. Without the override, these threads send the user's first message to `api.openai.com`. Update the secret's `hostPattern` to match the proxy host so the Envoy sidecar injects the credential on the right outbound requests.
 
 ### Model selection
 
@@ -51,11 +51,20 @@ Each of these writes re-serializes the whole file. Every key and value you set s
 
 A file that does not parse is never replaced. The write fails and reports a delivery failure, and the file stays as it is until you fix it.
 
+## Startup network calls
+
+[`/etc/codex/config.toml`](rootfs/etc/codex/config.toml) turns off the Codex calls that would ask for egress approval each time a Codex process starts:
+
+- `check_for_update_on_startup = false` stops the update check. The image pins the CLI.
+- `[features] plugins = false` stops the plugin catalog sync from `chatgpt.com`, `github.com` and `api.github.com`. MCP servers in `[mcp_servers.*]` are not plugins, so they still start.
+
+The terminal TUI still fetches its announcement tip from `raw.githubusercontent.com`. Codex has no setting to turn that off.
+
 ## Harness scripts
 
 | Script | Runs | Purpose |
 |---|---|---|
-| [`harness-chat`](rootfs/usr/local/bin/harness-chat) | `codex-acp` | ACP subprocess for chat-mode sessions (UI); runs its bundled `codex app-server` |
+| [`harness-chat`](rootfs/usr/local/bin/harness-chat) | `codex-acp` | ACP subprocess for chat-mode sessions (UI); runs `codex app-server` through `codex-app-server` |
 | [`harness-terminal`](rootfs/usr/local/bin/harness-terminal) | `codex` / `codex resume <thread>` | Interactive TUI for terminal-mode sessions |
 
 Both modes run without approvals or Codex's own sandbox, since the pod itself is the sandbox (network isolation + Envoy credential injection): terminal sessions pass `--dangerously-bypass-approvals-and-sandbox`, and chat sessions start in codex-acp's `agent-full-access` mode, which it sends with every turn and which therefore outranks `/etc/codex/config.toml`.

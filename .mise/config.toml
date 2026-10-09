@@ -15,10 +15,10 @@ CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "{{config_root}}/.mise/zig/cc"
 
 [vars]
 repo_root = "{{config_root}}"
-base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:33ba0eb07e5acb7da2469df46d09081a6e1079c7e4f3769198316f5efac5a218"
-base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:dbe63cc0af0d272c897f5e136173c9670f991deede43867f59876066dd6c4e5b"
+base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:c5b2afb85ecfff60c935a8c8df1851020f711b9211217309d4b59fcda8e0e22f"
+base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:06f90824df42c6d2dae1ff7b457b3d24e0e0901554dbf2f69d3fbd0886cd0635"
 base_image_keycloak = "quay.io/keycloak/keycloak:26.8.0@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc"
-base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:f9fc48eac6322872a373fedc5d1819ba3945f7bc18a3260b7612030f1bedefcb"
+base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:7c88ec5f1177a2ab937e3fb99c3e42c367c629a7632e5c90a9dc607a9e4d1dcc"
 base_image_debian = "mirror.gcr.io/library/debian:trixie-slim"
 
 [deps.pnpm]

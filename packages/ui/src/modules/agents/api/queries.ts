@@ -5,6 +5,7 @@ import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import type { AgentState, AgentView } from "../../../types.js";
+import { vanishedAgentIds } from "../lib/deleted-agent.js";
 
 export const agentsKeys = {
   root: ["agents"] as const,
@@ -19,6 +20,15 @@ export function useAgents() {
         api.agents.list.query(),
         api.channels.available.query(),
       ]);
+      const previous = queryClient.getQueryData<{
+        list: readonly AgentView[];
+      }>(agentsKeys.listWithChannels())?.list;
+      for (const id of vanishedAgentIds(previous, list)) {
+        useStore.getState().markAgentDeleted(id);
+        void queryClient.invalidateQueries({
+          queryKey: trpc.agents.get.queryKey({ id }),
+        });
+      }
       return { list, availableChannels };
     },
     staleTime: 5000,

@@ -62,6 +62,7 @@ import {
   ContributionFailuresBadge,
 } from "../../agents/components/contribution-failures-badge.js";
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
+import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
 import { VmRuntimeBadge } from "../../agents/components/vm-runtime-badge.js";
@@ -585,7 +586,7 @@ export function ChatView() {
   const surfaceCopy = {
     actionsAria: "Agent actions",
     configure: "Configure agent",
-    delete: "Delete Agent",
+    delete: "Delete agent",
     modelSubject: "agent",
     modelSettings: "Agent Setup",
   };
@@ -608,7 +609,7 @@ export function ChatView() {
     if (!selectedAgent) return;
     const ok = await showConfirm(
       "Delete this agent? This also deletes all persistent data and cannot be undone.",
-      "Delete Agent",
+      "Delete agent",
       { kind: "destructive" },
     );
     if (!ok) return;
@@ -1122,6 +1123,7 @@ function ChatHeaderStatus({
       <BackgroundWorkIndicator items={backgroundWork} />
       {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
+      {agent && <GatewayFailureBadge agent={agent} />}
       {!busy && agent && (
         <>
           <ContributionFailuresBadge failures={agentFailures(agent)} />

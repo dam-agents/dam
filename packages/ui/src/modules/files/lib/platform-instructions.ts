@@ -1,0 +1,1 @@
+export const PLATFORM_INSTRUCTIONS_PATH = "AGENTS.md";

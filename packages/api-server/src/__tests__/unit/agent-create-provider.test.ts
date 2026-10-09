@@ -96,7 +96,10 @@ function setup(
   const agents = createAgentsService({
     defaultHarness: "claude-code",
     owner: "owner-1",
-    repo: unused<AgentsDeps["repo"]>({ create: persist }),
+    repo: unused<AgentsDeps["repo"]>({
+      list: async () => [],
+      create: persist,
+    }),
     agentEnvRepo: unused<AgentsDeps["agentEnvRepo"]>({ replace: writeEnv }),
     registrySecretPort: unused<AgentsDeps["registrySecretPort"]>({
       create: writeRegistry,

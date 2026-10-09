@@ -108,7 +108,7 @@ export function buildFileListCommand(deps: FileListDeps): Command {
                     ? `${current}/${entry.name}`
                     : entry.name;
                   entries.push({ path, type: entry.type });
-                  if (opts.recursive && entry.type === "dir")
+                  if (opts.recursive && entry.type === "dir" && !entry.symlink)
                     nextFrontier.push(path);
                 }
               }

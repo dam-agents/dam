@@ -16,22 +16,29 @@ import {
 } from "./schemas.js";
 
 export const harnessConfigRouter = t.router({
-  status: t.procedure
+  status: readAgentProcedure
     .input(harnessConfigStatusInputSchema)
     .output(harnessConfigStatusSchema)
-    .query(({ ctx, input }) => ctx.harnessConfig.status(input.agentId)),
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.harnessConfig.status(input.agentId);
+    }),
 
-  settled: t.procedure
+  settled: readAgentProcedure
     .input(harnessConfigStatusInputSchema)
     .output(harnessConfigSettledSchema)
-    .query(({ ctx, input }) => ctx.harnessConfig.settled(input.agentId)),
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.harnessConfig.settled(input.agentId);
+    }),
 
-  snapshot: t.procedure
+  snapshot: readAgentProcedure
     .input(harnessConfigSnapshotInputSchema)
     .output(harnessConfigSnapshotResultSchema)
-    .query(({ ctx, input }) =>
-      ctx.harnessConfig.snapshot(input.agentId, input.harness),
-    ),
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.harnessConfig.snapshot(input.agentId, input.harness);
+    }),
 
   sessionPair: readAgentProcedure
     .input(harnessConfigStatusInputSchema)
@@ -48,7 +55,7 @@ export const harnessConfigRouter = t.router({
       return ctx.harnessConfig.rememberSessionPair(agentId, pair);
     }),
 
-  set: t.procedure
+  set: manageAgentsProcedure
     .input(harnessConfigApplyInputSchema)
     .mutation(({ ctx, input }) => {
       const { agentId, ...change } = input;

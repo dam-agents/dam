@@ -629,6 +629,21 @@ export function createAgentsService(deps: {
     });
   }
 
+  async function assertNameFree(
+    name: string,
+    owner: string | undefined,
+    agentId?: string,
+  ): Promise<void> {
+    const taken = (await deps.repo.list(owner)).some(
+      (a) => a.name === name && a.id !== agentId,
+    );
+    if (taken)
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `you already have an agent named "${name}"`,
+      });
+  }
+
   async function safeStatus(id: string): Promise<ContributionsStatus> {
     try {
       return await deps.contributionsProgress.status(id);
@@ -1071,6 +1086,7 @@ export function createAgentsService(deps: {
       }
       const owner = deps.owner;
       await assertOwnSecretRef(input.secretRef, owner);
+      await assertNameFree(input.name, owner);
       const agentId = input.id ?? generateK8sName("agent");
 
       if (input.registryCredential) {
@@ -1190,10 +1206,12 @@ export function createAgentsService(deps: {
     },
 
     async update(input: AgentUpdateInput) {
-      if (input.secretRef) {
+      if (input.secretRef || input.name !== undefined) {
         const current = await deps.repo.get(input.id, deps.owner);
         if (!current) return null;
         await assertOwnSecretRef(input.secretRef, current.owner, input.id);
+        if (input.name !== undefined && input.name !== current.name)
+          await assertNameFree(input.name, current.owner, input.id);
       }
       const patch: Record<string, unknown> = {};
       if (input.name !== undefined) patch.name = input.name;

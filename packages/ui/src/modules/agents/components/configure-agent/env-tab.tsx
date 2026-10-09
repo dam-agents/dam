@@ -48,10 +48,9 @@ export function EnvTab({
   return (
     <div className="flex flex-col gap-6">
       <p className="text-xs text-muted-foreground">
-        Variables added here are sent directly to the agent as plaintext. Use
-        them only for non-sensitive stubs and config — never secrets, which
-        belong in Connections. Changes apply to this agent; restart it to pick
-        them up.
+        Variables are sent to the agent as plain text, so never add secrets
+        here. Use this field for non-sensitive configuration only. Store secrets
+        in Connections.
       </p>
 
       {inherited.length > 0 && (

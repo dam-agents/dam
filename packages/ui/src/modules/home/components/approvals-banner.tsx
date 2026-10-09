@@ -2,11 +2,13 @@ import { ChevronRight, Warning } from "@carbon/icons-react";
 
 import { useStore } from "../../../store.js";
 import { useWaitingApprovals } from "../hooks/use-waiting-approvals.js";
+import { approvalsBannerCopy } from "../lib/approval-copy.js";
 
 export function ApprovalsBanner() {
   const setActivityView = useStore((s) => s.setActivityView);
-  const count = useWaitingApprovals().length;
-  if (count === 0) return null;
+  const approvals = useWaitingApprovals();
+  if (approvals.length === 0) return null;
+  const { title, detail } = approvalsBannerCopy(approvals);
 
   return (
     <button
@@ -19,14 +21,8 @@ export function ApprovalsBanner() {
         <Warning size={16} className="text-warning" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-foreground">
-          {count} {count === 1 ? "approval" : "approvals"} waiting
-        </p>
-        <p className="text-sm text-muted-foreground">
-          {count === 1
-            ? "An agent needs your decision"
-            : `${String(count)} agents need your decision`}
-        </p>
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        <p className="text-sm text-muted-foreground">{detail}</p>
       </div>
       <ChevronRight size={16} className="shrink-0 text-muted-foreground" />
     </button>

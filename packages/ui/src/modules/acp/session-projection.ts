@@ -253,6 +253,19 @@ function textOf(record: PlatformUndeliveredPrompt): string {
     .join("\n\n");
 }
 
+export function fileChipOf(link: {
+  name: string;
+  mimeType?: string | null;
+  size?: number | null;
+}): MessagePart {
+  return {
+    kind: "file",
+    name: link.name,
+    mimeType: link.mimeType ?? "",
+    ...(typeof link.size === "number" && { size: link.size }),
+  };
+}
+
 function partsOf(record: PlatformUndeliveredPrompt): MessagePart[] {
   const parts: MessagePart[] = [];
   for (const block of record.blocks) {
@@ -262,12 +275,7 @@ function partsOf(record: PlatformUndeliveredPrompt): MessagePart[] {
         data: block.data,
         mimeType: block.mimeType,
       });
-    else if (block.type === "resource_link")
-      parts.push({
-        kind: "file",
-        name: block.name,
-        mimeType: block.mimeType ?? "",
-      });
+    else if (block.type === "resource_link") parts.push(fileChipOf(block));
   }
   const text = textOf(record);
   if (text) parts.push({ kind: "text", text });
@@ -339,6 +347,18 @@ export function dropSuperseded(messages: Message[], ids: string[]): Message[] {
     out.push(m);
   }
   return out;
+}
+
+export function heldStillUndelivered(
+  held: PlatformUndeliveredPrompt[],
+  replayed: Message[],
+  superseded: string[],
+): PlatformUndeliveredPrompt[] {
+  return held.filter(
+    (r) =>
+      !superseded.includes(r.id) &&
+      !replayed.some((m) => m.role === "user" && m.id === r.id),
+  );
 }
 
 export function appendUndelivered(
@@ -433,6 +453,8 @@ function handleUserChunk(
     bubbles = [
       [{ kind: "image", data: u.content.data, mimeType: u.content.mimeType }],
     ];
+  } else if (u.content.type === "resource_link") {
+    bubbles = [[fileChipOf(u.content)]];
   }
 
   if (bubbles === null)
@@ -457,7 +479,12 @@ function handleAgentChunk(
   if (u.content.type === "text") {
     const txt = u.content.text;
     if (!txt) return messages;
-    return appendAgentParts(messages, [{ kind, text: txt }], at, turnId);
+    return appendAgentParts(
+      messages,
+      [{ kind, text: txt, ...(u.messageId && { messageId: u.messageId }) }],
+      at,
+      turnId,
+    );
   }
   if (u.content.type === "image") {
     return appendAgentParts(
@@ -737,13 +764,13 @@ function mergeParts(
   const merged = [...existing];
   for (const p of incoming) {
     const last = merged[merged.length - 1];
-    if (p.kind === "text" && last?.kind === "text") {
-      merged[merged.length - 1] = { kind: "text", text: last.text + p.text };
-    } else if (p.kind === "thought" && last?.kind === "thought") {
-      merged[merged.length - 1] = { kind: "thought", text: last.text + p.text };
-    } else {
-      merged.push(p);
-    }
+    const sameMessage =
+      (p.kind === "text" || p.kind === "thought") &&
+      last?.kind === p.kind &&
+      (!p.messageId || !last.messageId || p.messageId === last.messageId);
+    if (sameMessage)
+      merged[merged.length - 1] = { ...p, text: last.text + p.text };
+    else merged.push(p);
   }
   return merged;
 }

@@ -97,9 +97,9 @@ function AcceptButton({
 }
 
 function BackButton() {
-  const setView = useStore((s) => s.setView);
+  const navigateBack = useStore((s) => s.navigateBack);
   return (
-    <Button type="button" onClick={() => setView("home")}>
+    <Button type="button" onClick={navigateBack}>
       Back
     </Button>
   );

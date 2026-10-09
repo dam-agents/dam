@@ -25,7 +25,7 @@ export function ShareDialog({ artifact, onClose }: Props) {
   if (!artifact.interactive)
     return <SharingControls artifact={artifact} onClose={onClose} />;
   return (
-    <Modal>
+    <Modal onClose={onClose}>
       <DialogHeader title={`Share “${artifact.title}”`} onClose={onClose} />
       <DialogBody>
         Interactive pages stay private because their buttons can send prompts to

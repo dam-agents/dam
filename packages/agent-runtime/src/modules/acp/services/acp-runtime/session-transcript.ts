@@ -8,6 +8,7 @@ interface LogEntry {
   seq: number;
   line: string;
   bytes: number;
+  binary: boolean;
 }
 
 interface SessionLog {
@@ -84,6 +85,31 @@ function decodePageCursor(
   return { generation: text.slice(0, at), seq };
 }
 
+const INLINE_BINARY_RE = /"data"\s*:\s*"/;
+
+function withoutBinary(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutBinary);
+  if (typeof value !== "object" || value === null) return value;
+  const block = value as Record<string, unknown>;
+  if (
+    (block.type === "image" || block.type === "audio") &&
+    typeof block.data === "string"
+  ) {
+    return { type: "text", text: `[${block.type} not kept in history]` };
+  }
+  return Object.fromEntries(
+    Object.entries(block).map(([key, inner]) => [key, withoutBinary(inner)]),
+  );
+}
+
+function stripBinary(line: string): string {
+  try {
+    return JSON.stringify(withoutBinary(JSON.parse(line)));
+  } catch {
+    return line;
+  }
+}
+
 function withPlatformMeta(
   line: string,
   patch: Record<string, string | undefined>,
@@ -122,7 +148,11 @@ function withPlatformMeta(
  * UNIT_BOUNDARY_DESCRIPTION: Keeps each session's message history and tracks how
  * far every attached channel has read it, so a channel that joins late or
  * reconnects receives only what it missed. Sequence numbers, the size cap,
- * eviction, and the clip accounting all stay inside. A fresh viewer that opts
+ * eviction, and the clip accounting all stay inside. Over the cap, the
+ * oldest entry still holding inline image or audio bytes first has each
+ * replaced by a text placeholder, and whole entries are evicted only once
+ * none is left, so one large paste cannot push the text history out; live
+ * fan-out still carries the bytes. A fresh viewer that opts
  * into the tail gets only the newest replayTailEvents entries, moved back so
  * the cut never splits a run of one message's chunks or parts a tool call
  * from its updates, since the client would show half a sentence or drop the
@@ -166,9 +196,23 @@ export function createSessionTranscript(
     const log = getOrCreateLog(sessionId);
     const bytes = line.length;
     const seq = log.nextSeq++;
-    log.entries.push({ seq, line, bytes });
+    log.entries.push({
+      seq,
+      line,
+      bytes,
+      binary: INLINE_BINARY_RE.test(line),
+    });
     log.totalBytes += bytes;
-    while (log.totalBytes > deps.logBytesCap && log.entries.length > 1) {
+    while (log.totalBytes > deps.logBytesCap) {
+      const heavy = log.entries.find((entry) => entry.binary);
+      if (heavy) {
+        heavy.binary = false;
+        heavy.line = stripBinary(heavy.line);
+        log.totalBytes += heavy.line.length - heavy.bytes;
+        heavy.bytes = heavy.line.length;
+        continue;
+      }
+      if (log.entries.length <= 1) break;
       const evicted = log.entries.shift()!;
       log.totalBytes -= evicted.bytes;
       log.truncated = true;

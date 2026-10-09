@@ -19,6 +19,7 @@ import {
   applyUpdate,
   dropSuperseded,
   failQueuedOnDisconnect,
+  heldStillUndelivered,
   mergeLocalFailures,
   settleReplay,
 } from "../../acp/session-projection.js";
@@ -35,7 +36,11 @@ import {
   withDeliveryTracking,
 } from "../lib/prompt-delivery.js";
 import { pairMeta } from "../lib/session-pair-options.js";
-import { clearUndelivered, readUndelivered } from "../lib/undelivered-store.js";
+import {
+  clearUndelivered,
+  forgetUndelivered,
+  readUndelivered,
+} from "../lib/undelivered-store.js";
 
 const REPLAY_IDLE_WINDOW_MS = 3000;
 
@@ -410,7 +415,15 @@ export function useAcpConnection(
         superseded.success ? superseded.data : [],
       );
       const localKey = selectedAgent ? draftKey(selectedAgent, sid) : null;
-      const held = localKey === null ? [] : readUndelivered(localKey);
+      const recorded = localKey === null ? [] : readUndelivered(localKey);
+      const held = heldStillUndelivered(
+        recorded,
+        settled,
+        superseded.success ? superseded.data : [],
+      );
+      if (localKey !== null)
+        for (const r of recorded)
+          if (!held.includes(r)) forgetUndelivered(localKey, r.id);
       if (selectedAgent && localKey !== null && held.length > 0) {
         handOverUndelivered(selectedAgent, sid, held)
           .then(() => {

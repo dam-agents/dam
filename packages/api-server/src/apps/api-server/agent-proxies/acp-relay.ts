@@ -148,6 +148,7 @@ export function createAcpRelay(
             rpcId: msg.id,
             ownerSub: identity.owner,
             toolName,
+            toolCallId: tc.toolCallId,
             args: tc.rawInput,
             options,
           })
@@ -178,10 +179,10 @@ export function createAcpRelay(
         const key = String(msg.id);
         const rowId = mirroredRows.get(key);
         const result = msg.result as
-          { outcome?: { outcome?: unknown } } | undefined;
+          { outcome?: { outcome?: unknown; optionId?: unknown } } | undefined;
         if (!rowId || typeof result?.outcome?.outcome !== "string") return;
         approvals
-          .resolveAcpNativeFromInSession(rowId)
+          .resolveAcpNativeFromInSession(rowId, result.outcome)
           .then(() => mirroredRows.delete(key))
           .catch(() => {});
       }

@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-08
+Last verified: 2026-10-09
 
 ## Overview
 
@@ -96,13 +96,13 @@ A Schedule fire is the one wake nobody is waiting on: the api-server commits the
 
 ### Session inside the pod
 
-agent-runtime holds one harness process, a **Harness Lease**, per harness, provider Connection and model its sessions ask for: the model reaches the harness as its process env, never as a switch inside a live session, and changing a session's model moves its next turn to that model's lease. A lease outlives connections. ACP channels (UI tabs, the Slack worker, the in-process trigger handler) attach concurrently and engage sessions by the `sessionId` each frame carries.
+agent-runtime holds one harness process, a **Harness Lease**, per harness, provider Connection and model its sessions ask for: the model reaches the harness as its process env, never as a switch inside a live session, and changing a session's model moves its next turn to that model's lease. A lease outlives connections. ACP channels attach concurrently and engage sessions by the `sessionId` each frame carries.
 
 Each lease is the unchanged ACP runtime this section describes, behind a **lease router**. `session/new` names the session's harness, provider and model; the runtime persists that pair in its session-metadata store, so later frames, and a load or resume after a restart, route back to the same lease. A session naming none runs on the default harness and first granted provider, and keeps that pair. Leases spawn lazily, each told about the client as the first was, and an agent's question is answered to the lease that asked. The default lease stays; any other shuts down once it holds no session, and one whose harness crashes is dropped for the next session to respawn. The session list draws on the metadata store too, so a harness not running still lists its sessions.
 
 A lease spawns with the agent-wide env, its own provider's layer and its harness's layer ([connections](connections.md#contribution-fan-out)), then the pod's process env, then its harness, provider and model. Revoking a provider recycles only the leases on it; a prompt or setting sent to a session on a removed provider fails with a structured *provider removed* error naming it, and granting it again resumes the session.
 
-Each session is an append-only in-memory log (≤2 MB soft cap). Every channel keeps a per-session cursor; new events append to the log and fan out to engaged channels that have not yet seen them. Every entry the runtime appends live carries the wall-clock time it was written, as platform metadata on the frame; an entry filled in from a replay carries only what its source supplied, never a time the runtime invented. From a session-history provider that source can also supply the harness's own name for the prompt a reply answered — the prompt id by which [agent-telemetry](agent-telemetry.md#progressive-disclosure) joins a reply to its Turn once the Session is loaded.
+Each session is an append-only in-memory log (≤2 MB soft cap; inline image and audio bytes give way to a placeholder before any entry is evicted). Every channel keeps a per-session cursor; new events append to the log and fan out to engaged channels that have not yet seen them. Every entry the runtime appends live carries the wall-clock time it was written, as platform metadata on the frame; an entry filled in from a replay carries only what its source supplied, never a time the runtime invented. From a session-history provider that source can also supply the harness's own name for the prompt a reply answered — the prompt id by which [agent-telemetry](agent-telemetry.md#progressive-disclosure) joins a reply to its Turn once the Session is loaded.
 
 The runtime also tells engaged viewers when a scheduled fire begins its turn, and a load hands back the fire start times the session still holds — the newest, under a bound [persistence](persistence.md) owns. A thread draws each of those beside the prompt that opens its run, so a run boundary survives a reopen. A start whose prompt is not in view — older than the loaded tail — sits above the first message after it, and only the newest such start draws there, since one message opens one run; a start with no timed message to sit beside at all draws nothing.
 

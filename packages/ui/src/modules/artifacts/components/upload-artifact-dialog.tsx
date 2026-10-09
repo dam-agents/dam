@@ -54,7 +54,7 @@ export function UploadArtifactDialog({ folders, onClose }: Props) {
   };
 
   return (
-    <Modal>
+    <Modal onClose={onClose}>
       <DialogHeader title="Upload artifact" onClose={onClose} />
       <DialogBody>
         <div className="flex flex-col gap-4">

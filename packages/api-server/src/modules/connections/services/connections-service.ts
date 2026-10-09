@@ -33,6 +33,7 @@ import {
 } from "../domain/connection-template.js";
 import {
   buildConnection,
+  configInputContributions,
   gitHubAppApiBase,
   normalizePrivateKeyPem,
 } from "../domain/build-connection.js";
@@ -260,6 +261,70 @@ export function createConnectionsService(deps: {
       clientId: creds.clientId,
       ...(clientSecret ? { clientSecret } : {}),
     };
+  }
+
+  async function fanOutToAgents(
+    connectionId: string,
+    agentIds: readonly string[],
+    allOwnerConnectionIds: ReadonlySet<string>,
+    failureEvent: string,
+  ): Promise<void> {
+    for (const agentId of agentIds) {
+      try {
+        await deps.connectionLock(`agent:connections:${agentId}`, async () => {
+          const grantedConnections =
+            await deps.repo.listConnectionsForAgent(agentId);
+          await deps.fanOut.apply({
+            agentId,
+            ownerId: deps.ownerId,
+            grantedConnections,
+            allOwnerConnectionIds,
+          });
+        });
+      } catch (err) {
+        securityLog("warn", failureEvent, {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          agentId,
+          target: connectionId,
+          result: "failure",
+          reason: err instanceof Error ? err.message : "unknown",
+        });
+      }
+    }
+  }
+
+  function withConfigInputs(
+    conn: Connection,
+    configInputs: Record<string, string>,
+  ): Contribution[] {
+    const template = deps.templates.get(conn.templateId);
+    const specs =
+      template?.authKind === "header" ? (template.configInputs ?? []) : [];
+    if (specs.length === 0 || specs.some((s) => s.inputName === "region")) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "This connection's settings cannot be changed in place. Reconnect it instead.",
+      });
+    }
+    const envNames = new Set(specs.map((s) => s.envName));
+    let pinned: Contribution[];
+    try {
+      pinned = configInputContributions(specs, configInputs);
+    } catch (err) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: err instanceof Error ? err.message : "invalid settings",
+      });
+    }
+    return [
+      ...conn.contributions.filter(
+        (c) => c.kind !== "env" || !envNames.has(c.name),
+      ),
+      ...pinned,
+    ];
   }
 
   async function rotateHeaderValue(
@@ -829,11 +894,33 @@ export function createConnectionsService(deps: {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
 
+      const configInputs =
+        "configInputs" in credential ? credential.configInputs : null;
+      const contributions = configInputs
+        ? withConfigInputs(conn, configInputs)
+        : null;
+
       switch (conn.auth.kind) {
         case "header": {
-          const value = singleValueOf(credential);
-          await assertProviderKeyAccepted(conn.templateId, value, conn.id);
-          await rotateHeaderValue(conn, conn.auth, value);
+          const value =
+            "accessKeyId" in credential
+              ? singleValueOf(credential)
+              : credential.value;
+          if (value) {
+            await assertProviderKeyAccepted(conn.templateId, value, conn.id);
+            await rotateHeaderValue(conn, conn.auth, value);
+          }
+          if (contributions) {
+            await deps.repo.updateContributions(conn.id, contributions);
+            await deps.repo.mergeInputs(conn.id, { configInputs });
+            const owned = await deps.repo.listByOwner(deps.ownerId);
+            await fanOutToAgents(
+              conn.id,
+              await deps.repo.listAgentsForConnection(conn.id),
+              new Set(owned.map((c) => c.id)),
+              "connection.update.fanout_failed",
+            );
+          }
           break;
         }
         case "client-credentials":
@@ -912,33 +999,12 @@ export function createConnectionsService(deps: {
           ...ownerConnsAfter.map((c) => c.id),
           id,
         ]);
-        for (const agentId of affectedAgents) {
-          try {
-            await deps.connectionLock(
-              `agent:connections:${agentId}`,
-              async () => {
-                const grantedConnections =
-                  await deps.repo.listConnectionsForAgent(agentId);
-                await deps.fanOut.apply({
-                  agentId,
-                  ownerId: deps.ownerId,
-                  grantedConnections,
-                  allOwnerConnectionIds,
-                });
-              },
-            );
-          } catch (err) {
-            securityLog("warn", "connection.delete.fanout_failed", {
-              category: "credential",
-              actor: deps.ownerId,
-              actorKind: "user",
-              agentId,
-              target: conn.id,
-              result: "failure",
-              reason: err instanceof Error ? err.message : "unknown",
-            });
-          }
-        }
+        await fanOutToAgents(
+          conn.id,
+          affectedAgents,
+          allOwnerConnectionIds,
+          "connection.delete.fanout_failed",
+        );
       }
 
       const template = deps.templates.get(conn.templateId);
@@ -1101,12 +1167,15 @@ export function createConnectionsService(deps: {
         }
       }
       const effectiveInput = await applyFamilyCreds(template, input);
-      const built = await buildConnection(
-        template,
-        effectiveInput,
-        (purpose) => deps.secretStore.mintRef({ owner: deps.ownerId, purpose }),
-        deps.oauthCallbackUrl,
-        deps.brandName,
+      const built = await rejectIfInvalid(() =>
+        buildConnection(
+          template,
+          effectiveInput,
+          (purpose) =>
+            deps.secretStore.mintRef({ owner: deps.ownerId, purpose }),
+          deps.oauthCallbackUrl,
+          deps.brandName,
+        ),
       );
 
       const id = input.id ?? `conn-${randomBytes(6).toString("hex")}`;
@@ -1588,7 +1657,7 @@ function connectionSecretPath(auth: Connection["auth"]): string | null {
 }
 
 function singleValueOf(credential: ConnectionCredentialUpdate): string {
-  if (!("value" in credential)) {
+  if (!("value" in credential) || !credential.value) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message:
@@ -1599,7 +1668,7 @@ function singleValueOf(credential: ConnectionCredentialUpdate): string {
 }
 
 function keyPairOf(credential: ConnectionCredentialUpdate): Sigv4KeyPair {
-  if ("value" in credential) {
+  if (!("accessKeyId" in credential)) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message:

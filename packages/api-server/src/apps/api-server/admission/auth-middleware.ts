@@ -7,6 +7,7 @@ import {
   type AuthDenialKind,
   type SurfaceAttribution,
 } from "./auth.js";
+import { watchApiKey } from "./api-key-watch.js";
 
 const httpAuthDenial: Record<
   AuthDenialKind,
@@ -34,11 +35,12 @@ export function createAuthMiddleware(
       ? authHeader.slice(7)
       : null;
 
-    const admitted = await authenticate(token, {
-      edge: "http",
+    const site = {
+      edge: "http" as const,
       target: c.req.path,
       sourceIp: clientIp(c),
-    });
+    };
+    const admitted = await authenticate(token, site);
     if (!admitted.ok) {
       const { status, body } = httpAuthDenial[admitted.kind];
       return c.json(body, status);
@@ -49,6 +51,23 @@ export function createAuthMiddleware(
     c.set("roles", roles);
     c.set("surface", clientSurface(admitted.principal, attribution));
     emitUserAuthenticated(admitted.principal, attribution);
-    return next();
+    if (user.keyId === undefined) return next();
+    await next();
+
+    const body = c.res.body;
+    if (
+      !body ||
+      !c.res.headers.get("content-type")?.startsWith("text/event-stream")
+    ) {
+      return;
+    }
+    const keyDead = new AbortController();
+    const stop = watchApiKey(authenticate, token, site, () => keyDead.abort());
+    const { readable, writable } = new TransformStream<Uint8Array>();
+    void body
+      .pipeTo(writable, { signal: keyDead.signal })
+      .catch(() => {})
+      .finally(stop);
+    c.res = new Response(readable, c.res);
   };
 }

@@ -97,7 +97,9 @@ export function useFileMutations(agentId: string | null) {
       } catch (err) {
         emitToast({
           kind: "error",
-          message: getErrorMessage(err, "Create failed"),
+          message: isConflictError(err)
+            ? `"${path}" already exists`
+            : getErrorMessage(err, "Create failed"),
         });
       }
     },

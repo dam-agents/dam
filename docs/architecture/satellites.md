@@ -1,6 +1,6 @@
 # Satellites
 
-Last verified: 2026-09-24
+Last verified: 2026-10-09
 
 ## Overview
 
@@ -113,7 +113,7 @@ A machine past the offline window is refused as offline, whether or not it was d
 
 **Removing a Satellite takes its Jobs with it.** A Job is keyed by the Satellite and its sequence, and that sequence restarts for a Satellite registered under the same name again, so rows left behind would collide with its successor's first Jobs. The record goes with the machine, which is what removing it asks for. A worker still serving it stops claiming, lets its running jobs finish and exits, rather than registering the Satellite again.
 
-An outcome the Agent has not been told about is **never retired by the TTL** — dropping it would drop the one turn it is owed. The hourly wake retry is what eventually clears it. A Job that reached its TTL without ever starting — queued with nobody claiming — is **settled and told**, not deleted: it holds a place against the Satellite's concurrency until something ends it.
+An outcome the Agent has not been told about is **never retired by the TTL** — dropping it would drop the one turn it is owed. The hourly wake retry is what eventually clears it. **A stop wins over the wake**: an Agent its user [stopped](agent-lifecycle.md#hibernate) is not woken for an outcome — its turn waits in the outbox for the next deliberate wake, and the retry leaves it alone. A Job that reached its TTL without ever starting — queued with nobody claiming — is **settled and told**, not deleted: it holds a place against the Satellite's concurrency until something ends it.
 
 Output is captured with stdout and stderr merged in terminal order. Under a few KB it comes back inline; over that the tool returns a path and the full log is written into the Agent's own sandbox, so a large log costs the model a line rather than a context window. The file is written **at read time** — when an outcome arrives the Agent may be hibernating, but an Agent asking for it is up by definition.
 

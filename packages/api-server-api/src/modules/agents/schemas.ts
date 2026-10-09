@@ -112,7 +112,7 @@ export const agentCreateInputSchema = z.object({
 });
 export const agentUpdateInputSchema = z.object({
   id: z.string().min(1),
-  name: z.string().min(1).max(255).optional(),
+  name: agentNameSchema.max(255).optional(),
   description: z.string().optional(),
   avatar: z.enum(AVATAR_CHARACTERS).optional(),
   env: z.array(envVarSchema).max(64).optional(),

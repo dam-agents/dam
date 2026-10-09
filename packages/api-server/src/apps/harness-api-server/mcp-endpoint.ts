@@ -1087,14 +1087,14 @@ export function createMcpSession(
 
   server.tool(
     "toggle_schedule",
-    "Enable or disable a platform schedule by id. Only affects schedules belonging to this agent.",
-    { id: z.string().min(1) },
-    async ({ id }) => {
+    "Enable or disable a platform schedule by id. Pass `enabled` to set the state, so a retried call cannot undo itself; without it the state flips. Only affects schedules belonging to this agent.",
+    { id: z.string().min(1), enabled: z.boolean().optional() },
+    async ({ id, enabled }) => {
       const existing = await schedules.get(id);
       if (!existing || existing.agentId !== agentId) {
         return errorResult(`schedule ${id} not found on this agent`);
       }
-      const updated = await schedules.toggle(id);
+      const updated = await schedules.toggle(id, enabled);
       if (!updated) return errorResult(`schedule ${id} not found`);
       return json({ id: updated.id, enabled: updated.spec.enabled });
     },

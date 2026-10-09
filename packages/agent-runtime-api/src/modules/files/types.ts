@@ -9,6 +9,7 @@ import type {
 export interface DirEntry {
   name: string;
   type: "file" | "dir";
+  symlink?: true;
 }
 
 export type DirListResult =
