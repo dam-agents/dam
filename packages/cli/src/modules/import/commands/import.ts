@@ -1,5 +1,4 @@
 import { openAsBlob } from "node:fs";
-import { IMPORT_REPLACE_HEADER } from "agent-runtime-api";
 import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
@@ -53,9 +52,9 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
   cmd.addHelpText(
     "after",
     () =>
-      "\nEach <path> becomes a top-level entry under 'work/' on the Agent. " +
-      "Existing entries with the same name are replaced wholesale; other " +
-      "entries under 'work/' are untouched.\n\n" +
+      "\nEach <path> is merged into 'work/' on the Agent. Folders are merged " +
+      "recursively: files are added or replaced, existing files not in the " +
+      "bundle are kept.\n\n" +
       "Symlinks anywhere in the imported tree are skipped (not followed).\n\n" +
       "Excluded directory and file names (matched at every level by basename):\n" +
       `  ${[...EXCLUDE_FROM_IMPORT].sort().join(", ")}\n`,
@@ -93,7 +92,7 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
           process.stderr.write(`  ${a.input}\n`);
         }
         process.stderr.write(
-          "This replaces each entry under 'work/' on the agent if present.\n",
+          "Files are merged into 'work/' on the agent; existing files with the same name will be overwritten.\n",
         );
         const okToProceed = await confirm("Continue?", { timeoutMs: 120_000 });
         if (!okToProceed) {
@@ -168,7 +167,6 @@ async function uploadAndReport(args: {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
-          [IMPORT_REPLACE_HEADER]: "true",
         },
         body: form,
       },

@@ -8,7 +8,7 @@ import { create } from "tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createImportHandlers } from "../../modules/import/index.js";
 
-// TEST_OVERVIEW: A bundled file import moves each top-level bundle entry into work/. An entry that already exists in work/ is replaced only when the client sends the replace header; otherwise the import is refused with the colliding names and work/ is left untouched.
+// TEST_OVERVIEW: A bundled file import merges each top-level bundle entry into work/. Folders are merged recursively: files are added or replaced, existing files not in the bundle are kept.
 describe("import finalize", () => {
   let root: string;
   let workDir: string;
@@ -31,7 +31,7 @@ describe("import finalize", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  async function post(files: Record<string, string>, replace = false) {
+  async function post(files: Record<string, string>) {
     const src = await mkdtemp(join(root, "src-"));
     for (const [path, content] of Object.entries(files)) {
       mkdirSync(join(src, path, ".."), { recursive: true });
@@ -44,47 +44,57 @@ describe("import finalize", () => {
     const res = await fetch(url, {
       method: "POST",
       body: form,
-      headers: replace ? { "x-import-replace": "true" } : {},
     });
     return { status: res.status, body: await res.json() };
   }
 
-  // TEST_SCENARIO: The QA case. A folder upload named like an existing folder must not delete the old folder's files without the user's consent.
-  it("refuses a folder that already exists and keeps its contents", async () => {
+  // TEST_SCENARIO: Uploading a folder with the same name merges the contents — new files are added, existing files are kept.
+  it("merges a folder that already exists, keeping existing files", async () => {
     const res = await post({ "données/new.txt": "new" });
-    expect(res.status).toBe(409);
-    expect(res.body.conflicts).toEqual(["données"]);
+    expect(res.status).toBe(200);
     expect(existsSync(join(workDir, "données", "sub dir", "old.txt"))).toBe(
       true,
     );
-    expect(existsSync(join(workDir, "données", "new.txt"))).toBe(false);
-  });
-
-  // TEST_SCENARIO: A loose file with the same name as an existing top-level file is refused the same way, and nothing else in the bundle is moved.
-  it("refuses an existing top-level file and moves nothing", async () => {
-    const res = await post({ "notes.txt": "new", "fresh.txt": "x" });
-    expect(res.status).toBe(409);
-    expect(res.body.conflicts).toEqual(["notes.txt"]);
-    expect(await readFile(join(workDir, "notes.txt"), "utf8")).toBe(
-      "old notes",
+    expect(await readFile(join(workDir, "données", "new.txt"), "utf8")).toBe(
+      "new",
     );
-    expect(existsSync(join(workDir, "fresh.txt"))).toBe(false);
   });
 
-  // TEST_SCENARIO: After the user confirms, the client sends the replace header and the top-level entry is replaced as one unit.
-  it("replaces an existing entry when the replace header is sent", async () => {
-    const res = await post({ "données/new.txt": "new" }, true);
+  // TEST_SCENARIO: A file with the same name as an existing file replaces it.
+  it("replaces an existing file with the same name", async () => {
+    const res = await post({ "notes.txt": "new notes" });
     expect(res.status).toBe(200);
-    expect(readdirSync(join(workDir, "données"))).toEqual(["new.txt"]);
+    expect(await readFile(join(workDir, "notes.txt"), "utf8")).toBe(
+      "new notes",
+    );
   });
 
-  // TEST_SCENARIO: An entry with a new name needs no confirmation.
-  it("imports a new entry without the replace header", async () => {
+  // TEST_SCENARIO: A file in the bundle replaces an existing file in a nested folder.
+  it("replaces a file in a nested folder", async () => {
+    const res = await post({ "données/sub dir/old.txt": "updated" });
+    expect(res.status).toBe(200);
+    expect(
+      await readFile(join(workDir, "données", "sub dir", "old.txt"), "utf8"),
+    ).toBe("updated");
+  });
+
+  // TEST_SCENARIO: An entry with a new name is added without affecting existing entries.
+  it("imports a new entry without affecting existing entries", async () => {
     const res = await post({ "other/a.txt": "a" });
     expect(res.status).toBe(200);
     expect(await readFile(join(workDir, "other", "a.txt"), "utf8")).toBe("a");
     expect(existsSync(join(workDir, "données", "sub dir", "old.txt"))).toBe(
       true,
     );
+    expect(await readFile(join(workDir, "notes.txt"), "utf8")).toBe(
+      "old notes",
+    );
+  });
+
+  // TEST_SCENARIO: A file in the bundle replaces an existing directory of the same name.
+  it("replaces a directory with a file of the same name", async () => {
+    const res = await post({ données: "now a file" });
+    expect(res.status).toBe(200);
+    expect(await readFile(join(workDir, "données"), "utf8")).toBe("now a file");
   });
 });

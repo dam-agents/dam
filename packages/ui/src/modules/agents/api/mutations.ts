@@ -77,7 +77,6 @@ export function useCreateAgent() {
           importRawBundle({
             agentId: agent.id,
             bundle: rawBundle,
-            replace: true,
           });
       } else if (importEntries && importEntries.length > 0) {
         const count = importEntries.length;
@@ -86,7 +85,6 @@ export function useCreateAgent() {
           importBundle({
             agentId: agent.id,
             entries: importEntries,
-            replace: true,
           });
       }
 

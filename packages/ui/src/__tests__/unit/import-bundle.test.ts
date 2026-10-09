@@ -4,7 +4,6 @@ import {
   buildBundle,
   type BundleEntry,
   importBundle,
-  ImportConflictError,
 } from "../../modules/files/api/import-bundle.js";
 
 const authFetch = vi.hoisted(() => vi.fn<typeof fetch>());
@@ -116,31 +115,27 @@ describe("buildBundle", () => {
   });
 });
 
-describe("importBundle conflicts", () => {
-  // TEST_SCENARIO: The agent runtime refuses to replace existing top-level entries unless asked. The client turns that refusal into a typed error so the Files panel can ask the user, and sends the replace header only on the confirmed retry.
-  test("surfaces a refusal as ImportConflictError and opts in on replace", async () => {
+describe("importBundle", () => {
+  // TEST_SCENARIO: A successful import returns the result from the server.
+  test("returns the server response on success", async () => {
     authFetch.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({ error: "exists", conflicts: ["données"] }),
-        { status: 409 },
-      ),
+      Response.json({ filesWritten: 3, bytes: 100, durationMs: 50 }),
     );
-    const entries = [entry("données/new.txt")];
-    const refused = await importBundle({ agentId: "a", entries }).catch(
-      (e: unknown) => e,
-    );
-    expect(refused).toBeInstanceOf(ImportConflictError);
-    expect((refused as ImportConflictError).conflicts).toEqual(["données"]);
-    expect(
-      new Headers(authFetch.mock.calls[0][1]?.headers).has("x-import-replace"),
-    ).toBe(false);
+    const entries = [entry("project/a.txt")];
+    const result = await importBundle({ agentId: "a", entries });
+    expect(result).toEqual({ filesWritten: 3, bytes: 100, durationMs: 50 });
+  });
 
+  // TEST_SCENARIO: An error response throws with the server message.
+  test("throws on error response", async () => {
     authFetch.mockResolvedValueOnce(
-      Response.json({ filesWritten: 1, bytes: 3, durationMs: 1 }),
+      new Response(JSON.stringify({ error: "something went wrong" }), {
+        status: 500,
+      }),
     );
-    await importBundle({ agentId: "a", entries, replace: true });
-    expect(
-      new Headers(authFetch.mock.calls[1][1]?.headers).get("x-import-replace"),
-    ).toBe("true");
+    const entries = [entry("project/a.txt")];
+    await expect(importBundle({ agentId: "a", entries })).rejects.toThrow(
+      "something went wrong",
+    );
   });
 });

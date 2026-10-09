@@ -1,11 +1,7 @@
 import { lstat, mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises";
 import http from "node:http";
 import { join } from "node:path";
-import {
-  IMPORT_REPLACE_HEADER,
-  type ImportBundleConflict,
-  type ImportBundleResult,
-} from "agent-runtime-api";
+import { type ImportBundleResult } from "agent-runtime-api";
 import busboy from "busboy";
 
 import { IMPORT_STAGING_PREFIX } from "../../core/import-staging.js";
@@ -21,6 +17,29 @@ function messageForDomainError(error: ImportDomainError): string {
       return `refusing entry (${error.reason}): ${error.path}`;
     case "TarParseError":
       return `tar parse error: ${error.detail}`;
+  }
+}
+
+async function mergeDir(src: string, dest: string): Promise<void> {
+  const names = await readdir(src, { withFileTypes: true });
+  for (const ent of names) {
+    const srcPath = join(src, ent.name);
+    const destPath = join(dest, ent.name);
+    if (ent.isDirectory()) {
+      const destStat = await lstat(destPath).catch(
+        (e: NodeJS.ErrnoException) => (e.code === "ENOENT" ? null : e),
+      );
+      if (destStat instanceof Error) throw destStat;
+      if (destStat?.isDirectory()) {
+        await mergeDir(srcPath, destPath);
+      } else {
+        if (destStat) await rm(destPath, { force: true });
+        await rename(srcPath, destPath);
+      }
+    } else {
+      await rm(destPath, { recursive: true, force: true });
+      await rename(srcPath, destPath);
+    }
   }
 }
 
@@ -75,11 +94,7 @@ export function createImportHandlers(
     let sawFile = false;
     let finished = false;
 
-    const fail = async (
-      status: number,
-      message: string,
-      extra?: Omit<ImportBundleConflict, "error">,
-    ) => {
+    const fail = async (status: number, message: string) => {
       if (finished) return;
       finished = true;
       log(`fail ${status}: ${message}`);
@@ -89,7 +104,7 @@ export function createImportHandlers(
       try {
         if (!res.headersSent)
           res.writeHead(status, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: message, ...extra }));
+        res.end(JSON.stringify({ error: message }));
       } catch (e) {
         log(`fail: response write threw (${(e as Error).message})`);
       }
@@ -152,31 +167,7 @@ export function createImportHandlers(
         if (!staging) return fail(500, "internal: staging dir not initialized");
         log(`finalize start (dest=${workDir})`);
         await mkdir(workDir, { recursive: true });
-        const names = await readdir(staging);
-        if (req.headers[IMPORT_REPLACE_HEADER] !== "true") {
-          const exists = await Promise.all(
-            names.map((n) =>
-              lstat(join(workDir, n)).then(
-                () => true,
-                (e: NodeJS.ErrnoException) => e.code !== "ENOENT",
-              ),
-            ),
-          );
-          const conflicts = names.filter((_, i) => exists[i]);
-          if (conflicts.length > 0) {
-            return fail(
-              409,
-              `already exists in work/: ${conflicts.join(", ")}`,
-              {
-                conflicts,
-              },
-            );
-          }
-        }
-        for (const name of names) {
-          await rm(join(workDir, name), { recursive: true, force: true });
-          await rename(join(staging, name), join(workDir, name));
-        }
+        await mergeDir(staging, workDir);
         await rm(staging, { recursive: true, force: true }).catch(() => {});
         if (finished) {
           log(

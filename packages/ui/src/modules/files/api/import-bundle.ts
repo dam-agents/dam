@@ -1,6 +1,4 @@
 import {
-  IMPORT_REPLACE_HEADER,
-  importBundleConflictSchema,
   type ImportBundleResult,
   importBundleResultSchema,
 } from "agent-runtime-api";
@@ -177,23 +175,10 @@ function writeOct(buf: Uint8Array, off: number, n: number, len: number) {
   buf[off + len - 1] = 0;
 }
 
-type ImportBundleArgs = {
-  agentId: string;
-  entries: BundleEntry[];
-  replace?: boolean;
-};
-
-export class ImportConflictError extends Error {
-  constructor(readonly conflicts: string[]) {
-    super(`already exists: ${conflicts.join(", ")}`);
-  }
-}
-
 async function postBundle(
   agentId: string,
   bundle: Blob,
   filename: string,
-  replace: boolean,
 ): Promise<ImportBundleResult> {
   const form = new FormData();
   form.set("bundle", bundle, filename);
@@ -202,18 +187,10 @@ async function postBundle(
     {
       method: "POST",
       body: form,
-      headers: replace ? { [IMPORT_REPLACE_HEADER]: "true" } : {},
     },
   );
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    let body: unknown = null;
-    try {
-      body = JSON.parse(text);
-    } catch {}
-    const conflict = importBundleConflictSchema.safeParse(body);
-    if (conflict.success)
-      throw new ImportConflictError(conflict.data.conflicts);
     throw new Error(text || res.statusText);
   }
   const parsed = importBundleResultSchema.safeParse(await res.json());
@@ -234,32 +211,34 @@ async function gzipBlob(blob: Blob): Promise<Blob> {
   return new Response(stream).blob();
 }
 
+type ImportBundleArgs = {
+  agentId: string;
+  entries: BundleEntry[];
+};
+
 export async function importBundle({
   agentId,
   entries,
-  replace = false,
 }: ImportBundleArgs): Promise<ImportBundleResult> {
   const tar = await buildBundle(entries);
   if (
     typeof CompressionStream !== "undefined" &&
     tar.size <= MAX_GZIP_BUNDLE_BYTES
   ) {
-    return postBundle(agentId, await gzipBlob(tar), "bundle.tar.gz", replace);
+    return postBundle(agentId, await gzipBlob(tar), "bundle.tar.gz");
   }
-  return postBundle(agentId, tar, "bundle.tar", replace);
+  return postBundle(agentId, tar, "bundle.tar");
 }
 
 type ImportRawBundleArgs = {
   agentId: string;
   bundle: Blob | File;
-  replace?: boolean;
 };
 
 export async function importRawBundle({
   agentId,
   bundle,
-  replace = false,
 }: ImportRawBundleArgs): Promise<ImportBundleResult> {
   const filename = bundle instanceof File ? bundle.name : "bundle.tar.gz";
-  return postBundle(agentId, bundle, filename, replace);
+  return postBundle(agentId, bundle, filename);
 }
