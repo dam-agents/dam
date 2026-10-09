@@ -22,6 +22,7 @@ export {
   schedules,
   activityEvents,
   actorRoles,
+  externalActorLinks,
   termsAcceptances,
   apiKeys,
   userFeatures,

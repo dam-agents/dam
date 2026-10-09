@@ -55,6 +55,9 @@ export enum EventType {
   EntryPointChosen = "EntryPointChosen",
   KbSharePublished = "KbSharePublished",
   KbSharePublishFailed = "KbSharePublishFailed",
+  StarterKitOnboarded = "StarterKitOnboarded",
+  IdentityLinked = "IdentityLinked",
+  AgentOutOfMemory = "AgentOutOfMemory",
 }
 
 export type UserAuthenticated = {
@@ -96,6 +99,7 @@ export type SlackConnected = {
   type: EventType.SlackConnected;
   agentId: string;
   slackChannelId: string;
+  ownerSub: string | null;
 };
 
 export type SlackDisconnected = {
@@ -112,6 +116,7 @@ export type ChannelTurnRelayed = {
   externalActorId?: string;
   outcome: TurnOutcome;
   reason?: string;
+  ambient?: true;
 };
 
 export type ChannelMessageSent = {
@@ -420,6 +425,29 @@ export type KbSharePublishFailed = {
   reason: string;
 };
 
+export type StarterKitOnboarded = {
+  type: EventType.StarterKitOnboarded;
+  agentId: string;
+  ownerSub: string;
+  starterKit: string;
+};
+
+export type IdentityLinked = {
+  type: EventType.IdentityLinked;
+  provider: string;
+  externalUserId: string;
+  keycloakSub: string;
+};
+
+export type AgentOutOfMemory = {
+  type: EventType.AgentOutOfMemory;
+  agentId: string;
+  ownerSub: string;
+  restarts: number;
+  cpu?: string;
+  memory?: string;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | AgentCreated
@@ -469,7 +497,10 @@ export type DomainEvent =
   | ApiKeyChanged
   | EntryPointChosen
   | KbSharePublished
-  | KbSharePublishFailed;
+  | KbSharePublishFailed
+  | StarterKitOnboarded
+  | IdentityLinked
+  | AgentOutOfMemory;
 
 const bus$ = new Subject<DomainEvent>();
 

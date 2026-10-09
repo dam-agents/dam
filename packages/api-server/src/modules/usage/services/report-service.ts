@@ -26,20 +26,18 @@ export const VIEW_NAMES = [
   "usage_first_entry_point_by_user",
   "usage_core_actor_subs",
   "usage_core_agents",
+  "usage_users",
+  "usage_active_days",
+  "usage_feature_firsts",
+  "usage_slack_setup_firsts",
+  "usage_kit_agents",
+  "usage_agents_created",
+  "usage_agent_oom_restarts",
 ] as const;
 
 export type ViewName = (typeof VIEW_NAMES)[number];
 
 const VIEW_NAMES_SET = new Set<string>(VIEW_NAMES);
-
-const INTERNAL_VIEWS = new Set<ViewName>([
-  "usage_core_actor_subs",
-  "usage_core_agents",
-]);
-
-export const REPORTABLE_VIEW_NAMES = VIEW_NAMES.filter(
-  (n) => !INTERNAL_VIEWS.has(n),
-);
 
 export function isViewName(name: string): name is ViewName {
   return VIEW_NAMES_SET.has(name);

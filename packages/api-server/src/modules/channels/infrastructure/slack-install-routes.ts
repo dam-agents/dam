@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { escapeHtml } from "../../../core/escape-html.js";
 import { Hono, type Context, type Next } from "hono";
 import type { ApiVariables } from "../../../apps/api-server/deps.js";
 import type { TtlStore } from "../../../core/ttl-store.js";
@@ -52,20 +53,6 @@ export interface SlackInstallRoutesDeps {
   oauth: SlackInstallOAuthConfig;
   brandName: string;
   installerRole: string;
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(
-    /[&<>"']/g,
-    (c) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      })[c]!,
-  );
 }
 
 interface SlackOAuthAccessResponse {

@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import type { AgentsService } from "api-server-api";
 import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
+import { parseKitRef } from "../domain/requirements.js";
 
 export interface OnboardingMarkerDeps {
   agents: Pick<AgentsService, "get">;
@@ -26,6 +27,12 @@ export function createOnboardingMarker(
     if (agent.starterKitOnboarded) return;
     await deps.markAgentOnboarded(agentId, new Date().toISOString());
     emit({ type: EventType.AgentUpdated, agentId, ownerSub: owner });
+    emit({
+      type: EventType.StarterKitOnboarded,
+      agentId,
+      ownerSub: owner,
+      starterKit: parseKitRef(agent.starterKit)?.kitId ?? agent.starterKit,
+    });
     securityLog("info", "starter_kit.onboarded", {
       category: "resource",
       actor: owner,

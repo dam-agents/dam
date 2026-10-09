@@ -277,6 +277,13 @@ export const activityEvents = pgTable(
     uniqueIndex("activity_events_entry_point_dedup_idx")
       .on(table.actorSub, table.type)
       .where(sql`${table.type} = 'entry_point_chosen'`),
+    uniqueIndex("activity_events_agent_oom_dedup_idx")
+      .on(
+        table.agentId,
+        sql`(${table.payload} ->> 'restarts')`,
+        sql`date_trunc('day', ${table.occurredAt} AT TIME ZONE 'UTC')`,
+      )
+      .where(sql`${table.type} = 'agent_oom'`),
   ],
 );
 
@@ -286,7 +293,25 @@ export const actorRoles = pgTable("actor_roles", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
+
+export const externalActorLinks = pgTable(
+  "external_actor_links",
+  {
+    provider: text("provider").notNull(),
+    externalActorHash: text("external_actor_hash").notNull(),
+    actorSub: text("actor_sub").notNull(),
+    linkedAt: timestamp("linked_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.provider, table.externalActorHash] }),
+  ],
+);
 
 export const agents = pgTable(
   "agents",
@@ -307,6 +332,9 @@ export const agents = pgTable(
     sessionPair: jsonb("session_pair"),
     skillsSnapshot: jsonb("skills_snapshot"),
     onboardingChecklist: jsonb("onboarding_checklist"),
+    starterKit: text("starter_kit"),
+    onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
+    spawnedByAgentId: text("spawned_by_agent_id"),
   },
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );

@@ -14,6 +14,7 @@ import {
 import { createKitUpdateMarks } from "./modules/agents/infrastructure/kit-update-marks.js";
 import {
   AGENTS_PLURAL,
+  ANN_STARTER_KIT,
   ANN_STARTER_KIT_ONBOARDED,
   INVOCATIONS_ACTIVE_KEY,
   LABEL_OWNER,
@@ -208,6 +209,7 @@ import {
   createKitUpdateReporter,
   createResolvedCatalogRepository,
   parseCatalogSeeds,
+  parseKitRef,
 } from "./modules/starter-kits/index.js";
 import {
   composeInvocationLivenessSweep,
@@ -255,6 +257,7 @@ import {
   startAgentStateCache,
   createLiveAgentStateCache,
 } from "./modules/agents/infrastructure/agent-state-cache.js";
+import { createOutOfMemoryWatch } from "./modules/agents/infrastructure/out-of-memory-watch.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import {
@@ -348,6 +351,7 @@ export async function bootstrap() {
     live: k8sClient,
     namespace: config.namespace,
     log: (m) => getLogger().warn(`[agents] ${m}`),
+    observe: createOutOfMemoryWatch(),
   });
   const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
   const delegationFrames = createPodSessionClient({
@@ -777,10 +781,25 @@ export async function bootstrap() {
       const agents = await k8sClient.listCustomObjects(AGENTS_PLURAL);
       return agents
         .filter((a) => a.metadata?.name && a.metadata?.labels?.[LABEL_OWNER])
-        .map((a) => ({
-          id: a.metadata!.name!,
-          owner: a.metadata!.labels![LABEL_OWNER]!,
-        }));
+        .map((a) => {
+          const annotations = a.metadata?.annotations ?? {};
+          const kitRef = annotations[ANN_STARTER_KIT];
+          return {
+            id: a.metadata!.name!,
+            owner: a.metadata!.labels![LABEL_OWNER]!,
+            starterKit: kitRef ? (parseKitRef(kitRef)?.kitId ?? null) : null,
+            onboardedAt: annotations[ANN_STARTER_KIT_ONBOARDED] ?? null,
+          };
+        });
+    },
+    listLiveAgents: () => agentStateCache.list(),
+    agentSizing: {
+      slot: {
+        cpu: config.agentDefaultCpuLimit,
+        memory: config.agentDefaultMemoryLimit,
+      },
+      defaultStorage: config.agentDefaultStorageSize,
+      idleTimeoutMin: config.agentIdleTimeoutMinutes,
     },
   });
   usage.start();

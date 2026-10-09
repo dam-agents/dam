@@ -859,6 +859,7 @@ export function createAgentsService(deps: {
       type: EventType.SlackConnected,
       agentId: id,
       slackChannelId,
+      ownerSub: infra.owner ?? deps.owner ?? null,
     });
 
     const wasAmbient = existing?.ambient === true;
