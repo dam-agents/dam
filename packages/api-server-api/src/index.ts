@@ -257,8 +257,7 @@ export {
   detectPreset,
   detectTimezone,
   hasVisibleOccurrence,
-  nextVisibleOccurrence,
-  rruleProblem,
+  rruleNextFire,
   rruleToText,
 } from "./modules/schedules/rrule.js";
 export type {
