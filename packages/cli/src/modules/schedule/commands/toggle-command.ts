@@ -51,7 +51,7 @@ export function buildToggleCommand(deps: ToggleDeps, enable: boolean): Command {
         process.exit(EXIT_SUCCESS);
       }
 
-      const result = await svc.toggle(id);
+      const result = await svc.toggle(id, enable);
       if (!result.ok) {
         if (result.error.kind === "schedule-not-found") {
           process.stderr.write(`error: schedule not found: ${id}\n`);
