@@ -16,6 +16,7 @@ const canonicalPaths = [
   "/sandboxes/sb-1/connections",
   "/agents/new",
   "/artifacts",
+  "/nonexistent",
 ];
 
 describe("route round-trip", () => {
@@ -34,15 +35,16 @@ describe("route round-trip", () => {
     expect(parseRoute(path).view).toBe("home");
   });
 
-  // TEST_SCENARIO: the per-kind destinations are gone, and so are their paths. An unknown path is Home like any other, rather than something the router still carries a case for.
+  // TEST_SCENARIO: an unknown path is Not found and keeps its URL, rather than rendering Home or a default tab under the bad address.
   it.each([
+    "/nonexistent",
+    "/settings/bogus",
+    "/settings/api-keys/extra",
     "/coding-agents",
-    "/coding-agents/new",
-    "/knowledge-bases",
-    "/knowledge-bases/kb-1",
     "/knowledge-bases/kb-1/settings",
-  ])("no longer knows %s", (path) => {
-    expect(parseRoute(path).view).toBe("home");
+    "/sandboxes/sb-1/bogus",
+  ])("does not know %s", (path) => {
+    expect(parseRoute(path)).toEqual({ view: "not-found", path });
   });
 });
 

@@ -41,6 +41,7 @@ import {
   agentFailures,
   ContributionFailuresBadge,
 } from "./contribution-failures-badge.js";
+import { GatewayFailureBadge } from "./gateway-failure-badge.js";
 import { MigrateRuntimeAction } from "./migrate-runtime-action.js";
 import { FreeUpComputeItems } from "./power-menu-items.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
@@ -159,6 +160,7 @@ export function AgentRow({
           <OnboardingTag agent={agent} />
           <KitUpdateTag agentId={agent.id} />
           <ContributionFailuresBadge failures={agentFailures(agent)} />
+          <GatewayFailureBadge agent={agent} />
           <UnsupportedContributionsBadge agent={agent} />
         </div>
         <p className="mt-1 truncate text-sm text-muted-foreground">

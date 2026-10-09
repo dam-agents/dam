@@ -32,6 +32,7 @@ function makeService(outcome: ProviderKeyProbeOutcome) {
   const secrets = new Map<string, Record<string, string>>();
   const probed: string[] = [];
   const svc = createConnectionsService({
+    isOwnedAgent: async () => true,
     ownerId: "owner",
     templates: createConnectionTemplateRegistry(buildCatalog()),
     repo: unused<ConnectionsRepository>({
@@ -50,6 +51,7 @@ function makeService(outcome: ProviderKeyProbeOutcome) {
     oauthEngine: unused(),
     githubAppEngine: unused(),
     s3CredentialProbe: unused(),
+    providerBalance: unused(),
     providerKeyProbe: {
       probe: async (templateId, key) => {
         probed.push(`${templateId}:${key}`);

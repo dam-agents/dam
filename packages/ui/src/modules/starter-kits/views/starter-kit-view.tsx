@@ -562,7 +562,7 @@ function KitDetail({
             <Button
               onClick={() => navigateToStarterKitSetup(kit.catalog, kit.id)}
             >
-              Use this Starter Kit
+              Use this starter kit
             </Button>
           </div>
         </DialogFooter>

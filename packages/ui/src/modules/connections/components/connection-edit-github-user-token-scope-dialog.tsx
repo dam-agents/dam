@@ -108,7 +108,7 @@ export function ConnectionEditGithubUserTokenScopeDialog({
   };
 
   return (
-    <Modal widthClass="w-[560px]">
+    <Modal onClose={onClose} widthClass="w-[560px]">
       <DialogHeader
         title="Edit repositories & permissions"
         subtitle={connection.name}

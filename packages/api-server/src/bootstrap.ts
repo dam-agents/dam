@@ -119,6 +119,7 @@ import {
 import {
   createHarnessConfigSnapshotWriter,
   harnessConfigSupportOf,
+  composeFirePair,
   composeSessionModelChoices,
 } from "./modules/harness-config/index.js";
 import {
@@ -189,6 +190,10 @@ import {
 import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
+import {
+  createHarnessCatalog,
+  DEFAULT_TEMPLATE_ID,
+} from "./modules/templates/domain/harness-catalog.js";
 import {
   catalogEntryHosts,
   createCatalogSourceFromLocator,
@@ -356,6 +361,10 @@ export async function bootstrap() {
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
+  const harnessCatalog = createHarnessCatalog(
+    config.harnesses,
+    (await templatesRepo.get(DEFAULT_TEMPLATE_ID)) !== null,
+  );
   const resolvedCatalog = createResolvedCatalogRepository(db);
   const kitGitHosts = createGitHosts({
     host: config.githubEnterpriseHost,
@@ -509,8 +518,16 @@ export async function bootstrap() {
       resolveOwner: resolveAgentOwner,
     }),
     harnessServerUrl: config.harnessServerUrl,
+    telemetryEnv: harnessCatalog.telemetryEnv,
     resolveOwner: resolveAgentOwner,
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
+  });
+  const firePair = composeFirePair({
+    db,
+    catalog: harnessCatalog,
+    getCapabilities: async (agentId) =>
+      (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+        ?.runtimeCapabilities ?? null,
   });
   await periodicJobs.register("starter-kits-refresh", 600_000, () =>
     starterKitsRefresh.run(),
@@ -562,7 +579,8 @@ export async function bootstrap() {
     ) => runtimeDelivery.runtimeMutator.bump(agentId, events),
     enqueue: (agentId: string) =>
       runtimeDelivery.runtimeMutator.enqueueAfterCommit(agentId),
-    wakeAgent: (agentId: string) => agentsRepo.wakeIfHibernated(agentId),
+    wakeUnlessStopped: (agentId: string) =>
+      agentsRepo.wakeUnlessStopped(agentId),
     spillLog: satellitesBoot.spillLog,
     log: (msg: string) => {
       process.stderr.write(`${msg}\n`);
@@ -735,13 +753,16 @@ export async function bootstrap() {
   });
   const usageMetrics = composeUsageMetricsModule({
     meter: metrics.getMeter("platform-apiserver"),
-    templateOf: (agentId) => {
+    harnessOf: (agentId) => {
       const agent = agentsRepo.peekCached(agentId);
       return agent
-        ? { agent: "resolved", templateId: agent.templateId }
+        ? { agent: "resolved", harness: agent.spec.harness }
         : { agent: "unresolved" };
     },
-    knownTemplates: new Set((await templatesRepo.list()).map((t) => t.id)),
+    knownHarnesses: new Set([
+      ...Object.keys(config.harnesses.catalog),
+      ...(await templatesRepo.list()).flatMap((t) => t.spec.harness ?? []),
+    ]),
     now: () => Date.now(),
   });
   usageMetrics.start();
@@ -942,6 +963,7 @@ export async function bootstrap() {
       namespace: config.namespace,
       instanceName,
       stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
+      firePair: (agentId) => firePair(agentId, {}),
     });
 
   const slackWorker = slackGatewayFactory
@@ -1112,6 +1134,7 @@ export async function bootstrap() {
 
   const schedulesBoot = composeSchedulesAtBoot({
     db,
+    firePair,
     agentOnceLimits: {
       maxOpen: config.onceScheduleAgentMaxOpen,
       maxPerHour: config.onceScheduleAgentMaxPerHour,
@@ -1368,6 +1391,7 @@ export async function bootstrap() {
       onboardingChecklists,
       grantProvisioner: connectionGrantProvisioner(
         connectionsServiceFor(owner),
+        harnessCatalog,
       ),
     }).agents;
 
@@ -1539,6 +1563,7 @@ export async function bootstrap() {
     agentsRepo,
     connectionsBoot,
     templatesRepo,
+    harnessCatalog,
     starterKitsRepo: resolvedCatalog,
     kitUpstream,
     reposService,
@@ -1579,6 +1604,7 @@ export async function bootstrap() {
     k8sClient,
     agentsRepo,
     templatesRepo,
+    harnessCatalog,
     artifactLibraryFor,
     agentsServiceFor: harnessAgentsServiceFor,
     connectionsServiceFor,

@@ -7,6 +7,7 @@ import {
   type FrequencyPreset,
   hasVisibleOccurrence,
   PRECHECK_MAX_LENGTH,
+  rruleNextFire,
   rruleToText,
 } from "api-server-api";
 import { z } from "zod";
@@ -51,20 +52,11 @@ export const scheduleFormSchema = z
         path: ["days"],
         message: "Pick at least one day",
       });
-    if (
-      (v.kind === "minutely" || v.kind === "hourly") &&
-      !(Number.parseInt(v.interval, 10) >= 1)
-    )
-      ctx.addIssue({
-        code: "custom",
-        path: ["interval"],
-        message: "Enter a number of 1 or more",
-      });
     const { body, error } = buildRRuleParts(v);
     if (error) {
       ctx.addIssue({
         code: "custom",
-        path: [v.kind === "custom" ? "customRRule" : "kind"],
+        path: [errorField(v.kind)],
         message: error,
       });
       return;
@@ -88,8 +80,20 @@ export const scheduleFormSchema = z
 
 export type ScheduleFormValues = z.infer<typeof scheduleFormSchema>;
 
+export function errorField(
+  kind: ScheduleFormValues["kind"],
+): "customRRule" | "interval" | "kind" {
+  if (kind === "custom") return "customRRule";
+  return kind === "minutely" || kind === "hourly" ? "interval" : "kind";
+}
+
 function toFrequencyPreset(v: ScheduleFormValues): FrequencyPreset {
-  const interval = Math.max(1, Number.parseInt(v.interval, 10) || 1);
+  const interval = Number(v.interval);
+  if (
+    (v.kind === "minutely" || v.kind === "hourly") &&
+    !(v.interval.trim() !== "" && Number.isInteger(interval) && interval >= 1)
+  )
+    throw new Error("Enter a whole number of 1 or more");
   switch (v.kind) {
     case "minutely":
       return { kind: v.kind, interval, days: v.days };
@@ -111,6 +115,12 @@ export function buildRRuleParts(v: ScheduleFormValues): {
 } {
   try {
     const body = buildRRule(toFrequencyPreset(v));
+    const serverCheckOnly = !("Temporal" in globalThis);
+    const next = serverCheckOnly
+      ? null
+      : rruleNextFire(body, v.timezone, Temporal.Now.instant(), []);
+    if (next?.kind === "stopped")
+      return { body: "", summary: "", error: `Not accepted: ${next.reason}` };
     return { body, summary: rruleToText(body), error: null };
   } catch (e) {
     return { body: "", summary: "", error: (e as Error).message };

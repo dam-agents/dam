@@ -71,6 +71,11 @@ export function createTerminalRelay(
     const url = new URL(req.url!, `http://${req.headers.host}`);
     const sessionId = url.searchParams.get("sessionId") ?? "default";
     const reset = url.searchParams.get("reset") === "1";
+    const lease = new URLSearchParams();
+    for (const name of ["harness", "provider", "model"]) {
+      const value = url.searchParams.get(name);
+      if (value) lease.set(name, value);
+    }
 
     wss.handleUpgrade(req, socket, head, (client) => {
       client.on("error", () => {
@@ -117,7 +122,7 @@ export function createTerminalRelay(
           () =>
             new Promise<WebSocket>((resolve, reject) => {
               const ws = new WebSocket(
-                `ws://${podBaseUrl(agentId, namespace)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}`,
+                `ws://${podBaseUrl(agentId, namespace)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}${lease.size > 0 ? `&${lease.toString()}` : ""}`,
               );
               ws.on("open", () => resolve(ws));
               ws.on("error", (err) => {

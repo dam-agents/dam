@@ -100,6 +100,9 @@ export interface AcpRuntime {
   isSessionRunning(sessionId: string): boolean;
   sessionFrames(sessionId: string): { frames: string[]; truncated: boolean };
   resetSession(sessionId: string): void;
+  markSessionCold(sessionId: string): void;
+  releaseSession(sessionId: string): void;
+  holdsSessions(): boolean;
   refreshEnv(opts: { force: boolean }): void;
   recycleForConfig(): void;
   shutdown(): void;
@@ -114,7 +117,7 @@ export interface AcpRuntimeDeps {
   idleReapDelayMs?: number;
   envReadyAtBoot?: boolean;
   warmStartTimeoutMs?: number;
-  beforeFirstSpawn?: () => Promise<void>;
+  beforeSpawn?: () => Promise<void>;
   logBytesCap?: number;
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
@@ -132,6 +135,7 @@ export interface AcpRuntimeDeps {
   isTerminalSessionActive?: (sessionId: string) => boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
+  onHarnessExited?: () => void;
 }
 
 export const SCHEDULE_SURFACE = "schedule";
@@ -174,6 +178,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const engagedSessions = new Map<ClientChannel, Set<string>>();
   const nonViewerChannels = new Set<ClientChannel>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
+  let waitingAttaches = 0;
 
   function engagedChannelsFor(sessionId: string): ClientChannel[] {
     const channels: ClientChannel[] = [];
@@ -529,6 +534,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     initializeAnswer = null;
     initializeWaiters = null;
     deps.backgroundWork?.clear();
+    if (reason === "agent-exited") deps.onHarnessExited?.();
   }
 
   function describeBusy(): string {
@@ -560,9 +566,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     envReadyAtBoot: deps.envReadyAtBoot ?? true,
     warmStartTimeoutMs,
     envForceRecycleMs,
-    ...(deps.beforeFirstSpawn
-      ? { beforeFirstSpawn: deps.beforeFirstSpawn }
-      : {}),
+    ...(deps.beforeSpawn ? { beforeSpawn: deps.beforeSpawn } : {}),
     log(msg) {
       deps.log?.(msg);
     },
@@ -1137,6 +1141,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           deps.sessionMetadata?.recordSeen(promptSessionId);
         const promptBlocks = (frame as { params?: { prompt?: unknown } }).params
           ?.prompt;
+        const meta = deps.sessionMetadata?.get(promptSessionId)?.meta;
+        const title = meta && !meta.title ? promptTitle(promptBlocks) : null;
+        if (title)
+          deps.sessionMetadata?.set(promptSessionId, { ...meta, title });
         const willQueue = promptScheduler.hasTurnInFlight(promptSessionId);
         appendUserPromptToLog(
           promptSessionId,
@@ -1213,13 +1221,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (opts?.viewer === false) nonViewerChannels.add(channel);
       const buffered: string[] = [];
       let live = false;
+      waitingAttaches++;
       const release = (): void => {
         if (live) return;
+        live = true;
+        waitingAttaches--;
         if (!lease.ensure()) {
           channel.close(1011, "agent process is not running");
           return;
         }
-        live = true;
         for (const data of buffered) handleClientMessage(channel, data);
         buffered.length = 0;
       };
@@ -1229,6 +1239,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       });
       let cancelReady: () => void = () => {};
       channel.onClose(() => {
+        if (!live) {
+          live = true;
+          waitingAttaches--;
+        }
         cancelReady();
         detach(channel);
       });
@@ -1253,6 +1267,27 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     resetSession(sessionId) {
       tearDownSession(sessionId);
       deps.log?.(`reset session ${sessionId}`);
+    },
+
+    markSessionCold(sessionId) {
+      harnessColdSessions.add(sessionId);
+    },
+
+    releaseSession(sessionId) {
+      tearDownSession(sessionId);
+      for (const sessions of engagedSessions.values())
+        sessions.delete(sessionId);
+    },
+
+    holdsSessions() {
+      for (const sessions of engagedSessions.values())
+        if (sessions.size > 0) return true;
+      return (
+        runtimeBusy() ||
+        waitingAttaches > 0 ||
+        outboundIdToClient.size > 0 ||
+        (sessionCloseSupported && transcript.sessionCount() > 0)
+      );
     },
 
     refreshEnv(opts) {
@@ -1292,6 +1327,25 @@ function platformField(frame: unknown, key: string): unknown {
 function platformString(frame: unknown, key: string): string | null {
   const value = platformField(frame, key);
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+const TITLE_CHARS = 80;
+
+function promptTitle(prompt: unknown): string | null {
+  if (!Array.isArray(prompt)) return null;
+  const text = prompt
+    .map((b) =>
+      isNonNullObject(b) && b.type === "text" && typeof b.text === "string"
+        ? b.text
+        : "",
+    )
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return null;
+  return text.length > TITLE_CHARS
+    ? `${text.slice(0, TITLE_CHARS - 1)}…`
+    : text;
 }
 
 function rehydrateFailureMessage(error: unknown): string {
@@ -1359,6 +1413,9 @@ function toAcpPlatformMeta(session: PodSession): Record<string, unknown> {
     }),
     ...(session.runTotalMs !== null && { runTotalMs: session.runTotalMs }),
     ...(session.runCount !== null && { runCount: session.runCount }),
+    ...(session.harness !== undefined && { harness: session.harness }),
+    ...(session.provider !== undefined && { provider: session.provider }),
+    ...(session.model !== undefined && { model: session.model }),
   };
 }
 

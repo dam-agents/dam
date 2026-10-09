@@ -1,9 +1,9 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { monitorEventLoopDelay } from "node:perf_hooks";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import headlessPkg from "@xterm/headless";
 const { Terminal: HeadlessTerminal } = headlessPkg;
 import serializePkg from "@xterm/addon-serialize";
@@ -69,8 +69,14 @@ import {
   pluginStateRoot,
   readSkillInstallBootState,
   resolveDrivers,
+  sessionModelOf,
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
+import { leaseSpawnEnv } from "./core/runtime-env.js";
+import {
+  PROVIDER_REMOVED_REASON,
+  type LeasePair,
+} from "./modules/acp/services/lease-router.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const homeDir = config.PLATFORM_DEV
@@ -97,17 +103,27 @@ function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
     .map((p) => expandHome(p, home));
 }
 
-const harnessManifest = join(
-  __dir,
-  `../runtime-manifests/${process.env.PLATFORM_HARNESS}.yaml`,
-);
-const runtimeManifest = loadManifest(
-  config.PLATFORM_DEV
-    ? join(__dir, "../../agents/base/rootfs/app/runtime-manifest.yaml")
-    : existsSync(harnessManifest)
-      ? harnessManifest
-      : join(__dir, "../runtime-manifest.yaml"),
-);
+const defaultHarness = process.env.PLATFORM_HARNESS ?? "";
+const manifestsDir = join(__dir, "../runtime-manifests");
+const harnessManifests: Record<string, RuntimeManifest> = config.PLATFORM_DEV
+  ? {
+      [defaultHarness]: loadManifest(
+        join(__dir, "../../agents/base/rootfs/app/runtime-manifest.yaml"),
+      ),
+    }
+  : existsSync(join(manifestsDir, `${defaultHarness}.yaml`))
+    ? Object.fromEntries(
+        readdirSync(manifestsDir)
+          .filter((f) => f.endsWith(".yaml"))
+          .map((f) => [
+            basename(f, ".yaml"),
+            loadManifest(join(manifestsDir, f)),
+          ]),
+      )
+    : {
+        [defaultHarness]: loadManifest(join(__dir, "../runtime-manifest.yaml")),
+      };
+const runtimeManifest = harnessManifests[defaultHarness]!;
 
 const platformAgentId =
   process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown";
@@ -133,7 +149,7 @@ const seedRoots = skillRefPaths(
 ).filter((p) => !readSideSet.has(p));
 const pristineSkillPaths = [...seedRoots, STAGED_SKILLS_DIR];
 const stateBackend = createFileDocumentStoreBackend(homeDir);
-const envStore = createEnvStateStore(homeDir);
+const envStore = createEnvStateStore(homeDir, defaultHarness);
 const setupGitCredentialHelper = createGitCredentialHelperSetup(
   envStore,
   (msg) => process.stderr.write(`[git] ${msg}\n`),
@@ -182,6 +198,12 @@ if (envStore.ready()) podService?.refreshEnv();
 process.env.PLATFORM_RUNTIME_URL = `http://127.0.0.1:${config.PORT}`;
 
 let seedHarnessModel: (() => Promise<void>) | null = null;
+let leaseModel:
+  | ((lease: {
+      harness: string;
+      provider: string | null;
+    }) => Promise<string | null>)
+  | null = null;
 
 const {
   runtime: acpRuntime,
@@ -201,24 +223,34 @@ const {
   agentHome: homeDir,
   stateBackend,
   envReader: envStore,
-  sessionHistory: runtimeManifest.sessionHistory,
-  sessionSpend: runtimeManifest.sessionSpend,
-  ...(runtimeManifest.terminalSessionPins && {
-    terminalSessionPins: expandHome(
-      runtimeManifest.terminalSessionPins,
-      homeDir,
-    ),
-  }),
+  defaultHarness,
+  harnesses: Object.fromEntries(
+    Object.entries(harnessManifests).map(([name, manifest]) => [
+      name,
+      {
+        sessionHistory: manifest.sessionHistory,
+        sessionSpend: manifest.sessionSpend,
+        ...(manifest.terminalSessionPins && {
+          terminalSessionPins: expandHome(
+            manifest.terminalSessionPins,
+            homeDir,
+          ),
+        }),
+        sessionModel: sessionModelOf(manifest),
+      },
+    ]),
+  ),
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   onArtifactTouch: artifactTouchReporter.report,
-  beforeFirstSpawn: () => {
+  beforeSpawn: () => {
     if (seedHarnessModel) return seedHarnessModel();
     process.stderr.write(
       "[acp] first spawn reached before the runtime channel was composed — no model seeded\n",
     );
     return Promise.resolve();
   },
+  leaseModel: (lease) => leaseModel?.(lease) ?? Promise.resolve(null),
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
 
@@ -248,8 +280,9 @@ const reconcileOnState = imageSkillReconciler
 
 const runtimeChannel = await composeRuntimeChannel({
   subAgentSessions,
-  onHarnessConfigApplied: () => acpRuntime.recycleForConfig(),
-  manifest: runtimeManifest,
+  onHarnessConfigApplied: (harness) => acpRuntime.recycleHarness(harness),
+  manifests: harnessManifests,
+  defaultHarness,
   agentHome: homeDir,
   workDir,
   stateBackend,
@@ -264,8 +297,8 @@ const runtimeChannel = await composeRuntimeChannel({
   plugins: [
     createEnvPlugin({
       store: envStore,
-      onChange: ({ namesChanged }) => {
-        acpRuntime.refreshEnv({ force: namesChanged });
+      onChange: (change) => {
+        acpRuntime.applyEnvChange(change);
         podService?.refreshEnv();
         scheduleRecovery();
       },
@@ -285,6 +318,7 @@ const runtimeChannel = await composeRuntimeChannel({
 seedHarnessModel = async () => {
   await runtimeChannel.seedHarnessModel();
 };
+leaseModel = (lease) => runtimeChannel.leaseModel(lease);
 
 if (imageSkillReconciler) {
   const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));
@@ -406,6 +440,34 @@ function markTerminalSeen(sessionId: string): void {
   else sessionMetadata.set(sessionId, { mode: "terminal" });
 }
 
+function terminalLease(
+  sessionId: string,
+  requested: Partial<LeasePair>,
+): LeasePair | string {
+  const meta = sessionMetadata.get(sessionId)?.meta;
+  const harness = meta?.harness ?? requested.harness ?? defaultHarness;
+  if (!Object.hasOwn(harnessManifests, harness))
+    return `this agent does not carry the ${harness} harness`;
+  const provider =
+    meta?.harness !== undefined
+      ? (meta.provider ?? null)
+      : (requested.provider ?? envStore.providers()[0] ?? null);
+  const model =
+    meta?.harness !== undefined
+      ? (meta.model ?? null)
+      : (requested.model ?? null);
+  if (provider !== null && !envStore.providers().includes(provider))
+    return PROVIDER_REMOVED_REASON;
+  sessionMetadata.set(sessionId, {
+    ...meta,
+    mode: "terminal",
+    harness,
+    ...(provider !== null && { provider }),
+    ...(model !== null && { model }),
+  });
+  return { harness, provider, model };
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Stamps activity for output produced while nobody is
  * attached, which is what makes a terminal session unread. A terminal admits one
@@ -451,7 +513,7 @@ function reapPtySlotIfIdle(sessionId: string): void {
 function attachPty(
   sessionId: string,
   ws: WsWebSocket,
-  opts: { reset: boolean },
+  opts: { reset: boolean; lease: Partial<LeasePair> },
 ): void {
   if (opts.reset) killPtySlot(sessionId);
   let initialized = false;
@@ -513,6 +575,11 @@ function attachPty(
         return;
       }
 
+      const lease = terminalLease(sessionId, opts.lease);
+      if (typeof lease === "string") {
+        ws.close(1008, lease);
+        return;
+      }
       const headless = new HeadlessTerminal({
         cols,
         rows,
@@ -528,9 +595,8 @@ function attachPty(
         rows,
         cwd: workDir,
         env: {
-          ...envStore.current(),
           ...(Object.fromEntries(
-            Object.entries(process.env).filter(
+            Object.entries(leaseSpawnEnv(envStore, lease)).filter(
               ([k, v]) =>
                 v !== undefined &&
                 !k.startsWith("npm_config_") &&
@@ -791,8 +857,19 @@ server.on("upgrade", (req, socket, head) => {
   } else if (url.pathname === "/api/terminal") {
     const sessionId = url.searchParams.get("sessionId") ?? "default";
     const reset = url.searchParams.get("reset") === "1";
+    const leaseParam = (name: string): string | undefined =>
+      url.searchParams.get(name) || undefined;
+    const lease = {
+      ...(leaseParam("harness") !== undefined && {
+        harness: leaseParam("harness"),
+      }),
+      ...(leaseParam("provider") !== undefined && {
+        provider: leaseParam("provider"),
+      }),
+      ...(leaseParam("model") !== undefined && { model: leaseParam("model") }),
+    };
     termWss.handleUpgrade(req, socket, head, (ws) =>
-      attachPty(sessionId, ws, { reset }),
+      attachPty(sessionId, ws, { reset, lease }),
     );
   } else if (url.pathname === "/api/browser/display") {
     browserWss.handleUpgrade(req, socket, head, (ws) =>
@@ -838,7 +915,11 @@ server.listen(config.PORT, () => {
 if (config.MEM_REAPER && !config.PLATFORM_DEV) {
   startMemReaper({
     thresholdFraction: config.MEM_REAPER_THRESHOLD,
-    agentProcesses: runtimeManifest.agentProcesses,
+    agentProcesses: [
+      ...new Set(
+        Object.values(harnessManifests).flatMap((m) => m.agentProcesses),
+      ),
+    ],
     log: (msg) => process.stderr.write(`[mem-reaper] ${msg}\n`),
   });
 }

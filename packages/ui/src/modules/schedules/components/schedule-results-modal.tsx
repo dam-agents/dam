@@ -79,7 +79,7 @@ export function ScheduleResultsModal({
         : `${sessions.length} session${sessions.length === 1 ? "" : "s"} recorded`;
 
   return (
-    <Modal>
+    <Modal onClose={onClose}>
       <DialogHeader
         title={schedule.name}
         truncateTitle

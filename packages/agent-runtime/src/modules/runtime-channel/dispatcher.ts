@@ -25,8 +25,21 @@ interface DispatcherDeps {
   env: ContextEnv;
 }
 
-function contextFor(env: ContextEnv, plugin: Plugin): DispatchContext {
-  const pluginStateDir = join(env.pluginStateRoot, plugin.name);
+export interface ScopedBinding {
+  binding: DriverBinding;
+  scope: string | null;
+}
+
+function contextFor(
+  env: ContextEnv,
+  plugin: Plugin,
+  scope: string | null = null,
+): DispatchContext {
+  const pluginStateDir = join(
+    env.pluginStateRoot,
+    plugin.name,
+    ...(scope === null ? [] : [`@${scope}`]),
+  );
   mkdirSync(pluginStateDir, { recursive: true });
   return {
     agentHome: env.agentHome,
@@ -39,27 +52,36 @@ export interface Dispatcher {
   apply(contributions: Contribution[]): Promise<DriverFailure[]>;
 }
 
-export function createDispatcher(deps: DispatcherDeps): Dispatcher {
+export function createDispatcher(deps: {
+  drivers: Record<string, ScopedBinding[]>;
+  registry: PluginRegistry;
+  env: ContextEnv;
+}): Dispatcher {
   const handlers = new Map<
     ContributionKind,
-    { handler: KindHandler; ctx: DispatchContext }
+    { handler: KindHandler; ctx: DispatchContext }[]
   >();
 
-  for (const [kindRaw, binding] of Object.entries(deps.drivers)) {
+  for (const [kindRaw, bindings] of Object.entries(deps.drivers)) {
     const kind = kindRaw as ContributionKind;
-    const plugin = deps.registry.get(binding.impl);
-    if (!plugin) {
-      throw new Error(
-        `runtime-manifest binds kind "${kind}" to impl "${binding.impl}" but no plugin with that name is registered`,
-      );
+    for (const { binding, scope } of bindings) {
+      const plugin = deps.registry.get(binding.impl);
+      if (!plugin) {
+        throw new Error(
+          `runtime-manifest binds kind "${kind}" to impl "${binding.impl}" but no plugin with that name is registered`,
+        );
+      }
+      if (!plugin.bind) {
+        throw new Error(
+          `plugin "${binding.impl}" bound to contribution kind "${kind}" does not handle contributions (no bind)`,
+        );
+      }
+      const handler = plugin.bind(kind, binding);
+      handlers.set(kind, [
+        ...(handlers.get(kind) ?? []),
+        { handler, ctx: contextFor(deps.env, plugin, scope) },
+      ]);
     }
-    if (!plugin.bind) {
-      throw new Error(
-        `plugin "${binding.impl}" bound to contribution kind "${kind}" does not handle contributions (no bind)`,
-      );
-    }
-    const handler = plugin.bind(kind, binding);
-    handlers.set(kind, { handler, ctx: contextFor(deps.env, plugin) });
   }
 
   return {
@@ -81,18 +103,20 @@ export function createDispatcher(deps: DispatcherDeps): Dispatcher {
         );
       }
       const failures: DriverFailure[] = [];
-      for (const [kind, { handler, ctx }] of handlers) {
+      for (const [kind, bound] of handlers) {
         const list = byKind.get(kind) ?? [];
         deps.env.log(
           `[dispatcher] kind=${kind} count=${list.length} — invoking`,
         );
-        try {
-          await handler(list, ctx);
-          deps.env.log(`[dispatcher] kind=${kind} done`);
-        } catch (err) {
-          const message = (err as Error).message;
-          deps.env.log(`[runtime] driver ${kind} failed: ${message}`);
-          failures.push({ kind, message });
+        for (const { handler, ctx } of bound) {
+          try {
+            await handler(list, ctx);
+            deps.env.log(`[dispatcher] kind=${kind} done`);
+          } catch (err) {
+            const message = (err as Error).message;
+            deps.env.log(`[runtime] driver ${kind} failed: ${message}`);
+            failures.push({ kind, message });
+          }
         }
       }
       return failures;

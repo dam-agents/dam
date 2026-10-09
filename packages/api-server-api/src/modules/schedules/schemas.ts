@@ -105,6 +105,7 @@ export const scheduleDeleteInputSchema = z.object({
 
 export const scheduleToggleInputSchema = z.object({
   id: z.string().min(1),
+  enabled: z.boolean().optional(),
 });
 
 export const scheduleResetSessionInputSchema = z.object({

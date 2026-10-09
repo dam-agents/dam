@@ -1,4 +1,4 @@
-_GATEWAY_BASE="http://127.0.0.1:24180"
+_GATEWAY_BASE="http://127.0.0.1:24180${PLATFORM_PROVIDER:+/p/$PLATFORM_PROVIDER}"
 
 if [ -n "${AWS_BEARER_TOKEN_BEDROCK:-}" ]; then
 	export CLAUDE_CODE_USE_BEDROCK=1
@@ -35,6 +35,11 @@ else
 fi
 
 unset _GATEWAY_BASE _gateway_env _gateway_up _i 2>/dev/null || true
+
+# The session's model: the env outranks ~/.claude/settings.json and holds on resume.
+if [ -n "${PLATFORM_MODEL:-}" ]; then
+	export ANTHROPIC_MODEL="$PLATFORM_MODEL"
+fi
 
 # Workloads extend the gateway environment here.
 for _hook in /usr/local/lib/model-gateway.d/*.sh; do [ -r "$_hook" ] && . "$_hook"; done

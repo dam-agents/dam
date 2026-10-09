@@ -7,9 +7,15 @@ export { liveEventSchema, type LiveEvent } from "./modules/events/schemas.js";
 export type { LiveEventsService } from "./modules/events/types.js";
 
 export { SPEC_VERSION } from "./modules/templates/types.js";
-export { templateSpecSchema } from "./modules/templates/schemas.js";
+export {
+  harnessCatalogConfigSchema,
+  harnessFamilySchema,
+  templateSpecSchema,
+} from "./modules/templates/schemas.js";
 export type {
+  HarnessCatalog,
   HarnessFamily,
+  HarnessView,
   Template,
   TemplateHarness,
   TemplateSpec,
@@ -39,11 +45,16 @@ export type {
 
 export type {
   HarnessConfigChange,
+  HarnessConfigStatus,
+  SessionPair,
   HarnessConfigService,
   HarnessConfigSnapshot,
   HarnessConfigSnapshotPatch,
 } from "./modules/harness-config/types.js";
-export { harnessConfigSnapshotSchema } from "./modules/harness-config/schemas.js";
+export {
+  harnessConfigSnapshotSchema,
+  sessionPairSchema,
+} from "./modules/harness-config/schemas.js";
 
 export type {
   Agent,
@@ -86,6 +97,7 @@ export {
   AGENT_ID_RE,
   agentCreateInputSchema,
   agentKindSchema,
+  agentUpdateInputSchema,
 } from "./modules/agents/schemas.js";
 export type {
   AgentSetup,
@@ -257,8 +269,7 @@ export {
   detectPreset,
   detectTimezone,
   hasVisibleOccurrence,
-  nextVisibleOccurrence,
-  rruleProblem,
+  rruleNextFire,
   rruleToText,
 } from "./modules/schedules/rrule.js";
 export type {
@@ -281,6 +292,7 @@ export {
 export {
   DEFAULT_ENV_PLACEHOLDER,
   PROVIDERS,
+  BALANCE_PROVIDER_TYPES,
   PROVIDER_PRESET_TYPES,
   ibmLitellmEnvMappings,
   curveBenderEnvMappings,
@@ -394,6 +406,7 @@ export type {
   ConnectionStatus,
   ConnectionView,
   ConnectionTemplateView,
+  ProviderBalance,
   TemplateInput as ConnectionTemplateInput,
   ConnectionCategory,
   AgentConnections,
@@ -401,10 +414,17 @@ export type {
   AuthKind as ConnectionAuthKind,
 } from "./modules/connections/types.js";
 export { authConfig as connectionAuthConfigSchema } from "./modules/connections/types.js";
-export { connectionNameSchema } from "./modules/connections/schemas.js";
+export {
+  CONNECTION_ENV_NAME_HINT,
+  CONNECTION_ENV_NAME_RE,
+  connectionCreateInputSchema,
+  connectionHeaderNameSchema,
+  connectionNameSchema,
+} from "./modules/connections/schemas.js";
 export type {
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
+  ConnectionUpdateInput,
 } from "./modules/connections/schemas.js";
 
 export {

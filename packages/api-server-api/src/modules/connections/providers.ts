@@ -19,6 +19,7 @@ export const BOB_INFERENCE_PREFIX_REWRITE = {
 function liteLlmEnvMappings(
   host: string,
   openaiModel: string,
+  bobModel: string,
   proxy: Record<string, string>,
 ): EnvMapping[] {
   const baseUrl = `https://${host}`;
@@ -36,25 +37,36 @@ function liteLlmEnvMappings(
     { envName: "OPENAI_MODEL", placeholder: openaiModel },
     { envName: "BOB_GATEWAY_URL", placeholder: baseUrl },
     { envName: "BOBSHELL_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
+    { envName: "BOB_SHELL_MODEL", placeholder: bobModel },
   ];
 }
 
 export function ibmLitellmEnvMappings(): EnvMapping[] {
-  return liteLlmEnvMappings(IBM_LITELLM_HOST, "gpt-5.5", {
-    MODEL: "aws/claude-opus-4-8",
-    CONTEXT_WINDOW: "200000",
-    MAX_TOKENS: "8192",
-  });
+  return liteLlmEnvMappings(
+    IBM_LITELLM_HOST,
+    "gpt-5.5",
+    "aws/claude-sonnet-4-6",
+    {
+      MODEL: "aws/claude-opus-4-8",
+      CONTEXT_WINDOW: "200000",
+      MAX_TOKENS: "8192",
+    },
+  );
 }
 
 export function curveBenderEnvMappings(): EnvMapping[] {
   return [
-    ...liteLlmEnvMappings(CURVE_BENDER_HOST, "rits/zai-org/glm-5-3", {
-      MODEL: "rits/zai-org/glm-5-3",
-      CONTEXT_WINDOW: "262144",
-      MAX_TOKENS: "32768",
-      REASONING: "1",
-    }),
+    ...liteLlmEnvMappings(
+      CURVE_BENDER_HOST,
+      "rits/zai-org/glm-5-3",
+      "rits/zai-org/glm-5-3",
+      {
+        MODEL: "rits/zai-org/glm-5-3",
+        CONTEXT_WINDOW: "262144",
+        MAX_TOKENS: "32768",
+        REASONING: "1",
+      },
+    ),
     { envName: "CLAUDE_CODE_MAX_CONTEXT_TOKENS", placeholder: "262144" },
   ];
 }
@@ -187,6 +199,12 @@ export const PROVIDERS = {
     ],
   },
 } satisfies Record<ProviderPresetType, ProviderPreset>;
+
+export const BALANCE_PROVIDER_TYPES: ReadonlySet<ProviderPresetType> = new Set([
+  "bob",
+  "ibm-litellm",
+  "curve-bender",
+]);
 
 export const PROVIDER_PRESET_TYPES = Object.keys(
   PROVIDERS,

@@ -186,10 +186,10 @@ function makeHarness(
         seeded.push({ id, name: input.name, enabled: true });
         return { id, name: input.name } as Schedule;
       },
-      async toggle(id) {
+      async toggle(id, enabled) {
         calls.toggled.push(id);
         const found = seeded.find((s) => s.id === id);
-        if (found) found.enabled = !found.enabled;
+        if (found) found.enabled = enabled ?? !found.enabled;
         return null;
       },
       async list() {
@@ -516,6 +516,31 @@ describe("starter kits: apply", () => {
     });
     expect(pinned.calls.created[0].templateId).toBeUndefined();
     expect(pinned.calls.created[0].image).toBe("quay.io/acme/nous:1.0.0");
+  });
+
+  /** TEST_SCENARIO: On the default template, which names no harness, a kit
+   * that lists the harnesses it works with starts on the first of them, and
+   * the template's own harness wins when it names one. */
+  it("starts a kit on its first harness when the template names none", async () => {
+    const h = makeHarness({
+      ...LOADED,
+      kit: kit({ harnesses: ["codex", "claude-code"], connections: [] }),
+    });
+    const apply = {
+      catalog: "platform",
+      kitId: "code-reviewer",
+      name: "r",
+      connectionIds: [],
+      skipSchedules: [],
+      scheduleOverrides: [],
+    };
+    await h.service.apply({ ...apply, templateId: "default" });
+    expect(h.calls.created[0]).toMatchObject({
+      templateId: "default",
+      harness: "codex",
+    });
+    await h.service.apply({ ...apply, templateId: "codex" });
+    expect(h.calls.created[1]).not.toHaveProperty("harness");
   });
 
   it("passes the kit's declared size and disk to create, image or harness", async () => {

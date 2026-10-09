@@ -13,35 +13,24 @@ import { EMPTY_REGISTRY_CREDENTIAL } from "../../modules/sandboxes/components/re
 
 const complete: CreateAgentDraft = {
   name: "swift-otter",
-  templateId: "claude-code",
-  providerRef: { id: "conn-123" },
   egressPreset: "trusted",
   vm: false,
 };
 
 describe("create-agent draft completeness", () => {
-  it("is complete only with a name, a template, and a provider", () => {
+  /** TEST_SCENARIO: Creating asks for no harness and no provider; the
+   * platform grants the default provider and sessions choose the harness. */
+  it("is complete with a name alone", () => {
     expect(isCreateAgentDraftComplete(complete)).toBe(true);
     expect(isCreateAgentDraftComplete({ ...complete, name: "  " })).toBe(false);
-    expect(isCreateAgentDraftComplete({ ...complete, templateId: null })).toBe(
-      false,
-    );
-    expect(isCreateAgentDraftComplete({ ...complete, providerRef: null })).toBe(
-      false,
-    );
   });
 });
 
 describe("buildCreateAgentInput", () => {
-  it("maps the provider to the sole app-connection grant and trims the name", () => {
+  it("names neither a template nor a provider, and trims the name", () => {
     expect(
       buildCreateAgentInput({ ...complete, name: "  swift-otter " }),
-    ).toEqual({
-      name: "swift-otter",
-      templateId: "claude-code",
-      egressPreset: "trusted",
-      appConnectionIds: ["conn-123"],
-    });
+    ).toEqual({ name: "swift-otter", egressPreset: "trusted" });
   });
 
   it("carries the chosen egress preset through", () => {
@@ -50,19 +39,15 @@ describe("buildCreateAgentInput", () => {
     ).toMatchObject({ egressPreset: "all" });
   });
 
-  // TEST_SCENARIO: the backend is chosen beside the image, not by picking a different one, so the same template reaches the server either way and only the vm flag differs.
-  it("asks for a microVM without changing the template", () => {
+  it("asks for a microVM only when chosen", () => {
     expect(buildCreateAgentInput({ ...complete, vm: true })).toMatchObject({
-      templateId: "claude-code",
       vm: true,
     });
     expect(buildCreateAgentInput(complete)).not.toHaveProperty("vm");
   });
 
   it("throws on an incomplete draft", () => {
-    expect(() =>
-      buildCreateAgentInput({ ...complete, providerRef: null }),
-    ).toThrow();
+    expect(() => buildCreateAgentInput({ ...complete, name: "" })).toThrow();
   });
 });
 
@@ -84,11 +69,11 @@ const fullCredential = {
 };
 
 describe("coding-agent setup completeness", () => {
-  it("needs a name, a provider, and either a template or a custom image", () => {
+  it("needs a name and either a template or a custom image, but no provider", () => {
     expect(isCodingAgentSetupComplete(setup)).toBe(true);
     expect(isCodingAgentSetupComplete({ ...setup, name: "  " })).toBe(false);
     expect(isCodingAgentSetupComplete({ ...setup, providerRef: null })).toBe(
-      false,
+      true,
     );
     expect(isCodingAgentSetupComplete({ ...setup, templateId: null })).toBe(
       false,
@@ -183,8 +168,6 @@ describe("buildCodingAgentSetupInput", () => {
   });
 
   it("throws on an incomplete draft", () => {
-    expect(() =>
-      buildCodingAgentSetupInput({ ...setup, providerRef: null }),
-    ).toThrow();
+    expect(() => buildCodingAgentSetupInput({ ...setup, name: "" })).toThrow();
   });
 });

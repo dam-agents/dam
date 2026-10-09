@@ -10,13 +10,15 @@ interface DeliveryRecord {
   state: DeliveryState;
   timer: ReturnType<typeof setTimeout> | null;
   fail: () => void;
+  failed: boolean;
+  recover: (() => void) | undefined;
 }
 
 export interface PromptDelivery {
   beginSend: (
     promptId: string,
     fail: () => void,
-    opts?: { waking?: boolean },
+    opts?: { waking?: boolean; recover?: () => void },
   ) => void;
   handleUpdate: (update: AcpUpdate) => void;
   endSend: (promptId: string) => void;
@@ -35,12 +37,19 @@ export function createPromptDelivery(): PromptDelivery {
 
   return {
     beginSend: (promptId, fail, opts) => {
-      const record: DeliveryRecord = { state: "sending", timer: null, fail };
+      const record: DeliveryRecord = {
+        state: "sending",
+        timer: null,
+        fail,
+        failed: false,
+        recover: opts?.recover,
+      };
       records.set(promptId, record);
       record.timer = setTimeout(
         () => {
           record.timer = null;
           if (record.state !== "sending") return;
+          record.failed = true;
           record.fail();
         },
         opts?.waking ? WAKE_DELIVERY_TIMEOUT_MS : DELIVERY_TIMEOUT_MS,
@@ -56,6 +65,10 @@ export function createPromptDelivery(): PromptDelivery {
       const record = records.get(update.promptId);
       if (!record) return;
       clearTimer(record);
+      if (record.failed) {
+        record.failed = false;
+        record.recover?.();
+      }
       if (kind === "platform_prompt_accepted") {
         record.state = update.queued ? "queued" : "accepted";
         return;

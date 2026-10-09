@@ -34,6 +34,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     notReadyMessage: agent.notReadyMessage,
     podRestarts: agent.podRestarts,
     podRestartReason: agent.podRestartReason,
+    gatewayFailure: agent.gatewayFailure,
     contributionFailures: agent.contributionFailures,
     unsupportedContributionKinds: agent.unsupportedContributionKinds,
     workspaceFailures: agent.workspaceFailures,

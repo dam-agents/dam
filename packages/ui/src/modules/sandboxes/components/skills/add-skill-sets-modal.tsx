@@ -185,7 +185,7 @@ export function AddSkillSetsModal({
   };
 
   return (
-    <Modal>
+    <Modal onClose={onClose}>
       <DialogHeader
         title="Add skill sets"
         subtitle="Pick any number. Their skills turn on alongside what you already have — overlap is fine, and nothing gets turned off."

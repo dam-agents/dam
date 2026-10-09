@@ -9,7 +9,9 @@ The harness ships in the default image every harness Template boots, built by `/
 | Component | Package | Purpose |
 |---|---|---|
 | Harness | `@earendil-works/pi-coding-agent` + `pi-acp` | pi runtime fork + ACP bridge to Platform UI |
-| Memory | `@zhafron/pi-memory` | git-free file-based memory, auto-injected at session start |
+| Memory | `@zhafron/pi-memory` | git-free file-based memory, auto-injected at session start; a tool of the image, loaded by `pi-platform` |
+
+The image sets `PI_OFFLINE=1`, so Pi makes no network call at startup: no model-catalog fetch from `pi.dev` (which the egress gateway would hold for approval on every new Pi process), no version check, no install telemetry, and no install or update of the packages in `settings.json`. That last one is why pi-memory is a tool of the image: `pi-platform` loads it with `-e`. A home seeded before the change keeps the npm copy it installed at first boot, and `pi-platform` then does not add the image's copy, so it never loads twice.
 
 Default model: `openai / gpt-5.4-mini`. Change in [`app/working-dir/.pi/agent/settings.json`](rootfs/app/working-dir/.pi/agent/settings.json).
 
@@ -19,7 +21,7 @@ Default model: `openai / gpt-5.4-mini`. Change in [`app/working-dir/.pi/agent/se
 usr/local/bin/
   harness-chat           ← chat-mode entrypoint (pi-acp, which runs pi through pi-platform)
   harness-terminal       ← terminal-mode entrypoint (pi-platform)
-  pi-platform            ← runs pi with the platform's extensions loaded from the image
+  pi-platform            ← runs pi with the platform's extensions and pi-memory loaded from the image
 usr/local/share/pi-platform/
   pi-acp-patch.mjs       ← temporary pi-acp fix, loaded by harness-chat (see "pi-acp concurrent sessions")
   extensions/pi-dynamic-providers/
@@ -30,9 +32,7 @@ app/
     .pi/agent/
       settings.json      ← pi config (→ ~/.pi/agent/)
       auth.json          ← placeholder credentials
-    work/
-      .pi/
-        APPEND_SYSTEM.md ← appended to the system prompt (project-scoped)
+      APPEND_SYSTEM.md   ← appended to the system prompt (global)
 ```
 
 ## MCP servers
@@ -173,21 +173,22 @@ Pi system prompt conventions:
 | `.pi/APPEND_SYSTEM.md` | project (cwd) | appended to the system prompt |
 
 > **`app/working-dir/`** seeds `/home/agent/` on first boot.  
-> **`app/working-dir/work/`** seeds `/home/agent/work/` — the cwd where pi-acp spawns.  
+> Nothing seeds `/home/agent/work/`, the cwd where pi-acp spawns: a Starter Kit clones its repository there, and the seed refuses a non-empty directory.  
 > **`app/working-dir/.pi/agent/`** seeds `~/.pi/agent/` — pi's global config directory.
 
 ## pi-acp concurrent sessions
 
 pi-acp 0.0.34 keeps one live pi process per connection: every `session/new` and `session/load` kills the pi of every other session, and a turn already running there never gets its `session/prompt` answer, because pi-acp ends a turn only on pi's `agent_settled` event (upstream [svkozak/pi-acp#152](https://github.com/svkozak/pi-acp/issues/152)). The agent-runtime runs every session of an Agent through one pi-acp, so a schedule firing, a new chat, a Slack turn, a sub-agent or opening an old session froze whatever turn was running, and the platform kept showing it as running. Stop did not help: pi-acp had already forgotten the session.
 
-Until upstream fixes it, [`pi-acp-patch.mjs`](rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs) edits pi-acp's bundle in memory as it loads. `harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so pi and its tools do not inherit it. It patches four things:
+Until upstream fixes it, [`pi-acp-patch.mjs`](rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs) edits pi-acp's bundle in memory as it loads. `harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so pi and its tools do not inherit it. It patches five things:
 
 - `session/new` and `session/load` no longer close other sessions.
 - pi-acp advertises `session/close`, so the agent-runtime closes idle sessions and their pi processes instead of letting them pile up.
 - A pi process that exits fails its running and queued turns with an error instead of leaving them unanswered.
 - The next prompt to a session whose pi died starts a new pi on the same session file.
+- pi-acp does not run `npm view @earendil-works/pi-coding-agent` at each new session, so no "New version available" notice starts the first reply (upstream [svkozak/pi-acp#72](https://github.com/svkozak/pi-acp/issues/72): no setting turns it off). The platform pins the Pi version, so the user cannot act on that notice.
 
-The hook patches only pi-acp 0.0.34 and only when every edit matches the bundle exactly. Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` to the pod log. **To remove it** once a pi-acp release fixes #152: bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`. That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
+The hook patches only pi-acp 0.0.34 and only when every edit matches the bundle exactly. Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` to the pod log. **To remove it** once a pi-acp release fixes #152 and #72: bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`. That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
 
 ## Memory scopes
 

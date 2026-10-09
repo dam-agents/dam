@@ -123,7 +123,7 @@ export interface SchedulesService {
   ) => Promise<Schedule>;
   updateOnce: (input: ScheduleUpdateOnceInput) => Promise<Schedule | null>;
   delete: (id: string) => Promise<void>;
-  toggle: (id: string) => Promise<Schedule | null>;
+  toggle: (id: string, enabled?: boolean) => Promise<Schedule | null>;
   resetSession: (id: string) => Promise<void>;
   runNow: (id: string) => Promise<void>;
 }

@@ -190,7 +190,9 @@ export function ScheduleCard({
         {onceState === null && (
           <Switch
             checked={enabled}
-            onCheckedChange={() => toggleSchedule.mutate({ id })}
+            onCheckedChange={(checked) =>
+              toggleSchedule.mutate({ id, enabled: checked })
+            }
             label={enabled ? "Disable schedule" : "Enable schedule"}
           />
         )}

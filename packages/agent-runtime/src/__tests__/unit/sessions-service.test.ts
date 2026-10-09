@@ -114,7 +114,7 @@ describe("createSessionsService", () => {
     expect(entries.s1?.meta).toEqual({
       mode: "chat",
       ref: "ref-1",
-      title: "Release notes",
+      customTitle: "Release notes",
     });
     await service.setTitle({ sessionId: "s1", title: null });
     expect(entries.s1?.meta).toEqual({ mode: "chat", ref: "ref-1" });
@@ -143,7 +143,10 @@ describe("createSessionsService", () => {
     expect(await service.setTitle({ sessionId: "older", title: "Notes" })).toBe(
       true,
     );
-    expect(entries.older?.meta).toEqual({ mode: "terminal", title: "Notes" });
+    expect(entries.older?.meta).toEqual({
+      mode: "terminal",
+      customTitle: "Notes",
+    });
     expect(await service.setTitle({ sessionId: "unknown", title: "x" })).toBe(
       false,
     );

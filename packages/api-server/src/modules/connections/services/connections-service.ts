@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import {
   parseKbShareString,
   PROVIDER_TEMPLATE_IDS,
+  providerTypeForTemplateId,
   type ConnectionStatus,
   SHARED_KB_TEMPLATE_ID,
   IBM_LITELLM_HOST,
@@ -14,6 +15,7 @@ import {
   type ConnectionTemplateView,
   type ConnectionView,
   type Contribution,
+  type ProviderBalance,
   type SecretRef,
   preferenceGroupOf,
   signingTargetOf,
@@ -31,6 +33,7 @@ import {
 } from "../domain/connection-template.js";
 import {
   buildConnection,
+  configInputContributions,
   gitHubAppApiBase,
   normalizePrivateKeyPem,
 } from "../domain/build-connection.js";
@@ -60,6 +63,10 @@ import {
   type Sigv4KeyPair,
   sigv4KeyPair,
 } from "../domain/s3-contributions.js";
+import {
+  balanceQueryFor,
+  type ProviderBalanceSource,
+} from "../domain/provider-balance.js";
 import type {
   S3CredentialProbe,
   S3CredentialProbeFailure,
@@ -121,10 +128,12 @@ export function createConnectionsService(deps: {
   oauthEngine: OAuthEngine;
   githubAppEngine: GitHubAppEngine;
   s3CredentialProbe: S3CredentialProbe;
+  providerBalance: ProviderBalanceSource;
   providerKeyProbe: ProviderKeyProbe;
   oauthCallbackUrl: string;
   brandName: string;
   connectionLock: XactLock;
+  isOwnedAgent: (agentId: string) => Promise<boolean>;
   resolveKbShare: (
     shareId: string,
     presentedSecret: string | null,
@@ -252,6 +261,70 @@ export function createConnectionsService(deps: {
       clientId: creds.clientId,
       ...(clientSecret ? { clientSecret } : {}),
     };
+  }
+
+  async function fanOutToAgents(
+    connectionId: string,
+    agentIds: readonly string[],
+    allOwnerConnectionIds: ReadonlySet<string>,
+    failureEvent: string,
+  ): Promise<void> {
+    for (const agentId of agentIds) {
+      try {
+        await deps.connectionLock(`agent:connections:${agentId}`, async () => {
+          const grantedConnections =
+            await deps.repo.listConnectionsForAgent(agentId);
+          await deps.fanOut.apply({
+            agentId,
+            ownerId: deps.ownerId,
+            grantedConnections,
+            allOwnerConnectionIds,
+          });
+        });
+      } catch (err) {
+        securityLog("warn", failureEvent, {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          agentId,
+          target: connectionId,
+          result: "failure",
+          reason: err instanceof Error ? err.message : "unknown",
+        });
+      }
+    }
+  }
+
+  function withConfigInputs(
+    conn: Connection,
+    configInputs: Record<string, string>,
+  ): Contribution[] {
+    const template = deps.templates.get(conn.templateId);
+    const specs =
+      template?.authKind === "header" ? (template.configInputs ?? []) : [];
+    if (specs.length === 0 || specs.some((s) => s.inputName === "region")) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "This connection's settings cannot be changed in place. Reconnect it instead.",
+      });
+    }
+    const envNames = new Set(specs.map((s) => s.envName));
+    let pinned: Contribution[];
+    try {
+      pinned = configInputContributions(specs, configInputs);
+    } catch (err) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: err instanceof Error ? err.message : "invalid settings",
+      });
+    }
+    return [
+      ...conn.contributions.filter(
+        (c) => c.kind !== "env" || !envNames.has(c.name),
+      ),
+      ...pinned,
+    ];
   }
 
   async function rotateHeaderValue(
@@ -598,6 +671,86 @@ export function createConnectionsService(deps: {
     }
   }
 
+  async function applyGrants(
+    agentId: string,
+    desiredFrom: (current: string[]) => string[],
+  ): Promise<void> {
+    if (!(await deps.isOwnedAgent(agentId))) {
+      securityLog("warn", "authz.owner_mismatch", {
+        category: "authz",
+        actor: deps.ownerId,
+        actorKind: "user",
+        agentId,
+        decision: "deny",
+        reason: "agent-not-owned",
+        detail: { surface: "connection.grants_set" },
+      });
+      throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
+    }
+    const owned = await deps.repo.listByOwner(deps.ownerId);
+    const ownedById = new Map(owned.map((c) => [c.id, c]));
+
+    await deps.connectionLock(`agent:connections:${agentId}`, async () => {
+      const current = await deps.repo.listAgentGrants(agentId);
+      const deduped = Array.from(
+        new Set(desiredFrom(current.map((c) => c.connectionId))),
+      );
+      for (const id of deduped) {
+        if (!ownedById.has(id)) {
+          securityLog("warn", "authz.owner_mismatch", {
+            category: "authz",
+            actor: deps.ownerId,
+            actorKind: "user",
+            agentId,
+            decision: "deny",
+            reason: "connection-not-owned",
+            target: id,
+            detail: { surface: "connection.grants_set" },
+          });
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "connection not owned by caller",
+          });
+        }
+      }
+      const currentIds = new Set(current.map((c) => c.connectionId));
+      const desiredIds = new Set(deduped);
+      const toGrant = deduped.filter((id) => !currentIds.has(id));
+      const toRevoke = current
+        .map((c) => c.connectionId)
+        .filter((id) => !desiredIds.has(id));
+
+      const grantedConnections = deduped
+        .map((id) => ownedById.get(id))
+        .filter((c): c is Connection => c !== undefined);
+      assertNoUnaddressableRival(
+        grantedConnections.filter((c) => !currentIds.has(c.id)),
+        grantedConnections,
+      );
+
+      for (const id of toGrant) await deps.repo.grant(id, agentId);
+      for (const id of toRevoke) await deps.repo.revoke(id, agentId);
+
+      if (toGrant.length > 0 || toRevoke.length > 0) {
+        securityLog("info", "connection.grants_set", {
+          category: "authz-list",
+          actor: deps.ownerId,
+          actorKind: "user",
+          agentId,
+          result: "success",
+          detail: { granted: toGrant, revoked: toRevoke },
+        });
+      }
+
+      await deps.fanOut.apply({
+        agentId,
+        ownerId: deps.ownerId,
+        grantedConnections,
+        allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
+      });
+    });
+  }
+
   return {
     async listTemplates(): Promise<ConnectionTemplateView[]> {
       const templates = deps.templates.list();
@@ -671,6 +824,54 @@ export function createConnectionsService(deps: {
       }
     },
 
+    async defaultProviderConnection(fits) {
+      const usable = (
+        await deps.repo.listByOwnerOldestFirst(deps.ownerId)
+      ).filter((c) => {
+        const type = providerTypeForTemplateId(c.templateId);
+        return (
+          type !== null && fits(type) && PROVIDER_IS_ACTIVE[deriveStatus(c)]
+        );
+      });
+      return (
+        (usable.find((c) => c.templateId === "ibm-litellm") ?? usable[0])?.id ??
+        null
+      );
+    },
+
+    async getProviderBalance(id: string): Promise<ProviderBalance | null> {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (!conn) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "connection not found",
+        });
+      }
+      const query = balanceQueryFor(conn);
+      if (!query || conn.auth.kind !== "header") return null;
+      try {
+        const credential = await deps.secretStore.getField(conn.auth.valueRef);
+        if (!credential) throw new Error("the stored credential is missing");
+        return await deps.providerBalance.lookup(query, credential);
+      } catch (err) {
+        securityLog("warn", "connection.balance_lookup", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          target: conn.id,
+          result: "failure",
+          detail: {
+            templateId: conn.templateId,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        });
+        throw new TRPCError({
+          code: "BAD_GATEWAY",
+          message: "the provider did not report a balance",
+        });
+      }
+    },
+
     async validateGrantSet(connectionIds: string[]): Promise<void> {
       const wanted = new Set(connectionIds);
       const granted = (await deps.repo.listByOwner(deps.ownerId)).filter((c) =>
@@ -693,11 +894,33 @@ export function createConnectionsService(deps: {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (!conn) throw new TRPCError({ code: "NOT_FOUND" });
 
+      const configInputs =
+        "configInputs" in credential ? credential.configInputs : null;
+      const contributions = configInputs
+        ? withConfigInputs(conn, configInputs)
+        : null;
+
       switch (conn.auth.kind) {
         case "header": {
-          const value = singleValueOf(credential);
-          await assertProviderKeyAccepted(conn.templateId, value, conn.id);
-          await rotateHeaderValue(conn, conn.auth, value);
+          const value =
+            "accessKeyId" in credential
+              ? singleValueOf(credential)
+              : credential.value;
+          if (value) {
+            await assertProviderKeyAccepted(conn.templateId, value, conn.id);
+            await rotateHeaderValue(conn, conn.auth, value);
+          }
+          if (contributions) {
+            await deps.repo.updateContributions(conn.id, contributions);
+            await deps.repo.mergeInputs(conn.id, { configInputs });
+            const owned = await deps.repo.listByOwner(deps.ownerId);
+            await fanOutToAgents(
+              conn.id,
+              await deps.repo.listAgentsForConnection(conn.id),
+              new Set(owned.map((c) => c.id)),
+              "connection.update.fanout_failed",
+            );
+          }
           break;
         }
         case "client-credentials":
@@ -776,33 +999,12 @@ export function createConnectionsService(deps: {
           ...ownerConnsAfter.map((c) => c.id),
           id,
         ]);
-        for (const agentId of affectedAgents) {
-          try {
-            await deps.connectionLock(
-              `agent:connections:${agentId}`,
-              async () => {
-                const grantedConnections =
-                  await deps.repo.listConnectionsForAgent(agentId);
-                await deps.fanOut.apply({
-                  agentId,
-                  ownerId: deps.ownerId,
-                  grantedConnections,
-                  allOwnerConnectionIds,
-                });
-              },
-            );
-          } catch (err) {
-            securityLog("warn", "connection.delete.fanout_failed", {
-              category: "credential",
-              actor: deps.ownerId,
-              actorKind: "user",
-              agentId,
-              target: conn.id,
-              result: "failure",
-              reason: err instanceof Error ? err.message : "unknown",
-            });
-          }
-        }
+        await fanOutToAgents(
+          conn.id,
+          affectedAgents,
+          allOwnerConnectionIds,
+          "connection.delete.fanout_failed",
+        );
       }
 
       const template = deps.templates.get(conn.templateId);
@@ -846,68 +1048,18 @@ export function createConnectionsService(deps: {
       agentId: string,
       connectionIds: string[],
     ): Promise<void> {
-      const deduped = Array.from(new Set(connectionIds));
+      await applyGrants(agentId, () => connectionIds);
+    },
 
-      const owned = await deps.repo.listByOwner(deps.ownerId);
-      const ownedById = new Map(owned.map((c) => [c.id, c]));
-      for (const id of deduped) {
-        if (!ownedById.has(id)) {
-          securityLog("warn", "authz.owner_mismatch", {
-            category: "authz",
-            actor: deps.ownerId,
-            actorKind: "user",
-            agentId,
-            decision: "deny",
-            reason: "connection-not-owned",
-            target: id,
-            detail: { surface: "connection.grants_set" },
-          });
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "connection not owned by caller",
-          });
-        }
-      }
-
-      await deps.connectionLock(`agent:connections:${agentId}`, async () => {
-        const current = await deps.repo.listAgentGrants(agentId);
-        const currentIds = new Set(current.map((c) => c.connectionId));
-        const desiredIds = new Set(deduped);
-
-        const toGrant = deduped.filter((id) => !currentIds.has(id));
-        const toRevoke = current
-          .map((c) => c.connectionId)
-          .filter((id) => !desiredIds.has(id));
-
-        const grantedConnections = deduped
-          .map((id) => ownedById.get(id))
-          .filter((c): c is Connection => c !== undefined);
-        assertNoUnaddressableRival(
-          grantedConnections.filter((c) => !currentIds.has(c.id)),
-          grantedConnections,
-        );
-
-        for (const id of toGrant) await deps.repo.grant(id, agentId);
-        for (const id of toRevoke) await deps.repo.revoke(id, agentId);
-
-        if (toGrant.length > 0 || toRevoke.length > 0) {
-          securityLog("info", "connection.grants_set", {
-            category: "authz-list",
-            actor: deps.ownerId,
-            actorKind: "user",
-            agentId,
-            result: "success",
-            detail: { granted: toGrant, revoked: toRevoke },
-          });
-        }
-
-        await deps.fanOut.apply({
-          agentId,
-          ownerId: deps.ownerId,
-          grantedConnections,
-          allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
-        });
-      });
+    async updateAgentConnections(
+      agentId: string,
+      change: { grant: string[]; revoke: string[] },
+    ): Promise<void> {
+      const revoked = new Set(change.revoke);
+      await applyGrants(agentId, (current) => [
+        ...current.filter((id) => !revoked.has(id)),
+        ...change.grant,
+      ]);
     },
 
     async setPreferredConnection(
@@ -1015,12 +1167,15 @@ export function createConnectionsService(deps: {
         }
       }
       const effectiveInput = await applyFamilyCreds(template, input);
-      const built = await buildConnection(
-        template,
-        effectiveInput,
-        (purpose) => deps.secretStore.mintRef({ owner: deps.ownerId, purpose }),
-        deps.oauthCallbackUrl,
-        deps.brandName,
+      const built = await rejectIfInvalid(() =>
+        buildConnection(
+          template,
+          effectiveInput,
+          (purpose) =>
+            deps.secretStore.mintRef({ owner: deps.ownerId, purpose }),
+          deps.oauthCallbackUrl,
+          deps.brandName,
+        ),
       );
 
       const id = input.id ?? `conn-${randomBytes(6).toString("hex")}`;
@@ -1502,7 +1657,7 @@ function connectionSecretPath(auth: Connection["auth"]): string | null {
 }
 
 function singleValueOf(credential: ConnectionCredentialUpdate): string {
-  if (!("value" in credential)) {
+  if (!("value" in credential) || !credential.value) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message:
@@ -1513,7 +1668,7 @@ function singleValueOf(credential: ConnectionCredentialUpdate): string {
 }
 
 function keyPairOf(credential: ConnectionCredentialUpdate): Sigv4KeyPair {
-  if ("value" in credential) {
+  if (!("accessKeyId" in credential)) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message:

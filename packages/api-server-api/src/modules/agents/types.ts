@@ -105,6 +105,7 @@ export interface Agent {
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
+  gatewayFailure?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
   workspaceFailures: WorkspaceFailure[];
@@ -128,6 +129,7 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   starterKitSeed?: SeedStamp;
   id?: string;
   telemetryAttributionId?: string;
+  noDefaultProvider?: boolean;
 };
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 

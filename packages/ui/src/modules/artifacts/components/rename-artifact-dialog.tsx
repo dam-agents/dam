@@ -42,7 +42,7 @@ export function RenameArtifactDialog({ artifact, onClose }: Props) {
   };
 
   return (
-    <Modal>
+    <Modal onClose={pending ? undefined : onClose}>
       <DialogHeader
         onClose={onClose}
         closeDisabled={pending}

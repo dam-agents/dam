@@ -10,10 +10,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { HarnessConfigEventPayload } from "agent-runtime-api";
-import type { RuntimeEnvReader } from "../../core/runtime-env.js";
+import type {
+  LeaseEnvReader,
+  RuntimeEnvReader,
+} from "../../core/runtime-env.js";
 import { createHarnessConfigPlugin } from "../../modules/runtime-channel/drivers/harness-config-plugin.js";
 import type { ModelDiscovery } from "../../modules/runtime-channel/infrastructure/model-discovery.js";
 import type { HarnessConfigBinding } from "../../modules/runtime-channel/manifest.js";
+
+function asLease(reader: RuntimeEnvReader): LeaseEnvReader {
+  return { ...reader, providers: () => [], forLease: () => reader.current() };
+}
 
 const noEnv: RuntimeEnvReader = { current: () => ({}), ready: () => true };
 const noDiscovery: ModelDiscovery = async () => ({
@@ -48,9 +55,11 @@ describe("harness-config event handler", () => {
     payload: HarnessConfigEventPayload,
   ) =>
     createHarnessConfigPlugin({
+      harness: "test",
       binding,
       agentHome: home,
-      envReader: noEnv,
+      envReader: asLease(noEnv),
+      seedListingRetry: { attempts: 1, delayMs: 0 },
       discoverModels: noDiscovery,
       log: () => {},
     }).apply(payload);
@@ -164,9 +173,11 @@ describe("harness-config event handler (TOML)", () => {
 
   const apply = (payload: HarnessConfigEventPayload) =>
     createHarnessConfigPlugin({
+      harness: "test",
       binding: TOML_BINDING,
       agentHome: home,
-      envReader: noEnv,
+      envReader: asLease(noEnv),
+      seedListingRetry: { attempts: 1, delayMs: 0 },
       discoverModels: noDiscovery,
       log: () => {},
     }).apply(payload);

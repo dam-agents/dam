@@ -8,18 +8,12 @@ import type { CreateAgentInput } from "../api/mutations.js";
 
 export interface CreateAgentDraft {
   name: string;
-  templateId: string | null;
-  providerRef: ProviderRef | null;
   egressPreset: EgressPreset;
   vm: boolean;
 }
 
 export function isCreateAgentDraftComplete(draft: CreateAgentDraft): boolean {
-  return (
-    draft.name.trim().length > 0 &&
-    draft.templateId !== null &&
-    draft.providerRef !== null
-  );
+  return draft.name.trim().length > 0;
 }
 
 export function buildCreateAgentInput(
@@ -30,10 +24,8 @@ export function buildCreateAgentInput(
   }
   return {
     name: draft.name.trim(),
-    templateId: draft.templateId!,
     egressPreset: draft.egressPreset,
     ...(draft.vm ? { vm: true } : {}),
-    appConnectionIds: [draft.providerRef!.id],
   };
 }
 
@@ -66,7 +58,6 @@ export function isCodingAgentSetupComplete(
 ): boolean {
   return (
     draft.name.trim().length > 0 &&
-    draft.providerRef !== null &&
     (draft.templateId !== null || setupUsesCustomImage(draft)) &&
     (draft.hibernationTimeoutMin === null ||
       (Number.isInteger(draft.hibernationTimeoutMin) &&
@@ -95,7 +86,10 @@ export function buildCodingAgentSetupInput(
       : {}),
     ...(image ? { image } : { templateId: draft.templateId! }),
     appConnectionIds: [
-      ...new Set([...draft.connectionIds, draft.providerRef!.id]),
+      ...new Set([
+        ...draft.connectionIds,
+        ...(draft.providerRef ? [draft.providerRef.id] : []),
+      ]),
     ],
     ...(image && registryFilledCount(credential) === 3
       ? {

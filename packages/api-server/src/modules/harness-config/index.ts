@@ -1,6 +1,8 @@
 export {
+  composeFirePair,
   composeHarnessConfigModule,
   composeSessionModelChoices,
+  type FirePair,
 } from "./compose.js";
 export {
   harnessConfigSupported,

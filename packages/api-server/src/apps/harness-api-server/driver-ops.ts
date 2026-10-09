@@ -3,6 +3,7 @@ import {
   providerTypeForTemplateId,
   type BudgetsService,
   type ConnectionsService,
+  type HarnessCatalog,
   type InvocationView,
   type spawnInvocationRequestSchema,
   type TemplatesService,
@@ -22,6 +23,7 @@ import {
   type SpawnInput,
 } from "../../modules/invocations/index.js";
 import { securityLog } from "../../core/security-log.js";
+import { DEFAULT_TEMPLATE_ID } from "../../modules/templates/index.js";
 
 export type SpawnRequest = z.infer<typeof spawnInvocationRequestSchema>;
 
@@ -39,6 +41,7 @@ export interface DriverOpsDeps {
   invocationsServiceFor: (owner: string) => InvocationsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   templates: TemplatesService;
+  harnesses: HarnessCatalog;
   budgetsFor: (owner: string) => BudgetsService;
   defaultLimits: DefaultResourceLimits;
 }
@@ -71,14 +74,24 @@ function driverOps(
       const target: SpawnInput["target"] = body.image
         ? { image: body.image }
         : {};
-      if (body.harness) {
+      const carried = body.harness
+        ? deps.harnesses.harnesses.find((h) => h.name === body.harness)
+        : undefined;
+      if (carried) {
+        if (!body.image) target.templateId = DEFAULT_TEMPLATE_ID;
+        target.harness = carried.name;
+        if (carried.providers) target.runsOn = carried.providers;
+      } else if (body.harness) {
         const templates = await deps.templates.list();
         const matches = templates.filter(
           (t) => t.spec.harness === body.harness,
         );
         if (matches.length !== 1) {
           const available = [
-            ...new Set(templates.flatMap((t) => t.spec.harness ?? [])),
+            ...new Set([
+              ...deps.harnesses.harnesses.map((h) => h.name),
+              ...templates.flatMap((t) => t.spec.harness ?? []),
+            ]),
           ]
             .sort()
             .join(", ");
@@ -201,15 +214,32 @@ function driverOps(
 
     async images() {
       const templates = await deps.templates.list();
-      return templates.map((t) => ({
-        id: t.id,
-        name: t.name,
-        image: t.spec.image,
-        description: t.spec.description,
-        ...(t.spec.harness ? { harness: t.spec.harness } : {}),
-        size: concreteResources(t.spec.resources, undefined, deps.defaultLimits)
-          .limits,
-      }));
+      return templates.flatMap((t) => {
+        const size = concreteResources(
+          t.spec.resources,
+          undefined,
+          deps.defaultLimits,
+        ).limits;
+        return t.id === DEFAULT_TEMPLATE_ID
+          ? deps.harnesses.harnesses.map((h) => ({
+              id: t.id,
+              name: h.displayName,
+              image: t.spec.image,
+              description: h.description,
+              harness: h.name,
+              size,
+            }))
+          : [
+              {
+                id: t.id,
+                name: t.name,
+                image: t.spec.image,
+                description: t.spec.description,
+                ...(t.spec.harness ? { harness: t.spec.harness } : {}),
+                size,
+              },
+            ];
+      });
     },
 
     async budget() {

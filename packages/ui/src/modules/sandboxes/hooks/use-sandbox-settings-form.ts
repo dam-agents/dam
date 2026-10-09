@@ -9,6 +9,7 @@ import { useForm } from "react-hook-form";
 
 import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
 import { useStore } from "../../../store.js";
+import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useAgentConnections, useAgents } from "../../agents/api/queries.js";
 import { resolveCharacter } from "../../agents/components/avatar/agent-avatar.js";
 import { useAppConnections } from "../../connections/api/queries.js";
@@ -85,6 +86,8 @@ export function useSandboxSettingsForm() {
   const net = useStagedNetworkAccess(agentId);
 
   const harnessDraft = useHarnessConfigDraft(agentId);
+  const { data: harnessStatus } = useHarnessConfigStatus(agentId);
+  const carriedHarnesses = harnessStatus?.harnesses ?? null;
 
   const [formReady, setFormReady] = useState(false);
   const baselinedRef = useRef(false);
@@ -164,7 +167,10 @@ export function useSandboxSettingsForm() {
 
   const dirty = isDirty || net.dirty || harnessDraft.dirty;
   const isSubmitDisabled =
-    saving || !formReady || !dirty || selectedProvider === null;
+    saving ||
+    !formReady ||
+    !dirty ||
+    (carriedHarnesses === null && selectedProvider === null);
 
   useUnsavedGuard(dirty);
 
@@ -205,6 +211,7 @@ export function useSandboxSettingsForm() {
     errors,
     saving,
     formReady,
+    carriedHarnesses,
     selectedProvider,
     selectProvider,
     currentPreset,

@@ -1,4 +1,9 @@
-import { brandSchema, featureModeSchema, linksSchema } from "api-server-api";
+import {
+  brandSchema,
+  featureModeSchema,
+  harnessCatalogConfigSchema,
+  linksSchema,
+} from "api-server-api";
 import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
@@ -69,6 +74,20 @@ const featureModesSchema = z
     }
   })
   .pipe(z.record(z.string(), featureModeSchema));
+
+// UNIT_BOUNDARY_DESCRIPTION: the chart's harness catalog. Without one (a dev run outside the chart) the default image's harness is Claude Code with nothing else on offer.
+const harnessesSchema = z
+  .string()
+  .default('{"default":"claude-code","catalog":{}}')
+  .transform((raw, ctx) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be a JSON object" });
+      return z.NEVER;
+    }
+  })
+  .pipe(harnessCatalogConfigSchema);
 
 const configSchema = z.object({
   serverVersion: z.string().min(1),
@@ -161,6 +180,7 @@ const configSchema = z.object({
   minClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
+  harnesses: harnessesSchema,
   starterKitsCatalogs: z.string().default(""),
   starterKitsPinned: z.string().default(""),
   githubEnterpriseHost: z.string().default(""),
@@ -247,6 +267,10 @@ const validatedConfigSchema = configSchema
 export function agentsInstallSettings(config: Config) {
   return {
     virtualizationEnabled: config.virtualizationEnabled,
+    defaultHarness: config.harnesses.default,
+    telemetry: Object.values(config.harnesses.catalog).some(
+      (h) => h.telemetryEnv.length > 0,
+    ),
     agentDefaultStorageSize: config.agentDefaultStorageSize,
     agentDefaultMounts: config.agentDefaultMounts,
     runtimeMigrationRetentionMs: config.runtimeMigrationRetentionMs,
@@ -339,6 +363,7 @@ export function loadConfig(): Config {
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
+    harnesses: process.env.HARNESSES,
     starterKitsCatalogs: process.env.STARTER_KITS_CATALOGS,
     starterKitsPinned: process.env.STARTER_KITS_PINNED,
     githubEnterpriseHost: process.env.GITHUB_ENTERPRISE_HOST,

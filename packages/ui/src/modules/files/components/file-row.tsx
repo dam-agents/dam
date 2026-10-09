@@ -114,6 +114,7 @@ export function FileRow({
               </DropdownMenuTrigger>
               <DropdownMenuContent>
                 <FileRowMenuItems
+                  path={path}
                   isDir={isDir}
                   onAction={dispatch}
                   Item={DropdownMenuItem}
@@ -125,6 +126,7 @@ export function FileRow({
       </ContextMenuTrigger>
       <ContextMenuContent>
         <FileRowMenuItems
+          path={path}
           isDir={isDir}
           onAction={dispatch}
           Item={ContextMenuItem}

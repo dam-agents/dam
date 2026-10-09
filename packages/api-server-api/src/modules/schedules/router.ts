@@ -144,7 +144,7 @@ export const schedulesRouter = t.router({
   toggle: manageAgentsProcedure
     .input(scheduleToggleInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const sched = await ctx.schedules.toggle(input.id);
+      const sched = await ctx.schedules.toggle(input.id, input.enabled);
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(sched);
     }),

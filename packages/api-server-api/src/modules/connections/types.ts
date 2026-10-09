@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { contribution } from "agent-runtime-api";
 import { secretRef, type SecretRef } from "../secret-store/types.js";
+import type { ProviderPresetType } from "./providers.js";
 import type {
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
@@ -242,6 +243,13 @@ export interface GitHubUserTokenProbe {
   installationsTruncated?: boolean;
 }
 
+export interface ProviderBalance {
+  unit: "bobcoins" | "usd";
+  used: number;
+  limit: number | null;
+  resetsAt: string | null;
+}
+
 export interface ConnectionsService {
   listTemplates(): Promise<ConnectionTemplateView[]>;
 
@@ -250,6 +258,11 @@ export interface ConnectionsService {
   getConnection(id: string): Promise<ConnectionView | null>;
 
   validateProviderConnection(id: string): Promise<void>;
+
+  defaultProviderConnection(
+    fits: (type: ProviderPresetType) => boolean,
+  ): Promise<string | null>;
+  getProviderBalance(id: string): Promise<ProviderBalance | null>;
 
   validateGrantSet(connectionIds: string[]): Promise<void>;
 
@@ -304,5 +317,10 @@ export interface ConnectionsService {
 
   getAgentConnections(agentId: string): Promise<AgentConnections>;
   setAgentConnections(agentId: string, connectionIds: string[]): Promise<void>;
+
+  updateAgentConnections(
+    agentId: string,
+    change: { grant: string[]; revoke: string[] },
+  ): Promise<void>;
   setPreferredConnection(agentId: string, connectionId: string): Promise<void>;
 }

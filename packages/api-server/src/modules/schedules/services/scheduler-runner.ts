@@ -18,6 +18,7 @@ import type {
   RuntimeMutator,
 } from "../../runtime-delivery/index.js";
 import type { TtlStore } from "../../../core/ttl-store.js";
+import type { FirePair } from "../../harness-config/index.js";
 import { emit, EventType } from "../../../events.js";
 
 const TRIGGER_TTL_SECONDS = 3600;
@@ -53,6 +54,7 @@ export interface SchedulerRunner {
 }
 
 export interface SchedulerRunnerDeps {
+  firePair?: FirePair;
   repo: SchedulesRepository;
   queue: ScheduleQueue;
   runtimeMutator: RuntimeMutator;
@@ -119,10 +121,12 @@ export function createSchedulerRunner(
     await emitChanged(sched.agentId, sched.id);
   }
 
-  function triggerPayload(
+  const firedHarness = new WeakMap<Schedule, string>();
+
+  async function triggerPayload(
     sched: Schedule,
     fireAt: Date,
-  ): Record<string, unknown> {
+  ): Promise<Record<string, unknown>> {
     const payload: Record<string, unknown> = {
       scheduleId: sched.id,
       task: sched.spec.task ?? "",
@@ -132,6 +136,24 @@ export function createSchedulerRunner(
     if (sched.spec.precheck) payload.precheck = sched.spec.precheck;
     if (sched.spec.model) payload.model = sched.spec.model;
     if (sched.spec.sessionTitle) payload.sessionTitle = sched.spec.sessionTitle;
+    const continues =
+      sched.spec.type === "once" && sched.spec.origin?.mode === "continue";
+    const pair = continues
+      ? undefined
+      : await deps.firePair?.(sched.agentId, {
+          ...(sched.spec.model && { model: sched.spec.model }),
+        });
+    if (pair === null)
+      throw new Error(
+        "no model provider granted to this agent can run its harness; grant one to run this schedule",
+      );
+    if (pair) {
+      firedHarness.set(sched, pair.harness);
+      payload.harness = pair.harness;
+      if (pair.provider !== null) payload.provider = pair.provider;
+      if (pair.model !== null) payload.model = pair.model;
+      else delete payload.model;
+    }
     if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
     if (sched.spec.type === "once") {
       payload.once = true;
@@ -155,6 +177,9 @@ export function createSchedulerRunner(
           ownerSub,
           mode: sched.spec.sessionMode ?? "fresh",
           outcome,
+          ...(firedHarness.has(sched) && {
+            harness: firedHarness.get(sched),
+          }),
         });
       }
     } catch (err) {
@@ -217,7 +242,7 @@ export function createSchedulerRunner(
         await commitTrigger(
           sched,
           eventId,
-          triggerPayload(sched, fireAt),
+          await triggerPayload(sched, fireAt),
           action.expiresAt,
         );
       } catch (err) {
@@ -286,7 +311,7 @@ export function createSchedulerRunner(
       await commitTrigger(
         sched,
         eventId,
-        triggerPayload(sched, fireAt),
+        await triggerPayload(sched, fireAt),
         expiresAt,
       );
       await pokeAgent(sched, eventId);
@@ -350,7 +375,7 @@ export function createSchedulerRunner(
         await commitTrigger(
           sched,
           eventId,
-          triggerPayload(sched, firedAt),
+          await triggerPayload(sched, firedAt),
           expiresAt,
         );
       } catch (err) {

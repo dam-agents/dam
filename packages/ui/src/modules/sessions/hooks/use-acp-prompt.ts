@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
+import { trpc } from "../../../trpc.js";
 import type { Attachment, Message, RetryPayload } from "../../../types.js";
 import {
   connectionCloseReason,
@@ -13,6 +14,7 @@ import {
 } from "../../acp/close-race.js";
 import { extractErrorMessage, isQueueFullError } from "../../acp/errors.js";
 import {
+  fileChipOf,
   finalizeAllStreaming,
   hasAgentContent,
   hasStreamingAssistant,
@@ -20,6 +22,7 @@ import {
 import { buildPromptBlocks } from "../../acp/utils.js";
 import { acpSessionsKeys } from "../api/keys.js";
 import { optimisticInsertSession } from "../api/queries.js";
+import { harnessOfSession } from "../api/session-pair.js";
 import { draftKey } from "../lib/draft-key.js";
 import type { PromptDelivery } from "../lib/prompt-delivery.js";
 import { classifySendOutcome } from "../lib/send-outcome.js";
@@ -144,11 +147,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
             mimeType: block.mimeType,
           });
         else if (block.type === "resource_link")
-          userParts.push({
-            kind: "file",
-            name: block.name,
-            mimeType: block.mimeType ?? "",
-          });
+          userParts.push(fileChipOf(block));
       }
       if (attachments?.length) for (const a of attachments) userParts.push(a);
       if (text) userParts.push({ kind: "text", text });
@@ -244,8 +243,24 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           "Not delivered — the agent never confirmed it received this message.",
         );
       };
+      const recoverDelivery = () => {
+        if (!reported) return;
+        reported = false;
+        forgetUndelivered(draftKey(selectedAgent, intendedSessionId), uId);
+        setMessages((p) => {
+          const at = p.findIndex((m) => m.id === uId && m.error);
+          if (at === -1 || p.some((m) => m.id === aId)) return p;
+          return [
+            ...p.slice(0, at),
+            { ...p[at]!, error: undefined },
+            aMsg,
+            ...p.slice(at + 1),
+          ];
+        });
+      };
       delivery.beginSend(promptId, failDelivery, {
         waking: agentRunState !== "running",
+        recover: recoverDelivery,
       });
 
       let started: StartedSession | null = null;
@@ -279,6 +294,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
                 text,
                 attachments,
               );
+        const harness = harnessOfSession(selectedAgent, sessionId, !!started);
         const turn = connection.agent.request("session/prompt", {
           sessionId,
           prompt: promptBlocks,
@@ -286,6 +302,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
             platform: {
               promptId,
               surface: "ui",
+              ...(harness ? { harness } : {}),
               ...(retryOf !== undefined ? { retryOf } : {}),
               ...(initiator ? { initiator } : {}),
             },
@@ -304,6 +321,13 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
 
         finalizeBubble();
       } catch (err: unknown) {
+        if (
+          (err as { data?: { platform?: { reason?: string } } } | null)?.data
+            ?.platform?.reason === "provider-removed"
+        )
+          void queryClient.invalidateQueries({
+            queryKey: trpc.connections.getAgentConnections.queryKey(),
+          });
         const bubble = useStore.getState().messages.find((m) => m.id === aId);
         const streamed = !!bubble && hasAgentContent(bubble);
         const outcome = classifySendOutcome({

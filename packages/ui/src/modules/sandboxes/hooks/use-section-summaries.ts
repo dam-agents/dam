@@ -102,9 +102,27 @@ export function useSectionSummaries(agent: AgentView | null): {
       slotUnit: null,
     };
     const { harness, provider } = sandboxSubtitleParts(agent, lookup);
+    if (configStatus?.harnesses) {
+      const providers = apps
+        .filter(
+          (a) =>
+            providerAppIds.has(a.id) &&
+            agent.grantedConnectionIds.includes(a.id),
+        )
+        .map((a) => a.name);
+      return [harness, formatNameList(providers)].filter(Boolean).join(", ");
+    }
     const base = [harness, provider, modelName].filter(Boolean).join(", ");
     return staleModel.stale ? `${base} · not offered` : base;
-  }, [agent, templates, apps, modelName, staleModel.stale]);
+  }, [
+    agent,
+    templates,
+    apps,
+    modelName,
+    staleModel.stale,
+    configStatus?.harnesses,
+    providerAppIds,
+  ]);
 
   const connectionTemplates = useConnectionTemplates();
   const templateById = useMemo(
@@ -205,7 +223,7 @@ export function useSectionSummaries(agent: AgentView | null): {
     },
     warnings: missingProvider
       ? { setup: NO_PROVIDER_WARNING }
-      : staleModel.stale
+      : staleModel.stale && !configStatus?.harnesses
         ? { setup: STALE_MODEL_WARNING }
         : {},
   };

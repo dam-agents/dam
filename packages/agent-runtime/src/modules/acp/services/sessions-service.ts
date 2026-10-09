@@ -179,10 +179,11 @@ export function createSessionsService(deps: {
         !(await harnessListing()).some((s) => s.sessionId === sessionId)
       )
         return false;
-      const { title: _previous, ...meta } = entry?.meta ?? HARNESS_ONLY_META;
+      const { customTitle: _previous, ...meta } =
+        entry?.meta ?? HARNESS_ONLY_META;
       deps.sessionMetadata.set(
         sessionId,
-        input.title === null ? meta : { ...meta, title: input.title },
+        input.title === null ? meta : { ...meta, customTitle: input.title },
       );
       return true;
     },

@@ -12,6 +12,7 @@ import {
   event as eventSchema,
 } from "agent-runtime-api";
 import {
+  PROVIDER_TEMPLATE_IDS,
   RESERVED_MCP_SERVER_NAMES,
   SHARED_KB_TEMPLATE_ID,
   applyConnectionEgressAddressing,
@@ -64,6 +65,7 @@ export function createStateBuilder(deps: {
       ]);
       const builtin = deps.builtin.for(agentId, {
         sharedKnowledgeBases: granted.templateIds.has(SHARED_KB_TEMPLATE_ID),
+        harnesses: capabilities.harnesses ?? [],
       });
       const rawContribs = [
         ...userEnv,
@@ -149,10 +151,16 @@ async function readGrantedContributions(
   for (const row of rows) {
     templateIds.add(row.templateId);
     if (!Array.isArray(row.contributions)) continue;
+    const provider = PROVIDER_TEMPLATE_IDS.has(row.templateId);
     const parsed: Contribution[] = [];
     for (const raw of row.contributions) {
       const result = contributionSchema.safeParse(raw);
-      if (result.success) parsed.push(result.data);
+      if (!result.success) continue;
+      parsed.push(
+        provider && result.data.kind === "env"
+          ? { ...result.data, provider: row.id }
+          : result.data,
+      );
     }
     sources.push({
       id: row.id,

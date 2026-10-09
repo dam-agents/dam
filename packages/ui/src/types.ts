@@ -24,11 +24,13 @@ export interface ToolChip {
 interface TextPart {
   kind: "text";
   text: string;
+  messageId?: string;
 }
 
 interface ThoughtPart {
   kind: "thought";
   text: string;
+  messageId?: string;
 }
 
 interface HistoryPart {
@@ -40,6 +42,7 @@ interface ImagePart {
   kind: "image";
   data: string;
   mimeType: string;
+  name?: string;
 }
 
 interface FilePart {
@@ -159,6 +162,7 @@ export interface AgentView {
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
+  gatewayFailure?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
   workspaceFailures: {

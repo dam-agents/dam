@@ -47,7 +47,7 @@ export function KbShareRootsDialog({
     .map((c) => c.name);
 
   return (
-    <Modal>
+    <Modal onClose={pending ? undefined : onCancel}>
       <DialogHeader
         title="Share this knowledge base"
         onClose={onCancel}

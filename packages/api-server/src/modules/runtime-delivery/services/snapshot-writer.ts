@@ -4,6 +4,6 @@ export interface HarnessConfigSnapshotWriter {
   merge(
     agentId: string,
     patch: HarnessConfigSnapshotPatch,
-    opts: { confirmed: boolean },
+    opts: { confirmed: boolean; harness?: string },
   ): Promise<void>;
 }

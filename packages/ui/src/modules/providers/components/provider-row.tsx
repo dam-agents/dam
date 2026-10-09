@@ -1,4 +1,5 @@
 import { OverflowMenuVertical } from "@carbon/icons-react";
+import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ interface Props {
   type: ProviderPresetType;
   description: string;
   connected: boolean;
+  balance?: ReactNode;
   onConnect: () => void;
   onEditKey: () => void;
   onRemoveKey: () => void;
@@ -27,6 +29,7 @@ export function ProviderRow({
   type,
   description,
   connected,
+  balance,
   onConnect,
   onEditKey,
   onRemoveKey,
@@ -52,7 +55,12 @@ export function ProviderRow({
     <Card className="flex items-center gap-1 pr-2 transition-colors">
       <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4">
         <CardIcon provider={type} />
-        <ProviderText name={name} description={description} connected />
+        <ProviderText
+          name={name}
+          description={description}
+          connected
+          balance={balance}
+        />
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -83,10 +91,12 @@ function ProviderText({
   name,
   description,
   connected = false,
+  balance,
 }: {
   name: string;
   description: string;
   connected?: boolean;
+  balance?: ReactNode;
 }) {
   return (
     <div className="min-w-0 flex-1">
@@ -95,6 +105,7 @@ function ProviderText({
         {connected && <Badge variant="success">Connected</Badge>}
       </div>
       <p className="text-sm text-muted-foreground">{description}</p>
+      {balance}
     </div>
   );
 }

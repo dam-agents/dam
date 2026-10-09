@@ -37,7 +37,13 @@ describe("composeSessionList", () => {
   it("prefers a title the platform set over the harness's own", () => {
     const out = composeSessionList(
       [{ sessionId: "s1", title: "harness title", updatedAt: null }],
-      { s1: entry({ mode: "chat", title: "Daily brief" }) },
+      {
+        s1: entry({
+          mode: "chat",
+          title: "first prompt",
+          customTitle: "Daily brief",
+        }),
+      },
       { isTombstoned: notTombstoned, isRunning: notRunning },
     );
     expect(out[0]?.title).toBe("Daily brief");
@@ -51,6 +57,32 @@ describe("composeSessionList", () => {
     );
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ sessionId: "fresh", title: null });
+  });
+
+  /** TEST_SCENARIO: A session on a harness that is not running, such as Codex
+   * beside a Claude Code agent's default, is listed from the store alone with
+   * the harness, provider and model it runs on, and the title its first
+   * prompt gave it. */
+  it("lists a store-only session with its lease and remembered title", () => {
+    const out = composeSessionList(
+      [],
+      {
+        cx: entry({
+          mode: "chat",
+          harness: "codex",
+          provider: "conn-b",
+          model: "glm",
+          title: "fix the build",
+        }),
+      },
+      { isTombstoned: notTombstoned, isRunning: notRunning },
+    );
+    expect(out[0]).toMatchObject({
+      title: "fix the build",
+      harness: "codex",
+      provider: "conn-b",
+      model: "glm",
+    });
   });
 
   it("defaults a harness-only session to a terminal one", () => {

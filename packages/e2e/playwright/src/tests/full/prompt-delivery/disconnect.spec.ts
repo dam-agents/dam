@@ -71,7 +71,9 @@ test("a prompt queued when the connection drops is delivered after the tab recon
 
   await test.step("the queued prompt is promoted and answered as an ordinary turn", async () => {
     await expect(page.getByText(replyB)).toBeVisible({ timeout: 120_000 });
-    await expect(page.getByText(promptB)).toBeVisible();
+    await expect(
+      page.getByTestId("chat-message").getByText(promptB),
+    ).toBeVisible();
     await expect(undeliveredMarker(page)).toHaveCount(0);
     await expect(queuedIndicator(page)).toBeHidden();
   });

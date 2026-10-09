@@ -27,6 +27,7 @@ export interface NavigationSlice {
   clearSandboxFocus: () => void;
   hydrateRoute: () => void;
   setView: (v: ParameterlessView) => void;
+  navigateBack: () => void;
   navigateToSettings: (tab?: SettingsTab) => void;
   navigateToSandboxHome: (
     agentId: string,
@@ -39,6 +40,8 @@ export interface NavigationSlice {
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
 }
+
+const IN_APP_ENTRY = "in-app";
 
 function initialPath(): string {
   const { pathname } = window.location;
@@ -68,7 +71,7 @@ export const createNavigationSlice: StateCreator<
   [],
   [],
   NavigationSlice
-> = (set) => ({
+> = (set, get) => ({
   ...routeToNavigationState(parseRoute(initialPath())),
   sandboxFocus: null,
   clearSandboxFocus: () => set({ sandboxFocus: null }),
@@ -78,8 +81,12 @@ export const createNavigationSlice: StateCreator<
       sandboxFocus: null,
     }),
   setView: (v) => {
-    history.pushState(null, "", routeToPath({ view: v }));
+    history.pushState(IN_APP_ENTRY, "", routeToPath({ view: v }));
     set({ ...routeToNavigationState({ view: v }), sandboxFocus: null });
+  },
+  navigateBack: () => {
+    if (history.state === IN_APP_ENTRY) history.back();
+    else get().setView("home");
   },
   navigateToSettings: (tab) => {
     const settingsTab = tab ?? "account";

@@ -11,11 +11,16 @@ import type { Dispatcher, EventDispatcher } from "./dispatcher.js";
 import type { StateStore } from "./state-store.js";
 import { processEvents } from "./event-loop.js";
 
+export interface HarnessConfigReport {
+  harnessConfigCurrent?: HarnessConfigCurrent;
+  harnessConfigCurrentByHarness?: Record<string, HarnessConfigCurrent>;
+}
+
 export interface ApplyStateDeps {
   dispatcher: Dispatcher;
   eventDispatcher: EventDispatcher;
   stateStore: StateStore;
-  readHarnessConfig: () => Promise<HarnessConfigCurrent | undefined>;
+  readHarnessConfig: () => Promise<HarnessConfigReport>;
   onSnapshotProcessed?: (
     contributions: ApplyStateInput["state"]["contributions"],
   ) => void;
@@ -75,7 +80,7 @@ export function createRuntimeChannelService(
         status: "stale",
         appliedVersion: local.lastAppliedVersion,
         settledEvents,
-        harnessConfigCurrent: await deps.readHarnessConfig(),
+        ...(await deps.readHarnessConfig()),
       };
     }
 
@@ -97,7 +102,7 @@ export function createRuntimeChannelService(
       reportFailure,
     );
 
-    const harnessConfigCurrent = await deps.readHarnessConfig();
+    const harnessConfigReport = await deps.readHarnessConfig();
     deps.onSnapshotProcessed?.(input.state.contributions);
 
     if (failures.length > 0) {
@@ -111,7 +116,7 @@ export function createRuntimeChannelService(
         appliedHash: local.lastAppliedHash,
         failures,
         settledEvents,
-        harnessConfigCurrent,
+        ...harnessConfigReport,
       };
     }
 
@@ -131,7 +136,7 @@ export function createRuntimeChannelService(
       appliedHash: input.state.hash,
       failures: [],
       settledEvents,
-      harnessConfigCurrent,
+      ...harnessConfigReport,
     };
   }
 }

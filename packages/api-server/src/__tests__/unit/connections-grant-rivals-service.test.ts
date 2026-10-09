@@ -65,7 +65,10 @@ const billingB = billingKey("billing-b");
 const slackA = connection("slack-a", "slack");
 const slackB = connection("slack-b", "slack");
 
-function setup(initialGrants: string[] = []) {
+function setup(
+  initialGrants: string[] = [],
+  connectionLock: ConnectionsDeps["connectionLock"] = (_key, fn) => fn(),
+) {
   const rows = [githubOAuth, githubToken, billingA, billingB, slackA, slackB];
   const byId = new Map(rows.map((c) => [c.id, c]));
   const grants = new Set(initialGrants);
@@ -75,6 +78,7 @@ function setup(initialGrants: string[] = []) {
   const setPreferred = vi.fn(async () => {});
   const fanOut = vi.fn(async () => {});
   const service = createConnectionsService({
+    isOwnedAgent: async (agentId) => agentId === AGENT,
     ownerId: OWNER,
     repo: unused<ConnectionsDeps["repo"]>({
       listByOwner: async () => rows,
@@ -100,10 +104,11 @@ function setup(initialGrants: string[] = []) {
     oauthEngine: unused(),
     githubAppEngine: unused(),
     s3CredentialProbe: unused(),
+    providerBalance: unused(),
     providerKeyProbe: unused(),
     oauthCallbackUrl: "https://example.com/callback",
     brandName: "Test",
-    connectionLock: (_key, fn) => fn(),
+    connectionLock,
     resolveKbShare: async () => null,
   });
   return { service, grants, grant, setPreferred, fanOut };
@@ -193,5 +198,53 @@ describe("choosing the account an agent acts as", () => {
       service.setPreferredConnection(AGENT, githubToken.id),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(setPreferred).not.toHaveBeenCalled();
+  });
+});
+
+describe("granting or revoking one Connection at a time", () => {
+  /** TEST_SCENARIO: The session picker's "+ Provider" and the settings page's
+   * remove button change one grant, read under the per-agent lock, so two
+   * changes made at the same moment from two tabs both land instead of the
+   * later one restoring the set the earlier one replaced. */
+  it("keeps both of two concurrent grants", async () => {
+    let tail = Promise.resolve();
+    const serial: ConnectionsDeps["connectionLock"] = (_key, fn) => {
+      const run = tail.then(fn);
+      tail = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
+    };
+    const { service, grants } = setup([githubOAuth.id], serial);
+    await Promise.all([
+      service.updateAgentConnections(AGENT, {
+        grant: [slackA.id],
+        revoke: [],
+      }),
+      service.updateAgentConnections(AGENT, {
+        grant: [billingA.id],
+        revoke: [githubOAuth.id],
+      }),
+    ]);
+    expect([...grants].sort()).toEqual([billingA.id, slackA.id].sort());
+  });
+
+  /** TEST_SCENARIO: A caller cannot hand their own Connection to an agent
+   * somebody else owns: the change is refused as if the agent did not exist,
+   * and nothing is granted or fanned out. */
+  it("refuses to change the grants of an agent the caller does not own", async () => {
+    const { service, grant, fanOut } = setup();
+    await expect(
+      service.updateAgentConnections("agent-of-someone-else", {
+        grant: [slackA.id],
+        revoke: [],
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      service.setAgentConnections("agent-of-someone-else", [slackA.id]),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(grant).not.toHaveBeenCalled();
+    expect(fanOut).not.toHaveBeenCalled();
   });
 });

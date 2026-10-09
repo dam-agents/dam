@@ -61,3 +61,5 @@ export interface SessionsService {
 }
 
 export type SessionDirectoryEntry = z.infer<typeof sessionDirectoryEntrySchema>;
+
+export const PIN_MODEL_METHOD = "_platform/session/pin_model";
