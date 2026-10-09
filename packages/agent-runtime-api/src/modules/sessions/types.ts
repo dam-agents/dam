@@ -14,6 +14,7 @@ import type {
   sessionListInputSchema,
   sessionSpendInputSchema,
   sessionSpendSchema,
+  setSessionTitleInputSchema,
 } from "./schemas.js";
 
 export type PodSessionMode = z.infer<typeof podSessionModeSchema>;
@@ -38,6 +39,8 @@ export interface SessionPage {
   nextCursor: SessionListCursor | null;
 }
 
+export type SetSessionTitleInput = z.infer<typeof setSessionTitleInputSchema>;
+
 export type SessionHistoryInput = z.infer<typeof sessionHistoryInputSchema>;
 export type SessionHistory = z.infer<typeof sessionHistorySchema>;
 export type StoreDelegationFramesInput = z.infer<
@@ -49,6 +52,7 @@ export interface SessionsService {
   list(query?: SessionListQuery): Promise<SessionPage>;
   watch(signal?: AbortSignal): AsyncIterable<PodSessionNotice>;
   history(sessionId: string): Promise<SessionHistory>;
+  setTitle(input: SetSessionTitleInput): Promise<boolean>;
   storeDelegationFrames(
     input: StoreDelegationFramesInput,
   ): Promise<{ truncated: boolean }>;

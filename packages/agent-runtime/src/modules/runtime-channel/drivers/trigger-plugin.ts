@@ -65,6 +65,7 @@ export function createTriggerPlugin(deps: {
       ...(payload.harness !== undefined && { harness: payload.harness }),
       ...(payload.provider !== undefined && { provider: payload.provider }),
       ...(model !== undefined && { model }),
+      ...(payload.sessionTitle && { customTitle: payload.sessionTitle }),
     };
     const origin = payload.origin;
     if (origin?.mode === "continue") {

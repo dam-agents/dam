@@ -14,6 +14,7 @@ export const platformSessionMetaSchema = z.object({
   provider: z.string().optional(),
   model: z.string().optional(),
   title: z.string().optional(),
+  customTitle: z.string().optional(),
 });
 
 const sessionMetaEntrySchema = z.object({

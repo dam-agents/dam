@@ -229,6 +229,7 @@ export interface Schedule {
   at: string | null;
   inSession: "fresh" | "continue" | "report" | null;
   model: string | null;
+  sessionTitle: string | null;
   timezone: string | null;
   quietHours: QuietWindowView[];
   task: string | null;

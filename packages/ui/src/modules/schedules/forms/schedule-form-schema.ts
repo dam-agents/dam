@@ -1,3 +1,4 @@
+import { SESSION_TITLE_MAX_LENGTH } from "agent-runtime-api";
 import {
   ALL_DAYS,
   buildRRule,
@@ -22,6 +23,13 @@ export const scheduleFormSchema = z
       .trim()
       .max(PRECHECK_MAX_LENGTH, `Max ${PRECHECK_MAX_LENGTH} characters`),
     model: z.string(),
+    sessionTitle: z
+      .string()
+      .trim()
+      .max(
+        SESSION_TITLE_MAX_LENGTH,
+        `Max ${SESSION_TITLE_MAX_LENGTH} characters`,
+      ),
     timezone: z.string().trim().min(1, "Required"),
     sessionMode: z.enum(["fresh", "continuous"]),
     kind: z.enum(["daily", "hourly", "minutely", "custom"]),
@@ -132,6 +140,7 @@ export function scheduleFormDefaults(existing?: Schedule): ScheduleFormValues {
     task: existing?.task ?? "",
     precheck: existing?.precheck ?? "",
     model: existing?.model ?? "",
+    sessionTitle: existing?.sessionTitle ?? "",
     timezone: existing?.timezone ?? detectTimezone(),
     sessionMode: existing?.sessionMode ?? "fresh",
     kind: preset.kind,

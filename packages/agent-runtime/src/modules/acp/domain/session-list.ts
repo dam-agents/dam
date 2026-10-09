@@ -30,6 +30,7 @@ export interface SessionMetaLike {
     provider?: string;
     model?: string;
     title?: string;
+    customTitle?: string;
   };
   createdAt: string;
   lastActivityAt?: string;
@@ -67,7 +68,7 @@ function fromEntry(
     type: asType(entry.meta.type),
     createdAt: entry.createdAt,
     updatedAt: entry.lastActivityAt ?? listed?.updatedAt ?? null,
-    title: listed?.title ?? entry.meta.title ?? null,
+    title: entry.meta.customTitle ?? listed?.title ?? entry.meta.title ?? null,
     scheduleId: entry.meta.scheduleId ?? null,
     initialization: entry.meta.initialization === true,
     threadTs: entry.meta.threadTs ?? null,

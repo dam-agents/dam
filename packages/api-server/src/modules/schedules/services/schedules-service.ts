@@ -161,6 +161,7 @@ export function createSchedulesService(deps: {
         ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         ...(input.precheck ? { precheck: input.precheck } : {}),
         ...(input.model ? { model: input.model } : {}),
+        ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
       const schedule = await deps.repo.create({
         agentId: input.agentId,
@@ -215,6 +216,7 @@ export function createSchedulesService(deps: {
         ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         ...(input.precheck ? { precheck: input.precheck } : {}),
         ...(input.model ? { model: input.model } : {}),
+        ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
       const schedule = await deps.repo.create({
         agentId: input.agentId,
@@ -256,6 +258,10 @@ export function createSchedulesService(deps: {
       const at = resolveMoment(input.at, input.timezone, now());
       await ensureAgent(input.agentId);
       await ensureSessionModel(input.agentId, input.model, origin);
+      if (input.sessionTitle && origin?.mode === "continue")
+        throw badRequest(
+          "a task that continues its session keeps that session's title; drop the session title or run it fresh",
+        );
       if (createdBy === "agent") await ensureAgentWithinLimits(input.agentId);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
@@ -267,6 +273,7 @@ export function createSchedulesService(deps: {
         createdBy,
         ...(origin ? { origin } : {}),
         ...(input.model ? { model: input.model } : {}),
+        ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
       const schedule = await deps.repo.create({
         agentId: input.agentId,
@@ -313,13 +320,22 @@ export function createSchedulesService(deps: {
           input.model,
           current.spec.origin,
         );
-      const { model: _previous, ...unchanged } = current.spec;
+      if (input.sessionTitle && current.spec.origin?.mode === "continue")
+        throw badRequest(
+          "a task that continues its session keeps that session's title; drop the session title",
+        );
+      const {
+        model: _previous,
+        sessionTitle: _previousTitle,
+        ...unchanged
+      } = current.spec;
       const spec: ScheduleSpec = {
         ...unchanged,
         at: at.toISOString(),
         timezone: input.timezone,
         task: input.task,
         ...(input.model ? { model: input.model } : {}),
+        ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
@@ -359,6 +375,8 @@ export function createSchedulesService(deps: {
       else if (input.precheck !== undefined) delete spec.precheck;
       if (input.model) spec.model = input.model;
       else if (input.model !== undefined) delete spec.model;
+      if (input.sessionTitle) spec.sessionTitle = input.sessionTitle;
+      else if (input.sessionTitle !== undefined) delete spec.sessionTitle;
       await deps.repo.updateName(input.id, deps.owner, input.name);
       const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
       if (updated && spec.precheck !== current.spec.precheck)

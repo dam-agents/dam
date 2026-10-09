@@ -26,7 +26,10 @@ import {
   type OnceFormValues,
   onceLocalMoment,
 } from "./once-form-schema.js";
-import { ScheduleModelField } from "./schedule-fields.js";
+import {
+  ScheduleModelField,
+  ScheduleSessionTitleField,
+} from "./schedule-fields.js";
 import type { ScheduleDraft } from "./schedule-kind-field.js";
 
 interface Props {
@@ -98,6 +101,7 @@ export function OnceScheduleForm({
       task: v.task,
       timezone: v.timezone,
       ...(v.model ? { model: v.model } : {}),
+      ...(v.sessionTitle ? { sessionTitle: v.sessionTitle } : {}),
     };
     if (existing) {
       updateOnce.mutate(
@@ -215,6 +219,13 @@ export function OnceScheduleForm({
                 onChange={field.onChange}
               />
             )}
+          />
+        )}
+
+        {existing?.inSession !== "continue" && (
+          <ScheduleSessionTitleField
+            registration={register("sessionTitle")}
+            error={errors.sessionTitle?.message}
           />
         )}
       </DialogBody>

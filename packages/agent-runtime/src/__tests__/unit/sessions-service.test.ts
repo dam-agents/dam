@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InProcessCaller } from "../../modules/acp/infrastructure/in-process-request.js";
-import type { SessionMetadataStore } from "../../modules/acp/infrastructure/session-metadata-store.js";
+import type {
+  SessionMetaEntry,
+  SessionMetadataStore,
+} from "../../modules/acp/infrastructure/session-metadata-store.js";
 import { createSessionChanges } from "../../modules/acp/services/session-changes.js";
 import { createSessionsService } from "../../modules/acp/services/sessions-service.js";
 
@@ -80,5 +83,73 @@ describe("createSessionsService", () => {
     vi.advanceTimersByTime(0);
     await service.list();
     expect(listCalls).toHaveLength(4);
+  });
+
+  // TEST_SCENARIO: the agent renames its own session through the platform tool, which knows the session only by its reference; clearing the title hands the row back to the harness's title.
+  it("sets a title on the session a reference names, and clears it with null", async () => {
+    const entries: Record<string, SessionMetaEntry> = {
+      s1: { meta: { mode: "chat", ref: "ref-1" }, createdAt: "2026-10-08" },
+    };
+    const service = createSessionsService({
+      openCaller: () => pagedHarness().caller,
+      sessionMetadata: {
+        ...fakeStore(),
+        get: (id) => entries[id],
+        findByRef: (ref) =>
+          Object.keys(entries).find((id) => entries[id]?.meta.ref === ref),
+        set: (id, meta) => {
+          entries[id] = { ...entries[id]!, meta };
+        },
+      },
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      log: () => {},
+    });
+
+    expect(
+      await service.setTitle({ ref: "ref-1", title: "Release notes" }),
+    ).toBe(true);
+    expect(entries.s1?.meta).toEqual({
+      mode: "chat",
+      ref: "ref-1",
+      customTitle: "Release notes",
+    });
+    await service.setTitle({ sessionId: "s1", title: null });
+    expect(entries.s1?.meta).toEqual({ mode: "chat", ref: "ref-1" });
+    expect(await service.setTitle({ ref: "gone", title: "x" })).toBe(false);
+  });
+
+  // TEST_SCENARIO: a session only the harness lists, such as one started from a shell in the pod, has no platform record yet; renaming it from the UI must work, so it gets a terminal record carrying the title, while an id the harness does not list stays refused.
+  it("renames a session only the harness lists, and refuses an unknown one", async () => {
+    const entries: Record<string, SessionMetaEntry> = {};
+    const service = createSessionsService({
+      openCaller: () => pagedHarness().caller,
+      sessionMetadata: {
+        ...fakeStore(),
+        get: (id) => entries[id],
+        set: (id, meta) => {
+          entries[id] = { meta, createdAt: "2026-10-08" };
+        },
+      },
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      log: () => {},
+    });
+
+    expect(await service.setTitle({ sessionId: "older", title: "Notes" })).toBe(
+      true,
+    );
+    expect(entries.older?.meta).toEqual({
+      mode: "terminal",
+      customTitle: "Notes",
+    });
+    expect(await service.setTitle({ sessionId: "unknown", title: "x" })).toBe(
+      false,
+    );
+    expect(entries.unknown).toBeUndefined();
   });
 });

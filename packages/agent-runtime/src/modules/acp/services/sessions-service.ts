@@ -17,12 +17,17 @@ import type { HistoryProvider } from "../infrastructure/history-provider.js";
 import type { InProcessCaller } from "../infrastructure/in-process-request.js";
 import type { SpendProvider } from "../infrastructure/spend-provider.js";
 import type { PlatformSessionOf } from "../infrastructure/terminal-session-pins.js";
-import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
+import type {
+  PlatformSessionMeta,
+  SessionMetadataStore,
+} from "../infrastructure/session-metadata-store.js";
 import type { SessionChanges } from "./session-changes.js";
 
 const EMPTY_HISTORY: SessionHistory = { frames: [], truncated: false };
 
 const HARNESS_LISTING_TTL_MS = 30_000;
+
+const HARNESS_ONLY_META: PlatformSessionMeta = { mode: "terminal" };
 const MAX_HARNESS_PAGES = 200;
 
 interface HarnessListPage {
@@ -156,6 +161,31 @@ export function createSessionsService(deps: {
       if (live.frames.length > 0) return live;
       const stored = await deps.historyProvider?.fetch(sessionId);
       return stored ? { frames: stored, truncated: false } : EMPTY_HISTORY;
+    },
+
+    async setTitle(input) {
+      const sessionId =
+        "ref" in input
+          ? deps.sessionMetadata.findByRef(input.ref)
+          : input.sessionId;
+      if (
+        sessionId === undefined ||
+        deps.sessionMetadata.isTombstoned(sessionId)
+      )
+        return false;
+      const entry = deps.sessionMetadata.get(sessionId);
+      if (
+        !entry &&
+        !(await harnessListing()).some((s) => s.sessionId === sessionId)
+      )
+        return false;
+      const { customTitle: _previous, ...meta } =
+        entry?.meta ?? HARNESS_ONLY_META;
+      deps.sessionMetadata.set(
+        sessionId,
+        input.title === null ? meta : { ...meta, customTitle: input.title },
+      );
+      return true;
     },
 
     async storeDelegationFrames(input) {

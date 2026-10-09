@@ -19,6 +19,7 @@ export type {
   SessionSpendInput,
   SessionSpendTotal,
   SessionsService,
+  SetSessionTitleInput,
   StoreDelegationFramesInput,
   DelegationFrames,
 } from "./modules/sessions/types.js";
@@ -29,6 +30,8 @@ export {
   podSessionTypeSchema,
   SESSION_CATEGORIES,
   SESSION_LIST_MAX_LIMIT,
+  SESSION_TITLE_MAX_LENGTH,
+  sessionTitleSchema,
   sessionDirectoryReportSchema,
   sessionHistorySchema,
   delegationFramesSchema,

@@ -205,6 +205,14 @@ export async function deleteAgentSession(
   );
 }
 
+export async function setAgentSessionTitle(
+  agentId: string,
+  sessionId: string,
+  title: string | null,
+): Promise<void> {
+  await agentTrpc(agentId).sessions.setTitle.mutate({ sessionId, title });
+}
+
 export async function forgetUndeliveredPrompt(
   agentId: string,
   sessionId: string,

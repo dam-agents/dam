@@ -1,6 +1,11 @@
 import { Information } from "@carbon/icons-react";
 import { useId } from "react";
-import type { Control, FieldErrors, UseFormRegister } from "react-hook-form";
+import type {
+  Control,
+  FieldErrors,
+  UseFormRegister,
+  UseFormRegisterReturn,
+} from "react-hook-form";
 import { Controller } from "react-hook-form";
 
 import { Input } from "@/components/ui/input";
@@ -442,6 +447,33 @@ export function ScheduleModelField({
               clearedDescription: "Follows the model the agent is set to",
             })}
         onSelect={(id) => onChange(id ?? "")}
+      />
+    </FormField>
+  );
+}
+
+const SESSION_TITLE_HINT =
+  "Shown in the session list instead of the title the agent derives from the prompt. Every run of a fresh schedule gets the same title.";
+
+export function ScheduleSessionTitleField({
+  registration,
+  error,
+}: {
+  registration: UseFormRegisterReturn;
+  error?: string | undefined;
+}) {
+  return (
+    <FormField
+      label="Session title (optional)"
+      error={error}
+      hint={SESSION_TITLE_HINT}
+      disableInset
+    >
+      <Input
+        className="h-10"
+        variant={error ? "invalid" : undefined}
+        placeholder="Derived from the prompt"
+        {...registration}
       />
     </FormField>
   );

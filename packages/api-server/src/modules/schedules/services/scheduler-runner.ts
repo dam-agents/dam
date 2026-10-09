@@ -135,6 +135,7 @@ export function createSchedulerRunner(
     if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
     if (sched.spec.precheck) payload.precheck = sched.spec.precheck;
     if (sched.spec.model) payload.model = sched.spec.model;
+    if (sched.spec.sessionTitle) payload.sessionTitle = sched.spec.sessionTitle;
     const continues =
       sched.spec.type === "once" && sched.spec.origin?.mode === "continue";
     const pair = continues

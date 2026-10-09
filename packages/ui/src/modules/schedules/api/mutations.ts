@@ -17,6 +17,7 @@ interface CreateScheduleInput {
   sessionMode: "fresh" | "continuous";
   precheck?: string;
   model?: string;
+  sessionTitle?: string;
 }
 
 export function useCreateSchedule() {
@@ -45,6 +46,7 @@ interface UpdateScheduleInput {
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
   model: string | null;
+  sessionTitle: string | null;
 }
 
 export function useUpdateSchedule() {
@@ -69,6 +71,7 @@ export interface CreateOnceScheduleInput {
   timezone: string;
   at?: string;
   model?: string;
+  sessionTitle?: string;
 }
 
 export function useCreateOnceSchedule() {
@@ -89,6 +92,7 @@ export interface UpdateOnceScheduleInput {
   timezone: string;
   at: string;
   model?: string;
+  sessionTitle?: string;
 }
 
 export function useUpdateOnceSchedule() {
