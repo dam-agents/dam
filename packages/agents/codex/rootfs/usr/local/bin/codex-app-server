@@ -1,0 +1,7 @@
+#!/bin/sh
+# codex-acp runs `$CODEX_PATH app-server`. A -c flag here reaches every thread, also the
+# title thread codex-acp starts without CODEX_CONFIG, which would otherwise go to api.openai.com
+if [ -n "$OPENAI_BASE_URL" ]; then
+  set -- -c "model_providers.openai-platform.base_url=\"$OPENAI_BASE_URL\"" "$@"
+fi
+exec codex "$@"

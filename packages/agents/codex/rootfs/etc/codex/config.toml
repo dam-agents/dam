@@ -16,3 +16,8 @@ supports_websockets = false
 
 [projects."/home/agent/work"]
 trust_level = "trusted"
+
+# Plugins sync OpenAI's catalog from chatgpt.com and GitHub at every start, an egress prompt per process.
+# MCP servers in [mcp_servers.*] do not depend on it.
+[features]
+plugins = false
