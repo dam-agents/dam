@@ -3503,6 +3503,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         metadata: whisperSessionMetadata({
           agentId: target.instanceName,
           origin: command.channelId,
+          originWorkspace: command.teamId,
           user: command.userId,
           checksMembership,
         }),
@@ -3616,7 +3617,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       let member: boolean;
       try {
         member = (
-          await gw.listSharedChannels(slackUserId, event.teamId)
+          await gw.listSharedChannels(
+            slackUserId,
+            session.originWorkspace ?? event.teamId,
+          )
         ).includes(session.origin);
       } catch (err) {
         getLogger().warn(
