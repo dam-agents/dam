@@ -9,6 +9,8 @@ import {
 } from "../infrastructure/acp-frames.js";
 import { verdictOfOutcome } from "../infrastructure/wrapper-response-frames.js";
 import { emit, EventType } from "../../../events.js";
+import { getLogger } from "../../../core/logger.js";
+import { formatError } from "../../../core/format-error.js";
 
 const ACP_NATIVE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -125,7 +127,12 @@ export function createApprovalsRelayService(
         ownerSub: input.ownerSub,
       });
       if (input.toolCallId !== undefined)
-        await expireSupersededRows(deps.repo, rowId, input);
+        await expireSupersededRows(deps.repo, rowId, input).catch((err) => {
+          getLogger().error(
+            { reason: formatError(err), approvalId: rowId },
+            "approvals.expire_superseded_error",
+          );
+        });
       return rowId;
     },
 

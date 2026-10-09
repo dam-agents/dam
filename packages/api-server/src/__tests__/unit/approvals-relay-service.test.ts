@@ -104,6 +104,26 @@ describe("recordAcpNativePending", () => {
     ).toBe(true);
   });
 
+  // TEST_SCENARIO: a failed supersede scan must not lose the new row — the relay drops its tracking when the record call rejects, and the in-session answer would then never resolve it.
+  it("still returns the new row id when the supersede scan fails", async () => {
+    const { rows, repo } = makeRepo();
+    repo.listPendingForInstance = async () => {
+      throw new Error("db down");
+    };
+    const service = createApprovalsRelayService({ repo, bus: {} as RedisBus });
+    const rowId = await service.recordAcpNativePending({
+      agentId: AGENT,
+      sessionId: SESSION,
+      rpcId: "5",
+      ownerSub: "owner-1",
+      toolName: "Write /tmp/a",
+      toolCallId: "tc-1",
+      args: {},
+      options: OPTIONS,
+    });
+    expect(rowId).toBe(rows[0]?.id);
+  });
+
   // TEST_SCENARIO: two distinct tool calls waiting in one session are both real prompts.
   it("keeps the rows of other tool calls pending", async () => {
     const { rows, record } = setup();
