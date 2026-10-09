@@ -187,7 +187,7 @@ export function SettingsView() {
             <div className="w-full max-w-2xl">
               <PageHeader
                 title="Providers"
-                description="Agents need an API key from a provider to reach a model."
+                description="Connect a provider to give agents access to its models. Icons show compatible harnesses."
               />
 
               <section className="mb-8">

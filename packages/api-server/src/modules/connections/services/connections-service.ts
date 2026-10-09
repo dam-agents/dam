@@ -830,7 +830,9 @@ export function createConnectionsService(deps: {
       ).filter((c) => {
         const type = providerTypeForTemplateId(c.templateId);
         return (
-          type !== null && fits(type) && PROVIDER_IS_ACTIVE[deriveStatus(c)]
+          type !== null &&
+          fits(type, c.templateId) &&
+          PROVIDER_IS_ACTIVE[deriveStatus(c)]
         );
       });
       return (

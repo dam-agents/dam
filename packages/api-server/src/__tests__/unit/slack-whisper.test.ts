@@ -483,6 +483,34 @@ describe("/dam whisper with no message", () => {
     ).toBe(true);
   });
 
+  /**
+   * TEST_SCENARIO: In an enterprise organization a DM reply arrives tagged
+   * with the whisperer's home workspace, which need not be the workspace the
+   * channel lives in. Membership is checked where the whisper was opened, or
+   * a member's every reply would end the whisper.
+   */
+  it("checks membership in the workspace the whisper was opened from", async () => {
+    const h = harness(team);
+    const { rootTs } = await openSession(h);
+    await h.gw.fireDirectMessage({
+      user: USER,
+      channel: DM,
+      ts: "2000.000001",
+      threadTs: rootTs,
+      text: "from my home workspace",
+      channelType: "im",
+      teamId: "T-HOME",
+    });
+    expect(h.prompts.map((p) => p.agent)).toEqual([REVIEWER]);
+    expect(
+      h
+        .outbound()
+        .some(
+          (r) => r.kind === "ephemeral" && r.text.includes("whisper has ended"),
+        ),
+    ).toBe(false);
+  });
+
   it("ignores a thread whose root the bot did not post as a whisper", async () => {
     const h = harness({
       ...team,

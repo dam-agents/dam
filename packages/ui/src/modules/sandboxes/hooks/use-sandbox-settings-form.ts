@@ -19,6 +19,7 @@ import {
 } from "../../egress-rules/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useTemplates } from "../../templates/api/queries.js";
+import { findTemplate } from "../../templates/lib/find-template.js";
 import { parseCpuMilli, parseMemoryMi } from "../lib/quantity.js";
 import {
   type SandboxSettingsStatus,
@@ -198,8 +199,7 @@ export function useSandboxSettingsForm() {
 
   const templateName =
     agent && agent.templateId
-      ? (templates.find((t) => t.id === agent.templateId)?.name ??
-        agent.templateId)
+      ? (findTemplate(templates, agent.templateId)?.name ?? agent.templateId)
       : null;
 
   return {

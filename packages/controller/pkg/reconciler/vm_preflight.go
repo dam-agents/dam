@@ -194,7 +194,7 @@ func (r *AgentReconciler) preflightDevices(ctx context.Context) (problems, warni
 		where = "no schedulable node matching virtualization.runner.nodeSelector"
 	}
 	return []string{fmt.Sprintf(
-		"%s advertises %s, so every runner pod would pend: enable virtualization.devicePlugin, install KubeVirt, or name the resources your plugin publishes in virtualization.runner.devices",
+		"%s advertises %s, so every runner pod would pend: run a KVM device plugin on the cluster (KubeVirt, or e.g. squat's generic-device-plugin) and name the resources it publishes in virtualization.runner.devices",
 		where, strings.Join(names, " and "))}, nil
 }
 

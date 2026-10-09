@@ -1,3 +1,5 @@
+import type { HarnessCapability, HarnessConfigChoice } from "agent-runtime-api";
+
 import {
   useHarnessCatalog,
   useProviderConnections,
@@ -12,9 +14,15 @@ interface Props {
   agentId: string;
   harness: string;
   provider: string | null;
+  carried: readonly HarnessCapability[];
 }
 
-export function OtherProviderModels({ agentId, harness, provider }: Props) {
+export function OtherProviderModels({
+  agentId,
+  harness,
+  provider,
+  carried,
+}: Props) {
   const { data: catalog } = useHarnessCatalog();
   const providers = useProviderConnections(agentId);
   const others = providerOptions(
@@ -35,6 +43,13 @@ export function OtherProviderModels({ agentId, harness, provider }: Props) {
           agentId={agentId}
           harness={harness}
           provider={p}
+          fallback={
+            carried
+              .find((h) => h.name === harness)
+              ?.harnessConfigCatalog?.options.find(
+                (o) => o.category === "model",
+              )?.choices ?? []
+          }
         />
       ))}
     </div>
@@ -45,13 +60,20 @@ function ProviderSection({
   agentId,
   harness,
   provider,
+  fallback,
 }: {
   agentId: string;
   harness: string;
   provider: ProviderConnectionRef;
+  fallback: readonly HarnessConfigChoice[];
 }) {
-  const { data } = useProviderModels(agentId, harness, provider.id);
-  const models = data?.availableModels ?? [];
+  const { data, isLoading, isError, operable } = useProviderModels(
+    agentId,
+    harness,
+    provider.id,
+  );
+  const models =
+    data?.availableModels === null ? fallback : (data?.availableModels ?? []);
   return (
     <section aria-label={provider.name}>
       <h3 className="text-xs font-medium uppercase text-muted-foreground">
@@ -71,7 +93,13 @@ function ProviderSection({
         ))}
         {models.length === 0 && (
           <li className="px-1 py-1 text-muted-foreground opacity-50">
-            Default model
+            {!operable
+              ? "Start the agent to list this provider's models."
+              : isLoading
+                ? "Loading models…"
+                : isError || data?.availableModels === undefined
+                  ? "Could not list this provider's models."
+                  : "No models available."}
           </li>
         )}
       </ul>

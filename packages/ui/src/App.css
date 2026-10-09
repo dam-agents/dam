@@ -37,6 +37,11 @@
   --color-kit-surface: var(--c-kit-surface);
   --color-kit-line: var(--c-kit-line);
   --color-kit-rule: var(--c-kit-rule);
+  --color-icon-blue: #536b83;
+  --color-icon-clay: #986b58;
+  --color-icon-green: #557568;
+  --color-icon-violet: #746783;
+  --color-icon-ochre: #88714f;
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 

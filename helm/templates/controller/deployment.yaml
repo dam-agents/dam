@@ -72,9 +72,8 @@ spec:
               value: {{ .Values.controller.storageMigration | toJson | quote }}
             # The vm backend (backend.type=vm); see `virtualization` in values.yaml.
             {{- $r := .Values.virtualization.runner }}
-            {{- $dp := .Values.virtualization.devicePlugin }}
             {{- $cache := .Values.virtualization.imageCache | default dict }}
-            {{- $devices := $r.devices | default (ternary (dict (printf "%s/kvm" $dp.domain) "1") (dict "devices.kubevirt.io/kvm" "1") $dp.enabled) }}
+            {{- $devices := $r.devices | default (dict "devices.kubevirt.io/kvm" "1") }}
             {{- $runner := dict
                   "image" (include "platform.vmRunner.image" .)
                   "imagePullPolicy" ($r.image.pullPolicy | default "IfNotPresent")
@@ -93,7 +92,7 @@ spec:
                   "hostAddress" ($r.hostAddress | default "")
                   "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m")) }}
             - name: AGENT_VM
-              value: {{ dict "enabled" .Values.virtualization.enabled "runner" $runner "runtimeMigration" (dict "retention" ((.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString) "concurrency" ((.Values.virtualization.runtimeMigration | default dict).concurrency | default 10 | int) "ownerConcurrency" ((.Values.virtualization.runtimeMigration | default dict).ownerConcurrency | default 1 | int)) | toJson | quote }}
+              value: {{ dict "enabled" .Values.virtualization.enabled "runner" $runner "runtimeMigration" (dict "retention" ((.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString) "concurrency" ((.Values.virtualization.runtimeMigration | default dict).concurrency | default 10 | int) "ownerConcurrency" ((.Values.virtualization.runtimeMigration | default dict).ownerConcurrency | default 1 | int) "cloneSource" (dig "cloneSource" true (.Values.virtualization.runtimeMigration | default dict))) | toJson | quote }}
             {{- if .Values.virtualization.enabled }}
             - name: VM_RUNNER_CA_ISSUER
               value: {{ .Values.virtualization.runnerCA.issuerName | quote }}

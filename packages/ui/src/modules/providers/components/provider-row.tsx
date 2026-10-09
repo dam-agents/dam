@@ -1,10 +1,11 @@
 import { OverflowMenuVertical } from "@carbon/icons-react";
+import type { HarnessFamily } from "api-server-api";
 import type { ReactNode } from "react";
 
+import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { CardButton } from "@/components/ui/card-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +18,7 @@ import { CardIcon } from "./card-icon.js";
 
 interface Props {
   type: ProviderPresetType;
-  description: string;
+  harnesses?: readonly HarnessFamily[];
   connected: boolean;
   balance?: ReactNode;
   onConnect: () => void;
@@ -27,7 +28,7 @@ interface Props {
 
 export function ProviderRow({
   type,
-  description,
+  harnesses,
   connected,
   balance,
   onConnect,
@@ -36,76 +37,73 @@ export function ProviderRow({
 }: Props) {
   const name = PROVIDERS[type].displayName;
 
-  if (!connected) {
-    return (
-      <CardButton
-        onClick={onConnect}
-        className="flex w-full items-start gap-3 p-4"
-      >
-        <CardIcon provider={type} />
-        <ProviderText name={name} description={description} />
-        <span className="shrink-0 text-sm font-normal text-muted-foreground">
-          Connect
-        </span>
-      </CardButton>
-    );
-  }
-
   return (
-    <Card className="flex items-center gap-1 pr-2 transition-colors">
-      <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4">
-        <CardIcon provider={type} />
-        <ProviderText
-          name={name}
-          description={description}
-          connected
-          balance={balance}
-        />
-      </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={`Actions for ${name}`}
+    <Card className="flex items-center gap-3 p-4">
+      <CardIcon provider={type} />
+      <div className="min-w-0 flex-1">
+        <div className="flex h-8 items-center gap-2">
+          <p
+            className="truncate text-base font-medium text-foreground"
+            title={name}
           >
-            <OverflowMenuVertical size={16} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuItem onSelect={onEditKey}>Edit key</DropdownMenuItem>
-          <DropdownMenuItem tone="danger" onSelect={onRemoveKey}>
-            Remove key
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            {name}
+          </p>
+          {connected && (
+            <Badge variant="success" className="shrink-0">
+              Connected
+            </Badge>
+          )}
+          <div className="ml-auto shrink-0">
+            {connected ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Actions for ${name}`}
+                  >
+                    <OverflowMenuVertical size={16} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onSelect={onEditKey}>
+                    Edit key
+                  </DropdownMenuItem>
+                  <DropdownMenuItem tone="danger" onSelect={onRemoveKey}>
+                    Remove key
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onConnect}
+                aria-label={`Connect ${name}`}
+              >
+                Connect
+              </Button>
+            )}
+          </div>
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="text-xs text-muted-foreground">supports:</span>
+            {harnesses?.length ? (
+              <HarnessIcons harnesses={harnesses} size="sm" />
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                {harnesses ? "None" : "Compatibility unavailable"}
+              </span>
+            )}
+          </div>
+          <div className="min-w-0 text-right">{balance}</div>
+        </div>
+      </div>
     </Card>
   );
 }
 
 ProviderRow.Skeleton = function ProviderRowSkeleton() {
-  return <Card className="h-[76px] animate-pulse" />;
+  return <Card className="h-[92px] animate-pulse" />;
 };
-
-function ProviderText({
-  name,
-  description,
-  connected = false,
-  balance,
-}: {
-  name: string;
-  description: string;
-  connected?: boolean;
-  balance?: ReactNode;
-}) {
-  return (
-    <div className="min-w-0 flex-1">
-      <div className="flex items-center gap-2">
-        <p className="text-base font-medium text-foreground">{name}</p>
-        {connected && <Badge variant="success">Connected</Badge>}
-      </div>
-      <p className="text-sm text-muted-foreground">{description}</p>
-      {balance}
-    </div>
-  );
-}

@@ -260,7 +260,7 @@ export interface ConnectionsService {
   validateProviderConnection(id: string): Promise<void>;
 
   defaultProviderConnection(
-    fits: (type: ProviderPresetType) => boolean,
+    fits: (type: ProviderPresetType, templateId: string) => boolean,
   ): Promise<string | null>;
   getProviderBalance(id: string): Promise<ProviderBalance | null>;
 

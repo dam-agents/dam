@@ -1,5 +1,5 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { AgentsService } from "api-server-api";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
@@ -104,6 +104,24 @@ const workspace: FakeSlackChannel[] = [
 ];
 
 describe("slack outbound — cross-workspace reach", () => {
+  it("normalizes compact code fences on top-level posts too", async () => {
+    const h = harness({ boundChannelId: BOUND, channels: workspace });
+    const posts = vi.spyOn(h.gw, "postMessage");
+    const text = "Before\n```ps -ef\nkill -9 <pid>```\nAfter.";
+
+    expect(await h.post(text)).toEqual({ ok: true });
+    expect(posts.mock.calls[0]![0]).toMatchObject({
+      text,
+      blocks: [
+        {
+          type: "markdown",
+          text: "Before\n```\nps -ef\nkill -9 <pid>\n```\nAfter.",
+        },
+        { type: "context" },
+      ],
+    });
+  });
+
   it("unbound agent: post errors and lists nothing — the binding is the gate", async () => {
     const h = harness({ boundChannelId: null, channels: workspace });
     expect(await h.post("hi")).toEqual({ error: "no channel connected" });

@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-export type SidebarPanelId = "sessions" | "files" | "artifacts";
+export type SidebarPanelId = "sessions" | "files" | "artifacts" | "processes";
 
 export type PanelWeights = Record<SidebarPanelId, number>;
 

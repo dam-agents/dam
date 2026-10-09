@@ -287,7 +287,11 @@ export function createMcpSession(
     `Post a NEW top-level message to a connected channel (slack or telegram) — for announcements, cross-posting to another channel, or starting a new thread. On Slack this is NOT how you answer a message you are currently handling: use reply for that, so the answer stays in the thread it arrived in. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file by setting attachment.path. 50 MB cap.`,
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
-      text: z.string(),
+      text: z
+        .string()
+        .describe(
+          "On Slack, use standard Markdown, not mrkdwn. Put code fences on separate lines, with an optional language after the opening fence.",
+        ),
       chatId: z
         .string()
         .optional()
@@ -519,7 +523,11 @@ export function createMcpSession(
     "reply",
     `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
     {
-      text: z.string(),
+      text: z
+        .string()
+        .describe(
+          "Use standard Markdown, not Slack mrkdwn. Put code fences on separate lines, with an optional language after the opening fence.",
+        ),
       attachment: attachmentInput,
       threadTs: z
         .string()

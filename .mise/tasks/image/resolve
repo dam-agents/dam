@@ -79,7 +79,7 @@ third_party() {
     yq -r '.. | select(tag == "!!map") | (
       (to_entries[] | select((.key | test("(^i|I)mage$")) and (.value | tag) == "!!str" and .value != "") | .value),
       (select((.repository // "") != "" and (.tag // "") != "") | .repository + ":" + .tag),
-      (select((.repository // "") != "" and (.digest // "") != "") | .repository + "@" + .digest))' helm/values.yaml
+      (select((.repository // "") != "" and (.digest // "") != "") | .repository + "@" + .digest))' helm/values.yaml helm/extra/kvm-device-plugin.yaml
     sed -n '/^MIRRORS="/,/^"$/{/:/s|.*/|'"$IMAGE_PREFIX"'/|p;}' .mise/tasks/image/mirror
   } | sort -u
 }

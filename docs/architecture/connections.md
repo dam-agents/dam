@@ -227,28 +227,23 @@ the model-information route ([harness configuration](harness-config.md#model-dis
 Claude Code reaches custom upstreams through its in-pod model gateway,
 which fronts each granted provider apart.
 
-### App preset: Curve Bender
+### App preset: IBM ETE LiteLLM CurveBender
 
 A second LiteLLM proxy, fronting open models hosted on RITS rather than
-Claude and GPT. It is a provider of its own, offered next to the IBM
-LiteLLM proxy so an agent can hold either or both, and contributes the
-same env, the same Bob prefix rewrite and the same inert key placeholder,
-aimed at its own host. What differs is what it tells the harnesses about its
-models, which the endpoint's model list names but does not describe. Codex, Pi and Bob start on GLM, since the
-models the IBM LiteLLM proxy pins do not exist here. Pi gives every model the
-endpoint lists one shared description, so the Connection tells it they are
-reasoning models — without that Pi drops their thinking — and names the
-smallest context window among them, so Pi compacts before the endpoint
-refuses a request. Their thinking is steered with the OpenAI-style
-reasoning effort; the endpoint ignores the switch GLM's own vendor API uses,
-so Pi's built-in description of GLM would be the wrong one here. Claude Code
-takes its models from the endpoint's list
-([harness configuration](harness-config.md#model-discovery-and-the-seeded-model))
-but knows nothing of their size, so the Connection names the same window to
-it too; otherwise it assumes one of its own and compacts too late. Pi's
-stream from this endpoint can carry the end of the thinking and the start of
-the answer in one piece, which Pi alone would show as answer first, so the
-image's Pi extension hands it the thinking first.
+Claude and GPT. An Agent can hold either proxy or both. CurveBender uses
+the same routing and credential scheme, including Bob's prefix rewrite,
+aimed at its own host; its model defaults differ.
+
+Work runs on GLM. Claude Code reserves a separate model slot for its
+non-reasoning permission classifier; the Connection pins both roles
+([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
+The endpoint's model list names models but does not describe them, so the
+Connection supplies the supported deployment window to both Claude Code and
+Pi. Pi also needs the reasoning capability and OpenAI-style reasoning effort:
+the endpoint ignores the switch GLM's own vendor API uses, so Pi's built-in
+description would be wrong here. Pi applies these hints to every listed model.
+Its stream can carry the end of thinking and the start of the answer in one
+piece, so the image's Pi extension preserves thinking-before-answer order.
 
 ### App preset: AWS Bedrock
 
@@ -371,7 +366,7 @@ The api-server's contribution-fanout layer routes each Contribution kind to the 
 
 | Kind | Rail | Delivery semantics | Note |
 |---|---|---|---|
-| `env` | Runtime channel `applyState` (state slice) | Sub-second push; applied at next harness spawn | Written to a JSON file the harness spawn path merges into the process env. Two sources feed it — user-typed env (the Environment editor) and connection-derived env — user env ordered first so it wins on name collision (first-occurrence-wins). A change recycles the harness at an idle turn boundary; only a variable-set change may force one mid-turn — value-only changes spare in-flight runs. No pod roll. |
+| `env` | Runtime channel `applyState` (state slice) | Sub-second push; applied at next harness spawn | Written to a JSON file the harness spawn path merges into the process env. Two sources feed it — user-typed env (the Environment editor) and connection-derived env — user env ordered first so it wins on name collision (first-occurrence-wins). A change recycles the harness at an idle turn boundary; only a variable-set change may force one mid-turn, never past a kept [Harness Task](agent-processes.md#reported-background-work) — value-only changes spare in-flight runs. No pod roll. |
 | `egress-allow` | Postgres `egress_rules` → Envoy `ext_authz` | Live read; no pod involvement | Joined per-grant; revoke sweeps rows. Agent never sees these. |
 | `egress-inject` | Postgres `egress_rules` → Envoy `ext_authz`, plus a wire-injected credential at the gateway | Live read; no pod involvement | Same `egress_rules` row as `egress-allow`; the gateway also injects `headerName`/`valueFormat` on the wire (mechanics in [credential gateway](credential-gateway.md)). Agent never sees these. |
 | `egress-sign` | Postgres `egress_rules` → Envoy `ext_authz`, plus a signing step at the gateway | Live read; no pod involvement | Same `egress_rules` row as `egress-allow`, path-scoped to the bucket when one is set; the gateway re-signs requests naming the Connection with its key pair (mechanics in [credential gateway](credential-gateway.md#request-signing)). Agent never sees the keys. |

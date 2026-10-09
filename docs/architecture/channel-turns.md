@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-08
+Last verified: 2026-10-09
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer. What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md). Which of these outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -71,6 +71,8 @@ A turn that never lost its relay needs no watch, and is judged the moment it end
 ## Outbound — agent to channel
 
 Outbound is initiated by the agent process. The harness calls a tool on the api-server's per-Agent MCP endpoint, the endpoint authenticates the call, and the channel manager routes the message back through the right worker.
+
+Slack posts use standard Markdown. Replies, private whispers and top-level posts share one renderer, which normalizes compact Slack-style fences within Slack's Markdown size limit. Larger messages pass through unchanged to bound processing cost. Ambiguous standalone fences retain Markdown semantics; tools request separate fence lines.
 
 What the agent sees:
 

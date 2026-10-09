@@ -57,7 +57,7 @@ export function useAgentRows() {
 
   const subtitleLookup = useMemo<SandboxSubtitleLookup>(
     () => ({
-      templateNameById: new Map(templates.map((t) => [t.id, t.name])),
+      templates,
       connectionTemplateIdById: new Map(
         (connections.data ?? []).map((c) => [c.id, c.templateId]),
       ),

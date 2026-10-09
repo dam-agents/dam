@@ -1,4 +1,5 @@
 import {
+  harnessFits,
   type HarnessView,
   type ProviderPresetType,
   providerTypeForTemplateId,
@@ -9,6 +10,7 @@ export interface ProviderConnectionRef {
   id: string;
   name: string;
   type: ProviderPresetType;
+  templateId?: string;
 }
 
 export interface HarnessOption {
@@ -32,9 +34,8 @@ export function providerOptions(
   granted: readonly ProviderConnectionRef[],
   owned: readonly ProviderConnectionRef[],
 ): { granted: ProviderConnectionRef[]; addable: ProviderConnectionRef[] } {
-  const runsOn = catalog.find((h) => h.name === harness)?.providers;
   const fits = (p: ProviderConnectionRef) =>
-    runsOn === undefined || runsOn.includes(p.type);
+    harnessFits({ harnesses: catalog }, harness, p.type, p.templateId);
   const grantedIds = new Set(granted.map((p) => p.id));
   return {
     granted: granted.filter(fits),
@@ -64,7 +65,9 @@ export function grantedProviderRefs(
 ): { granted: ProviderConnectionRef[]; owned: ProviderConnectionRef[] } {
   const owned = connections.flatMap((c) => {
     const type = providerTypeForTemplateId(c.templateId);
-    return type ? [{ id: c.id, name: c.name, type }] : [];
+    return type
+      ? [{ id: c.id, name: c.name, type, templateId: c.templateId }]
+      : [];
   });
   const held = new Set(grantedIds);
   return { granted: owned.filter((p) => held.has(p.id)), owned };

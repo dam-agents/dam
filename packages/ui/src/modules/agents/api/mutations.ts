@@ -17,6 +17,7 @@ import {
   importRawBundle,
 } from "../../files/api/import-bundle.js";
 import { trackImport } from "../../files/track-import.js";
+import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
 import { agentsKeys } from "./queries.js";
 
 const invalidatesAgentsList = {
@@ -74,12 +75,18 @@ export function useCreateAgent() {
       if (rawBundle != null) {
         importLabel = rawBundle.name;
         runImport = () =>
-          importRawBundle({ agentId: agent.id, bundle: rawBundle });
+          importRawBundle({
+            agentId: agent.id,
+            bundle: rawBundle,
+          });
       } else if (importEntries && importEntries.length > 0) {
         const count = importEntries.length;
         importLabel = `${count} file${count === 1 ? "" : "s"}`;
         runImport = () =>
-          importBundle({ agentId: agent.id, entries: importEntries });
+          importBundle({
+            agentId: agent.id,
+            entries: importEntries,
+          });
       }
 
       if (runImport) {
@@ -125,6 +132,10 @@ export function useDeleteAgent() {
 export function useUpdateAgent() {
   return useMutation({
     ...trpc.agents.update.mutationOptions(),
+    onSettled: (_agent, error, vars) => {
+      if (error || (vars.env === undefined && vars.name === undefined)) return;
+      askToRestartAfterSave(vars.id);
+    },
     meta: {
       ...invalidatesAgentsAndBudget,
       errorToast: "Failed to update agent",
@@ -285,6 +296,9 @@ export function useSetAgentConnections() {
     onError: (_err, _vars, context) => {
       if (context?.previous)
         queryClient.setQueryData(context.key, context.previous);
+    },
+    onSettled: (_data, error, vars) => {
+      if (!error) askToRestartAfterSave(vars.agentId);
     },
     meta: {
       invalidates: [

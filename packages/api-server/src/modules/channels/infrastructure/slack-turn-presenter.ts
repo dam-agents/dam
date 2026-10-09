@@ -23,12 +23,49 @@ export interface TurnPresenter {
   clearStatus(): Promise<void>;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Preserve Markdown blocks, but treat paired compact
+ * triple-backtick fences as Slack code, with no language/title line. This is
+ * not a Markdown parser; ambiguous standalone fences keep Markdown semantics.
+ * Unclosed fences cost O(n²), so text above Slack's 12,000-character limit
+ * bypasses normalization; supporting larger input needs a linear scanner.
+ */
 export function renderAssistantBlocks(
   footer: AgentFooter,
   text: string,
 ): SlackBlock[] {
+  if (text.length > 12_000) {
+    return [{ type: "markdown", text }, agentContextBlock(footer)];
+  }
+  const markdown = text.replace(
+    /(^[ \t>]*(`{3,})(?!`)[^`\n]*\n[\s\S]*?^[ \t>]*\2`*[ \t]*\r?$)|(?<!`)(`{3,})(?!`)([\s\S]*?)(?<!`)\3(?!`)/gm,
+    (
+      block: string,
+      markdownBlock: string | undefined,
+      _markdownFence: string | undefined,
+      fence: string,
+      code: string,
+      offset: number,
+    ) => {
+      if (markdownBlock || fence.length !== 3) return block;
+      const before = text.slice(0, offset);
+      const after = text.slice(offset + block.length);
+      const startsLine = /(?:^|\n) {0,3}$/.test(before);
+      const endsLine = /^[ \t]*(?:\r?\n|$)/.test(after);
+      if (/\n[ \t>]*$/.test(code) && endsLine) return block;
+      return (
+        (startsLine ? "" : "\n") +
+        fence +
+        (code.startsWith("\n") || code.startsWith("\r\n") ? "" : "\n") +
+        code +
+        (code.endsWith("\n") ? "" : "\n") +
+        fence +
+        (endsLine ? "" : "\n")
+      );
+    },
+  );
   return [
-    { type: "markdown", text: text || "(no response)" },
+    { type: "markdown", text: markdown || "(no response)" },
     agentContextBlock(footer),
   ];
 }

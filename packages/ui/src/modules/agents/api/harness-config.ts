@@ -5,6 +5,7 @@ import { useRef } from "react";
 
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
+import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
 import { unavailableModel } from "../../sessions/components/model-settings-snapshot.js";
 import { agentTrpc, agentTrpcHttp } from "../agent-trpc.js";
 import { useAgentLacksLiveUpdates, useIsAgentOperable } from "./queries.js";
@@ -168,9 +169,10 @@ export function useApplyHarnessConfig() {
       }
       return undefined;
     },
-    onSettled: (_data, error) => {
+    onSettled: (_data, error, change) => {
       const pending = rollback.current;
       rollback.current = null;
+      if (!error) askToRestartAfterSave(change.agentId);
       if (error && pending) {
         queryClient.setQueryData(pending.key, pending.previous);
         return;

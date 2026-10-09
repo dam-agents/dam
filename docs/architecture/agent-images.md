@@ -6,13 +6,15 @@ The images an agent runs in: the **default image**, which the default Template b
 
 ## One base, one image over it
 
-Every image is a Debian system-package base and directory trees packed onto it as layers, with no Dockerfile. The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment as mise config, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, and dam-run.
+Every image is a Debian system-package base and directory trees packed onto it as layers, with no Dockerfile. The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment as mise config, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, dam-run, and `platform-keep`, which [keeps](agent-processes.md#keeping-work) a long job running and the agent awake.
 
 - **A harness** is mise config over the base — its tools and env — and a `rootfs/` of its files at their image paths. The default image carries all four.
 - **A workload** is the default image under its own files and env. Its Python package is installed into a venv and shipped as a whole Python at a fixed path, the interpreter and its standard library copied in, named in an environment variable; the entrypoint and login shells put it first on `PATH`, so `python` is the workload's, whatever Python the node's tools hold. **k-search** also ships its upstream source trees, pinned by commit and checksum and patched at install, at fixed paths.
 - **The e2e mock**, beside its source in [`packages/e2e/agents/mock/`](../../packages/e2e/agents/mock/), is the default image under its scripted harness and the node binary its agent-runtime runs, so it boots without the node's tools.
 
 ## The default image and the harness tools
+
+The UI labels an Agent's image by its Template's name, resolving retired template aliases from the catalogue too. An unknown or absent Template falls back to the image reference.
 
 The default image is every harness over the base at once, with none of their tools packaged. Each harness's entry points and runtime manifest sit under its name. The agent-runtime loads every manifest there and runs each harness's drivers, so one contribution kind can have several bindings, each keeping its state per harness. The harness is chosen per session ([agent-lifecycle](agent-lifecycle.md#session-inside-the-pod)); the Agent's own harness, seeded at create and handed to the pod or machine in its environment, is the default for a session that names none. The tools, the base's and every harness's, are named in the image's system mise config with the lockfile, and its `PATH` names each tool's versioned install directory under mise's system data dir, so the image fixes every version it runs without holding a byte of them. mise's own data dir stays the image's, writable, so `mise use -g` still installs there.
 

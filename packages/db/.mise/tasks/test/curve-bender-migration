@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+#MISE description="Check the CurveBender backfill using temporary tables in the local cluster"
+set -euo pipefail
+repo="$(git rev-parse --show-toplevel)"
+{
+  cat <<'SQL'
+BEGIN;
+CREATE TEMP TABLE connections (id text, template_id text, contributions jsonb, auth jsonb);
+CREATE TEMP TABLE connection_grants (agent_id text, connection_id text);
+CREATE TEMP TABLE runtime_state_outbox (agent_id text, version int, last_enqueued_at timestamptz);
+INSERT INTO connections VALUES
+  ('cb', 'curve-bender', '[{"kind":"env","name":"CLAUDE_CODE_MAX_CONTEXT_TOKENS","placeholder":"262144"},{"kind":"env","name":"OPENAI_PROXY_CONTEXT_WINDOW","placeholder":"262144"},{"kind":"env","name":"CUSTOM","placeholder":"keep"},{"kind":"egress-inject","host":"example.test"}]', '{"credential":"untouched"}'),
+  ('empty', 'curve-bender', '[]', '{}'),
+  ('other', 'ibm-litellm', '[]', '{}');
+INSERT INTO connection_grants VALUES ('a', 'cb'), ('a', 'empty'), ('b', 'empty'), ('c', 'other');
+INSERT INTO runtime_state_outbox VALUES ('a', 5, NULL), ('b', 3, NULL), ('c', 7, NULL);
+SQL
+  cat "$repo/packages/db/drizzle/0063_curve_bender_classifier_defaults.sql"
+  cat <<'SQL'
+DO $$
+BEGIN
+  ASSERT (SELECT contributions @> '[{"kind":"env","name":"ANTHROPIC_DEFAULT_SONNET_MODEL","placeholder":"rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4"},{"kind":"env","name":"ANTHROPIC_MODEL","placeholder":"rits/zai-org/glm-5-3"},{"kind":"env","name":"CLAUDE_CODE_AUTO_MODE_SERVER","placeholder":"0"},{"kind":"env","name":"CLAUDE_CODE_MAX_CONTEXT_TOKENS","placeholder":"256000"},{"kind":"env","name":"OPENAI_PROXY_CONTEXT_WINDOW","placeholder":"256000"}]'::jsonb FROM connections WHERE id = 'cb'), 'Classifier configuration missing';
+  ASSERT (SELECT jsonb_array_length(contributions) = 12 FROM connections WHERE id = 'cb'), 'Old defaults duplicated or other contributions lost';
+  ASSERT (SELECT contributions @> '[{"kind":"env","name":"CUSTOM","placeholder":"keep"},{"kind":"egress-inject","host":"example.test"}]'::jsonb AND auth = '{"credential":"untouched"}'::jsonb FROM connections WHERE id = 'cb'), 'Existing configuration or credential changed';
+  ASSERT (SELECT jsonb_array_length(contributions) = 10 FROM connections WHERE id = 'empty'), 'Empty contribution list not backfilled';
+  ASSERT (SELECT contributions = '[]'::jsonb AND auth = '{}'::jsonb FROM connections WHERE id = 'other'), 'Another provider changed';
+  ASSERT (SELECT count(*) = 4 FROM connection_grants), 'Grants changed';
+  ASSERT (SELECT version = 6 AND last_enqueued_at IS NOT NULL FROM runtime_state_outbox WHERE agent_id = 'a'), 'Shared grants must bump once';
+  ASSERT (SELECT version = 4 AND last_enqueued_at IS NOT NULL FROM runtime_state_outbox WHERE agent_id = 'b'), 'Affected agent not queued';
+  ASSERT (SELECT version = 7 AND last_enqueued_at IS NULL FROM runtime_state_outbox WHERE agent_id = 'c'), 'Unrelated agent queued';
+END $$;
+ROLLBACK;
+SQL
+} | mise run //:cluster:kubectl -- exec -i platform-postgres-0 -- psql -U platform -d platform -v ON_ERROR_STOP=1

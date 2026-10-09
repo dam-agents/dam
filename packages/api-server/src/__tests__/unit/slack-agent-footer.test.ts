@@ -230,6 +230,84 @@ describe("formatSlackTs", () => {
 });
 
 describe("renderAssistantBlocks", () => {
+  it.each([
+    [
+      "compact Slack fences",
+      "Before\n```ps -ef | grep shim\nkill -9 <pid>\ncrictl rmp -f pod```\nAfter `command`.",
+      "Before\n```\nps -ef | grep shim\nkill -9 <pid>\ncrictl rmp -f pod\n```\nAfter `command`.",
+    ],
+    [
+      "inline fences and trailing prose",
+      "Before ```pwd``` after.",
+      "Before \n```\npwd\n```\n after.",
+    ],
+    [
+      "multiple compact blocks",
+      "```first``` and ```second```",
+      "```\nfirst\n```\n and \n```\nsecond\n```",
+    ],
+    [
+      "standard Markdown with a language",
+      "Before\n```bash\necho hello\n```\nAfter.",
+      "Before\n```bash\necho hello\n```\nAfter.",
+    ],
+    [
+      "standard Markdown without a language",
+      "```\npwd\n```\nAfter.",
+      "```\npwd\n```\nAfter.",
+    ],
+    [
+      "longer fences containing literal triple backticks",
+      "````markdown\n```example```\n````",
+      "````markdown\n```example```\n````",
+    ],
+    [
+      "literal backticks inside Markdown code",
+      "```js\nconst fence = '```';\n```\nAfter.",
+      "```js\nconst fence = '```';\n```\nAfter.",
+    ],
+    [
+      "longer closing Markdown fences",
+      "````markdown\n```example```\n`````",
+      "````markdown\n```example```\n`````",
+    ],
+    [
+      "quoted Markdown code",
+      "> ```js\n> const fence = '```';\n> ```",
+      "> ```js\n> const fence = '```';\n> ```",
+    ],
+    [
+      "CRLF fences",
+      "```\r\npwd\r\n```\r\nAfter.",
+      "```\r\npwd\r\n```\r\nAfter.",
+    ],
+    ["unclosed fences", "```\npwd", "```\npwd"],
+    [
+      "inline code",
+      "Use `pwd` then **continue**.",
+      "Use `pwd` then **continue**.",
+    ],
+  ])("renders %s without losing code or prose", (_name, input, expected) => {
+    expect(renderAssistantBlocks(footer, input)[0]).toEqual({
+      type: "markdown",
+      text: expected,
+    });
+  });
+
+  it("normalizes text at Slack's Markdown limit", () => {
+    const text = "```pwd```".padStart(12_000, "a");
+    expect(renderAssistantBlocks(footer, text)[0]?.text).toBe(
+      `${"a".repeat(11_991)}\n\`\`\`\npwd\n\`\`\``,
+    );
+  });
+
+  it.each(["```pwd```".padStart(12_001, "a"), "```a\n".repeat(8_000)])(
+    "leaves oversized text unchanged",
+    (text) => {
+      expect(renderAssistantBlocks(footer, text)[0]?.text === text).toBe(true);
+    },
+  );
+
   it("appends the link footer after the text", () => {
     expect(renderAssistantBlocks(footer, "hello")).toEqual([
       { type: "markdown", text: "hello" },

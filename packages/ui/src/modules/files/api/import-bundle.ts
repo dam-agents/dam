@@ -175,11 +175,6 @@ function writeOct(buf: Uint8Array, off: number, n: number, len: number) {
   buf[off + len - 1] = 0;
 }
 
-type ImportBundleArgs = {
-  agentId: string;
-  entries: BundleEntry[];
-};
-
 async function postBundle(
   agentId: string,
   bundle: Blob,
@@ -215,6 +210,11 @@ async function gzipBlob(blob: Blob): Promise<Blob> {
   const stream = blob.stream().pipeThrough(new CompressionStream("gzip"));
   return new Response(stream).blob();
 }
+
+type ImportBundleArgs = {
+  agentId: string;
+  entries: BundleEntry[];
+};
 
 export async function importBundle({
   agentId,

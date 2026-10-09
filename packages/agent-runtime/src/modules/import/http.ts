@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises";
 import http from "node:http";
 import { join } from "node:path";
-import type { ImportBundleResult } from "agent-runtime-api";
+import { type ImportBundleResult } from "agent-runtime-api";
 import busboy from "busboy";
 
 import { IMPORT_STAGING_PREFIX } from "../../core/import-staging.js";
@@ -17,6 +17,51 @@ function messageForDomainError(error: ImportDomainError): string {
       return `refusing entry (${error.reason}): ${error.path}`;
     case "TarParseError":
       return `tar parse error: ${error.detail}`;
+  }
+}
+
+async function directoryConflicts(
+  src: string,
+  dest: string,
+): Promise<string[]> {
+  const conflicts: string[] = [];
+  for (const ent of await readdir(src, { withFileTypes: true })) {
+    const destPath = join(dest, ent.name);
+    const destStat = await lstat(destPath).catch((e: NodeJS.ErrnoException) => {
+      if (e.code === "ENOENT") return null;
+      throw e;
+    });
+    if (!destStat?.isDirectory()) continue;
+    if (ent.isDirectory()) {
+      const nested = await directoryConflicts(join(src, ent.name), destPath);
+      conflicts.push(...nested.map((path) => join(ent.name, path)));
+    } else {
+      conflicts.push(ent.name);
+    }
+  }
+  return conflicts;
+}
+
+async function mergeDir(src: string, dest: string): Promise<void> {
+  const names = await readdir(src, { withFileTypes: true });
+  for (const ent of names) {
+    const srcPath = join(src, ent.name);
+    const destPath = join(dest, ent.name);
+    if (ent.isDirectory()) {
+      const destStat = await lstat(destPath).catch(
+        (e: NodeJS.ErrnoException) => (e.code === "ENOENT" ? null : e),
+      );
+      if (destStat instanceof Error) throw destStat;
+      if (destStat?.isDirectory()) {
+        await mergeDir(srcPath, destPath);
+      } else {
+        if (destStat) await rm(destPath, { force: true });
+        await rename(srcPath, destPath);
+      }
+    } else {
+      await rm(destPath, { force: true });
+      await rename(srcPath, destPath);
+    }
   }
 }
 
@@ -142,12 +187,16 @@ export function createImportHandlers(
           return fail(422, messageForDomainError(extractResult.error));
         }
         if (!staging) return fail(500, "internal: staging dir not initialized");
+        const conflicts = await directoryConflicts(staging, workDir);
+        if (conflicts.length) {
+          return fail(
+            409,
+            `bundle files conflict with existing directories: ${JSON.stringify(conflicts)}`,
+          );
+        }
         log(`finalize start (dest=${workDir})`);
         await mkdir(workDir, { recursive: true });
-        for (const name of await readdir(staging)) {
-          await rm(join(workDir, name), { recursive: true, force: true });
-          await rename(join(staging, name), join(workDir, name));
-        }
+        await mergeDir(staging, workDir);
         await rm(staging, { recursive: true, force: true }).catch(() => {});
         if (finished) {
           log(

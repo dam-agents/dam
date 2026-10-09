@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { z } from "zod";
-import type { PodSession } from "agent-runtime-api";
+import type { PendingRestart, PodSession } from "agent-runtime-api";
 import {
   buildPlatformRunStartedNotification,
   buildPlatformTurnEndedNotification,
@@ -105,7 +105,16 @@ export interface AcpRuntime {
   holdsSessions(): boolean;
   refreshEnv(opts: { force: boolean }): void;
   recycleForConfig(): void;
+  harnesses(): RunningHarness[];
+  pendingRestart(): PendingRestart | null;
+  applyPendingRestart(): boolean;
+  onPendingRestartChange(cb: () => void): void;
   shutdown(): void;
+}
+
+export interface RunningHarness {
+  pid: number;
+  turnSince: number | null;
 }
 
 export interface AcpRuntimeDeps {
@@ -124,7 +133,7 @@ export interface AcpRuntimeDeps {
   historyProvider?: HistoryProvider;
   terminalSessionPins?: () => PlatformSessionOf;
   sessionMetadata?: SessionMetadataStore;
-  backgroundWork?: BackgroundWorkRegistry;
+  backgroundWork: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
   queueParkMs?: number;
   undeliveredPrompts: UndeliveredPromptStore;
@@ -218,11 +227,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const at = deps.sessionMetadata?.startRun(sessionId);
         if (at) announceRunStart(sessionId, at);
       }
+      checkPendingRestart();
     },
     onTurnEnded: (sessionId) => {
       if (shuttingDown) return;
       deps.sessionMetadata?.finishRun(sessionId);
       deps.activeTurns.remove(sessionId);
+      checkPendingRestart();
     },
     onTurnInterrupted: (sessionId, turn) => {
       if (!turn.runPrompt && !isRunSession(sessionId)) return;
@@ -533,7 +544,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sessionResumeSupported = false;
     initializeAnswer = null;
     initializeWaiters = null;
-    deps.backgroundWork?.clear();
+    deps.backgroundWork.clear();
     if (reason === "agent-exited") deps.onHarnessExited?.();
   }
 
@@ -541,8 +552,41 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return (
       `${promptScheduler.activeTurnCount()} turn(s), ` +
       `${pendingRequests.size()} pending request(s), ` +
-      `${deps.backgroundWork?.held().length ?? 0} background hold(s)`
+      `${deps.backgroundWork.held().length} background hold(s)`
     );
+  }
+
+  function taskCount(sessions: HeldSession[]): number {
+    return sessions.reduce((n, held) => n + held.items.length, 0);
+  }
+
+  function keptTaskCount(): number {
+    return taskCount(deps.backgroundWork.held());
+  }
+
+  const pendingRestartListeners: (() => void)[] = [];
+  let lastPendingRestart = "null";
+
+  function pendingRestart(): PendingRestart | null {
+    const pending = lease.pending();
+    const blockingTasks = keptTaskCount();
+    if (!pending || blockingTasks === 0) return null;
+    return {
+      reason: pending.reason,
+      since: new Date(pending.since).toISOString(),
+      blockingTasks,
+      stops: {
+        tasks: taskCount(deps.backgroundWork.reported()),
+        turns: promptScheduler.activeTurnCount(),
+      },
+    };
+  }
+
+  function checkPendingRestart(): void {
+    const next = JSON.stringify(pendingRestart());
+    if (next === lastPendingRestart) return;
+    lastPendingRestart = next;
+    for (const cb of pendingRestartListeners) cb();
   }
 
   const lease = createHarnessLease({
@@ -566,6 +610,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     envReadyAtBoot: deps.envReadyAtBoot ?? true,
     warmStartTimeoutMs,
     envForceRecycleMs,
+    keptTasks: keptTaskCount,
+    onPendingChange: () => checkPendingRestart(),
     ...(deps.beforeSpawn ? { beforeSpawn: deps.beforeSpawn } : {}),
     log(msg) {
       deps.log?.(msg);
@@ -652,10 +698,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   function runtimeBusy(): boolean {
     if (promptScheduler.anyWork() || pendingRequests.any()) return true;
-    return (deps.backgroundWork?.held().length ?? 0) > 0;
+    return deps.backgroundWork.held().length > 0;
   }
 
-  deps.backgroundWork?.onRelease(() => lease.maybeRecycle());
+  deps.backgroundWork.onChange(() => {
+    checkPendingRestart();
+    lease.maybeRecycle();
+  });
 
   function detach(channel: ClientChannel): void {
     const sessions = engagedSessions.get(channel);
@@ -699,7 +748,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     promptScheduler.forget(sessionId);
     runTextBuffers.delete(sessionId);
     pendingRequests.forget(sessionId);
-    deps.backgroundWork?.forget(sessionId);
+    deps.backgroundWork.forget(sessionId);
     lease.maybeRecycle();
     const reap = idleReapTimers.get(sessionId);
     if (reap) {
@@ -715,7 +764,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (promptScheduler.hasWork(sessionId)) return;
     if (bootstrap.has(sessionId)) return;
     if (pendingRequests.hasFor(sessionId)) return;
-    if (deps.backgroundWork?.hasWork(sessionId)) {
+    if (deps.backgroundWork.hasWork(sessionId)) {
       idleReapTimers.set(
         sessionId,
         setTimeout(
@@ -1252,7 +1301,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     status() {
       return {
         idle: !runtimeBusy(),
-        backgroundWork: deps.backgroundWork?.held() ?? [],
+        backgroundWork: deps.backgroundWork.held(),
       };
     },
 
@@ -1296,6 +1345,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     recycleForConfig() {
       lease.recycleForConfig();
+    },
+
+    harnesses() {
+      const pid = lease.pid();
+      if (pid === null) return [];
+      return [{ pid, turnSince: promptScheduler.activeTurnSince() }];
+    },
+
+    pendingRestart,
+
+    applyPendingRestart() {
+      if (pendingRestart() === null) return false;
+      return lease.recycleNow();
+    },
+
+    onPendingRestartChange(cb) {
+      pendingRestartListeners.push(cb);
     },
 
     shutdown() {

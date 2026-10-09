@@ -108,6 +108,7 @@ export type { SessionView } from "api-server-api";
 export interface TemplateView {
   id: string;
   name: string;
+  aliases?: string[];
   image: string;
   description?: string;
   category: "harness";

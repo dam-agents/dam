@@ -79,7 +79,7 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
           className="flex items-center gap-1 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           {pair
-            ? `${pairName ?? ""} · ${pair.model ?? "default model"}${provider ? ` · ${provider.name}` : ""}`
+            ? `${pairName ?? ""}${pair.model ? ` · ${pair.model}` : ""}${provider ? ` · ${provider.name}` : ""}`
             : "Choose a harness and model"}
         </button>
       </PopoverTrigger>
@@ -202,27 +202,22 @@ function ProviderModels({
   provider: ProviderConnectionRef;
   current: string | null | undefined;
   fallback: readonly { value: string; name: string }[];
-  onChoose: (model: string | null) => void;
+  onChoose: (model: string) => void;
 }) {
-  const { data, isLoading, isError, operable } = useProviderModels(
+  const { data, isLoading, isError, operable, refetch } = useProviderModels(
     agentId,
     harness,
     provider.id,
   );
-  const models = data?.availableModels ?? fallback;
+  const models =
+    data?.availableModels === null ? fallback : (data?.availableModels ?? []);
+  const unavailable = isError || data?.availableModels === undefined;
   return (
     <section aria-label={provider.name} className="flex flex-col">
       <h3 className="px-1 text-xs font-medium uppercase text-muted-foreground">
         {provider.name}
       </h3>
       <ul className="flex flex-col">
-        <li>
-          <ModelChoice
-            label="Default model"
-            current={current === null}
-            onClick={() => onChoose(null)}
-          />
-        </li>
         {models.map((m) => (
           <li key={m.value}>
             <ModelChoice
@@ -238,9 +233,18 @@ function ProviderModels({
               ? "Start the agent to list this provider's models."
               : isLoading
                 ? "Loading models…"
-                : isError
+                : unavailable
                   ? "Could not list this provider's models."
-                  : null}
+                  : "No models available."}
+            {operable && !isLoading && unavailable && (
+              <button
+                type="button"
+                className="ml-1 text-accent hover:underline"
+                onClick={() => void refetch()}
+              >
+                Retry
+              </button>
+            )}
           </li>
         )}
       </ul>

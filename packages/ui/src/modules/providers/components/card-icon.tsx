@@ -1,7 +1,9 @@
 import { Cloud } from "@carbon/icons-react";
+import type { ComponentType, SVGProps } from "react";
 
 import {
   AnthropicIcon,
+  BobFilledIcon,
   BobIcon,
   LiteLLMIcon,
   OpenAIIcon,
@@ -10,60 +12,25 @@ import { cn } from "@/lib/utils";
 
 import type { ProviderPresetType } from "../../../types.js";
 
-const LITELLM_STYLE = {
-  Icon: LiteLLMIcon,
-  bg: "bg-muted",
-  iconClass: "text-2xl leading-none",
-  lgIconClass: "!text-[40px]",
-  smIconClass: "!text-base",
-};
-
 const STYLES: Record<
   ProviderPresetType,
   {
-    Icon: React.ComponentType<{ className?: string }>;
+    Icon: ComponentType<SVGProps<SVGSVGElement>>;
     bg: string;
-    iconClass: string;
-    lgIconClass: string;
-    smIconClass: string;
   }
 > = {
-  anthropic: {
-    Icon: AnthropicIcon,
-    bg: "bg-foreground",
-    iconClass: "w-5 h-5 text-background",
-    lgIconClass: "!w-8 !h-8",
-    smIconClass: "!w-3.5 !h-3.5",
-  },
-  openai: {
-    Icon: OpenAIIcon,
-    bg: "bg-foreground",
-    iconClass: "w-5 h-5 text-background",
-    lgIconClass: "!w-8 !h-8",
-    smIconClass: "!w-3.5 !h-3.5",
-  },
-  "ibm-litellm": LITELLM_STYLE,
-  "curve-bender": LITELLM_STYLE,
-  bob: {
-    Icon: BobIcon,
-    bg: "",
-    iconClass: "w-full h-full",
-    lgIconClass: "",
-    smIconClass: "",
-  },
-  bedrock: {
-    Icon: Cloud,
-    bg: "bg-foreground",
-    iconClass: "w-5 h-5 text-background",
-    lgIconClass: "!w-8 !h-8",
-    smIconClass: "!w-3.5 !h-3.5",
-  },
+  anthropic: { Icon: AnthropicIcon, bg: "bg-icon-clay" },
+  openai: { Icon: OpenAIIcon, bg: "bg-icon-green" },
+  "ibm-litellm": { Icon: LiteLLMIcon, bg: "bg-icon-blue" },
+  "curve-bender": { Icon: LiteLLMIcon, bg: "bg-icon-violet" },
+  bob: { Icon: BobIcon, bg: "bg-icon-blue" },
+  bedrock: { Icon: Cloud, bg: "bg-icon-ochre" },
 };
 
 const TILE_SIZE_CLASS: Record<"lg" | "md" | "sm", string> = {
-  lg: "w-[68px] h-[68px]",
-  md: "w-[38px] h-[38px]",
-  sm: "w-7 h-7",
+  lg: "size-[68px]",
+  md: "size-[38px]",
+  sm: "size-5",
 };
 
 export function CardIcon({
@@ -73,23 +40,19 @@ export function CardIcon({
   provider: ProviderPresetType;
   size?: "lg" | "md" | "sm";
 }) {
-  const style = STYLES[provider];
-  const Icon = style.Icon;
+  const { Icon: OutlineIcon, bg } = STYLES[provider];
+  const Icon =
+    size === "sm" && provider === "bob" ? BobFilledIcon : OutlineIcon;
   return (
     <div
+      aria-hidden="true"
       className={cn(
-        "shrink-0 rounded-lg flex items-center justify-center",
+        "shrink-0 flex items-center justify-center",
         TILE_SIZE_CLASS[size],
-        style.bg,
+        size !== "sm" && ["rounded-lg text-white", bg],
       )}
     >
-      <Icon
-        className={cn(
-          style.iconClass,
-          size === "lg" && style.lgIconClass,
-          size === "sm" && style.smIconClass,
-        )}
-      />
+      <Icon className={size === "sm" ? "size-full" : "size-3/5"} />
     </div>
   );
 }
