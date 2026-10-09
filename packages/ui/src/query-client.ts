@@ -14,6 +14,10 @@ import {
   isTermsStaleError,
   onTermsStale,
 } from "./modules/terms/lib/on-terms-stale.js";
+import {
+  isWorkspaceRefusedError,
+  onWorkspaceRefused,
+} from "./modules/workspaces/lib/on-workspace-refused.js";
 
 declare module "@tanstack/react-query" {
   interface Register {
@@ -38,6 +42,10 @@ export const queryClient = new QueryClient({
     onError: (error, query) => {
       if (isTermsStaleError(error)) {
         onTermsStale();
+        return;
+      }
+      if (isWorkspaceRefusedError(error)) {
+        onWorkspaceRefused();
         return;
       }
       const toast = query.meta?.errorToast;

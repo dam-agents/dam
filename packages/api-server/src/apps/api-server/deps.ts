@@ -2,6 +2,7 @@ import type { CoreV1Api } from "@kubernetes/client-node";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { Db } from "db";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
+import type { composeWorkspacesModule } from "../../modules/workspaces/index.js";
 import type {
   E2eService,
   HarnessCatalog,
@@ -119,6 +120,7 @@ export interface ApiServerDeps {
   kitUpstream: KitUpstream;
   reposService: ReposService;
   apiKeysModule: ReturnType<typeof composeApiKeysModule>;
+  workspacesModule: ReturnType<typeof composeWorkspacesModule>;
   satellitesBoot: SatellitesComposition;
   auth: ReturnType<typeof createAuth>;
   jwksWarmup: ReturnType<typeof startJwksWarmup>;

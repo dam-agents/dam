@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
 import { DOCS_URL } from "../constants.js";
+import { WorkspaceSwitcher } from "../modules/workspaces/components/workspace-switcher.js";
 import { useStore } from "../store.js";
 
 interface Destination {
@@ -139,6 +140,7 @@ export function IconRail({
           </Tooltip>
         </div>
         <div className="mt-px flex flex-col gap-px">
+          <WorkspaceSwitcher expanded={expandedNav} />
           {primary.map((destination) => (
             <RailItem
               key={destination.label}

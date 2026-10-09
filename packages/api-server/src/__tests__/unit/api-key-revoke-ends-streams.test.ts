@@ -17,6 +17,7 @@ import { createTrpcHttpHandler } from "../../apps/api-server/trpc/http.js";
 import { createTrpcWsEndpoint } from "../../apps/api-server/trpc/ws.js";
 import type { ApiVariables } from "../../apps/api-server/deps.js";
 import { createLiveEventsService } from "../../modules/live-events/services/live-events-service.js";
+import { noWorkspaceAccess } from "../helpers/no-workspace-access.js";
 
 const servers: Server[] = [];
 const sockets: WebSocket[] = [];
@@ -98,7 +99,9 @@ describe("API key revocation and open streams", () => {
     app.all(
       "/api/trpc/*",
       createTrpcHttpHandler({
-        composeApiContext: (user) => ({ user, liveEvents }) as ApiContext,
+        workspaceAccess: noWorkspaceAccess,
+        composeApiContext: (user) =>
+          ({ user, owner: user.sub, liveEvents }) as ApiContext,
       }),
     );
     const port = await listen(
@@ -141,9 +144,11 @@ describe("API key revocation and open streams", () => {
     const endpoint = createTrpcWsEndpoint({
       authenticate,
       surfaceAttribution: attribution,
+      workspaceAccess: noWorkspaceAccess,
       composeApiContext: (user) =>
         ({
           user,
+          owner: user.sub,
           liveEvents,
           terms: { isAccepted: async () => true },
         }) as unknown as ApiContext,

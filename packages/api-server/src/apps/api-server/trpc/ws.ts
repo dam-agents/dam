@@ -2,7 +2,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { TRPCError } from "@trpc/server";
 import { applyWSSHandler } from "@trpc/server/adapters/ws";
-import type { ApiContext, UserIdentity } from "api-server-api";
+import type { ApiContext, UserIdentity, WorkspaceAccess } from "api-server-api";
 import { appRouter } from "api-server-api/router";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
@@ -16,7 +16,9 @@ import {
 } from "../admission/auth.js";
 import { watchApiKey } from "../admission/api-key-watch.js";
 import { addUpgradeSecurityHeaders } from "../agent-proxies/upgrade.js";
+import type { WorkspaceAccessResolver } from "../../../modules/workspaces/index.js";
 import { logInternalError } from "./log-internal-error.js";
+import { resolveRequestedWorkspace } from "./workspace-header.js";
 
 const trpcDenial: Record<
   AuthDenialKind,
@@ -46,7 +48,12 @@ const DENIAL_HOLD_MS = 1_000;
 export interface TrpcWsDeps {
   authenticate: Authenticate;
   surfaceAttribution: SurfaceAttribution;
-  composeApiContext: (user: UserIdentity, surface: string) => ApiContext;
+  composeApiContext: (
+    user: UserIdentity,
+    surface: string,
+    workspace?: WorkspaceAccess,
+  ) => ApiContext;
+  workspaceAccess: WorkspaceAccessResolver;
 }
 
 /**
@@ -126,9 +133,18 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
         );
         res.once("close", stop);
       }
+      const workspace = await resolveRequestedWorkspace(
+        deps.workspaceAccess,
+        user,
+        info.connectionParams?.workspace,
+      ).catch(async (err: unknown) => {
+        await firstRequestOrTimeout(res, DENIAL_HOLD_MS);
+        throw err;
+      });
       return deps.composeApiContext(
         user,
         clientSurface(admitted.principal, deps.surfaceAttribution),
+        workspace,
       );
     },
   });

@@ -223,6 +223,23 @@ user's `sub`. The api-server is the sole writer of resource spec and stamps
 the label on create; every list and get filters by it. There is no
 namespace-per-user.
 
+The owner value is a person's `sub` or a **workspace principal** `ws-<uuid>`.
+A workspace is a shared owner. Its members are stored by verified login email,
+each with one role. The browser names the workspace in the
+`x-platform-workspace` header (HTTP) or the `workspace` connection parameter
+(tRPC WebSocket). The api-server checks membership, then uses the workspace
+principal as the owner and narrows the person's scopes to the role:
+
+| Role | Scopes |
+|---|---|
+| reader | `agents:read`, `agents:operate` |
+| editor | reader + `agents:manage`, `credentials:read` |
+| admin | editor + `credentials:manage`, member management |
+
+API keys never act in a workspace. Feature flags, API keys, satellites and
+terms stay personal. The controller and the credential path see only the owner
+value, so they do not change.
+
 The controller picks credentials per-Agent by listing K8s Secrets
 labelled `agent-platform.ai/owner=<sub>,agent-platform.ai/managed-by=api-server` in the agent
 namespace, then mounting the matching set into the paired gateway pod. Cross-

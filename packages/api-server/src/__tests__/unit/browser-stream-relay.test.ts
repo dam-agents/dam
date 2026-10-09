@@ -124,7 +124,8 @@ describe("who reaches an agent's browser stream", () => {
           },
         } as never;
       },
-      verifyOwner: async (agentId, sub) => sub === "alice" && agentId === owned,
+      verifyOwner: async (agentId, user) =>
+        user.sub === "alice" && agentId === owned,
       isTermsAccepted: async () => true,
       surfaceAttribution: { uiClientId: "platform-ui", cliClientId: "cli" },
     });

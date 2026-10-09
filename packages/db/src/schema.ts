@@ -665,6 +665,40 @@ export const userFeatures = pgTable(
   (table) => [primaryKey({ columns: [table.owner, table.feature] })],
 );
 
+export const workspaceRoleEnum = pgEnum("workspace_role", [
+  "admin",
+  "editor",
+  "reader",
+]);
+
+export const workspaces = pgTable("workspaces", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const workspaceMembers = pgTable(
+  "workspace_members",
+  {
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: workspaceRoleEnum("role").notNull(),
+    addedBy: text("added_by").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.email] }),
+    index("workspace_members_email_idx").on(table.email),
+  ],
+);
+
 export const artifactFolders = pgTable(
   "artifact_folders",
   {

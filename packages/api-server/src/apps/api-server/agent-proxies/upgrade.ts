@@ -45,7 +45,7 @@ export type RelayAdmissionResult =
 
 export interface RelayAdmissionDeps {
   authenticate: Authenticate;
-  verifyOwner: (agentId: string, ownerSub: string) => Promise<boolean>;
+  verifyOwner: (agentId: string, user: UserIdentity) => Promise<boolean>;
   isTermsAccepted: IsAcceptedPort;
   surfaceAttribution: SurfaceAttribution;
 }
@@ -71,7 +71,7 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
     if (!admitted.ok) return admitted;
     const { user } = admitted.principal;
 
-    if (!(await deps.verifyOwner(agentId, user.sub))) {
+    if (!(await deps.verifyOwner(agentId, user))) {
       securityLog("warn", "ws.owner_mismatch", {
         category: "authz",
         actor: user.sub,

@@ -3,11 +3,15 @@ import type { AppRouter } from "api-server-api";
 
 import { getAccessToken } from "./auth.js";
 import { onFetchError, onFetchSuccess } from "./lib/api-health.js";
+import { currentWorkspaceId } from "./modules/workspaces/lib/current-workspace.js";
 
 export const wsClient = createWSClient({
   url: () =>
     `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/trpc-ws`,
-  connectionParams: async () => ({ token: await getAccessToken() }),
+  connectionParams: async () => ({
+    token: await getAccessToken(),
+    workspace: currentWorkspaceId() ?? undefined,
+  }),
   lazy: { enabled: true, closeMs: 30_000 },
   keepAlive: { enabled: true },
   onOpen: () => onFetchSuccess(),

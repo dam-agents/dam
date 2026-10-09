@@ -118,6 +118,9 @@ export function createAuth(config: AuthConfig, deps: AuthDeps = {}) {
         sub: payload.sub!,
         preferredUsername:
           (claims.preferred_username as string) ?? payload.sub!,
+        ...(typeof claims.email === "string" && claims.email_verified === true
+          ? { email: claims.email.trim().toLowerCase() }
+          : {}),
         scopes: ALL_SCOPES,
         agentIds: "*",
       },

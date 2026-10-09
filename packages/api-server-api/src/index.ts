@@ -256,6 +256,23 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
+export type {
+  Workspace,
+  WorkspaceAccess,
+  WorkspaceMember,
+  WorkspaceRole,
+  WorkspacesService,
+} from "./modules/workspaces/types.js";
+export {
+  workspaceIdOfPrincipal,
+  workspacePrincipal,
+  WORKSPACE_REFUSED_MESSAGE,
+  workspaceRoleScopes,
+} from "./modules/workspaces/types.js";
+export {
+  workspaceIdSchema,
+  workspaceRoleSchema,
+} from "./modules/workspaces/schemas.js";
 export { quietWindowSchema } from "./modules/schedules/schemas.js";
 export {
   ONCE_DELIVERY_WINDOW_MS,
