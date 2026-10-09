@@ -13,7 +13,10 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	k8stypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
@@ -102,6 +105,54 @@ func TestASingleNodeHomeIsCopiedFromAClone(t *testing.T) {
 	assert.Empty(t, migrationClones(t, r), "the clone goes once the copy has landed")
 	_, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, "home-agent-my-agent-0", metav1.GetOptions{})
 	assert.NoError(t, err, "the home itself stays")
+}
+
+func TestACopyReusesOnlyALiveCloneOwnedByItsAgent(t *testing.T) {
+	for _, state := range []string{"live", "deleting", "earlier agent", "unowned"} {
+		t.Run(state, func(t *testing.T) {
+			ctx := context.Background()
+			agent := copyingAgentCR()
+			old := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
+				Name: "rtmc-my-agent-1", Namespace: "test-agents",
+				OwnerReferences: []metav1.OwnerReference{agentOwnerRef(agent)},
+			}}
+			switch state {
+			case "deleting":
+				old.DeletionTimestamp = new(metav1.Now())
+				old.Finalizers = []string{"kubernetes.io/pvc-protection"}
+			case "earlier agent":
+				old.OwnerReferences[0].UID = "earlier-agent"
+			case "unowned":
+				old.OwnerReferences = nil
+			}
+			r, job := startCopyOf(t, true, func(r *AgentReconciler) {
+				createAll(t, r, old)
+				r.client.(*fake.Clientset).PrependReactor("create", "persistentvolumeclaims", func(action k8stesting.Action) (bool, runtime.Object, error) {
+					claim := action.(k8stesting.CreateAction).GetObject().(*corev1.PersistentVolumeClaim)
+					if claim.Name == "" && claim.GenerateName != "" {
+						claim.Name = claim.GenerateName + "fresh"
+					}
+					return false, nil, nil
+				})
+			})
+			pvcs := r.client.CoreV1().PersistentVolumeClaims("test-agents")
+			claim, err := pvcs.Get(ctx, copyClaim(job), metav1.GetOptions{})
+			require.NoError(t, err)
+			assert.True(t, ownedBy(claim, agent))
+			assert.Nil(t, claim.DeletionTimestamp)
+			if state == "live" {
+				assert.Equal(t, old.Name, claim.Name)
+			} else {
+				assert.NotEqual(t, old.Name, claim.Name)
+				require.NotNil(t, claim.Spec.DataSource)
+				assert.Equal(t, "home-agent-my-agent-0", claim.Spec.DataSource.Name)
+				assert.Equal(t, agent.Name, claim.Labels[LabelRuntimeMigrationCloneFor])
+			}
+			unchanged, err := pvcs.Get(ctx, old.Name, metav1.GetOptions{})
+			require.NoError(t, err)
+			assert.Equal(t, old, unchanged)
+		})
+	}
 }
 
 // TEST_SCENARIO: a volume no CSI driver serves cannot be cloned, and an install that turns cloning off reads every volume in place; neither cuts a clone.

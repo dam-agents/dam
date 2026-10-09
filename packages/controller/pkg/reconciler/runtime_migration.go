@@ -826,11 +826,23 @@ func (r *AgentReconciler) runtimeMigrationCopySource(ctx context.Context, agent 
 			DataSource:       &corev1.TypedLocalObjectReference{Kind: "PersistentVolumeClaim", Name: source},
 		},
 	}
-	if _, err := pvcs.Create(ctx, clone, metav1.CreateOptions{}); err != nil && !k8serrors.IsAlreadyExists(err) {
+	created, err := pvcs.Create(ctx, clone, metav1.CreateOptions{})
+	if k8serrors.IsAlreadyExists(err) {
+		existing, readErr := pvcs.Get(ctx, clone.Name, metav1.GetOptions{})
+		if readErr != nil && !k8serrors.IsNotFound(readErr) {
+			return "", fmt.Errorf("reading the home volume's clone %s: %w", clone.Name, readErr)
+		}
+		if readErr == nil && ownedBy(existing, agent) && existing.DeletionTimestamp == nil {
+			return existing.Name, nil
+		}
+		clone.GenerateName, clone.Name = clone.Name+"-", ""
+		created, err = pvcs.Create(ctx, clone, metav1.CreateOptions{})
+	}
+	if err != nil {
 		return "", fmt.Errorf("cloning the home volume %s: %w", source, err)
 	}
-	slog.Info("runtime migration: home volume cloned for the copy", "agent", agent.Name, "pvc", source, "clone", clone.Name, "attempt", attempt)
-	return clone.Name, nil
+	slog.Info("runtime migration: home volume cloned for the copy", "agent", agent.Name, "pvc", source, "clone", created.Name, "attempt", attempt)
+	return created.Name, nil
 }
 
 func runtimeMigrationCloneName(agentName string, attempt int32) string {
