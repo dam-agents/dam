@@ -695,7 +695,11 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         };
-        assert_eq!(ids, vec!["m1"], "the list names the machine once its create has begun");
+        assert_eq!(
+            ids,
+            vec!["m1"],
+            "the list names the machine once its create has begun"
+        );
 
         assert_eq!(
             call(&api, "DELETE", "/machines/m1", Some("secret"), "").await,
