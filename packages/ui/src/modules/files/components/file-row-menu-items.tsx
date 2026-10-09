@@ -1,5 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 
+import { PLATFORM_INSTRUCTIONS_PATH } from "../lib/platform-instructions.js";
+
 export type FileRowMenuAction =
   | "edit"
   | "download"
@@ -16,10 +18,12 @@ interface MenuItemProps {
 }
 
 export function FileRowMenuItems({
+  path,
   isDir,
   onAction,
   Item,
 }: {
+  path: string;
   isDir: boolean;
   onAction: (action: FileRowMenuAction) => void;
   Item: ComponentType<MenuItemProps>;
@@ -36,7 +40,9 @@ export function FileRowMenuItems({
         </>
       ) : (
         <>
-          <Item onSelect={() => onAction("edit")}>Edit</Item>
+          {path !== PLATFORM_INSTRUCTIONS_PATH && (
+            <Item onSelect={() => onAction("edit")}>Edit</Item>
+          )}
           <Item onSelect={() => onAction("download")}>Download</Item>
         </>
       )}

@@ -18,6 +18,7 @@ import { useStore } from "../../../store.js";
 import { useFilePromotion } from "../../artifacts/hooks/use-file-promotion.js";
 import { type FileContent, useFileWriteMutation } from "../api/queries.js";
 import { base64ToBlob, downloadFileContent } from "../lib/download.js";
+import { PLATFORM_INSTRUCTIONS_PATH } from "../lib/platform-instructions.js";
 import { saveFileDraft } from "../lib/save-file.js";
 import { FilePreviewBody } from "./file-preview-body.js";
 import { FullscreenPreviewDialog } from "./fullscreen-preview-dialog.js";
@@ -38,7 +39,8 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const isPdf = mime === "application/pdf";
   const isBinaryImage =
     binary && !!content && !!mime && mime.startsWith("image/") && !isSvg;
-  const editable = !binary && !tooLarge;
+  const platformInstructions = path === PLATFORM_INSTRUCTIONS_PATH;
+  const editable = !binary && !tooLarge && !platformInstructions;
 
   const selectedAgent = useStore((s) => s.selectedAgent);
   const promotion = useFilePromotion(selectedAgent, file);
@@ -297,6 +299,12 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           <Close size={16} />
         </Button>
       </div>
+      {platformInstructions && (
+        <p className="px-4 py-2 border-b border-border text-xs text-muted-foreground">
+          This file holds the platform's instructions and is read-only. Put your
+          own instructions in <code>work/AGENTS.md</code>.
+        </p>
+      )}
       <div
         className={
           editMode ? "flex-1 overflow-hidden p-2" : "flex-1 overflow-auto p-4"
