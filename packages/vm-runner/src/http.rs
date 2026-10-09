@@ -685,12 +685,17 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         serde_json::from_str::<MachineStatus>(&body).unwrap();
 
-        let (status, body) = call(&api, "GET", "/machines", Some("secret"), "").await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(
-            serde_json::from_str::<Vec<String>>(&body).unwrap(),
-            vec!["m1"]
-        );
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let ids = loop {
+            let (status, body) = call(&api, "GET", "/machines", Some("secret"), "").await;
+            assert_eq!(status, StatusCode::OK);
+            let ids: Vec<String> = serde_json::from_str(&body).unwrap();
+            if !ids.is_empty() || std::time::Instant::now() >= deadline {
+                break ids;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+        assert_eq!(ids, vec!["m1"], "the list names the machine once its create has begun");
 
         assert_eq!(
             call(&api, "DELETE", "/machines/m1", Some("secret"), "").await,

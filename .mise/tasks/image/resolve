@@ -76,7 +76,7 @@ PINNED_TAGS="keycloak vm-runner $AGENTS $WORKLOADS"
 # not listed.
 third_party() {
   {
-    yq -r '.. | select(tag == "!!map") | (
+    yq -N -r '.. | select(tag == "!!map") | (
       (to_entries[] | select((.key | test("(^i|I)mage$")) and (.value | tag) == "!!str" and .value != "") | .value),
       (select((.repository // "") != "" and (.tag // "") != "") | .repository + ":" + .tag),
       (select((.repository // "") != "" and (.digest // "") != "") | .repository + "@" + .digest))' helm/values.yaml helm/extra/kvm-device-plugin.yaml
@@ -226,6 +226,7 @@ self_check() {
   has "$(third_party)" ghcr.io/squat/generic-device-plugin@sha256:
   has "$(third_party)" "$IMAGE_PREFIX/clickhouse-operator:"
   case "$(third_party)" in *"$IMAGE_PREFIX/controller"*) echo "FAIL: own image in third_party" >&2; f=1 ;; esac
+  case "$(third_party | grep -vE '^[^[:space:]]+[:@][^[:space:]]+$' || true)" in ?*) echo "FAIL: third_party lists a line that is no image ref" >&2; f=1 ;; esac
   has "$(effective_paths nous)" packages/agents/base
   has "$(effective_paths mock)" packages/e2e/agents/mock-api
   has "$(effective_paths k-search)" packages/agents/claude-code
