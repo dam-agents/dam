@@ -396,11 +396,15 @@ export function createSchedulesService(deps: {
       });
     },
 
-    async toggle(id) {
+    async toggle(id, enabled) {
       const current = await deps.repo.get(id, deps.owner);
-      if (current?.spec.type === "once")
+      if (!current) return null;
+      if (current.spec.type === "once")
         throw badRequest("a one-time schedule cannot be paused; delete it");
-      const next = await deps.repo.toggle(id, deps.owner);
+      const next = await deps.repo.updateSpec(id, deps.owner, {
+        ...current.spec,
+        enabled: enabled ?? !current.spec.enabled,
+      });
       if (!next) return null;
       if (next.spec.enabled) {
         await deps.runner.sync(id);

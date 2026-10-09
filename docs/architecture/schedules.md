@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-08
+Last verified: 2026-10-09
 
 ## Overview
 
@@ -9,6 +9,8 @@ A **Schedule** is a task attached to an Agent that fires on its own: a cron or R
 The subsystem straddles two components. The api-server owns the schedule rows, the queue that arms them, and the decision to fire; agent-runtime owns what a fire *becomes* — the Session it opens, the Precheck it runs first, and the verdict it reports back. Everything between the two — the outbox, the delivery worker, the event's TTL — belongs to [runtime delivery](runtime-delivery.md) and is not restated here. Waking and hibernating the Agent a fire lands on belong to [agent-lifecycle](agent-lifecycle.md).
 
 Schedules are authored per Agent, but they are also read across them: one owner-scoped list, narrowed to the Agents an API key is bound to, gives the owner every schedule that runs on their behalf in one place. It matters most for the schedules an Agent set up for itself in chat, which otherwise surface only in that Agent's own panel and keep spending until someone notices them.
+
+Pausing and resuming a schedule names the state the caller wants rather than flipping it, so a request re-sent after its answer was lost, or the same switch flipped from two stale tabs, lands where the caller meant. A request that names no state still flips, so a CLI older than the server keeps working ([cli](cli.md#compatibility-negotiation)).
 
 ## Fire
 
