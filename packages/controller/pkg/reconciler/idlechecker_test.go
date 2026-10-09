@@ -50,7 +50,9 @@ func newIdleChecker(t *testing.T, timeout time.Duration, agents []*apiv1.Agent, 
 		dynObjs = append(dynObjs, u)
 	}
 	client := fake.NewSimpleClientset(sts...)
-	return NewIdleChecker(client, newFakeDynamic(dynObjs...), idleCheckerCfg(timeout)), client
+	checker := NewIdleChecker(client, newFakeDynamic(dynObjs...), idleCheckerCfg(timeout))
+	checker.busyProbe = func(context.Context, string) bool { return false }
+	return checker, client
 }
 
 func agentStatefulSet(name string, replicas int32) *appsv1.StatefulSet {
