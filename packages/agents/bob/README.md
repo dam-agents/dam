@@ -8,7 +8,7 @@ The harness ships in the default image every harness Template boots, built by `/
 
 | Component | Source | Purpose |
 |---|---|---|
-| Harness | `bobshell` 2.0.3 (the `bob-shell` COS bucket release tarball, as a mise `http:` tool) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions |
+| Harness | `bobshell` 2.0.6 (the `bob-shell` COS bucket release tarball, as a mise `http:` tool) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions |
 | Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs) | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json`, and re-asserts the platform instructions rules link and the terminal-session pin hook; runs before either surface starts |
 | Session spend | [`bob-session-spend`](rootfs/usr/local/bin/bob-session-spend) | Prints each root task's cost in Bobcoins from `~/.bob/db/bob.db`; the runtime manifest's `sessionSpend` runs it so the sessions list and the Usage section show it |
 | Storage | `/home/agent` PVC | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives pod restarts |
@@ -135,7 +135,7 @@ Less common toggles, not surfaced on the provider card.
 |---|---|
 | `BOB_AUTO_APPROVE` | Set to `0` to make sessions ask per tool call instead of auto-approving, for an agent whose Config panel leaves Approvals unset (see [Autonomy posture](#autonomy-posture)). |
 | `BOB_LOG_LEVEL` | Bob's log level: `debug`, `info`, `warn`, `error`, `silent`. Logs go to stderr; stdout belongs to the ACP stream. |
-| `BOB_TELEMETRY_*` | The platform's export rail, not free-form: `BOB_TELEMETRY_PROVIDER`, `_URL`, `_SERVICE_PATH` and `_AGENT_OPS_ENABLED` are set for the agent when the telemetry backend is enabled, pointing Bob's OTLP exporter at the platform collector through the ordinary gateway egress. Overriding them by hand redirects the agent's spend telemetry, so leave them to the rail. Bob 2.0.3 also reads the standard `OTEL_EXPORTER_OTLP_*` variables: a set endpoint among them overrides the provider, and only `http/json` is accepted, so those stay unset as well. The exporter ignores `HTTPS_PROXY`, so on the platform the export does not reach the collector today. |
+| `BOB_TELEMETRY_*` | The platform's export rail, not free-form: `BOB_TELEMETRY_PROVIDER`, `_URL`, `_SERVICE_PATH` and `_AGENT_OPS_ENABLED` are set for the agent when the telemetry backend is enabled, pointing Bob's OTLP exporter at the platform collector through the ordinary gateway egress. Overriding them by hand redirects the agent's spend telemetry, so leave them to the rail. Bob also reads the standard `OTEL_EXPORTER_OTLP_*` variables: a set endpoint among them overrides the provider and also sends a copy of the export to IBM's own endpoint, so those stay unset as well. The exporter ignores `HTTPS_PROXY`, so on the platform the export does not reach the collector today. |
 
 Telemetry has no env switch. Bob reads `telemetry.enabled` from `~/.bob/settings/settings.json`, and the bootstrap keeps whatever that section already holds apart from asserting `excludePayload`, so setting it to `false` by hand (Files panel or SSH) survives every restart.
 
