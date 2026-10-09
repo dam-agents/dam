@@ -70,7 +70,6 @@ function classify(
     runtimePid: RUNTIME,
     harnesses,
     tasks,
-    skipTasks: new Set(),
   });
 }
 

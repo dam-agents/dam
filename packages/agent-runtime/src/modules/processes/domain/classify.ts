@@ -18,7 +18,6 @@ export interface ClassifyInput {
   runtimePid: number;
   harnesses: RunningHarness[];
   tasks: ReportedTask[];
-  skipTasks: ReadonlySet<string>;
 }
 
 export interface ProcessTree {
@@ -166,7 +165,6 @@ export function classifyProcesses(input: ClassifyInput): ProcessTree[] {
 
   for (const task of input.tasks) {
     const identity = taskIdentity(task);
-    if (input.skipTasks.has(identity)) continue;
     const root = taskRoot(task);
     const members = root ? [root, ...descendantsOf(root)] : [];
     for (const m of members) claimed.add(procKey(m));

@@ -55,9 +55,8 @@ by applying it now, which stops that work, by stopping or unkeeping the kept tas
 a hard stop or pause. Once the last kept task is gone, the
 recycle runs at once on an idle runtime, or after the grace period while a turn still
 runs. Unkept tasks never hold a recycle back, since the recycle kills them anyway; a kept
-Detached Process holds it back only as any busy runtime does, up to the grace period, and
-the recycle leaves it alone. A harness that stopped answering is
-recycled regardless, since a wedged harness serves no task.
+Detached Process never does either, since the recycle leaves it alone. A harness that
+stopped answering is recycled regardless, since a wedged harness serves no task.
 
 Only work a harness *supervises* reaches its report, which bounds what the contract
 promises. A job the agent detached from the harness is invisible to it, and what is
@@ -156,8 +155,8 @@ The agent marks through the runtime's in-pod surface, from inside the agent only
 user has decided about a process, a later mark on it is refused with a message that names
 the user's choice, so the agent can ask instead. This, like the reported contract, is not a
 security boundary — the agent could kill its own work anyway — but a rule an honest agent
-follows. Kept Detached Processes count toward the runtime's busy signal next to kept
-Harness Tasks; when the last one ends, a recycle that waited for an idle runtime runs.
+follows. Kept Detached Processes keep the agent awake next to kept Harness Tasks, but never
+hold back a harness recycle.
 With holds refused by the install, Harness Task reports are discarded, so none is listed,
 and nothing keeps the agent awake: a Detached Process row still says who decided, and
 `platform-keep` still records its mark, but neither holds the agent.

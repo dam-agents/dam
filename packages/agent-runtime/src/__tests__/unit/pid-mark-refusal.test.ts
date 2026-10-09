@@ -57,7 +57,6 @@ function judge(
       command: t.command,
       description: undefined,
     })),
-    skipTasks: new Set(),
   });
   const target = processes.find((p) => p.pid === targetPid)!;
   return pidMarkRefusal({

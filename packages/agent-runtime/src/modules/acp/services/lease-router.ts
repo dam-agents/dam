@@ -8,7 +8,10 @@ import {
 import type { ClientChannel } from "../infrastructure/client-channel.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
 import type { BackgroundWorkRegistry } from "./background-work-registry.js";
-import type { AcpRuntime } from "./acp-runtime/acp-runtime.js";
+import type {
+  AcpRuntime,
+  AcpRuntimeStatus,
+} from "./acp-runtime/acp-runtime.js";
 import { PIN_MODEL_METHOD } from "agent-runtime-api";
 import type { EnvChange } from "../../runtime-channel/drivers/env-plugin.js";
 
@@ -20,12 +23,21 @@ export interface LeasePair {
 
 export const PROVIDER_REMOVED_REASON = "provider-removed";
 
+export interface KeptProcesses {
+  count(): number;
+}
+
+export interface LeaseRouterStatus extends AcpRuntimeStatus {
+  keptProcesses: number;
+}
+
 export interface LeaseRouterDeps {
   defaultHarness: string;
   harnessKnown: (harness: string) => boolean;
   providers: () => string[];
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
+  keptProcesses: KeptProcesses;
   createRuntime: (
     pair: LeasePair,
     scoped: {
@@ -40,6 +52,7 @@ export interface LeaseRouterDeps {
 }
 
 export interface LeaseRouter extends AcpRuntime {
+  status(): LeaseRouterStatus;
   applyEnvChange(change: EnvChange): void;
   recycleHarness(harness: string): void;
   leases(): LeasePair[];
@@ -498,10 +511,11 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     status() {
       const all = [...leases.values()].map((l) => l.runtime.status());
+      const keptProcesses = deps.keptProcesses.count();
       return {
-        idle: all.every((s) => s.idle),
+        idle: keptProcesses === 0 && all.every((s) => s.idle),
         backgroundWork: deps.backgroundWork.held(),
-        keptProcesses: all.reduce((n, s) => n + s.keptProcesses, 0),
+        keptProcesses,
       };
     },
 

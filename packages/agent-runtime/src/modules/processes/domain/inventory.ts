@@ -1,5 +1,9 @@
 import type { FinishedRow, KeepSource, ProcessRow } from "agent-runtime-api";
-import { commandLabel, type ProcessTree } from "./classify.js";
+import {
+  commandLabel,
+  type ProcessTree,
+  type ReportedTask,
+} from "./classify.js";
 import type { KeepMark, KeepOverride, KeepResolution } from "./keep.js";
 import { CLK_TCK, procKey, type ScannedProcess } from "./snapshot.js";
 
@@ -36,7 +40,7 @@ export interface Inventory {
   running: ProcessRow[];
   tracked: TrackedRow[];
   finished: FinishedRow[];
-  exitedTasks: string[];
+  exitedTasks: ReportedTask[];
 }
 
 function cpuPercent(
@@ -99,7 +103,7 @@ export function assembleInventory(input: {
   const running: ProcessRow[] = [];
   const tracked: TrackedRow[] = [];
   const finished: FinishedRow[] = [];
-  const exitedTasks: string[] = [];
+  const exitedTasks: ReportedTask[] = [];
   const seen = new Set<string>();
 
   for (const tree of input.trees) {
@@ -111,7 +115,7 @@ export function assembleInventory(input: {
       before.procKey !== rootKey
     ) {
       finished.push(finishedFrom(before, now, "exit"));
-      exitedTasks.push(tree.identity);
+      if (tree.task) exitedTasks.push(tree.task);
       seen.add(tree.identity);
       continue;
     }

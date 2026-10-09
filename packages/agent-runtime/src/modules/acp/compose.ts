@@ -25,7 +25,6 @@ import {
 } from "./infrastructure/session-metadata-store.js";
 import {
   createAcpRuntime,
-  type KeptProcesses,
   type ReportableTurn,
 } from "./services/acp-runtime/acp-runtime.js";
 import { createOnceReporter } from "./services/once-reporter.js";
@@ -51,6 +50,7 @@ import {
 } from "./infrastructure/terminal-session-pins.js";
 import {
   createLeaseRouter,
+  type KeptProcesses,
   type LeaseRouter,
 } from "./services/lease-router.js";
 import { createDelegationFramesStore } from "./infrastructure/delegation-frames-store.js";
@@ -176,6 +176,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     providers: () => opts.envReader.providers(),
     sessionMetadata,
     backgroundWork,
+    keptProcesses: opts.keptProcesses,
     log: opts.log,
     createRuntime: (pair, scoped) => {
       const harness = opts.harnesses[pair.harness];
@@ -210,7 +211,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
           });
         },
         backgroundWork: scoped.backgroundWork,
-        ...(isDefault ? { keptProcesses: opts.keptProcesses } : {}),
         onHarnessExited: scoped.onHarnessExited,
         workingDir: opts.workingDir,
         sessionMetadata,

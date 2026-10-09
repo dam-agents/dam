@@ -38,7 +38,6 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
     status: () => ({
       idle: true,
       backgroundWork: [],
-      keptProcesses: 0,
     }),
     resetSession: () => {},
     markSessionCold: () => {},

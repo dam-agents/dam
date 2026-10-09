@@ -48,21 +48,18 @@ describe("acp-runtime: staying awake", () => {
     expect(world.runtime.status()).toEqual({
       idle: false,
       backgroundWork: [],
-      keptProcesses: 0,
     });
 
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
     expect(world.runtime.status()).toEqual({
       idle: false,
       backgroundWork: [],
-      keptProcesses: 0,
     });
 
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
     expect(world.runtime.status()).toEqual({
       idle: true,
       backgroundWork: [],
-      keptProcesses: 0,
     });
   });
 
@@ -89,7 +86,6 @@ describe("acp-runtime: staying awake", () => {
     expect(world.runtime.status()).toEqual({
       idle: false,
       backgroundWork: [],
-      keptProcesses: 0,
     });
     expect(world.harness().received("session/close")).toEqual([]);
 
@@ -102,7 +98,6 @@ describe("acp-runtime: staying awake", () => {
     expect(world.runtime.status()).toEqual({
       idle: true,
       backgroundWork: [],
-      keptProcesses: 0,
     });
   });
 
@@ -149,7 +144,6 @@ describe("acp-runtime: staying awake", () => {
           ],
         },
       ],
-      keptProcesses: 0,
     });
     expect(world.harness().received("session/close")).toEqual([]);
 
@@ -161,7 +155,6 @@ describe("acp-runtime: staying awake", () => {
     expect(world.runtime.status()).toEqual({
       idle: true,
       backgroundWork: [],
-      keptProcesses: 0,
     });
     vi.advanceTimersByTime(15_000);
     expect(
@@ -171,32 +164,6 @@ describe("acp-runtime: staying awake", () => {
         .map((frame) => frame.params),
     ).toEqual([{ sessionId: SESSION }]);
     expect(world.harness().killed()).toBe(false);
-  });
-
-  /**
-   * TEST_SCENARIO: A kept Detached Process runs outside the harness, so no session
-   * holds it. The runtime still counts it as busy, and the status says how
-   * many there are, so the UI can explain why an agent with no turn stays
-   * awake.
-   */
-  it("should stay busy and count kept Detached Processes in the status", () => {
-    let kept = 2;
-    const world = createWorld({
-      keptProcesses: { count: () => kept, onRelease: () => {} },
-    });
-
-    expect(world.runtime.status()).toEqual({
-      idle: false,
-      backgroundWork: [],
-      keptProcesses: 2,
-    });
-
-    kept = 0;
-    expect(world.runtime.status()).toEqual({
-      idle: true,
-      backgroundWork: [],
-      keptProcesses: 0,
-    });
   });
 
   /**
@@ -222,7 +189,6 @@ describe("acp-runtime: staying awake", () => {
     expect(world.runtime.status()).toEqual({
       idle: true,
       backgroundWork: [],
-      keptProcesses: 0,
     });
   });
 
@@ -257,7 +223,6 @@ describe("acp-runtime: staying awake", () => {
     expect(world.runtime.status()).toEqual({
       idle: true,
       backgroundWork: [],
-      keptProcesses: 0,
     });
   });
 });

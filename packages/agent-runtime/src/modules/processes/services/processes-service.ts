@@ -157,7 +157,6 @@ export function createProcessesService(
 ): ProcessesService & KeepMarkSink {
   let latest: Latest | null = null;
   let samples: CpuSample[] = [];
-  let exitedTasks = new Set<string>();
   let tracked: TrackedRow[] = [];
   const stopping = new Map<string, ReadonlySet<string>>();
   let inflight: Promise<void> | null = null;
@@ -241,14 +240,12 @@ export function createProcessesService(
     const doc = deps.document.read();
     const tasks = deps.reportedTasks();
     const reported = new Set(tasks.map(taskIdentity));
-    exitedTasks = new Set([...exitedTasks].filter((id) => reported.has(id)));
     const trees = withoutStopping(
       classifyProcesses({
         snapshot,
         runtimePid: deps.runtimePid,
         harnesses: deps.harnesses(),
         tasks,
-        skipTasks: exitedTasks,
       }),
       snapshot,
     );
@@ -270,7 +267,8 @@ export function createProcessesService(
       }),
     });
     recordSample(snapshot);
-    for (const id of inventory.exitedTasks) exitedTasks.add(id);
+    for (const task of inventory.exitedTasks)
+      deps.dropTask(task.sessionId, task.taskId);
     latest = { snapshot, trees, running: inventory.running };
     tracked = inventory.tracked;
 
