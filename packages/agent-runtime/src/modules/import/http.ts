@@ -1,7 +1,11 @@
-import { mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, rename, rm } from "node:fs/promises";
 import http from "node:http";
 import { join } from "node:path";
-import type { ImportBundleResult } from "agent-runtime-api";
+import {
+  IMPORT_REPLACE_HEADER,
+  type ImportBundleConflict,
+  type ImportBundleResult,
+} from "agent-runtime-api";
 import busboy from "busboy";
 
 import { IMPORT_STAGING_PREFIX } from "../../core/import-staging.js";
@@ -71,7 +75,11 @@ export function createImportHandlers(
     let sawFile = false;
     let finished = false;
 
-    const fail = async (status: number, message: string) => {
+    const fail = async (
+      status: number,
+      message: string,
+      extra?: Omit<ImportBundleConflict, "error">,
+    ) => {
       if (finished) return;
       finished = true;
       log(`fail ${status}: ${message}`);
@@ -81,7 +89,7 @@ export function createImportHandlers(
       try {
         if (!res.headersSent)
           res.writeHead(status, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: message }));
+        res.end(JSON.stringify({ error: message, ...extra }));
       } catch (e) {
         log(`fail: response write threw (${(e as Error).message})`);
       }
@@ -144,7 +152,22 @@ export function createImportHandlers(
         if (!staging) return fail(500, "internal: staging dir not initialized");
         log(`finalize start (dest=${workDir})`);
         await mkdir(workDir, { recursive: true });
-        for (const name of await readdir(staging)) {
+        const names = await readdir(staging);
+        if (req.headers[IMPORT_REPLACE_HEADER] !== "true") {
+          const exists = await Promise.all(
+            names.map((n) => lstat(join(workDir, n)).then(
+                () => true,
+                (e: NodeJS.ErrnoException) => e.code !== "ENOENT",
+              )),
+          );
+          const conflicts = names.filter((_, i) => exists[i]);
+          if (conflicts.length > 0) {
+            return fail(409, `already exists in work/: ${conflicts.join(", ")}`, {
+              conflicts,
+            });
+          }
+        }
+        for (const name of names) {
           await rm(join(workDir, name), { recursive: true, force: true });
           await rename(join(staging, name), join(workDir, name));
         }

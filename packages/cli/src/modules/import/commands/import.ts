@@ -1,4 +1,5 @@
 import { openAsBlob } from "node:fs";
+import { IMPORT_REPLACE_HEADER } from "agent-runtime-api";
 import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
@@ -165,7 +166,10 @@ async function uploadAndReport(args: {
       `${args.host}/api/agents/${encodeURIComponent(args.agentId)}/import`,
       {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          [IMPORT_REPLACE_HEADER]: "true",
+        },
         body: form,
       },
     );

@@ -4,7 +4,11 @@ import { getErrorMessage } from "../../../lib/errors.js";
 import { formatBytes } from "../../../lib/format-size.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
-import { type BundleEntry, importBundle } from "../api/import-bundle.js";
+import {
+  type BundleEntry,
+  importBundle,
+  ImportConflictError,
+} from "../api/import-bundle.js";
 import {
   MAX_UPLOAD_BYTES,
   useFileCreateMutation,
@@ -283,7 +287,20 @@ export function useFileMutations(agentId: string | null) {
     async (entries: BundleEntry[]) => {
       if (!agentId || entries.length === 0) return;
       try {
-        await trackImport(agentId, () => importBundle({ agentId, entries }));
+        try {
+          await trackImport(agentId, () => importBundle({ agentId, entries }));
+        } catch (err) {
+          if (!(err instanceof ImportConflictError)) throw err;
+          const names = err.conflicts.map((n) => `"${n}"`).join(", ");
+          const ok = await showConfirm(
+            `${names} already ${err.conflicts.length === 1 ? "exists" : "exist"}. Replace? The current contents will be deleted.`,
+            "Replace",
+          );
+          if (!ok) return;
+          await trackImport(agentId, () =>
+            importBundle({ agentId, entries, replace: true }),
+          );
+        }
         emitToast({
           kind: "success",
           message: `Imported ${entries.length} file${entries.length === 1 ? "" : "s"}`,
@@ -295,7 +312,7 @@ export function useFileMutations(agentId: string | null) {
         });
       }
     },
-    [agentId],
+    [agentId, showConfirm],
   );
 
   return {

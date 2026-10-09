@@ -74,12 +74,20 @@ export function useCreateAgent() {
       if (rawBundle != null) {
         importLabel = rawBundle.name;
         runImport = () =>
-          importRawBundle({ agentId: agent.id, bundle: rawBundle });
+          importRawBundle({
+            agentId: agent.id,
+            bundle: rawBundle,
+            replace: true,
+          });
       } else if (importEntries && importEntries.length > 0) {
         const count = importEntries.length;
         importLabel = `${count} file${count === 1 ? "" : "s"}`;
         runImport = () =>
-          importBundle({ agentId: agent.id, entries: importEntries });
+          importBundle({
+            agentId: agent.id,
+            entries: importEntries,
+            replace: true,
+          });
       }
 
       if (runImport) {

@@ -1,9 +1,14 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   buildBundle,
   type BundleEntry,
+  importBundle,
+  ImportConflictError,
 } from "../../modules/files/api/import-bundle.js";
+
+const authFetch = vi.hoisted(() => vi.fn<typeof fetch>());
+vi.mock("../../auth.js", () => ({ authFetch }));
 
 type ParsedEntry = { path: string; type: string; content: string };
 
@@ -108,5 +113,34 @@ describe("buildBundle", () => {
     const tar = await parseTar(await buildBundle(paths.map((p) => entry(p))));
 
     expect(tar.map((e) => e.path)).toEqual(paths);
+  });
+});
+
+describe("importBundle conflicts", () => {
+  // TEST_SCENARIO: The agent runtime refuses to replace existing top-level entries unless asked. The client turns that refusal into a typed error so the Files panel can ask the user, and sends the replace header only on the confirmed retry.
+  test("surfaces a refusal as ImportConflictError and opts in on replace", async () => {
+    authFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ error: "exists", conflicts: ["données"] }),
+        { status: 409 },
+      ),
+    );
+    const entries = [entry("données/new.txt")];
+    const refused = await importBundle({ agentId: "a", entries }).catch(
+      (e: unknown) => e,
+    );
+    expect(refused).toBeInstanceOf(ImportConflictError);
+    expect((refused as ImportConflictError).conflicts).toEqual(["données"]);
+    expect(
+      new Headers(authFetch.mock.calls[0][1]?.headers).has("x-import-replace"),
+    ).toBe(false);
+
+    authFetch.mockResolvedValueOnce(
+      Response.json({ filesWritten: 1, bytes: 3, durationMs: 1 }),
+    );
+    await importBundle({ agentId: "a", entries, replace: true });
+    expect(
+      new Headers(authFetch.mock.calls[1][1]?.headers).get("x-import-replace"),
+    ).toBe("true");
   });
 });

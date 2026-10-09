@@ -97,8 +97,15 @@ export {
   backgroundWorkReportSchema,
   type BackgroundWorkItem,
 } from "./modules/background-work/schemas.js";
-export { importBundleResultSchema } from "./modules/import/types.js";
-export type { ImportBundleResult } from "./modules/import/types.js";
+export {
+  IMPORT_REPLACE_HEADER,
+  importBundleConflictSchema,
+  importBundleResultSchema,
+} from "./modules/import/types.js";
+export type {
+  ImportBundleConflict,
+  ImportBundleResult,
+} from "./modules/import/types.js";
 export {
   contribution,
   contributionKind,
