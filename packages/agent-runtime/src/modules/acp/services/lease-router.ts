@@ -32,6 +32,7 @@ export interface LeaseRouterDeps {
       pair: () => LeasePair;
       backgroundWork: BackgroundWorkRegistry;
       onHarnessExited: () => void;
+      harnessSpawned: () => void;
     },
   ) => AcpRuntime;
   idleCheckMs?: number;
@@ -46,7 +47,7 @@ export interface LeaseRouter extends AcpRuntime {
 
 interface Lease {
   key: string;
-  serial: number;
+  process: number;
   pair: LeasePair;
   runtime: AcpRuntime;
   channels: Map<ClientChannel, VirtualChannel>;
@@ -95,7 +96,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   const leases = new Map<string, Lease>();
   const attachments = new Map<ClientChannel, Attachment>();
   const movedSessions = new Set<string>();
-  let nextLeaseSerial = 1;
+  let nextProcess = 1;
   let nextSwallowed = 1;
 
   const defaultPair = (): LeasePair => ({
@@ -147,10 +148,13 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         );
         drop(lease);
       },
+      harnessSpawned: () => {
+        lease.process = nextProcess++;
+      },
     });
     const lease: Lease = {
       key,
-      serial: nextLeaseSerial++,
+      process: nextProcess++,
       pair,
       runtime,
       channels: new Map(),
@@ -225,7 +229,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         if (line.includes('"method"') && line.includes('"id"')) {
           const frame = parseFrame(line);
           if (frame && isRequest(frame)) {
-            const routed = `${SWALLOWED_ID_PREFIX}in-${String(lease.serial)}-${JSON.stringify(frame.id)}`;
+            const routed = `${SWALLOWED_ID_PREFIX}in-${String(lease.process)}-${JSON.stringify(frame.id)}`;
             attachment.inbound.set(routed, { lease, id: frame.id });
             real.send(JSON.stringify({ ...frame, id: routed }));
             return;

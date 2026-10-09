@@ -61,6 +61,7 @@ function createLeaseWorld(opts: { providers: string[] }) {
         backgroundWork: scoped.backgroundWork,
         onHarnessExited: scoped.onHarnessExited,
         spawnAgent: () => {
+          scoped.harnessSpawned();
           const { harness, process } = createHarness();
           const spawnedAs = key(scoped.pair());
           const list = harnesses.get(spawnedAs) ?? [];
@@ -237,6 +238,31 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     expect(world.harness("claude-code/conn-a").answersTo(7)).toEqual([
       expect.objectContaining({ result: { outcome: "x" } }),
     ]);
+  });
+
+  /** TEST_SCENARIO: A recycle restarts the harness inside the same lease, and
+   * the new process counts its request ids from the start again. Its question
+   * must not reach the client under the id of one from the process before,
+   * which the platform could take for an approval it already recorded. */
+  it("never gives a restarted harness's question the id of an earlier one", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    startSession(world, client, "claude-code/conn-a", "s-a", 1, {});
+    world
+      .harness("claude-code/conn-a")
+      .emit(frames.requestPermission(7, "s-a"));
+    const [before] = client.saw("session/request_permission") as [Frame];
+    client.send({ jsonrpc: "2.0", id: before.id, result: { outcome: "x" } });
+
+    world.router.recycleHarness("claude-code");
+    const reconnected = world.connect();
+    startSession(world, reconnected, "claude-code/conn-a", "s-b", 1, {});
+    expect(world.harnessCount("claude-code/conn-a")).toBe(2);
+    world
+      .harness("claude-code/conn-a")
+      .emit(frames.requestPermission(7, "s-b"));
+    const [after] = reconnected.saw("session/request_permission") as [Frame];
+    expect(after.id).not.toEqual(before.id);
   });
 
   /** TEST_SCENARIO: Taking provider B away recycles B's process and leaves

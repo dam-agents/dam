@@ -194,15 +194,17 @@ export function composeAcp(opts: ComposeAcpOptions): {
         runResults,
         sessionMcpServers: (ref) => platformMcpEntry.sessionServers(ref),
         onReportableTurnEnded: (report) => reportTurn(report),
-        spawnAgent: () =>
-          createChildAgentProcess({
+        spawnAgent: () => {
+          scoped.harnessSpawned();
+          return createChildAgentProcess({
             command: opts.command,
             workingDir: opts.workingDir,
             env: leaseSpawnEnv(opts.envReader, {
               ...scoped.pair(),
               model: scoped.pair().model ?? seeded,
             }),
-          }),
+          });
+        },
         backgroundWork: scoped.backgroundWork,
         onHarnessExited: scoped.onHarnessExited,
         workingDir: opts.workingDir,
