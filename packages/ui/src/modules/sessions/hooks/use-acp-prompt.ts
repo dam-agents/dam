@@ -244,8 +244,24 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           "Not delivered — the agent never confirmed it received this message.",
         );
       };
+      const recoverDelivery = () => {
+        if (!reported) return;
+        reported = false;
+        forgetUndelivered(draftKey(selectedAgent, intendedSessionId), uId);
+        setMessages((p) => {
+          const at = p.findIndex((m) => m.id === uId && m.error);
+          if (at === -1 || p.some((m) => m.id === aId)) return p;
+          return [
+            ...p.slice(0, at),
+            { ...p[at]!, error: undefined },
+            aMsg,
+            ...p.slice(at + 1),
+          ];
+        });
+      };
       delivery.beginSend(promptId, failDelivery, {
         waking: agentRunState !== "running",
+        recover: recoverDelivery,
       });
 
       let started: StartedSession | null = null;
