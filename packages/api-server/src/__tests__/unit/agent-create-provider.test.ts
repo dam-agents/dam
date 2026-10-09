@@ -86,7 +86,10 @@ function setup(rows: Connection[] = [provider]) {
   const runtimeBump = vi.fn(async () => 1);
   const agents = createAgentsService({
     owner: "owner-1",
-    repo: unused<AgentsDeps["repo"]>({ create: persist }),
+    repo: unused<AgentsDeps["repo"]>({
+      list: async () => [],
+      create: persist,
+    }),
     agentEnvRepo: unused<AgentsDeps["agentEnvRepo"]>({ replace: writeEnv }),
     registrySecretPort: unused<AgentsDeps["registrySecretPort"]>({
       create: writeRegistry,
