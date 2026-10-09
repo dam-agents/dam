@@ -5002,7 +5002,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 teamId: target.teamId,
                 text,
                 ...persona,
-                blocks: [{ type: "markdown", text }, contextBlock],
+                blocks: renderAssistantBlocks(footer, text),
                 metadata: agentPostMetadata(fileIds),
                 ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
                 ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
