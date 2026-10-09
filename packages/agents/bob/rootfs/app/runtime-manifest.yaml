@@ -99,6 +99,8 @@ drivers:
       urlEnv:
         - BOB_GATEWAY_URL
         - BOB_DEFAULT_GATEWAY_URL
+      tokenEnv:
+        - BOBSHELL_API_KEY
       redirectEnv:
         - BOB_GATEWAY_URL
       pinEnv:

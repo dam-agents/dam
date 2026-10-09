@@ -120,6 +120,9 @@ drivers:
     modelDiscovery:
       urlEnv:
         - ANTHROPIC_BASE_URL
+      tokenEnv:
+        - ANTHROPIC_AUTH_TOKEN
+        - ANTHROPIC_API_KEY
       namePrefix: "claude/"
       lowercaseNames: true
       extendsCatalog: true
