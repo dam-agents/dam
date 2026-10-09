@@ -118,6 +118,14 @@ normal gateway restart. The race itself is not closed — deletion is not
 atomic with the roll — so the eviction, not the ordering, is what bounds
 the harm.
 
+A gateway that fails anyway — crash-looping, or wedged on a superseded
+configuration — leaves the agent pod ready, so the agent still reads as
+running and chat works while its egress is down. The agent view therefore
+carries the gateway's failure message apart from the agent's state, and
+the UI shows it as a warning next to that state. Only hard failures count:
+a gateway that is starting, rolling, hibernated or parked over budget
+shows no warning.
+
 A host's L7 chain can opt into HTTP/2 so credential injection also covers
 gRPC request streams (e.g. Modal); hosts default to HTTP/1.1 unchanged.
 

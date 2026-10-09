@@ -59,6 +59,7 @@ import {
   ContributionFailuresBadge,
 } from "../../agents/components/contribution-failures-badge.js";
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
+import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
 import { VmRuntimeBadge } from "../../agents/components/vm-runtime-badge.js";
@@ -1059,6 +1060,7 @@ function ChatHeaderStatus({
       <BackgroundWorkIndicator items={backgroundWork} />
       {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
+      {agent && <GatewayFailureBadge agent={agent} />}
       {!busy && agent && (
         <>
           <ContributionFailuresBadge failures={agentFailures(agent)} />
