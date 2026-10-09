@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   bobBalance,
   liteLlmBalance,
 } from "../../modules/connections/domain/provider-balance.js";
+import { createProviderBalanceSource } from "../../modules/connections/infrastructure/provider-balance-source.js";
 
 /**
  * TEST_OVERVIEW: the Providers page shows how much of a provider's budget the
@@ -63,4 +64,27 @@ describe("provider balance", () => {
       resetsAt: null,
     });
   });
+});
+
+describe("provider balance source", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([401, 403])(
+    "shows no balance when Bob refuses the key with %i",
+    async (status) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response("", { status })),
+      );
+
+      await expect(
+        createProviderBalanceSource().lookup(
+          { kind: "bob", pins: {} },
+          "sk-bob",
+        ),
+      ).resolves.toBeNull();
+    },
+  );
 });

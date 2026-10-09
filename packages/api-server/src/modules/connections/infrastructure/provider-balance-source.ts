@@ -70,11 +70,12 @@ export function createProviderBalanceSource(): ProviderBalanceSource {
         return liteLlmBalance(liteLlmKeyInfoSchema.parse(await json(url, res)));
       }
       const url = `https://${BOB_HOST}/admin/v1/profile`;
-      const body = await json(
-        url,
-        await get(url, { Authorization: `Apikey ${credential}` }),
+      const res = await get(url, { Authorization: `Apikey ${credential}` });
+      if (refused(url, res)) return null;
+      const balance = bobBalance(
+        bobProfileSchema.parse(await json(url, res)),
+        query.pins,
       );
-      const balance = bobBalance(bobProfileSchema.parse(body), query.pins);
       if (!balance) throw new Error("Bob profile has no matching team");
       return balance;
     },

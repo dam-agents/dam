@@ -407,6 +407,7 @@ export { connectionNameSchema } from "./modules/connections/schemas.js";
 export type {
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
+  ConnectionUpdateInput,
 } from "./modules/connections/schemas.js";
 
 export {
