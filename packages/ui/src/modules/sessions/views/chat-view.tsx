@@ -552,7 +552,7 @@ export function ChatView() {
   const surfaceCopy = {
     actionsAria: "Agent actions",
     configure: "Configure agent",
-    delete: "Delete Agent",
+    delete: "Delete agent",
     modelSubject: "agent",
     modelSettings: "Agent Setup",
   };
@@ -575,7 +575,7 @@ export function ChatView() {
     if (!selectedAgent) return;
     const ok = await showConfirm(
       "Delete this agent? This also deletes all persistent data and cannot be undone.",
-      "Delete Agent",
+      "Delete agent",
       { kind: "destructive" },
     );
     if (!ok) return;

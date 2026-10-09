@@ -72,7 +72,7 @@ export function StarterKitsView() {
   return (
     <div>
       <PageHeader
-        title="Starter Kits"
+        title="Starter kits"
         description="Each starter kit bundles a harness, skills, schedules, and connections into a ready-made agent configuration."
         actions={
           <Button variant="outline" onClick={() => setView("agent-new")}>

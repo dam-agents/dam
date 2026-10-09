@@ -25,7 +25,7 @@ export function useSandboxRowActions({
         be undone.
       </>
     );
-    if (!(await showConfirm(msg, "Delete Agent", { kind: "destructive" })))
+    if (!(await showConfirm(msg, "Delete agent", { kind: "destructive" })))
       return;
     deleteAgent.mutate({ id: agent.id });
   };

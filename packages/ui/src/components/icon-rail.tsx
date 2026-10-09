@@ -46,7 +46,7 @@ export function IconRail({
     navigate: () => setView("home"),
   };
   const starterKits: Destination = {
-    label: "Starter Kits",
+    label: "Starter kits",
     shortLabel: "Kits",
     icon: Box,
     active:
