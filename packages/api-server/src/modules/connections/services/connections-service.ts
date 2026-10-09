@@ -1120,12 +1120,15 @@ export function createConnectionsService(deps: {
         }
       }
       const effectiveInput = await applyFamilyCreds(template, input);
-      const built = await buildConnection(
-        template,
-        effectiveInput,
-        (purpose) => deps.secretStore.mintRef({ owner: deps.ownerId, purpose }),
-        deps.oauthCallbackUrl,
-        deps.brandName,
+      const built = await rejectIfInvalid(() =>
+        buildConnection(
+          template,
+          effectiveInput,
+          (purpose) =>
+            deps.secretStore.mintRef({ owner: deps.ownerId, purpose }),
+          deps.oauthCallbackUrl,
+          deps.brandName,
+        ),
       );
 
       const id = input.id ?? `conn-${randomBytes(6).toString("hex")}`;

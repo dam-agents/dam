@@ -404,6 +404,8 @@ export type {
 } from "./modules/connections/types.js";
 export { authConfig as connectionAuthConfigSchema } from "./modules/connections/types.js";
 export {
+  CONNECTION_ENV_NAME_HINT,
+  CONNECTION_ENV_NAME_RE,
   connectionCreateInputSchema,
   connectionHeaderNameSchema,
   connectionNameSchema,

@@ -120,6 +120,10 @@ export const connectionNameSchema = resourceNameSchema("my-mcp-server").refine(
   },
 );
 
+export const CONNECTION_ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+export const CONNECTION_ENV_NAME_HINT =
+  "env var name must be letters, digits, and underscores (not starting with a digit)";
+
 const commonFields = {
   templateId: z.string().min(1),
   name: connectionNameSchema,
@@ -143,10 +147,7 @@ const headerCreateInput = z.object({
   valueFormat: connectionValueFormatSchema.optional(),
   envName: z
     .string()
-    .regex(
-      /^[A-Za-z_][A-Za-z0-9_]*$/,
-      "env var name must be letters, digits, and underscores (not starting with a digit)",
-    )
+    .regex(CONNECTION_ENV_NAME_RE, CONNECTION_ENV_NAME_HINT)
     .optional(),
   configInputs: z.record(z.string(), z.string()).optional(),
   value: z.string().min(1),
@@ -176,10 +177,7 @@ const clientCredentialsCreateInput = z.object({
   valueFormat: connectionValueFormatSchema.optional(),
   envName: z
     .string()
-    .regex(
-      /^[A-Za-z_][A-Za-z0-9_]*$/,
-      "env var name must be letters, digits, and underscores (not starting with a digit)",
-    )
+    .regex(CONNECTION_ENV_NAME_RE, CONNECTION_ENV_NAME_HINT)
     .optional(),
 });
 

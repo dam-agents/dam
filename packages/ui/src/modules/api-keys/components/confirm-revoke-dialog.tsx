@@ -21,7 +21,7 @@ export function ConfirmRevokeDialog({
   pending,
 }: Props) {
   return (
-    <Modal>
+    <Modal onClose={pending ? undefined : onCancel}>
       <DialogHeader title="Revoke API key?" />
       <DialogBody>
         <p className="text-sm text-muted-foreground mb-2">

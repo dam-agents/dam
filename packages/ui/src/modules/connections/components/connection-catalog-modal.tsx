@@ -175,7 +175,11 @@ export function ConnectionCatalogModal({
   }
 
   return (
-    <Modal widthClass="w-[860px] max-w-full" heightClass="h-[85vh]">
+    <Modal
+      onClose={onClose}
+      widthClass="w-[860px] max-w-full"
+      heightClass="h-[85vh]"
+    >
       <DialogHeader
         title={title ?? "Connection catalogue"}
         subtitle={

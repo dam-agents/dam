@@ -68,7 +68,8 @@ export function SandboxHomeHeader({ agent, display, avatar }: Props) {
     );
     if (!(await showConfirm(msg, "Delete Agent", { kind: "destructive" })))
       return;
-    deleteAgent.mutate({ id: agent.id }, { onSuccess: () => setView("home") });
+    deleteAgent.mutate({ id: agent.id });
+    setView("home");
   };
 
   return (
