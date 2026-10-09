@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-07
+Last verified: 2026-10-09
 
 ## Overview
 
@@ -176,6 +176,13 @@ prefix and yields the same principal shape — sub, scopes, agent binding,
 optional key id. Keys cannot mint or revoke other keys: the management
 surface rejects any request authenticated via a key, so a leaked key
 cannot escalate.
+
+A key is checked when a request or connection opens, so every long-lived
+stream it opens — an HTTP subscription, the tRPC WebSocket, an agent
+relay — re-checks the key every few seconds and ends once the key is
+revoked or expired. The re-check is a poll rather than a reaction to the
+revoke, because revoke can land on another replica; the poll interval is
+the bound on how long a revoked key keeps a stream.
 
 ## Keycloak event logging
 

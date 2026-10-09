@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#MISE description="No image seeds the work directory: the default image ships every harness's working-dir, and a workspace seed refuses a non-empty work directory"
+#MISE sources=["*/rootfs/app/working-dir/**/*", ".mise/tasks/check/empty-work-seed"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+set -euo pipefail
+cd "$(dirname "$0")/../../.."
+shipped="$(find ./*/rootfs/app/working-dir/work -mindepth 1 2>/dev/null || true)"
+if [ -n "$shipped" ]; then
+  echo "empty-work-seed: these seed /home/agent/work, so a Starter Kit's workspace seed refuses to clone there:" >&2
+  echo "$shipped" >&2
+  echo "Ship them under the home (a harness's global config directory) instead." >&2
+  exit 1
+fi
+echo "empty-work-seed: ok"

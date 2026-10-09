@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-08
+Last verified: 2026-10-09
 
 ## Overview
 
@@ -45,7 +45,7 @@ Three display-axis attributes drive UI grouping. `category` and `isCustom` place
 
 Templates are registered in code; adding a new integration is one entry. Schemas validate user input; the template's `build()` function projects inputs into the concrete `auth` + `contributions[]` of the Connection record.
 
-Beyond the auth credential, a template may declare optional **config inputs** that the user fills at connect time; each filled input projects into an additional `env` contribution, validated against the input's spec.
+Beyond the auth credential, a template may declare optional **config inputs** that the user fills at connect time; each filled input projects into an additional `env` contribution, validated against the input's spec. They can change later without re-entering the credential, unless one also decides an egress host.
 
 #### Internal-only templates
 

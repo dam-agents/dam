@@ -31,7 +31,7 @@ export function ApiKeysList() {
   return (
     <div className="anim-in">
       <PageHeader
-        title="API Keys"
+        title="API keys"
         description="Long-lived tokens for headless / CI use. Pass the value as a bearer credential when calling the API. Plaintext is shown once on creation and never recoverable."
       />
 

@@ -43,6 +43,15 @@ function setup() {
   const agents = createAgentsService({
     owner: "owner-1",
     repo: unused<AgentsDeps["repo"]>({
+      list: async () => [],
+      get: async (id) =>
+        parseInfraAgent({
+          metadata: {
+            name: id,
+            labels: { "agent-platform.ai/owner": "owner-1" },
+          },
+          spec: { name: "test-agent", image: "example.com/agent:latest" },
+        }),
       create: persist,
       updateSpec: patchSpec,
     }),

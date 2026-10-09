@@ -201,9 +201,45 @@ function firstWallTimeAfter(
   return wall.toZonedDateTime(after.timeZoneId, { disambiguation: "later" });
 }
 
+const BY_RANGES: Record<string, [number, number]> = {
+  BYSECOND: [0, 59],
+  BYMINUTE: [0, 59],
+  BYHOUR: [0, 23],
+  BYMONTH: [1, 12],
+  BYMONTHDAY: [-31, 31],
+  BYYEARDAY: [-366, 366],
+  BYWEEKNO: [-53, 53],
+  BYSETPOS: [-366, 366],
+};
+
+function byPartProblem(rruleBody: string): string | null {
+  for (const part of rruleBody.split(";")) {
+    const [key = "", values = ""] = part
+      .trim()
+      .toUpperCase()
+      .replace(/^RRULE:/, "")
+      .split("=");
+    const range = BY_RANGES[key];
+    if (!range) continue;
+    const [min, max] = range;
+    const outside = values.split(",").some((raw) => {
+      const v = raw.trim();
+      const n = Number(v);
+      return (
+        !/^[+-]?\d+$/.test(v) || n < min || n > max || (min < 0 && n === 0)
+      );
+    });
+    if (outside)
+      return `${key} must be within ${min < 0 ? `±1 to ${max}` : `${min} to ${max}`}`;
+  }
+  return null;
+}
+
 export function rruleProblem(rruleBody: string): string | null {
   if (rruleBody.length > MAX_RRULE_LENGTH)
     return `an rrule longer than ${MAX_RRULE_LENGTH} characters is not supported`;
+  const byProblem = byPartProblem(rruleBody);
+  if (byProblem) return byProblem;
   const options = parseRRule(rruleBody).options();
   if (options.freq === "SECONDLY")
     return "FREQ=SECONDLY is not supported, schedules run at minute granularity";
@@ -212,6 +248,42 @@ export function rruleProblem(rruleBody: string): string | null {
   if ((options.interval ?? 1) > MAX_INTERVAL)
     return `INTERVAL above ${MAX_INTERVAL} is not supported`;
   return null;
+}
+
+export type RRuleNextFire =
+  | { kind: "next"; at: Temporal.ZonedDateTime }
+  | { kind: "stopped"; reason: string };
+
+export function rruleNextFire(
+  rruleBody: string,
+  timezone: string,
+  after: Temporal.Instant,
+  windows: QuietWindow[],
+): RRuleNextFire {
+  try {
+    const problem = rruleProblem(rruleBody);
+    if (problem) return { kind: "stopped", reason: problem };
+    const next = nextVisibleOccurrence(rruleBody, timezone, after, windows);
+    switch (next.kind) {
+      case "next":
+        return next;
+      case "exhausted":
+        return { kind: "stopped", reason: "it has no more occurrences" };
+      case "suppressed":
+        return {
+          kind: "stopped",
+          reason: "quiet hours cover every remaining occurrence",
+        };
+    }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      kind: "stopped",
+      reason: /^Maximum (iterations|candidate evaluations)/.test(message)
+        ? "it never fires"
+        : message,
+    };
+  }
 }
 
 export function hasVisibleOccurrence(

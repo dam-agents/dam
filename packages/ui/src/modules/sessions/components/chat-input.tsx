@@ -91,7 +91,12 @@ export function ChatInput({
           const base64 = dataUrl.split(",")[1];
           if (!base64) return;
           const attachment: Attachment = IMAGE_MIME.includes(file.type)
-            ? { kind: "image", data: base64, mimeType: file.type }
+            ? {
+                kind: "image",
+                data: base64,
+                mimeType: file.type,
+                name: file.name,
+              }
             : {
                 kind: "file",
                 name: file.name,
@@ -293,19 +298,20 @@ function AttachmentChip({
   attachment: Attachment;
   onRemove: () => void;
 }) {
+  const name = attachment.name ?? "pasted image";
   return (
     <div className="relative group">
       {attachment.kind === "image" ? (
         <img
           src={`data:${attachment.mimeType};base64,${attachment.data}`}
-          alt="attachment"
+          alt={name}
           className="h-14 w-14 rounded-md border border-border object-cover"
         />
       ) : (
         <div className="h-14 px-3 rounded-md border border-border bg-muted flex items-center gap-2">
           <Document size={14} className="text-muted-foreground shrink-0" />
           <span className="text-[11px] text-foreground/80 truncate max-w-[120px]">
-            {attachment.name}
+            {name}
           </span>
         </div>
       )}
@@ -313,7 +319,7 @@ function AttachmentChip({
         variant="destructive"
         size="icon"
         onClick={onRemove}
-        aria-label="Remove attachment"
+        aria-label={`Remove ${name}`}
         className={cn(
           "absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full",
           HOVER_ACTION,

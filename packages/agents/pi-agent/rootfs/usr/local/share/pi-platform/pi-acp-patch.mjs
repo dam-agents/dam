@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 
 const PATCHED_VERSION = "0.0.34";
-const UPSTREAM_ISSUE = "https://github.com/svkozak/pi-acp/issues/152";
+const UPSTREAM_ISSUES =
+  "https://github.com/svkozak/pi-acp/issues/152 and https://github.com/svkozak/pi-acp/issues/72";
 const HELPERS = `globalThis[Symbol.for("platform.pi-acp-patch")]`;
 
 function dropOwnImport() {
@@ -77,6 +78,11 @@ const edits = [
       "  }\n",
     count: 1,
   },
+  {
+    find: "    const updateNotice = buildUpdateNotice();\n",
+    replace: "    const updateNotice = null;\n",
+    count: 1,
+  },
 ];
 
 function patched(url, loaded) {
@@ -110,7 +116,7 @@ registerHooks({
     }
     if (typeof result === "object") return result;
     process.stderr.write(
-      `pi-acp-patch: not applied: ${result}; drop the patch once ${UPSTREAM_ISSUE} is fixed\n`,
+      `pi-acp-patch: not applied: ${result}; drop the patch once ${UPSTREAM_ISSUES} are fixed\n`,
     );
     return loaded;
   },

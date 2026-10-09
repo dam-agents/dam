@@ -22,6 +22,7 @@ import {
   AgentAvatar,
   avatarMood,
 } from "../../agents/components/avatar/agent-avatar.js";
+import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { FreeUpComputeItems } from "../../agents/components/power-menu-items.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
 import { useConfirmStopAgent } from "../../agents/hooks/use-confirm-stop-agent.js";
@@ -89,6 +90,7 @@ export function SandboxHomeHeader({ agent, display, avatar }: Props) {
       adornment={
         <>
           <StatusBadge state={display.state} working={working} />
+          <GatewayFailureBadge agent={agent} />
           {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
         </>
       }

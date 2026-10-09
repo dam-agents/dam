@@ -103,6 +103,35 @@ describe("prompt delivery", () => {
     expect(fail).toHaveBeenCalledOnce();
   });
 
+  // TEST_SCENARIO: the browser lost the network for longer than the bounded wait, so the send was failed as undelivered, but the socket held the prompt and delivered it once the network came back. The acceptance that then arrives proves delivery, so the failure is reversed; without the reversal the prompt keeps its undelivered mark and a retry runs it twice.
+  test("an acceptance after the send was failed reverses the failure", () => {
+    const delivery = createPromptDelivery();
+    const fail = vi.fn();
+    const recover = vi.fn();
+    const onFrame = withDeliveryTracking(delivery, dropEverything);
+
+    delivery.beginSend(PROMPT, fail, { recover });
+    vi.advanceTimersByTime(DELIVERY_TIMEOUT_MS);
+    expect(fail).toHaveBeenCalledOnce();
+
+    onFrame(accepted(), SESSION);
+    onFrame(started, SESSION);
+    expect(recover).toHaveBeenCalledOnce();
+  });
+
+  // TEST_SCENARIO: an acceptance within the bounded wait has nothing to reverse.
+  test("an acceptance in time does not reverse anything", () => {
+    const delivery = createPromptDelivery();
+    const recover = vi.fn();
+    const onFrame = withDeliveryTracking(delivery, dropEverything);
+
+    delivery.beginSend(PROMPT, vi.fn(), { recover });
+    onFrame(accepted(), SESSION);
+    vi.advanceTimersByTime(DELIVERY_TIMEOUT_MS * 2);
+
+    expect(recover).not.toHaveBeenCalled();
+  });
+
   // TEST_SCENARIO: a prompt queued behind a running turn is accepted with queued set. Waiting is unbounded, so the send is never failed for waiting, however long the turn ahead of it runs.
   test("a queued prompt is never failed for waiting", () => {
     const delivery = createPromptDelivery();

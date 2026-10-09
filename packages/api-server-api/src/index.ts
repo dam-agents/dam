@@ -86,6 +86,7 @@ export {
   AGENT_ID_RE,
   agentCreateInputSchema,
   agentKindSchema,
+  agentUpdateInputSchema,
 } from "./modules/agents/schemas.js";
 export type {
   AgentSetup,
@@ -257,8 +258,7 @@ export {
   detectPreset,
   detectTimezone,
   hasVisibleOccurrence,
-  nextVisibleOccurrence,
-  rruleProblem,
+  rruleNextFire,
   rruleToText,
 } from "./modules/schedules/rrule.js";
 export type {
@@ -406,11 +406,14 @@ export { authConfig as connectionAuthConfigSchema } from "./modules/connections/
 export {
   CONNECTION_ENV_NAME_HINT,
   CONNECTION_ENV_NAME_RE,
+  connectionCreateInputSchema,
+  connectionHeaderNameSchema,
   connectionNameSchema,
 } from "./modules/connections/schemas.js";
 export type {
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
+  ConnectionUpdateInput,
 } from "./modules/connections/schemas.js";
 
 export {

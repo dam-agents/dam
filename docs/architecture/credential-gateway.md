@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-10-07
+Last verified: 2026-10-09
 
 ## Overview
 
@@ -94,6 +94,14 @@ chain (logged as a warning) rather than emit an unbootable bootstrap.
 Requests to the host then go out uncredentialed — failing upstream auth
 for that host only — instead of crash-looping the whole gateway. Stale
 Secrets written by since-replaced code paths are the known trigger.
+The same render-time check covers the two connection inputs Envoy itself
+validates. A host that is not a DNS name or a leading `*.` wildcard (a
+bare `*`, a partial wildcard, a space) gets no chain at all, since Envoy
+rejects it as a server name. A header name that is not an RFC 7230 token
+degrades its host to allow-only. Both are logged as warnings. The
+Connections API refuses these inputs, and a value format without
+`{value}`, at create time; the render-time check covers Secrets that
+got past it.
 
 That check covers a credential already known to be bad when the gateway is
 rendered. A credential can also be revoked *after* it — disconnecting a
@@ -109,6 +117,14 @@ a failure being repaired rather than a slow start. Recovery costs a
 normal gateway restart. The race itself is not closed — deletion is not
 atomic with the roll — so the eviction, not the ordering, is what bounds
 the harm.
+
+A gateway that fails anyway — crash-looping, or wedged on a superseded
+configuration — leaves the agent pod ready, so the agent still reads as
+running and chat works while its egress is down. The agent view therefore
+carries the gateway's failure message apart from the agent's state, and
+the UI shows it as a warning next to that state. Only hard failures count:
+a gateway that is starting, rolling, hibernated or parked over budget
+shows no warning.
 
 A host's L7 chain can opt into HTTP/2 so credential injection also covers
 gRPC request streams (e.g. Modal); hosts default to HTTP/1.1 unchanged.

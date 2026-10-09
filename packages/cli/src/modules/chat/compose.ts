@@ -15,6 +15,23 @@ import { createSessionsPort } from "./services/sessions-service.js";
 export const buildSessionsPort = (host: string, token: string) =>
   createSessionsPort({ acp: createAcpSessionClient({ host, token }) });
 
+export function askModeSwitch(
+  input: NodeJS.ReadableStream,
+  output: NodeJS.WritableStream,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input, output });
+    output.write(
+      "Switch session mode\nSwitch this session to terminal mode? Files and history are preserved,\nbut any running tasks will be cancelled.\n",
+    );
+    rl.on("close", () => resolve(false));
+    rl.question("[y/N] ", (answer) => {
+      resolve(answer.trim().toLowerCase() === "y");
+      rl.close();
+    });
+  });
+}
+
 export function composeChatModule({
   compatService,
   configService,
@@ -32,20 +49,7 @@ export function composeChatModule({
     tokenProvider,
     createAgentService,
     createSessionsPort: buildSessionsPort,
-    confirmModeSwitch: () =>
-      new Promise((resolve) => {
-        const rl = createInterface({
-          input: process.stdin,
-          output: process.stderr,
-        });
-        process.stderr.write(
-          "Switch session mode\nSwitch this session to terminal mode? Files and history are preserved,\nbut any running tasks will be cancelled.\n",
-        );
-        rl.question("[y/N] ", (answer) => {
-          rl.close();
-          resolve(answer.trim().toLowerCase() === "y");
-        });
-      }),
+    confirmModeSwitch: () => askModeSwitch(process.stdin, process.stderr),
     isTty: Boolean(process.stdin.isTTY),
   });
 
