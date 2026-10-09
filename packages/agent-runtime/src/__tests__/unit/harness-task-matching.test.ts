@@ -1,9 +1,6 @@
 import { describe, it, expect } from "vitest";
-import {
-  classifyProcesses,
-  type ReportedTask,
-  type RunningHarness,
-} from "../../modules/processes/domain/classify.js";
+import type { ReportedTask, RunningHarness } from "../../modules/acp/index.js";
+import { classifyProcesses } from "../../modules/processes/domain/classify.js";
 import type { ScannedProcess } from "../../modules/processes/domain/snapshot.js";
 
 const RUNTIME = 8;

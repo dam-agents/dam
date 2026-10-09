@@ -1,9 +1,6 @@
 import type { FinishedRow, KeepSource, ProcessRow } from "agent-runtime-api";
-import {
-  commandLabel,
-  type ProcessTree,
-  type ReportedTask,
-} from "./classify.js";
+import type { ReportedTask } from "../../acp/index.js";
+import { commandLabel, type ProcessTree } from "./classify.js";
 import type { KeepMark, KeepOverride, KeepResolution } from "./keep.js";
 import { CLK_TCK, procKey, type ScannedProcess } from "./snapshot.js";
 

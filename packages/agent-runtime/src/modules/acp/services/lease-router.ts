@@ -14,6 +14,7 @@ import type {
 } from "./acp-runtime/acp-runtime.js";
 import { PIN_MODEL_METHOD } from "agent-runtime-api";
 import type { EnvChange } from "../../runtime-channel/drivers/env-plugin.js";
+import type { KeepPolicy } from "../../processes/index.js";
 
 export interface LeasePair {
   harness: string;
@@ -22,10 +23,6 @@ export interface LeasePair {
 }
 
 export const PROVIDER_REMOVED_REASON = "provider-removed";
-
-export interface KeptProcesses {
-  count(): number;
-}
 
 export interface LeaseRouterStatus extends AcpRuntimeStatus {
   keptProcesses: number;
@@ -37,7 +34,7 @@ export interface LeaseRouterDeps {
   providers: () => string[];
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
-  keptProcesses: KeptProcesses;
+  keepPolicy: Pick<KeepPolicy, "keptProcessCount">;
   createRuntime: (
     pair: LeasePair,
     scoped: {
@@ -64,7 +61,6 @@ interface Lease {
   pair: LeasePair;
   runtime: AcpRuntime;
   channels: Map<ClientChannel, VirtualChannel>;
-  releaseListeners: (() => void)[];
 }
 
 interface VirtualChannel extends ClientChannel {
@@ -123,10 +119,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     return keyOf(pairOfSession(sessionId, false)) === lease.key;
   }
 
-  function scopedBackgroundWork(
-    lease: () => Lease,
-    releaseListeners: (() => void)[],
-  ): BackgroundWorkRegistry {
+  function scopedBackgroundWork(lease: () => Lease): BackgroundWorkRegistry {
     const shared = deps.backgroundWork;
     const owned = (): string[] =>
       shared
@@ -141,12 +134,10 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       reported: () =>
         shared.reported().filter((h) => ownsSession(lease(), h.sessionId)),
       drop: (sid, itemId) => shared.drop(sid, itemId),
-      keepChanged: () => shared.keepChanged(),
       forget: (sid) => shared.forget(sid),
       clear: () => {
         for (const sid of owned()) shared.forget(sid);
       },
-      onRelease: (cb) => releaseListeners.push(cb),
       onChange: (cb) => shared.onChange(cb),
     };
   }
@@ -156,10 +147,9 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     const existing = leases.get(key);
     if (existing) return existing;
     let self: Lease | null = null;
-    const releaseListeners: (() => void)[] = [];
     const runtime = deps.createRuntime(pair, {
       pair: () => lease.pair,
-      backgroundWork: scopedBackgroundWork(() => self!, releaseListeners),
+      backgroundWork: scopedBackgroundWork(() => self!),
       onHarnessExited: () => {
         if (lease.key === keyOf(defaultPair())) return;
         deps.log(
@@ -177,7 +167,6 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       pair,
       runtime,
       channels: new Map(),
-      releaseListeners,
     };
     self = lease;
     leases.set(key, lease);
@@ -456,11 +445,6 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     }
   }
 
-  deps.backgroundWork.onRelease(() => {
-    for (const lease of leases.values())
-      for (const cb of lease.releaseListeners) cb();
-  });
-
   const idleTimer = setInterval(
     idleOut,
     deps.idleCheckMs ?? DEFAULT_IDLE_CHECK_MS,
@@ -511,7 +495,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     status() {
       const all = [...leases.values()].map((l) => l.runtime.status());
-      const keptProcesses = deps.keptProcesses.count();
+      const keptProcesses = deps.keepPolicy.keptProcessCount();
       return {
         idle: keptProcesses === 0 && all.every((s) => s.idle),
         backgroundWork: deps.backgroundWork.held(),

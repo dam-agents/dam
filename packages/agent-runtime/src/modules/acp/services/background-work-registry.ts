@@ -1,4 +1,5 @@
 import type { BackgroundWorkItem } from "agent-runtime-api";
+import type { KeepPolicy } from "../../processes/index.js";
 
 export interface HeldSession {
   sessionId: string;
@@ -11,16 +12,14 @@ export interface BackgroundWorkRegistry {
   held(): HeldSession[];
   reported(): HeldSession[];
   drop(sessionId: string, itemId: string): void;
-  keepChanged(): void;
   forget(sessionId: string): void;
   clear(): void;
-  onRelease(cb: () => void): void;
   onChange(cb: () => void): void;
 }
 
 export interface BackgroundWorkRegistryDeps {
   enabled?: boolean;
-  isKept?: (sessionId: string, item: BackgroundWorkItem) => boolean;
+  keepPolicy: Pick<KeepPolicy, "isKeptTask" | "onChange">;
   log?: (msg: string) => void;
 }
 
@@ -29,27 +28,25 @@ export interface BackgroundWorkRegistryDeps {
  * for two separate jobs. Every reported item holds its session open, because
  * the harness kills a closed session's tasks. Only items that are kept make
  * the runtime busy, so the user can stop a task from keeping the agent awake
- * without killing it. A task the user stopped is dropped and ignored in later
- * reports until a report leaves it out, so a stale report cannot bring it back.
+ * without killing it. Which items are kept comes from the processes module's
+ * keep policy. A task that was stopped, or whose process is gone, is dropped
+ * and ignored in later reports until a report leaves it out, so a stale report
+ * cannot bring it back. One change signal covers a changed report, a drop, and
+ * a changed keep decision; listeners read again.
  */
 export function createBackgroundWorkRegistry(
-  deps: BackgroundWorkRegistryDeps = {},
+  deps: BackgroundWorkRegistryDeps,
 ): BackgroundWorkRegistry {
   const enabled = deps.enabled ?? true;
-  const isKept = deps.isKept ?? (() => true);
 
   const holds = new Map<string, BackgroundWorkItem[]>();
   const dropped = new Map<string, Set<string>>();
 
-  const releaseListeners: (() => void)[] = [];
   const changeListeners: (() => void)[] = [];
   function notifyChange(): void {
     for (const cb of changeListeners) cb();
   }
-  function notifyRelease(): void {
-    notifyChange();
-    for (const cb of releaseListeners) cb();
-  }
+  deps.keepPolicy.onChange(notifyChange);
 
   function sameItems(
     a: BackgroundWorkItem[],
@@ -80,7 +77,9 @@ export function createBackgroundWorkRegistry(
   function keptSessions(): HeldSession[] {
     const out: HeldSession[] = [];
     for (const [sessionId, items] of holds) {
-      const kept = items.filter((item) => isKept(sessionId, item));
+      const kept = items.filter((item) =>
+        deps.keepPolicy.isKeptTask(sessionId, item.id),
+      );
       if (kept.length > 0) out.push({ sessionId, items: kept });
     }
     return out;
@@ -89,7 +88,7 @@ export function createBackgroundWorkRegistry(
   function release(sessionId: string, reason: string): void {
     holds.delete(sessionId);
     deps.log?.(`background work in session ${sessionId} is ${reason}`);
-    notifyRelease();
+    notifyChange();
   }
 
   return {
@@ -138,27 +137,19 @@ export function createBackgroundWorkRegistry(
         return;
       }
       holds.set(sessionId, rest);
-      notifyRelease();
-    },
-
-    keepChanged() {
-      notifyRelease();
+      notifyChange();
     },
 
     forget(sessionId) {
       dropped.delete(sessionId);
-      if (holds.delete(sessionId)) notifyRelease();
+      if (holds.delete(sessionId)) notifyChange();
     },
 
     clear() {
       dropped.clear();
       if (holds.size === 0) return;
       holds.clear();
-      notifyRelease();
-    },
-
-    onRelease(cb) {
-      releaseListeners.push(cb);
+      notifyChange();
     },
 
     onChange(cb) {

@@ -1,6 +1,11 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
-import { createWorld, frames, IDLE_REAP_DELAY_MS } from "./acp-world.js";
+import {
+  createWorld,
+  frames,
+  IDLE_REAP_DELAY_MS,
+  keepsEveryTask,
+} from "./acp-world.js";
 
 /**
  * TEST_OVERVIEW: staying awake.
@@ -114,7 +119,9 @@ describe("acp-runtime: staying awake", () => {
    */
   it("should hold the pod awake and the session open for background work, and release both when it ends", () => {
     vi.useFakeTimers();
-    const backgroundWork = createBackgroundWorkRegistry();
+    const backgroundWork = createBackgroundWorkRegistry({
+      keepPolicy: keepsEveryTask,
+    });
     const world = createWorld({
       backgroundWork,
       backgroundWorkRecheckMs: 15_000,
@@ -173,7 +180,9 @@ describe("acp-runtime: staying awake", () => {
    * forever, with a status naming a job that no longer exists.
    */
   it("should drop every background hold when the harness dies", async () => {
-    const backgroundWork = createBackgroundWorkRegistry();
+    const backgroundWork = createBackgroundWorkRegistry({
+      keepPolicy: keepsEveryTask,
+    });
     const world = createWorld({ backgroundWork });
 
     const alice = world.connect();
@@ -200,7 +209,9 @@ describe("acp-runtime: staying awake", () => {
    * instead of keeping an empty pod awake for a dead job.
    */
   it("should let a session reset take its background hold down with it", () => {
-    const backgroundWork = createBackgroundWorkRegistry();
+    const backgroundWork = createBackgroundWorkRegistry({
+      keepPolicy: keepsEveryTask,
+    });
     const world = createWorld({ backgroundWork });
 
     const alice = world.connect();

@@ -133,7 +133,7 @@ export interface AcpRuntimeDeps {
   historyProvider?: HistoryProvider;
   terminalSessionPins?: () => PlatformSessionOf;
   sessionMetadata?: SessionMetadataStore;
-  backgroundWork?: BackgroundWorkRegistry;
+  backgroundWork: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
   queueParkMs?: number;
   undeliveredPrompts: UndeliveredPromptStore;
@@ -544,7 +544,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sessionResumeSupported = false;
     initializeAnswer = null;
     initializeWaiters = null;
-    deps.backgroundWork?.clear();
+    deps.backgroundWork.clear();
     if (reason === "agent-exited") deps.onHarnessExited?.();
   }
 
@@ -552,16 +552,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return (
       `${promptScheduler.activeTurnCount()} turn(s), ` +
       `${pendingRequests.size()} pending request(s), ` +
-      `${deps.backgroundWork?.held().length ?? 0} background hold(s)`
+      `${deps.backgroundWork.held().length} background hold(s)`
     );
   }
 
-  function taskCount(sessions: HeldSession[] = []): number {
+  function taskCount(sessions: HeldSession[]): number {
     return sessions.reduce((n, held) => n + held.items.length, 0);
   }
 
   function keptTaskCount(): number {
-    return taskCount(deps.backgroundWork?.held());
+    return taskCount(deps.backgroundWork.held());
   }
 
   const pendingRestartListeners: (() => void)[] = [];
@@ -576,7 +576,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       since: new Date(pending.since).toISOString(),
       blockingTasks,
       stops: {
-        tasks: taskCount(deps.backgroundWork?.reported()),
+        tasks: taskCount(deps.backgroundWork.reported()),
         turns: promptScheduler.activeTurnCount(),
       },
     };
@@ -698,10 +698,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   function runtimeBusy(): boolean {
     if (promptScheduler.anyWork() || pendingRequests.any()) return true;
-    return (deps.backgroundWork?.held().length ?? 0) > 0;
+    return deps.backgroundWork.held().length > 0;
   }
 
-  deps.backgroundWork?.onChange(() => {
+  deps.backgroundWork.onChange(() => {
     checkPendingRestart();
     lease.maybeRecycle();
   });
@@ -748,7 +748,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     promptScheduler.forget(sessionId);
     runTextBuffers.delete(sessionId);
     pendingRequests.forget(sessionId);
-    deps.backgroundWork?.forget(sessionId);
+    deps.backgroundWork.forget(sessionId);
     lease.maybeRecycle();
     const reap = idleReapTimers.get(sessionId);
     if (reap) {
@@ -764,7 +764,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (promptScheduler.hasWork(sessionId)) return;
     if (bootstrap.has(sessionId)) return;
     if (pendingRequests.hasFor(sessionId)) return;
-    if (deps.backgroundWork?.hasWork(sessionId)) {
+    if (deps.backgroundWork.hasWork(sessionId)) {
       idleReapTimers.set(
         sessionId,
         setTimeout(
@@ -1301,7 +1301,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     status() {
       return {
         idle: !runtimeBusy(),
-        backgroundWork: deps.backgroundWork?.held() ?? [],
+        backgroundWork: deps.backgroundWork.held(),
       };
     },
 

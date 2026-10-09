@@ -1,17 +1,6 @@
 import type { ProcessKind } from "agent-runtime-api";
+import type { ReportedTask, RunningHarness } from "../../acp/index.js";
 import { procKey, type ProcSnapshot, type ScannedProcess } from "./snapshot.js";
-
-export interface ReportedTask {
-  sessionId: string;
-  taskId: string;
-  command: string | undefined;
-  description: string | undefined;
-}
-
-export interface RunningHarness {
-  pid: number;
-  turnSince: number | null;
-}
 
 export interface ClassifyInput {
   snapshot: ProcSnapshot;

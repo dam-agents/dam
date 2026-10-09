@@ -1,11 +1,11 @@
-import type { PendingRestart, ProcessesService } from "agent-runtime-api";
+import type { ProcessesService } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
-import type { ReportedTask, RunningHarness } from "./domain/classify.js";
+import type { HarnessWork } from "../acp/index.js";
 import { createOutputReader } from "./infrastructure/output-file.js";
 import { createProcessTable } from "./infrastructure/proc-scan.js";
 import { openProcessesDocument } from "./infrastructure/processes-document.js";
 import { createProcessSignals } from "./infrastructure/signals.js";
-import { createKeepState, type KeptProcesses } from "./services/keep-state.js";
+import { createKeepState, type KeepPolicy } from "./services/keep-state.js";
 import {
   createProcessesService,
   type KeepMarkSink,
@@ -14,20 +14,12 @@ import {
 export interface StartProcessesOptions {
   backgroundWorkHolds: boolean;
   runtimePid: number;
-  harnesses: () => RunningHarness[];
-  reportedTasks: () => ReportedTask[];
-  onTasksChanged: (cb: () => void) => void;
-  onTaskKeepChanged: () => void;
-  dropTask: (sessionId: string, taskId: string) => void;
-  pendingRestart: () => PendingRestart | null;
-  applyPendingRestart: () => boolean;
-  onPendingRestartChange: (cb: () => void) => void;
+  harnessWork: HarnessWork;
   log: (msg: string) => void;
 }
 
 export interface PreparedProcesses {
-  isKeptTask: (sessionId: string, taskId: string) => boolean;
-  keptProcesses: KeptProcesses;
+  keepPolicy: KeepPolicy;
   start(opts: StartProcessesOptions): {
     service: ProcessesService;
     keepMarks: KeepMarkSink;
@@ -40,8 +32,7 @@ export function prepareProcesses(
   const document = openProcessesDocument(stateBackend);
   const keep = createKeepState(document);
   return {
-    isKeptTask: keep.isKeptTask,
-    keptProcesses: keep.keptProcesses,
+    keepPolicy: keep,
     start(opts) {
       const service = createProcessesService({
         ...opts,

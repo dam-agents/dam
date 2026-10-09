@@ -38,7 +38,10 @@ describe("acp-runtime: pending restart", () => {
   it("should report what a restart now stops while a kept task holds it back", () => {
     vi.useFakeTimers();
     const backgroundWork = createBackgroundWorkRegistry({
-      isKept: (_sessionId, item) => item.id === devServer.id,
+      keepPolicy: {
+        isKeptTask: (_sessionId, taskId) => taskId === devServer.id,
+        onChange: () => {},
+      },
     });
     const world = createWorld({ backgroundWork, envForceRecycleMs: GRACE_MS });
     let notices = 0;

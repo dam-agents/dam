@@ -214,6 +214,7 @@ const {
   triggerDriver,
   sessionMetadata,
   backgroundWork,
+  harnessWork,
   sessions: sessionsService,
   sessionChanges,
   activeTurns,
@@ -246,8 +247,7 @@ const {
   ),
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
-  isKeptTask: processes.isKeptTask,
-  keptProcesses: processes.keptProcesses,
+  keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
   beforeSpawn: () => {
     if (seedHarnessModel) return seedHarnessModel();
@@ -263,22 +263,7 @@ const {
 const { service: processesService, keepMarks } = processes.start({
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   runtimePid: process.pid,
-  harnesses: () => acpRuntime.harnesses(),
-  reportedTasks: () =>
-    backgroundWork.reported().flatMap(({ sessionId, items }) =>
-      items.map((item) => ({
-        sessionId,
-        taskId: item.id,
-        command: item.command,
-        description: item.description,
-      })),
-    ),
-  onTasksChanged: (cb) => backgroundWork.onChange(cb),
-  onTaskKeepChanged: () => backgroundWork.keepChanged(),
-  dropTask: (sessionId, taskId) => backgroundWork.drop(sessionId, taskId),
-  pendingRestart: () => acpRuntime.pendingRestart(),
-  applyPendingRestart: () => acpRuntime.applyPendingRestart(),
-  onPendingRestartChange: (cb) => acpRuntime.onPendingRestartChange(cb),
+  harnessWork,
   log: (msg) => process.stderr.write(`[processes] ${msg}\n`),
 });
 

@@ -8,6 +8,7 @@ import {
   createSessionMetadata,
   frames,
   memoryDocumentBackend,
+  keepsEveryTask,
   promptTextsOf,
   type Frame,
   type Harness,
@@ -42,14 +43,16 @@ function createLeaseWorld(opts: { providers: string[] }) {
   const harnesses = new Map<string, Harness[]>();
   const key = (pair: LeasePair): string =>
     `${pair.harness}/${pair.provider ?? "-"}${pair.model ? `/${pair.model}` : ""}`;
-  const backgroundWork = createBackgroundWorkRegistry();
+  const backgroundWork = createBackgroundWorkRegistry({
+    keepPolicy: keepsEveryTask,
+  });
   const router = createLeaseRouter({
     defaultHarness: "claude-code",
     harnessKnown: (h) => ["claude-code", "codex"].includes(h),
     providers: () => providers,
     sessionMetadata: metadata.store,
     backgroundWork,
-    keptProcesses: { count: () => keptProcesses },
+    keepPolicy: { keptProcessCount: () => keptProcesses },
     idleCheckMs: IDLE_CHECK_MS,
     log: () => {},
     createRuntime: (pair, scoped) =>

@@ -4,7 +4,6 @@ import {
   PROCESS_OUTPUT_MAX_BYTES,
   type FinishedRow,
   type KeepMarkRequest,
-  type PendingRestart,
   type ProcessesService,
   type ProcessNotice,
   type ProcessRow,
@@ -12,13 +11,12 @@ import {
 } from "agent-runtime-api";
 import type { DocumentStore } from "../../../core/document-store.js";
 import { noticeStream } from "../../../core/notice-stream.js";
+import type { HarnessWork } from "../../acp/index.js";
 import {
   classifyProcesses,
   platformOwnPids,
   taskIdentity,
   type ProcessTree,
-  type ReportedTask,
-  type RunningHarness,
 } from "../domain/classify.js";
 import {
   assembleInventory,
@@ -79,14 +77,7 @@ export interface ProcessesServiceDeps {
   keep: KeepState;
   backgroundWorkHolds: boolean;
   runtimePid: number;
-  harnesses: () => RunningHarness[];
-  reportedTasks: () => ReportedTask[];
-  onTasksChanged: (cb: () => void) => void;
-  onTaskKeepChanged: () => void;
-  dropTask: (sessionId: string, taskId: string) => void;
-  pendingRestart: () => PendingRestart | null;
-  applyPendingRestart: () => boolean;
-  onPendingRestartChange: (cb: () => void) => void;
+  harnessWork: HarnessWork;
   log: (msg: string) => void;
 }
 
@@ -136,8 +127,8 @@ function withDescendants(
  * panel, and the keep decisions on it. It scans the process table every few
  * seconds while someone watches, every 15 seconds while a Keep Mark or a kept
  * Detached Process is alive, every half minute otherwise, on demand when a
- * read finds the last scan stale, and whenever the harness reports a change to
- * its Harness Tasks. Each scan is diffed with the last: Harness Tasks and
+ * read finds the last scan stale, and whenever the harness side signals a
+ * change to its Harness Tasks or to a waiting restart. Each scan is diffed with the last: Harness Tasks and
  * Detached Processes that are gone move to the finished history in the
  * processes runtime document. The document carries the boot id. On a new
  * boot, the rows the last scan saw running are recorded as ended by
@@ -238,13 +229,13 @@ export function createProcessesService(
     await ready;
     const snapshot = await deps.table.scan();
     const doc = deps.document.read();
-    const tasks = deps.reportedTasks();
+    const tasks = deps.harnessWork.reportedTasks();
     const reported = new Set(tasks.map(taskIdentity));
     const trees = withoutStopping(
       classifyProcesses({
         snapshot,
         runtimePid: deps.runtimePid,
-        harnesses: deps.harnesses(),
+        harnesses: deps.harnessWork.harnesses(),
         tasks,
       }),
       snapshot,
@@ -268,7 +259,7 @@ export function createProcessesService(
     });
     recordSample(snapshot);
     for (const task of inventory.exitedTasks)
-      deps.dropTask(task.sessionId, task.taskId);
+      deps.harnessWork.forgetTask(task.sessionId, task.taskId);
     latest = { snapshot, trees, running: inventory.running };
     tracked = inventory.tracked;
 
@@ -301,7 +292,9 @@ export function createProcessesService(
     keepAlive = marks.length > 0 || keptDetached > 0;
     deps.keep.setKeptProcesses(keptDetached);
 
-    const signature = noticeSignature(inventory.running);
+    const signature = `${noticeSignature(inventory.running)}|${JSON.stringify(
+      deps.harnessWork.pendingRestart(),
+    )}`;
     if (signature !== lastSignature) {
       lastSignature = signature;
       notify();
@@ -361,8 +354,7 @@ export function createProcessesService(
     if (keepAlive || backgroundTicks % UNKEPT_SCAN_EVERY === 0) void refresh();
   }, KEPT_SCAN_MS);
   backgroundTimer.unref?.();
-  deps.onTasksChanged(() => void refresh());
-  deps.onPendingRestartChange(notify);
+  deps.harnessWork.onChange(() => void refresh());
   void refresh();
 
   return {
@@ -371,7 +363,7 @@ export function createProcessesService(
       return {
         running,
         finished: deps.document.read().finished,
-        pendingRestart: deps.pendingRestart(),
+        pendingRestart: deps.harnessWork.pendingRestart(),
       };
     },
 
@@ -430,7 +422,7 @@ export function createProcessesService(
       deps.log(
         `the user set ${tree.kind} ${key} to ${keepsAwake ? "keep the agent awake" : "stop at hibernation"}`,
       );
-      if (tree.kind === "harness-task") deps.onTaskKeepChanged();
+      if (tree.kind === "harness-task") deps.keep.taskKeepChanged();
       await scanFromNow();
       return ok(undefined);
     },
@@ -471,7 +463,8 @@ export function createProcessesService(
           ),
         });
       }
-      if (tree.task) deps.dropTask(tree.task.sessionId, tree.task.taskId);
+      if (tree.task)
+        deps.harnessWork.forgetTask(tree.task.sessionId, tree.task.taskId);
 
       const killTimer = setTimeout(() => {
         void killSurvivors(keys, group).catch((error: unknown) => {
@@ -484,7 +477,8 @@ export function createProcessesService(
     },
 
     async applyPendingRestart() {
-      if (!deps.applyPendingRestart()) return err({ kind: "NothingPending" });
+      if (!deps.harnessWork.applyPendingRestart())
+        return err({ kind: "NothingPending" });
       deps.log("the user applied the waiting harness restart");
       await scanFromNow();
       return ok(undefined);
@@ -523,7 +517,7 @@ export function createProcessesService(
               target,
               tree,
               processes: current.snapshot.processes,
-              harnessPids: deps.harnesses().map((h) => h.pid),
+              harnessPids: deps.harnessWork.harnesses().map((h) => h.pid),
               callerPid: request.callerPid,
             })
           : null;
