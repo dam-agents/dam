@@ -15,7 +15,13 @@ const connectionCredentialKeyPair = z.object({
   secretAccessKey: z.string().min(1),
 });
 
+const connectionConfigInputsUpdate = z.object({
+  configInputs: z.record(z.string(), z.string()),
+  value: z.string().min(1).optional(),
+});
+
 export const connectionCredentialUpdateSchema = z.union([
+  connectionConfigInputsUpdate,
   connectionCredentialValue,
   connectionCredentialKeyPair,
 ]);
@@ -24,9 +30,11 @@ export type ConnectionCredentialUpdate = z.infer<
 >;
 
 export const connectionUpdateInputSchema = z.union([
+  connectionIdInputSchema.merge(connectionConfigInputsUpdate),
   connectionIdInputSchema.merge(connectionCredentialValue),
   connectionIdInputSchema.merge(connectionCredentialKeyPair),
 ]);
+export type ConnectionUpdateInput = z.infer<typeof connectionUpdateInputSchema>;
 
 export const connectionStartOAuthInputSchema = z.object({
   connectionId: z.string().min(1),
