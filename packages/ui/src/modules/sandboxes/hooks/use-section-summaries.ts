@@ -97,7 +97,7 @@ export function useSectionSummaries(agent: AgentView | null): {
   const setup = useMemo(() => {
     if (!agent) return undefined;
     const lookup: SandboxSubtitleLookup = {
-      templateNameById: new Map(templates.map((t) => [t.id, t.name])),
+      templates,
       connectionTemplateIdById: new Map(apps.map((a) => [a.id, a.templateId])),
       slotUnit: null,
     };

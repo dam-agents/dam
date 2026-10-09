@@ -1,14 +1,15 @@
 import { PROVIDERS, providerTypeForTemplateId } from "api-server-api";
 
-import type { AgentView } from "../../../types.js";
+import type { AgentView, TemplateView } from "../../../types.js";
 import {
   formatSizeLabel,
   sizeInMi,
   type SlotUnit,
 } from "../../budgets/lib/slots.js";
+import { findTemplate } from "../../templates/lib/find-template.js";
 
 export interface SandboxSubtitleLookup {
-  templateNameById: ReadonlyMap<string, string>;
+  templates: readonly TemplateView[];
   connectionTemplateIdById: ReadonlyMap<string, string>;
   slotUnit: SlotUnit | null;
 }
@@ -18,9 +19,7 @@ export function sandboxSubtitleParts(
   lookup: SandboxSubtitleLookup,
 ): { harness: string; provider: string | null } {
   const harness =
-    (agent.templateId
-      ? lookup.templateNameById.get(agent.templateId)
-      : undefined) ?? agent.image;
+    findTemplate(lookup.templates, agent.templateId)?.name ?? agent.image;
   return { harness, provider: providerLabel(agent, lookup) };
 }
 
