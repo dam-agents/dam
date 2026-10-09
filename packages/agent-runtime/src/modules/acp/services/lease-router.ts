@@ -46,6 +46,7 @@ export interface LeaseRouter extends AcpRuntime {
 
 interface Lease {
   key: string;
+  serial: number;
   pair: LeasePair;
   runtime: AcpRuntime;
   channels: Map<ClientChannel, VirtualChannel>;
@@ -94,7 +95,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   const leases = new Map<string, Lease>();
   const attachments = new Map<ClientChannel, Attachment>();
   const movedSessions = new Set<string>();
-  let nextInbound = 1;
+  let nextLeaseSerial = 1;
   let nextSwallowed = 1;
 
   const defaultPair = (): LeasePair => ({
@@ -149,6 +150,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     });
     const lease: Lease = {
       key,
+      serial: nextLeaseSerial++,
       pair,
       runtime,
       channels: new Map(),
@@ -223,7 +225,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         if (line.includes('"method"') && line.includes('"id"')) {
           const frame = parseFrame(line);
           if (frame && isRequest(frame)) {
-            const routed = `${SWALLOWED_ID_PREFIX}in-${String(nextInbound++)}`;
+            const routed = `${SWALLOWED_ID_PREFIX}in-${String(lease.serial)}-${JSON.stringify(frame.id)}`;
             attachment.inbound.set(routed, { lease, id: frame.id });
             real.send(JSON.stringify({ ...frame, id: routed }));
             return;

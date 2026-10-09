@@ -213,6 +213,32 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     ]);
   });
 
+  /** TEST_SCENARIO: A permission prompt is still open when the page reloads,
+   * so the runtime puts the same question before the new connection. It
+   * reaches the client under the id the first connection saw, which is what
+   * lets the platform resolve the approval it already recorded for it rather
+   * than leave that one pending beside a second. */
+  it("puts a re-sent question before a new client under the id it had", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const first = world.connect();
+    startSession(world, first, "claude-code/conn-a", "s-a", 1, {});
+    first.send(frames.prompt(2, "s-a", "write a file"));
+    world
+      .harness("claude-code/conn-a")
+      .emit(frames.requestPermission(7, "s-a"));
+    const [asked] = first.saw("session/request_permission") as [Frame];
+
+    const reloaded = world.connect();
+    reloaded.send(frames.loadSession(1, "s-a"));
+    const [reasked] = reloaded.saw("session/request_permission") as [Frame];
+    expect(reasked.id).toEqual(asked.id);
+
+    reloaded.send({ jsonrpc: "2.0", id: reasked.id, result: { outcome: "x" } });
+    expect(world.harness("claude-code/conn-a").answersTo(7)).toEqual([
+      expect.objectContaining({ result: { outcome: "x" } }),
+    ]);
+  });
+
   /** TEST_SCENARIO: Taking provider B away recycles B's process and leaves
    * A's running; a prompt to B's session then fails naming the provider,
    * instead of running on another one. */
