@@ -29,12 +29,10 @@ export function framesToMessages(frames: readonly string[]): Message[] {
   const messages = frames.reduce<Message[]>((acc, line) => {
     const frame = parseLine(line);
     if (!isUpdateFrame(frame)) return acc;
-    const meta = frameMetaOf(frame.params._meta);
     return applyUpdate(
       acc,
       frame.params.update,
-      meta.at,
-      meta.telemetryPromptId,
+      frameMetaOf(frame.params._meta),
     );
   }, []);
   return settleReplay(messages, { turnInFlight: false });

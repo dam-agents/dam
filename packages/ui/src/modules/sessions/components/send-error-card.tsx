@@ -4,6 +4,7 @@ import { Callout } from "@/components/ui/callout";
 import { cn } from "@/lib/utils";
 
 import { describeSendError } from "../../acp/errors.js";
+import { QuietNotice } from "./quiet-notice.js";
 
 interface Props {
   rawError: string;
@@ -15,13 +16,9 @@ export function SendErrorCard({ rawError, interrupted, quiet }: Props) {
   const { message, hint } = describeSendError(rawError);
   if (interrupted && quiet) {
     return (
-      <p
-        className="mt-1 flex max-w-[620px] items-start gap-1.5 text-xs text-muted-foreground break-words"
-        data-testid="prompt-delivery-error"
-      >
-        <Warning size={12} className="shrink-0 mt-0.5" />
-        <span>Response interrupted: {message}</span>
-      </p>
+      <QuietNotice testId="prompt-delivery-error">
+        Response interrupted: {message}
+      </QuietNotice>
     );
   }
   return (

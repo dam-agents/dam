@@ -23,7 +23,7 @@ usr/local/bin/
   harness-terminal       ← terminal-mode entrypoint (pi-platform)
   pi-platform            ← runs pi with the platform's extensions and pi-memory loaded from the image
 usr/local/share/pi-platform/
-  pi-acp-patch.mjs       ← temporary pi-acp fix, loaded by harness-chat (see "pi-acp concurrent sessions")
+  pi-acp-patch.mjs       ← temporary pi-acp fix, loaded by harness-chat (see "pi-acp patch")
   extensions/pi-dynamic-providers/
     index.ts             ← loaded with -e on every start; registers any of {rits, openai-proxy, amazon-bedrock} whose env vars are set
 app/
@@ -139,7 +139,7 @@ For non-Bearer auth, override `injectionConfig` on the secret instead of changin
 
 ### RITS (custom provider via extension)
 
-The [`pi-dynamic-providers`](rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts) extension ships in the image, not the home seed: the home is seeded once, so an extension copied there would never pick up a later image's fix. `pi-platform` loads it with `-e` on every start (pi-acp runs pi through it via `PI_ACP_PI_COMMAND`, and the terminal entrypoint calls it directly), and removes the copy that homes seeded before the move still carry, so it never loads twice. It registers a `rits` provider (tuned for vLLM, what RITS runs) and/or an `openai-proxy` provider — each activates only when its env vars are set — and mirrors the resulting config into `~/.pi/agent/models.json` and `~/.pi/agent/auth.json`. Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
+The [`pi-dynamic-providers`](rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts) extension ships in the image, not the home seed: the home is seeded once, so an extension copied there would never pick up a later image's fix. `pi-platform` loads it with `-e` on every start (pi-acp runs pi through it via `PI_ACP_PI_COMMAND`, and the terminal entrypoint calls it directly), and removes the copy that homes seeded before the move still carry, so it never loads twice. It registers a `rits` provider (tuned for vLLM, what RITS runs) and/or an `openai-proxy` provider — each activates only when its env vars are set — and mirrors the resulting config into `~/.pi/agent/models.json` and `~/.pi/agent/auth.json`. Both providers stream through pi-ai's openai-completions implementation with a `fetch` of the extension's own, which hands pi-ai a chunk's reasoning before the content that shares it. The extension takes that implementation from the package root (`openAICompletionsApi`): Pi resolves an extension's `@earendil-works/pi-ai` imports only for the root, `compat`, `oauth` and `providers/all`, so a deeper subpath fails to load and the provider runs without that `fetch`. `openai-proxy` sends the output limit as `max_completion_tokens`, which every model behind the IBM LiteLLM proxy honors (some refuse `max_tokens`), and asks for streamed token counts, so each reply reports its real usage. Pi reads a reply that stopped at the output limit with an output below that limit as a full context and drops it from the conversation; without counts every output is 0. Some models report a few tokens less than the limit when cut (Gemini on IBM LiteLLM: 4), so the extension reports the output of a reply that ends with `length` as the request's limit. `rits` keeps `max_tokens` and does not ask for counts (vLLM direct, untested). Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
 
 | Env var | Required | Default | Purpose |
 |---|---|---|---|
@@ -176,19 +176,23 @@ Pi system prompt conventions:
 > Nothing seeds `/home/agent/work/`, the cwd where pi-acp spawns: a Starter Kit clones its repository there, and the seed refuses a non-empty directory.  
 > **`app/working-dir/.pi/agent/`** seeds `~/.pi/agent/` — pi's global config directory.
 
-## pi-acp concurrent sessions
+## pi-acp patch
 
 pi-acp 0.0.34 keeps one live pi process per connection: every `session/new` and `session/load` kills the pi of every other session, and a turn already running there never gets its `session/prompt` answer, because pi-acp ends a turn only on pi's `agent_settled` event (upstream [svkozak/pi-acp#152](https://github.com/svkozak/pi-acp/issues/152)). The agent-runtime runs every session of an Agent through one pi-acp, so a schedule firing, a new chat, a Slack turn, a sub-agent or opening an old session froze whatever turn was running, and the platform kept showing it as running. Stop did not help: pi-acp had already forgotten the session.
 
-Until upstream fixes it, [`pi-acp-patch.mjs`](rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs) edits pi-acp's bundle in memory as it loads. `harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so pi and its tools do not inherit it. It patches five things:
+pi-acp also ends every turn with `end_turn`, even when the reply stopped at the output limit, and the replay of a reopened chat carries no stop reason, so the chat cannot mark a cut reply.
+
+Until upstream fixes these, [`pi-acp-patch.mjs`](rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs) edits pi-acp's bundle in memory as it loads. `harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so pi and its tools do not inherit it. It patches seven things:
 
 - `session/new` and `session/load` no longer close other sessions.
 - pi-acp advertises `session/close`, so the agent-runtime closes idle sessions and their pi processes instead of letting them pile up.
 - A pi process that exits fails its running and queued turns with an error instead of leaving them unanswered.
 - The next prompt to a session whose pi died starts a new pi on the same session file.
 - pi-acp does not run `npm view @earendil-works/pi-coding-agent` at each new session, so no "New version available" notice starts the first reply (upstream [svkozak/pi-acp#72](https://github.com/svkozak/pi-acp/issues/72): no setting turns it off). The platform pins the Pi version, so the user cannot act on that notice.
+- A turn whose last reply stopped at the output limit (Pi's `length`) ends with `max_tokens`.
+- On `session/load`, the replayed text of such a reply carries `_meta.platform.stopReason: "max_tokens"`, so a reopened chat still marks the cut.
 
-The hook patches only pi-acp 0.0.34 and only when every edit matches the bundle exactly. Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` to the pod log. **To remove it** once a pi-acp release fixes #152 and #72: bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`. That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
+The hook patches only pi-acp 0.0.34 and only when every edit matches the bundle exactly. Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` to the pod log. **To remove it** once a pi-acp release fixes #152 and #72 and reports `max_tokens`: bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`. A release that fixes only some of the three lets you drop just their edits. That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
 
 ## Memory scopes
 

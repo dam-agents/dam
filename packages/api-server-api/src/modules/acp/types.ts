@@ -54,6 +54,7 @@ export const platformFrameMetaSchema = z.object({
   replayFor: z.string().min(1).optional(),
   telemetryPromptId: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
+  stopReason: z.string().min(1).optional(),
 });
 
 export const platformClippedReplayMetaSchema = z.object({

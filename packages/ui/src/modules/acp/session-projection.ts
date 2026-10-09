@@ -1,5 +1,6 @@
 import type {
   ContentChunk,
+  StopReason,
   ToolCall,
   ToolCallContent,
   ToolCallUpdate,
@@ -13,7 +14,13 @@ import type {
   ToolContent,
 } from "../../types.js";
 import { describeJsonRpcError } from "./errors.js";
-import type { AcpUpdate } from "./types.js";
+import type { AcpUpdate, FrameMeta } from "./types.js";
+
+const OUTPUT_LIMIT_STOP_REASON: StopReason = "max_tokens";
+
+function isOutputLimitStop(stopReason: string | undefined): boolean {
+  return stopReason === OUTPUT_LIMIT_STOP_REASON;
+}
 
 const PLUMBING_TAGS = [
   "how-to-respond",
@@ -114,47 +121,42 @@ function parseUserText(text: string): MessagePart[][] {
 export function applyUpdate(
   messages: Message[],
   update: AcpUpdate,
-  at?: string,
-  telemetryPromptId?: string,
-  model?: string,
-  turnId?: string,
+  frame: FrameMeta = {},
 ): Message[] {
-  const next = applyUpdateOf(messages, update, at, telemetryPromptId, turnId);
-  const stamped =
+  const { telemetryPromptId, model, stopReason } = frame;
+  const next = applyUpdateOf(messages, update, frame);
+  const named =
     telemetryPromptId === undefined
       ? next
-      : stampActiveReply(next, telemetryPromptId);
-  return model === undefined ? stamped : stampActiveReplyModel(stamped, model);
+      : stampActiveReply(next, "telemetryPromptId", telemetryPromptId);
+  const modelled =
+    model === undefined ? named : stampActiveReply(named, "model", model);
+  return isOutputLimitStop(stopReason)
+    ? stampActiveReply(modelled, "stoppedAtOutputLimit", true)
+    : modelled;
 }
 
 function applyUpdateOf(
   messages: Message[],
   update: AcpUpdate,
-  at?: string,
-  telemetryPromptId?: string,
-  turnId?: string,
+  { at, telemetryPromptId, turnId }: FrameMeta,
 ): Message[] {
   switch (update.sessionUpdate) {
-    case "platform_turn_ended":
-      if (update.turnId !== undefined)
-        return closeTurn(messages, update.turnId, {
-          at,
-          telemetryPromptId,
-          interruption:
-            update.error &&
-            describeJsonRpcError(update.error.message, update.error.details),
-          model: update.model,
-          stopped: update.stopReason === "cancelled",
-        });
-      return closeActiveAssistant(
-        messages,
+    case "platform_turn_ended": {
+      const end: ReplyClose = {
         at,
         telemetryPromptId,
-        update.error &&
+        interruption:
+          update.error &&
           describeJsonRpcError(update.error.message, update.error.details),
-        update.model,
-        update.stopReason === "cancelled",
-      );
+        model: update.model,
+        stopped: update.stopReason === "cancelled",
+        stoppedAtOutputLimit: isOutputLimitStop(update.stopReason),
+      };
+      return update.turnId === undefined
+        ? closeActiveAssistant(messages, end)
+        : closeTurn(messages, update.turnId, end);
+    }
 
     case "platform_prompt_accepted":
       return update.queued && waitsBehindAnotherReply(messages, update.promptId)
@@ -673,13 +675,7 @@ function appendToTurn(
 function closeTurn(
   messages: Message[],
   turnId: string,
-  end: {
-    at?: string;
-    telemetryPromptId?: string;
-    interruption?: string;
-    model?: string;
-    stopped: boolean;
-  },
+  end: ReplyClose,
 ): Message[] {
   const owned = (m: Message) =>
     m.role === "assistant" &&
@@ -703,6 +699,8 @@ function closeTurn(
         ...(end.interruption !== undefined &&
           hasAgentContent(m) && { error: { message: end.interruption } }),
         ...(end.stopped && { stopped: true }),
+        ...(end.stoppedAtOutputLimit &&
+          hasAgentContent(m) && { stoppedAtOutputLimit: true }),
         streaming: false,
         queued: false,
       };
@@ -786,13 +784,25 @@ function activeReplyIndex(messages: Message[]): number {
   return -1;
 }
 
+interface ReplyClose {
+  at?: string;
+  telemetryPromptId?: string;
+  interruption?: string;
+  model?: string;
+  stopped?: boolean;
+  stoppedAtOutputLimit?: boolean;
+}
+
 function closeActiveAssistant(
   messages: Message[],
-  at?: string,
-  telemetryPromptId?: string,
-  interruption?: string,
-  model?: string,
-  stopped = false,
+  {
+    at,
+    telemetryPromptId,
+    interruption,
+    model,
+    stopped = false,
+    stoppedAtOutputLimit,
+  }: ReplyClose = {},
 ): Message[] {
   const i = activeReplyIndex(messages);
   if (i === -1) return stopped ? markLastReplyStopped(messages) : messages;
@@ -807,6 +817,8 @@ function closeActiveAssistant(
           ...(interruption !== undefined &&
             hasAgentContent(x) && { error: { message: interruption } }),
           ...(stopped && { stopped: true }),
+          ...(stoppedAtOutputLimit &&
+            hasAgentContent(x) && { stoppedAtOutputLimit }),
           ...(toolStatus !== null && {
             parts: settleRunningTools(x.parts, toolStatus),
           }),
@@ -827,10 +839,9 @@ function settleRunningTools(
   );
 }
 
-function endedToolStatus(end: {
-  interruption?: string;
-  stopped: boolean;
-}): "failed" | "cancelled" | null {
+function endedToolStatus(
+  end: Pick<ReplyClose, "interruption" | "stopped">,
+): "failed" | "cancelled" | null {
   if (end.interruption !== undefined) return "failed";
   return end.stopped ? "cancelled" : null;
 }
@@ -842,27 +853,23 @@ function markLastReplyStopped(messages: Message[]): Message[] {
   return messages.map((m, i) => (i === last ? { ...m, stopped: true } : m));
 }
 
+type ReplyStampKey = "telemetryPromptId" | "model" | "stoppedAtOutputLimit";
+
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a replayed frame names the harness's prompt id
- * in its metadata, because a replay rebuilt from the harness's own transcript
- * carries no end-of-turn notification to name it on. The reply being streamed
- * is the one that prompt produced, so it takes the name.
+ * UNIT_BOUNDARY_DESCRIPTION: a replayed frame carries facts about its reply in
+ * its metadata (the harness's prompt id, the model, a stop at the output
+ * limit), because a replay rebuilt from the harness's own transcript carries
+ * no end-of-turn notification to name them on. The reply being streamed is
+ * the one the frame belongs to, so it takes them.
  */
-function stampActiveReply(
+function stampActiveReply<K extends ReplyStampKey>(
   messages: Message[],
-  telemetryPromptId: string,
+  key: K,
+  value: NonNullable<Message[K]>,
 ): Message[] {
   const i = activeReplyIndex(messages);
-  if (i === -1 || messages[i].telemetryPromptId === telemetryPromptId) {
-    return messages;
-  }
-  return messages.map((x, j) => (j === i ? { ...x, telemetryPromptId } : x));
-}
-
-function stampActiveReplyModel(messages: Message[], model: string): Message[] {
-  const i = activeReplyIndex(messages);
-  if (i === -1 || messages[i].model === model) return messages;
-  return messages.map((x, j) => (j === i ? { ...x, model } : x));
+  if (i === -1 || messages[i][key] === value) return messages;
+  return messages.map((x, j) => (j === i ? { ...x, [key]: value } : x));
 }
 
 function appendOrExtendUser(

@@ -2,9 +2,13 @@ import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 
 const PATCHED_VERSION = "0.0.34";
-const UPSTREAM_ISSUES =
-  "https://github.com/svkozak/pi-acp/issues/152 and https://github.com/svkozak/pi-acp/issues/72";
+const UPSTREAM_GAPS =
+  "pi-acp keeps concurrent sessions apart (https://github.com/svkozak/pi-acp/issues/152), " +
+  "can turn off its update notice (https://github.com/svkozak/pi-acp/issues/72) " +
+  "and reports a reply cut at the output limit as max_tokens";
 const HELPERS = `globalThis[Symbol.for("platform.pi-acp-patch")]`;
+const stopReasons = new WeakMap();
+const lastRepliesOfTurns = new WeakMap();
 
 function dropOwnImport() {
   const rest = (process.env.NODE_OPTIONS ?? "")
@@ -38,6 +42,48 @@ function settleTurnsOnExit(session) {
       }
     });
   });
+}
+
+function cutAtOutputLimit(piStopReason) {
+  return piStopReason === "length";
+}
+
+function recordStopReason(session, piStopReason) {
+  stopReasons.set(session, piStopReason);
+}
+
+function turnStopReason(session) {
+  return cutAtOutputLimit(stopReasons.get(session)) ? "max_tokens" : "end_turn";
+}
+
+function lastRepliesOf(messages) {
+  let replies = lastRepliesOfTurns.get(messages);
+  if (replies) return replies;
+  replies = new Set();
+  let last;
+  for (const message of messages) {
+    if (message?.role === "user") {
+      if (last) replies.add(last);
+      last = undefined;
+    } else if (message?.role === "assistant") {
+      last = message;
+    }
+  }
+  if (last) replies.add(last);
+  lastRepliesOfTurns.set(messages, replies);
+  return replies;
+}
+
+function cutReply(message, messages) {
+  return (
+    cutAtOutputLimit(message?.stopReason) && lastRepliesOf(messages).has(message)
+  );
+}
+
+function replayMeta(message, messages) {
+  return cutReply(message, messages)
+    ? { _meta: { platform: { stopReason: "max_tokens" } } }
+    : {};
 }
 
 const edits = [
@@ -83,6 +129,42 @@ const edits = [
     replace: "    const updateNotice = null;\n",
     count: 1,
   },
+  {
+    find: '      case "turn_end": {\n        break;\n      }\n',
+    replace:
+      '      case "turn_end": {\n' +
+      `        ${HELPERS}.recordStopReason(this, ev.message?.stopReason);\n` +
+      "        break;\n" +
+      "      }\n",
+    count: 1,
+  },
+  {
+    find: "  startTurn(t) {\n    this.cancelRequested = false;\n",
+    replace:
+      "  startTurn(t) {\n" +
+      "    this.cancelRequested = false;\n" +
+      `    ${HELPERS}.recordStopReason(this, undefined);\n`,
+    count: 1,
+  },
+  {
+    find: '    const reason = this.cancelRequested ? "cancelled" : "end_turn";\n',
+    replace: `    const reason = this.cancelRequested ? "cancelled" : ${HELPERS}.turnStopReason(this);\n`,
+    count: 1,
+  },
+  {
+    find:
+      "        const text = normalizePiAssistantText(m?.content);\n" +
+      "        if (text) {\n" +
+      "          await this.conn.sessionUpdate({\n" +
+      "            sessionId: session.sessionId,\n",
+    replace:
+      "        const text = normalizePiAssistantText(m?.content);\n" +
+      `        if (text || ${HELPERS}.cutReply(m, messages)) {\n` +
+      "          await this.conn.sessionUpdate({\n" +
+      "            sessionId: session.sessionId,\n" +
+      `            ...${HELPERS}.replayMeta(m, messages),\n`,
+    count: 1,
+  },
 ];
 
 function patched(url, loaded) {
@@ -102,7 +184,14 @@ function patched(url, loaded) {
 }
 
 dropOwnImport();
-globalThis[Symbol.for("platform.pi-acp-patch")] = { exited, settleTurnsOnExit };
+globalThis[Symbol.for("platform.pi-acp-patch")] = {
+  exited,
+  settleTurnsOnExit,
+  recordStopReason,
+  turnStopReason,
+  cutReply,
+  replayMeta,
+};
 
 registerHooks({
   load(url, context, nextLoad) {
@@ -116,7 +205,7 @@ registerHooks({
     }
     if (typeof result === "object") return result;
     process.stderr.write(
-      `pi-acp-patch: not applied: ${result}; drop the patch once ${UPSTREAM_ISSUES} are fixed\n`,
+      `pi-acp-patch: not applied: ${result}; drop the patch once ${UPSTREAM_GAPS}\n`,
     );
     return loaded;
   },
