@@ -219,6 +219,7 @@ export function relayRoute(
     if (!admitted.ok) return deny(admitted.kind);
     if (agentAllows && !(await agentAllows(agentId)))
       return deny("not-permitted");
+    if (socket.destroyed) return;
     socket.once(
       "close",
       admitted.watchKey(() => socket.destroy()),

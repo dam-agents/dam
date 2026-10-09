@@ -117,7 +117,7 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
       emitUserAuthenticated(admitted.principal, deps.surfaceAttribution);
       logWsAttach(user.sub, site);
       attachCredentialLifecycle(res, admitted.principal.expiresAt);
-      if (user.keyId !== undefined) {
+      if (user.keyId !== undefined && res.readyState === res.OPEN) {
         const stop = watchApiKey(deps.authenticate, token, site, () =>
           res.close(CLOSE_CREDENTIAL_EXPIRED, "credential revoked"),
         );
