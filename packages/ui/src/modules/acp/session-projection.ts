@@ -341,6 +341,18 @@ export function dropSuperseded(messages: Message[], ids: string[]): Message[] {
   return out;
 }
 
+export function heldStillUndelivered(
+  held: PlatformUndeliveredPrompt[],
+  replayed: Message[],
+  superseded: string[],
+): PlatformUndeliveredPrompt[] {
+  return held.filter(
+    (r) =>
+      !superseded.includes(r.id) &&
+      !replayed.some((m) => m.role === "user" && m.id === r.id),
+  );
+}
+
 export function appendUndelivered(
   messages: Message[],
   records: PlatformUndeliveredPrompt[],

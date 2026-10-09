@@ -6,6 +6,7 @@ import {
   failQueuedOnDisconnect,
   finalizeAllStreaming,
   hasStreamingAssistant,
+  heldStillUndelivered,
   mergeLocalFailures,
 } from "../../modules/acp/session-projection.js";
 import type { Message, ToolChip } from "../../types.js";
@@ -733,6 +734,31 @@ describe("mergeLocalFailures", () => {
     expect(mergeLocalFailures(rebuilt, [...rebuilt, interrupted])).toBe(
       rebuilt,
     );
+  });
+});
+
+describe("heldStillUndelivered", () => {
+  const held = (id: string) => ({
+    id,
+    recordedAt: "2026-10-09T00:00:00.000Z",
+    blocks: [{ type: "text" as const, text: id }],
+    droppedAttachments: [],
+    reason: "Not delivered",
+  });
+
+  // TEST_SCENARIO: the browser recorded sends as undelivered when no acceptance came in time. On the next session load the replay shows the runtime echoed one of them, so it reached the pod, and another was retried, so the pod superseded it. Only the send the runtime never saw is still undelivered and handed over; the others would otherwise be marked undelivered on the pod for good.
+  test("keeps only the sends the runtime never received", () => {
+    const replay = [
+      userMsg("echoed", "say mango"),
+      assistantMsg("a", "Mango."),
+    ];
+    expect(
+      heldStillUndelivered(
+        [held("echoed"), held("retried"), held("lost")],
+        replay,
+        ["retried"],
+      ).map((r) => r.id),
+    ).toEqual(["lost"]);
   });
 });
 
