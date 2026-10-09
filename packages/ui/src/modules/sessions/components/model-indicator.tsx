@@ -72,7 +72,7 @@ export function ModelIndicator({
         <p className="text-muted-foreground">
           This {subject} is using{" "}
           <span className="text-foreground">{model}</span>
-          {guidance(switchable !== undefined, settings?.label)}
+          {modelGuidance(switchable !== undefined, settings?.label)}
         </p>
         {switchable && (
           <ul
@@ -114,11 +114,14 @@ export function ModelIndicator({
   );
 }
 
-function guidance(canSwitch: boolean, settingsLabel: string | undefined) {
+export function modelGuidance(
+  canSwitch: boolean,
+  settingsLabel: string | undefined,
+) {
   if (canSwitch && settingsLabel) {
     return `. Switch it below, or change the default for new sessions in ${settingsLabel}.`;
   }
   if (canSwitch) return ". Switch it below.";
   if (settingsLabel) return `. Change the model in ${settingsLabel}.`;
-  return ".";
+  return ". The model is fixed for this session — start a new session to use a different one.";
 }
