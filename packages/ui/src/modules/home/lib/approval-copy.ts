@@ -8,7 +8,10 @@ export function approvalHeadline(approval: ApprovalView): string {
 
 export function approvalDetail(approval: ApprovalView): string {
   const payload = approval.payload;
-  return payload.kind === "ext_authz"
-    ? `${payload.method} ${payload.host}${payload.path}`
-    : payload.toolName;
+  if (payload.kind !== "ext_authz") return payload.toolName;
+  const target =
+    payload.path === "*"
+      ? `${payload.host} (any path)`
+      : `${payload.host}${payload.path}`;
+  return payload.method === "*" ? target : `${payload.method} ${target}`;
 }
