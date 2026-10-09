@@ -123,7 +123,7 @@ export interface PidMarkInput {
   target: ScannedProcess;
   tree: ProcessTree | undefined;
   processes: ScannedProcess[];
-  harnessPid: number | null;
+  harnessPids: number[];
   callerPid: number;
 }
 
@@ -146,7 +146,7 @@ function ancestorPids(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Decides whether `platform-keep --pid` may mark a
  * process, and says why not. A mark counts only on a Detached Process. A
- * Harness Task is kept by default, so it needs none. Other work under the
+ * Harness Task is kept by default, so it needs none. Other work under a
  * chat harness ends with the command that runs it, or with its session, and
  * never detaches, so a mark on it would report a keep that does nothing. The
  * one exception is a child of the shell that runs `platform-keep` itself, as
@@ -155,11 +155,11 @@ function ancestorPids(
  * once it detaches.
  */
 export function pidMarkRefusal(input: PidMarkInput): string | null {
-  const { target, tree, harnessPid, callerPid } = input;
+  const { target, tree, harnessPids, callerPid } = input;
   if (tree?.kind === "harness-task")
     return `pid ${target.pid} is a background task your harness runs. It is kept by default, so it needs no mark.`;
   const ancestors = ancestorPids(target, input.processes);
-  if (harnessPid === null || !ancestors.has(harnessPid)) return null;
+  if (!harnessPids.some((pid) => ancestors.has(pid))) return null;
   if (ancestors.has(callerPid)) return null;
   return `pid ${target.pid} runs under your harness as part of another command, such as a background task or a tool call that still runs. It ends with that command or its session, so a mark cannot keep it. Start the job with platform-keep -- <command> instead.`;
 }

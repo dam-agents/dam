@@ -501,6 +501,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       return {
         idle: all.every((s) => s.idle),
         backgroundWork: deps.backgroundWork.held(),
+        keptProcesses: all.reduce((n, s) => n + s.keptProcesses, 0),
       };
     },
 
@@ -587,6 +588,10 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     leases() {
       return [...leases.values()].map((l) => l.pair);
+    },
+
+    harnesses() {
+      return [...leases.values()].flatMap((l) => l.runtime.harnesses());
     },
 
     pendingRestart() {

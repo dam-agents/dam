@@ -106,12 +106,16 @@ export interface AcpRuntime {
   holdsSessions(): boolean;
   refreshEnv(opts: { force: boolean }): void;
   recycleForConfig(): void;
-  harnessPid(): number | null;
-  activeTurnSince(): number | null;
+  harnesses(): RunningHarness[];
   pendingRestart(): PendingRestart | null;
   applyPendingRestart(): boolean;
   onPendingRestartChange(cb: () => void): void;
   shutdown(): void;
+}
+
+export interface RunningHarness {
+  pid: number;
+  turnSince: number | null;
 }
 
 export interface KeptProcesses {
@@ -1347,12 +1351,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       lease.recycleForConfig();
     },
 
-    harnessPid() {
-      return lease.pid();
-    },
-
-    activeTurnSince() {
-      return promptScheduler.activeTurnSince();
+    harnesses() {
+      const pid = lease.pid();
+      if (pid === null) return [];
+      return [{ pid, turnSince: promptScheduler.activeTurnSince() }];
     },
 
     pendingRestart,

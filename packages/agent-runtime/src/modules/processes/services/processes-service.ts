@@ -18,6 +18,7 @@ import {
   taskIdentity,
   type ProcessTree,
   type ReportedTask,
+  type RunningHarness,
 } from "../domain/classify.js";
 import {
   assembleInventory,
@@ -78,8 +79,7 @@ export interface ProcessesServiceDeps {
   keep: KeepState;
   backgroundWorkHolds: boolean;
   runtimePid: number;
-  harnessPid: () => number | null;
-  activeTurnSince: () => number | null;
+  harnesses: () => RunningHarness[];
   reportedTasks: () => ReportedTask[];
   onTasksChanged: (cb: () => void) => void;
   onTaskKeepChanged: () => void;
@@ -246,8 +246,7 @@ export function createProcessesService(
       classifyProcesses({
         snapshot,
         runtimePid: deps.runtimePid,
-        harnessPid: deps.harnessPid(),
-        turnSince: deps.activeTurnSince(),
+        harnesses: deps.harnesses(),
         tasks,
         skipTasks: exitedTasks,
       }),
@@ -526,7 +525,7 @@ export function createProcessesService(
               target,
               tree,
               processes: current.snapshot.processes,
-              harnessPid: deps.harnessPid(),
+              harnessPids: deps.harnesses().map((h) => h.pid),
               callerPid: request.callerPid,
             })
           : null;

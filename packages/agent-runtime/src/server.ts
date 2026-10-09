@@ -263,8 +263,7 @@ const {
 const { service: processesService, keepMarks } = processes.start({
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   runtimePid: process.pid,
-  harnessPid: () => acpRuntime.harnessPid(),
-  activeTurnSince: () => acpRuntime.activeTurnSince(),
+  harnesses: () => acpRuntime.harnesses(),
   reportedTasks: () =>
     backgroundWork.reported().flatMap(({ sessionId, items }) =>
       items.map((item) => ({

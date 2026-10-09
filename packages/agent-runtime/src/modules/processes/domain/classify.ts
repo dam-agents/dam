@@ -8,11 +8,15 @@ export interface ReportedTask {
   description: string | undefined;
 }
 
+export interface RunningHarness {
+  pid: number;
+  turnSince: number | null;
+}
+
 export interface ClassifyInput {
   snapshot: ProcSnapshot;
   runtimePid: number;
-  harnessPid: number | null;
-  turnSince: number | null;
+  harnesses: RunningHarness[];
   tasks: ReportedTask[];
   skipTasks: ReadonlySet<string>;
 }
@@ -84,14 +88,15 @@ export function platformOwnPids(
  * UNIT_BOUNDARY_DESCRIPTION: Sorts the pod's process table into the three
  * kinds the Processes panel lists, one tree per root. The platform's own
  * processes are never listed: PID 1, agent-runtime and its ancestors, and
- * agent-runtime's direct children (the chat harness, the pod service, PTYs,
- * sshd). A Harness Task is a chat-harness descendant matched to a task the
- * harness reported, by the output file the harness names after the task id.
- * Never by command: two tasks can run the same command, and a guess could hand
- * one task the other's process. A Turn Process is a chat-harness descendant
- * outside every Harness Task tree, started at or after the earliest running
- * turn, so helpers the harness started before the turn (MCP servers and the
- * like) stay out, and so do children of older work that writes to a file,
+ * agent-runtime's direct children (the chat harnesses, the pod service, PTYs,
+ * sshd). There is one chat harness per lease, and each is read the same way.
+ * A Harness Task is a chat-harness descendant matched to a task a harness
+ * reported, by the output file the harness names after the task id. Never by
+ * command: two tasks can run the same command, and a guess could hand one task
+ * the other's process. A Turn Process is a chat-harness descendant outside
+ * every Harness Task tree, started at or after the earliest turn running on
+ * that harness, so helpers the harness started before the turn (MCP servers
+ * and the like) stay out, and so do children of older work that writes to a file,
  * which is unreported background work rather than the turn's. A Detached
  * Process is a child of the reaper an orphan is re-parented to: PID 1, or an ancestor of
  * agent-runtime acting as subreaper (catatonit when it is not PID 1). When
@@ -123,9 +128,14 @@ export function classifyProcesses(input: ClassifyInput): ProcessTree[] {
 
   const ancestors = runtimeAncestors(byPid, input.runtimePid);
 
-  const harness =
-    input.harnessPid === null ? undefined : byPid.get(input.harnessPid);
-  const harnessDescendants = harness ? descendantsOf(harness) : [];
+  const harnessPids = new Set(input.harnesses.map((h) => h.pid));
+  const harnessTrees = input.harnesses.flatMap((h) => {
+    const root = byPid.get(h.pid);
+    return root
+      ? [{ descendants: descendantsOf(root), turnSince: h.turnSince }]
+      : [];
+  });
+  const harnessDescendants = harnessTrees.flatMap((t) => t.descendants);
 
   const topmost = (matches: ScannedProcess[]): ScannedProcess[] => {
     const pids = new Set(matches.map((p) => p.pid));
@@ -136,7 +146,7 @@ export function classifyProcesses(input: ClassifyInput): ProcessTree[] {
         pid = byPid.get(pid)!.ppid
       ) {
         if (pids.has(pid)) return false;
-        if (pid === harness?.pid) break;
+        if (harnessPids.has(pid)) break;
       }
       return true;
     });
@@ -171,10 +181,10 @@ export function classifyProcesses(input: ClassifyInput): ProcessTree[] {
     });
   }
 
-  if (input.turnSince !== null) {
-    const since = input.turnSince;
-    const candidates = harnessDescendants.filter(
-      (p) => unclaimed(p) && p.startedAtMs >= since,
+  for (const { descendants, turnSince } of harnessTrees) {
+    if (turnSince === null) continue;
+    const candidates = descendants.filter(
+      (p) => unclaimed(p) && p.startedAtMs >= turnSince,
     );
     const candidatePids = new Set(candidates.map((p) => p.pid));
     for (const root of candidates) {

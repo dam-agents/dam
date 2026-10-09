@@ -5,6 +5,7 @@ import type { ScannedProcess } from "../../modules/processes/domain/snapshot.js"
 
 const RUNTIME = 8;
 const HARNESS = 1176;
+const SECOND_HARNESS = 2176;
 
 function proc(
   pid: number,
@@ -32,6 +33,8 @@ const platform = [
   proc(RUNTIME, 1, "node dist/server.js"),
   proc(1133, RUNTIME, "claude-agent-acp"),
   proc(HARNESS, 1133, "claude"),
+  proc(2133, RUNTIME, "claude-agent-acp"),
+  proc(SECOND_HARNESS, 2133, "claude"),
 ];
 
 function judge(
@@ -44,8 +47,10 @@ function judge(
   const trees = classifyProcesses({
     snapshot: { scannedAt: 0, processes },
     runtimePid: RUNTIME,
-    harnessPid: HARNESS,
-    turnSince: null,
+    harnesses: [
+      { pid: HARNESS, turnSince: null },
+      { pid: SECOND_HARNESS, turnSince: null },
+    ],
     tasks: tasks.map((t) => ({
       sessionId: "s1",
       taskId: t.taskId,
@@ -59,7 +64,7 @@ function judge(
     target,
     tree: trees.find((t) => t.members.some((m) => m.pid === targetPid)),
     processes,
-    harnessPid: HARNESS,
+    harnessPids: [HARNESS, SECOND_HARNESS],
     callerPid,
   });
 }
@@ -93,6 +98,20 @@ describe("pidMarkRefusal", () => {
         proc(1300, HARNESS, "bash -c eval 'platform-keep --pid 1238'"),
       ],
       1238,
+      1300,
+    );
+
+    expect(refusal).toContain("platform-keep -- <command>");
+  });
+
+  it("refuses work under any chat harness, not only the first", () => {
+    const refusal = judge(
+      [
+        proc(2237, SECOND_HARNESS, "bash -c eval 'sleep 300'"),
+        proc(2238, 2237, "sleep 300"),
+        proc(1300, HARNESS, "bash -c eval 'platform-keep --pid 2238'"),
+      ],
+      2238,
       1300,
     );
 

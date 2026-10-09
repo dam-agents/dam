@@ -1,6 +1,6 @@
 import type { PendingRestart, ProcessesService } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
-import type { ReportedTask } from "./domain/classify.js";
+import type { ReportedTask, RunningHarness } from "./domain/classify.js";
 import { createOutputReader } from "./infrastructure/output-file.js";
 import { createProcessTable } from "./infrastructure/proc-scan.js";
 import { openProcessesDocument } from "./infrastructure/processes-document.js";
@@ -14,8 +14,7 @@ import {
 export interface StartProcessesOptions {
   backgroundWorkHolds: boolean;
   runtimePid: number;
-  harnessPid: () => number | null;
-  activeTurnSince: () => number | null;
+  harnesses: () => RunningHarness[];
   reportedTasks: () => ReportedTask[];
   onTasksChanged: (cb: () => void) => void;
   onTaskKeepChanged: () => void;

@@ -1,6 +1,6 @@
 # Agent processes
 
-Last verified: 2026-10-08
+Last verified: 2026-10-09
 
 ## Overview
 
@@ -66,10 +66,10 @@ can refuse holds outright.
 The runtime sorts what runs in the pod into three kinds, one row per process tree, with
 its command, start time, and the CPU and memory of the whole tree:
 
-- **Turn Process** — a descendant of the chat harness that a running turn started. It is
-  listed only while a turn runs, and only if it started after the earliest running turn
-  began, so helpers the harness keeps (MCP servers and the like) never show. Children of
-  older work that writes to a file are not the turn's either.
+- **Turn Process** — a descendant of a chat harness that a running turn started. It is
+  listed only while a turn runs on that harness, and only if it started after the earliest
+  turn running there began, so helpers the harness keeps (MCP servers and the like) never
+  show. Children of older work that writes to a file are not the turn's either.
 - **Harness Task** — a reported background job, matched to the harness descendant that
   runs it by the output file the harness names after the task. Never by command: two
   tasks can run the same command, and a wrong match would point Stop at the other
@@ -79,8 +79,11 @@ its command, start time, and the CPU and memory of the whole tree:
   init that wraps agent-runtime and adopts orphans as a subreaper. Work under an attached
   terminal or SSH shell is not listed until it detaches.
 
+A pod runs one chat harness per [Harness Lease](agent-lifecycle.md#session-inside-the-pod),
+and the runtime reads every one of them the same way.
+
 **Never listed:** PID 1, agent-runtime and its ancestors, and agent-runtime's direct
-children — the chat harness, the pod service, terminals, SSH servers.
+children — the chat harnesses, the pod service, terminals, SSH servers.
 
 A row carries the **output file** behind the process's stdout or stderr when that is a
 regular file, and the user can read its tail. The runtime reads only a file a scan
