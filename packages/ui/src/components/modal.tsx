@@ -314,7 +314,7 @@ function useEscapeWhenTopmost(id: string, onClose: (() => void) | undefined) {
 
   useEffect(() => {
     const closeIfTopmost = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || event.defaultPrevented) return;
       if (openModalIds[openModalIds.length - 1] !== id) return;
       close.current?.();
     };

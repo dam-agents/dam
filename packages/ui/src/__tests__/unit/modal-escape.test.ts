@@ -1,5 +1,6 @@
 import { globSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+
 import { describe, expect, test } from "vitest";
 
 const src = fileURLToPath(new URL("../../", import.meta.url));

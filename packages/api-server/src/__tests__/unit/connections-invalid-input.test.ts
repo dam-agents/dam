@@ -74,10 +74,12 @@ describe("env var name input", () => {
   it.each(["custom-header", "custom-client-credentials"])(
     "%s refuses 1BAD-VAR in the form",
     (id) => {
-      const template = createConnectionTemplateRegistry(buildCatalog()).get(id)!;
-      const input = templateToView(template, "https://example.com/cb").inputs.find(
-        (i) => i.name === "envName",
-      );
+      const template =
+        createConnectionTemplateRegistry(buildCatalog()).get(id)!;
+      const input = templateToView(
+        template,
+        "https://example.com/cb",
+      ).inputs.find((i) => i.name === "envName");
       const pattern = new RegExp(input!.pattern!);
       expect(pattern.test("1BAD-VAR")).toBe(false);
       expect(pattern.test("MY_API_KEY")).toBe(true);

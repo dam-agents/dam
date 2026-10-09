@@ -14,7 +14,7 @@ describe("getErrorMessage", () => {
       { code: "too_small", path: [], message: "required" },
     ]);
     expect(getErrorMessage(new Error(message))).toBe(
-      "envName: env var name must be letters, digits, and underscores (not starting with a digit); required",
+      "env var name must be letters, digits, and underscores (not starting with a digit); required",
     );
   });
 

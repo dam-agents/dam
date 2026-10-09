@@ -26,12 +26,8 @@ function zodIssuesText(message: string): string | undefined {
   try {
     const issues: unknown = JSON.parse(message);
     if (!Array.isArray(issues) || issues.length === 0) return undefined;
-    const lines = issues.map((issue: { message?: unknown; path?: unknown }) =>
-      typeof issue?.message === "string"
-        ? Array.isArray(issue.path) && issue.path.length > 0
-          ? `${issue.path.join(".")}: ${issue.message}`
-          : issue.message
-        : undefined,
+    const lines = issues.map((issue: { message?: unknown }) =>
+      typeof issue?.message === "string" ? issue.message : undefined,
     );
     return lines.every((l) => l !== undefined) ? lines.join("; ") : undefined;
   } catch {
