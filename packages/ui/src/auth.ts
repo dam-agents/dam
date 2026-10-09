@@ -8,6 +8,9 @@ import { removeAllUndelivered } from "./modules/sessions/lib/undelivered-store.j
 
 let userManager: UserManager;
 let currentUser: User | null = null;
+let renewal: Promise<User | null> | null = null;
+
+const RENEW_BEFORE_EXPIRY_S = 45;
 
 function signinExtraParams(): Record<string, string> {
   return { kc_theme: readStoredTheme() };
@@ -52,15 +55,22 @@ export async function initAuth(): Promise<User | null> {
 
 export async function getAccessToken(): Promise<string> {
   const user = await userManager.getUser();
-  if (user && !user.expired) {
+  if (
+    user &&
+    !user.expired &&
+    (user.expires_in ?? Infinity) > RENEW_BEFORE_EXPIRY_S
+  ) {
     return user.access_token;
   }
 
   try {
-    const renewed = await userManager.signinSilent();
-    currentUser = renewed;
-    return renewed!.access_token;
+    renewal ??= userManager.signinSilent().finally(() => {
+      renewal = null;
+    });
+    currentUser = await renewal;
+    return currentUser!.access_token;
   } catch {
+    if (user && !user.expired) return user.access_token;
     rememberReturnPath("login");
     await userManager.signinRedirect({ extraQueryParams: signinExtraParams() });
     throw new Error("Session expired");

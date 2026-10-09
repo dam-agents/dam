@@ -78,15 +78,18 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
       (expiresAt?.getTime() ?? Date.now() + API_KEY_REAUTH_MS) - Date.now(),
       0,
     );
-    const nudgeInMs = Math.max(closeInMs - RECONNECT_NUDGE_BEFORE_MS, 0);
     const timers = [
-      setTimeout(() => {
-        ws.send(JSON.stringify({ id: null, method: "reconnect" }));
-      }, nudgeInMs),
       setTimeout(() => {
         ws.close(CLOSE_CREDENTIAL_EXPIRED, "credential expired");
       }, closeInMs),
     ];
+    if (closeInMs > RECONNECT_NUDGE_BEFORE_MS) {
+      timers.push(
+        setTimeout(() => {
+          ws.send(JSON.stringify({ id: null, method: "reconnect" }));
+        }, closeInMs - RECONNECT_NUDGE_BEFORE_MS),
+      );
+    }
 
     ws.once("close", () => {
       for (const t of timers) clearTimeout(t);
