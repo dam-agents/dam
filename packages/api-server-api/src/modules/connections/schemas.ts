@@ -2,6 +2,49 @@ import { z } from "zod";
 
 import { RESERVED_MCP_SERVER_NAMES, resourceNameSchema } from "../shared.js";
 
+const GATEWAY_HOST =
+  /^(?:\*\.)?[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*$/;
+
+const isGatewayHostname = (hostname: string): boolean =>
+  hostname.length <= 253 && GATEWAY_HOST.test(hostname);
+
+export const connectionHostSchema = z
+  .string()
+  .min(1)
+  .refine((raw) => {
+    const trimmed = raw.trim();
+    try {
+      return isGatewayHostname(
+        new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`)
+          .hostname,
+      );
+    } catch {
+      return false;
+    }
+  }, "host must be a DNS hostname or a *.wildcard such as *.example.com, optionally with https:// and a port");
+
+const connectionUrlSchema = z
+  .string()
+  .url()
+  .refine(
+    (url) => URL.canParse(url) && isGatewayHostname(new URL(url).hostname),
+    "URL host must be a DNS hostname",
+  );
+
+export const connectionHeaderNameSchema = z
+  .string()
+  .regex(
+    /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/,
+    "header name must be letters, digits or !#$%&'*+-.^_`|~ only, with no spaces or colons",
+  );
+
+export const connectionValueFormatSchema = z
+  .string()
+  .refine(
+    (format) => format.includes("{value}"),
+    "value format must contain {value} where the secret goes",
+  );
+
 export const connectionIdInputSchema = z.object({
   id: z.string().min(1),
 });
@@ -53,7 +96,7 @@ export const connectionDiscoverMcpInputSchema = z.object({
 });
 
 export const connectionProbeClusterCaInputSchema = z.object({
-  host: z.string().min(1),
+  host: connectionHostSchema,
 });
 
 export const connectionGetAgentConnectionsInputSchema = z.object({
@@ -85,8 +128,8 @@ const commonFields = {
 const oauthCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("oauth"),
-  url: z.string().url().optional(),
-  host: z.string().min(1).optional(),
+  url: connectionUrlSchema.optional(),
+  host: connectionHostSchema.optional(),
   clientId: z.string().min(1).optional(),
   clientSecret: z.string().min(1).optional(),
   appSlug: z.string().min(1).optional(),
@@ -95,9 +138,9 @@ const oauthCreateInput = z.object({
 const headerCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("header"),
-  host: z.string().min(1).optional(),
-  headerName: z.string().min(1).optional(),
-  valueFormat: z.string().min(1).optional(),
+  host: connectionHostSchema.optional(),
+  headerName: connectionHeaderNameSchema.optional(),
+  valueFormat: connectionValueFormatSchema.optional(),
   envName: z
     .string()
     .regex(
@@ -123,14 +166,14 @@ const sigv4CreateInput = z.object({
 const clientCredentialsCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("client-credentials"),
-  host: z.string().min(1).optional(),
+  host: connectionHostSchema.optional(),
   issuerUrl: z.string().url().optional(),
   clientId: z.string().min(1).optional(),
   clientSecret: z.string().min(1).optional(),
   scopes: z.string().optional(),
   audience: z.string().min(1).optional(),
-  headerName: z.string().min(1).optional(),
-  valueFormat: z.string().min(1).optional(),
+  headerName: connectionHeaderNameSchema.optional(),
+  valueFormat: connectionValueFormatSchema.optional(),
   envName: z
     .string()
     .regex(
@@ -143,7 +186,7 @@ const clientCredentialsCreateInput = z.object({
 const githubAppCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("github-app"),
-  host: z.string().min(1).optional(),
+  host: connectionHostSchema.optional(),
   appId: z.string().min(1),
   installationId: z.string().min(1),
   privateKey: z.string().min(1),
@@ -157,7 +200,7 @@ export const connectionProbeGitHubAppInputSchema = z.object({
   appId: z.string().min(1),
   installationId: z.string().min(1),
   privateKey: z.string().min(1),
-  host: z.string().min(1).optional(),
+  host: connectionHostSchema.optional(),
 });
 
 export const connectionProbeGitHubAppForConnectionInputSchema = z.object({
@@ -185,8 +228,8 @@ export const connectionUpdateGitHubUserTokenScopeInputSchema = z.object({
 const noneCreateInput = z.object({
   ...commonFields,
   authKind: z.literal("none"),
-  url: z.string().url().optional(),
-  headerName: z.string().min(1).optional(),
+  url: connectionUrlSchema.optional(),
+  headerName: connectionHeaderNameSchema.optional(),
   value: z.string().min(1).optional(),
 });
 

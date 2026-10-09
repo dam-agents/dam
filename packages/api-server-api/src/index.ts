@@ -402,7 +402,11 @@ export type {
   AuthKind as ConnectionAuthKind,
 } from "./modules/connections/types.js";
 export { authConfig as connectionAuthConfigSchema } from "./modules/connections/types.js";
-export { connectionNameSchema } from "./modules/connections/schemas.js";
+export {
+  connectionCreateInputSchema,
+  connectionHeaderNameSchema,
+  connectionNameSchema,
+} from "./modules/connections/schemas.js";
 export type {
   ConnectionCreateInput,
   ConnectionCredentialUpdate,
