@@ -14,7 +14,7 @@ export function GatewayFailureBadge({
       title={`Network gateway: ${agent.gatewayFailure}`}
       data-testid="gateway-failure-badge"
     >
-      Network gateway is failing to start
+      Network gateway is failing
     </Badge>
   );
 }

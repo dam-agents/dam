@@ -115,7 +115,8 @@ configuration — leaves the agent pod ready, so the agent still reads as
 running and chat works while its egress is down. The agent view therefore
 carries the gateway's failure message apart from the agent's state, and
 the UI shows it as a warning next to that state. Only hard failures count:
-a gateway that is starting, rolling or hibernated shows no warning.
+a gateway that is starting, rolling, hibernated or parked over budget
+shows no warning.
 
 A host's L7 chain can opt into HTTP/2 so credential injection also covers
 gRPC request streams (e.g. Modal); hosts default to HTTP/1.1 unchanged.

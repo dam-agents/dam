@@ -322,6 +322,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       gatewayPod?.status === "False" ? gatewayPod.reason : undefined,
     gatewayFailure:
       !hibernated &&
+      ready?.reason !== READY_REASON_OVER_BUDGET &&
       gatewayPod?.status === "False" &&
       GATEWAY_FAILURE_REASONS.has(gatewayPod.reason ?? "")
         ? gatewayPod.message || gatewayPod.reason

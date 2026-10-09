@@ -65,6 +65,16 @@ describe("gatewayFailure", () => {
     expect(infra.gatewayFailure).toBeUndefined();
   });
 
+  it("stays unset for an agent parked over budget", () => {
+    const infra = parseInfraAgent(
+      agentWithGateway("ContainerTerminated", "exited with code 1 (Error)", {
+        status: "False",
+        reason: "OverBudget",
+      }),
+    );
+    expect(infra.gatewayFailure).toBeUndefined();
+  });
+
   it("stays unset for a hibernated agent", () => {
     const infra = parseInfraAgent(
       agentWithGateway("ContainerTerminated", "exited with code 1 (Error)", {
