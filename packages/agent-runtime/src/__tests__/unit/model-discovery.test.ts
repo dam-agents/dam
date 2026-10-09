@@ -8,10 +8,19 @@ function stubFetch(opts: {
   ok?: boolean;
   status?: number;
   throws?: boolean;
-}): { fetchImpl: typeof globalThis.fetch; urls: string[] } {
+}): {
+  fetchImpl: typeof globalThis.fetch;
+  urls: string[];
+  headers: Record<string, string>[];
+} {
   const urls: string[] = [];
-  const fetchImpl = (async (url: string | URL | Request) => {
+  const headers: Record<string, string>[] = [];
+  const fetchImpl = (async (
+    url: string | URL | Request,
+    init?: RequestInit,
+  ) => {
     urls.push(String(url));
+    headers.push({ ...(init?.headers as Record<string, string>) });
     if (opts.throws) throw new Error("network down");
     return {
       ok: opts.ok ?? true,
@@ -19,7 +28,7 @@ function stubFetch(opts: {
       json: async () => opts.body,
     } as Response;
   }) as unknown as typeof globalThis.fetch;
-  return { fetchImpl, urls };
+  return { fetchImpl, urls, headers };
 }
 
 describe("createModelDiscovery", () => {
@@ -76,6 +85,33 @@ describe("createModelDiscovery", () => {
       { OPENAI_PROXY_URL: "https://proxy.example.com/" },
     );
     expect(urls).toEqual(["https://proxy.example.com/v1/models"]);
+  });
+
+  // TEST_SCENARIO: a gateway that injects only addressed requests reads the connection from the placeholder; without it the listing goes out bare and the provider answers 401.
+  it("sends the first set tokenEnv value as the credential", async () => {
+    const { fetchImpl, headers } = stubFetch({ body: { data: [{ id: "m" }] } });
+    const discover = createModelDiscovery({ log: noop, fetchImpl });
+    await discover(
+      { urlEnv: ["U"], tokenEnv: ["MISSING", "TOKEN"] },
+      { U: "https://proxy", TOKEN: "sk-platform:conn:c1" },
+    );
+    expect(headers).toEqual([
+      {
+        accept: "application/json",
+        authorization: "Bearer sk-platform:conn:c1",
+        "x-api-key": "sk-platform:conn:c1",
+      },
+    ]);
+  });
+
+  it("sends no credential when no tokenEnv value is set", async () => {
+    const { fetchImpl, headers } = stubFetch({ body: { data: [{ id: "m" }] } });
+    const discover = createModelDiscovery({ log: noop, fetchImpl });
+    await discover(
+      { urlEnv: ["U"], tokenEnv: ["TOKEN"] },
+      { U: "https://proxy" },
+    );
+    expect(headers).toEqual([{ accept: "application/json" }]);
   });
 
   it("does not double-append /v1 when the base already has a version segment", async () => {

@@ -70,6 +70,8 @@ drivers:
       - urlEnv:
           - OPENAI_PROXY_URL
           - OPENAI_BASE_URL
+        tokenEnv:
+          - OPENAI_API_KEY
         redirectEnv:
           - OPENAI_PROXY_URL
           - OPENAI_BASE_URL

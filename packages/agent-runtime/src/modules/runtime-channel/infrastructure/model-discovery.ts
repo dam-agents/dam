@@ -9,6 +9,16 @@ export interface DiscoverySource {
   base: string;
 }
 
+function credentialHeaders(
+  spec: ModelDiscoverySpec,
+  env: Record<string, string>,
+): Record<string, string> {
+  const token = spec.tokenEnv
+    ?.map((name) => env[name]?.trim())
+    .find((value) => !!value);
+  return token ? { authorization: `Bearer ${token}`, "x-api-key": token } : {};
+}
+
 function discoverySources(
   sources: ModelDiscoverySources | undefined,
 ): readonly ModelDiscoverySpec[] {
@@ -106,12 +116,13 @@ export function createModelDiscovery(deps: {
     shape: ModelListShape,
     spec: ModelDiscoverySpec,
     via: string,
+    credentials: Record<string, string>,
   ): Promise<ModelDiscoveryOutcome | "refused"> => {
     for (let attempt = 1; attempt <= DISCOVERY_ATTEMPTS; attempt++) {
       const last = attempt === DISCOVERY_ATTEMPTS;
       try {
         const res = await doFetch(url, {
-          headers: { accept: "application/json" },
+          headers: { accept: "application/json", ...credentials },
           signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS),
         });
         if (!res.ok) {
@@ -158,6 +169,7 @@ export function createModelDiscovery(deps: {
     const selected = selectDiscoverySource(sources, env);
     if (!selected) return { status: "not-configured" };
     const { spec, via, base } = selected;
+    const credentials = credentialHeaders(spec, env);
 
     for (const listing of spec.fallback ? [spec, spec.fallback] : [spec]) {
       const outcome = await list(
@@ -165,6 +177,7 @@ export function createModelDiscovery(deps: {
         listing.shape ?? "openai-models",
         spec,
         via,
+        credentials,
       );
       if (outcome !== "refused") return outcome;
     }

@@ -29,6 +29,7 @@ const modelListing = z.object({
 
 export const modelDiscoverySpec = modelListing.extend({
   urlEnv: z.array(z.string().min(1)).nonempty(),
+  tokenEnv: z.array(z.string().min(1)).optional(),
   redirectEnv: z.array(z.string().min(1)).optional(),
   pinEnv: z.array(z.string().min(1)).optional(),
   namePrefix: z.string().min(1).optional(),
