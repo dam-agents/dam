@@ -64,6 +64,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "Shows what each turn of a conversation actually did — its spans, its records and what the call cost — under the reply itself, and adds a telemetry export to the session menu.",
   },
+  {
+    id: "processes",
+    label: "Processes panel",
+    description:
+      "See what runs in your agent, what keeps it awake, and what finished while you were away.",
+  },
 ];
 
 function FeatureRowCard({

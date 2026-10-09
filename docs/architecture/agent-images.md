@@ -6,7 +6,7 @@ The images an agent runs in: the **default image**, which the default Template b
 
 ## One base, one image over it
 
-Every image is a Debian system-package base and directory trees packed onto it as layers, with no Dockerfile. The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment as mise config, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, and dam-run.
+Every image is a Debian system-package base and directory trees packed onto it as layers, with no Dockerfile. The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment as mise config, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, dam-run, and `platform-keep`, which [keeps](agent-processes.md#keeping-work) a long job running and the agent awake.
 
 - **A harness** is mise config over the base — its tools and env — and a `rootfs/` of its files at their image paths. The default image carries all four.
 - **A workload** is the default image under its own files and env. Its Python package is installed into a venv and shipped as a whole Python at a fixed path, the interpreter and its standard library copied in, named in an environment variable; the entrypoint and login shells put it first on `PATH`, so `python` is the workload's, whatever Python the node's tools hold. **k-search** also ships its upstream source trees, pinned by commit and checksum and patched at install, at fixed paths.

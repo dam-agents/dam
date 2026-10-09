@@ -8,6 +8,7 @@ import {
   createSessionMetadata,
   frames,
   memoryDocumentBackend,
+  keepsEveryTask,
   promptTextsOf,
   type Frame,
   type Harness,
@@ -37,17 +38,21 @@ const IDLE_CHECK_MS = 10_000;
 
 function createLeaseWorld(opts: { providers: string[] }) {
   let providers = opts.providers;
+  let keptProcesses = 0;
   const metadata = createSessionMetadata();
   const harnesses = new Map<string, Harness[]>();
   const key = (pair: LeasePair): string =>
     `${pair.harness}/${pair.provider ?? "-"}${pair.model ? `/${pair.model}` : ""}`;
-  const backgroundWork = createBackgroundWorkRegistry();
+  const backgroundWork = createBackgroundWorkRegistry({
+    keepPolicy: keepsEveryTask,
+  });
   const router = createLeaseRouter({
     defaultHarness: "claude-code",
     harnessKnown: (h) => ["claude-code", "codex"].includes(h),
     providers: () => providers,
     sessionMetadata: metadata.store,
     backgroundWork,
+    keepPolicy: { keptProcessCount: () => keptProcesses },
     idleCheckMs: IDLE_CHECK_MS,
     log: () => {},
     createRuntime: (pair, scoped) =>
@@ -87,6 +92,9 @@ function createLeaseWorld(opts: { providers: string[] }) {
       return last;
     },
     harnessCount: (k: string) => harnesses.get(k)?.length ?? 0,
+    keepProcesses(count: number) {
+      keptProcesses = count;
+    },
     grantAhead(provider: string) {
       providers = [provider, ...providers];
     },
@@ -489,6 +497,38 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     client.disconnect();
     vi.advanceTimersByTime(IDLE_REAP_DELAY_MS + IDLE_CHECK_MS);
     expect(world.harness("claude-code/conn-b/opus").killed()).toBe(false);
+  });
+
+  /** TEST_SCENARIO: A kept Detached Process runs outside every harness, so
+   * the agent stays awake for it even before any lease is open, and the
+   * status says how many there are, so the UI can explain why. */
+  it("stays busy for kept Detached Processes with no lease open", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    world.keepProcesses(2);
+    expect(world.router.leases()).toEqual([]);
+    expect(world.router.status()).toEqual({
+      idle: false,
+      backgroundWork: [],
+      keptProcesses: 2,
+    });
+
+    world.keepProcesses(0);
+    expect(world.router.status()).toEqual({
+      idle: true,
+      backgroundWork: [],
+      keptProcesses: 0,
+    });
+  });
+
+  /** TEST_SCENARIO: A restart of the harness leaves a Detached Process
+   * running, so a kept one does not hold an env change back. */
+  it("recycles for an env change while a kept Detached Process runs", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    startSession(world, client, "claude-code/conn-a", "s", 1, {});
+    world.keepProcesses(1);
+    world.router.refreshEnv({ force: false });
+    expect(world.harness("claude-code/conn-a").killed()).toBe(true);
   });
 
   /** TEST_SCENARIO: Changing a session's model moves it to the process for

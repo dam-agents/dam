@@ -239,6 +239,7 @@ export const createSessionsSlice: StateCreator<
         openArtifactId: null,
         openDelegation: null,
         openBrowserAgentId: null,
+        openProcessOutputKey: null,
         openFileDirty: false,
         openArtifactDirty: false,
         openFileEdit: false,

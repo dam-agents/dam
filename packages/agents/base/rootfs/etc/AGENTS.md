@@ -19,4 +19,6 @@ Additionally available if running in a root VM:
 - `k3s`: start with `k3s server >/var/log/k3s.log 2>&1 &`, use `k3s kubectl`, stops on restart; cluster state is kept in `~/.local/share/k3s`; pods trust the gateway's CA the same way
 - `apt-get` to install extra software
 
+Long jobs: work you start keeps running after the user leaves, but stops when the agent hibernates. For a long job that must finish after your turn ends, start it with `platform-keep -- <command>` (it prints the pid and the log file; `--log FILE` picks the file), or keep one that already runs detached (started with `nohup` or `setsid`) with `platform-keep --pid <pid>`. A background task your harness runs for you is kept already and needs no mark. Kept work holds the agent awake until it exits, and the user sees it and can stop it. Never keep helper daemons (servers, watchers, bridges); plain `nohup … &` is right for those.
+
 Delegation: your harness's own subagent does work in this sandbox. The platform's `spawn_subagent` tool starts a separate agent in a new sandbox; use it only when the task needs another harness, its own setup, more resources, isolation from this workspace, or a schema-checked result.

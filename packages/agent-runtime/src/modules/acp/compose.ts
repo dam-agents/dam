@@ -33,6 +33,11 @@ import {
   type BackgroundWorkRegistry,
 } from "./services/background-work-registry.js";
 import {
+  createHarnessWork,
+  type HarnessWork,
+} from "./services/harness-work.js";
+import type { KeepPolicy } from "../processes/index.js";
+import {
   createTriggerSessionDriver,
   type TriggerSessionDriver,
 } from "./services/trigger-session-driver.js";
@@ -68,6 +73,7 @@ export interface ComposeAcpOptions {
   harnesses: Readonly<Record<string, HarnessRuntime>>;
   isTerminalSessionActive: (sessionId: string) => boolean;
   backgroundWorkHolds: boolean;
+  keepPolicy: KeepPolicy;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   beforeSpawn: () => Promise<void>;
   leaseModel: (lease: {
@@ -115,6 +121,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   triggerDriver: TriggerSessionDriver;
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
+  harnessWork: HarnessWork;
   sessions: SessionsService;
   sessionChanges: SessionChanges;
   activeTurns: ActiveTurnStore;
@@ -130,6 +137,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   );
   const backgroundWork = createBackgroundWorkRegistry({
     enabled: opts.backgroundWorkHolds,
+    keepPolicy: opts.keepPolicy,
     log: opts.log,
   });
   const undeliveredPrompts = createUndeliveredPromptStore(
@@ -172,6 +180,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     providers: () => opts.envReader.providers(),
     sessionMetadata,
     backgroundWork,
+    keepPolicy: opts.keepPolicy,
     log: opts.log,
     createRuntime: (pair, scoped) => {
       const harness = opts.harnesses[pair.harness];
@@ -270,6 +279,10 @@ export function composeAcp(opts: ComposeAcpOptions): {
     triggerDriver,
     sessionMetadata,
     backgroundWork,
+    harnessWork: createHarnessWork({
+      registry: backgroundWork,
+      router: runtime,
+    }),
     sessions,
     sessionChanges,
     activeTurns,

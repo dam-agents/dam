@@ -8,9 +8,13 @@ import {
 import type { ClientChannel } from "../infrastructure/client-channel.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
 import type { BackgroundWorkRegistry } from "./background-work-registry.js";
-import type { AcpRuntime } from "./acp-runtime/acp-runtime.js";
+import type {
+  AcpRuntime,
+  AcpRuntimeStatus,
+} from "./acp-runtime/acp-runtime.js";
 import { PIN_MODEL_METHOD } from "agent-runtime-api";
 import type { EnvChange } from "../../runtime-channel/drivers/env-plugin.js";
+import type { KeepPolicy } from "../../processes/index.js";
 
 export interface LeasePair {
   harness: string;
@@ -20,12 +24,17 @@ export interface LeasePair {
 
 export const PROVIDER_REMOVED_REASON = "provider-removed";
 
+export interface LeaseRouterStatus extends AcpRuntimeStatus {
+  keptProcesses: number;
+}
+
 export interface LeaseRouterDeps {
   defaultHarness: string;
   harnessKnown: (harness: string) => boolean;
   providers: () => string[];
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
+  keepPolicy: Pick<KeepPolicy, "keptProcessCount">;
   createRuntime: (
     pair: LeasePair,
     scoped: {
@@ -40,6 +49,7 @@ export interface LeaseRouterDeps {
 }
 
 export interface LeaseRouter extends AcpRuntime {
+  status(): LeaseRouterStatus;
   applyEnvChange(change: EnvChange): void;
   recycleHarness(harness: string): void;
   leases(): LeasePair[];
@@ -51,7 +61,6 @@ interface Lease {
   pair: LeasePair;
   runtime: AcpRuntime;
   channels: Map<ClientChannel, VirtualChannel>;
-  releaseListeners: (() => void)[];
 }
 
 interface VirtualChannel extends ClientChannel {
@@ -96,6 +105,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   const leases = new Map<string, Lease>();
   const attachments = new Map<ClientChannel, Attachment>();
   const movedSessions = new Set<string>();
+  const pendingRestartListeners: (() => void)[] = [];
   let nextProcess = 1;
   let nextSwallowed = 1;
 
@@ -109,14 +119,11 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     return keyOf(pairOfSession(sessionId, false)) === lease.key;
   }
 
-  function scopedBackgroundWork(
-    lease: () => Lease,
-    releaseListeners: (() => void)[],
-  ): BackgroundWorkRegistry {
+  function scopedBackgroundWork(lease: () => Lease): BackgroundWorkRegistry {
     const shared = deps.backgroundWork;
     const owned = (): string[] =>
       shared
-        .held()
+        .reported()
         .map((h) => h.sessionId)
         .filter((sid) => ownsSession(lease(), sid));
     return {
@@ -124,11 +131,14 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       hasWork: (sid) => shared.hasWork(sid),
       held: () =>
         shared.held().filter((h) => ownsSession(lease(), h.sessionId)),
+      reported: () =>
+        shared.reported().filter((h) => ownsSession(lease(), h.sessionId)),
+      drop: (sid, itemId) => shared.drop(sid, itemId),
       forget: (sid) => shared.forget(sid),
       clear: () => {
         for (const sid of owned()) shared.forget(sid);
       },
-      onRelease: (cb) => releaseListeners.push(cb),
+      onChange: (cb) => shared.onChange(cb),
     };
   }
 
@@ -137,10 +147,9 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     const existing = leases.get(key);
     if (existing) return existing;
     let self: Lease | null = null;
-    const releaseListeners: (() => void)[] = [];
     const runtime = deps.createRuntime(pair, {
       pair: () => lease.pair,
-      backgroundWork: scopedBackgroundWork(() => self!, releaseListeners),
+      backgroundWork: scopedBackgroundWork(() => self!),
       onHarnessExited: () => {
         if (lease.key === keyOf(defaultPair())) return;
         deps.log(
@@ -158,17 +167,22 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       pair,
       runtime,
       channels: new Map(),
-      releaseListeners,
     };
     self = lease;
     leases.set(key, lease);
+    runtime.onPendingRestartChange(notifyPendingRestart);
     deps.log(`opened lease ${key}`);
     return lease;
+  }
+
+  function notifyPendingRestart(): void {
+    for (const cb of pendingRestartListeners) cb();
   }
 
   function drop(lease: Lease): void {
     if (leases.get(lease.key) !== lease) return;
     leases.delete(lease.key);
+    if (lease.runtime.pendingRestart() !== null) notifyPendingRestart();
     for (const v of lease.channels.values()) v.quiet = true;
     for (const v of lease.channels.values()) v.fireClose();
     lease.channels.clear();
@@ -431,11 +445,6 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     }
   }
 
-  deps.backgroundWork.onRelease(() => {
-    for (const lease of leases.values())
-      for (const cb of lease.releaseListeners) cb();
-  });
-
   const idleTimer = setInterval(
     idleOut,
     deps.idleCheckMs ?? DEFAULT_IDLE_CHECK_MS,
@@ -486,9 +495,11 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     status() {
       const all = [...leases.values()].map((l) => l.runtime.status());
+      const keptProcesses = deps.keepPolicy.keptProcessCount();
       return {
-        idle: all.every((s) => s.idle),
+        idle: keptProcesses === 0 && all.every((s) => s.idle),
         backgroundWork: deps.backgroundWork.held(),
+        keptProcesses,
       };
     },
 
@@ -575,6 +586,37 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     leases() {
       return [...leases.values()].map((l) => l.pair);
+    },
+
+    harnesses() {
+      return [...leases.values()].flatMap((l) => l.runtime.harnesses());
+    },
+
+    pendingRestart() {
+      const pending = [...leases.values()]
+        .map((l) => l.runtime.pendingRestart())
+        .filter((p) => p !== null);
+      if (pending.length === 0) return null;
+      const oldest = pending.reduce((a, b) => (b.since < a.since ? b : a));
+      return {
+        ...oldest,
+        blockingTasks: pending.reduce((n, p) => n + p.blockingTasks, 0),
+        stops: {
+          tasks: pending.reduce((n, p) => n + p.stops.tasks, 0),
+          turns: pending.reduce((n, p) => n + p.stops.turns, 0),
+        },
+      };
+    },
+
+    applyPendingRestart() {
+      let applied = false;
+      for (const lease of [...leases.values()])
+        if (lease.runtime.applyPendingRestart()) applied = true;
+      return applied;
+    },
+
+    onPendingRestartChange(cb) {
+      pendingRestartListeners.push(cb);
     },
 
     shutdown() {

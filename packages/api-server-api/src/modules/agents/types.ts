@@ -144,6 +144,11 @@ export interface SessionBackgroundWork {
   items: BackgroundWorkItemView[];
 }
 
+export interface AgentBackgroundWork {
+  sessions: SessionBackgroundWork[];
+  keptProcesses: number;
+}
+
 export type UpgradeAgentError =
   | { type: "AgentNotFound" }
   | { type: "TemplateNotFound" }
@@ -264,7 +269,7 @@ export type UnbindTelegramChatResult =
 export interface AgentsService {
   list: () => Promise<Agent[]>;
   get: (id: string) => Promise<Agent | null>;
-  backgroundWork: (id: string) => Promise<SessionBackgroundWork[] | null>;
+  backgroundWork: (id: string) => Promise<AgentBackgroundWork | null>;
   create: (input: AgentCreateInput) => Promise<Agent>;
   update: (input: AgentUpdateInput) => Promise<Agent | null>;
   delete: (id: string) => Promise<void>;

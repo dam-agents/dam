@@ -5,6 +5,7 @@ import { preferenceGroupOf } from "api-server-api";
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
+import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
 
 function samePreferenceGroup(connectionId: string): Set<string> {
   const connections =
@@ -52,6 +53,9 @@ export function useSetPreferredConnection() {
     onError: (_err, _vars, context) => {
       if (context?.previous)
         queryClient.setQueryData(context.key, context.previous);
+    },
+    onSettled: (_data, error, vars) => {
+      if (!error) askToRestartAfterSave(vars.agentId);
     },
     meta: {
       invalidates: [trpc.connections.getAgentConnections.queryKey()],

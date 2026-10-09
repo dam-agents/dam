@@ -32,6 +32,7 @@ import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { useFeed } from "../../home/api/queries.js";
+import { useKeptWorkCount } from "../../sessions/api/background-work.js";
 
 interface Props {
   agent: AgentView;
@@ -41,6 +42,7 @@ interface Props {
 
 export function SandboxHomeHeader({ agent, display, avatar }: Props) {
   const working = useFeed().workingByAgent.get(agent.id);
+  const keptWork = useKeptWorkCount(agent.id);
   const setView = useStore((s) => s.setView);
   const selectAgent = useStore((s) => s.selectAgent);
   const showConfirm = useStore((s) => s.showConfirm);
@@ -89,7 +91,11 @@ export function SandboxHomeHeader({ agent, display, avatar }: Props) {
       title={agent.name}
       adornment={
         <>
-          <StatusBadge state={display.state} working={working} />
+          <StatusBadge
+            state={display.state}
+            working={working}
+            keptWork={keptWork}
+          />
           <GatewayFailureBadge agent={agent} />
           {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
         </>
