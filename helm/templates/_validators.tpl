@@ -240,20 +240,14 @@ so an egress entry lying inside link-local can only mean the endpoint itself.
 {{- end -}}
 
 {{/*
-On OpenShift the chart's own SCC is the only one the runner and the device
-plugin get, and it admits neither a privileged container nor a hostPath
-volume. Without a built-in SCC bound as well, admission refuses the pod and
-the failure is silent where it hurts most: a rejected device plugin advertises
-no KVM resource, so every runner pod pends forever on a resource nothing will
-ever publish. `openshift.scc.anyuidCapNet.enabled` is the chart's existing
+On OpenShift the chart's own SCC is the only one the runner gets, and it
+admits no hostPath volume. Without a built-in SCC bound as well, admission
+refuses the pod. `openshift.scc.anyuidCapNet.enabled` is the chart's existing
 signal that this is an OpenShift cluster.
 */}}
 {{- define "platform.validate.openShiftSccForPrivilegedVMPieces" -}}
 {{- if and .Values.virtualization.enabled .Values.openshift.scc.anyuidCapNet.enabled -}}
 {{- $v := .Values.virtualization -}}
-{{- if and $v.devicePlugin.enabled (not $v.devicePlugin.scc) -}}
-{{- fail "on OpenShift, virtualization.devicePlugin.enabled=true requires virtualization.devicePlugin.scc (the plugin runs privileged with the kubelet's device-plugin socket and /dev). Set it to `privileged`, or the DaemonSet never admits, advertises no KVM resource, and every VM runner pod pends forever." -}}
-{{- end -}}
 {{- if and $v.runner.imageArchiveHostPath (not $v.runner.scc) -}}
 {{- fail "on OpenShift, virtualization.runner.imageArchiveHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume that value mounts. Set an SCC that admits a hostPath, or drop imageArchiveHostPath and give the runner a registry to pull from." -}}
 {{- end -}}
@@ -287,14 +281,16 @@ time: a range that is not a CIDR makes Kubernetes reject the runner's
 NetworkPolicy on every reconcile, and an exception that is not one is dropped
 without a word, leaving the range it was meant to close open. A DNS policy
 other than the two the runner supports is silently read as `Default`. A budget
-that is not a positive quantity refuses every runner. A device plugin with no
-grants advertises nothing, so every runner pends. `0.0.0.0/0` with no
+that is not a positive quantity refuses every runner. `0.0.0.0/0` with no
 exceptions is not refused here: the values name it as the way to leave the
 runner unconfined on purpose, and the controller warns about it at startup.
 */}}
 {{- define "platform.validate.vmValuesTheControllerCanUse" -}}
 {{- if .Values.virtualization.enabled -}}
 {{- $v := .Values.virtualization -}}
+{{- if ($v.devicePlugin | default dict).enabled -}}
+{{- fail "virtualization.devicePlugin is gone: the chart no longer ships a KVM device plugin, because a plugin is per node and a cluster runs one for every install on it. Run one on the cluster (e.g. squat's generic-device-plugin, as etc/kvm-device-plugin.yaml does for local dev), set virtualization.runner.devices to the resource it publishes (squat.ai/kvm: \"1\"), and drop virtualization.devicePlugin." -}}
+{{- end -}}
 {{- $cidr := `^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$` -}}
 {{- range $field := list "egressCidrs" "egressExceptCidrs" "dnsCidrs" -}}
 {{- range (index $v.runner $field | default list) -}}
@@ -313,9 +309,6 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- end -}}
 {{- if regexMatch `^0*(\.0*)?([eE][+-]?[0-9]+)?[A-Za-z]*$` $budget -}}
 {{- fail (printf "virtualization.imageCache.budget %q leaves the cached images no room at all, so no runner can fetch an image. Give it a positive size well under the disk it sits on." $budget) -}}
-{{- end -}}
-{{- if and $v.devicePlugin.enabled (lt (int $v.devicePlugin.count) 1) -}}
-{{- fail "virtualization.devicePlugin.count must be at least 1 — it is how many VM runners a node may host, and with none the plugin advertises no device and every runner pends." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

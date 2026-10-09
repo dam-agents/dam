@@ -204,12 +204,14 @@ virtualization:
       digest: "" # @ci-pin vm-runner-image-digest
       pullPolicy: IfNotPresent
     # KVM arrives as a device-plugin resource, which is the only way the
-    # runner gets it — it is never a privileged pod. Empty = the chart's own
-    # plugin below when enabled, else KubeVirt's (`devices.kubevirt.io/kvm`,
-    # present on every node virt-handler runs on). Any plugin exposing
-    # /dev/kvm works; a cluster with none cannot host vm agents, and the
-    # controller says so at startup when no schedulable node matching
-    # `nodeSelector` advertises it.
+    # runner gets it — it is never a privileged pod. Empty = KubeVirt's
+    # (`devices.kubevirt.io/kvm`, present on every node virt-handler runs on).
+    # The chart ships no plugin of its own: a plugin is per node, so on nodes
+    # several installs share it is the cluster's, run once. Any plugin
+    # exposing /dev/kvm works — e.g. squat's generic-device-plugin, as
+    # `squat.ai/kvm`, which local dev applies from etc/kvm-device-plugin.yaml;
+    # a cluster with none cannot host vm agents, and the controller says so at
+    # startup when no schedulable node matching `nodeSelector` advertises it.
     devices: {}
     # OpenShift: name of a *built-in* SCC to bind to the runner's
     # ServiceAccount. Usually unnecessary — when `openshift.scc.anyuidCapNet`
@@ -519,34 +521,6 @@ virtualization:
         memory: 128Mi
       limits:
         memory: 1Gi
-  # A device plugin of our own (squat's generic-device-plugin) advertising
-  # /dev/kvm as `<domain>/kvm` on the
-  # nodes it runs on — any node with KVM does, KubeVirt not required. Runs
-  # privileged (kubelet socket dir + /dev from the host), so keep it on the
-  # KVM-capable pool via nodeSelector/tolerations.
-  devicePlugin:
-    enabled: false
-    image:
-      repository: ghcr.io/squat/generic-device-plugin
-      # Pinned by digest: this DaemonSet is privileged with the host's /dev.
-      digest: sha256:dc192e164c69b03f156765793a1be62ca437709ae477b27ca7d8f3dcf5021576
-      pullPolicy: IfNotPresent
-    # OpenShift: the plugin needs the privileged SCC; empty renders no binding.
-    scc: ""
-    domain: squat.ai
-    # How many grants of each device the plugin advertises, which is the cap
-    # on VM runners per node — and runners are per owner, so it is really a
-    # cap on owners per node. /dev/kvm is not consumed by
-    # opening it, so this is an accounting number the device-plugin API
-    # requires rather than a real resource; raise it rather than let a runner
-    # pend for want of a grant.
-    count: 16
-    # Where the plugin runs, i.e. which nodes may host machines. Empty falls
-    # back to `runner.nodeSelector` / `runner.tolerations`; with both empty it
-    # runs on every schedulable node and advertises zero devices where there
-    # is no /dev/kvm.
-    nodeSelector: {}
-    tolerations: []
 
 # -- Target namespace for agent workloads (agents, templates, runs)
 agentNamespace: platform-agents

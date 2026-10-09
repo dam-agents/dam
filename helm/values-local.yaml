@@ -45,7 +45,8 @@ controller:
     defaultMemory: "14Gi"
 
 # The VM runner (vm backend) in the lima k3s VM: /dev/kvm comes from lima's
-# nested virtualization, handed to the pod by the chart's own device plugin.
+# nested virtualization, handed to the pod as `squat.ai/kvm` by the device
+# plugin cluster:install applies from etc/kvm-device-plugin.yaml.
 # Rendered only with virtualization.enabled.
 virtualization:
   runner:
@@ -53,6 +54,8 @@ virtualization:
       repository: platform-vm-runner
       tag: latest
       pullPolicy: Never
+    devices:
+      squat.ai/kvm: "1"
     storage: 40Gi
     # The lima VM has 20 GiB; leave the rest for k3s and the platform pods.
     resources:
@@ -77,8 +80,6 @@ virtualization:
       - 10.42.0.0/16
       - 10.43.0.0/16
       - 169.254.0.0/16
-  devicePlugin:
-    enabled: true
 
 
 harnessTools:

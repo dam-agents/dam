@@ -147,7 +147,7 @@ if [ -n "$VIRT_ENABLED" ] && [ -z "${IS_SANDBOX:-}" ] && [ "$(uname -s)" = Darwi
   . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
   HOST_RUNNER=1
   export VM_HOST_RUNNER=1
-  HELM_EXTRA_ARGS+=(--set=virtualization.runner.hostAddress="$HOST_RUNNER_ADDRESS" --set=virtualization.devicePlugin.enabled=false)
+  HELM_EXTRA_ARGS+=(--set=virtualization.runner.hostAddress="$HOST_RUNNER_ADDRESS")
 fi
 # A host runner reaches each machine's gateway through a NodePort, which lima
 # forwards to the Mac's loopback only when a rule names it ahead of the k3s
@@ -325,6 +325,7 @@ prepull_images() {
         helm template ztunnel istio/ztunnel --version "$ISTIO_VERSION"
       fi
       helm template platform helm -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}"
+      if [ -n "$VIRT_ENABLED" ] && [ -z "$HOST_RUNNER" ]; then cat etc/kvm-device-plugin.yaml; fi
     } | yq -r '.. | select(tag == "!!map" and has("image")) | .image | select(tag == "!!str")' |
       grep -v '^---$' | grep -vE '(^|/)platform-' | sort -u
   ) || return 0
@@ -891,6 +892,13 @@ if [ -n "${CLICKSTACK:-}" ]; then
     crd/keeperclusters.clickhouse.com \
     crd/mongodbcommunity.mongodbcommunity.mongodb.com
   HELM_EXTRA_ARGS+=(--set clickstack.enabled=true)
+fi
+
+# VM runner pods take /dev/kvm from a device plugin, which the chart does not
+# ship: the cluster runs one for every install on it. The Mac's host runner
+# needs none.
+if [ -n "$VIRT_ENABLED" ] && [ -z "$HOST_RUNNER" ]; then
+  kubectl apply -f etc/kvm-device-plugin.yaml
 fi
 
 # No --wait: the keycloak-provision post-install hook imports the platform realm
