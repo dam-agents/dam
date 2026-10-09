@@ -61,6 +61,8 @@ drivers:
     modelDiscovery:
       - urlEnv:
           - AWS_ENDPOINT_URL_BEDROCK
+        tokenEnv:
+          - AWS_BEARER_TOKEN_BEDROCK
         redirectEnv:
           - AWS_ENDPOINT_URL_BEDROCK
         pinEnv:
