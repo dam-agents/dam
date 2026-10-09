@@ -41,7 +41,7 @@ const LITELLM_PROVIDERS = {
   "curve-bender": {
     description: CURVE_BENDER_DESCRIPTION,
     keyGuideUrl: `https://${CURVE_BENDER_HOST}/ui/`,
-    keyGuideHint: "Generate a key in the Curve Bender LiteLLM dashboard",
+    keyGuideHint: "Generate a key in the CurveBender LiteLLM dashboard",
   },
 } as const;
 
@@ -77,7 +77,24 @@ export function LiteLlmProxyForm({
       provider={provider}
       title={PROVIDERS[provider].displayName}
       description={
-        isEdit ? "Paste a new token to replace the existing one." : description
+        <>
+          {isEdit
+            ? "Paste a new token to replace the existing one."
+            : description}
+          {provider === "curve-bender" && (
+            <>
+              {" "}
+              <a
+                href="https://ibm.biz/cb-docs"
+                {...externalLinkProps}
+                className="underline hover:text-primary"
+              >
+                CurveBender documentation
+              </a>
+              .
+            </>
+          )}
+        </>
       }
       onSubmit={onSubmit}
       onCancel={onCancel}

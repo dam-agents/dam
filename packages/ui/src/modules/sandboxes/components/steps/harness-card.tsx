@@ -1,45 +1,19 @@
 import { Box } from "@carbon/icons-react";
+import type { HarnessFamily } from "api-server-api";
 
+import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { cardSelectionVariants } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-import type { ProviderPresetType, TemplateView } from "../../../../types.js";
-import { CardIcon } from "../../../providers/components/card-icon.js";
+import type { TemplateView } from "../../../../types.js";
 
-const HARNESS_PRESET: Record<string, ProviderPresetType> = {
-  codex: "openai",
+const TEMPLATE_HARNESS: Record<string, HarnessFamily> = {
+  "claude-code": "claude-code",
+  codex: "codex",
+  "pi-agent": "pi",
   bob: "bob",
 };
-
-const HARNESS_ICON_SRC: Record<string, string> = {
-  "claude-code": "/icons/claude-code.svg",
-  "pi-agent": "/icons/pi-agent.svg",
-};
-
-function HarnessIcon({ templateId }: { templateId: string }) {
-  const iconSrc = HARNESS_ICON_SRC[templateId];
-  if (iconSrc) {
-    return (
-      <img
-        src={iconSrc}
-        alt=""
-        width={38}
-        height={38}
-        className="shrink-0 rounded-lg"
-      />
-    );
-  }
-  const preset = HARNESS_PRESET[templateId];
-  if (preset) {
-    return <CardIcon provider={preset} size="md" />;
-  }
-  return (
-    <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-card">
-      <Box className="size-5 text-muted-foreground" />
-    </div>
-  );
-}
 
 export function HarnessCard({
   template,
@@ -69,7 +43,15 @@ export function HarnessCard({
       <div className="pointer-events-none relative">
         <div className="flex min-h-[96px] flex-col gap-3">
           <div className="flex items-start justify-between gap-3">
-            <HarnessIcon templateId={template.id} />
+            {template.id === "default" ? (
+              <HarnessIcons />
+            ) : TEMPLATE_HARNESS[template.id] ? (
+              <HarnessIcons harnesses={[TEMPLATE_HARNESS[template.id]]} />
+            ) : (
+              <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg border border-border bg-card">
+                <Box className="size-5 text-muted-foreground" />
+              </div>
+            )}
             {template.tags && template.tags.length > 0 ? (
               <span className="shrink-0 text-sm text-muted-foreground">
                 {template.tags.join(" · ")}

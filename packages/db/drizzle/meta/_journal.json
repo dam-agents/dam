@@ -442,6 +442,13 @@
       "when": 1791463561949,
       "tag": "0062_good_zombie",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1791539250473,
+      "tag": "0063_curve_bender_classifier_defaults",
+      "breakpoints": true
     }
   ]
 }

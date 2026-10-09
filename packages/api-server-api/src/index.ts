@@ -291,6 +291,7 @@ export {
 } from "./modules/shared.js";
 export {
   DEFAULT_ENV_PLACEHOLDER,
+  harnessFits,
   PROVIDERS,
   BALANCE_PROVIDER_TYPES,
   PROVIDER_PRESET_TYPES,
