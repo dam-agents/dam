@@ -30,6 +30,7 @@ import {
 } from "../lib/schedule-form-options.js";
 import {
   buildRRuleParts,
+  errorField,
   type ScheduleFormValues,
 } from "./schedule-form-schema.js";
 
@@ -169,9 +170,7 @@ export function ScheduleRecurrenceFields({
         <Field
           layout={layout}
           label="Every"
-          {...(errors.interval?.message
-            ? { error: errors.interval.message }
-            : {})}
+          {...(cadence.error ? { error: cadence.error } : {})}
         >
           <div
             className={cn(
@@ -183,7 +182,7 @@ export function ScheduleRecurrenceFields({
               type="number"
               min={1}
               className={cn("w-[80px]", rows ? "h-8" : "h-10")}
-              variant={errors.interval ? "invalid" : undefined}
+              variant={cadence.error ? "invalid" : undefined}
               {...register("interval")}
             />
             <span>{values.kind === "minutely" ? "minutes" : "hours"}</span>
@@ -246,7 +245,9 @@ export function ScheduleRecurrenceFields({
       )}
 
       {cadence.error
-        ? values.kind !== "custom" && <FormError message={cadence.error} />
+        ? errorField(values.kind) === "kind" && (
+            <FormError message={cadence.error} />
+          )
         : !rows &&
           cadence.summary && (
             <p className="-mt-1 text-sm text-muted-foreground">
