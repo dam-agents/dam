@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-10-07
+Last verified: 2026-10-09
 
 ## Overview
 
@@ -94,6 +94,14 @@ chain (logged as a warning) rather than emit an unbootable bootstrap.
 Requests to the host then go out uncredentialed — failing upstream auth
 for that host only — instead of crash-looping the whole gateway. Stale
 Secrets written by since-replaced code paths are the known trigger.
+The same render-time check covers the two connection inputs Envoy itself
+validates. A host that is not a DNS name or a leading `*.` wildcard (a
+bare `*`, a partial wildcard, a space) gets no chain at all, since Envoy
+rejects it as a server name. A header name that is not an RFC 7230 token
+degrades its host to allow-only. Both are logged as warnings. The
+Connections API refuses these inputs, and a value format without
+`{value}`, at create time; the render-time check covers Secrets that
+got past it.
 
 That check covers a credential already known to be bad when the gateway is
 rendered. A credential can also be revoked *after* it — disconnecting a

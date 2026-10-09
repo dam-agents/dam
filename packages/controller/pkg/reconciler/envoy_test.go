@@ -816,6 +816,39 @@ func TestChainsFromSecrets_ConnectionPartialSDSKeysDegradePerHost(t *testing.T) 
 	assert.False(t, byHost["github.com"].Credentialed())
 }
 
+// TEST_SCENARIO: Envoy rejects a bare or partial wildcard in server_names and a header name that is not an RFC 7230 token, and either one crash-loops the whole gateway. An entry like that must lose only its own host or credential, and every other entry must still render.
+func TestRenderEnvoyBootstrap_InvalidHostOrHeaderDegradesOnlyItsEntry(t *testing.T) {
+	s := ownerSecret("platform-conn-custom", "connection", "custom")
+	delete(s.Annotations, envoyHostPatternAnn)
+	s.Annotations[envoyInjectionHostsAnn] = `[
+		{"host":"*","headerName":"X-Api-Key"},
+		{"host":"exa mple.com","headerName":"X-Api-Key"},
+		{"host":"bad-header.example.com","headerName":"Bad Header:"},
+		{"host":"api.example.com","headerName":"X-Api-Key"},
+		{"host":"*.wild.example.com","headerName":"X-Api-Key"}
+	]`
+	s = withHostSDS(s, "*", "exa mple.com", "bad-header.example.com", "api.example.com", "*.wild.example.com")
+
+	chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+	byHost := map[string]envoyHostChain{}
+	for _, c := range chains {
+		byHost[c.Host] = c
+	}
+	assert.NotContains(t, byHost, "*")
+	assert.NotContains(t, byHost, "exa mple.com")
+	require.Contains(t, byHost, "bad-header.example.com")
+	assert.False(t, byHost["bad-header.example.com"].Credentialed())
+	assert.True(t, byHost["api.example.com"].Credentialed())
+	assert.True(t, byHost["*.wild.example.com"].Credentialed())
+
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, chains, false)
+	require.NoError(t, err)
+	assert.NotContains(t, got, "Bad Header:")
+	assert.NotContains(t, got, "exa mple.com")
+	assert.Contains(t, got, "api.example.com")
+	assert.Contains(t, got, "X-Api-Key")
+}
+
 // TEST_SCENARIO: Bob prefixes every gateway call with a service path the proxy does not serve, so the rewrite route must match before the catch-all and leave the host's other paths alone.
 func TestBuildChainForwardRoutes_RewriteRoutePrecedesCatchAll(t *testing.T) {
 	c := credentialedChain("platform-conn-litellm", "litellm.example.com")
