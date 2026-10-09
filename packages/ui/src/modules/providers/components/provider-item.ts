@@ -1,4 +1,4 @@
-import type { ConnectionView } from "api-server-api";
+import type { ConnectionUpdateInput, ConnectionView } from "api-server-api";
 import { normalizeBobChatMode } from "api-server-api";
 
 import type { BobModelPins } from "../../../types.js";
@@ -31,5 +31,27 @@ export function bobPinsFromConnection(
     teamId: env.get("BOB_TEAM_ID"),
     maxCost: env.get("BOB_MAX_COINS"),
     chatMode: chatMode ? normalizeBobChatMode(chatMode) : chatMode,
+  };
+}
+
+export function bobConfigInputs(pins: BobModelPins): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (pins.model) out.model = pins.model;
+  if (pins.agentId) out.instanceId = pins.agentId;
+  if (pins.teamId) out.teamId = pins.teamId;
+  if (pins.maxCost) out.maxCost = pins.maxCost;
+  if (pins.chatMode) out.chatMode = pins.chatMode;
+  return out;
+}
+
+export function bobUpdateInput(
+  id: string,
+  value: string,
+  pins: BobModelPins,
+): ConnectionUpdateInput {
+  return {
+    id,
+    configInputs: bobConfigInputs(pins),
+    ...(value ? { value } : {}),
   };
 }

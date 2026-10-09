@@ -35,7 +35,7 @@ function SourceCard({
             </span>
             <span className="text-sm text-muted-foreground">{count}</span>
             <Badge variant="kit" size="sm">
-              Starter Kit
+              Starter kit
             </Badge>
           </div>
           <p className="mt-0.5 font-mono text-xs text-muted-foreground">

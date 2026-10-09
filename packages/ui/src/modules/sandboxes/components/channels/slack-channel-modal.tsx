@@ -36,7 +36,7 @@ export function SlackChannelModal({
   } = form;
 
   return (
-    <Modal>
+    <Modal onClose={isSubmitting ? undefined : onClose}>
       <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
         <DialogHeader
           title={editing ? "Slack channel settings" : "Connect a Slack channel"}

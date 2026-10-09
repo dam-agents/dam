@@ -186,10 +186,10 @@ function makeHarness(
         seeded.push({ id, name: input.name, enabled: true });
         return { id, name: input.name } as Schedule;
       },
-      async toggle(id) {
+      async toggle(id, enabled) {
         calls.toggled.push(id);
         const found = seeded.find((s) => s.id === id);
-        if (found) found.enabled = !found.enabled;
+        if (found) found.enabled = enabled ?? !found.enabled;
         return null;
       },
       async list() {

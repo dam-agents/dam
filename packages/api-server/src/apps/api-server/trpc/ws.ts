@@ -14,6 +14,7 @@ import {
   type AuthDenialKind,
   type SurfaceAttribution,
 } from "../admission/auth.js";
+import { watchApiKey } from "../admission/api-key-watch.js";
 import { addUpgradeSecurityHeaders } from "../agent-proxies/upgrade.js";
 import { logInternalError } from "./log-internal-error.js";
 
@@ -78,15 +79,18 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
       (expiresAt?.getTime() ?? Date.now() + API_KEY_REAUTH_MS) - Date.now(),
       0,
     );
-    const nudgeInMs = Math.max(closeInMs - RECONNECT_NUDGE_BEFORE_MS, 0);
     const timers = [
-      setTimeout(() => {
-        ws.send(JSON.stringify({ id: null, method: "reconnect" }));
-      }, nudgeInMs),
       setTimeout(() => {
         ws.close(CLOSE_CREDENTIAL_EXPIRED, "credential expired");
       }, closeInMs),
     ];
+    if (closeInMs > RECONNECT_NUDGE_BEFORE_MS) {
+      timers.push(
+        setTimeout(() => {
+          ws.send(JSON.stringify({ id: null, method: "reconnect" }));
+        }, closeInMs - RECONNECT_NUDGE_BEFORE_MS),
+      );
+    }
 
     ws.once("close", () => {
       for (const t of timers) clearTimeout(t);
@@ -105,10 +109,8 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
         sourceIp: upgradeSourceIp(req),
       };
 
-      const admitted = await deps.authenticate(
-        info.connectionParams?.token,
-        site,
-      );
+      const token = info.connectionParams?.token;
+      const admitted = await deps.authenticate(token, site);
       if (!admitted.ok) {
         await firstRequestOrTimeout(res, DENIAL_HOLD_MS);
         throw new TRPCError(trpcDenial[admitted.kind]);
@@ -118,6 +120,12 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
       emitUserAuthenticated(admitted.principal, deps.surfaceAttribution);
       logWsAttach(user.sub, site);
       attachCredentialLifecycle(res, admitted.principal.expiresAt);
+      if (user.keyId !== undefined && res.readyState === res.OPEN) {
+        const stop = watchApiKey(deps.authenticate, token, site, () =>
+          res.close(CLOSE_CREDENTIAL_EXPIRED, "credential revoked"),
+        );
+        res.once("close", stop);
+      }
       return deps.composeApiContext(
         user,
         clientSurface(admitted.principal, deps.surfaceAttribution),

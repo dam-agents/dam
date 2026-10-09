@@ -31,6 +31,7 @@ export interface AcpPermissionOption {
 interface AcpNativePayload {
   kind: "acp_native";
   toolName: string;
+  toolCallId?: string;
   args?: unknown;
   rpcId?: number | string;
   options?: AcpPermissionOption[];

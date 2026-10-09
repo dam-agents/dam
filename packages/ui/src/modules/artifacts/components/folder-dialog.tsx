@@ -33,7 +33,7 @@ export function FolderDialog({ folder, onClose }: Props) {
   };
 
   return (
-    <Modal>
+    <Modal onClose={onClose}>
       <DialogHeader
         onClose={onClose}
         title={folder ? "Edit folder" : "New folder"}

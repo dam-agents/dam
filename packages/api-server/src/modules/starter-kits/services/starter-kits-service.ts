@@ -196,7 +196,7 @@ export function createStarterKitsService(
               ...(precheck ? { precheck } : {}),
               ...(o?.quietHours ? { quietHours: o.quietHours } : {}),
             });
-      if (!enabled) await deps.schedules.toggle(created.id);
+      if (!enabled) await deps.schedules.toggle(created.id, false);
     }
   }
 

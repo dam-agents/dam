@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -446,6 +447,15 @@ func validPathRewrites(s corev1.Secret, e connectionHostInjection) []envoyPathRe
 	return out
 }
 
+var (
+	gatewayServerName = regexp.MustCompile(`^(\*\.)?[a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*$`)
+	httpHeaderToken   = regexp.MustCompile("^[!#$%&'*+\\-.^_`|~0-9A-Za-z]+$")
+)
+
+func validServerName(host string) bool {
+	return len(host) <= 253 && gatewayServerName.MatchString(host)
+}
+
 func anchoredPath(p string) bool {
 	if !strings.HasPrefix(p, "/") || !strings.HasSuffix(p, "/") {
 		return false
@@ -638,9 +648,14 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 		return b
 	}
 
-	add := func(host, secretName string, cred *envoyCredential, opts chainOpts) {
+	add := func(host, secretName string, cred *envoyCredential, opts chainOpts) *bucket {
 		if host == "" {
-			return
+			return nil
+		}
+		if !validServerName(host) {
+			slog.Warn("host is not a DNS name or *.wildcard Envoy accepts as a server name; skipping its chain",
+				"host", host, "secret", secretName)
+			return nil
 		}
 		b := bucketFor(host, secretName)
 		if opts.http2 {
@@ -680,7 +695,7 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 			b.opts.pathRewrites = append(b.opts.pathRewrites, r)
 		}
 		if cred == nil {
-			return
+			return b
 		}
 		header := cred.HeaderName
 		if header == "" {
@@ -691,18 +706,19 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 			slog.Warn("duplicate injection header and path scope on host within one connection; later credential skipped to avoid credential_injector clobber",
 				"host", host, "headerName", header, "pathPattern", cred.PathPattern,
 				"winningSecret", winner.secretName, "skippedSecret", secretName)
-			return
+			return b
 		}
 		b.seenHeader[claim] = headerOwner{connectionID: cred.ConnectionID, secretName: secretName}
 		c := *cred
 		c.HeaderName = header
 		b.credentials = append(b.credentials, c)
+		return b
 	}
 
 	addSigner := func(host, secretName string, signer envoySigner, opts chainOpts) {
-		add(host, secretName, nil, opts)
-		b := bucketFor(host, secretName)
-		b.signers = append(b.signers, signer)
+		if b := add(host, secretName, nil, opts); b != nil {
+			b.signers = append(b.signers, signer)
+		}
 	}
 
 	for _, s := range secrets {
@@ -713,6 +729,10 @@ func chainsFromSecrets(secrets []corev1.Secret, l7Hosts []string) []envoyHostCha
 				case hc.signer != nil:
 					addSigner(hc.host, s.Name, *hc.signer, hc.opts)
 				case hc.cred == nil:
+					add(hc.host, s.Name, nil, hc.opts)
+				case !httpHeaderToken.MatchString(hc.cred.HeaderName):
+					slog.Warn("connection injects an invalid HTTP header name; rendering host allow-only (no credential injection)",
+						"namespace", s.Namespace, "secret", s.Name, "host", hc.host, "headerName", hc.cred.HeaderName)
 					add(hc.host, s.Name, nil, hc.opts)
 				case len(s.Data[hc.cred.SDSFileKey]) == 0:
 					slog.Warn("connection Secret missing SDS data key; rendering host allow-only (no credential injection)",

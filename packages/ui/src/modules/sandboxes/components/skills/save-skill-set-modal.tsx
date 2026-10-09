@@ -89,7 +89,7 @@ export function SaveSkillSetModal({
   };
 
   return (
-    <Modal widthClass="w-[620px]">
+    <Modal onClose={onClose} widthClass="w-[620px]">
       <DialogHeader
         title="Save as skill set"
         subtitle="Starts from what's on here — unmark anything you don't want in the set."

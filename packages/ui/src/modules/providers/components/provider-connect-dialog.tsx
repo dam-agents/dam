@@ -1,4 +1,7 @@
-import type { ConnectionCreateInput } from "api-server-api";
+import type {
+  ConnectionCreateInput,
+  ConnectionUpdateInput,
+} from "api-server-api";
 
 import { Modal } from "../../../components/modal.js";
 import {
@@ -18,7 +21,9 @@ import { BobForm } from "./bob/form.js";
 import { LiteLlmProxyForm } from "./litellm-proxy/form.js";
 import { OpenAIForm } from "./openai/form.js";
 import {
+  bobConfigInputs,
   bobPinsFromConnection,
+  bobUpdateInput,
   type ProviderItem,
   type ProviderRef,
 } from "./provider-item.js";
@@ -44,9 +49,12 @@ export function ProviderConnectDialog({
   const persist = async (args: {
     value: string;
     createInput: ConnectionCreateInput;
+    updateInput?: ConnectionUpdateInput;
   }) => {
     if (item) {
-      await updateConnection.mutateAsync({ id: item.id, value: args.value });
+      await updateConnection.mutateAsync(
+        args.updateInput ?? { id: item.id, value: args.value },
+      );
       onConnected({ id: item.id });
     } else {
       const created = await createConnection.mutateAsync(args.createInput);
@@ -65,7 +73,7 @@ export function ProviderConnectDialog({
     : undefined;
 
   return (
-    <Modal widthClass="w-[505px]">
+    <Modal onClose={onClose} widthClass="w-[505px]">
       <div className="min-h-0 flex-1 overflow-y-auto">
         {provider === "anthropic" && (
           <AnthropicForm
@@ -94,6 +102,7 @@ export function ProviderConnectDialog({
             onSave={({ value, pins }) =>
               persist({
                 value,
+                updateInput: item && bobUpdateInput(item.id, value, pins),
                 createInput: {
                   templateId: "bob",
                   name: "bob",
@@ -167,14 +176,4 @@ function bedrockConfigInputs(pins: BedrockPins): Record<string, string> {
   return pins.model
     ? { region: pins.region, model: pins.model }
     : { region: pins.region };
-}
-
-function bobConfigInputs(pins: BobModelPins): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (pins.model) out.model = pins.model;
-  if (pins.agentId) out.instanceId = pins.agentId;
-  if (pins.teamId) out.teamId = pins.teamId;
-  if (pins.maxCost) out.maxCost = pins.maxCost;
-  if (pins.chatMode) out.chatMode = pins.chatMode;
-  return out;
 }
