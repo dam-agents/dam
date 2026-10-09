@@ -2,6 +2,7 @@ import type { HarnessView } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
+  grantedProviderRefs,
   harnessOptions,
   nextPair,
   providerOptions,
@@ -29,6 +30,38 @@ const oai = { id: "oai", name: "OpenAI", type: "openai" as const };
 const claude = { id: "claude", name: "Anthropic", type: "anthropic" as const };
 
 describe("session pair options", () => {
+  it("keeps Anthropic OAuth out of Pi's granted and addable providers", () => {
+    const { granted, owned } = grantedProviderRefs(
+      ["oauth"],
+      [
+        { id: "oauth", name: "OAuth", templateId: "anthropic-oauth" },
+        { id: "key", name: "API key", templateId: "anthropic" },
+      ],
+    );
+    const catalog: HarnessView[] = [
+      ...CATALOG,
+      {
+        name: "pi",
+        displayName: "Pi",
+        providers: ["anthropic"],
+        tags: [],
+        experimental: false,
+      },
+    ];
+    expect(providerOptions("pi", catalog, granted, owned)).toEqual({
+      granted: [],
+      addable: [owned[1]],
+    });
+    expect(providerOptions("pi", catalog, [], owned)).toEqual({
+      granted: [],
+      addable: [owned[1]],
+    });
+    expect(providerOptions("claude-code", catalog, granted, owned)).toEqual({
+      granted,
+      addable: [owned[1]],
+    });
+  });
+
   /** TEST_SCENARIO: The picker names the harnesses the agent's runtime
    * carries, by the catalog's display name. */
   it("offers the carried harnesses by name", () => {

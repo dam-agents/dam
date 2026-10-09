@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { contribution as contributionSchema } from "agent-runtime-api";
 import { describe, it, expect } from "vitest";
 import type { Contribution, SecretRef } from "api-server-api";
 import { buildConnection } from "../../modules/connections/domain/build-connection.js";
@@ -101,24 +103,78 @@ describe("curve-bender connection template", () => {
     });
   });
 
-  // TEST_SCENARIO: Pi applies one model config to every model the endpoint lists, so it must be told these are reasoning models with a context no larger than the smallest one served — otherwise it drops their thinking and compacts too late.
-  it("tells Pi the endpoint serves reasoning models with a 262k context", async () => {
+  it("reserves Sonnet for the classifier and pins work slots to GLM", async () => {
+    const { contributions } = await buildIbmLitellm("curve-bender");
+    for (const name of [
+      "ANTHROPIC_MODEL",
+      "ANTHROPIC_DEFAULT_MODEL",
+      "ANTHROPIC_DEFAULT_FABLE_MODEL",
+      "ANTHROPIC_DEFAULT_OPUS_MODEL",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    ]) {
+      expect(envOf(contributions, name)).toMatchObject({
+        placeholder: "rits/zai-org/glm-5-3",
+      });
+    }
+    expect(
+      envOf(contributions, "ANTHROPIC_DEFAULT_SONNET_MODEL"),
+    ).toMatchObject({
+      placeholder: "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4",
+    });
+    expect(envOf(contributions, "CLAUDE_CODE_AUTO_MODE_SERVER")).toMatchObject({
+      placeholder: "0",
+    });
+    expect(envOf(contributions, "ENABLE_TOOL_SEARCH")).toMatchObject({
+      placeholder: "false",
+    });
+    const ete = await buildIbmLitellm();
+    expect(
+      envOf(ete.contributions, "ANTHROPIC_DEFAULT_SONNET_MODEL"),
+    ).toBeUndefined();
+    expect(
+      envOf(ete.contributions, "CLAUDE_CODE_AUTO_MODE_SERVER"),
+    ).toBeUndefined();
+  });
+
+  it("backfills existing connections with the same defaults as new ones", async () => {
+    const migration = readFileSync(
+      new URL(
+        "../../../../db/drizzle/0063_curve_bender_classifier_defaults.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const defaults = contributionSchema
+      .array()
+      .parse(
+        JSON.parse(
+          migration.match(/SELECT '(\[[\s\S]*?\])'::jsonb/)?.[1] ?? "null",
+        ),
+      );
+    const { contributions } = await buildIbmLitellm("curve-bender");
+    expect(defaults).toHaveLength(10);
+    for (const contribution of defaults)
+      expect(contributions).toContainEqual(contribution);
+  });
+
+  // TEST_SCENARIO: Pi applies one model config to every model the endpoint lists, so it must be told these are reasoning models with a context no larger than the supported deployment window — otherwise it drops their thinking and compacts too late.
+  it("tells Pi the endpoint serves reasoning models with a 256k context", async () => {
     const { contributions } = await buildIbmLitellm("curve-bender");
 
     expect(envOf(contributions, "OPENAI_PROXY_REASONING")).toMatchObject({
       placeholder: "1",
     });
     expect(envOf(contributions, "OPENAI_PROXY_CONTEXT_WINDOW")).toMatchObject({
-      placeholder: "262144",
+      placeholder: "256000",
     });
   });
 
   // TEST_SCENARIO: Claude Code knows nothing about the endpoint's models and assumes a window for them, so it must be told the real one — otherwise it compacts too late and the endpoint refuses the request.
-  it("tells Claude Code the endpoint's 262k context", async () => {
+  it("tells Claude Code the endpoint's 256k context", async () => {
     const { contributions } = await buildIbmLitellm("curve-bender");
 
     expect(
       envOf(contributions, "CLAUDE_CODE_MAX_CONTEXT_TOKENS"),
-    ).toMatchObject({ placeholder: "262144" });
+    ).toMatchObject({ placeholder: "256000" });
   });
 });

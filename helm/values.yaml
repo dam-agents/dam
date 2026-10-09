@@ -1951,7 +1951,7 @@ harnessTemplates:
   default:
     enabled: true
     displayName: "Coding agent"
-    description: "Runs Claude Code, Codex, Pi or Bob, chosen per session"
+    description: "Runs Bob, Claude, Codex or Pi, chosen per session"
     aliases: [claude-code, codex, pi-agent, bob]
     image:
       repository: quay.io/dam-agents/default

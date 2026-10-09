@@ -348,6 +348,29 @@ describe("the harness and default provider a new agent gets", () => {
 });
 
 describe("the default provider's fit", () => {
+  it("skips subscription OAuth when choosing Pi's default Anthropic connection", async () => {
+    const oauth = { ...provider, id: "oauth", templateId: "anthropic-oauth" };
+    const key = { ...provider, id: "key", templateId: "anthropic" };
+    const { connections } = setup([oauth, key]);
+    const provisioner = connectionGrantProvisioner(
+      { ...connections, listConnections: async () => [] },
+      {
+        harnesses: [
+          {
+            name: "pi",
+            displayName: "Pi",
+            providers: ["anthropic"],
+            tags: [],
+            experimental: false,
+          },
+        ],
+      },
+    );
+    expect(await provisioner.defaultProvider([], { harness: "pi" })).toBe(
+      "key",
+    );
+  });
+
   const openai = { ...provider, id: "conn-openai", templateId: "openai" };
   const provisioner = () => {
     const { connections } = setup([provider, openai]);

@@ -231,10 +231,10 @@ export function connectionGrantProvisioner(
       );
       return holdsProvider
         ? null
-        : connections.defaultProviderConnection((type) =>
+        : connections.defaultProviderConnection((type, templateId) =>
             harness !== undefined &&
             catalog.harnesses.some((h) => h.name === harness)
-              ? harnessFits(catalog, harness, type)
+              ? harnessFits(catalog, harness, type, templateId)
               : !providers || providers.includes(type),
           );
     },

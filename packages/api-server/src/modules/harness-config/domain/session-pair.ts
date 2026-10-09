@@ -3,6 +3,7 @@ import type { ProviderPresetType, SessionPair } from "api-server-api";
 export interface GrantedProvider {
   id: string;
   type: ProviderPresetType;
+  templateId?: string;
 }
 
 export interface SessionPairInputs {
@@ -10,7 +11,11 @@ export interface SessionPairInputs {
   agentHarness: string;
   defaultHarness: string;
   granted: readonly GrantedProvider[];
-  fits: (harness: string, type: ProviderPresetType) => boolean;
+  fits: (
+    harness: string,
+    type: ProviderPresetType,
+    templateId?: string,
+  ) => boolean;
 }
 
 /**
@@ -30,7 +35,7 @@ export function resolveSessionPair(
   input: SessionPairInputs,
 ): SessionPair | null {
   const fits = (harness: string, provider: GrantedProvider): boolean =>
-    input.fits(harness, provider.type);
+    input.fits(harness, provider.type, provider.templateId);
   const firstFitting = (harness: string): GrantedProvider | undefined =>
     input.granted.find((p) => fits(harness, p));
 

@@ -6,10 +6,10 @@ interface ProviderRowDef {
 }
 
 export const IBM_LITELLM_DESCRIPTION =
-  "IBM's external LiteLLM proxy — Claude on watsonx-routed AWS.";
+  "IBM's LiteLLM proxy for Claude, GPT and other models — Anthropic, OpenAI Chat and Responses APIs.";
 
 export const CURVE_BENDER_DESCRIPTION =
-  "LiteLLM proxy fronting open models hosted on RITS — GLM and Nemotron.";
+  "GLM 5.3 on RITS via LiteLLM. Nemotron is reserved for Claude's auto-permission classifier.";
 
 export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   {
@@ -22,22 +22,22 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   },
   {
     type: "bob",
-    description:
-      "IBM Bob Shell endpoint with twin-secret credential injection.",
+    description: "IBM's model endpoint for Bob Shell.",
   },
   {
     type: "anthropic",
     description:
-      "Claude Code, Claude SDK, and any Anthropic-compatible client.",
+      "Claude models for Claude and Pi. API keys also support OpenAI Chat Completions; OAuth is Claude-only.",
   },
   {
     type: "openai",
-    description: "GPT-family models for Codex and OpenAI-compatible agents.",
+    description:
+      "OpenAI models for Codex and Pi via Chat Completions and Responses APIs.",
   },
   {
     type: "bedrock",
     description:
-      "Models your organization hosts in AWS Bedrock, for Claude Code and Pi agents.",
+      "Models available in your AWS region for Claude and Pi, using a Bedrock API key.",
   },
 ];
 

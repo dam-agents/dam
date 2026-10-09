@@ -36,47 +36,26 @@ export function ProviderBalance({ connectionId }: { connectionId: string }) {
 
   if (isError) {
     return (
-      <p className="mt-2 text-xs text-muted-foreground">Balance unavailable</p>
+      <p className="truncate text-xs text-muted-foreground">
+        Balance unavailable
+      </p>
     );
   }
   if (!balance) return null;
 
   const exhausted = balance.limit !== null && balance.used >= balance.limit;
-  const usedShare =
-    balance.limit && balance.limit > 0
-      ? Math.min(balance.used / balance.limit, 1)
-      : null;
   const reset = resetLabel(balance.resetsAt);
+  const label = [summary(balance), reset].filter(Boolean).join(" · ");
 
   return (
-    <div className="mt-2 flex max-w-sm flex-col gap-1">
-      {usedShare !== null && (
-        <div
-          className="h-1.5 overflow-hidden rounded-full bg-muted"
-          role="progressbar"
-          aria-label="Budget used"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(usedShare * 100)}
-        >
-          <div
-            className={cn(
-              "h-full rounded-full",
-              exhausted ? "bg-danger" : "bg-primary",
-            )}
-            style={{ width: `${usedShare * 100}%` }}
-          />
-        </div>
+    <p
+      className={cn(
+        "truncate text-xs",
+        exhausted ? "text-danger" : "text-muted-foreground",
       )}
-      <p
-        className={cn(
-          "text-xs",
-          exhausted ? "text-danger" : "text-muted-foreground",
-        )}
-      >
-        {summary(balance)}
-        {reset && ` · ${reset}`}
-      </p>
-    </div>
+      title={label}
+    >
+      {label}
+    </p>
   );
 }

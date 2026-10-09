@@ -58,7 +58,7 @@ describe("agent template display names", () => {
     "shows the name for %s even on an older image",
     (templateId) => {
       expect(sandboxSubtitle({ ...agent, templateId }, lookup)).toBe(
-        "Coding agent · IBM LiteLLM ETE Proxy",
+        "Coding agent · IBM ETE LiteLLM Proxy",
       );
       expect(
         sandboxSubtitleParts({ ...agent, templateId }, lookup).harness,

@@ -130,7 +130,13 @@ export function createHarnessConfigService(deps: {
       const provider = granted.find((p) => p.id === pair.provider);
       if (
         pair.provider !== null &&
-        (!provider || !harnessFits(deps.catalog, pair.harness, provider.type))
+        (!provider ||
+          !harnessFits(
+            deps.catalog,
+            pair.harness,
+            provider.type,
+            provider.templateId,
+          ))
       )
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -275,6 +281,7 @@ export async function resolveFirePair(
     agentHarness,
     defaultHarness: deps.catalog.default,
     granted,
-    fits: (harness, type) => harnessFits(deps.catalog, harness, type),
+    fits: (harness, type, templateId) =>
+      harnessFits(deps.catalog, harness, type, templateId),
   });
 }

@@ -1,9 +1,23 @@
+import type { HarnessView } from "../templates/types.js";
+
 export type ProviderPresetType =
   "anthropic" | "ibm-litellm" | "curve-bender" | "openai" | "bob" | "bedrock";
 
 export interface EnvMapping {
   envName: string;
   placeholder: string;
+}
+
+export function harnessFits(
+  catalog: { harnesses: readonly HarnessView[] },
+  harness: string,
+  type: ProviderPresetType,
+  templateId?: string,
+): boolean {
+  const entry = catalog.harnesses.find((h) => h.name === harness);
+  if (templateId === "anthropic-oauth" && harness !== "claude-code")
+    return false;
+  return !!entry && (!entry.providers || entry.providers.includes(type));
 }
 
 export const DEFAULT_ENV_PLACEHOLDER = "dummy-placeholder";
@@ -54,20 +68,35 @@ export function ibmLitellmEnvMappings(): EnvMapping[] {
   );
 }
 
+const CURVE_BENDER_WORK_MODEL = "rits/zai-org/glm-5-3";
+
 export function curveBenderEnvMappings(): EnvMapping[] {
   return [
     ...liteLlmEnvMappings(
       CURVE_BENDER_HOST,
-      "rits/zai-org/glm-5-3",
-      "rits/zai-org/glm-5-3",
+      CURVE_BENDER_WORK_MODEL,
+      CURVE_BENDER_WORK_MODEL,
       {
-        MODEL: "rits/zai-org/glm-5-3",
-        CONTEXT_WINDOW: "262144",
+        MODEL: CURVE_BENDER_WORK_MODEL,
+        CONTEXT_WINDOW: "256000",
         MAX_TOKENS: "32768",
         REASONING: "1",
       },
     ),
-    { envName: "CLAUDE_CODE_MAX_CONTEXT_TOKENS", placeholder: "262144" },
+    ...[
+      "ANTHROPIC_MODEL",
+      "ANTHROPIC_DEFAULT_MODEL",
+      "ANTHROPIC_DEFAULT_FABLE_MODEL",
+      "ANTHROPIC_DEFAULT_OPUS_MODEL",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    ].map((envName) => ({ envName, placeholder: CURVE_BENDER_WORK_MODEL })),
+    {
+      envName: "ANTHROPIC_DEFAULT_SONNET_MODEL",
+      placeholder: "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4",
+    },
+    { envName: "CLAUDE_CODE_AUTO_MODE_SERVER", placeholder: "0" },
+    { envName: "ENABLE_TOOL_SEARCH", placeholder: "false" },
+    { envName: "CLAUDE_CODE_MAX_CONTEXT_TOKENS", placeholder: "256000" },
   ];
 }
 
@@ -173,12 +202,12 @@ export const PROVIDERS = {
   },
   "ibm-litellm": {
     id: "ibm-litellm",
-    displayName: "IBM LiteLLM ETE Proxy",
+    displayName: "IBM ETE LiteLLM Proxy",
     modes: [{ key: "api-key", label: "API Token", templateId: "ibm-litellm" }],
   },
   "curve-bender": {
     id: "curve-bender",
-    displayName: "Curve Bender",
+    displayName: "IBM ETE LiteLLM CurveBender",
     modes: [{ key: "api-key", label: "API Token", templateId: "curve-bender" }],
   },
   openai: {
