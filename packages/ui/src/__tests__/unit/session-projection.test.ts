@@ -100,6 +100,22 @@ describe("applyUpdate — agent content", () => {
     expect(messages[0].parts).toEqual([{ kind: "text", text: "hello world" }]);
   });
 
+  test("keeps separate agent messages in separate text parts", () => {
+    const chunk = (text: string, messageId: string) => ({
+      ...txtChunk(text),
+      messageId,
+    });
+    let messages: Message[] = [];
+    messages = applyUpdate(messages, chunk("capture the ", "m1"));
+    messages = applyUpdate(messages, chunk("final line.", "m1"));
+    messages = applyUpdate(messages, chunk("Output:", "m2"));
+    expect(messages).toHaveLength(1);
+    expect(messages[0].parts.map((p) => p.kind === "text" && p.text)).toEqual([
+      "capture the final line.",
+      "Output:",
+    ]);
+  });
+
   test("appends image as a new part after text", () => {
     let messages: Message[] = [];
     messages = applyUpdate(messages, txtChunk("see:"));
@@ -364,6 +380,23 @@ describe("applyUpdate — turn boundaries", () => {
     expect(out[0].parts).toEqual([
       { kind: "text", text: "look at" },
       { kind: "file", name: "image.png", mimeType: "" },
+    ]);
+  });
+
+  test("user_message_chunk resource_link replays as a file chip", () => {
+    const out = applyUpdate([], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u1",
+      content: {
+        type: "resource_link" as const,
+        uri: "file:///workspace/second.txt",
+        name: "second.txt",
+        mimeType: "text/plain",
+        size: 22,
+      },
+    });
+    expect(out[0].parts).toEqual([
+      { kind: "file", name: "second.txt", mimeType: "text/plain", size: 22 },
     ]);
   });
 });

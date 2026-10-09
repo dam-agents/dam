@@ -13,6 +13,7 @@ import {
 } from "../../acp/close-race.js";
 import { extractErrorMessage, isQueueFullError } from "../../acp/errors.js";
 import {
+  fileChipOf,
   finalizeAllStreaming,
   hasAgentContent,
   hasStreamingAssistant,
@@ -144,11 +145,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
             mimeType: block.mimeType,
           });
         else if (block.type === "resource_link")
-          userParts.push({
-            kind: "file",
-            name: block.name,
-            mimeType: block.mimeType ?? "",
-          });
+          userParts.push(fileChipOf(block));
       }
       if (attachments?.length) for (const a of attachments) userParts.push(a);
       if (text) userParts.push({ kind: "text", text });
