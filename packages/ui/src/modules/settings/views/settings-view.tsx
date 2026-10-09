@@ -22,6 +22,7 @@ import { useSlackInstallAvailability } from "../../slack/api/queries.js";
 import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
 import { useUsageInspectAvailability } from "../../usage/api/queries.js";
 import { UsageAnalyticsView } from "../../usage/views/usage-analytics-view.js";
+import { WorkspacesTab } from "../../workspaces/components/workspaces-tab.js";
 import { AppVersionRow } from "../components/app-version-row.js";
 
 const baseTabs: readonly TabDef<SettingsTab>[] = [
@@ -32,6 +33,7 @@ const baseTabs: readonly TabDef<SettingsTab>[] = [
   { value: "api-keys", label: "API keys" },
   { value: "usage", label: "Usage" },
   { value: "schedules", label: "Schedules" },
+  { value: "workspaces", label: "Workspaces" },
 ];
 
 const themeOptions = [
@@ -147,6 +149,8 @@ export function SettingsView() {
         )}
 
         {activeTab === "api-keys" && <ApiKeysList />}
+
+        {activeTab === "workspaces" && <WorkspacesTab />}
 
         {activeTab === "account" && (
           <div className="anim-in">

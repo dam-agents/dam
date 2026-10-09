@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import type { UserIdentity } from "api-server-api";
 import { Hono, type MiddlewareHandler } from "hono";
 import { except } from "hono/combine";
 import {
@@ -61,8 +62,12 @@ const PUBLIC_PATHS = [
 
 export function startApiServerApp(deps: ApiServerDeps) {
   const { config } = deps;
-  const verifyOwner = (agentId: string, ownerSub: string) =>
-    deps.agentsRepo.isOwnedBy(agentId, ownerSub);
+  const verifyOwner = async (agentId: string, user: UserIdentity) => {
+    const owner = await deps.agentsRepo.getOwner(agentId);
+    return (
+      owner !== null && deps.workspacesModule.access.canReachOwner(user, owner)
+    );
+  };
   const ensureReady = (agentId: string) => deps.agentsRepo.ensureReady(agentId);
   const composeApiContext = createApiContextFactory(deps);
 
@@ -88,7 +93,13 @@ export function startApiServerApp(deps: ApiServerDeps) {
     ),
   );
   mountRoutes(app, deps);
-  app.all("/api/trpc/*", createTrpcHttpHandler({ composeApiContext }));
+  app.all(
+    "/api/trpc/*",
+    createTrpcHttpHandler({
+      composeApiContext,
+      workspaceAccess: deps.workspacesModule.access,
+    }),
+  );
   app.all(
     "/api/agents/:id/trpc/*",
     createAgentTrpcProxy({
@@ -127,6 +138,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     authenticate,
     surfaceAttribution: deps.surfaceAttribution,
     composeApiContext,
+    workspaceAccess: deps.workspacesModule.access,
   });
   const relayAdmission = createRelayAdmission({
     authenticate,

@@ -175,6 +175,7 @@ import {
   createApiKeysCleanupHook,
   listApiKeyAgentIds,
 } from "./modules/api-keys/index.js";
+import { composeWorkspacesModule } from "./modules/workspaces/index.js";
 import {
   composeArtifactExpirySweeper,
   composeArtifactLibraryForOwner,
@@ -423,6 +424,7 @@ export async function bootstrap() {
       agentsRepo.isOwnedBy(agentId, ownerSub),
     ownerDirectory: userDirectory,
   });
+  const workspacesModule = composeWorkspacesModule(db);
   const auth = createAuth(
     {
       issuerUrl: `${config.keycloakExternalUrl}/realms/${config.keycloakRealm}`,
@@ -1587,6 +1589,7 @@ export async function bootstrap() {
     kitUpstream,
     reposService,
     apiKeysModule,
+    workspacesModule,
     satellitesBoot,
     auth,
     jwksWarmup,

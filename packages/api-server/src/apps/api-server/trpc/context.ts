@@ -1,4 +1,4 @@
-import type { ApiContext, UserIdentity } from "api-server-api";
+import type { ApiContext, UserIdentity, WorkspaceAccess } from "api-server-api";
 import { ChannelType } from "api-server-api";
 import {
   composeAgentsModule,
@@ -48,6 +48,7 @@ import {
   bindConversation,
   unbindConversation,
 } from "../../../modules/channels/infrastructure/telegram-conversations-repository.js";
+import { scopeToWorkspace } from "../../../modules/workspaces/index.js";
 import type { ApiServerDeps } from "../deps.js";
 
 export function createApiContextFactory(boot: ApiServerDeps) {
@@ -90,6 +91,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     liveEvents,
     wakeAgent,
     artifactLibraryFor,
+    workspacesModule,
   } = boot;
 
   const defaultLimits = {
@@ -97,9 +99,15 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     memory: config.agentDefaultMemoryLimit,
   };
 
-  return (user: UserIdentity, surface: string): ApiContext => {
+  return (
+    person: UserIdentity,
+    surface: string,
+    workspace?: WorkspaceAccess,
+  ): ApiContext => {
+    const owner = workspace?.principal ?? person.sub;
+    const user = workspace ? scopeToWorkspace(person, workspace) : person;
     const connections = composeConnectionsForOwner({
-      ownerId: user.sub,
+      ownerId: owner,
       maxSharedKbConnections: config.kbShareMaxConnectionsPerOwner,
       db,
       templates: connectionsBoot.templates,
@@ -116,8 +124,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const { budgets, resizeGate } = composeBudgetsModule({
       k8s: k8sClient,
-      owner: user.sub,
-      listAgents: () => agentsRepo.list(user.sub),
+      owner,
+      listAgents: () => agentsRepo.list(owner),
       defaultCeiling: {
         cpu: config.defaultUserCpuBudget,
         memory: config.defaultUserMemoryBudget,
@@ -133,7 +141,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agentDefaultLimits: defaultLimits,
       install: agentsInstallSettings(config),
       resizeGate,
-      owner: user.sub,
+      owner,
       db,
       telegramBinding: telegramBindFlows
         ? {
@@ -172,23 +180,23 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       (await agents.get(agentId)) !== null;
     const { schedules } = composeSchedulesForOwner({
       boot: schedulesBoot,
-      owner: user.sub,
+      owner,
       agentBinding: user.agentIds,
       agentExists,
     });
     const invocationsQuery = composeInvocationsQueryForOwner({
       db,
-      owner: user.sub,
+      owner,
       frames: delegationFrames,
     });
     const invocationsControl = composeInvocationsControlForOwner({
       db,
-      owner: user.sub,
+      owner,
       agents,
       frames: delegationFrames,
     });
     const { kbShares } = composeKbSharesForOwner({
-      owner: user.sub,
+      owner,
       db,
       agents,
       namespace: config.namespace,
@@ -205,12 +213,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         maxFiles: config.kbShareMaxFiles,
       },
     });
-    const artifactLibrary = artifactLibraryFor(user.sub, surface, {
+    const artifactLibrary = artifactLibraryFor(owner, surface, {
       agentExists,
     });
     const { features } = composeFeaturesForOwner({
       db,
-      owner: user.sub,
+      owner: person.sub,
       surface,
       modes: config.featureModes,
     });
@@ -219,7 +227,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       surface,
       api,
       namespace: config.namespace,
-      owner: user.sub,
+      owner,
       db,
       seedSources,
       brandName: config.brand.name,
@@ -229,7 +237,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const l7Hosts = createAgentL7HostsPort(k8sClient);
     const { starterKits } = composeStarterKitsForOwner({
-      owner: user.sub,
+      owner,
       repo: starterKitsRepo,
       agents,
       schedules,
@@ -248,10 +256,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       pinnedKit: config.starterKitsPinned,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
-      (await agentExists(agentId)) && ownerSub === user.sub;
+      (await agentExists(agentId)) && ownerSub === owner;
     const { service: egressRules } = composeEgressRulesModule({
       db,
-      ownerSub: user.sub,
+      ownerSub: owner,
       isAgentOwnedBy,
       l7Hosts,
       presetSeeder,
@@ -259,7 +267,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const { service: approvals } = composeApprovalsService({
       db,
-      ownerSub: user.sub,
+      ownerSub: owner,
       agentBinding: user.agentIds,
       isAgentOwnedBy: (agentId, ownerSub) =>
         agentsRepo.isOwnedBy(agentId, ownerSub),
@@ -268,26 +276,26 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const attention = composeAttentionService({
       db,
-      ownerSub: user.sub,
+      ownerSub: owner,
       ownsApproval: async (approvalId) =>
         (await createApprovalsRepository(db).getPending(approvalId))
-          ?.ownerSub === user.sub,
+          ?.ownerSub === owner,
     });
     const files = composeFilesModule(
       agentsRepo,
       config.namespace,
-      user.sub,
+      owner,
       surface,
     );
     const apiKeys = apiKeysModule.createService({
-      ownerSub: user.sub,
+      ownerSub: person.sub,
       surface,
     });
-    const satellites = satellitesBoot.serviceFor(user.sub, user.agentIds);
+    const satellites = satellitesBoot.serviceFor(person.sub, user.agentIds);
     const { service: harnessConfig } = composeHarnessConfigModule({
       catalog: harnesses,
       db,
-      ownerSub: user.sub,
+      ownerSub: owner,
       surface,
       runtimeMutator,
       isOwnedAgent,
@@ -300,7 +308,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     > => {
       const [live, registered] = await Promise.all([
         agents.list(),
-        listRegisteredAgentIds(user.sub),
+        listRegisteredAgentIds(owner),
       ]);
       const names = new Map(live.map((a) => [a.id, a.name]));
       const scoped = scopeOwnedAgentIds({
@@ -312,7 +320,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     };
     const { caseStudies } = composeCaseStudiesForOwner({
       db,
-      owner: user.sub,
+      owner,
       listOwnedAgentIds: async () => (await listOwnedAgents()).map((a) => a.id),
       readArtifactText: async (artifactId) => {
         const artifact = await artifactLibrary.getContent(artifactId);
@@ -366,13 +374,16 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       metrics,
       telemetry,
       terms,
-      usage: composeUsageForOwner(user.sub),
+      usage: composeUsageForOwner(owner),
       e2e,
       apiKeys,
       satellites,
       satelliteWorker: satellitesBoot.workerOps,
       budgets,
+      workspaces: workspacesModule.serviceFor(person),
       user,
+      owner,
+      ...(workspace ? { workspace } : {}),
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,
       featureModes: config.featureModes,

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 
 import { createTrpcWsEndpoint } from "../../apps/api-server/trpc/ws.js";
+import { noWorkspaceAccess } from "../helpers/no-workspace-access.js";
 
 const servers: Server[] = [];
 const sockets: WebSocket[] = [];
@@ -18,6 +19,7 @@ async function refusingDoor(): Promise<number> {
   const endpoint = createTrpcWsEndpoint({
     authenticate: async () => ({ ok: false, kind: "unauthorized" }),
     surfaceAttribution: { uiClientId: "ui", cliClientId: "cli" },
+    workspaceAccess: noWorkspaceAccess,
     composeApiContext: () => {
       throw new Error("a refused connection composes no context");
     },

@@ -38,10 +38,15 @@ import type {
 } from "./modules/templates/types.js";
 import type { TermsService } from "./modules/terms/types.js";
 import type { UsageService } from "./modules/usage/types.js";
+import type {
+  WorkspaceAccess,
+  WorkspacesService,
+} from "./modules/workspaces/types.js";
 
 export interface UserIdentity {
   sub: string;
   preferredUsername: string;
+  email?: string;
   scopes: readonly Scope[];
   agentIds: readonly string[] | "*";
   keyId?: string;
@@ -79,7 +84,10 @@ export interface ApiContext {
   satellites: SatellitesService;
   satelliteWorker: SatelliteWorkerOps;
   budgets: BudgetsService;
+  workspaces: WorkspacesService;
   user: UserIdentity;
+  owner: string;
+  workspace?: WorkspaceAccess;
   e2eEnabled: boolean;
   virtualizationEnabled: boolean;
   featureModes: FeatureModes;

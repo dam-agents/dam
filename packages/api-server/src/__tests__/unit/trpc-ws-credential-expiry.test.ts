@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 
 import { createTrpcWsEndpoint } from "../../apps/api-server/trpc/ws.js";
+import { noWorkspaceAccess } from "../helpers/no-workspace-access.js";
 
 const servers: Server[] = [];
 const sockets: WebSocket[] = [];
@@ -27,6 +28,7 @@ async function admit(expiresInMs: number) {
       },
     }),
     surfaceAttribution: { uiClientId: "ui", cliClientId: "cli" },
+    workspaceAccess: noWorkspaceAccess,
     composeApiContext: () => ({}) as ApiContext,
   });
   const server = createServer();

@@ -1,5 +1,6 @@
 import { request as httpRequest } from "node:http";
 import { Readable, Transform } from "node:stream";
+import type { UserIdentity } from "api-server-api";
 import type { Context } from "hono";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -33,7 +34,7 @@ const PROXY_HOP_BY_HOP_HEADERS = new Set([
 export interface ImportProxyDeps {
   namespace: string;
   maxImportBundleBytes: number;
-  verifyOwner: (agentId: string, ownerSub: string) => Promise<boolean>;
+  verifyOwner: (agentId: string, user: UserIdentity) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<unknown>;
 }
 
@@ -45,7 +46,7 @@ export function createImportProxy(deps: ImportProxyDeps) {
   return async (c: ImportCtx) => {
     const user = c.get("user");
     const agentId = c.req.param("id")!;
-    if (!(await deps.verifyOwner(agentId, user.sub))) {
+    if (!(await deps.verifyOwner(agentId, user))) {
       securityLog("warn", "authz.owner_mismatch", {
         category: "authz",
         actor: user.sub,

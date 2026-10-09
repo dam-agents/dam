@@ -16,6 +16,7 @@ import { kbSharesRouter } from "./modules/kb-shares/router.js";
 import { satellitesRouter } from "./modules/satellites/router.js";
 import { linksRouter } from "./modules/links/router.js";
 import { featuresRouter } from "./modules/features/router.js";
+import { workspacesRouter } from "./modules/workspaces/router.js";
 import { filesRouter } from "./modules/files/router.js";
 import { harnessConfigRouter } from "./modules/harness-config/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
@@ -45,6 +46,7 @@ export const appRouter = t.router({
   artifactLibrary: artifactLibraryRouter,
   caseStudies: caseStudiesRouter,
   features: featuresRouter,
+  workspaces: workspacesRouter,
   files: filesRouter,
   links: linksRouter,
   metrics: metricsRouter,

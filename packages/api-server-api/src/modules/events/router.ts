@@ -8,6 +8,6 @@ export const eventsRouter = t.router({
   owner: readAgentProcedure
     .use(requireWildcardBinding)
     .subscription(({ ctx, signal }) =>
-      ctx.liveEvents.ownerStream(ctx.user.sub, signal),
+      ctx.liveEvents.ownerStream(ctx.owner, signal),
     ),
 });
