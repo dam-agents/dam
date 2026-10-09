@@ -47,6 +47,7 @@ export interface PromptScheduler {
   hasWork(sessionId: string): boolean;
   anyWork(): boolean;
   activeTurnCount(): number;
+  activeTurnSince(): number | null;
   onEngaged(sessionId: string): void;
   onSessionReady(sessionId: string): void;
   onDetached(sessionId: string): void;
@@ -119,6 +120,7 @@ export function createPromptScheduler(
       promptId: string | null;
       turnId: string;
       runPrompt: boolean;
+      startedAt: number;
     }
   >();
   const queues = new Map<string, PromptSubmission[]>();
@@ -202,6 +204,7 @@ export function createPromptScheduler(
       promptId: entry.promptId,
       turnId: entry.promptId ?? randomUUID(),
       runPrompt: entry.runPrompt ?? false,
+      startedAt: Date.now(),
     });
     deps.onTurnStarted?.(entry);
     if (entry.promptId !== null) {
@@ -334,6 +337,15 @@ export function createPromptScheduler(
 
     activeTurnCount() {
       return activeTurns.size;
+    },
+
+    activeTurnSince() {
+      let earliest: number | null = null;
+      for (const turn of activeTurns.values()) {
+        if (earliest === null || turn.startedAt < earliest)
+          earliest = turn.startedAt;
+      }
+      return earliest;
     },
 
     onEngaged(sessionId) {

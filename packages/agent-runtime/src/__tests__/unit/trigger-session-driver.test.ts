@@ -45,6 +45,10 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
     holdsSessions: () => false,
     refreshEnv: () => {},
     recycleForConfig: () => {},
+    harnesses: () => [],
+    pendingRestart: () => null,
+    applyPendingRestart: () => false,
+    onPendingRestartChange: () => {},
     shutdown: () => {},
   };
   return { runtime, sent };

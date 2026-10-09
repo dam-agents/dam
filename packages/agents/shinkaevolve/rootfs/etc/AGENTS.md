@@ -109,8 +109,10 @@ estimate, but an informed user may pre-authorize it.
   reports harness-registered tasks to the runtime: the pod is held awake for
   as long as the run lives, and the finishing task wakes you for a follow-up
   turn — **report the result to the user then** (best `combined_score`, the
-  objective metric, and where the winner lives in `results/`). A detached `nohup` process is invisible to that contract, so the
-  pod can hibernate mid-run. Still keep the PID and log in the run directory
+  objective metric, and where the winner lives in `results/`). A bare `nohup` process does not hold the pod awake, so it can hibernate
+  mid-run. Without a harness background facility, launch the run with
+  `platform-keep -- <command>` instead: it holds the pod awake until the run
+  exits, and the user sees it and can stop it. Still keep the PID and log in the run directory
   for monitoring and crash recovery:
 
   ```sh

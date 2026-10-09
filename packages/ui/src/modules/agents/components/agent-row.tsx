@@ -24,6 +24,7 @@ import {
 import type { AgentView } from "../../../types.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { AgentChannelChips } from "../../sandboxes/components/channels/agent-channel-chips.js";
+import { useKeptWorkCount } from "../../sessions/api/background-work.js";
 import { KitUpdateTag } from "../../starter-kits/components/kit-update-tag.js";
 import { OnboardingTag } from "../../starter-kits/components/onboarding-tag.js";
 import {
@@ -106,6 +107,7 @@ export function AgentRow({
   const kindBadge = agentKindBadge(agent);
   const kitBadge = starterKitBadge(agent);
   const knowledge = knowledgeBadge(agent);
+  const keptWork = useKeptWorkCount(agent.id);
   const onShareKnowledge = knowledge ? onShare : undefined;
   return (
     <Card
@@ -209,7 +211,11 @@ export function AgentRow({
               }
             : {})}
         >
-          <StatusBadge state={display.state} working={working} />
+          <StatusBadge
+            state={display.state}
+            working={working}
+            keptWork={keptWork}
+          />
         </span>
         {}
         <span onClick={(e) => e.stopPropagation()}>

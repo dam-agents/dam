@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { SessionBackgroundWork } from "api-server-api";
+import type { AgentBackgroundWork } from "api-server-api";
 import { podBaseUrl } from "./k8s.js";
 
 const statusSchema = z.object({
@@ -17,12 +17,13 @@ const statusSchema = z.object({
       }),
     )
     .catch([]),
+  keptProcesses: z.number().int().nonnegative().catch(0),
 });
 
 const STATUS_TIMEOUT_MS = 3_000;
 
 export interface PodStatusClient {
-  backgroundWork(agentId: string): Promise<SessionBackgroundWork[]>;
+  backgroundWork(agentId: string): Promise<AgentBackgroundWork>;
 }
 
 export function createPodStatusClient(namespace: string): PodStatusClient {
@@ -33,7 +34,11 @@ export function createPodStatusClient(namespace: string): PodStatusClient {
         { signal: AbortSignal.timeout(STATUS_TIMEOUT_MS) },
       );
       if (!res.ok) throw new Error(`pod status returned ${res.status}`);
-      return statusSchema.parse(await res.json()).backgroundWork;
+      const status = statusSchema.parse(await res.json());
+      return {
+        sessions: status.backgroundWork,
+        keptProcesses: status.keptProcesses,
+      };
     },
   };
 }
