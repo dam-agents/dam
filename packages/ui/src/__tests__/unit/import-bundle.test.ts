@@ -1,9 +1,13 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   buildBundle,
   type BundleEntry,
+  importBundle,
 } from "../../modules/files/api/import-bundle.js";
+
+const authFetch = vi.hoisted(() => vi.fn<typeof fetch>());
+vi.mock("../../auth.js", () => ({ authFetch }));
 
 type ParsedEntry = { path: string; type: string; content: string };
 
@@ -108,5 +112,30 @@ describe("buildBundle", () => {
     const tar = await parseTar(await buildBundle(paths.map((p) => entry(p))));
 
     expect(tar.map((e) => e.path)).toEqual(paths);
+  });
+});
+
+describe("importBundle", () => {
+  // TEST_SCENARIO: A successful import returns the result from the server.
+  test("returns the server response on success", async () => {
+    authFetch.mockResolvedValueOnce(
+      Response.json({ filesWritten: 3, bytes: 100, durationMs: 50 }),
+    );
+    const entries = [entry("project/a.txt")];
+    const result = await importBundle({ agentId: "a", entries });
+    expect(result).toEqual({ filesWritten: 3, bytes: 100, durationMs: 50 });
+  });
+
+  // TEST_SCENARIO: An error response throws with the server message.
+  test("throws on error response", async () => {
+    authFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "something went wrong" }), {
+        status: 500,
+      }),
+    );
+    const entries = [entry("project/a.txt")];
+    await expect(importBundle({ agentId: "a", entries })).rejects.toThrow(
+      "something went wrong",
+    );
   });
 });
