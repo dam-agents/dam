@@ -21,6 +21,7 @@ import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
 import { isDarkTheme } from "./modules/platform/store/theme.js";
+import { NotFoundView } from "./modules/platform/views/not-found-view.js";
 import { PendingBindModal } from "./modules/sandboxes/components/channels/pending-bind-modal.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
@@ -154,7 +155,7 @@ function MainApp() {
               ) : view === "artifacts" ? (
                 <ArtifactsView />
               ) : (
-                <HomeView />
+                <NotFoundView />
               )}
             </div>
           )}
