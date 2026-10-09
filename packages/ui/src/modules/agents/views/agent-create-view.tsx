@@ -147,12 +147,17 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     leastUsedCharacter(
       (agentsQ.data?.list ?? []).map((a) => resolveCharacter(a.name, a.avatar)),
     );
+  const slackCheckboxRef = useRef<HTMLButtonElement>(null);
   const { openCatalog, catalogNode } = useSetupConnectionCatalog({
     connectionIds: form.connectionIds,
     onToggle: toggleConnection,
     satelliteNames: form.satelliteNames,
     onToggleSatellite: toggleSatellite,
     oauthReturnView: returnPath,
+    onGoToChannels:
+      !kit && availableChannels?.slack
+        ? () => slackCheckboxRef.current?.focus({ focusVisible: true })
+        : undefined,
   });
   const grantSatellite = useGrantSatellite();
   const grantSatellites = (agentId: string) =>
@@ -689,6 +694,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
           value={form.channels}
           onChange={(channels) => update({ channels })}
           onGoToConnections={openCatalog}
+          slackCheckboxRef={slackCheckboxRef}
         />
       )}
       {catalogNode}

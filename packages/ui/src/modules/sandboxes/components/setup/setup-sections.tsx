@@ -84,12 +84,14 @@ export function useSetupConnectionCatalog({
   satelliteNames,
   onToggleSatellite,
   oauthReturnView,
+  onGoToChannels,
 }: {
   connectionIds: string[];
   onToggle: (id: string, granted: boolean) => void;
   satelliteNames: string[];
   onToggleSatellite: (name: string, granted: boolean) => void;
   oauthReturnView: string;
+  onGoToChannels?: () => void;
 }): { openCatalog: () => void; catalogNode: ReactNode } {
   const [open, setOpen] = useState(false);
   const grantedIds = useMemo(() => new Set(connectionIds), [connectionIds]);
@@ -105,6 +107,13 @@ export function useSetupConnectionCatalog({
           onToggle: (on) => onToggleSatellite(s.name, on),
         })}
         oauthReturnView={oauthReturnView}
+        onGoToChannels={
+          onGoToChannels &&
+          (() => {
+            setOpen(false);
+            requestAnimationFrame(() => onGoToChannels());
+          })
+        }
       />
     ) : null,
   };
