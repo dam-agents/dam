@@ -207,10 +207,6 @@ async function uploadAndReport(args: {
       process.stderr.write("error: agent no longer exists\n");
       return EXIT_AGENT_NOT_RESOLVED;
     case 409:
-      process.stderr.write(
-        "error: another import is already in progress for this agent\n",
-      );
-      return EXIT_RUNTIME_FAILURE;
     case 411:
     case 413:
       process.stderr.write(`error: ${serverMessage}\n`);

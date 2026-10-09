@@ -91,10 +91,32 @@ describe("import finalize", () => {
     );
   });
 
-  // TEST_SCENARIO: A file in the bundle replaces an existing directory of the same name.
-  it("replaces a directory with a file of the same name", async () => {
-    const res = await post({ données: "now a file" });
-    expect(res.status).toBe(200);
-    expect(await readFile(join(workDir, "données"), "utf8")).toBe("now a file");
-  });
+  // TEST_SCENARIO: Directory collisions must reject the whole import before any workspace entry changes.
+  it.each(["données", "données/sub dir"])(
+    "refuses a file replacing directory %s without changing the workspace",
+    async (path) => {
+      mkdirSync(join(workDir, "z-empty"));
+      const res = await post({
+        "a-new.txt": "new",
+        "notes.txt": "new notes",
+        [path]: "now a file",
+        "z-empty": "another collision",
+      });
+      expect(res.status).toBe(409);
+      expect(res.body.error).toContain(path);
+      expect(res.body.error).toContain("z-empty");
+      expect(
+        await readFile(join(workDir, "données", "sub dir", "old.txt"), "utf8"),
+      ).toBe("old");
+      expect(await readFile(join(workDir, "notes.txt"), "utf8")).toBe(
+        "old notes",
+      );
+      expect(readdirSync(join(workDir, "z-empty"))).toEqual([]);
+      expect(existsSync(join(workDir, "a-new.txt"))).toBe(false);
+      expect(
+        readdirSync(root).some((name) => name.startsWith(".import-")),
+      ).toBe(false);
+      expect((await post({ "retry.txt": "retry" })).status).toBe(200);
+    },
+  );
 });

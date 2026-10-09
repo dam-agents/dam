@@ -20,6 +20,28 @@ function messageForDomainError(error: ImportDomainError): string {
   }
 }
 
+async function directoryConflicts(
+  src: string,
+  dest: string,
+): Promise<string[]> {
+  const conflicts: string[] = [];
+  for (const ent of await readdir(src, { withFileTypes: true })) {
+    const destPath = join(dest, ent.name);
+    const destStat = await lstat(destPath).catch((e: NodeJS.ErrnoException) => {
+      if (e.code === "ENOENT") return null;
+      throw e;
+    });
+    if (!destStat?.isDirectory()) continue;
+    if (ent.isDirectory()) {
+      const nested = await directoryConflicts(join(src, ent.name), destPath);
+      conflicts.push(...nested.map((path) => join(ent.name, path)));
+    } else {
+      conflicts.push(ent.name);
+    }
+  }
+  return conflicts;
+}
+
 async function mergeDir(src: string, dest: string): Promise<void> {
   const names = await readdir(src, { withFileTypes: true });
   for (const ent of names) {
@@ -37,7 +59,7 @@ async function mergeDir(src: string, dest: string): Promise<void> {
         await rename(srcPath, destPath);
       }
     } else {
-      await rm(destPath, { recursive: true, force: true });
+      await rm(destPath, { force: true });
       await rename(srcPath, destPath);
     }
   }
@@ -165,6 +187,13 @@ export function createImportHandlers(
           return fail(422, messageForDomainError(extractResult.error));
         }
         if (!staging) return fail(500, "internal: staging dir not initialized");
+        const conflicts = await directoryConflicts(staging, workDir);
+        if (conflicts.length) {
+          return fail(
+            409,
+            `bundle files conflict with existing directories: ${JSON.stringify(conflicts)}`,
+          );
+        }
         log(`finalize start (dest=${workDir})`);
         await mkdir(workDir, { recursive: true });
         await mergeDir(staging, workDir);
