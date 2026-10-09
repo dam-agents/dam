@@ -1,3 +1,4 @@
+import { isUtf8 } from "node:buffer";
 import { dirname } from "node:path";
 import {
   mkdir,
@@ -135,7 +136,7 @@ export function createFilesService(workingDir: string): FilesService {
             mtimeMs,
           });
         }
-        if (hasNullBytes(buf)) {
+        if (hasNullBytes(buf) || !isUtf8(buf)) {
           return ok({
             path: rel,
             content: buf.toString("base64"),

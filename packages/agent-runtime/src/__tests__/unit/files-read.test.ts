@@ -72,4 +72,16 @@ describe("readFileSafe text and binary classification", () => {
     expect(file.binary).toBe(true);
     expect(file.mimeType).toBe("application/octet-stream");
   });
+
+  // TEST_SCENARIO: A Latin-1 file has no null bytes and no detected format, but its bytes are not valid UTF-8. Decoding it would replace each accented byte with U+FFFD, and a save from the editor would then write those replacements back over the original bytes.
+  it("keeps a file that is not valid UTF-8 binary with its raw bytes", async () => {
+    const latin1 = Buffer.from("caf\xe9 cr\xe8me\n", "latin1");
+    writeFileSync(join(work, "latin1.txt"), latin1);
+
+    const file = await read("latin1.txt");
+
+    expect(file.binary).toBe(true);
+    expect(file.mimeType).toBe("application/octet-stream");
+    expect(file.content).toBe(latin1.toString("base64"));
+  });
 });
