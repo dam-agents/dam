@@ -44,6 +44,12 @@ export type AgentSizing = {
   idleTimeoutMin: number;
 };
 
+export type OutOfMemoryRestart = {
+  agentId: string;
+  cpu: string | undefined;
+  memory: string | undefined;
+};
+
 export type AnalyticsFacts = {
   users: ReadonlyArray<UserFact>;
   activeDays: ReadonlyArray<ActiveDayFact>;
@@ -52,7 +58,7 @@ export type AnalyticsFacts = {
   kitAgents: ReadonlyArray<KitAgentFact>;
   agentsCreated: ReadonlyArray<AgentCreatedFact>;
   liveAgents: ReadonlyArray<LiveAgentFact>;
-  oomAgentIds: ReadonlySet<string>;
+  oomRestarts: ReadonlyArray<OutOfMemoryRestart>;
   knowledgeBaseConnectionIds: ReadonlySet<string>;
   providerConnectionIds: ReadonlySet<string>;
   sizing: AgentSizing;
@@ -85,7 +91,8 @@ export type SizeRow = {
   size: "1x" | "2x" | "4x" | "custom";
   agents: number;
   alwaysOn: number;
-  outOfMemory: number;
+  outOfMemoryEvents: number;
+  outOfMemoryAgents: number;
 };
 
 export type AnalyticsReport = {

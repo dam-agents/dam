@@ -18,6 +18,16 @@ const PAGE_STYLE = `:root {
   --q0: #d9dce0; --q1: #86b6ef; --q2: #3987e5; --q3: #1c5cab; --q4: #0d366b;
   --q0-ink: #4d5358; --q1-ink: #0b2545; --q2-ink: #ffffff; --q3-ink: #ffffff; --q4-ink: #ffffff;
   --good: #0e7a2f; --bad: #c21f1f;
+  --b1: #86b6ef; --b2: #3987e5; --b3: #1c5cab; --b4: #0d366b; --b5: #061f40;
+  --b1-ink: #121619; --b2-ink: #121619; --b3-ink: #ffffff; --b4-ink: #ffffff; --b5-ink: #ffffff;
+  --g1: #4cc39a; --g2: #1baf7a; --g3: #117a55; --g4: #0a4d36;
+  --g1-ink: #121619; --g2-ink: #121619; --g3-ink: #ffffff; --g4-ink: #ffffff;
+  --o1: #f3a06f; --o2: #eb6834; --o3: #b84a1e; --o4: #7a2f10;
+  --o1-ink: #121619; --o2-ink: #121619; --o3-ink: #ffffff; --o4-ink: #ffffff;
+  --v1: #a79bea; --v2: #7b6bd6; --v3: #4a3aa7; --v4: #2a2066; --v5: #17123f;
+  --v1-ink: #121619; --v2-ink: #ffffff; --v3-ink: #ffffff; --v4-ink: #ffffff; --v5-ink: #ffffff;
+  --s7: #4a3aa7; --s8: #e34948;
+  --lost: #c21f1f;
   --tip-bg: #121619; --tip-ink: #f4f4f4;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -32,6 +42,16 @@ const PAGE_STYLE = `:root {
     --q0: #34383c; --q1: #184f95; --q2: #2a78d6; --q3: #6da7ec; --q4: #b7d3f6;
     --q0-ink: #c1c7cd; --q1-ink: #ffffff; --q2-ink: #ffffff; --q3-ink: #0b2545; --q4-ink: #0b2545;
     --good: #3fbf65; --bad: #ff7070; --tip-bg: #f2f4f8; --tip-ink: #121619;
+    --b1: #184f95; --b2: #2a78d6; --b3: #6da7ec; --b4: #b7d3f6; --b5: #e3eefb;
+    --b1-ink: #ffffff; --b2-ink: #ffffff; --b3-ink: #121619; --b4-ink: #121619; --b5-ink: #121619;
+    --g1: #0f7a55; --g2: #1baf7a; --g3: #5fd1a8; --g4: #a6ead0;
+    --g1-ink: #ffffff; --g2-ink: #121619; --g3-ink: #121619; --g4-ink: #121619;
+    --o1: #9a3d17; --o2: #d95926; --o3: #f08a5e; --o4: #f7bfa2;
+    --o1-ink: #ffffff; --o2-ink: #ffffff; --o3-ink: #121619; --o4-ink: #121619;
+    --v1: #4a3aa7; --v2: #7b6bd6; --v3: #a79bea; --v4: #d0c9f3; --v5: #e8e4fa;
+    --v1-ink: #ffffff; --v2-ink: #ffffff; --v3-ink: #121619; --v4-ink: #121619; --v5-ink: #121619;
+    --s7: #9085e9; --s8: #e66767;
+    --lost: #ff7070;
   }
 }
 :root[data-theme="dark"] {
@@ -42,6 +62,16 @@ const PAGE_STYLE = `:root {
   --q0: #34383c; --q1: #184f95; --q2: #2a78d6; --q3: #6da7ec; --q4: #b7d3f6;
   --q0-ink: #c1c7cd; --q1-ink: #ffffff; --q2-ink: #ffffff; --q3-ink: #0b2545; --q4-ink: #0b2545;
   --good: #3fbf65; --bad: #ff7070; --tip-bg: #f2f4f8; --tip-ink: #121619;
+  --b1: #184f95; --b2: #2a78d6; --b3: #6da7ec; --b4: #b7d3f6; --b5: #e3eefb;
+  --b1-ink: #ffffff; --b2-ink: #ffffff; --b3-ink: #121619; --b4-ink: #121619; --b5-ink: #121619;
+  --g1: #0f7a55; --g2: #1baf7a; --g3: #5fd1a8; --g4: #a6ead0;
+  --g1-ink: #ffffff; --g2-ink: #121619; --g3-ink: #121619; --g4-ink: #121619;
+  --o1: #9a3d17; --o2: #d95926; --o3: #f08a5e; --o4: #f7bfa2;
+  --o1-ink: #ffffff; --o2-ink: #ffffff; --o3-ink: #121619; --o4-ink: #121619;
+  --v1: #4a3aa7; --v2: #7b6bd6; --v3: #a79bea; --v4: #d0c9f3; --v5: #e8e4fa;
+  --v1-ink: #ffffff; --v2-ink: #ffffff; --v3-ink: #121619; --v4-ink: #121619; --v5-ink: #121619;
+  --s7: #9085e9; --s8: #e66767;
+  --lost: #ff7070;
 }
 * { box-sizing: border-box; }
 body { background: var(--page); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
@@ -69,13 +99,14 @@ section { margin-top: 44px; scroll-margin-top: 80px; }
 .sec-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 14px; }
 h2 { font-size: 17px; font-weight: 600; margin: 0; }
 .window { font-family: var(--mono); font-size: 11.5px; color: var(--muted); letter-spacing: 0.02em; }
-.sec-note { flex-basis: 100%; color: var(--ink-2); font-size: 13px; margin: 0; max-width: 75ch; }
+.sec-note { flex: 0 0 100%; max-width: 100%; color: var(--ink-2); font-size: 13px; margin: 2px 0 0; text-wrap: pretty; }
+@media (min-width: 900px) { .sec-note { padding-right: 28%; } }
 
 .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
 .card { background: var(--surface); border: 1px solid var(--hair); border-radius: var(--radius); padding: 18px 20px 16px; min-width: 0; display: flex; flex-direction: column; }
-.c3 { grid-column: span 3; } .c4 { grid-column: span 4; } .c5 { grid-column: span 5; } .c6 { grid-column: span 6; } .c7 { grid-column: span 7; } .c8 { grid-column: span 8; } .c12 { grid-column: span 12; }
-@media (max-width: 1080px) { .c3 { grid-column: span 6; } .c4, .c5, .c7, .c8 { grid-column: span 12; } .c6 { grid-column: span 12; } }
-@media (max-width: 600px) { .c3 { grid-column: span 12; } }
+.c2 { grid-column: span 2; } .c3 { grid-column: span 3; } .c4 { grid-column: span 4; } .c5 { grid-column: span 5; } .c6 { grid-column: span 6; } .c7 { grid-column: span 7; } .c8 { grid-column: span 8; } .c12 { grid-column: span 12; }
+@media (max-width: 1080px) { .c2 { grid-column: span 4; } .c3 { grid-column: span 6; } .c4, .c5, .c7, .c8 { grid-column: span 12; } .c6 { grid-column: span 12; } }
+@media (max-width: 600px) { .c2 { grid-column: span 6; } .c3 { grid-column: span 12; } }
 h3 { font-size: 14px; font-weight: 600; margin: 0; }
 .q { color: var(--ink-2); font-size: 13px; margin: 2px 0 0; text-wrap: pretty; }
 .base { margin-top: auto; padding-top: 12px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
@@ -83,16 +114,15 @@ h3 { font-size: 14px; font-weight: 600; margin: 0; }
 .chart svg { display: block; overflow: visible; }
 
 /* tiles */
-.tile .label { font-size: 13px; color: var(--ink-2); display: flex; justify-content: space-between; gap: 8px; }
-.tile .val { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin-top: 10px; font-feature-settings: "tnum"; }
-.tile .val small { font-size: 15px; font-weight: 500; color: var(--muted); margin-left: 4px; letter-spacing: 0; }
-.delta { font-family: var(--mono); font-size: 12px; margin-top: 6px; display: flex; gap: 6px; align-items: center; color: var(--muted); }
+.tile { padding: 14px 16px 12px; cursor: help; }
+.tile .label { font-size: 12.5px; color: var(--ink-2); line-height: 1.3; }
+.tile .val { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin-top: 8px; font-feature-settings: "tnum"; }
+.tile .val small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 3px; letter-spacing: 0; }
+.delta { font-family: var(--mono); font-size: 11px; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; color: var(--muted); }
 .delta .up-good, .delta .down-good { color: var(--good); }
 .delta .up-bad, .delta .down-bad { color: var(--bad); }
-.tile .sub { margin-top: 12px; display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
-.tile .sub span b { font-family: var(--mono); font-weight: 500; color: var(--ink); margin-left: 4px; }
-.tile .def { font-size: 12px; color: var(--muted); margin-top: 10px; text-wrap: pretty; }
-.spark { margin-top: 12px; }
+.tile .sub { margin-top: 8px; font-size: 11.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .sub b { font-family: var(--mono); font-weight: 500; color: var(--ink); }
 
 /* legend */
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: 12px; color: var(--ink-2); }
@@ -104,6 +134,8 @@ h3 { font-size: 14px; font-weight: 600; margin: 0; }
 .tk { font-family: var(--mono); font-size: 11px; fill: var(--muted); }
 .lb { font-family: var(--sans); font-size: 12px; fill: var(--ink-2); }
 .lbs { font-family: var(--sans); font-size: 12px; fill: var(--ink); font-weight: 500; }
+.lbf { font-family: var(--sans); font-size: 13.5px; fill: var(--ink); font-weight: 600; }
+.zebra { fill: var(--page); }
 .vl { font-family: var(--mono); font-size: 11.5px; fill: var(--ink); }
 .grid-l { stroke: var(--hair); stroke-width: 1; }
 .base-l { stroke: var(--axis); stroke-width: 1; }
@@ -119,6 +151,9 @@ h3 { font-size: 14px; font-weight: 600; margin: 0; }
 .matrix tr:last-child td { border-bottom: 0; }
 .matrix .size b { font-weight: 600; font-size: 15px; }
 .matrix .size div { color: var(--muted); font-size: 11.5px; font-family: var(--mono); }
+.matrix .n { font-family: var(--mono); font-size: 12px; color: var(--ink); white-space: nowrap; }
+.matrix .n small { color: var(--muted); }
+.base .def, .matrix th.def { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
 .meter { display: flex; align-items: center; gap: 10px; min-width: 120px; }
 .meter .trk { flex: 1; height: 8px; background: var(--q0); border-radius: 4px; overflow: hidden; min-width: 40px; }
 .meter .fil { height: 100%; border-radius: 4px; }
@@ -126,9 +161,10 @@ h3 { font-size: 14px; font-weight: 600; margin: 0; }
 .matrix-wrap { overflow-x: auto; }
 .pending { display: inline-flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--ink-2); background: var(--page); border: 1px dashed var(--axis); border-radius: 6px; padding: 2px 8px; margin-top: 8px; }
 
-.tip { position: fixed; z-index: 20; pointer-events: none; background: var(--tip-bg); color: var(--tip-ink); font-size: 12px; padding: 7px 10px; border-radius: 7px; max-width: 280px; opacity: 0; transform: translateY(4px); transition: opacity .1s, transform .1s; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+.tip { position: fixed; z-index: 20; pointer-events: none; background: var(--tip-bg); color: var(--tip-ink); font-size: 12px; padding: 7px 10px; border-radius: 7px; max-width: 340px; line-height: 1.45; opacity: 0; transform: translateY(4px); transition: opacity .1s, transform .1s; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
 .tip.on { opacity: 1; transform: none; }
 .tip .t { font-weight: 600; margin-bottom: 3px; }
+.tip .d { font-size: 11.5px; opacity: .9; }
 .tip .r { display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); font-size: 11.5px; }
 .tip .r i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 6px; }
 footer { margin-top: 48px; color: var(--muted); font-size: 12px; max-width: 80ch; }
@@ -154,7 +190,7 @@ const PAGE_BODY = `<header class="top">
 
 <main class="wrap">
   <div class="facts">
-    <span class="chip"><b id="totalUsers"></b> authenticated users</span>
+    <span class="chip"><b id="totalUsers"></b> users who have signed in</span>
     <span class="chip">Core team excluded from every count</span>
     <span class="chip">All days are UTC</span>
   </div>
@@ -195,21 +231,21 @@ const PAGE_BODY = `<header class="top">
         <p class="q">How many of the five core features does a new user touch on their first day?</p>
         <div class="chart" id="featCount"></div>
         <div class="legend" id="featCountLeg"></div>
-        <div class="base">% of cohort · first day = UTC day of first login</div>
+        <div class="base" id="featCountBase"></div>
       </div>
 
       <div class="card c12">
         <h3>Day-one use of each feature</h3>
         <p class="q">Which features are new users picking up on their first day, and is that growing?</p>
         <div class="chart" id="smallMult"></div>
-        <div class="base">% of cohort that used the feature on its first day · one panel per feature, shared scale · bars are cohorts, oldest to newest</div>
+        <div class="base">% of cohort that used the feature on its first day · bars are cohorts, oldest to newest · hover a panel title for what counts as using the feature</div>
       </div>
 
       <div class="card c6">
         <h3>Starter kits on day one</h3>
         <p class="q">How do new users start, and which kits do they pick first?</p>
         <div class="chart" id="kitSplit"></div>
-        <div class="chart" id="kitDay1"></div>
+        <div class="chart" id="kitDay1" style="margin-top:22px"></div>
         <div class="base" id="kitDay1Base"></div>
       </div>
 
@@ -226,7 +262,7 @@ const PAGE_BODY = `<header class="top">
         <p class="q">How long after creating a starter-kit agent does a user finish its checklist?</p>
         <div class="chart" id="checkLag"></div>
         <div class="legend" id="checkLagLeg"></div>
-        <div class="base">Users with a starter-kit agent · first completion per user, measured from that agent's creation · kits without onboarding excluded · completions are recorded from this release on</div>
+        <div class="base">Users with a starter-kit agent · first completion per user, measured from that agent's creation · kits without onboarding excluded</div>
       </div>
     </div>
   </section>
@@ -238,14 +274,14 @@ const PAGE_BODY = `<header class="top">
       <p class="sec-note">Everyone, including users still in onboarding. Each point is a full Monday-to-Sunday week, labelled with its Monday; the week in progress is not shown.</p>
     </div>
     <div class="grid">
-      <div class="card c7">
+      <div class="card c6">
         <h3>Weekly activity</h3>
         <p class="q">How often are users using the platform?</p>
         <div class="chart" id="activity"></div>
         <div class="legend" id="activityLeg"></div>
-        <div class="base">Active 1+ · Regular 3+ · Super 5+ active days in the week · Abandoned: logged in at least once, 0 active days</div>
+        <div class="base">Active: 1+ active days in that calendar week · Regular: 3+ · Super: 5+ · Abandoned: logged in before the end of that week, 0 active days in it</div>
       </div>
-      <div class="card c5">
+      <div class="card c6">
         <h3>Longitudinal activity</h3>
         <p class="q">Of users past their first three weeks, who keeps coming back every week?</p>
         <div class="chart" id="longi"></div>
@@ -300,7 +336,7 @@ const PAGE_BODY = `<header class="top">
         <h3>Size, always-on and memory</h3>
         <p class="q">What size are agents, which hold their compute around the clock, and which sizes run out of memory?</p>
         <div class="matrix-wrap"><table class="matrix" id="matrix"></table></div>
-        <div class="base">1 slot = the default agent size · always on = set never to hibernate · out of memory = at least one restart for exceeding memory in 30 days, recorded from this release on</div>
+        <div class="base">1 slot = the default agent size · always on = set never to hibernate · out of memory = restarts of the agents listed here for exceeding memory in the last 30 days, counted at the size the agent had at the time, with the agents behind them</div>
       </div>
       <div class="card c5">
         <h3>Disk size</h3>
@@ -323,7 +359,6 @@ const PAGE_BODY = `<header class="top">
     </div>
   </section>
 
-  <footer>Value proposition and the "notified of access" funnel stage are not part of this report yet.</footer>
 </main>
 
 <div class="tip" id="tip" role="tooltip"></div>
@@ -335,8 +370,8 @@ const NS = "http://www.w3.org/2000/svg";
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const fmt = (iso) => { const [, m, d] = iso.split("-"); return \`\${Number(d)} \${MONTHS[Number(m) - 1]}\`; };
 const fmtUp = (iso) => fmt(iso).toUpperCase();
-const col = (k) => k === "q2b" ? "color-mix(in srgb, var(--q2) 50%, var(--q3))" : \`var(--\${k})\`;
-const ink = (k) => (k.startsWith("q") ? \`var(--\${k === "q2b" ? "q2" : k}-ink)\` : "#fff");
+const col = (k) => \`var(--\${k})\`;
+const ink = (k) => (/^[qbgov]\\d$/.test(k) ? \`var(--\${k}-ink)\` : "#fff");
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const svg = (w, h) => { const s = document.createElementNS(NS, "svg"); s.setAttribute("width", w); s.setAttribute("height", h); s.setAttribute("viewBox", \`0 0 \${w} \${h}\`); return s; };
 const el = (tag, attrs, parent, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; if (parent) parent.appendChild(e); return e; };
@@ -346,6 +381,25 @@ const hbarPath = (x, y, w, h, r = 4) => { r = Math.max(0, Math.min(r, w, h / 2))
 const pct = (part, whole) => (whole ? Math.round((part / whole) * 100) : 0);
 const setText = (id, text) => { document.getElementById(id).textContent = text; };
 
+const FEATURE_DEFS = {
+  "Starter kit": "The user created at least one agent from a starter kit and sent that agent at least one message.",
+  "Artifact": "The user or one of their agents created an artifact.",
+  "Scheduling": "A scheduled event fired on an agent the user owns.",
+  "Agent in Slack": "An agent the user created posted at least one message in a Slack channel, prompted or not.",
+  "Skills mounting": "The user connected at least one skill source.",
+  "No feature": "The user used none of the five core features on their first day.",
+};
+const featureTip = (label) => \`<div class="t">\${esc(label)}</div><div class="d">\${esc(FEATURE_DEFS[label] || "")}</div>\`;
+const exactShares = (counts) => {
+  const total = counts.reduce((a, b) => a + b, 0);
+  if (!total) return counts.map(() => 0);
+  const raw = counts.map((c) => (c / total) * 100);
+  const floors = raw.map(Math.floor);
+  let left = 100 - floors.reduce((a, b) => a + b, 0);
+  const order = raw.map((v, i) => [v - floors[i], i]).sort((a, b) => b[0] - a[0]);
+  for (const [, i] of order) { if (left <= 0) break; if (counts[i] > 0) { floors[i]++; left--; } }
+  return floors;
+};
 const tip = document.getElementById("tip");
 function moveTip(e) {
   const pad = 14, r = tip.getBoundingClientRect();
@@ -367,102 +421,108 @@ function legend(id, cats, ramp, line) {
 }
 function emptyNote(host, text) { host.innerHTML = \`<p class="q">\${esc(text)}</p>\`; }
 
-function sparkline(vals, w, h) {
-  const s = svg(w, h);
-  const pts = vals.map((v, i) => [i, v]).filter(([, v]) => v !== null);
-  if (pts.length < 2) return s;
-  const ys = pts.map(([, v]) => v), max = Math.max(...ys), min = Math.min(...ys);
-  const x = (i) => 2 + (i * (w - 6)) / (vals.length - 1), y = (v) => h - 3 - ((v - min) / (max - min || 1)) * (h - 8);
-  const line = pts.map(([i, v]) => \`\${x(i)},\${y(v)}\`).join(" ");
-  el("polygon", { points: \`\${x(pts[0][0])},\${h} \${line} \${x(pts.at(-1)[0])},\${h}\`, fill: "var(--accent)", opacity: 0.08 }, s);
-  el("polyline", { points: line, fill: "none", stroke: "var(--accent)", "stroke-width": 1.75, "stroke-linejoin": "round", "stroke-linecap": "round" }, s);
-  el("circle", { cx: x(pts.at(-1)[0]), cy: y(pts.at(-1)[1]), r: 3, fill: "var(--accent)", stroke: "var(--surface)", "stroke-width": 1.5 }, s);
-  return s;
-}
 
 function renderTiles() {
   const L = R.last7;
+  const activeDay = "An active day is a UTC day on which the user sent a message to an agent on any surface, or had a scheduled event fire.";
   const tiles = [
-    { label: "Weekly active users", t: L.weeklyActive, good: "up", sub: [["3+ days", L.weeklyActive.regular], ["5+ days", L.weeklyActive.super]], def: "1+ active days" },
-    { label: "Weekly abandoned", t: L.weeklyAbandoned, good: "down", def: "Logged in at least once, 0 active days in the last 7" },
-    { label: "Longitudinally active", t: L.longitudinallyActive, of: L.longitudinallyActive.eligible, good: "up", def: "1+ active days in each of the last 3 weeks, of users 21+ days past first login" },
-    { label: "Agents created", t: L.agentsCreated, good: "up", sub: [["from kits", L.agentsCreated.fromKits], ["other", L.agentsCreated.other]] },
-    { label: "Starter kit adoption", t: L.starterKitAdoption, unit: "%", pp: true, good: "up", def: "Share of new agents created from a starter kit" },
-    { label: "Onboarding conversion", t: L.onboardingConversion, unit: "%", pp: true, good: "up", def: \`Reached 3 active days in their first week · \${L.onboardingConversion.users} users whose first week ended in the last 7 days\` },
+    { label: "Weekly active users", t: L.weeklyActive, good: "up", sub: \`3+ days <b>\${L.weeklyActive.regular}</b> · 5+ days <b>\${L.weeklyActive.super}</b>\`, def: \`Users who had 1 or more active days during the last 7 days. \${activeDay} 3+ active days counts as a regular user, 5+ as a super user.\` },
+    { label: "Weekly abandoned", t: L.weeklyAbandoned, good: "down", def: "Users who have logged in at least once and had 0 active days during the last 7 days." },
+    { label: "Longitudinally active", t: L.longitudinallyActive, of: L.longitudinallyActive.eligible, good: "up", def: \`Users who had 1 or more active days in each of the last 3 weeks, out of the \${L.longitudinallyActive.eligible} users whose first login was at least 3 weeks ago.\` },
+    { label: "Agents created", t: L.agentsCreated, good: "up", sub: \`from kits <b>\${L.agentsCreated.fromKits}</b> · other <b>\${L.agentsCreated.other}</b>\`, def: "Agents created during the last 7 days, split into those created from a starter kit and those built from scratch. Sub-agents that another agent started are not counted." },
+    { label: "Starter kit adoption", t: L.starterKitAdoption, unit: "%", pp: true, good: "up", def: "Share of the agents created during the last 7 days that came from a starter kit rather than from scratch." },
+    { label: "Onboarding conversion", t: L.onboardingConversion, unit: "%", pp: true, good: "up", sub: \`<b>\${L.onboardingConversion.users}</b> users measured\`, def: \`Users who logged in and then reached 3 active days within their first week. Measured on the \${L.onboardingConversion.users} users whose first week ended during the last 7 days, so every one of them had the full week.\` },
   ];
   const g = document.getElementById("tiles"); g.innerHTML = "";
   for (const t of tiles) {
-    const c = document.createElement("div"); c.className = "card tile c4";
+    const c = document.createElement("div"); c.className = "card tile c2"; c.tabIndex = 0;
     const v = t.t.value, p = t.t.previous, unit = t.unit || "";
-    let delta = \`<span>no earlier data</span>\`;
+    let delta = \`<span>no earlier period</span>\`;
     if (v !== null && p !== null) {
       const d = v - p, dir = d > 0 ? "up" : d < 0 ? "down" : "flat";
       const cls = dir === "flat" ? "" : \`\${dir}-\${dir === t.good ? "good" : "bad"}\`;
       const arrow = dir === "up" ? "▲" : dir === "down" ? "▼" : "■";
-      delta = \`<span class="\${cls}">\${arrow} \${d > 0 ? "+" : ""}\${d}\${t.pp ? " pp" : ""}</span><span>vs previous 7 days (\${p}\${unit})</span>\`;
+      delta = \`<span class="\${cls}">\${arrow} \${d > 0 ? "+" : ""}\${d}\${t.pp ? " pp" : ""}</span><span>vs \${p}\${unit}</span>\`;
     }
-    c.innerHTML = \`<div class="label"><span>\${esc(t.label)}</span></div>
+    c.innerHTML = \`<div class="label">\${esc(t.label)}</div>
       <div class="val">\${v === null ? "–" : v}\${v !== null && unit ? \`<small>\${unit}</small>\` : ""}\${t.of !== undefined ? \`<small>of \${t.of}</small>\` : ""}</div>
       <div class="delta">\${delta}</div>
-      \${t.sub ? \`<div class="sub">\${t.sub.map(([k, n]) => \`<span>\${esc(k)}<b>\${n}</b></span>\`).join("")}</div>\` : ""}
-      \${t.def ? \`<div class="def">\${esc(t.def)}</div>\` : ""}\`;
-    const sp = document.createElement("div"); sp.className = "spark"; c.appendChild(sp); g.appendChild(c);
-    sp.appendChild(sparkline(t.t.trend, Math.max(120, sp.clientWidth), 34));
+      \${t.sub ? \`<div class="sub">\${t.sub}</div>\` : ""}\`;
+    g.appendChild(c);
+    const html = \`<div class="t">\${esc(t.label)}</div><div class="d">\${esc(t.def)} The change compares with the 7 days before.</div>\`;
+    bindTip(c, html);
+    c.addEventListener("focus", () => { const r = c.getBoundingClientRect(); showTip({ clientX: r.left + 8, clientY: r.bottom - 8 }, html); });
+    c.addEventListener("blur", hideTip);
   }
 }
 
 function stacked100(id, panel, ramp) {
   const host = document.getElementById(id); host.innerHTML = "";
   if (!panel.rows.length) { emptyNote(host, "No cohort has completed its first week yet."); return; }
-  const W = host.clientWidth, lw = 64, nw = W > 480 ? 44 : 0, bh = 22, gap = 10;
-  const H = panel.rows.length * (bh + gap) - gap;
+  const W = host.clientWidth, lw = 64, nw = W > 480 ? 44 : 0, bh = 22, gap = 16, top = 12;
+  const H = top + panel.rows.length * (bh + gap) - gap + 4;
   const s = svg(W, H), g = el("g", {}, s); host.appendChild(s);
   const bw = W - lw - nw;
   panel.rows.forEach((r, ri) => {
-    const y = ri * (bh + gap), label = fmt(r.weekStart);
+    const y = top + ri * (bh + gap), label = fmt(r.weekStart);
+    if (ri % 2 === 1) el("rect", { x: -4, y: y - gap / 2, width: W + 8, height: bh + gap, rx: 4, class: "zebra" }, g);
     el("text", { x: 0, y: y + bh / 2 + 4, class: "lb" }, g, label);
     if (nw) el("text", { x: W, y: y + bh / 2 + 4, class: "tk", "text-anchor": "end" }, g, \`n=\${r.size}\`);
     if (!r.size) { el("rect", { x: lw, y, width: bw, height: bh, rx: 4, fill: "var(--page)" }, g); el("text", { x: lw + 10, y: y + bh / 2 + 4, class: "tk" }, g, "no users"); return; }
-    let x = lw;
-    const tipHtml = \`<div class="t">Week of \${esc(label)}</div>\` + panel.categories.map((c, k) => row(col(ramp[k]), c, \`\${pct(r.counts[k], r.size)}% · \${r.counts[k]}\`)).join("") + \`<div class="r" style="opacity:.7;margin-top:3px"><span>cohort</span><span>\${r.size} users</span></div>\`;
+    let x = lw, lastOutsideX = -Infinity, outsideAbove = true;
+    const pcts = exactShares(r.counts);
+    const tipHtml = \`<div class="t">Week of \${esc(label)}</div>\` + panel.categories.map((c, k) => row(col(ramp[k]), c, \`\${pcts[k]}% · \${r.counts[k]}\`)).join("") + \`<div class="r" style="opacity:.7;margin-top:3px"><span>cohort</span><span>\${r.size} users</span></div>\`;
     r.counts.forEach((v, ci) => {
       if (!v) return;
       const w = (v / r.size) * bw;
       const first = x === lw, last = Math.abs(x + w - (lw + bw)) < 0.5;
       const gw = Math.max(1, w - (last ? 0 : 2));
       const m = el("rect", { x, y, width: gw, height: bh, rx: (first || last) ? 4 : 1.5, fill: col(ramp[ci]), class: "mark" }, g);
-      if (w > 30) el("text", { x: x + gw / 2, y: y + bh / 2 + 4, "text-anchor": "middle", "font-family": "var(--mono)", "font-size": 11, fill: ink(ramp[ci]), "pointer-events": "none" }, g, \`\${pct(v, r.size)}%\`);
+      const text = \`\${pcts[ci]}%\`;
+      if (w >= 26) {
+        el("text", { x: x + gw / 2, y: y + bh / 2 + 4, "text-anchor": "middle", "font-family": "var(--mono)", "font-size": 11, fill: ink(ramp[ci]), "pointer-events": "none" }, g, text);
+      } else {
+        const cx = x + gw / 2;
+        if (cx - lastOutsideX < 26) outsideAbove = !outsideAbove; else outsideAbove = true;
+        lastOutsideX = cx;
+        el("text", { x: cx, y: outsideAbove ? y - 3 : y + bh + 10, "text-anchor": "middle", "font-family": "var(--mono)", "font-size": 9.5, fill: "var(--ink-2)", "pointer-events": "none" }, g, text);
+      }
       bindTip(m, tipHtml, g);
       x += w;
     });
   });
 }
 
-function oneBar(id, shares, ramp, showCounts) {
+function oneBar(id, shares, ramp) {
   const host = document.getElementById(id); host.innerHTML = "";
   const tot = shares.reduce((a, b) => a + b.count, 0);
   if (!tot) { emptyNote(host, "No users yet."); return; }
-  const W = host.clientWidth, bh = 34, s = svg(W, bh + 26), g = el("g", {}, s); host.appendChild(s);
+  const pcts = exactShares(shares.map((s) => s.count));
+  const W = host.clientWidth, bh = 34, top = 14, s = svg(W, bh + top), g = el("g", {}, s); host.appendChild(s);
   let x = 0;
   shares.forEach((sh, i) => {
     if (!sh.count) return;
     const w = (sh.count / tot) * W, last = Math.abs(x + w - W) < 0.5, gw = Math.max(1, w - (last ? 0 : 2));
-    const m = el("rect", { x, y: 0, width: gw, height: bh, rx: 4, fill: col(ramp[i]), class: "mark" }, g);
-    const p = pct(sh.count, tot);
-    if (w > 48) el("text", { x: x + 10, y: bh / 2 + 5, "font-family": "var(--mono)", "font-size": 12.5, "font-weight": 500, fill: ink(ramp[i]), "pointer-events": "none" }, g, showCounts ? \`\${sh.count}\` : \`\${p}%\`);
-    if (w > 60) el("text", { x: x + 1, y: bh + 18, class: "lb" }, g, w > 140 ? \`\${sh.label} · \${p}%\` : \`\${p}%\`);
-    bindTip(m, \`<div class="t">\${esc(sh.label)}</div>\` + row(null, "users", \`\${sh.count} (\${p}%)\`), g);
+    const m = el("rect", { x, y: top, width: gw, height: bh, rx: 4, fill: col(ramp[i]), class: "mark" }, g);
+    const full = \`\${sh.count} · \${pcts[i]}%\`, short = \`\${pcts[i]}%\`;
+    if (w > 74) el("text", { x: x + 10, y: top + bh / 2 + 5, "font-family": "var(--mono)", "font-size": 12.5, "font-weight": 500, fill: ink(ramp[i]), "pointer-events": "none" }, g, full);
+    else if (w > 36) el("text", { x: x + gw / 2, y: top + bh / 2 + 5, "text-anchor": "middle", "font-family": "var(--mono)", "font-size": 12, fill: ink(ramp[i]), "pointer-events": "none" }, g, short);
+    else el("text", { x: x + gw / 2, y: top - 4, "text-anchor": "middle", "font-family": "var(--mono)", "font-size": 10, fill: "var(--ink-2)", "pointer-events": "none" }, g, full);
+    bindTip(m, \`<div class="t">\${esc(sh.label)}</div>\` + row(null, "users", full), g);
     x += w;
   });
+  const legendRow = document.createElement("div"); legendRow.className = "legend";
+  legendRow.innerHTML = shares.map((sh, i) => \`<span><i style="background:\${col(ramp[i])}"></i>\${esc(sh.label)}</span>\`).join("");
+  host.appendChild(legendRow);
 }
 
 function funnel(id, stages) {
   const host = document.getElementById(id); host.innerHTML = "";
   const base = stages[0].count;
   if (!base) { emptyNote(host, "No users yet."); return; }
-  const W = host.clientWidth, H = 250, bot = 44, n = stages.length;
-  const gap = W > 700 ? 14 : 6, bw = (W - gap * (n - 1)) / n;
-  const sc = (v) => (v / base) * (H - 26 - bot);
+  const W = host.clientWidth, H = 290, bot = 48, top = 30, n = stages.length;
+  const gap = W > 700 ? 16 : 6, bw = (W - gap * (n - 1)) / n;
+  const sc = (v) => (v / base) * (H - top - bot);
   const s = svg(W, H), g = el("g", {}, s); host.appendChild(s);
   el("line", { x1: 0, x2: W, y1: H - bot, y2: H - bot, class: "base-l" }, g);
   stages.forEach((st, i) => {
@@ -470,22 +530,25 @@ function funnel(id, stages) {
     const sub = i === n - 1;
     if (sub) {
       const sx = x - gap / 2;
-      el("line", { x1: sx, x2: sx, y1: 4, y2: H - bot + 36, stroke: "var(--axis)", "stroke-dasharray": "2 4" }, g);
-      el("text", { x: x + bw / 2, y: 12, "text-anchor": "middle", class: "tk" }, g, \`of \${st.base} users 21+ days in\`);
+      el("line", { x1: sx, x2: sx, y1: 4, y2: H - bot + 40, stroke: "var(--axis)", "stroke-dasharray": "2 4" }, g);
+      el("text", { x: x + bw / 2, y: 13, "text-anchor": "middle", class: "tk" }, g, \`of \${st.base} users 21+ days in\`);
     }
     if (i > 0 && !sub) {
-      const prev = stages[i - 1].count, ph = sc(prev);
-      el("rect", { x, y: H - bot - ph, width: bw, height: Math.max(0, ph - h), fill: "none", stroke: "var(--axis)", "stroke-dasharray": "3 3", rx: 4 }, g);
-      const lost = prev - st.count;
-      if (ph - h > 16) el("text", { x: x + bw / 2, y: H - bot - ph + (ph - h) / 2 + 4, "text-anchor": "middle", "font-family": "var(--mono)", "font-size": 11, fill: "var(--bad)" }, g, \`−\${lost} · \${pct(lost, prev)}%\`);
+      const prev = stages[i - 1].count, ph = sc(prev), lh = Math.max(0, ph - h), lost = prev - st.count;
+      if (lost > 0) {
+        el("rect", { x, y: H - bot - ph, width: bw, height: lh, fill: "var(--lost)", opacity: 0.14, rx: 4 }, g);
+        el("rect", { x: x + 0.5, y: H - bot - ph + 0.5, width: bw - 1, height: Math.max(0, lh - 1), fill: "none", stroke: "var(--lost)", "stroke-dasharray": "4 3", rx: 4, opacity: 0.8 }, g);
+        const inside = lh >= 24;
+        el("text", { x: x + bw / 2, y: inside ? H - bot - ph + lh / 2 + 5 : H - bot - ph - 7, "text-anchor": "middle", "font-family": "var(--mono)", "font-size": 13, "font-weight": 600, fill: "var(--lost)" }, g, \`−\${lost} · \${pct(lost, prev)}%\`);
+      }
     }
-    const m = el("path", { d: barPath(x, y, bw, h, 5), fill: sub ? "var(--q3)" : "var(--q2)", class: "mark" }, g);
-    const inside = h > 42;
-    el("text", { x: x + bw / 2, y: inside ? y + 20 : y - 22, "text-anchor": "middle", "font-family": "var(--sans)", "font-size": W > 700 ? 18 : 14, "font-weight": 600, fill: inside ? "#fff" : "var(--ink)", "pointer-events": "none" }, g, st.count);
-    el("text", { x: x + bw / 2, y: inside ? y + 36 : y - 8, "text-anchor": "middle", "font-family": "var(--mono)", "font-size": 11, fill: inside ? "#fff" : "var(--ink-2)", opacity: 0.85, "pointer-events": "none" }, g, \`\${pct(st.count, st.base)}%\`);
+    const m = el("path", { d: barPath(x, y, bw, h, 5), fill: sub ? "var(--b3)" : "var(--b2)", class: "mark" }, g);
+    const inside = h > 56, inkFill = sub ? "var(--b3-ink)" : "var(--b2-ink)";
+    el("text", { x: x + bw / 2, y: inside ? y + 28 : y - 26, "text-anchor": "middle", "font-family": "var(--sans)", "font-size": W > 700 ? 24 : 17, "font-weight": 600, fill: inside ? inkFill : "var(--ink)", "pointer-events": "none" }, g, st.count);
+    el("text", { x: x + bw / 2, y: inside ? y + 46 : y - 9, "text-anchor": "middle", "font-family": "var(--mono)", "font-size": 13, fill: inside ? inkFill : "var(--ink-2)", opacity: 0.9, "pointer-events": "none" }, g, \`\${pct(st.count, st.base)}%\`);
     const words = st.label.split(" "), half = Math.ceil(words.length / 2);
-    el("text", { x: x + bw / 2, y: H - bot + 18, "text-anchor": "middle", class: "lbs" }, g, W > 820 ? st.label : words.slice(0, half).join(" "));
-    if (W <= 820 && words.length > half) el("text", { x: x + bw / 2, y: H - bot + 33, "text-anchor": "middle", class: "lbs" }, g, words.slice(half).join(" "));
+    el("text", { x: x + bw / 2, y: H - bot + 21, "text-anchor": "middle", class: "lbf" }, g, W > 820 ? st.label : words.slice(0, half).join(" "));
+    if (W <= 820 && words.length > half) el("text", { x: x + bw / 2, y: H - bot + 38, "text-anchor": "middle", class: "lbf" }, g, words.slice(half).join(" "));
     const prev = i && !sub ? stages[i - 1].count : null;
     bindTip(m, \`<div class="t">\${esc(st.label)}</div>\` + row(null, "users", st.count) + row(null, \`of \${st.base} users\`, \`\${pct(st.count, st.base)}%\`) + (prev ? row(null, "kept from previous step", \`\${pct(st.count, prev)}%\`) : ""), g);
   });
@@ -495,21 +558,22 @@ function smallMult(id, panels, weeks, sizes) {
   const host = document.getElementById(id); host.innerHTML = "";
   if (!weeks.length) { emptyNote(host, "No cohort has completed its first week yet."); return; }
   const W = host.clientWidth, cols = W > 900 ? 6 : W > 520 ? 3 : 2, gap = 18, pw = (W - gap * (cols - 1)) / cols;
-  const ph = 112, head = 22, H = Math.ceil(panels.length / cols) * (ph + head + 14);
-  const { max } = niceScale(Math.max(...panels.flatMap((p) => p.percents)));
+  const ph = 124, head = 22, H = Math.ceil(panels.length / cols) * (ph + head + 14);
+  const colors = ["s8", "s1", "s3", "s2", "s7", "s5"];
   const s = svg(W, H); host.appendChild(s);
   panels.forEach((p, i) => {
     const cx = (i % cols) * (pw + gap), cy = Math.floor(i / cols) * (ph + head + 14);
     const g = el("g", { transform: \`translate(\${cx},\${cy})\` }, s);
-    const c = i === 0 ? "q0" : "s1";
-    el("text", { x: 0, y: 13, class: "lbs" }, g, p.label);
+    const c = colors[i % colors.length];
+    const title = el("text", { x: 0, y: 13, class: "lbs", style: "cursor:help" }, g, p.label);
+    bindTip(title, featureTip(p.label));
     el("text", { x: pw, y: 13, class: "vl", "text-anchor": "end" }, g, \`\${p.percents.at(-1)}%\`);
-    const by = head + ph - 14;
-    [0, max / 2, max].forEach((t) => { const yy = by - (t / max) * (ph - 24); el("line", { x1: 0, x2: pw, y1: yy, y2: yy, class: t ? "grid-l" : "base-l" }, g); if (i % cols === 0 && t) el("text", { x: 0, y: yy - 3, class: "tk" }, g, \`\${t}%\`); });
+    const by = head + ph - 14, plot = ph - 24;
+    [0, 50, 100].forEach((t) => { const yy = by - (t / 100) * plot; el("line", { x1: 0, x2: pw, y1: yy, y2: yy, class: t ? "grid-l" : "base-l" }, g); if (t) el("text", { x: 0, y: yy - 3, class: "tk" }, g, \`\${t}%\`); });
     const n = p.percents.length, bg = 3, bw = (pw - bg * (n - 1)) / n;
     p.percents.forEach((v, k) => {
-      const h = (v / max) * (ph - 24), x = k * (bw + bg);
-      const m = el("path", { d: barPath(x, by - h, bw, Math.max(h, 0.5), 3), fill: col(c), opacity: k === n - 1 ? 1 : 0.55, class: "mark" }, g);
+      const h = (v / 100) * plot, x = k * (bw + bg);
+      const m = el("path", { d: barPath(x, by - h, bw, Math.max(h, 0.5), 3), fill: col(c), opacity: k === n - 1 ? 1 : 0.6, class: "mark" }, g);
       bindTip(m, \`<div class="t">\${esc(p.label)}</div>\` + row(null, \`week of \${fmt(weeks[k])}\`, \`\${v}%\`) + row(null, "cohort", \`\${sizes[k]} users\`));
     });
     el("text", { x: 0, y: by + 13, class: "tk" }, g, fmt(weeks[0]));
@@ -520,24 +584,35 @@ function smallMult(id, panels, weeks, sizes) {
 function hbars(id, shares, opts) {
   const host = document.getElementById(id); host.innerHTML = "";
   if (!shares.length) { emptyNote(host, opts.empty || "Nothing yet."); return; }
-  const W = host.clientWidth, bh = opts.bh || 18, gap = opts.gap || 9, lw = opts.lw || 128, vw = 74;
-  const H = shares.length * (bh + gap) - gap, s = svg(W, H), g = el("g", {}, s); host.appendChild(s);
+  const W = host.clientWidth, bh = opts.bh || 18, gap = opts.gap || 9, lw = opts.lw || 128, vw = 86;
+  const H = shares.length * (bh + gap) - gap, extra = opts.fullScale ? 18 : 0;
+  const s = svg(W, H + extra), g = el("g", {}, s); host.appendChild(s);
   const max = Math.max(1, ...shares.map((d) => d.count)), bw = W - lw - vw;
+  const pcts = opts.sumsTo100 ? exactShares(shares.map((d) => d.count)) : shares.map((d) => pct(d.count, opts.total));
   shares.forEach((sh, i) => {
-    const y = i * (bh + gap), w = Math.max(2, (sh.count / max) * bw);
-    el("text", { x: lw - 10, y: y + bh / 2 + 4, "text-anchor": "end", class: "lb" }, g, sh.label);
+    const y = i * (bh + gap);
+    const frac = opts.fullScale ? pcts[i] / 100 : sh.count / max;
+    const w = Math.max(2, frac * bw);
+    const label = el("text", { x: lw - 10, y: y + bh / 2 + 4, "text-anchor": "end", class: "lb" }, g, sh.label);
     el("rect", { x: lw, y, width: bw, height: bh, rx: 4, fill: "var(--page)" }, g);
     const m = el("path", { d: hbarPath(lw, y, w, bh), fill: col(opts.color || "s1"), class: "mark" }, g);
-    const text = opts.pctOnly ? \`\${pct(sh.count, opts.total)}%\` : \`\${sh.count} · \${pct(sh.count, opts.total)}%\`;
+    const text = \`\${sh.count} · \${pcts[i]}%\`;
     el("text", { x: lw + w + 8, y: y + bh / 2 + 4, class: "vl" }, g, text);
-    bindTip(m, \`<div class="t">\${esc(sh.label)}</div>\` + row(null, opts.unit, \`\${sh.count} · \${pct(sh.count, opts.total)}%\`), g);
+    const def = opts.defs && FEATURE_DEFS[sh.label] ? \`<div class="d">\${esc(FEATURE_DEFS[sh.label])}</div>\` : "";
+    bindTip(m, \`<div class="t">\${esc(sh.label)}</div>\` + row(null, opts.unit, text) + def, g);
+    if (def) { label.setAttribute("style", "cursor:help"); bindTip(label, \`<div class="t">\${esc(sh.label)}</div>\${def}\`); }
   });
+  if (opts.fullScale) {
+    el("text", { x: lw, y: H + 14, class: "tk" }, g, "0%");
+    el("text", { x: lw + bw, y: H + 14, "text-anchor": "end", class: "tk" }, g, "100%");
+  }
 }
 
 function columns(id, shares, opts) {
   const host = document.getElementById(id); host.innerHTML = "";
   const W = host.clientWidth, H = opts.h || 190, top = 20, bot = 26;
   const tot = shares.reduce((a, b) => a + b.count, 0), { max } = niceScale(Math.max(...shares.map((d) => d.count)));
+  const pcts = exactShares(shares.map((d) => d.count));
   const s = svg(W, H), g = el("g", {}, s); host.appendChild(s);
   const n = shares.length, gap = Math.min(18, W / n / 4), bw = (W - gap * (n - 1)) / n;
   el("line", { x1: 0, x2: W, y1: H - bot, y2: H - bot, class: "base-l" }, g);
@@ -546,7 +621,7 @@ function columns(id, shares, opts) {
     const m = el("path", { d: barPath(x, y, bw, Math.max(h, 0.5), 4), fill: col("q2"), class: "mark" }, g);
     el("text", { x: x + bw / 2, y: y - 6, "text-anchor": "middle", class: "vl" }, g, \`\${sh.count}\`);
     el("text", { x: x + bw / 2, y: H - bot + 16, "text-anchor": "middle", class: "lb" }, g, sh.label);
-    bindTip(m, \`<div class="t">\${esc(sh.label)}</div>\` + row(null, opts.unit, \`\${sh.count} · \${pct(sh.count, tot)}%\`), g);
+    bindTip(m, \`<div class="t">\${esc(sh.label)}</div>\` + row(null, opts.unit, \`\${sh.count} · \${pcts[i]}%\`), g);
   });
 }
 
@@ -613,11 +688,20 @@ function agentsWeekly(id, weeks, kit, other) {
 
 function matrix(sizes) {
   const t = document.getElementById("matrix"), total = sizes.reduce((a, b) => a + b.agents, 0);
+  const shares = exactShares(sizes.map((r) => r.agents));
   const labels = { "1x": ["1×", "1 slot"], "2x": ["2×", "2 slots"], "4x": ["4×", "4 slots"], custom: ["Custom", "set by a kit or the team"] };
-  const meter = (v, of, c) => { const p = pct(v, of); return \`<div class="meter"><div class="trk"><div class="fil" style="width:\${Math.max(p, v ? 2 : 0)}%;background:\${c}"></div></div><span class="n">\${p}% · \${v}</span></div>\`; };
-  t.innerHTML = \`<thead><tr><th>Size</th><th>Agents</th><th>Always on</th><th>Out of memory · 30 d</th></tr></thead><tbody>\` +
-    sizes.map((r) => \`<tr><td class="size"><b>\${labels[r.size][0]}</b><div>\${labels[r.size][1]}</div></td>
-      <td>\${meter(r.agents, total, "var(--q2)")}</td><td>\${meter(r.alwaysOn, r.agents, "var(--s4)")}</td><td>\${meter(r.outOfMemory, r.agents, "var(--bad)")}</td></tr>\`).join("") + \`</tbody>\`;
+  const meter = (v, of, p, c) => \`<div class="meter"><div class="trk"><div class="fil" style="width:\${Math.max(p, v ? 2 : 0)}%;background:\${c}"></div></div><span class="n">\${p}% · \${v}</span></div>\`;
+  const HEADS = [
+    ["Size", "Compute size in slots. One slot is the install's default agent size; an agent whose cpu and memory are not whole multiples of it is listed as custom."],
+    ["Agents", "Agents that exist right now at this size, created by a non-core user, hibernated ones included, as a share of all such agents."],
+    ["Always on", "Agents at this size that are set never to hibernate, so they hold their compute around the clock, as a share of the agents at this size."],
+    ["Out of memory · 30 d", "Restarts in the last 30 days in which an agent exceeded its memory limit. Only agents that still exist count. Each restart is filed under the size the agent had at that moment, even if it has been resized since. The second number is how many different agents those restarts belong to."],
+  ];
+  t.innerHTML = \`<thead><tr>\${HEADS.map(([h]) => \`<th class="def">\${esc(h)}</th>\`).join("")}</tr></thead><tbody>\` +
+    sizes.map((r, i) => \`<tr><td class="size"><b>\${labels[r.size][0]}</b><div>\${labels[r.size][1]}</div></td>
+      <td>\${meter(r.agents, total, shares[i], "var(--q2)")}</td><td>\${meter(r.alwaysOn, r.agents, pct(r.alwaysOn, r.agents), "var(--s4)")}</td>
+      <td><span class="n">\${r.outOfMemoryEvents} event\${r.outOfMemoryEvents === 1 ? "" : "s"} <small>· \${r.outOfMemoryAgents} agent\${r.outOfMemoryAgents === 1 ? "" : "s"}</small></span></td></tr>\`).join("") + \`</tbody>\`;
+  t.querySelectorAll("th.def").forEach((th, i) => bindTip(th, \`<div class="t">\${esc(HEADS[i][0])}</div><div class="d">\${esc(HEADS[i][1])}</div>\`));
 }
 
 function renderText() {
@@ -628,21 +712,24 @@ function renderText() {
   setText("cohortNote", O.cohortWeeks.length ? \`A cohort appears once every member has had at least 7 days since first login, so the newest shown is the week of \${fmt(O.cohortWeeks.at(-1))}.\` : "A cohort appears once every member has had at least 7 days since first login.");
   const weekThree = O.funnel.at(-1);
   setText("funnelBase", \`First five columns: the \${O.funnel[0].count} users whose first login was at least 4 days ago, so each could have reached a 4th active day; active days counted within each user's first 21 days · Active in week 3: only the \${weekThree.base} users whose first login was at least 21 days ago, with an active day in days 15–21\`);
-  setText("kitDay1Base", \`Split: % of users in the cohorts above (n = \${O.cohortSizes.reduce((a, b) => a + b, 0)}) · kits: % of the \${O.firstDayKitUsers} users who created a starter-kit agent on their first day\`);
+  setText("kitDay1Base", \`Of the \${O.cohortSizes.reduce((a, b) => a + b, 0)} users whose first login fell in the six weeks shown above · kits: how many of the \${O.firstDayKitUsers} users who created a starter-kit agent on their first day picked each kit; a user who picked several kits counts under each, so the shares can add up to more than 100%\`);
   setText("useWindow", \`CALENDAR WEEKS · MON – SUN · LAST COMPLETE WEEK \${fmtUp(A.weeks.at(-1))}\`);
-  setText("longiBase", \`Same thresholds, met in each of the 3 weeks ending that week · base grows from \${A.longitudinalEligible[0]} to \${A.longitudinalEligible.at(-1)} users\`);
-  setText("perUserBase", \`All \${R.totalUsers} authenticated users · agents ever created\`);
-  setText("featUseBase", \`Of \${R.totalUsers} authenticated users\`);
+  setText("longiBase", \`Active: 1+ active days in each of the 3 weeks ending that week · Regular: 3+ in each · Super: 5+ in each · Abandoned: 0 active days across all 3 · of users 3+ weeks past first login, \${A.longitudinalEligible[0]} to \${A.longitudinalEligible.at(-1)} users\`);
+  setText("perUserBase", \`All \${R.totalUsers} users who have signed in · agents ever created\`);
+  setText("featUseBase", \`Of \${R.totalUsers} users who have signed in · hover a feature for its definition\`);
   setText("kitUseBase", \`\${A.kitPopularity.reduce((a, b) => a + b.count, 0)} agents created from starter kits\`);
-  setText("checkStateBase", \`\${A.checklistState.reduce((a, b) => a + b.count, 0)} users · a user counts as completed if any of their kit agents completed, otherwise as started if any checklist exists\`);
+  setText("checkStateBase", \`\${A.checklistState.reduce((a, b) => a + b.count, 0)} users who created a starter-kit agent · completed if any of their kit agents completed, otherwise started if any checklist exists\`);
   setText("agentsWindow", \`CURRENT STATE · \${R.agentsNow.total} LIVE AGENTS\`);
+  const fb = document.getElementById("featCountBase");
+  fb.innerHTML = \`% of cohort · first day = UTC day of first login · the five core features: \` + ["Starter kit", "Artifact", "Scheduling", "Agent in Slack", "Skills mounting"].map((f) => \`<span class="def">\${esc(f.toLowerCase())}</span>\`).join(", ");
+  fb.querySelectorAll(".def").forEach((span) => { const label = Object.keys(FEATURE_DEFS).find((k) => k.toLowerCase() === span.textContent); bindTip(span, featureTip(label)); });
 }
 
 const RAMPS = {
-  firstWeek: ["q0", "q1", "q2", "q3"],
-  featCount: ["q0", "q1", "q2", "q2b", "q3", "q4"],
-  slackLag: ["q3", "q2", "q1", "q0"],
-  checkLag: ["q3", "q2", "q1", "s4", "q0"],
+  firstWeek: ["q0", "b1", "b2", "b3"],
+  featCount: ["q0", "v1", "v2", "v3", "v4", "v5"],
+  slackLag: ["g4", "g3", "g2", "q0"],
+  checkLag: ["o4", "o3", "o2", "b2", "q0"],
   activity: ["s1", "s3", "s5", "s2"],
 };
 
@@ -653,17 +740,17 @@ function renderAll() {
   stacked100("firstWeek", O.firstWeekActiveDays, RAMPS.firstWeek); legend("firstWeekLeg", O.firstWeekActiveDays.categories, RAMPS.firstWeek);
   stacked100("featCount", O.firstDayFeatureCount, RAMPS.featCount); legend("featCountLeg", O.firstDayFeatureCount.categories, RAMPS.featCount);
   smallMult("smallMult", O.firstDayFeatureUse, O.cohortWeeks, O.cohortSizes);
-  oneBar("kitSplit", O.firstDayStart, ["s1", "s3", "q0"], false);
-  hbars("kitDay1", O.firstDayKits, { total: O.firstDayKitUsers, unit: "users", lw: 136, pctOnly: true, empty: "No starter-kit agents created on a first day yet." });
+  oneBar("kitSplit", O.firstDayStart, ["g2", "b2", "q0"]);
+  hbars("kitDay1", O.firstDayKits, { total: O.firstDayKitUsers, unit: "users", lw: 136, color: "g2", empty: "No starter-kit agents created on a first day yet." });
   stacked100("slackLag", O.slackSetup, RAMPS.slackLag); legend("slackLagLeg", O.slackSetup.categories, RAMPS.slackLag);
   stacked100("checkLag", O.checklistCompletion, RAMPS.checkLag); legend("checkLagLeg", O.checklistCompletion.categories, RAMPS.checkLag);
   lines("activity", A.weeks, A.activity, RAMPS.activity, "activityLeg");
   lines("longi", A.longitudinalWeeks, A.longitudinal, RAMPS.activity, "longiLeg");
   agentsWeekly("agentsWk", A.weeks, A.agentsCreated.fromKits, A.agentsCreated.other);
   columns("perUser", A.agentsPerUser, { unit: "users" });
-  hbars("featUse", A.featureAdoption, { total: R.totalUsers, unit: "users", lw: 120, bh: 22, gap: 12 });
-  hbars("kitUse", A.kitPopularity, { total: A.kitPopularity.reduce((a, b) => a + b.count, 0), unit: "agents", lw: 136, empty: "No agents created from starter kits yet." });
-  oneBar("checkState", A.checklistState, ["s3", "s4", "q0"], true);
+  hbars("featUse", A.featureAdoption, { total: R.totalUsers, unit: "users", lw: 120, bh: 22, gap: 12, fullScale: true, defs: true });
+  hbars("kitUse", A.kitPopularity, { total: A.kitPopularity.reduce((a, b) => a + b.count, 0), unit: "agents", lw: 136, color: "v2", sumsTo100: true, empty: "No agents created from starter kits yet." });
+  oneBar("checkState", A.checklistState, ["g2", "o2", "q0"]);
   matrix(N.sizes);
   columns("disk", N.disk, { unit: "agents", h: 200 });
   columns("conns", N.connections, { unit: "agents" });

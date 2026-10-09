@@ -169,9 +169,15 @@ CREATE VIEW "usage_agents_created" AS
   WHERE a.spawned_by_agent_id IS NULL;
 --> statement-breakpoint
 
--- One row per agent and UTC day on which it restarted after running out of memory.
-CREATE VIEW "usage_agent_oom_days" AS
-  SELECT e.agent_id, (e.occurred_at AT TIME ZONE 'UTC')::date AS day
+-- One row per restart an agent made after running out of memory, with the cpu
+-- and memory limits the agent had at that moment, so a later resize or deletion
+-- does not move the restart to another size group.
+CREATE VIEW "usage_agent_oom_restarts" AS
+  SELECT
+    e.agent_id,
+    (e.occurred_at AT TIME ZONE 'UTC')::date AS day,
+    e.payload ->> 'cpu' AS cpu,
+    e.payload ->> 'memory' AS memory
   FROM activity_events e
   JOIN usage_users u ON u.actor_sub = e.actor_sub
   WHERE e.type = 'agent_oom';

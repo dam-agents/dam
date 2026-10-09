@@ -7,6 +7,7 @@ import {
   type CoreFeature,
   type FeatureFirstFact,
   type KitAgentFact,
+  type OutOfMemoryRestart,
   type SlackSetupFact,
   type UserFact,
 } from "../domain/analytics-report.js";
@@ -28,7 +29,7 @@ export type AnalyticsRepository = {
   slackSetups(): Promise<SlackSetupFact[]>;
   kitAgents(): Promise<KitAgentFact[]>;
   agentsCreated(): Promise<AgentCreatedFact[]>;
-  outOfMemoryAgentIds(sinceDays: number): Promise<Set<string>>;
+  outOfMemoryRestarts(sinceDays: number): Promise<OutOfMemoryRestart[]>;
   knowledgeBaseConnectionIds(): Promise<Set<string>>;
   providerConnectionIds(): Promise<Set<string>>;
 };
@@ -114,11 +115,19 @@ export function createAnalyticsRepository(db: Db): AnalyticsRepository {
       }));
     },
 
-    async outOfMemoryAgentIds(sinceDays) {
-      const rows = await db.execute<{ agent_id: string }>(sql`
-        SELECT DISTINCT agent_id FROM usage_agent_oom_days
+    async outOfMemoryRestarts(sinceDays) {
+      const rows = await db.execute<{
+        agent_id: string;
+        cpu: string | null;
+        memory: string | null;
+      }>(sql`
+        SELECT agent_id, cpu, memory FROM usage_agent_oom_restarts
         WHERE day >= (now() AT TIME ZONE 'UTC')::date - ${sinceDays}::int`);
-      return new Set(rows.map((r) => r.agent_id));
+      return rows.map((r) => ({
+        agentId: r.agent_id,
+        cpu: r.cpu ?? undefined,
+        memory: r.memory ?? undefined,
+      }));
     },
 
     async providerConnectionIds() {

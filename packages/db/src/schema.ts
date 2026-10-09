@@ -280,6 +280,7 @@ export const activityEvents = pgTable(
     uniqueIndex("activity_events_agent_oom_dedup_idx")
       .on(
         table.agentId,
+        sql`(${table.payload} ->> 'restarts')`,
         sql`date_trunc('day', ${table.occurredAt} AT TIME ZONE 'UTC')`,
       )
       .where(sql`${table.type} = 'agent_oom'`),

@@ -32,7 +32,7 @@ export const VIEW_NAMES = [
   "usage_slack_setup_firsts",
   "usage_kit_agents",
   "usage_agents_created",
-  "usage_agent_oom_days",
+  "usage_agent_oom_restarts",
 ] as const;
 
 export type ViewName = (typeof VIEW_NAMES)[number];

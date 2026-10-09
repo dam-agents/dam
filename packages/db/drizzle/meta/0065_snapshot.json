@@ -1,6 +1,6 @@
 {
-  "id": "63a0c345-f830-46cf-94f5-5bf2d498966c",
-  "prevId": "10c691c4-f0ab-4f7a-9ffb-d76807a270cb",
+  "id": "ae5d6eb4-7ac0-489c-9d8e-9de68d9681b6",
+  "prevId": "f264e7c7-4f28-40a7-95d3-3ff19d730afe",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -214,6 +214,12 @@
             {
               "expression": "agent_id",
               "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"payload\" ->> 'restarts')",
+              "isExpression": true,
               "asc": true,
               "nulls": "last"
             },

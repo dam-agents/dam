@@ -444,6 +444,8 @@ export type AgentOutOfMemory = {
   agentId: string;
   ownerSub: string;
   restarts: number;
+  cpu?: string;
+  memory?: string;
 };
 
 export type DomainEvent =

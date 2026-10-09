@@ -276,7 +276,7 @@ function buildOnboarding(
     (u) => u.firstDay + FUNNEL_SPAN <= today,
   );
   const funnel = [
-    { label: "Logged in", count: funnelBase, base: funnelBase },
+    { label: "Logged in 4+ days ago", count: funnelBase, base: funnelBase },
     ...funnelStages,
     {
       label: "Active in week 3",
@@ -500,13 +500,13 @@ function buildAllUse(
 }
 
 function sizeOf(
-  agent: LiveAgentFact,
+  limits: { cpu: string | undefined; memory: string | undefined },
   slot: AnalyticsFacts["sizing"]["slot"],
 ): SizeRow["size"] {
-  if (!agent.cpu && !agent.memory) return "1x";
-  const cpu = parseCpuMilli(agent.cpu ?? slot.cpu) / parseCpuMilli(slot.cpu);
+  if (!limits.cpu && !limits.memory) return "1x";
+  const cpu = parseCpuMilli(limits.cpu ?? slot.cpu) / parseCpuMilli(slot.cpu);
   const memory =
-    parseMemoryBytes(agent.memory ?? slot.memory) /
+    parseMemoryBytes(limits.memory ?? slot.memory) /
     parseMemoryBytes(slot.memory);
   if (cpu !== memory) return "custom";
   if (cpu === 1) return "1x";
@@ -530,16 +530,31 @@ function buildAgentsNow(facts: AnalyticsFacts): AnalyticsReport["agentsNow"] {
       size,
       agents: 0,
       alwaysOn: 0,
-      outOfMemory: 0,
+      outOfMemoryEvents: 0,
+      outOfMemoryAgents: 0,
     }),
   );
+  const rowOf = (limits: {
+    cpu: string | undefined;
+    memory: string | undefined;
+  }) => sizes.find((s) => s.size === sizeOf(limits, facts.sizing.slot))!;
   for (const a of agents) {
-    const row = sizes.find((s) => s.size === sizeOf(a, facts.sizing.slot))!;
+    const row = rowOf(a);
     row.agents++;
     if (neverHibernates(a.hibernationTimeout, facts.sizing.idleTimeoutMin))
       row.alwaysOn++;
-    if (facts.oomAgentIds.has(a.id)) row.outOfMemory++;
   }
+  const live = new Set(agents.map((a) => a.id));
+  const agentsBySize = new Map<SizeRow, Set<string>>();
+  for (const r of facts.oomRestarts) {
+    if (!live.has(r.agentId)) continue;
+    const row = rowOf(r);
+    row.outOfMemoryEvents++;
+    const seen = agentsBySize.get(row) ?? new Set<string>();
+    seen.add(r.agentId);
+    agentsBySize.set(row, seen);
+  }
+  for (const [row, seen] of agentsBySize) row.outOfMemoryAgents = seen.size;
   const gi = 1024 ** 3;
   return {
     total: agents.length,

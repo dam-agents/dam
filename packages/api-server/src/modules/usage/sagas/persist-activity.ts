@@ -392,7 +392,11 @@ export function startPersistActivitySaga(
     agentId: event.agentId,
     surface: null,
     outcome: "failure",
-    payload: { restarts: event.restarts },
+    payload: {
+      restarts: event.restarts,
+      ...(event.cpu ? { cpu: event.cpu } : {}),
+      ...(event.memory ? { memory: event.memory } : {}),
+    },
   }));
 
   return sub;

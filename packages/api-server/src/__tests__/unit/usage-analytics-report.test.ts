@@ -24,7 +24,7 @@ function facts(overrides: Partial<AnalyticsFacts> = {}): AnalyticsFacts {
     kitAgents: [],
     agentsCreated: [],
     liveAgents: [],
-    oomAgentIds: new Set(),
+    oomRestarts: [],
     knowledgeBaseConnectionIds: new Set(),
     providerConnectionIds: new Set(),
     sizing: {
@@ -129,7 +129,7 @@ describe("usage analytics report", () => {
     );
     const stage = (label: string) =>
       r.onboarding.funnel.find((s) => s.label === label)!;
-    expect(stage("Logged in")).toMatchObject({ count: 2, base: 2 });
+    expect(stage("Logged in 4+ days ago")).toMatchObject({ count: 2, base: 2 });
     expect(stage("1st active day")).toMatchObject({ count: 2, base: 2 });
     expect(stage("2nd active day")).toMatchObject({ count: 1, base: 2 });
     expect(stage("Active in week 3")).toMatchObject({ count: 1, base: 1 });
@@ -184,6 +184,10 @@ describe("usage analytics report", () => {
   // TEST_SCENARIO: the agents panels read live agents but count only those a
   // TEST_SCENARIO: non-core user created, size an agent by whole slots, and do not
   // TEST_SCENARIO: count the provider key every agent is granted as a connection.
+  // TEST_SCENARIO: Out-of-memory events count only for agents that still exist and
+  // TEST_SCENARIO: are grouped by the size the agent had when it ran out, so x1 (now 1x)
+  // TEST_SCENARIO: keeps its event under 4x, the deleted agent's event is dropped, and
+  // TEST_SCENARIO: agents are the distinct agents behind the events.
   it("sizes live agents and leaves out agents nobody counted", () => {
     const live = (
       id: string,
@@ -215,7 +219,12 @@ describe("usage analytics report", () => {
           }),
           live("core-agent", { cpu: "4", memory: "8Gi" }),
         ],
-        oomAgentIds: new Set(["x2"]),
+        oomRestarts: [
+          { agentId: "x2", cpu: "2", memory: "4Gi" },
+          { agentId: "x2", cpu: "2", memory: "4Gi" },
+          { agentId: "gone", cpu: "2", memory: "4Gi" },
+          { agentId: "x1", cpu: "4", memory: "8Gi" },
+        ],
         knowledgeBaseConnectionIds: new Set(["kb"]),
         providerConnectionIds: new Set(["provider-key"]),
       }),
@@ -223,10 +232,34 @@ describe("usage analytics report", () => {
     );
     expect(r.agentsNow.total).toBe(3);
     expect(r.agentsNow.sizes).toEqual([
-      { size: "1x", agents: 1, alwaysOn: 0, outOfMemory: 0 },
-      { size: "2x", agents: 1, alwaysOn: 1, outOfMemory: 1 },
-      { size: "4x", agents: 0, alwaysOn: 0, outOfMemory: 0 },
-      { size: "custom", agents: 1, alwaysOn: 0, outOfMemory: 0 },
+      {
+        size: "1x",
+        agents: 1,
+        alwaysOn: 0,
+        outOfMemoryEvents: 0,
+        outOfMemoryAgents: 0,
+      },
+      {
+        size: "2x",
+        agents: 1,
+        alwaysOn: 1,
+        outOfMemoryEvents: 2,
+        outOfMemoryAgents: 1,
+      },
+      {
+        size: "4x",
+        agents: 0,
+        alwaysOn: 0,
+        outOfMemoryEvents: 1,
+        outOfMemoryAgents: 1,
+      },
+      {
+        size: "custom",
+        agents: 1,
+        alwaysOn: 0,
+        outOfMemoryEvents: 0,
+        outOfMemoryAgents: 0,
+      },
     ]);
     expect(r.agentsNow.knowledgeBases.map((s) => s.count)).toEqual([
       2, 1, 0, 0,
