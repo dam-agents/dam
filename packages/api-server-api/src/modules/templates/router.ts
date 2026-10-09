@@ -8,6 +8,7 @@ function toView(tmpl: Template) {
   return {
     id: tmpl.id,
     name: tmpl.name,
+    aliases: tmpl.spec.aliases,
     image: tmpl.spec.image,
     description: tmpl.spec.description,
     category: tmpl.spec.category ?? "harness",
