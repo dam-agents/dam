@@ -65,7 +65,7 @@ export function SandboxHomeHeader({ agent, display, avatar }: Props) {
         be undone.
       </>
     );
-    if (!(await showConfirm(msg, "Delete Agent", { kind: "destructive" })))
+    if (!(await showConfirm(msg, "Delete agent", { kind: "destructive" })))
       return;
     deleteAgent.mutate({ id: agent.id }, { onSuccess: () => setView("home") });
   };
@@ -141,7 +141,7 @@ export function SandboxHomeHeader({ agent, display, avatar }: Props) {
                 disabled={deleteAgent.isPending}
                 onSelect={() => void onDelete()}
               >
-                Delete Agent
+                Delete agent
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
