@@ -95,11 +95,13 @@ unread, because agents hold credentials there.
 
 **Finished work.** A Harness Task or Detached Process that a scan finds gone moves to a
 finished history — a Harness Task as soon as its process is gone, without waiting for the
-harness's next report. Turn Processes keep no history. The history and the rows last seen
-running live in the **processes runtime document** on the agent's home volume
-([persistence](persistence.md)), stamped with the kernel's boot id: on a boot with a new
-id, the rows the last scan saw running are recorded as ended by hibernation, since nothing
-outlives one. The history keeps the newest twenty entries, none older than a week.
+harness's next report. Such a task is also dropped from its session's report, the same way
+as a [stopped](#keeping-work) one, so it stops holding the agent awake. Turn Processes
+keep no history. The history and the rows last seen running live in the **processes
+runtime document** on the agent's home volume ([persistence](persistence.md)), stamped
+with the kernel's boot id: on a boot with a new id, the rows the last scan saw running are
+recorded as ended by hibernation, since nothing outlives one. The history keeps the newest
+twenty entries, none older than a week.
 
 **Reading it.** The inventory is served on agent-runtime's tRPC surface, reached through
 the same per-agent relay as the file and session watches; a hibernated agent shows

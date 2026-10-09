@@ -139,7 +139,9 @@ function withDescendants(
  * read finds the last scan stale, and whenever the harness reports a change to
  * its Harness Tasks. Each scan is diffed with the last: Harness Tasks and
  * Detached Processes that are gone move to the finished history in the
- * processes runtime document. The document carries the boot id. On a new
+ * processes runtime document, and a gone Harness Task is also dropped from
+ * its session's report, so it stops holding the agent before the harness
+ * reports again. The document carries the boot id. On a new
  * boot, the rows the last scan saw running are recorded as ended by
  * hibernation, and the marks and overrides are dropped, since nothing outlives
  * one. The agent marks work with `platform-keep`; the user overrides any
@@ -302,6 +304,12 @@ export function createProcessesService(
     ).length;
     keepAlive = marks.length > 0 || keptDetached > 0;
     deps.keep.setKeptProcesses(keptDetached);
+
+    const exited = new Set(inventory.exitedTasks);
+    for (const task of tasks) {
+      if (exited.has(taskIdentity(task)))
+        deps.dropTask(task.sessionId, task.taskId);
+    }
 
     const signature = noticeSignature(inventory.running);
     if (signature !== lastSignature) {
