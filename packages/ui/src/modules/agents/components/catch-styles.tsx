@@ -43,6 +43,14 @@ const CATCH_CSS = `
   30% { transform: scale(1.06); }
   100% { box-shadow: 0 0 0 14px rgba(69, 137, 255, 0); transform: scale(1); }
 }
+@keyframes dock-enter {
+  from { opacity: 0; transform: translateY(8px) scale(0.95); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dock-exit {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(8px) scale(0.95); }
+}
 `;
 
 export function CatchStyles() {

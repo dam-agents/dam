@@ -115,7 +115,7 @@ export function CrewSlot({ name, justCaught }: CrewSlotData) {
   );
 }
 
-function useQuestAction(action: QuestAction) {
+export function useQuestAction(action: QuestAction) {
   const setView = useStore((s) => s.setView);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const selectAgent = useStore((s) => s.selectAgent);
@@ -145,11 +145,21 @@ export function QuestRow({
   reward,
   state,
   showReward = true,
-}: Omit<QuestRowData, "id"> & { showReward?: boolean }) {
+  onClick,
+}: Omit<QuestRowData, "id"> & {
+  showReward?: boolean;
+  onClick?: () => void;
+}) {
   const done = state === "done";
-  const handleAction = useQuestAction(action);
   return (
-    <li className="flex list-none items-center gap-3 px-4 py-1.5">
+    <li
+      className={cn(
+        "flex list-none items-center gap-3 rounded-md px-4 py-1.5 transition-colors hover:bg-muted/40",
+        onClick && "cursor-pointer",
+      )}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+    >
       <span className="flex size-4 shrink-0 items-center justify-center">
         {done ? (
           <CheckmarkFilled size={16} className="text-success" />
@@ -193,6 +203,7 @@ export function ChecklistPanel({
   revealAvatars,
   onCollapse,
   onDismiss,
+  onRowClick,
 }: {
   done: number;
   total: number;
@@ -202,9 +213,22 @@ export function ChecklistPanel({
   revealAvatars?: boolean;
   onCollapse?: () => void;
   onDismiss?: () => void;
+  onRowClick?: (action: QuestAction) => void;
 }) {
+  const [exiting, setExiting] = useState(false);
+  const handleDismiss = () => {
+    setExiting(true);
+    setTimeout(() => onDismiss?.(), 300);
+  };
+
   return (
-    <div className="w-[340px] overflow-hidden rounded-lg border border-border bg-card shadow-xl">
+    <div
+      className={cn(
+        "w-[340px] overflow-hidden rounded-lg border border-border bg-card shadow-xl",
+        "animate-[dock-enter_0.3s_ease-out]",
+        exiting && "animate-[dock-exit_0.3s_ease-in_forwards]",
+      )}
+    >
       <div
         className={cn(
           "flex items-center gap-3 px-4 pt-3.5",
@@ -245,15 +269,20 @@ export function ChecklistPanel({
 
       <ul className="border-t border-border py-1.5">
         {rows.map((row) => (
-          <QuestRow key={row.id} {...row} showReward={showAvatars} />
+          <QuestRow
+            key={row.id}
+            {...row}
+            showReward={showAvatars}
+            onClick={onRowClick ? () => onRowClick(row.action) : undefined}
+          />
         ))}
       </ul>
       {onDismiss && (
-        <div className="border-t border-border px-4 py-2">
+        <div className="flex justify-end border-t border-border px-4 py-2">
           <button
             type="button"
             className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-            onClick={onDismiss}
+            onClick={handleDismiss}
           >
             Dismiss
           </button>
@@ -276,11 +305,19 @@ export function ChecklistPill({
   onExpand?: () => void;
   onDismiss?: () => void;
 }) {
+  const [exiting, setExiting] = useState(false);
+  const handleDismiss = () => {
+    setExiting(true);
+    setTimeout(() => onDismiss?.(), 300);
+  };
+
   return (
     <div
       className={cn(
         "flex h-11 items-center gap-2.5 rounded-lg border border-border bg-card pl-2 pr-1 shadow-lg",
+        "animate-[dock-enter_0.3s_ease-out]",
         pulse && "animate-[dock-pulse_0.7s_ease-out]",
+        exiting && "animate-[dock-exit_0.3s_ease-in_forwards]",
       )}
     >
       <button
@@ -302,7 +339,7 @@ export function ChecklistPill({
         <button
           type="button"
           aria-label="Dismiss checklist"
-          onClick={onDismiss}
+          onClick={handleDismiss}
           className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
         >
           <span className="text-base leading-none">&times;</span>

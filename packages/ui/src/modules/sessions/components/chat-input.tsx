@@ -1,4 +1,4 @@
-import { Add, Close, Document, SendAltFilled, Stop } from "@carbon/icons-react";
+import { Close, Document, SendAltFilled, Stop } from "@carbon/icons-react";
 import {
   type KeyboardEvent,
   type RefObject,
@@ -22,9 +22,11 @@ import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
 import { draftKey, EMPTY_DRAFT } from "../lib/draft-key.js";
 import { ChatColumn } from "./chat-column.js";
+import { PlusMenuPopover } from "./plus-menu-popover.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
+import type { SandboxSection } from "../../platform/lib/routes.js";
 import type { RotatingPlaceholder } from "../../schedules/components/schedule-chat-discovery.js";
 
 export interface ChatInputProps {
@@ -34,6 +36,7 @@ export interface ChatInputProps {
   onSend: (text: string, attachments?: Attachment[]) => void;
   onStop: () => void;
   rotatingPlaceholder?: RotatingPlaceholder | null;
+  onConfigureSection?: (section: SandboxSection) => void;
 }
 
 export function ChatInput({
@@ -43,6 +46,7 @@ export function ChatInput({
   onSend,
   onStop,
   rotatingPlaceholder,
+  onConfigureSection,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -179,18 +183,22 @@ export function ChatInput({
       e.preventDefault();
       send();
     }
+    if (e.key === "Tab" && showRotating && key) {
+      e.preventDefault();
+      setDraft(key, { text: rotatingPlaceholder!.text });
+    }
   };
 
   const placeholder = isComputing ? "Queue a message..." : "Message...";
 
   return (
     <div
-      className="px-4 md:px-8 pt-3 pb-1"
+      className="pt-3 pb-1"
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <ChatColumn className="flex flex-col gap-1.5">
+      <ChatColumn className="px-4 md:px-8 flex flex-col gap-1.5">
         <input
           ref={fileInputRef}
           type="file"
@@ -216,26 +224,31 @@ export function ChatInput({
             </div>
           )}
           <div className="flex items-end gap-1 px-2 min-h-[56px]">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="shrink-0 mb-[9px] h-10 w-10 text-muted-foreground hover:text-primary disabled:opacity-40"
-              onClick={() => fileInputRef.current?.click()}
+            <PlusMenuPopover
+              agentId={agentId}
               disabled={loadingSession || !key}
-              aria-label="Attach file"
-              tooltip="Attach file"
-            >
-              <Add size={16} />
-            </Button>
+              onAttachFile={() => fileInputRef.current?.click()}
+              onConfigureSection={onConfigureSection}
+              onPrefillInput={(text) => {
+                if (!key) return;
+                setDraft(key, { text });
+                requestAnimationFrame(() => textareaRef.current?.focus());
+              }}
+            />
             <div className="relative flex-1">
               {showRotating && (
                 <span
                   className={cn(
-                    "pointer-events-none absolute left-0 top-[17px] pr-2 text-sm leading-[22px] text-muted-foreground/50 transition-opacity duration-300",
+                    "pointer-events-none absolute inset-x-0 top-[17px] flex items-center justify-between text-sm leading-[22px] transition-opacity duration-500",
                     rotatingPlaceholder!.fading && "opacity-0",
                   )}
                 >
-                  {rotatingPlaceholder!.text}
+                  <span className="truncate text-muted-foreground/50">
+                    {rotatingPlaceholder!.text}
+                  </span>
+                  <kbd className="shrink-0 mr-2 inline-flex h-5 items-center rounded border border-border/50 px-1.5 text-[11px] text-muted-foreground/50">
+                    Tab
+                  </kbd>
                 </span>
               )}
               <Textarea

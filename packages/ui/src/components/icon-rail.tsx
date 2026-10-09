@@ -190,8 +190,7 @@ export function IconRail({
   const agentSentinelRef = useRef<HTMLDivElement>(null);
   const activitySentinelRef = useRef<HTMLDivElement>(null);
   const activityEndRef = useRef<HTMLDivElement>(null);
-  const hasActivity =
-    showActivityProp === false ? false : feedItems.length > 0;
+  const hasActivity = showActivityProp === false ? false : feedItems.length > 0;
   const hasUnreadActivity = feedItems.some((item) => item.type === "unread");
   const [agentsStuck, setAgentsStuck] = useState(false);
   const [activityStuck, setActivityStuck] = useState(false);
@@ -396,238 +395,242 @@ export function IconRail({
                   No agents yet
                 </p>
               ) : (
-              <>
-              <div className="flex flex-col gap-px px-2">
-                  {visibleAgents.map((agent, agentIndex) => {
-                    const display = resolveAgentDisplay(
-                      agent,
-                      restartingIds,
-                      pausingIds,
-                    );
-                    const isExpanded = expandedAgentIds.has(agent.id);
-                    const agentSessions = sessionsByAgent.get(agent.id) ?? [];
-                    const sessionLimit =
-                      agentSessionCounts[agent.id] ?? AGENT_SESSION_PAGE;
-                    const visibleSessions = agentSessions.slice(
-                      0,
-                      sessionLimit,
-                    );
-                    const hasMoreSessions = sessionLimit < agentSessions.length;
-                    const hasUnread = agentSessions.some(
-                      (s) => s.type === "unread",
-                    );
-                    const isSelected =
-                      isExpanded ||
-                      (!!activeSessionId &&
-                        agentSessions.some(
-                          (s) =>
-                            (s.type === "running" ||
-                              s.type === "unread" ||
-                              s.type === "read") &&
-                            s.session.sessionId === activeSessionId,
-                        ));
+                <>
+                  <div className="flex flex-col gap-px px-2">
+                    {visibleAgents.map((agent, agentIndex) => {
+                      const display = resolveAgentDisplay(
+                        agent,
+                        restartingIds,
+                        pausingIds,
+                      );
+                      const isExpanded = expandedAgentIds.has(agent.id);
+                      const agentSessions = sessionsByAgent.get(agent.id) ?? [];
+                      const sessionLimit =
+                        agentSessionCounts[agent.id] ?? AGENT_SESSION_PAGE;
+                      const visibleSessions = agentSessions.slice(
+                        0,
+                        sessionLimit,
+                      );
+                      const hasMoreSessions =
+                        sessionLimit < agentSessions.length;
+                      const hasUnread = agentSessions.some(
+                        (s) => s.type === "unread",
+                      );
+                      const isSelected =
+                        isExpanded ||
+                        (!!activeSessionId &&
+                          agentSessions.some(
+                            (s) =>
+                              (s.type === "running" ||
+                                s.type === "unread" ||
+                                s.type === "read") &&
+                              s.session.sessionId === activeSessionId,
+                          ));
 
-                    return (
-                      <div key={agent.id}>
-                        <div
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => {
-                            setExpandedAgentIds((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(agent.id)) next.delete(agent.id);
-                              else next.add(agent.id);
-                              return next;
-                            });
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
+                      return (
+                        <div key={agent.id}>
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => {
                               setExpandedAgentIds((prev) => {
                                 const next = new Set(prev);
                                 if (next.has(agent.id)) next.delete(agent.id);
                                 else next.add(agent.id);
                                 return next;
                               });
-                            }
-                          }}
-                          className={cn(
-                            "group group/agent relative flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer",
-                            isSelected && "bg-muted",
-                          )}
-                        >
-                          <SidebarAvatar
-                            agentId={agent.id}
-                            state={display.state}
-                          />
-                          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
-                            {agent.name}
-                          </span>
-                          {hasUnread && !isSelected && (
-                            <span
-                              aria-label="Unread sessions"
-                              className="absolute top-1/2 right-3 size-2 -translate-y-1/2 rounded-full bg-accent group-hover/agent:invisible group-focus-within/agent:invisible"
-                            />
-                          )}
-                          <span
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setExpandedAgentIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(agent.id)) next.delete(agent.id);
+                                  else next.add(agent.id);
+                                  return next;
+                                });
+                              }
+                            }}
                             className={cn(
-                              "flex shrink-0 items-center gap-0.5 transition-opacity group-hover/agent:opacity-100 focus-within:opacity-100",
-                              isSelected ? "opacity-100" : "opacity-0",
+                              "group group/agent relative flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer",
+                              isSelected && "bg-muted",
                             )}
                           >
-                            <Tooltip content="New chat" side="right">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigateToAgentLanding(agent.id);
-                                }}
-                                className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-                                aria-label={`New chat with ${agent.name}`}
-                              >
-                                <NewTab size={16} />
-                              </button>
-                            </Tooltip>
-                            <AgentOverflowMenu display={display} />
-                          </span>
-                        </div>
-                        {isExpanded && visibleSessions.length > 0 && (
-                          <div className="mt-1 mb-3 flex flex-col gap-px">
-                            {visibleSessions.map((item) => {
-                              const isRunning = item.type === "running";
-                              const isUnread = item.type === "unread";
-                              const hasSession =
-                                item.type === "running" ||
-                                item.type === "unread" ||
-                                item.type === "read";
-                              const title = hasSession
-                                ? (item.session.title ?? "Session")
-                                : "";
-                              const meta = item.at ? timeAgo(item.at, now) : "";
-                              const isSlack =
-                                hasSession && !!item.session.threadTs;
-                              const isSchedule =
-                                hasSession && !!item.session.scheduleId;
-                              return (
-                                <div
-                                  key={item.id}
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={
-                                    hasSession
-                                      ? () => handleOpen(item)
-                                      : undefined
-                                  }
-                                  onKeyDown={(e) => {
-                                    if (
-                                      hasSession &&
-                                      (e.key === "Enter" || e.key === " ")
-                                    ) {
-                                      e.preventDefault();
-                                      handleOpen(item);
-                                    }
-                                  }}
-                                  className={cn(
-                                    "group/agentsession relative flex w-full flex-col gap-0.5 rounded-lg py-2 pl-10 pr-3 text-left transition-colors hover:bg-muted cursor-pointer",
-                                    hasSession &&
-                                      activeSessionId === item.session.sessionId
-                                      ? "bg-muted"
-                                      : "",
-                                  )}
-                                >
-                                  <span className="flex items-center gap-1.5">
-                                    <span className="min-w-0 truncate text-sm text-foreground">
-                                      {title}
-                                    </span>
-                                    {isRunning && (
-                                      <span className="working-dots ml-auto shrink-0 inline-flex items-center -space-x-[1px] group-hover/agentsession:invisible">
-                                        <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
-                                        <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
-                                        <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
-                                      </span>
-                                    )}
-                                    {isUnread && !isRunning && (
-                                      <span className="ml-auto size-2 shrink-0 rounded-full bg-accent group-hover/agentsession:invisible" />
-                                    )}
-                                  </span>
-                                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                                    <span className="min-w-0 truncate">
-                                      {meta}
-                                    </span>
-                                    {isSlack && (
-                                      <>
-                                        <span>·</span>
-                                        <img
-                                          src="/icons/slack.svg"
-                                          alt="Slack"
-                                          className="size-3.5 shrink-0"
-                                        />
-                                      </>
-                                    )}
-                                    {isSchedule && (
-                                      <>
-                                        <span>·</span>
-                                        <span className="shrink-0 text-muted-foreground">
-                                          <Time size={14} />
-                                        </span>
-                                      </>
-                                    )}
-                                  </span>
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon-xs"
-                                        className="absolute right-1 top-1.5 opacity-0 transition-opacity group-hover/agentsession:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-                                        onClick={(e) => e.stopPropagation()}
-                                        aria-label="More actions"
-                                      >
-                                        <OverflowMenuVertical size={16} />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      <DropdownMenuItem tone="danger">
-                                        <TrashCan size={13} /> Delete session
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                              );
-                            })}
-                            {hasMoreSessions && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setAgentSessionCounts((prev) => ({
-                                    ...prev,
-                                    [agent.id]:
-                                      (prev[agent.id] ?? AGENT_SESSION_PAGE) +
-                                      AGENT_SESSION_PAGE,
-                                  }))
-                                }
-                                className="w-full py-1 pl-10 pr-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
-                              >
-                                View more
-                              </button>
+                            <SidebarAvatar
+                              agentId={agent.id}
+                              state={display.state}
+                            />
+                            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+                              {agent.name}
+                            </span>
+                            {hasUnread && !isSelected && (
+                              <span
+                                aria-label="Unread sessions"
+                                className="absolute top-1/2 right-3 size-2 -translate-y-1/2 rounded-full bg-accent group-hover/agent:invisible group-focus-within/agent:invisible"
+                              />
                             )}
+                            <span
+                              className={cn(
+                                "flex shrink-0 items-center gap-0.5 transition-opacity group-hover/agent:opacity-100 focus-within:opacity-100",
+                                isSelected ? "opacity-100" : "opacity-0",
+                              )}
+                            >
+                              <Tooltip content="New chat" side="right">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigateToAgentLanding(agent.id);
+                                  }}
+                                  className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+                                  aria-label={`New chat with ${agent.name}`}
+                                >
+                                  <NewTab size={16} />
+                                </button>
+                              </Tooltip>
+                              <AgentOverflowMenu display={display} />
+                            </span>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                {hasHiddenAgents && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllAgents((v) => !v)}
-                    className="mt-1 block px-5 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    {showAllAgents
-                      ? "Show less"
-                      : `See all (${agents.length - activeAgents.length} hibernating)`}
-                  </button>
-                )}
-              </>
+                          {isExpanded && visibleSessions.length > 0 && (
+                            <div className="mt-1 mb-3 flex flex-col gap-px">
+                              {visibleSessions.map((item) => {
+                                const isRunning = item.type === "running";
+                                const isUnread = item.type === "unread";
+                                const hasSession =
+                                  item.type === "running" ||
+                                  item.type === "unread" ||
+                                  item.type === "read";
+                                const title = hasSession
+                                  ? (item.session.title ?? "Session")
+                                  : "";
+                                const meta = item.at
+                                  ? timeAgo(item.at, now)
+                                  : "";
+                                const isSlack =
+                                  hasSession && !!item.session.threadTs;
+                                const isSchedule =
+                                  hasSession && !!item.session.scheduleId;
+                                return (
+                                  <div
+                                    key={item.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={
+                                      hasSession
+                                        ? () => handleOpen(item)
+                                        : undefined
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (
+                                        hasSession &&
+                                        (e.key === "Enter" || e.key === " ")
+                                      ) {
+                                        e.preventDefault();
+                                        handleOpen(item);
+                                      }
+                                    }}
+                                    className={cn(
+                                      "group/agentsession relative flex w-full flex-col gap-0.5 rounded-lg py-2 pl-10 pr-3 text-left transition-colors hover:bg-muted cursor-pointer",
+                                      hasSession &&
+                                        activeSessionId ===
+                                          item.session.sessionId
+                                        ? "bg-muted"
+                                        : "",
+                                    )}
+                                  >
+                                    <span className="flex items-center gap-1.5">
+                                      <span className="min-w-0 truncate text-sm text-foreground">
+                                        {title}
+                                      </span>
+                                      {isRunning && (
+                                        <span className="working-dots ml-auto shrink-0 inline-flex items-center -space-x-[1px] group-hover/agentsession:invisible">
+                                          <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
+                                          <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
+                                          <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
+                                        </span>
+                                      )}
+                                      {isUnread && !isRunning && (
+                                        <span className="ml-auto size-2 shrink-0 rounded-full bg-accent group-hover/agentsession:invisible" />
+                                      )}
+                                    </span>
+                                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                      <span className="min-w-0 truncate">
+                                        {meta}
+                                      </span>
+                                      {isSlack && (
+                                        <>
+                                          <span>·</span>
+                                          <img
+                                            src="/icons/slack.svg"
+                                            alt="Slack"
+                                            className="size-3.5 shrink-0"
+                                          />
+                                        </>
+                                      )}
+                                      {isSchedule && (
+                                        <>
+                                          <span>·</span>
+                                          <span className="shrink-0 text-muted-foreground">
+                                            <Time size={14} />
+                                          </span>
+                                        </>
+                                      )}
+                                    </span>
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon-xs"
+                                          className="absolute right-1 top-1.5 opacity-0 transition-opacity group-hover/agentsession:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                                          onClick={(e) => e.stopPropagation()}
+                                          aria-label="More actions"
+                                        >
+                                          <OverflowMenuVertical size={16} />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem tone="danger">
+                                          <TrashCan size={13} /> Delete session
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </div>
+                                );
+                              })}
+                              {hasMoreSessions && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setAgentSessionCounts((prev) => ({
+                                      ...prev,
+                                      [agent.id]:
+                                        (prev[agent.id] ?? AGENT_SESSION_PAGE) +
+                                        AGENT_SESSION_PAGE,
+                                    }))
+                                  }
+                                  className="w-full py-1 pl-10 pr-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
+                                >
+                                  View more
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {hasHiddenAgents && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllAgents((v) => !v)}
+                      className="mt-1 block px-5 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {showAllAgents
+                        ? "Show less"
+                        : `See all (${agents.length - activeAgents.length} hibernating)`}
+                    </button>
+                  )}
+                </>
               )}
             </div>
 
@@ -657,131 +660,132 @@ export function IconRail({
                   No activity
                 </p>
               ) : (
-              <>
-                {visibleActivity.length === 0 && (
-                  <p className="px-5 py-2 text-sm text-muted-foreground">
-                    No matching activity
-                  </p>
-                )}
-                <div key="list" className="flex flex-col gap-px px-2">
-                  {visibleActivity.map((item, activityIndex) => {
-                    const isRunning = item.type === "running";
-                    const isUnread = item.type === "unread";
-                    const hasSession =
-                      item.type === "running" ||
-                      item.type === "unread" ||
-                      item.type === "read";
-                    const title = hasSession
-                      ? (item.session.title ?? "Session")
-                      : "";
-                    const agent = agentNameMap.get(item.agentId) ?? "Agent";
-                    const meta = item.at ? timeAgo(item.at, now) : "";
-                    const isSlack = hasSession && !!item.session.threadTs;
-                    const isSchedule = hasSession && !!item.session.scheduleId;
-                    const slackChannel = isSlack
-                      ? ((item.session as Record<string, unknown>)
-                          .slackChannel as string | undefined)
-                      : undefined;
-                    return (
-                      <div
-                        key={item.id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={
-                          hasSession ? () => handleOpen(item) : undefined
-                        }
-                        onKeyDown={(e) => {
-                          if (
-                            hasSession &&
-                            (e.key === "Enter" || e.key === " ")
-                          ) {
-                            e.preventDefault();
-                            handleOpen(item);
+                <>
+                  {visibleActivity.length === 0 && (
+                    <p className="px-5 py-2 text-sm text-muted-foreground">
+                      No matching activity
+                    </p>
+                  )}
+                  <div key="list" className="flex flex-col gap-px px-2">
+                    {visibleActivity.map((item, activityIndex) => {
+                      const isRunning = item.type === "running";
+                      const isUnread = item.type === "unread";
+                      const hasSession =
+                        item.type === "running" ||
+                        item.type === "unread" ||
+                        item.type === "read";
+                      const title = hasSession
+                        ? (item.session.title ?? "Session")
+                        : "";
+                      const agent = agentNameMap.get(item.agentId) ?? "Agent";
+                      const meta = item.at ? timeAgo(item.at, now) : "";
+                      const isSlack = hasSession && !!item.session.threadTs;
+                      const isSchedule =
+                        hasSession && !!item.session.scheduleId;
+                      const slackChannel = isSlack
+                        ? ((item.session as Record<string, unknown>)
+                            .slackChannel as string | undefined)
+                        : undefined;
+                      return (
+                        <div
+                          key={item.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={
+                            hasSession ? () => handleOpen(item) : undefined
                           }
-                        }}
-                        className={cn(
-                          "group/activity relative flex w-full flex-col gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted cursor-pointer",
-                          hasSession &&
-                            activeSessionId === item.session.sessionId
-                            ? "bg-muted"
-                            : "",
-                        )}
-                      >
-                        <span className="flex items-center gap-1.5">
-                          <span className="min-w-0 truncate text-sm text-foreground">
-                            {title}
-                          </span>
-                          {isRunning && (
-                            <span className="working-dots ml-auto shrink-0 inline-flex items-center -space-x-[1px] group-hover/activity:invisible">
-                              <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
-                              <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
-                              <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
+                          onKeyDown={(e) => {
+                            if (
+                              hasSession &&
+                              (e.key === "Enter" || e.key === " ")
+                            ) {
+                              e.preventDefault();
+                              handleOpen(item);
+                            }
+                          }}
+                          className={cn(
+                            "group/activity relative flex w-full flex-col gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted cursor-pointer",
+                            hasSession &&
+                              activeSessionId === item.session.sessionId
+                              ? "bg-muted"
+                              : "",
+                          )}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <span className="min-w-0 truncate text-sm text-foreground">
+                              {title}
                             </span>
-                          )}
-                          {isUnread && !isRunning && (
-                            <span className="ml-auto size-2 shrink-0 rounded-full bg-accent group-hover/activity:invisible" />
-                          )}
-                        </span>
-                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <span className="min-w-0 truncate">
-                            {`${agent}${meta ? ` · ${meta}` : ""}`}
+                            {isRunning && (
+                              <span className="working-dots ml-auto shrink-0 inline-flex items-center -space-x-[1px] group-hover/activity:invisible">
+                                <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
+                                <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
+                                <span className="size-2 rounded-full border-[1.5px] border-background bg-[#a2a9b0] dark:bg-white/40" />
+                              </span>
+                            )}
+                            {isUnread && !isRunning && (
+                              <span className="ml-auto size-2 shrink-0 rounded-full bg-accent group-hover/activity:invisible" />
+                            )}
                           </span>
-                          {isSlack && (
-                            <>
-                              <span>·</span>
-                              <Tooltip
-                                content={
-                                  slackChannel
-                                    ? `#${slackChannel}`
-                                    : "Slack channel"
-                                }
-                                side="right"
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <span className="min-w-0 truncate">
+                              {`${agent}${meta ? ` · ${meta}` : ""}`}
+                            </span>
+                            {isSlack && (
+                              <>
+                                <span>·</span>
+                                <Tooltip
+                                  content={
+                                    slackChannel
+                                      ? `#${slackChannel}`
+                                      : "Slack channel"
+                                  }
+                                  side="right"
+                                >
+                                  <img
+                                    src="/icons/slack.svg"
+                                    alt="Slack"
+                                    className="size-3.5 shrink-0"
+                                  />
+                                </Tooltip>
+                              </>
+                            )}
+                            {isSchedule && (
+                              <>
+                                <span>·</span>
+                                <Tooltip content="Scheduled" side="right">
+                                  <span className="shrink-0 text-muted-foreground">
+                                    <Time size={14} />
+                                  </span>
+                                </Tooltip>
+                              </>
+                            )}
+                          </span>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                className="absolute right-2 top-2 opacity-0 transition-opacity group-hover/activity:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                                onClick={(e) => e.stopPropagation()}
+                                aria-label="More actions"
                               >
-                                <img
-                                  src="/icons/slack.svg"
-                                  alt="Slack"
-                                  className="size-3.5 shrink-0"
-                                />
-                              </Tooltip>
-                            </>
-                          )}
-                          {isSchedule && (
-                            <>
-                              <span>·</span>
-                              <Tooltip content="Scheduled" side="right">
-                                <span className="shrink-0 text-muted-foreground">
-                                  <Time size={14} />
-                                </span>
-                              </Tooltip>
-                            </>
-                          )}
-                        </span>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon-xs"
-                              className="absolute right-2 top-2 opacity-0 transition-opacity group-hover/activity:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-                              onClick={(e) => e.stopPropagation()}
-                              aria-label="More actions"
-                            >
-                              <OverflowMenuVertical size={16} />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem tone="danger">
-                              <TrashCan size={13} /> Delete session
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    );
-                  })}
-                </div>
-                {hasMoreActivity && (
-                  <div ref={activityEndRef} className="h-px" />
-                )}
-              </>
+                                <OverflowMenuVertical size={16} />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem tone="danger">
+                                <TrashCan size={13} /> Delete session
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {hasMoreActivity && (
+                    <div ref={activityEndRef} className="h-px" />
+                  )}
+                </>
               )}
             </div>
           </div>

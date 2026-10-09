@@ -33,6 +33,12 @@ async function main() {
   // Wait for the avatar sheet to load
   await page.waitForSelector(".bee-avatar", { timeout: 10000 });
 
+  // Strip all CSS backgrounds from tile wrappers so only the SVG avatar is captured.
+  // Without this, the card surface and hover backgrounds leak into frames.
+  await page.addStyleTag({
+    content: `.group, .group > * { background: transparent !important; }`,
+  });
+
   for (const charName of CHARS) {
     console.log(`Capturing ${charName}...`);
 

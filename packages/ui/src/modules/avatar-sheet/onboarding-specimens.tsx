@@ -181,6 +181,7 @@ export function OnboardingSpecimens() {
           crew={crewFor([])}
           rows={rowsFor(new Map())}
           showAvatars={false}
+          onDismiss={() => {}}
         />
       </Specimen>
 
@@ -200,6 +201,7 @@ export function OnboardingSpecimens() {
               )}
               rows={rowsFor(new Map([["first-agent", "shield"]]))}
               revealAvatars={k > 0}
+              onDismiss={() => {}}
             />
           )}
         </ReplayOnClick>
@@ -215,6 +217,7 @@ export function OnboardingSpecimens() {
           total={TOTAL}
           crew={crewFor(IN_PROGRESS_CAUGHT)}
           rows={rowsFor(IN_PROGRESS_REWARDS, "connect-github")}
+          onDismiss={() => {}}
         />
       </Specimen>
 
@@ -225,14 +228,20 @@ export function OnboardingSpecimens() {
         wide
       >
         <Labeled label={`0 of ${TOTAL}`}>
-          <ChecklistPill done={0} total={TOTAL} />
+          <ChecklistPill done={0} total={TOTAL} onDismiss={() => {}} />
         </Labeled>
         <Labeled label={`3 of ${TOTAL}`}>
-          <ChecklistPill done={3} total={TOTAL} />
+          <ChecklistPill done={3} total={TOTAL} onDismiss={() => {}} />
         </Labeled>
         <ReplayOnClick label="Replay pulse">
           {(k) => (
-            <ChecklistPill key={k} done={6} total={TOTAL} pulse={k > 0} />
+            <ChecklistPill
+              key={k}
+              done={6}
+              total={TOTAL}
+              pulse={k > 0}
+              onDismiss={() => {}}
+            />
           )}
         </ReplayOnClick>
       </Specimen>

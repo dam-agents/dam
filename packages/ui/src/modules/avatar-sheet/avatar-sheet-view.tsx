@@ -6,7 +6,6 @@ import {
   Folder,
   Idea,
   Image,
-  OverflowMenuVertical,
   Power,
   Send,
 } from "@carbon/icons-react";
@@ -30,7 +29,6 @@ import {
 import { unlockAllCharacters } from "../agents/lib/character-unlocks.js";
 import { AgentSetupView } from "../agents/views/agent-setup-view.js";
 import { SidebarSection } from "../sessions/components/sidebar-section.js";
-import { EyeBeeMRebus } from "./eye-bee-m.js";
 import { AppFrame, SetupColumn } from "./first-agent-screens.js";
 
 const CHOOSE_AVATAR_POOL: CharName[] = [
@@ -457,12 +455,6 @@ function ChatSpecimen() {
       <div className="flex h-full">
         <div className="flex w-[220px] shrink-0 flex-col border-r border-border">
           <div className="flex h-11 items-center gap-2.5 border-b border-border px-3">
-            <CharAvatar
-              name={charName}
-              state="running"
-              colors={CHAR_COLORS[charName]}
-              className="size-7"
-            />
             <span className="truncate text-sm font-semibold text-foreground">
               {agentName}
             </span>
@@ -563,33 +555,13 @@ function ChatSpecimen() {
         </div>
 
         <div className="flex flex-1 flex-col">
-          <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-6">
-            <span className="flex">
-              <CharAvatar
-                name={charName}
-                state="running"
-                colors={CHAR_COLORS[charName]}
-                className="size-7"
-              />
-            </span>
-            <h2 className="truncate text-sm font-bold text-foreground">
-              {agentName}
-            </h2>
-            <span className="size-2 shrink-0 rounded-full bg-success" />
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Agent actions"
-              className="ml-auto"
-            >
-              <OverflowMenuVertical size={16} />
-            </Button>
-          </header>
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-6">
-            <ChatMessages charName={charName} agentName={agentName} />
+          <div className="flex-1 overflow-y-auto">
+            <div className="mx-auto flex w-full max-w-[813px] flex-col gap-8 px-4 py-8 md:px-8">
+              <ChatMessages charName={charName} agentName={agentName} />
+            </div>
           </div>
-          <div className="px-8 pb-6">
-            <div className="mx-auto flex h-12 max-w-3xl items-center justify-between rounded-xl border border-border bg-card px-4 text-sm text-muted-foreground">
+          <div className="px-4 pb-6 pt-3 md:px-8">
+            <div className="mx-auto flex h-12 w-full max-w-[813px] items-center justify-between rounded-xl border border-border bg-card px-4 text-sm text-muted-foreground">
               Ask {agentName} to do something
               <Send size={16} />
             </div>
@@ -646,26 +618,13 @@ export function AvatarSheetView() {
       <SheetToggle active="avatar-sheet" />
       <PageHeader
         title="Avatar Design Sheet"
-        description="Paul Rand robot avatars — illustrations, placement, and animations."
+        description="Robot avatars — illustrations, placement, and animations."
       />
-
-      <section className="mb-12">
-        <SectionLabel>Source — Eye Bee M</SectionLabel>
-        <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
-          Paul Rand&apos;s Eye Bee M rebus. Every agent avatar below is built
-          from its pieces: the eye&apos;s lid and iris, the bee&apos;s teardrop
-          wings, eyes and striped body, and the bars of the M.
-        </p>
-        <div className="inline-flex overflow-hidden rounded-xl border border-border">
-          <EyeBeeMRebus className="block size-[360px]" />
-        </div>
-      </section>
 
       <section className="mb-12">
         <SectionLabel>Character Avatars — Awake</SectionLabel>
         <p className="mb-4 text-sm text-muted-foreground">
-          Less bee-influenced, more abstract — still built from Paul Rand rebus
-          pieces. Hover to see gesture animations.
+          Hover to see gesture animations.
         </p>
         <div className="grid grid-cols-4 gap-4 md:grid-cols-8">
           {CHAR_NAMES.map((n) => (
@@ -751,9 +710,8 @@ export function AvatarSheetView() {
         <SectionLabel>Chat UI — Full Shell</SectionLabel>
         <p className="mb-4 max-w-[760px] text-sm text-muted-foreground">
           Full chat layout with the sidebar, a Files + Artifacts left panel, and
-          the conversation center. The agent&apos;s character avatar appears in
-          the left-panel header, the chat header, and next to each assistant
-          message.
+          the conversation center. The agent&apos;s character avatar appears
+          next to each assistant message.
         </p>
         <ChatSpecimen />
       </section>
