@@ -1,8 +1,28 @@
+import type { HarnessCapability } from "agent-runtime-api";
 import { createElement, Fragment, type PropsWithChildren } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { OtherProviderModels } from "../../modules/sessions/components/other-provider-models.js";
 import { SessionPairPicker } from "../../modules/sessions/components/session-pair-picker.js";
+
+const carried: HarnessCapability[] = [
+  {
+    name: "pi",
+    harnessConfig: true,
+    sessionModel: true,
+    harnessConfigCatalog: {
+      options: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          choices: [{ value: "static", name: "Static model" }],
+        },
+      ],
+    },
+  },
+];
 
 const state = vi.hoisted(() => ({
   models: {} as Record<
@@ -10,6 +30,7 @@ const state = vi.hoisted(() => ({
     { availableModels?: { value: string; name: string }[] | null }
   >,
   loading: false,
+  fetching: false,
   operable: true,
   refetch: vi.fn(),
 }));
@@ -55,7 +76,8 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useGrantProvider: () => ({ grant: vi.fn(), pending: false }),
   useProviderModels: (_agent: string, _harness: string, provider: string) => ({
     data: state.models[provider],
-    isFetching: state.loading,
+    isLoading: state.loading,
+    isFetching: state.loading || state.fetching,
     isError: false,
     operable: state.operable,
     refetch: state.refetch,
@@ -67,23 +89,7 @@ function renderPicker() {
     createElement(SessionPairPicker, {
       agentId: "agent",
       defaultHarness: "pi",
-      carried: [
-        {
-          name: "pi",
-          harnessConfig: true,
-          sessionModel: true,
-          harnessConfigCatalog: {
-            options: [
-              {
-                id: "model",
-                name: "Model",
-                category: "model",
-                choices: [{ value: "static", name: "Static model" }],
-              },
-            ],
-          },
-        },
-      ],
+      carried,
     }),
   );
 }
@@ -92,6 +98,7 @@ describe("session pair model choices", () => {
   beforeEach(() => {
     state.models = {};
     state.loading = false;
+    state.fetching = false;
     state.operable = true;
   });
 
@@ -106,6 +113,7 @@ describe("session pair model choices", () => {
     expect(html).toContain("IBM model");
     expect(html).toContain("Curve model");
     expect(html).not.toMatch(/default model/i);
+    expect(html).not.toContain("choose a model");
     expect(html).not.toContain("Static model");
   });
 
@@ -127,6 +135,42 @@ describe("session pair model choices", () => {
       "Start the agent to list this provider&#x27;s models.",
     );
   });
+
+  it("keeps failure, empty state and Retry visible during background polls", () => {
+    state.models = { ibm: {}, curve: { availableModels: [] } };
+    const before = renderPicker();
+    state.fetching = true;
+    expect(renderPicker()).toBe(before);
+    expect(before).toContain("Retry");
+    expect(before).toContain("No models available.");
+    expect(before).not.toContain("Loading models…");
+  });
+
+  it.each([
+    { availableModels: null, expected: "Static model" },
+    { availableModels: [], expected: "No models available." },
+    {
+      availableModels: undefined,
+      expected: "Could not list this provider&#x27;s models.",
+    },
+  ])(
+    "renders other providers with $expected during background polls",
+    ({ availableModels, expected }) => {
+      state.models = { curve: { availableModels } };
+      state.fetching = true;
+      const html = renderToStaticMarkup(
+        createElement(OtherProviderModels, {
+          agentId: "agent",
+          harness: "pi",
+          provider: "ibm",
+          carried,
+        }),
+      );
+      expect(html).toContain(expected);
+      expect(html).not.toContain("Loading models…");
+      if (availableModels !== null) expect(html).not.toContain("Static model");
+    },
+  );
 
   it("uses a harness catalog only when discovery is explicitly not configured", () => {
     state.models = { ibm: { availableModels: null } };

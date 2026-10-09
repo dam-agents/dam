@@ -79,7 +79,7 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
           className="flex items-center gap-1 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           {pair
-            ? `${pairName ?? ""} · ${pair.model ?? "choose a model"}${provider ? ` · ${provider.name}` : ""}`
+            ? `${pairName ?? ""}${pair.model ? ` · ${pair.model}` : ""}${provider ? ` · ${provider.name}` : ""}`
             : "Choose a harness and model"}
         </button>
       </PopoverTrigger>
@@ -204,7 +204,7 @@ function ProviderModels({
   fallback: readonly { value: string; name: string }[];
   onChoose: (model: string) => void;
 }) {
-  const { data, isFetching, isError, operable, refetch } = useProviderModels(
+  const { data, isLoading, isError, operable, refetch } = useProviderModels(
     agentId,
     harness,
     provider.id,
@@ -231,12 +231,12 @@ function ProviderModels({
           <li className="px-1 py-1 text-muted-foreground">
             {!operable
               ? "Start the agent to list this provider's models."
-              : isFetching
+              : isLoading
                 ? "Loading models…"
                 : unavailable
                   ? "Could not list this provider's models."
                   : "No models available."}
-            {operable && !isFetching && unavailable && (
+            {operable && !isLoading && unavailable && (
               <button
                 type="button"
                 className="ml-1 text-accent hover:underline"
