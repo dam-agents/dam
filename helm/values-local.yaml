@@ -46,7 +46,7 @@ controller:
 
 # The VM runner (vm backend) in the lima k3s VM: /dev/kvm comes from lima's
 # nested virtualization, handed to the pod as `squat.ai/kvm` by the device
-# plugin cluster:install applies from etc/kvm-device-plugin.yaml.
+# plugin cluster:install applies from helm/extra/kvm-device-plugin.yaml.
 # Rendered only with virtualization.enabled.
 virtualization:
   runner:

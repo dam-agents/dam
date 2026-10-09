@@ -209,7 +209,7 @@ virtualization:
     # The chart ships no plugin of its own: a plugin is per node, so on nodes
     # several installs share it is the cluster's, run once. Any plugin
     # exposing /dev/kvm works — e.g. squat's generic-device-plugin, as
-    # `squat.ai/kvm`, which local dev applies from etc/kvm-device-plugin.yaml;
+    # `squat.ai/kvm`, which local dev applies from helm/extra/kvm-device-plugin.yaml;
     # a cluster with none cannot host vm agents, and the controller says so at
     # startup when no schedulable node matching `nodeSelector` advertises it.
     devices: {}
