@@ -429,10 +429,16 @@ virtualization:
   # `concurrency` caps the copy Jobs running at once in the install and
   # `ownerConcurrency` those of one owner, whose copies all land on the same
   # runner claim; a migration past either cap waits, and says so on the Agent.
+  # `cloneSource` makes each copy attempt read a CSI clone of a single-node
+  # (ReadWriteOnce) home volume instead of the volume itself, so a copy never
+  # waits on an attachment the old volume still holds on another node
+  # (Multi-Attach). It applies only to CSI volumes; the storage class's driver
+  # must support volume cloning. Set it to false for a driver that does not.
   runtimeMigration:
     retention: 168h
     concurrency: 10
     ownerConcurrency: 1
+    cloneSource: true
   # The CA the controller trusts a runner's serving certificate by. It is the
   # runners' own and signs nothing else: the envoyMitm CA signs gateway leaves
   # for hostnames taken from users' credential hosts, so a leaf naming a

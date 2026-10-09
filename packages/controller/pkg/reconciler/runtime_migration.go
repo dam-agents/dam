@@ -54,6 +54,8 @@ const (
 	// UNIT_BOUNDARY_DESCRIPTION: the role the copy Job's pod carries, which is what the owner's runner admits to its machine API besides the api-server and the controller. Only the controller creates pods with it, and it is paired with the owner label, so one owner's Job never reaches another owner's runner.
 	RoleRuntimeMigration = "runtime-migration"
 
+	LabelRuntimeMigrationCloneFor = "agent-platform.ai/runtime-migration-clone-for"
+
 	// UNIT_BOUNDARY_DESCRIPTION: where the copy Job finds what it runs and reads. vm-seed ships in the runner image, so the Job carries exactly the tar writer the runner's reader was tested against.
 	runtimeMigrationSeedBinary = "/usr/local/bin/vm-seed"
 	runtimeMigrationSourcePath = "/mnt/home"
@@ -306,6 +308,9 @@ func (r *AgentReconciler) failRuntimeMigration(ctx context.Context, agent *apiv1
 	if err := r.deleteRuntimeMigrationNetworkPolicy(ctx, agent.Name); err != nil {
 		return err
 	}
+	if err := r.deleteRuntimeMigrationClones(ctx, agent.Name); err != nil {
+		return err
+	}
 	return r.runtimeMigrationPhase(ctx, agent, m, apiv1.ReasonRuntimeMigrationFailed, why)
 }
 
@@ -506,6 +511,9 @@ func (r *AgentReconciler) clearRuntimeMigration(ctx context.Context, agent *apiv
 	if err := r.deleteSeedCapability(ctx, name); err != nil {
 		return err
 	}
+	if err := r.deleteRuntimeMigrationClones(ctx, name); err != nil {
+		return err
+	}
 	if err := r.deleteMachine(ctx, name, agent.Labels[envoyOwnerLabel]); err != nil {
 		return err
 	}
@@ -660,6 +668,9 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		if err := r.deleteSeedCapability(ctx, name); err != nil {
 			return err
 		}
+		if err := r.deleteRuntimeMigrationClones(ctx, name); err != nil {
+			return err
+		}
 		if why != "" {
 			msg := fmt.Sprintf("the home was copied, but %s; copying it again", why)
 			r.migrationEvent(ctx, agent, corev1.EventTypeWarning, "RuntimeMigrationCopyFailed", msg)
@@ -700,15 +711,153 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 			return nil
 		}
 		slog.Warn("runtime migration: deleting failed home copy job for retry", "agent", name, "job", job.Name)
-		if err := jobs.Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
-			return err
-		}
-		if err := r.deleteRuntimeMigrationNetworkPolicy(ctx, name); err != nil {
-			return err
-		}
-		return r.deleteSeedCapability(ctx, name)
+		return r.dropRuntimeMigrationCopy(ctx, name)
 	}
-	return r.setRuntimeMigrationNote(ctx, agent, m, r.copyPodWaiting(ctx, job))
+	waiting := r.copyPodWaiting(ctx, job)
+	started, err := r.copyJobStarted(ctx, job)
+	if err != nil {
+		return err
+	}
+	if started || job.CreationTimestamp.IsZero() || time.Since(job.CreationTimestamp.Time) < runtimeMigrationStartGrace {
+		return r.setRuntimeMigrationNote(ctx, agent, m, waiting)
+	}
+	why := fmt.Sprintf("the copy pod did not start within %s", runtimeMigrationStartGrace)
+	if waiting != "" {
+		why = fmt.Sprintf("%s (%s)", why, waiting)
+	}
+	if m.attempts >= runtimeMigrationMaxAttempts {
+		if err := r.dropRuntimeMigrationCopy(ctx, name); err != nil {
+			return err
+		}
+		return r.failRuntimeMigration(ctx, agent, m, fmt.Sprintf("%s; gave up after %d attempts", why, m.attempts))
+	}
+	note := fmt.Sprintf("%s; retrying (attempt %d of %d)", why, m.attempts, runtimeMigrationMaxAttempts)
+	slog.Warn("runtime migration: abandoning a copy job whose pod never started", "agent", name, "job", job.Name, "reason", why)
+	r.migrationEvent(ctx, agent, corev1.EventTypeWarning, "RuntimeMigrationCopyStuck", note)
+	if err := r.setRuntimeMigrationNote(ctx, agent, m, note); err != nil {
+		return err
+	}
+	return r.dropRuntimeMigrationCopy(ctx, name)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a copy pod may stay unstarted before its attempt is given up. A pod that waits on a volume attached elsewhere (Multi-Attach), a mount that fails or a node that cannot run it would otherwise hold its slot and the migration until the Job's active deadline, hours later. Giving it up spends the attempt, so a cause that stays fails the migration after three attempts with that cause as its reason.
+const runtimeMigrationStartGrace = 10 * time.Minute
+
+// UNIT_BOUNDARY_DESCRIPTION: whether any pod of the copy Job got as far as running its container. Until then the Job has read nothing and sent nothing, so giving it up loses no work.
+func (r *AgentReconciler) copyJobStarted(ctx context.Context, job *batchv1.Job) (bool, error) {
+	pods, err := r.client.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: batchv1.JobNameLabel + "=" + job.Name})
+	if err != nil {
+		return false, fmt.Errorf("listing the home copy job's pods: %w", err)
+	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.Status.Phase != corev1.PodPending && pod.Status.Phase != "" {
+			return true, nil
+		}
+		for _, cs := range pod.Status.ContainerStatuses {
+			if cs.State.Running != nil || cs.State.Terminated != nil {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: removes one copy attempt — its Job, NetworkPolicy, seed capability and source clones — so the next reconcile starts the next attempt from nothing. The Job goes in the background: a pod stuck on a node that will not end it must not hold up the retry, which reads a clone of its own.
+func (r *AgentReconciler) dropRuntimeMigrationCopy(ctx context.Context, name string) error {
+	prop := metav1.DeletePropagationBackground
+	if err := r.client.BatchV1().Jobs(r.config.Namespace).Delete(ctx, runtimeMigrationJobName(name), metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("deleting the home copy job: %w", err)
+	}
+	if err := r.deleteRuntimeMigrationNetworkPolicy(ctx, name); err != nil {
+		return err
+	}
+	if err := r.deleteSeedCapability(ctx, name); err != nil {
+		return err
+	}
+	return r.deleteRuntimeMigrationClones(ctx, name)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the claim a copy attempt reads. A home volume only one node can attach stays attached to the node its last pod ran on until that node's kubelet lets it go, and a node whose sandbox will not die never does, so a copy pod placed elsewhere waits on Multi-Attach. A CSI clone is cut by the storage backend with no attachment at all, so each attempt reads a fresh clone of its own, attached wherever its pod lands, and a clone a stuck pod still holds blocks no later attempt. The container is already down when the copy starts, so the clone holds exactly what the copy would have read. A shared volume admits every node and is read in place, and so is one no CSI driver serves, since only a CSI driver clones a volume, or one whose PersistentVolume the controller may not read. `cloneSource: false` reads every volume in place.
+func (r *AgentReconciler) runtimeMigrationCopySource(ctx context.Context, agent *apiv1.Agent, source string, attempt int32) (string, error) {
+	if c := r.config.VM.RuntimeMigration.CloneSource; c != nil && !*c {
+		return source, nil
+	}
+	pvcs := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace)
+	pvc, err := pvcs.Get(ctx, source, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("reading the volume %s to clone: %w", source, err)
+	}
+	if pvc.Spec.VolumeName == "" || slices.ContainsFunc(pvc.Spec.AccessModes, func(m corev1.PersistentVolumeAccessMode) bool {
+		return m == corev1.ReadWriteMany || m == corev1.ReadOnlyMany
+	}) {
+		return source, nil
+	}
+	pv, err := r.client.CoreV1().PersistentVolumes().Get(ctx, pvc.Spec.VolumeName, metav1.GetOptions{})
+	if k8serrors.IsForbidden(err) {
+		slog.Warn("runtime migration: cannot read the home volume's PersistentVolume, so the copy reads it in place", "agent", agent.Name, "pvc", source, "error", err)
+		return source, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading the volume behind %s to clone it: %w", source, err)
+	}
+	if pv.Spec.CSI == nil {
+		return source, nil
+	}
+	size := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	if capacity, ok := pvc.Status.Capacity[corev1.ResourceStorage]; ok && capacity.Cmp(size) > 0 {
+		size = capacity
+	}
+	clone := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            runtimeMigrationCloneName(agent.Name, attempt),
+			Namespace:       r.config.Namespace,
+			OwnerReferences: []metav1.OwnerReference{agentOwnerRef(agent)},
+			Labels: map[string]string{
+				LabelRuntimeMigrationCloneFor:  agent.Name,
+				"agent-platform.ai/managed-by": "platform-controller",
+			},
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes:      pvc.Spec.AccessModes,
+			StorageClassName: pvc.Spec.StorageClassName,
+			VolumeMode:       pvc.Spec.VolumeMode,
+			Resources:        corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: size}},
+			DataSource:       &corev1.TypedLocalObjectReference{Kind: "PersistentVolumeClaim", Name: source},
+		},
+	}
+	if _, err := pvcs.Create(ctx, clone, metav1.CreateOptions{}); err != nil && !k8serrors.IsAlreadyExists(err) {
+		return "", fmt.Errorf("cloning the home volume %s: %w", source, err)
+	}
+	slog.Info("runtime migration: home volume cloned for the copy", "agent", agent.Name, "pvc", source, "clone", clone.Name, "attempt", attempt)
+	return clone.Name, nil
+}
+
+func runtimeMigrationCloneName(agentName string, attempt int32) string {
+	suffix := fmt.Sprintf("-%d", attempt)
+	name := "rtmc-" + agentName
+	if len(name)+len(suffix) > 63 {
+		name = name[:63-len(suffix)]
+	}
+	return name + suffix
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: removes every source clone the Agent's copies made. The clone carries no agent or mount label, so nothing else takes it for the Agent's own volume, and the Agent owns it, so deleting the Agent mid-copy takes it too.
+func (r *AgentReconciler) deleteRuntimeMigrationClones(ctx context.Context, name string) error {
+	pvcs := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace)
+	list, err := pvcs.List(ctx, metav1.ListOptions{LabelSelector: LabelRuntimeMigrationCloneFor + "=" + name})
+	if err != nil {
+		return fmt.Errorf("listing the home volume's clones: %w", err)
+	}
+	for _, pvc := range list.Items {
+		if pvc.DeletionTimestamp != nil {
+			continue
+		}
+		if err := pvcs.Delete(ctx, pvc.Name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("deleting the home volume's clone %s: %w", pvc.Name, err)
+		}
+	}
+	return nil
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a seed capability outlives its Job's active deadline: the time its pod may wait to be scheduled and pull the runner image before the deadline's clock matters. Past it the runner refuses the capability, and a retry is a new Job with a new one.
@@ -796,10 +945,6 @@ func (r *AgentReconciler) startRuntimeMigrationCopy(ctx context.Context, agent *
 	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
 		return err
 	}
-	desired, err := r.buildRuntimeMigrationJob(agent, owner, source, runnerIP, reader)
-	if err != nil {
-		return err
-	}
 	r.migrationCopyMu.Lock()
 	defer r.migrationCopyMu.Unlock()
 	wait, err := r.runtimeMigrationCopySlot(ctx, owner)
@@ -819,10 +964,18 @@ func (r *AgentReconciler) startRuntimeMigrationCopy(ctx context.Context, agent *
 		return err
 	}
 	m.attempts = attempt
+	claim, err := r.runtimeMigrationCopySource(ctx, agent, source, attempt)
+	if err != nil {
+		return err
+	}
+	desired, err := r.buildRuntimeMigrationJob(agent, owner, claim, runnerIP, reader)
+	if err != nil {
+		return err
+	}
 	if _, err := r.client.BatchV1().Jobs(r.config.Namespace).Create(ctx, desired, metav1.CreateOptions{}); err != nil && !k8serrors.IsAlreadyExists(err) {
 		return fmt.Errorf("creating the home copy job: %w", err)
 	}
-	slog.Info("runtime migration: home copy started", "agent", name, "pvc", source, "attempt", attempt)
+	slog.Info("runtime migration: home copy started", "agent", name, "pvc", source, "reads", claim, "attempt", attempt)
 	return r.setRuntimeMigrationNote(ctx, agent, m, "")
 }
 
@@ -919,6 +1072,9 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 		return err
 	}
 	if err := r.deleteSeedCapability(ctx, name); err != nil {
+		return err
+	}
+	if err := r.deleteRuntimeMigrationClones(ctx, name); err != nil {
 		return err
 	}
 	until := time.Now().Add(r.migrationRetention())

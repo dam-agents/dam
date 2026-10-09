@@ -93,7 +93,7 @@ spec:
                   "hostAddress" ($r.hostAddress | default "")
                   "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m")) }}
             - name: AGENT_VM
-              value: {{ dict "enabled" .Values.virtualization.enabled "runner" $runner "runtimeMigration" (dict "retention" ((.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString) "concurrency" ((.Values.virtualization.runtimeMigration | default dict).concurrency | default 10 | int) "ownerConcurrency" ((.Values.virtualization.runtimeMigration | default dict).ownerConcurrency | default 1 | int)) | toJson | quote }}
+              value: {{ dict "enabled" .Values.virtualization.enabled "runner" $runner "runtimeMigration" (dict "retention" ((.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString) "concurrency" ((.Values.virtualization.runtimeMigration | default dict).concurrency | default 10 | int) "ownerConcurrency" ((.Values.virtualization.runtimeMigration | default dict).ownerConcurrency | default 1 | int) "cloneSource" (dig "cloneSource" true (.Values.virtualization.runtimeMigration | default dict))) | toJson | quote }}
             {{- if .Values.virtualization.enabled }}
             - name: VM_RUNNER_CA_ISSUER
               value: {{ .Values.virtualization.runnerCA.issuerName | quote }}
