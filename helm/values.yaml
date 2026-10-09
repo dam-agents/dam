@@ -1931,24 +1931,22 @@ controller:
 # (mounts/env/resources) is never detected.
 # `$HOME` in mount paths is substituted at chart render time with the fixed
 # agent home, /home/agent.
-# Every entry is a harness the platform delivers. The four built-in ones share
-# one image, quay.io/dam-agents/default, which bakes no tools and runs on the
-# node's `harnessTools`; `harness` picks the one it runs. Workload images
-# (research frameworks and other pre-built agents) are starter kits in the
-# built-in catalog (`starterKits`), not templates.
+# The built-in `default` entry boots quay.io/dam-agents/default, which carries
+# every harness in `harnesses` and bakes no tools: it runs on the node's
+# `harnessTools`. Its sessions choose the harness, so the template names none.
+# Workload images (research frameworks and other pre-built agents) are starter
+# kits in the built-in catalog (`starterKits`), not templates.
+# `aliases` lists retired template ids that resolve to this one, so agents
+# created from them still find their template (image upgrades, usage).
 # `experimental: true` badges the image as alpha.
 # `providers` lists the model-provider connection types the image can run on
 # (any of anthropic, ibm-litellm, curve-bender, openai, bob, bedrock) — which env the harness inside
-# reads. Create flows narrow the provider picker to it; omit it to offer every
-# provider. Validated when templates load.
-# `harness` names the harness family running inside the image — which CLI the
-# template wraps, independent of the entry's key. It must be one of
-# claude-code, codex, pi, bob; any other value fails template validation and
-# the entry is skipped at api-server boot (logged), rather than silently
-# installing without harness wiring. Knowledge-base creation passes it to the
-# KB template's installer so the installed tooling (manual, commands, skill)
-# lands where that harness reads it. Omit it for images that wrap none of the
-# known families — the installer then falls back to its own harness detection.
+# reads. Omit it to offer every provider. Validated when templates load.
+# `harness` names the one harness family a custom image wraps (claude-code,
+# codex, pi, bob); its sessions have no harness choice. Any other value fails
+# template validation and the entry is skipped at api-server boot (logged).
+# Knowledge-base creation passes it to the KB template's installer so the
+# installed tooling lands where that harness reads it.
 #
 # To predefine an *experimental external agent* (a private-registry image users
 # just pick from the template list, with no manual "Private registry" entry),
@@ -1976,63 +1974,16 @@ controller:
 #     imagePullSecretRef: "icr-pull-secret"
 #
 harnessTemplates:
-  claude-code:
+  default:
     enabled: true
-    providers: [ibm-litellm, curve-bender, anthropic, bedrock]
-    displayName: "Claude Code"
-    description: "Default Claude Code agent"
-    releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
-    telemetry: true
-    harness: claude-code
-    tags: ["Anthropic"]
+    displayName: "Coding agent"
+    description: "Runs Claude Code, Codex, Pi or Bob, chosen per session"
+    aliases: [claude-code, codex, pi-agent, bob]
     image:
       repository: quay.io/dam-agents/default
       tag: "" # @ci-pin default-image-tag
     storageSize: "5Gi"
-
-  codex:
-    enabled: true
-    providers: [ibm-litellm, curve-bender, openai]
-    displayName: "Codex"
-    description: "OpenAI Codex coding agent"
-    releaseNotesUrl: "https://github.com/openai/codex/releases"
-    harness: codex
-    tags: ["OpenAI"]
-    image:
-      repository: quay.io/dam-agents/default
-      tag: "" # @ci-pin default-image-tag
-    storageSize: "5Gi"
-
-  pi-agent:
-    enabled: true
-    providers: [ibm-litellm, curve-bender, anthropic, openai, bedrock]
-    displayName: "PI Agent"
-    description: "Pi coding agent with multi-LLM support"
-    harness: pi
-    tags: ["Any provider"]
-    image:
-      repository: quay.io/dam-agents/default
-      tag: "" # @ci-pin default-image-tag
-    storageSize: "5Gi"
-
-  bob:
-    enabled: true
-    providers: [ibm-litellm, curve-bender, bob]
-    displayName: "IBM Bob"
-    description: "Bob shell agent"
-    releaseNotesUrl: "https://bob.ibm.com/docs/shell/changelog"
-    harness: bob
-    # Bob exports OTLP traces rather than the per-call log records Claude Code
-    # writes, so it rides its own env rail — see docs/architecture/observability.md.
-    telemetry: bob
-    tags: ["Anthropic", "Mistral", "Granite"]
-    image:
-      repository: quay.io/dam-agents/default
-      tag: "" # @ci-pin default-image-tag
-    # Bob recommends ≥4 GB RAM (8 GB nicer); storage only holds the home
-    # dir + workspace (the bundle lives in the image), so the agent default
-    # of 2 Gi is plenty.
-    storageSize: "2Gi"
+    # The largest of the harnesses' needs: Bob recommends ≥4 GB RAM.
     resources:
       requests:
         cpu: "500m"
@@ -2040,6 +1991,48 @@ harnessTemplates:
       limits:
         cpu: "2"
         memory: "4Gi"
+
+# -- The harnesses the default image carries, keyed by the name the agent
+# runtime knows them by. A session chooses one; `default` preselects it where a
+# session has no harness of its own yet, and seeds the harness of new agents.
+# `providers` lists the model-provider connection types the harness can run on;
+# the session picker offers only their models. `telemetry` names the export
+# rail the harness reads (claude-code or bob, see
+# docs/architecture/observability.md); it applies only with clickstack.enabled.
+harnesses:
+  default: claude-code
+  catalog:
+    claude-code:
+      enabled: true
+      displayName: "Claude"
+      description: "Anthropic's coding agent"
+      releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
+      providers: [ibm-litellm, curve-bender, anthropic, bedrock]
+      telemetry: claude-code
+      tags: ["Anthropic"]
+    codex:
+      enabled: true
+      displayName: "Codex"
+      description: "OpenAI Codex coding agent"
+      releaseNotesUrl: "https://github.com/openai/codex/releases"
+      providers: [ibm-litellm, curve-bender, openai]
+      tags: ["OpenAI"]
+    pi:
+      enabled: true
+      displayName: "Pi"
+      description: "Pi coding agent with multi-LLM support"
+      providers: [ibm-litellm, curve-bender, anthropic, openai, bedrock]
+      tags: ["Any provider"]
+    bob:
+      enabled: true
+      displayName: "Bob"
+      description: "Bob shell agent"
+      releaseNotesUrl: "https://bob.ibm.com/docs/shell/changelog"
+      providers: [ibm-litellm, curve-bender, bob]
+      # Bob exports OTLP traces rather than the per-call log records Claude
+      # Code writes, so it rides its own env rail.
+      telemetry: bob
+      tags: ["Anthropic", "Mistral", "Granite"]
 
 # -- The harnesses' tools for the image every harness Template boots
 # (quay.io/dam-agents/default), which bakes none: mise's system data dir with

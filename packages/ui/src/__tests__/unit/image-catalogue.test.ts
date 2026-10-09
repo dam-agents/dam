@@ -17,20 +17,20 @@ function template(id: string): TemplateView {
   };
 }
 
-const CATALOGUE = [template("codex"), template("claude-code")];
+const CATALOGUE = [template("codex"), template("default")];
 
 describe("the harness catalogue", () => {
   // TEST_SCENARIO: the setup form offers one list, and it is the harness images. Templates carry a category so a future non-harness image cannot reach that list by default.
   it("offers the harness images", () => {
     expect(imageCatalogue(CATALOGUE).harnesses.map((t) => t.id)).toEqual([
       "codex",
-      "claude-code",
+      "default",
     ]);
   });
 
   // TEST_SCENARIO: an install that has Claude Code should open on it rather than on whichever harness happens to sort first, and an install without it still has to offer something.
-  it("prefers Claude Code, and falls back to whatever is installed", () => {
-    expect(defaultHarnessId(CATALOGUE)).toBe("claude-code");
+  it("prefers the default template, and falls back to whatever is installed", () => {
+    expect(defaultHarnessId(CATALOGUE)).toBe("default");
     expect(defaultHarnessId([template("codex")])).toBe("codex");
     expect(defaultHarnessId([])).toBeNull();
   });
@@ -42,14 +42,14 @@ describe("the harness catalogue", () => {
     ).toBeNull();
     expect(
       reconcileHarnessSelection(CATALOGUE, "retired", { allowNone: false }),
-    ).toEqual({ templateId: "claude-code" });
+    ).toEqual({ templateId: "default" });
     expect(
       reconcileHarnessSelection(CATALOGUE, "retired", { allowNone: true }),
     ).toEqual({ templateId: null });
     expect(
       reconcileHarnessSelection(CATALOGUE, null, { allowNone: false }),
     ).toEqual({
-      templateId: "claude-code",
+      templateId: "default",
     });
   });
 });

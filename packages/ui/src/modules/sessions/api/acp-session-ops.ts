@@ -28,6 +28,9 @@ interface PlatformMeta {
   runStartedAt?: string;
   runTotalMs?: number;
   runCount?: number;
+  harness?: string;
+  provider?: string;
+  model?: string;
 }
 
 interface ListedSession {
@@ -65,6 +68,9 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     runStartedAt: p?.runStartedAt ?? null,
     runTotalMs: p?.runTotalMs ?? null,
     runCount: p?.runCount ?? null,
+    harness: p?.harness ?? null,
+    provider: p?.provider ?? null,
+    model: p?.model ?? null,
   };
 }
 
@@ -142,6 +148,9 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     runStartedAt: s.runStartedAt,
     runTotalMs: s.runTotalMs,
     runCount: s.runCount,
+    harness: s.harness ?? null,
+    provider: s.provider ?? null,
+    model: s.model ?? null,
     ...(s.spend ? { spend: s.spend } : {}),
   };
 }

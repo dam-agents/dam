@@ -16,22 +16,51 @@ function customUpstream(raw) {
   return base;
 }
 
-let UPSTREAM = customUpstream(process.env.ANTHROPIC_BASE_URL);
-let TOKEN = process.env.ANTHROPIC_AUTH_TOKEN || "";
-if (!UPSTREAM) {
+const upstreams = new Map();
+
+function front(key, env) {
+  const base = customUpstream(env.ANTHROPIC_BASE_URL);
+  const token = env.ANTHROPIC_AUTH_TOKEN || "";
+  const current = upstreams.get(key);
+  if (!base) return upstreams.delete(key);
+  if (current?.base === base && current.token === token) return false;
+  const next = { key, base, token, knownModels: new Map() };
+  upstreams.set(key, next);
+  log(`fronting ${base}${key ? ` for provider ${key}` : ""}`);
+  next.ready = refreshCatalog(next);
+  return true;
+}
+
+function readSnapshot() {
+  try {
+    return JSON.parse(readFileSync(SNAPSHOT_FILE, "utf8"));
+  } catch (err) {
+    log(`unreadable env snapshot (${err.message})`);
+    return null;
+  }
+}
+
+function applySnapshot(snapshot) {
+  front("", snapshot.env ?? {});
+  const providers = snapshot.providers ?? {};
+  for (const key of upstreams.keys())
+    if (key && !Object.hasOwn(providers, key)) upstreams.delete(key);
+  for (const [key, env] of Object.entries(providers)) front(key, env ?? {});
+}
+
+applySnapshot(readSnapshot() ?? { env: process.env });
+if (upstreams.size === 0) {
   log("no custom upstream; nothing to front");
   process.exit(0);
 }
-
-let knownModels = new Map();
 
 const publicName = (id) => {
   const name = id.toLowerCase();
   return name.startsWith(PREFIX) ? name : PREFIX + name;
 };
 
-const resolveModel = (name) =>
-  knownModels.get(name) ??
+const resolveModel = (upstream, name) =>
+  upstream.knownModels.get(name) ??
   (name.toLowerCase().startsWith(PREFIX) ? name.slice(PREFIX.length) : name);
 
 const isEmbedding = (m) =>
@@ -41,12 +70,12 @@ const isEmbedding = (m) =>
       .includes("embedding"),
   );
 
-async function fetchCatalog() {
+async function fetchCatalog(upstream) {
   try {
-    const r = await fetch(`${UPSTREAM}/v1/models?limit=1000`, {
+    const r = await fetch(`${upstream.base}/v1/models?limit=1000`, {
       headers: {
-        authorization: `Bearer ${TOKEN}`,
-        "x-api-key": TOKEN,
+        authorization: `Bearer ${upstream.token}`,
+        "x-api-key": upstream.token,
         "anthropic-version": "2023-06-01",
         accept: "application/json",
       },
@@ -67,17 +96,14 @@ async function fetchCatalog() {
   }
 }
 
-async function refreshCatalog() {
-  const upstream = UPSTREAM;
-  const ids = await fetchCatalog();
-  if (ids && UPSTREAM === upstream) applyCatalog(ids);
+async function refreshCatalog(upstream) {
+  const ids = await fetchCatalog(upstream);
+  if (ids && upstreams.get(upstream.key) === upstream) {
+    if (ids.join("\n") !== [...upstream.knownModels.values()].join("\n"))
+      log(`serving ${ids.length} model(s)${upstream.key ? ` for provider ${upstream.key}` : ""}`);
+    upstream.knownModels = new Map(ids.map((id) => [publicName(id), id]));
+  }
   return ids;
-}
-
-function applyCatalog(ids) {
-  if (ids.join("\n") !== [...knownModels.values()].join("\n"))
-    log(`serving ${ids.length} model(s)`);
-  knownModels = new Map(ids.map((id) => [publicName(id), id]));
 }
 
 const isDateLike = (p) => p.length >= 8;
@@ -107,8 +133,8 @@ const latest = (models, tier) => {
 
 const shQuote = (v) => `'${v.replaceAll("'", "'\\''")}'`;
 
-function envLines() {
-  const models = [...knownModels.values()];
+function envLines(upstream) {
+  const models = [...upstream.knownModels.values()];
   if (!models.length) return "";
   const [fable, opus, sonnet, haiku] = ["fable", "opus", "sonnet", "haiku"].map(
     (t) => latest(models, t),
@@ -144,12 +170,14 @@ const RES_DROP = new Set([
   "connection",
 ]);
 
-function rewriteModel(body, contentType) {
+function rewriteModel(upstream, body, contentType) {
   if (!body.length || !(contentType ?? "").includes("json")) return body;
   try {
     const obj = JSON.parse(body.toString("utf8"));
     return typeof obj?.model === "string"
-      ? Buffer.from(JSON.stringify({ ...obj, model: resolveModel(obj.model) }))
+      ? Buffer.from(
+          JSON.stringify({ ...obj, model: resolveModel(upstream, obj.model) }),
+        )
       : body;
   } catch {
     return body;
@@ -161,8 +189,9 @@ const keepHeaders = (entries, drop) =>
     entries.filter(([k, v]) => !drop.has(k) && typeof v === "string"),
   );
 
-async function proxy(req, res) {
+async function proxy(upstream, path, req, res) {
   const body = rewriteModel(
+    upstream,
     Buffer.concat(await Array.fromAsync(req)),
     req.headers["content-type"],
   );
@@ -175,7 +204,7 @@ async function proxy(req, res) {
 
   let r;
   try {
-    r = await fetch(UPSTREAM + req.url, {
+    r = await fetch(upstream.base + path, {
       method: req.method,
       headers,
       body: body.length ? body : undefined,
@@ -205,63 +234,75 @@ async function proxy(req, res) {
   } else res.end();
 }
 
+const PROVIDER_PATH = /^\/p\/([^/]+)(\/.*)?$/;
+
 const server = http.createServer((req, res) => {
-  const path = new URL(req.url, `http://${HOST}`).pathname;
+  const url = new URL(req.url, `http://${HOST}`);
+  const scoped = PROVIDER_PATH.exec(url.pathname);
+  const upstream = upstreams.get(scoped ? decodeURIComponent(scoped[1]) : "");
+  const path = scoped ? (scoped[2] ?? "/") : url.pathname;
+  if (!upstream) {
+    res.writeHead(502, { "content-type": "application/json" }).end(
+      JSON.stringify({
+        error: {
+          type: "api_error",
+          message: "model-gateway: no upstream for this provider",
+        },
+      }),
+    );
+    return;
+  }
   if (req.method === "GET" && path === "/env.sh") {
-    res.writeHead(200, { "content-type": "text/plain" }).end(envLines());
+    res
+      .writeHead(200, { "content-type": "text/plain" })
+      .end(envLines(upstream));
     return;
   }
   if (req.method === "GET" && path === "/v1/models") {
     const respond = () =>
       res.writeHead(200, { "content-type": "application/json" }).end(
         JSON.stringify({
-          data: [...knownModels.values()].map((id) => ({
+          data: [...upstream.knownModels.values()].map((id) => ({
             id: publicName(id),
             type: "model",
           })),
           has_more: false,
         }),
       );
-    if (knownModels.size) {
-      void refreshCatalog();
+    if (upstream.knownModels.size) {
+      void refreshCatalog(upstream);
       respond();
     } else {
-      void refreshCatalog().then(respond);
+      void refreshCatalog(upstream).then(respond);
     }
     return;
   }
-  void proxy(req, res).catch((err) => {
+  void proxy(upstream, path + url.search, req, res).catch((err) => {
     log(`proxy error: ${err.message}`);
     res.destroy();
   });
 });
 
 process.on("SIGHUP", () => {
-  let env;
-  try {
-    env = JSON.parse(readFileSync(SNAPSHOT_FILE, "utf8")).env ?? {};
-  } catch (err) {
-    log(`reload: unreadable env snapshot (${err.message}); keeping env`);
+  const snapshot = readSnapshot();
+  if (!snapshot) {
+    log("reload: keeping env");
     return;
   }
-  const base = customUpstream(env.ANTHROPIC_BASE_URL);
-  if (!base) {
+  applySnapshot(snapshot);
+  if (upstreams.size === 0) {
     log("reload: no custom upstream; exiting");
     process.exit(0);
   }
-  if (base !== UPSTREAM || (env.ANTHROPIC_AUTH_TOKEN || "") !== TOKEN) {
-    UPSTREAM = base;
-    TOKEN = env.ANTHROPIC_AUTH_TOKEN || "";
-    knownModels = new Map();
-    log(`reload: fronting ${UPSTREAM}`);
-    void refreshCatalog();
-  }
 });
 
-if (!(await refreshCatalog()))
+const discovered = await Promise.all(
+  [...upstreams.values()].map((u) => u.ready),
+);
+if (!discovered.some(Boolean))
   log(
     "no models discovered yet; passthrough only (built-in names still route)",
   );
 server.listen(PORT, HOST, () =>
-  log(`listening on ${HOST}:${PORT}, fronting ${UPSTREAM}`),
+  log(`listening on ${HOST}:${PORT}, fronting ${upstreams.size} upstream(s)`),
 );

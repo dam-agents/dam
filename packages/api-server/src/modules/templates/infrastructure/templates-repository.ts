@@ -14,15 +14,21 @@ export type ReadTemplateSpec = TemplatesRepository["readSpec"];
 
 export function createTemplatesRepository(dir: string): TemplatesRepository {
   const byId = loadTemplates(dir);
+  const byAlias = new Map<string, Template>();
+  for (const tmpl of byId.values())
+    for (const alias of tmpl.spec.aliases ?? [])
+      if (!byId.has(alias)) byAlias.set(alias, tmpl);
+  const find = (id: string): Template | null =>
+    byId.get(id) ?? byAlias.get(id) ?? null;
   return {
     async list() {
       return [...byId.values()];
     },
     async get(id) {
-      return byId.get(id) ?? null;
+      return find(id);
     },
     async readSpec(id) {
-      const tmpl = byId.get(id);
+      const tmpl = find(id);
       return tmpl ? { spec: tmpl.spec } : null;
     },
   };

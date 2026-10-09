@@ -1,4 +1,8 @@
 import {
+  DEFAULT_TEMPLATE_ID,
+  RETIRED_TEMPLATE_HARNESS,
+} from "../../templates/index.js";
+import {
   isProtectedAgentEnvName,
   type AgentsService,
   type AgentCreateInput,
@@ -531,6 +535,8 @@ export function createAgentsService(deps: {
   agentDefaultStorageSize?: string;
   agentDefaultMounts: readonly AgentMount[];
   virtualizationEnabled?: boolean;
+  defaultHarness?: string;
+  telemetry?: boolean;
   runtimeMigrationRetentionMs?: number | null;
   resizeGate?: ResizeGatePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
@@ -539,6 +545,10 @@ export function createAgentsService(deps: {
       connectionIds: string[];
       providerConnectionId?: string;
     }): Promise<{ grantedConnectionIds: string[] }>;
+    defaultProvider(
+      connectionIds: string[],
+      template: { harness?: string; providers?: readonly string[] },
+    ): Promise<string | null>;
     applyAfterCreate(
       agentId: string,
       sel: { connectionIds: string[] },
@@ -957,13 +967,25 @@ export function createAgentsService(deps: {
     async create(input: AgentCreateInput) {
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
-      if (input.templateId) {
-        const tmpl = await deps.readTemplateSpec(input.templateId);
+      let templateProviders: readonly string[] | undefined;
+      const requestedTemplate =
+        input.templateId ??
+        (input.image === undefined ? DEFAULT_TEMPLATE_ID : undefined);
+      if (requestedTemplate) {
+        const tmpl = await deps.readTemplateSpec(requestedTemplate);
         if (!tmpl) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: `template "${input.templateId}" not found`,
-          });
+          throw new TRPCError(
+            input.templateId === undefined
+              ? {
+                  code: "BAD_REQUEST",
+                  message:
+                    "this install has no default template; name a templateId or an image",
+                }
+              : {
+                  code: "NOT_FOUND",
+                  message: `template "${requestedTemplate}" not found`,
+                },
+          );
         }
         spec = assembleSpecFromTemplate(
           input.name,
@@ -976,7 +998,13 @@ export function createAgentsService(deps: {
           },
           deps.agentDefaultLimits,
         );
-        templateId = input.templateId;
+        if (input.harness !== undefined) spec.harness = input.harness;
+        if (Object.hasOwn(RETIRED_TEMPLATE_HARNESS, requestedTemplate))
+          spec.harness ??= RETIRED_TEMPLATE_HARNESS[requestedTemplate];
+        if (requestedTemplate === DEFAULT_TEMPLATE_ID)
+          spec.harness ??= deps.defaultHarness;
+        templateId = requestedTemplate;
+        templateProviders = tmpl.spec.providers;
       } else {
         spec = assembleSpecFromImage(
           input.name,
@@ -1001,6 +1029,7 @@ export function createAgentsService(deps: {
       const templateEnv = seedTelemetryIdentity(
         (spec.env as EnvVar[] | undefined) ?? [],
         input.name,
+        deps.telemetry === true,
       );
       delete spec.env;
       if (input.secretRef !== undefined) spec.secretRef = input.secretRef;
@@ -1013,14 +1042,28 @@ export function createAgentsService(deps: {
         spec.telemetryAttributionId = input.telemetryAttributionId;
       if (input.requireConnectionAddress) spec.requireConnectionAddress = true;
 
+      const providerConnectionId =
+        input.providerConnectionId ??
+        (templateId !== undefined && !input.noDefaultProvider
+          ? await deps.grantProvisioner?.defaultProvider(
+              input.connectionIds ?? [],
+              {
+                ...(typeof spec.harness === "string" && {
+                  harness: spec.harness,
+                }),
+                ...(templateProviders && { providers: templateProviders }),
+              },
+            )
+          : undefined) ??
+        undefined;
       const grantSel = {
         connectionIds: Array.from(
           new Set([
             ...(input.connectionIds ?? []),
-            ...(input.providerConnectionId ? [input.providerConnectionId] : []),
+            ...(providerConnectionId ? [providerConnectionId] : []),
           ]),
         ),
-        providerConnectionId: input.providerConnectionId,
+        providerConnectionId,
       };
       if (input.providerConnectionId && !deps.grantProvisioner) {
         throw new TRPCError({

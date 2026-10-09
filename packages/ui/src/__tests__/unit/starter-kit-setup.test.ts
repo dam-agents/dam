@@ -110,14 +110,13 @@ describe("requirementStatuses", () => {
 });
 
 describe("isStarterKitSetupComplete", () => {
-  test("requires name, harness, provider and every required connection", () => {
+  test("requires name, harness and every required connection, but no provider", () => {
     expect(isStarterKitSetupComplete(kit, complete, owned, templates)).toBe(
       true,
     );
     for (const patch of [
       { name: "  " },
       { templateId: null },
-      { providerRef: null },
       { connectionIds: [] },
     ]) {
       expect(
@@ -179,7 +178,7 @@ describe("buildStarterKitApplyInput", () => {
     expect(() =>
       buildStarterKitApplyInput(
         kit,
-        { ...complete, providerRef: null },
+        { ...complete, name: "" },
         owned,
         templates,
       ),
@@ -363,18 +362,20 @@ describe("harness matching", () => {
     { id: "codex", harness: "codex" as const },
     { id: "custom" },
   ];
-  test("offers every harness when the kit names none, and only the named families otherwise", () => {
+  /** TEST_SCENARIO: A template that names no harness is the default image,
+   * which carries them all and lets sessions choose, so it fits any kit. */
+  test("offers every harness when the kit names none, and the named families or the all-harness template otherwise", () => {
     expect(allowedHarnesses({ harnesses: undefined }, catalogue)).toHaveLength(
       3,
     );
     expect(
       allowedHarnesses({ harnesses: ["codex"] }, catalogue).map((t) => t.id),
-    ).toEqual(["codex"]);
+    ).toEqual(["codex", "custom"]);
   });
   test("describes what the kit runs on", () => {
     expect(
       harnessesLine({ image: undefined, harnesses: ["claude-code", "bob"] }),
-    ).toBe("An agent on Claude Code or Bob");
+    ).toBe("An agent on Claude or Bob");
     expect(harnessesLine({ image: undefined, harnesses: undefined })).toBe(
       "An agent on the harness you pick",
     );

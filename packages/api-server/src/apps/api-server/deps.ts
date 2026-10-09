@@ -4,6 +4,7 @@ import type { Db } from "db";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
 import type {
   E2eService,
+  HarnessCatalog,
   LiveEventsService,
   ReposService,
   TermsService,
@@ -113,6 +114,7 @@ export interface ApiServerDeps {
   agentsRepo: AgentsRepository;
   connectionsBoot: ConnectionsBootCompose;
   templatesRepo: TemplatesRepository;
+  harnessCatalog: HarnessCatalog;
   starterKitsRepo: StarterKitsRepository;
   kitUpstream: KitUpstream;
   reposService: ReposService;

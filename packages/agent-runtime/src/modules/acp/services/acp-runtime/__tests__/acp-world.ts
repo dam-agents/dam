@@ -46,7 +46,7 @@ export interface Harness {
   killed(): boolean;
 }
 
-function createHarness(): { harness: Harness; process: AgentProcess } {
+export function createHarness(): { harness: Harness; process: AgentProcess } {
   const lineHandlers: ((line: string) => void)[] = [];
   const sent: Frame[] = [];
   let killed = false;
@@ -121,7 +121,7 @@ export interface Client {
   disconnect(): void;
 }
 
-function createClient(): { client: Client; channel: ClientChannel } {
+export function createClient(): { client: Client; channel: ClientChannel } {
   const messageHandlers: ((data: string) => void)[] = [];
   const closeHandlers: (() => void)[] = [];
   const sent: string[] = [];

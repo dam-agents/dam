@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import {
   parseKbShareString,
   PROVIDER_TEMPLATE_IDS,
+  providerTypeForTemplateId,
   type ConnectionStatus,
   SHARED_KB_TEMPLATE_ID,
   IBM_LITELLM_HOST,
@@ -132,6 +133,7 @@ export function createConnectionsService(deps: {
   oauthCallbackUrl: string;
   brandName: string;
   connectionLock: XactLock;
+  isOwnedAgent: (agentId: string) => Promise<boolean>;
   resolveKbShare: (
     shareId: string,
     presentedSecret: string | null,
@@ -669,6 +671,86 @@ export function createConnectionsService(deps: {
     }
   }
 
+  async function applyGrants(
+    agentId: string,
+    desiredFrom: (current: string[]) => string[],
+  ): Promise<void> {
+    if (!(await deps.isOwnedAgent(agentId))) {
+      securityLog("warn", "authz.owner_mismatch", {
+        category: "authz",
+        actor: deps.ownerId,
+        actorKind: "user",
+        agentId,
+        decision: "deny",
+        reason: "agent-not-owned",
+        detail: { surface: "connection.grants_set" },
+      });
+      throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
+    }
+    const owned = await deps.repo.listByOwner(deps.ownerId);
+    const ownedById = new Map(owned.map((c) => [c.id, c]));
+
+    await deps.connectionLock(`agent:connections:${agentId}`, async () => {
+      const current = await deps.repo.listAgentGrants(agentId);
+      const deduped = Array.from(
+        new Set(desiredFrom(current.map((c) => c.connectionId))),
+      );
+      for (const id of deduped) {
+        if (!ownedById.has(id)) {
+          securityLog("warn", "authz.owner_mismatch", {
+            category: "authz",
+            actor: deps.ownerId,
+            actorKind: "user",
+            agentId,
+            decision: "deny",
+            reason: "connection-not-owned",
+            target: id,
+            detail: { surface: "connection.grants_set" },
+          });
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "connection not owned by caller",
+          });
+        }
+      }
+      const currentIds = new Set(current.map((c) => c.connectionId));
+      const desiredIds = new Set(deduped);
+      const toGrant = deduped.filter((id) => !currentIds.has(id));
+      const toRevoke = current
+        .map((c) => c.connectionId)
+        .filter((id) => !desiredIds.has(id));
+
+      const grantedConnections = deduped
+        .map((id) => ownedById.get(id))
+        .filter((c): c is Connection => c !== undefined);
+      assertNoUnaddressableRival(
+        grantedConnections.filter((c) => !currentIds.has(c.id)),
+        grantedConnections,
+      );
+
+      for (const id of toGrant) await deps.repo.grant(id, agentId);
+      for (const id of toRevoke) await deps.repo.revoke(id, agentId);
+
+      if (toGrant.length > 0 || toRevoke.length > 0) {
+        securityLog("info", "connection.grants_set", {
+          category: "authz-list",
+          actor: deps.ownerId,
+          actorKind: "user",
+          agentId,
+          result: "success",
+          detail: { granted: toGrant, revoked: toRevoke },
+        });
+      }
+
+      await deps.fanOut.apply({
+        agentId,
+        ownerId: deps.ownerId,
+        grantedConnections,
+        allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
+      });
+    });
+  }
+
   return {
     async listTemplates(): Promise<ConnectionTemplateView[]> {
       const templates = deps.templates.list();
@@ -740,6 +822,21 @@ export function createConnectionsService(deps: {
           message: `model provider '${conn.name}' is ${status}; reconnect it before creating an agent`,
         });
       }
+    },
+
+    async defaultProviderConnection(fits) {
+      const usable = (
+        await deps.repo.listByOwnerOldestFirst(deps.ownerId)
+      ).filter((c) => {
+        const type = providerTypeForTemplateId(c.templateId);
+        return (
+          type !== null && fits(type) && PROVIDER_IS_ACTIVE[deriveStatus(c)]
+        );
+      });
+      return (
+        (usable.find((c) => c.templateId === "ibm-litellm") ?? usable[0])?.id ??
+        null
+      );
     },
 
     async getProviderBalance(id: string): Promise<ProviderBalance | null> {
@@ -951,68 +1048,18 @@ export function createConnectionsService(deps: {
       agentId: string,
       connectionIds: string[],
     ): Promise<void> {
-      const deduped = Array.from(new Set(connectionIds));
+      await applyGrants(agentId, () => connectionIds);
+    },
 
-      const owned = await deps.repo.listByOwner(deps.ownerId);
-      const ownedById = new Map(owned.map((c) => [c.id, c]));
-      for (const id of deduped) {
-        if (!ownedById.has(id)) {
-          securityLog("warn", "authz.owner_mismatch", {
-            category: "authz",
-            actor: deps.ownerId,
-            actorKind: "user",
-            agentId,
-            decision: "deny",
-            reason: "connection-not-owned",
-            target: id,
-            detail: { surface: "connection.grants_set" },
-          });
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "connection not owned by caller",
-          });
-        }
-      }
-
-      await deps.connectionLock(`agent:connections:${agentId}`, async () => {
-        const current = await deps.repo.listAgentGrants(agentId);
-        const currentIds = new Set(current.map((c) => c.connectionId));
-        const desiredIds = new Set(deduped);
-
-        const toGrant = deduped.filter((id) => !currentIds.has(id));
-        const toRevoke = current
-          .map((c) => c.connectionId)
-          .filter((id) => !desiredIds.has(id));
-
-        const grantedConnections = deduped
-          .map((id) => ownedById.get(id))
-          .filter((c): c is Connection => c !== undefined);
-        assertNoUnaddressableRival(
-          grantedConnections.filter((c) => !currentIds.has(c.id)),
-          grantedConnections,
-        );
-
-        for (const id of toGrant) await deps.repo.grant(id, agentId);
-        for (const id of toRevoke) await deps.repo.revoke(id, agentId);
-
-        if (toGrant.length > 0 || toRevoke.length > 0) {
-          securityLog("info", "connection.grants_set", {
-            category: "authz-list",
-            actor: deps.ownerId,
-            actorKind: "user",
-            agentId,
-            result: "success",
-            detail: { granted: toGrant, revoked: toRevoke },
-          });
-        }
-
-        await deps.fanOut.apply({
-          agentId,
-          ownerId: deps.ownerId,
-          grantedConnections,
-          allOwnerConnectionIds: new Set(owned.map((c) => c.id)),
-        });
-      });
+    async updateAgentConnections(
+      agentId: string,
+      change: { grant: string[]; revoke: string[] },
+    ): Promise<void> {
+      const revoked = new Set(change.revoke);
+      await applyGrants(agentId, (current) => [
+        ...current.filter((id) => !revoked.has(id)),
+        ...change.grant,
+      ]);
     },
 
     async setPreferredConnection(

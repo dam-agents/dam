@@ -1,5 +1,12 @@
-import type { HarnessConfigCurrent } from "../runtime/types.js";
+import type {
+  HarnessConfigChoice,
+  HarnessConfigCurrent,
+} from "../runtime/types.js";
 
 export interface HarnessConfigService {
-  readCurrent: () => Promise<HarnessConfigCurrent>;
+  readCurrent: (opts?: { harness?: string }) => Promise<HarnessConfigCurrent>;
+  models: (lease: {
+    harness: string;
+    provider: string | null;
+  }) => Promise<HarnessConfigChoice[] | null | undefined>;
 }

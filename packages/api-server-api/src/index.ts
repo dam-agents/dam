@@ -7,9 +7,15 @@ export { liveEventSchema, type LiveEvent } from "./modules/events/schemas.js";
 export type { LiveEventsService } from "./modules/events/types.js";
 
 export { SPEC_VERSION } from "./modules/templates/types.js";
-export { templateSpecSchema } from "./modules/templates/schemas.js";
+export {
+  harnessCatalogConfigSchema,
+  harnessFamilySchema,
+  templateSpecSchema,
+} from "./modules/templates/schemas.js";
 export type {
+  HarnessCatalog,
   HarnessFamily,
+  HarnessView,
   Template,
   TemplateHarness,
   TemplateSpec,
@@ -39,11 +45,16 @@ export type {
 
 export type {
   HarnessConfigChange,
+  HarnessConfigStatus,
+  SessionPair,
   HarnessConfigService,
   HarnessConfigSnapshot,
   HarnessConfigSnapshotPatch,
 } from "./modules/harness-config/types.js";
-export { harnessConfigSnapshotSchema } from "./modules/harness-config/schemas.js";
+export {
+  harnessConfigSnapshotSchema,
+  sessionPairSchema,
+} from "./modules/harness-config/schemas.js";
 
 export type {
   Agent,

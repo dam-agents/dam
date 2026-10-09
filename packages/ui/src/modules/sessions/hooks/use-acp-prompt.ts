@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
+import { trpc } from "../../../trpc.js";
 import type { Attachment, Message, RetryPayload } from "../../../types.js";
 import {
   connectionCloseReason,
@@ -21,6 +22,7 @@ import {
 import { buildPromptBlocks } from "../../acp/utils.js";
 import { acpSessionsKeys } from "../api/keys.js";
 import { optimisticInsertSession } from "../api/queries.js";
+import { harnessOfSession } from "../api/session-pair.js";
 import { draftKey } from "../lib/draft-key.js";
 import type { PromptDelivery } from "../lib/prompt-delivery.js";
 import { classifySendOutcome } from "../lib/send-outcome.js";
@@ -292,6 +294,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
                 text,
                 attachments,
               );
+        const harness = harnessOfSession(selectedAgent, sessionId, !!started);
         const turn = connection.agent.request("session/prompt", {
           sessionId,
           prompt: promptBlocks,
@@ -299,6 +302,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
             platform: {
               promptId,
               surface: "ui",
+              ...(harness ? { harness } : {}),
               ...(retryOf !== undefined ? { retryOf } : {}),
               ...(initiator ? { initiator } : {}),
             },
@@ -317,6 +321,13 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
 
         finalizeBubble();
       } catch (err: unknown) {
+        if (
+          (err as { data?: { platform?: { reason?: string } } } | null)?.data
+            ?.platform?.reason === "provider-removed"
+        )
+          void queryClient.invalidateQueries({
+            queryKey: trpc.connections.getAgentConnections.queryKey(),
+          });
         const bubble = useStore.getState().messages.find((m) => m.id === aId);
         const streamed = !!bubble && hasAgentContent(bubble);
         const outcome = classifySendOutcome({

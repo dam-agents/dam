@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type {
   DriverBinding,
   EventHandler,
+  HarnessConfigChoice,
   HarnessConfigCurrent,
   HarnessConfigEventPayload,
   Plugin,
@@ -19,7 +20,7 @@ import {
 } from "../infrastructure/model-discovery.js";
 import type { HarnessConfigBinding } from "../manifest.js";
 import { expandHome } from "../../../core/expand-home.js";
-import type { RuntimeEnvReader } from "../../../core/runtime-env.js";
+import type { LeaseEnvReader } from "../../../core/runtime-env.js";
 
 const IMPL_NAME = "harness-config";
 
@@ -42,20 +43,29 @@ export interface HarnessConfigPlugin extends Plugin {
   readonly catalog: HarnessConfigBinding["catalog"];
   readonly sessionModel: boolean;
   readCurrent(opts?: { discover?: boolean }): Promise<HarnessConfigCurrent>;
+  models(
+    provider: string | null,
+  ): Promise<HarnessConfigChoice[] | null | undefined>;
   apply: ApplyHarnessConfigFn;
   seedModel(): Promise<boolean>;
+  leaseModel(provider: string | null): Promise<string | null>;
 }
 
 export function createHarnessConfigPlugin(deps: {
+  harness: string;
   binding: HarnessConfigBinding | undefined;
   agentHome: string;
-  envReader: RuntimeEnvReader;
+  envReader: LeaseEnvReader;
   discoverModels: ModelDiscovery;
   seedListingRetry: SeedListingRetry;
   onApplied?: () => void;
   log: (msg: string) => void;
 }): HarnessConfigPlugin {
   const { binding, agentHome, envReader, discoverModels, log } = deps;
+  const envOf = (provider: string | null): Record<string, string> =>
+    envReader.forLease({ harness: deps.harness, provider });
+  const defaultEnv = (): Record<string, string> =>
+    envOf(envReader.providers()[0] ?? null);
   const seedRetry = deps.seedListingRetry;
 
   const apply: ApplyHarnessConfigFn = async (payload) => {
@@ -121,7 +131,7 @@ export function createHarnessConfigPlugin(deps: {
 
   const harnessDefault = (): string | null => {
     if (binding?.sessionModel !== true) return null;
-    const env = envReader.current();
+    const env = defaultEnv();
     const pinned = selectDiscoverySource(binding.modelDiscovery, env)
       ?.spec.pinEnv?.map((name) => env[name]?.trim())
       .find((value) => !!value);
@@ -138,8 +148,15 @@ export function createHarnessConfigPlugin(deps: {
       defaultModel: harnessDefault(),
     };
     if (opts?.discover === false) return values;
+    const availableModels = await listModels(defaultEnv());
+    return availableModels === undefined
+      ? values
+      : { ...values, availableModels };
+  };
 
-    const env = envReader.current();
+  const listModels = async (
+    env: Record<string, string>,
+  ): Promise<HarnessConfigChoice[] | null | undefined> => {
     const outcome: ModelDiscoveryOutcome = !binding
       ? { status: "not-configured" }
       : binding.modelDiscovery && !envReader.ready()
@@ -152,22 +169,25 @@ export function createHarnessConfigPlugin(deps: {
           env,
         )?.spec.extendsCatalog;
         const catalogModels = extendsCatalog
-          ? (binding?.catalog?.options.find((o) => o.id === "model")?.choices ??
-            [])
+          ? (
+              binding?.catalog?.options.find((o) => o.id === "model")
+                ?.choices ?? []
+            ).filter((c) =>
+              outcome.models.some((m) =>
+                m.value.toLowerCase().includes(c.value.toLowerCase()),
+              ),
+            )
           : [];
         const listed = new Set(catalogModels.map((c) => c.value));
-        return {
-          ...values,
-          availableModels: [
-            ...catalogModels,
-            ...outcome.models.filter((m) => !listed.has(m.value)),
-          ],
-        };
+        return [
+          ...catalogModels,
+          ...outcome.models.filter((m) => !listed.has(m.value)),
+        ];
       }
       case "not-configured":
-        return { ...values, availableModels: null };
+        return null;
       case "unavailable":
-        return values;
+        return undefined;
     }
   };
 
@@ -187,7 +207,7 @@ export function createHarnessConfigPlugin(deps: {
 
   const seedModel = async (): Promise<boolean> => {
     if (!binding?.modelDiscovery || !binding.keys.model) return false;
-    const env = envReader.current();
+    const env = defaultEnv();
     const source = selectDiscoverySource(binding.modelDiscovery, env);
     if (!source) return false;
     if (!source.spec.redirectEnv?.includes(source.via)) {
@@ -228,14 +248,32 @@ export function createHarnessConfigPlugin(deps: {
     return true;
   };
 
+  const leaseModel = async (
+    provider: string | null,
+  ): Promise<string | null> => {
+    if (!binding?.modelDiscovery) return null;
+    const env = envOf(provider);
+    const source = selectDiscoverySource(binding.modelDiscovery, env);
+    const pinned = source?.spec.pinEnv
+      ?.map((name) => env[name]?.trim())
+      .find((value) => !!value);
+    if (pinned) return pinned;
+    const outcome = await listUntilAnswered(env);
+    if (outcome.status !== "observed") return null;
+    if (!source?.spec.redirectEnv?.includes(outcome.via)) return null;
+    return outcome.models[0]?.value ?? null;
+  };
+
   return {
     name: IMPL_NAME,
     supported: binding !== undefined,
     catalog: binding?.catalog,
     sessionModel: binding?.sessionModel === true,
     readCurrent,
+    models: (provider) => listModels(envOf(provider)),
     apply,
     seedModel,
+    leaseModel,
     bindEvent(_kind: string, _binding: DriverBinding): EventHandler {
       return async (payload) => apply(payload as HarnessConfigEventPayload);
     },

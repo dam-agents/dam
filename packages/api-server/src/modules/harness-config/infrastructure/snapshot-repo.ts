@@ -1,4 +1,4 @@
-import { eq, type Db, agents as agentsTable } from "db";
+import { eq, sql, type Db, type DbTx, agents as agentsTable } from "db";
 import {
   harnessConfigSnapshotSchema,
   type HarnessConfigSnapshot,
@@ -6,11 +6,14 @@ import {
 } from "api-server-api";
 
 export interface HarnessConfigSnapshotRepo {
-  read(agentId: string): Promise<HarnessConfigSnapshot | null>;
+  read(
+    agentId: string,
+    harness?: string,
+  ): Promise<HarnessConfigSnapshot | null>;
   merge(
     agentId: string,
     patch: HarnessConfigSnapshotPatch,
-    opts: { confirmed: boolean },
+    opts: { confirmed: boolean; harness?: string },
   ): Promise<void>;
 }
 
@@ -21,11 +24,16 @@ const EMPTY: Omit<HarnessConfigSnapshot, "capturedAt" | "confirmed"> = {
   availableModels: null,
 };
 
+const NEVER_CAPTURED = new Date(0).toISOString();
+
 export function createHarnessConfigSnapshotRepo(
   db: Db,
 ): HarnessConfigSnapshotRepo {
-  async function read(agentId: string): Promise<HarnessConfigSnapshot | null> {
-    const rows = await db
+  async function readStored(
+    agentId: string,
+    q: Db | DbTx = db,
+  ): Promise<HarnessConfigSnapshot | null> {
+    const rows = await q
       .select({ snapshot: agentsTable.harnessConfigSnapshot })
       .from(agentsTable)
       .where(eq(agentsTable.id, agentId));
@@ -36,30 +44,60 @@ export function createHarnessConfigSnapshotRepo(
   }
 
   return {
-    read,
-
-    async merge(agentId, patch, opts): Promise<void> {
-      const stored = await read(agentId);
-      const at = new Date().toISOString();
-      const next: HarnessConfigSnapshot = {
-        ...(stored ?? EMPTY),
-        ...patch,
-        capturedAt: at,
-        confirmed: opts.confirmed,
-      };
-      if ("availableModels" in patch) next.modelAtDiscovery = next.model;
-      if (
-        stored &&
-        sameSnapshot(stored, next) &&
-        stored.modelAtDiscovery === next.modelAtDiscovery
-      ) {
-        return;
-      }
-      await db
-        .update(agentsTable)
-        .set({ harnessConfigSnapshot: next })
-        .where(eq(agentsTable.id, agentId));
+    async read(agentId, harness) {
+      const stored = await readStored(agentId);
+      if (harness !== undefined) return stored?.harnesses?.[harness] ?? null;
+      return stored?.capturedAt === NEVER_CAPTURED ? null : stored;
     },
+
+    merge: (agentId, patch, opts) =>
+      db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(pg_catalog.hashtext(${`harness-config-snapshot:${agentId}`}))`,
+        );
+        const stored = await readStored(agentId, tx);
+        const { harnesses: _others, ...ownStored } = stored ?? {};
+        const current =
+          opts.harness === undefined
+            ? stored?.capturedAt === NEVER_CAPTURED
+              ? null
+              : stored && (ownStored as HarnessConfigSnapshot)
+            : (stored?.harnesses?.[opts.harness] ?? null);
+        const at = new Date().toISOString();
+        const own: HarnessConfigSnapshot = {
+          ...(current ?? EMPTY),
+          ...patch,
+          capturedAt: at,
+          confirmed: opts.confirmed,
+        };
+        delete own.harnesses;
+        if ("availableModels" in patch) own.modelAtDiscovery = own.model;
+        if (
+          current &&
+          sameSnapshot(current, own) &&
+          current.modelAtDiscovery === own.modelAtDiscovery
+        ) {
+          return;
+        }
+        const next: HarnessConfigSnapshot =
+          opts.harness === undefined
+            ? {
+                ...own,
+                ...(stored?.harnesses && { harnesses: stored.harnesses }),
+              }
+            : {
+                ...(stored ?? {
+                  ...EMPTY,
+                  capturedAt: NEVER_CAPTURED,
+                  confirmed: false,
+                }),
+                harnesses: { ...stored?.harnesses, [opts.harness]: own },
+              };
+        await tx
+          .update(agentsTable)
+          .set({ harnessConfigSnapshot: next })
+          .where(eq(agentsTable.id, agentId));
+      }),
   };
 }
 

@@ -1,10 +1,7 @@
 import { config } from "../config.js";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import type { ArtifactTouch } from "./infrastructure/artifact-touch.js";
-import {
-  mergedSpawnEnv,
-  type RuntimeEnvReader,
-} from "../../core/runtime-env.js";
+import { leaseSpawnEnv, type LeaseEnvReader } from "../../core/runtime-env.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
 import {
   createExecHistoryProvider,
@@ -28,7 +25,6 @@ import {
 } from "./infrastructure/session-metadata-store.js";
 import {
   createAcpRuntime,
-  type AcpRuntime,
   type ReportableTurn,
 } from "./services/acp-runtime/acp-runtime.js";
 import { createOnceReporter } from "./services/once-reporter.js";
@@ -48,7 +44,14 @@ import {
 } from "./services/session-changes.js";
 import { createInProcessCaller } from "./infrastructure/in-process-request.js";
 import { createSessionsService } from "./services/sessions-service.js";
-import { readTerminalSessionPins } from "./infrastructure/terminal-session-pins.js";
+import {
+  readTerminalSessionPins,
+  type PlatformSessionOf,
+} from "./infrastructure/terminal-session-pins.js";
+import {
+  createLeaseRouter,
+  type LeaseRouter,
+} from "./services/lease-router.js";
 import { createDelegationFramesStore } from "./infrastructure/delegation-frames-store.js";
 import {
   createSubAgentSessionStore,
@@ -60,25 +63,35 @@ export interface ComposeAcpOptions {
   workingDir: string;
   agentHome: string;
   stateBackend: DocumentStoreBackend;
-  envReader: RuntimeEnvReader;
+  envReader: LeaseEnvReader;
+  defaultHarness: string;
+  harnesses: Readonly<Record<string, HarnessRuntime>>;
+  isTerminalSessionActive: (sessionId: string) => boolean;
+  backgroundWorkHolds: boolean;
+  onArtifactTouch: (touch: ArtifactTouch) => void;
+  beforeSpawn: () => Promise<void>;
+  leaseModel: (lease: {
+    harness: string;
+    provider: string | null;
+  }) => Promise<string | null>;
+  log: (msg: string) => void;
+}
+
+export interface HarnessRuntime {
   sessionHistory?: {
     module?: string;
     exportName?: string;
     command?: string[];
   };
   terminalSessionPins?: string;
+  sessionModel: boolean;
   sessionSpend?: { command: string[]; unit: string };
-  isTerminalSessionActive: (sessionId: string) => boolean;
-  backgroundWorkHolds: boolean;
-  onArtifactTouch: (touch: ArtifactTouch) => void;
-  beforeSpawn: () => Promise<void>;
-  log: (msg: string) => void;
 }
 
 function historyProviderOf(
   opts: ComposeAcpOptions,
+  declared: HarnessRuntime["sessionHistory"],
 ): HistoryProvider | undefined {
-  const declared = opts.sessionHistory;
   const { log } = opts;
   if (declared?.module !== undefined) {
     return createWorkerHistoryProvider({
@@ -98,7 +111,7 @@ function historyProviderOf(
 }
 
 export function composeAcp(opts: ComposeAcpOptions): {
-  runtime: AcpRuntime;
+  runtime: LeaseRouter;
   triggerDriver: TriggerSessionDriver;
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
@@ -125,39 +138,98 @@ export function composeAcp(opts: ComposeAcpOptions): {
   );
   const activeTurns = createActiveTurnStore(opts.stateBackend);
   const subAgentSessions = createSubAgentSessionStore(opts.stateBackend);
-  const historyProvider = historyProviderOf(opts);
-  const pinsDir = opts.terminalSessionPins;
-  const terminalSessionPins = pinsDir
-    ? () => readTerminalSessionPins(pinsDir)
+  const historyProviders = new Map(
+    Object.entries(opts.harnesses).map(([name, h]) => [
+      name,
+      historyProviderOf(opts, h.sessionHistory),
+    ]),
+  );
+  const pinDirs = Object.values(opts.harnesses).flatMap((h) =>
+    h.terminalSessionPins ? [h.terminalSessionPins] : [],
+  );
+  const terminalSessionPinsOf = (dirs: string[]) => (): PlatformSessionOf => {
+    const maps = dirs.map(readTerminalSessionPins);
+    return (harnessSessionId) =>
+      maps.map((of) => of(harnessSessionId)).find((id) => id !== undefined);
+  };
+  const terminalSessionPins =
+    pinDirs.length > 0 ? terminalSessionPinsOf(pinDirs) : undefined;
+  const harnessOfSession = (sessionId: string): string =>
+    sessionMetadata.get(sessionId)?.meta.harness ?? opts.defaultHarness;
+  const historyProvider: HistoryProvider | undefined = [
+    ...historyProviders.values(),
+  ].some((p) => p !== undefined)
+    ? {
+        fetch: (sessionId) =>
+          historyProviders.get(harnessOfSession(sessionId))?.fetch(sessionId) ??
+          Promise.resolve(null),
+      }
     : undefined;
-  const runtime = createAcpRuntime({
-    undeliveredPrompts,
-    activeTurns,
-    runResults: createRunResultStore(opts.stateBackend),
-    sessionMcpServers: (ref) => platformMcpEntry.sessionServers(ref),
-    onReportableTurnEnded: (report) => reportTurn(report),
-    spawnAgent: () =>
-      createChildAgentProcess({
-        command: opts.command,
-        workingDir: opts.workingDir,
-        env: mergedSpawnEnv(opts.envReader),
-      }),
-    backgroundWork,
-    workingDir: opts.workingDir,
+  const runResults = createRunResultStore(opts.stateBackend);
+  const runtime = createLeaseRouter({
+    defaultHarness: opts.defaultHarness,
+    harnessKnown: (harness) => Object.hasOwn(opts.harnesses, harness),
+    providers: () => opts.envReader.providers(),
     sessionMetadata,
-    isTerminalSessionActive: opts.isTerminalSessionActive,
-    onArtifactTouch: opts.onArtifactTouch,
-    onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
-      subAgentSessions.record(sessionId, subAgentIds),
-    ...(historyProvider ? { historyProvider } : {}),
-    ...(terminalSessionPins ? { terminalSessionPins } : {}),
+    backgroundWork,
     log: opts.log,
-    envReadyAtBoot: opts.envReader.ready(),
-    beforeSpawn: opts.beforeSpawn,
-    idleReapDelayMs: 3_000,
-    ...(config.QUEUE_PARK_MS !== undefined
-      ? { queueParkMs: config.QUEUE_PARK_MS }
-      : {}),
+    createRuntime: (pair, scoped) => {
+      const harness = opts.harnesses[pair.harness];
+      const ownHistory = historyProviders.get(pair.harness);
+      const ownPins = harness?.terminalSessionPins;
+      const isDefault =
+        pair.harness === opts.defaultHarness &&
+        pair.model === null &&
+        pair.provider === (opts.envReader.providers()[0] ?? null);
+      const seedsLease =
+        !isDefault && pair.model === null && harness?.sessionModel !== true;
+      let seeded: string | null = null;
+      const seedLease = async (): Promise<void> => {
+        seeded = await opts.leaseModel(scoped.pair());
+        if (seeded) opts.log(`[${pair.harness}] lease runs on ${seeded}`);
+      };
+      return createAcpRuntime({
+        undeliveredPrompts,
+        activeTurns,
+        runResults,
+        sessionMcpServers: (ref) => platformMcpEntry.sessionServers(ref),
+        onReportableTurnEnded: (report) => reportTurn(report),
+        spawnAgent: () => {
+          scoped.harnessSpawned();
+          return createChildAgentProcess({
+            command: opts.command,
+            workingDir: opts.workingDir,
+            env: leaseSpawnEnv(opts.envReader, {
+              ...scoped.pair(),
+              model: scoped.pair().model ?? seeded,
+            }),
+          });
+        },
+        backgroundWork: scoped.backgroundWork,
+        onHarnessExited: scoped.onHarnessExited,
+        workingDir: opts.workingDir,
+        sessionMetadata,
+        isTerminalSessionActive: opts.isTerminalSessionActive,
+        onArtifactTouch: opts.onArtifactTouch,
+        onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
+          subAgentSessions.record(sessionId, subAgentIds),
+        ...(ownHistory ? { historyProvider: ownHistory } : {}),
+        ...(ownPins
+          ? { terminalSessionPins: terminalSessionPinsOf([ownPins]) }
+          : {}),
+        log: (msg) => opts.log(`[${pair.harness}] ${msg}`),
+        envReadyAtBoot: opts.envReader.ready(),
+        ...(isDefault
+          ? { beforeSpawn: opts.beforeSpawn }
+          : seedsLease
+            ? { beforeSpawn: seedLease }
+            : {}),
+        idleReapDelayMs: 3_000,
+        ...(config.QUEUE_PARK_MS !== undefined
+          ? { queueParkMs: config.QUEUE_PARK_MS }
+          : {}),
+      });
+    },
   });
   const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
   reportTurn = createOnceReporter({
@@ -165,6 +237,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
     findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
     log: (msg) => opts.log?.(msg),
   });
+  const sessionSpend = Object.values(opts.harnesses).find(
+    (h) => h.sessionSpend,
+  )?.sessionSpend;
   const sessions = createSessionsService({
     openCaller: () =>
       createInProcessCaller((channel) =>
@@ -176,11 +251,11 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionFrames: (sessionId) => runtime.sessionFrames(sessionId),
     delegations: createDelegationFramesStore(opts.agentHome),
     ...(historyProvider ? { historyProvider } : {}),
-    ...(opts.sessionSpend
+    ...(sessionSpend
       ? {
           spendProvider: createExecSpendProvider({
-            command: opts.sessionSpend.command,
-            unit: opts.sessionSpend.unit,
+            command: sessionSpend.command,
+            unit: sessionSpend.unit,
             cwd: opts.workingDir,
             log: opts.log,
           }),

@@ -3,7 +3,6 @@ import { useCallback } from "react";
 import { useStore } from "../../../store.js";
 import { applyUpdate } from "../../acp/session-projection.js";
 import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
-import { sessionModelFrom } from "../lib/session-model.js";
 
 export function useAcpUpdateHandler(): () => UpdateHandler {
   const setMessages = useStore((s) => s.setMessages);
@@ -38,12 +37,7 @@ export function useAcpUpdateHandler(): () => UpdateHandler {
         useStore.getState().addRunStart(update.at);
       }
 
-      if (kind === "config_option_update" && viewing === sessionId) {
-        useStore
-          .getState()
-          .setSessionModel(sessionModelFrom(sessionId, update.configOptions));
-        return;
-      }
+      if (kind === "config_option_update") return;
 
       setMessages((prev) =>
         applyUpdate(

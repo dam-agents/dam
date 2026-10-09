@@ -64,6 +64,8 @@ function makeRepoFake() {
     },
     listByOwner: async (ownerId) =>
       [...rows.values()].filter((c) => c.ownerId === ownerId),
+    listByOwnerOldestFirst: async (ownerId) =>
+      [...rows.values()].filter((c) => c.ownerId === ownerId),
     get: async (id, ownerId) => {
       const c = rows.get(id);
       return c && c.ownerId === ownerId ? c : null;
@@ -139,6 +141,7 @@ function makeService(
     },
   };
   const svc = createConnectionsService({
+    isOwnedAgent: async () => true,
     ownerId: OWNER,
     templates: createConnectionTemplateRegistry(buildCatalog()),
     repo,

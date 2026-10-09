@@ -9,6 +9,7 @@ import {
   type InvocationView,
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
+  type HarnessFamily,
   type ProviderPresetType,
   type SkillSetApplyResult,
   type SkillsService,
@@ -79,6 +80,7 @@ export class ProviderMismatchError extends Error {
 export interface SpawnTarget {
   templateId?: string;
   image?: string;
+  harness?: HarnessFamily;
   runsOn?: ProviderPresetType[];
 }
 
@@ -234,10 +236,12 @@ export function createInvocationsService(deps: {
           sweepable: true,
           egressPreset: "none",
           telemetryAttributionId: rootId,
+          noDefaultProvider: true,
           ...(input.target.templateId
             ? { templateId: input.target.templateId }
             : {}),
           ...(input.target.image ? { image: input.target.image } : {}),
+          ...(input.target.harness ? { harness: input.target.harness } : {}),
           ...created,
           ...(input.connections.length
             ? { connectionIds: input.connections }
@@ -291,6 +295,13 @@ export function createInvocationsService(deps: {
               scheduleId: invocationScheduleId(agent.id),
               task,
               sessionMode: "fresh",
+              ...(input.target.harness && {
+                harness: input.target.harness,
+                ...(provider.kind === "inherited" && { provider: provider.id }),
+                ...(input.harnessConfig?.model && {
+                  model: input.harnessConfig.model,
+                }),
+              }),
             },
             expiresAt,
           },

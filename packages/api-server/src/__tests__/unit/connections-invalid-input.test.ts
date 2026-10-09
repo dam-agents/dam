@@ -48,6 +48,7 @@ describe("connection create with an invalid input", () => {
       oauthCallbackUrl: "https://example.com/callback",
       brandName: "Test",
       connectionLock: (_key, fn) => fn(),
+      isOwnedAgent: async () => true,
       resolveKbShare: unused(),
     });
     const err = await svc

@@ -1,3 +1,4 @@
+import { harnessFamilySchema } from "../templates/schemas.js";
 import { z } from "zod";
 import { AVATAR_CHARACTERS } from "./avatar/svg.js";
 import { egressPresetSchema } from "../egress-rules/schemas.js";
@@ -72,47 +73,43 @@ export const agentNameSchema = z
     message: "agent name cannot have the shape of an agent ID",
   });
 
-export const agentCreateInputSchema = z
-  .object({
-    kbShareRoots: z.array(z.string().min(1)).min(1).max(20).optional(),
-    name: agentNameSchema,
-    templateId: z.string().optional(),
-    image: z.string().optional(),
-    description: z.string().optional(),
-    avatar: z.enum(AVATAR_CHARACTERS).optional(),
-    env: z.array(envVarSchema).max(64).optional(),
-    secretRef: z.string().optional(),
-    registryCredential: z
-      .object({
-        server: z.string().min(1),
-        username: z.string().min(1),
-        password: z.string().min(1),
-      })
-      .optional(),
-    egressPreset: egressPresetSchema.optional(),
-    hibernationTimeoutMin: z.number().int().min(0).optional(),
-    requireConnectionAddress: z.boolean().optional(),
-    gitRepo: z
-      .object({
-        url: z.url(),
-        ref: z.string().min(1).optional(),
-        commit: z.string().min(1).optional(),
-        branch: z.string().min(1).optional(),
-        into: z.enum(["work", "home"]).optional(),
-      })
-      .optional(),
-    connectionIds: z.array(z.string()).optional(),
-    providerConnectionId: z.string().min(1).optional(),
-    size: agentSizeSchema.optional(),
-    vm: z.boolean().optional(),
-    storage: storageQuantitySchema.optional(),
-    sweepable: z.boolean().optional(),
-    lifetimeMs: z.number().int().min(0).optional(),
-  })
-  .refine((d) => d.templateId !== undefined || d.image !== undefined, {
-    message: "Either templateId or image is required",
-  });
-
+export const agentCreateInputSchema = z.object({
+  kbShareRoots: z.array(z.string().min(1)).min(1).max(20).optional(),
+  name: agentNameSchema,
+  templateId: z.string().optional(),
+  image: z.string().optional(),
+  harness: harnessFamilySchema.optional(),
+  description: z.string().optional(),
+  avatar: z.enum(AVATAR_CHARACTERS).optional(),
+  env: z.array(envVarSchema).max(64).optional(),
+  secretRef: z.string().optional(),
+  registryCredential: z
+    .object({
+      server: z.string().min(1),
+      username: z.string().min(1),
+      password: z.string().min(1),
+    })
+    .optional(),
+  egressPreset: egressPresetSchema.optional(),
+  hibernationTimeoutMin: z.number().int().min(0).optional(),
+  requireConnectionAddress: z.boolean().optional(),
+  gitRepo: z
+    .object({
+      url: z.url(),
+      ref: z.string().min(1).optional(),
+      commit: z.string().min(1).optional(),
+      branch: z.string().min(1).optional(),
+      into: z.enum(["work", "home"]).optional(),
+    })
+    .optional(),
+  connectionIds: z.array(z.string()).optional(),
+  providerConnectionId: z.string().min(1).optional(),
+  size: agentSizeSchema.optional(),
+  vm: z.boolean().optional(),
+  storage: storageQuantitySchema.optional(),
+  sweepable: z.boolean().optional(),
+  lifetimeMs: z.number().int().min(0).optional(),
+});
 export const agentUpdateInputSchema = z.object({
   id: z.string().min(1),
   name: agentNameSchema.max(255).optional(),

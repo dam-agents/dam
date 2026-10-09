@@ -22,6 +22,7 @@ export type {
   StoreDelegationFramesInput,
   DelegationFrames,
 } from "./modules/sessions/types.js";
+export { PIN_MODEL_METHOD } from "./modules/sessions/types.js";
 export {
   podSessionModeSchema,
   podSessionNoticeSchema,
@@ -112,6 +113,8 @@ export {
   harnessConfigChoice,
   harnessConfigCatalog,
   harnessConfigCurrent,
+  harnessConfigCurrentByHarness,
+  harnessCapability,
   fileFormat,
   mergeMode,
   eventReportInput,
@@ -127,6 +130,7 @@ export {
 } from "./modules/runtime/types.js";
 export type {
   HarnessConfigCurrent,
+  HarnessCapability,
   Contribution,
   ContributionKind,
   Event,

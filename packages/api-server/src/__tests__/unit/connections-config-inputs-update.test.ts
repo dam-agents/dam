@@ -71,6 +71,7 @@ function makeService() {
     oauthCallbackUrl: "https://example.com/callback",
     brandName: "Test",
     connectionLock: (_key, fn) => fn(),
+    isOwnedAgent: async () => true,
     resolveKbShare: unused(),
   });
   return { svc, rows, secretWrites, probed, fannedOut };

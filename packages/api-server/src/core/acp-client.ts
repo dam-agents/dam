@@ -1,3 +1,4 @@
+import type { SessionPair } from "api-server-api";
 import { WebSocket } from "ws";
 import { match } from "ts-pattern";
 import {
@@ -451,10 +452,33 @@ async function withAcpConnection<T>(
 
 export type AcpClientFactory = (instanceName: string) => AcpClient;
 
+function pairMeta(pair: SessionPair | undefined): Record<string, string> {
+  if (!pair) return {};
+  return {
+    harness: pair.harness,
+    ...(pair.provider !== null && { provider: pair.provider }),
+    ...(pair.model !== null && { model: pair.model }),
+  };
+}
+
+async function resolvePair(
+  firePair:
+    ((agentId: string) => Promise<SessionPair | null | undefined>) | undefined,
+  agentId: string,
+): Promise<SessionPair | undefined> {
+  const pair = await firePair?.(agentId);
+  if (pair === null)
+    throw new Error(
+      "no model provider granted to this agent can run its harness",
+    );
+  return pair;
+}
+
 export function createAcpClient(opts: {
   namespace: string;
   instanceName: string;
   stallProbeMs: number;
+  firePair?: (agentId: string) => Promise<SessionPair | null | undefined>;
 }): AcpClient {
   const url = `ws://${podBaseUrl(opts.instanceName, opts.namespace)}/api/acp`;
   const { instanceName: agentId, stallProbeMs } = opts;
@@ -555,11 +579,13 @@ export function createAcpClient(opts: {
             sessionId = sendOpts.resumeSessionId;
             watchSessionId = sessionId;
           } else {
+            const pair = await resolvePair(opts.firePair, agentId);
+            const platform = { ...sendOpts.platformMeta, ...pairMeta(pair) };
             const newSession: NewSessionRequest = {
               cwd: ".",
               mcpServers: [],
-              ...(sendOpts.platformMeta && {
-                _meta: { platform: sendOpts.platformMeta },
+              ...(Object.keys(platform).length > 0 && {
+                _meta: { platform },
               }),
             };
             const s = await connection.agent.request("session/new", newSession);
@@ -679,9 +705,11 @@ export function createAcpClient(opts: {
             sessionId = triggerOpts.resumeSessionId;
             watchSessionId = sessionId;
           } else {
+            const pair = await resolvePair(opts.firePair, agentId);
             const s = await connection.agent.request("session/new", {
               cwd: ".",
               mcpServers,
+              ...(pair && { _meta: { platform: pairMeta(pair) } }),
             });
             sessionId = s.sessionId;
             watchSessionId = sessionId;

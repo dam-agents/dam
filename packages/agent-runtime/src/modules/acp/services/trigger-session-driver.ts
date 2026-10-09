@@ -1,3 +1,4 @@
+import { PIN_MODEL_METHOD } from "agent-runtime-api";
 import { createInProcessCaller } from "../infrastructure/in-process-request.js";
 import type { PlatformSessionMeta } from "../infrastructure/session-metadata-store.js";
 import {
@@ -70,6 +71,16 @@ export function createTriggerSessionDriver(deps: {
         let openedOn: string | null;
 
         if (resumeSessionId) {
+          if (model)
+            await caller
+              .request(PIN_MODEL_METHOD, { sessionId: resumeSessionId, model })
+              .catch((err: unknown) => {
+                throw new SessionModelError(
+                  model,
+                  (err as Error).message,
+                  resumeSessionId,
+                );
+              });
           const res = await caller.request<OpenedSession>("session/resume", {
             sessionId: resumeSessionId,
             cwd: ".",
@@ -83,14 +94,15 @@ export function createTriggerSessionDriver(deps: {
           >("session/new", {
             cwd: ".",
             mcpServers: mcp,
-            ...(platformMeta && { _meta: { platform: platformMeta } }),
+            ...((platformMeta || model) && {
+              _meta: {
+                platform: { ...platformMeta, ...(model && { model }) },
+              },
+            }),
           });
           sessionId = res.sessionId;
           openedOn = openedModel(res);
         }
-
-        if (model && model !== openedOn)
-          await setSessionModel(caller, sessionId, model);
 
         caller.notify("session/prompt", {
           sessionId,
@@ -106,29 +118,4 @@ export function createTriggerSessionDriver(deps: {
       }
     },
   };
-}
-
-async function setSessionModel(
-  caller: ReturnType<typeof createInProcessCaller>,
-  sessionId: string,
-  model: string,
-): Promise<void> {
-  try {
-    await caller.request("session/set_model", { sessionId, modelId: model });
-    return;
-  } catch (first) {
-    try {
-      await caller.request("session/set_config_option", {
-        sessionId,
-        configId: "model",
-        value: model,
-      });
-    } catch (second) {
-      throw new SessionModelError(
-        model,
-        `${(second as Error).message} (and ${(first as Error).message})`,
-        sessionId,
-      );
-    }
-  }
 }

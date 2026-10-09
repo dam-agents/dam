@@ -1,7 +1,4 @@
-import type {
-  ClientConnection,
-  LoadSessionResponse,
-} from "@agentclientprotocol/sdk";
+import type { ClientConnection } from "@agentclientprotocol/sdk";
 import {
   platformClippedReplayMetaSchema,
   platformReplayTurnMetaSchema,
@@ -29,12 +26,16 @@ import {
 import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
+import {
+  readNextSessionPair,
+  rememberSessionPair,
+} from "../api/session-pair.js";
 import { draftKey } from "../lib/draft-key.js";
 import {
   type PromptDelivery,
   withDeliveryTracking,
 } from "../lib/prompt-delivery.js";
-import { sessionModelFrom } from "../lib/session-model.js";
+import { pairMeta } from "../lib/session-pair-options.js";
 import {
   clearUndelivered,
   forgetUndelivered,
@@ -217,22 +218,20 @@ export function useAcpConnection(
 
       let startedSessionId: string;
       try {
+        const next = readNextSessionPair(agentId);
         const session = await connection.agent.request("session/new", {
           cwd: ".",
           mcpServers: [],
           _meta: {
-            platform: { mode: SessionMode.Chat, type: SessionType.Regular },
+            platform: {
+              mode: SessionMode.Chat,
+              type: SessionType.Regular,
+              ...(next && pairMeta(next.pair)),
+            },
           },
         });
         startedSessionId = session.sessionId;
-        const viewing = useStore.getState().sessionId;
-        if (viewing === null || viewing === startedSessionId) {
-          useStore
-            .getState()
-            .setSessionModel(
-              sessionModelFrom(startedSessionId, session.configOptions),
-            );
-        }
+        if (next?.chosen) rememberSessionPair(agentId, next.pair);
       } catch (err) {
         try {
           ws.close();
@@ -442,14 +441,6 @@ export function useAcpConnection(
           : undefined,
       );
       if (replayBefore === undefined && generation === generationRef.current) {
-        useStore
-          .getState()
-          .setSessionModel(
-            sessionModelFrom(
-              sid,
-              (result as LoadSessionResponse | null)?.configOptions,
-            ),
-          );
         useStore
           .getState()
           .setRunStarts([

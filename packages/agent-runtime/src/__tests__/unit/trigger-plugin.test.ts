@@ -68,6 +68,42 @@ describe("trigger plugin", () => {
     expect(calls[0]?.resumeSessionId).toBeUndefined();
   });
 
+  /** TEST_SCENARIO: A schedule fires on the harness, provider and model it
+   * remembers, so its session opens on that pair rather than the agent's
+   * default harness, whose default model would not exist there. */
+  it("opens the session on the fire's own harness, provider and model", async () => {
+    const { driver, calls } = fakeDriver();
+    const stateStore: TriggerStateStore = {
+      getSessionForSchedule: () => undefined,
+      setSessionForSchedule: vi.fn(),
+      clearSessionForSchedule: vi.fn(),
+    };
+    await createTriggerPlugin({
+      runPrecheck: allows,
+      harnessDefault: async () => "default-harness-model",
+      log: () => {},
+      reporter: { report: async () => {} },
+      driver,
+      stateStore,
+    }).bindEvent!("trigger", { impl: "trigger" })(
+      {
+        scheduleId: "sch-p",
+        task: "do it",
+        harness: "codex",
+        provider: "conn-b",
+        model: "glm",
+      },
+      ctx,
+    );
+    expect(calls[0]?.platformMeta).toEqual({
+      ...scheduleMeta("sch-p"),
+      harness: "codex",
+      provider: "conn-b",
+      model: "glm",
+    });
+    expect(calls[0]?.model).toBe("glm");
+  });
+
   it("stamps metadata and records the session when continuous mode first fires", async () => {
     const { driver, calls } = fakeDriver();
     const setSessionForSchedule = vi.fn();

@@ -19,13 +19,18 @@ const key = (
 
 function setup(user: User) {
   const harnessConfig = {
-    status: vi.fn(async () => ({
+    status: vi.fn(async (_agentId: string) => ({
       supported: true,
       catalog: null,
       sessionModel: false,
+      defaultHarness: null,
+      harnesses: null,
     })),
-    settled: vi.fn(async () => ({ settled: true })),
-    snapshot: vi.fn(async () => ({ hasRun: false, snapshot: null })),
+    settled: vi.fn(async (_agentId: string) => ({ settled: true })),
+    snapshot: vi.fn(async (_agentId: string, _harness?: string) => ({
+      hasRun: false,
+      snapshot: null,
+    })),
     apply: vi.fn(async () => {}),
   };
   const ctx = { harnessConfig, user } as unknown as ApiContext;
@@ -60,7 +65,7 @@ describe("harnessConfig router authorization", () => {
   it.each(reads)("serves %s for the key's own agent", async (op) => {
     const { caller, harnessConfig } = setup(key(["agents:read"], ["agent-a"]));
     await caller.harnessConfig[op]({ agentId: "agent-a" });
-    expect(harnessConfig[op]).toHaveBeenCalledWith("agent-a");
+    expect(harnessConfig[op].mock.calls[0]?.[0]).toBe("agent-a");
   });
 
   it.each([

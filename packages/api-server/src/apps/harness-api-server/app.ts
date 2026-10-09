@@ -5,6 +5,7 @@ import type {
   AgentsService,
   ArtifactTouchService,
   ConnectionsService,
+  HarnessCatalog,
   RuntimeDeliveryService,
   SessionDirectoryService,
 } from "api-server-api";
@@ -77,6 +78,7 @@ export interface HarnessApiServerAppDeps {
   k8sClient: K8sClient;
   agentsRepo: AgentsRepository;
   templatesRepo: TemplatesRepository;
+  harnessCatalog: HarnessCatalog;
   artifactLibraryFor: ArtifactLibraryFor;
   agentsServiceFor: (owner: string) => AgentsService;
   connectionsServiceFor: (owner: string) => ConnectionsService;
@@ -109,6 +111,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     k8sClient,
     agentsRepo,
     templatesRepo,
+    harnessCatalog,
     artifactLibraryFor,
     agentsServiceFor,
     connectionsServiceFor,
@@ -216,6 +219,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     invocationsServiceFor,
     connectionsServiceFor,
     templates: templatesRepo,
+    harnesses: harnessCatalog,
     budgetsFor: (owner) =>
       composeBudgetsModule({
         k8s: k8sClient,

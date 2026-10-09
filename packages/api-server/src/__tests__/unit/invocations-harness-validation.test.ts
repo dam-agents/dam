@@ -6,7 +6,12 @@ import { AGENTS_PLURAL } from "../../modules/agents/infrastructure/labels.js";
 
 // TEST_OVERVIEW: A driver names a harness, and the spawn runs on that harness's Template. A harness the install does not carry is refused before anything is created, naming the harnesses it does carry.
 
-function makeApp(opts: { spawn?: () => Promise<{ id: string }> } = {}) {
+function makeApp(
+  opts: {
+    spawn?: () => Promise<{ id: string }>;
+    catalog?: { name: string; displayName: string; providers?: string[] }[];
+  } = {},
+) {
   const spawned: Array<Record<string, unknown>> = [];
   const app = new Hono();
   mountInvocationRoutes(app, {
@@ -46,6 +51,15 @@ function makeApp(opts: { spawn?: () => Promise<{ id: string }> } = {}) {
       ],
       get: async () => null,
     } as never,
+    harnesses: {
+      default: "claude-code",
+      harnesses: (opts.catalog ?? []).map((h) => ({
+        tags: [],
+        experimental: false,
+        ...h,
+      })) as never,
+      telemetryEnv: () => [],
+    },
     budgetsFor: () =>
       ({
         reserved: async () => ({
@@ -95,5 +109,24 @@ describe("spawn harness validation", () => {
     expect(res.status).toBe(201);
     expect(spawned).toHaveLength(1);
     expect(spawned[0]).toMatchObject({ target: { templateId: "pi-agent" } });
+  });
+
+  /** TEST_SCENARIO: The default image carries every harness in the install's
+   * catalog. A spawn naming one runs on the default Template with that harness
+   * as the target's own, and only on providers the harness can use. */
+  test("runs a catalog harness on the default Template", async () => {
+    const { app, spawned } = makeApp({
+      catalog: [{ name: "codex", displayName: "Codex", providers: ["openai"] }],
+    });
+
+    const res = await app.request(
+      "/api/agents/driver-1/invocations",
+      body("codex"),
+    );
+
+    expect(res.status).toBe(201);
+    expect(spawned[0]).toMatchObject({
+      target: { templateId: "default", harness: "codex", runsOn: ["openai"] },
+    });
   });
 });

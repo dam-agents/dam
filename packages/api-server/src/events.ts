@@ -131,6 +131,7 @@ export type ScheduleFired = {
   ownerSub: string;
   mode: "fresh" | "continuous";
   outcome: TurnOutcome;
+  harness?: string;
 };
 
 export type ConnectionKind = "oauth_app" | "mcp";
@@ -288,6 +289,7 @@ export type SessionTurnRelayed = {
   agentId: string;
   actorSub: string;
   surface: string;
+  harness?: string;
 };
 
 export type AgentRelayAttached = {

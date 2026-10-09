@@ -6,6 +6,7 @@ import {
   mkdirSync,
   readFileSync,
   readlinkSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -98,7 +99,11 @@ function writeSettings() {
   const panel = section(existing, "platform");
   const mode =
     normalizeMode(panel.mode) ?? normalizeMode(process.env.BOB_CHAT_MODE);
-  const model = firstNonBlank(panel.model, process.env.BOB_SHELL_MODEL);
+  const model = firstNonBlank(
+    process.env.PLATFORM_MODEL,
+    panel.model,
+    process.env.BOB_SHELL_MODEL,
+  );
   const cost = Number(
     firstNonBlank(process.env.BOB_MAX_COINS, process.env.BOB_MAX_COST),
   );
@@ -123,7 +128,9 @@ function writeSettings() {
     hooks: withPinSessionHook(section(existing, "hooks")),
   };
   mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
-  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
+  const staged = `${SETTINGS_PATH}.${process.pid}`;
+  writeFileSync(staged, JSON.stringify(settings, null, 2) + "\n");
+  renameSync(staged, SETTINGS_PATH);
   process.stdout.write(`${resolveApprovals(panel)}\n`);
 }
 

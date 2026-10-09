@@ -53,12 +53,12 @@ if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
     --set=harnessTemplates.mock.resources.limits.memory=1Gi
   )
   # The lane also boots one harness Template on the default image and the
-  # node's harness tools (smoke/22-harness-tools): the Claude Code Template,
+  # node's harness tools (smoke/22-harness-tools): the default Template,
   # sized like the mock, and the per-node installer that fills its tools.
   INSTALL_ARGS+=(
-    --set=harnessTemplates.claude-code.enabled=true
-    --set=harnessTemplates.claude-code.resources.limits.cpu=1000m
-    --set=harnessTemplates.claude-code.resources.limits.memory=1Gi
+    --set=harnessTemplates.default.enabled=true
+    --set=harnessTemplates.default.resources.limits.cpu=1000m
+    --set=harnessTemplates.default.resources.limits.memory=1Gi
     --set=harnessTools.hostPath=/var/lib/platform-harness-tools
   )
 else

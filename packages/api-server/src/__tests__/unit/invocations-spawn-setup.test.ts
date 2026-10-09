@@ -447,6 +447,11 @@ function makeApp(templates: Array<{ id: string; spec: object }>) {
         }),
       }) as never,
     templates: { list: async () => templates, get: async () => null } as never,
+    harnesses: {
+      default: "claude-code",
+      harnesses: [],
+      telemetryEnv: () => [],
+    },
     budgetsFor: () => ({}) as never,
     defaultLimits: { cpu: "1", memory: "1Gi" },
   });

@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import type {
   HarnessConfigSnapshot,
   HarnessConfigSnapshotPatch,
+  SessionPair,
 } from "api-server-api";
+import type { GrantedProvider } from "../../modules/harness-config/domain/session-pair.js";
 import {
   createHarnessConfigService,
   sessionModelChoices,
@@ -21,11 +23,13 @@ function makeService(opts?: {
   settled?: boolean;
   capabilities?: unknown;
   snapshot?: HarnessConfigSnapshot | null;
+  granted?: GrantedProvider[];
 }) {
   const calls = {
     bumps: [] as BumpCall[],
     enqueues: [] as string[],
     merges: [] as MergeCall[],
+    pairs: [] as SessionPair[],
   };
   const service = createHarnessConfigService({
     ownerSub: "owner-1",
@@ -45,6 +49,26 @@ function makeService(opts?: {
         calls.merges.push({ agentId, patch, confirmed: mergeOpts.confirmed });
       },
     },
+    pairRepo: {
+      read: async () => null,
+      write: async (_agentId, pair) => {
+        calls.pairs.push(pair);
+      },
+      grantedProviders: async () => opts?.granted ?? [],
+    },
+    catalog: {
+      default: "claude-code",
+      harnesses: [
+        {
+          name: "codex",
+          displayName: "Codex",
+          providers: ["openai"],
+          tags: [],
+          experimental: false,
+        },
+      ],
+      telemetryEnv: () => [],
+    },
     isOwnedAgent: async () => opts?.owned ?? true,
     getCapabilities: async () => opts?.capabilities,
     isSettled: async () => opts?.settled ?? true,
@@ -52,6 +76,71 @@ function makeService(opts?: {
   });
   return { service, calls };
 }
+
+const CARRIES_CODEX = {
+  harnessConfig: true,
+  defaultHarness: "claude-code",
+  harnesses: [
+    { name: "claude-code", harnessConfig: true, sessionModel: true },
+    { name: "codex", harnessConfig: true, sessionModel: false },
+  ],
+};
+
+describe("harness-config service: harnesses chosen per session", () => {
+  /** TEST_SCENARIO: An agent still on an image with one harness would apply
+   * Codex's settings to its own harness's file, so a change naming a harness
+   * it does not report carrying is refused. */
+  it("refuses a change for a harness the agent's runtime does not carry", async () => {
+    const { service, calls } = makeService({
+      capabilities: { harnessConfig: true },
+    });
+    await expect(
+      service.apply("a1", {
+        harness: "codex",
+        configOptions: { effort: "high" },
+      }),
+    ).rejects.toThrow(/does not carry the codex harness/);
+    expect(calls.bumps).toEqual([]);
+  });
+
+  it("sends a change for a carried harness with the harness named", async () => {
+    const { service, calls } = makeService({ capabilities: CARRIES_CODEX });
+    await service.apply("a1", {
+      harness: "codex",
+      configOptions: { effort: "high" },
+    });
+    expect(calls.bumps[0]?.events[0]).toMatchObject({
+      payload: { harness: "codex", configOptions: { effort: "high" } },
+    });
+  });
+
+  /** TEST_SCENARIO: The pair a person picks is remembered only when the
+   * harness can run on the chosen provider. */
+  it("remembers a pair only on a provider its harness can run on", async () => {
+    const { service, calls } = makeService({
+      capabilities: CARRIES_CODEX,
+      granted: [
+        { id: "lite", type: "ibm-litellm" },
+        { id: "oai", type: "openai" },
+      ],
+    });
+    await expect(
+      service.rememberSessionPair("a1", {
+        harness: "codex",
+        provider: "lite",
+        model: "x",
+      }),
+    ).rejects.toThrow(/cannot run on that provider/);
+    await service.rememberSessionPair("a1", {
+      harness: "codex",
+      provider: "oai",
+      model: "gpt-5",
+    });
+    expect(calls.pairs).toEqual([
+      { harness: "codex", provider: "oai", model: "gpt-5" },
+    ]);
+  });
+});
 
 describe("harness-config service", () => {
   it("fires a one-shot harness-config event carrying the change, then enqueues", async () => {
@@ -91,15 +180,33 @@ describe("harness-config service", () => {
       await makeService({
         capabilities: { harnessConfig: true },
       }).service.status("a1"),
-    ).toEqual({ supported: true, catalog: null, sessionModel: false });
+    ).toEqual({
+      supported: true,
+      catalog: null,
+      sessionModel: false,
+      defaultHarness: null,
+      harnesses: null,
+    });
     expect(
       await makeService({
         capabilities: { harnessConfig: false },
       }).service.status("a1"),
-    ).toEqual({ supported: false, catalog: null, sessionModel: false });
+    ).toEqual({
+      supported: false,
+      catalog: null,
+      sessionModel: false,
+      defaultHarness: null,
+      harnesses: null,
+    });
     expect(
       await makeService({ capabilities: null }).service.status("a1"),
-    ).toEqual({ supported: true, catalog: null, sessionModel: false });
+    ).toEqual({
+      supported: true,
+      catalog: null,
+      sessionModel: false,
+      defaultHarness: null,
+      harnesses: null,
+    });
   });
 
   it("status returns the option catalog advertised on hello", async () => {
@@ -117,7 +224,13 @@ describe("harness-config service", () => {
       await makeService({
         capabilities: { harnessConfig: true, harnessConfigCatalog: catalog },
       }).service.status("a1"),
-    ).toEqual({ supported: true, catalog, sessionModel: false });
+    ).toEqual({
+      supported: true,
+      catalog,
+      sessionModel: false,
+      defaultHarness: null,
+      harnesses: null,
+    });
   });
 
   it("rejects status for an agent the caller doesn't own", async () => {

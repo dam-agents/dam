@@ -53,6 +53,7 @@ export const templateSpecSchema = z
     description: z.string().optional(),
     category: templateCategorySchema,
     harness: templateHarnessSchema.optional(),
+    aliases: z.array(z.string().min(1)).optional(),
     providers: z
       .array(
         z.custom<ProviderPresetType>(
@@ -80,3 +81,27 @@ export const templateSpecSchema = z
     skillSources: z.array(skillSourceSeedSchema).optional(),
   })
   .passthrough();
+
+const providerTypeSchema = z.custom<ProviderPresetType>(
+  (v) => typeof v === "string" && isProviderPresetType(v),
+  "unknown provider type",
+);
+
+export const harnessEntrySchema = z.object({
+  displayName: z.string().min(1),
+  description: z.string().optional(),
+  releaseNotesUrl: z.string().optional(),
+  providers: z.array(providerTypeSchema).optional(),
+  tags: z.array(z.string()).default([]),
+  experimental: z.boolean().default(false),
+});
+
+export const harnessCatalogConfigSchema = z.object({
+  default: harnessFamilySchema,
+  catalog: z.record(
+    z.string(),
+    harnessEntrySchema.extend({
+      telemetryEnv: z.array(envVarConfigMapSchema).default([]),
+    }),
+  ),
+});

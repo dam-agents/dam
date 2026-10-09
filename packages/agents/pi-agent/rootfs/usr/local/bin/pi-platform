@@ -1,8 +1,32 @@
 #!/bin/sh
-rm -rf "$HOME/.pi/agent/extensions/pi-dynamic-providers"
+# Each provider's lease keeps the files Pi's provider extension rewrites at
+# start in a directory of its own, so two leases on different providers never
+# overwrite each other's; everything else stays shared through links.
+shared="$HOME/.pi/agent"
+if [ -n "$PLATFORM_PROVIDER" ]; then
+  lease="$HOME/.pi/leases/$PLATFORM_PROVIDER"
+  mkdir -p "$lease" "$shared/sessions" "$shared/npm"
+  for entry in "$shared"/*; do
+    [ -e "$entry" ] || continue
+    name=$(basename "$entry")
+    case "$name" in settings.json | models.json | auth.json | extensions) continue ;; esac
+    [ -e "$lease/$name" ] || [ -L "$lease/$name" ] || ln -s "$entry" "$lease/$name"
+  done
+  [ -f "$shared/settings.json" ] && cp "$shared/settings.json" "$lease/settings.json"
+  [ "$shared/auth.json" -nt "$lease/auth.json" ] && cp -p "$shared/auth.json" "$lease/auth.json"
+  mkdir -p "$lease/extensions"
+  for entry in "$shared"/extensions/*; do
+    [ -e "$entry" ] || continue
+    name=$(basename "$entry")
+    [ "$name" = pi-dynamic-providers ] && continue
+    [ -e "$lease/extensions/$name" ] || [ -L "$lease/extensions/$name" ] || ln -s "$entry" "$lease/extensions/$name"
+  done
+  export PI_CODING_AGENT_DIR="$lease"
+fi
+rm -rf "${PI_CODING_AGENT_DIR:-$shared}/extensions/pi-dynamic-providers"
 # Homes seeded before the image shipped pi-memory still load their own npm copy.
 # Pi exits on a missing -e path, so skip it while the node tools lack pi-memory.
 mem="$(mise where npm:@zhafron/pi-memory 2>/dev/null)/node_modules/@zhafron/pi-memory"
-[ -d "$HOME/.pi/agent/npm/node_modules/@zhafron/pi-memory" ] || [ ! -d "$mem" ] ||
+[ -d "$shared/npm/node_modules/@zhafron/pi-memory" ] || [ ! -d "$mem" ] ||
   set -- -e "$mem" "$@"
 exec pi -e /usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts "$@"

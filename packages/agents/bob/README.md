@@ -70,9 +70,11 @@ Guardrails that stay active: `approval.outsideWorkspaceAllowed` is a hard gate a
 
 `bob acp` parses only `--trust`, `--auto-approve`, `--accept-license`, `--log-level` and `--disable-{mcp,subagents}` — model, mode and cost have no flag on that surface, so they ride `~/.bob/settings/settings.json`, which `bob-settings.mjs` merge-writes from the env before either surface starts. Settings come from three places, in this order of precedence: the agent's **Config panel**, then the **Bob Shell provider** pins, then free-form **Configure Agent → Env**.
 
+Bob cannot switch a live session's model, so the platform runs one Bob process per model a session picks, and gives it that model as `PLATFORM_MODEL`, which wins over all three. These processes share the one settings file, and Bob reads it only at start: two processes that start in the same moment can each start on the other's model. The write is atomic, so a process never reads a half-written file.
+
 ### The Config panel (per agent)
 
-The manifest declares a `harness-config` driver, which is what puts the panel on the agent at all, and it offers three options: **Model**, **Mode** (`agent` / `plan` / `ask`) and **Approvals** (`auto` / `ask`).
+The manifest declares a `harness-config` driver, which is what puts the panel on the agent at all, and it declares three options: **Model**, **Mode** (`agent` / `plan` / `ask`) and **Approvals** (`auto` / `ask`). The panel shows Mode and Approvals; the model is picked per session, in the chat's session picker, from the same list.
 
 The panel writes into a `platform` section of the settings file that **Bob itself ignores**, not into `session.*`. That indirection is load-bearing: `bob-settings.mjs` rewrites Bob's own keys on every harness start, so a panel writing them directly would be overwritten by the provider pin (or deleted when the pin is cleared). Instead the bootstrap reads the `platform` section, resolves panel value over provider pin, and writes the result — so a panel choice survives every restart, and an agent with no panel choice still follows the pin.
 
@@ -85,15 +87,15 @@ Two consequences worth knowing:
 
 ### Where the Model list comes from
 
-The panel's Model choices are not a list this repo maintains — the manifest declares a `modelDiscovery` source and agent-runtime reads the list live, so what the dropdown offers is what the granted key and tenant actually serve.
+The session picker's Model choices are not a list this repo maintains — the manifest declares a `modelDiscovery` source and agent-runtime reads the list live, so what the dropdown offers is what the granted key and tenant actually serve.
 
 Discovery asks the same endpoint Bob itself asks, `/inference/v1/model/info` on the gateway, and reads the LiteLLM-shaped `data[].model_name` out of it, skipping every entry the gateway marks as something other than a chat model. The request leaves the pod through `HTTPS_PROXY` like every other, so the credential is injected at the sidecar and the agent container never holds it.
 
 Which gateway gets asked follows from the connection, and two of them can be granted at once, so each contributes its own variable rather than competing for one — a duplicate env name is settled by secret order, which is no way to choose an endpoint. A connection that points Bob at another endpoint sets `BOB_GATEWAY_URL`, the variable Bob's own client reads; the Bob Shell connection sets `BOB_DEFAULT_GATEWAY_URL` for its own gateway. Discovery reads them in that order, so it resolves models through whichever host Bob is actually talking to.
 
-A Bob Shell connection made before `BOB_DEFAULT_GATEWAY_URL` was added to the preset does not carry it — re-save the provider in Settings → Providers once to pick it up, otherwise the Model option stays absent and the rest of the panel keeps working.
+A Bob Shell connection made before `BOB_DEFAULT_GATEWAY_URL` was added to the preset does not carry it — re-save the provider in Settings → Providers once to pick it up, otherwise the picker offers no Bob model and the rest keeps working.
 
-A list that cannot be read — no gateway URL granted, no route to it, an auth failure, or an empty list — leaves the panel on its last known list and the rest of the panel usable; it never blocks opening the panel or starting a session. `BOB_SHELL_MODEL` keeps working as the provider-level default for agents that make no panel choice, with the same precedence as Mode: panel over pin.
+A list that cannot be read — no gateway URL granted, no route to it, an auth failure, or an empty list — leaves the picker on its last known list; it never blocks opening the panel or starting a session. `BOB_SHELL_MODEL` keeps working as the provider-level default for a session that picks no model.
 
 ### Why a redirected Bob is given a model
 
@@ -108,8 +110,8 @@ These ride on the secret's `envMappings`, so every agent granted the Bob secret 
 | Env var | Translated to | Effect |
 |---|---|---|
 | `BOBSHELL_API_KEY` | n/a (env-only) | API key the Envoy sidecar swaps to the real value on the wire. Always emitted. |
-| `BOB_DEFAULT_GATEWAY_URL` | n/a (env-only) | Gateway the Config panel's model list is read from when nothing redirects Bob. Always emitted, pinned to the host the secret is scoped to. |
-| `BOB_SHELL_MODEL` | `session.model` | Default model for new tasks, unless the agent's Config panel sets one. Examples: `premium-shell`, `codestral-2508`, `claude-sonnet-5`. Empty → Bob's built-in default. |
+| `BOB_DEFAULT_GATEWAY_URL` | n/a (env-only) | Gateway the session picker's model list is read from when nothing redirects Bob. Always emitted, pinned to the host the secret is scoped to. |
+| `BOB_SHELL_MODEL` | `session.model` | Default model for new tasks, unless the session picks one. Examples: `premium-shell`, `codestral-2508`, `claude-sonnet-5`. Empty → Bob's built-in default. |
 | `BOB_CHAT_MODE` | `session.defaultMode` | One of `agent`, `plan`, `ask` (2.0 merged `code`/`advanced` into `agent`; legacy pinned values are mapped onto `agent`). Starting mode for new sessions, unless the agent's Config panel sets one. |
 | `BOB_MAX_COINS` | `session.maxCost` | Per-task cost cap — Bob stops the task when exceeded. |
 | `BOB_INSTANCE_ID` | `bob chat --instance-id` (terminal only) | IBM tenant scoping. Neither `bob acp` nor the settings file takes an instance, so this pin does not reach chat-mode sessions; headless instance selection goes through Bob profiles. |
@@ -122,7 +124,7 @@ Per-agent overrides for any of these still work — set the same env name in **C
 Granting the **IBM LiteLLM ETE Proxy** connection points Bob at that proxy instead of IBM's Bob gateway: it contributes `BOB_GATEWAY_URL`, an inert `BOBSHELL_API_KEY` placeholder, and a gateway path rewrite that maps Bob's `/inference/v1` prefix onto the proxy's plain `/v1` routes. Bob itself is unchanged — its prefixes are compiled in, and the rewrite happens in the Envoy sidecar. Three things to know:
 
 - **The key needs more than model access.** Bob asks the proxy for its model list before it will start a session, and that is a management route, not a model call — a LiteLLM virtual key scoped to LLM API routes alone is refused there and Bob fails to start. The team behind the key also has to carry the model Bob is set to use, or the first message comes back refused.
-- **A model gets chosen for you.** Bob's built-in default resolves to a tier alias only its own gateway serves, so the proxy would reject it as unknown. The connection therefore pins `BOB_SHELL_MODEL` to a model the proxy serves — `aws/claude-sonnet-4-6` on the ETE proxy, `rits/zai-org/glm-5-3` on Curve Bender — and the Config panel offers the proxy's full list live (see [Where the Model list comes from](#where-the-model-list-comes-from) above). A panel pick wins over the pin, and so does `BOB_SHELL_MODEL` in **Configure Agent → Env**. The pin is a default, not a promise: before Bob starts, the platform checks it against the proxy's live list, and a pin the proxy no longer serves is passed over for the first listed model. A pick the proxy does not list — a model chosen before switching providers — is cleared on the next restart so the pin applies, which keeps an existing agent working across a provider switch.
+- **A model gets chosen for you.** Bob's built-in default resolves to a tier alias only its own gateway serves, so the proxy would reject it as unknown. The connection therefore pins `BOB_SHELL_MODEL` to a model the proxy serves — `aws/claude-sonnet-4-6` on the ETE proxy, `rits/zai-org/glm-5-3` on Curve Bender — and the session picker offers the proxy's full list live (see [Where the Model list comes from](#where-the-model-list-comes-from) above). A session's pick wins over the pin, and so does `BOB_SHELL_MODEL` in **Configure Agent → Env**. The pin is a default, not a promise: before Bob starts, the platform checks it against the proxy's live list, and a pin the proxy no longer serves is passed over for the first listed model. A pick the proxy does not list — a model chosen before switching providers — is cleared on the next restart so the pin applies, which keeps an existing agent working across a provider switch.
 - **A connection's contributions are projected when it is created**, so a LiteLLM connection made before this shipped carries no gateway env and keeps Bob on its own gateway. Editing it does not help — the edit dialog replaces the credential and nothing else, and contributions are never recomputed. Delete it and create it again to pick the new ones up.
 
 ### Free-form env vars (Configure Agent → Env)
