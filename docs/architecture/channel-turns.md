@@ -72,7 +72,7 @@ A turn that never lost its relay needs no watch, and is judged the moment it end
 
 Outbound is initiated by the agent process. The harness calls a tool on the api-server's per-Agent MCP endpoint, the endpoint authenticates the call, and the channel manager routes the message back through the right worker.
 
-Slack message text uses standard Markdown, not Slack's mrkdwn dialect. Replies, private whispers and top-level posts share one renderer: it preserves Markdown code blocks and their language labels, and normalizes paired compact Slack-style code fences so the first command stays code and following prose stays outside. Ambiguous standalone fences retain Markdown semantics; the tools ask for separate fence lines to avoid that ambiguity.
+Slack posts use standard Markdown. Replies, private whispers and top-level posts share one renderer, which normalizes compact Slack-style fences within Slack's Markdown size limit. Larger messages pass through unchanged to bound processing cost. Ambiguous standalone fences retain Markdown semantics; tools request separate fence lines.
 
 What the agent sees:
 

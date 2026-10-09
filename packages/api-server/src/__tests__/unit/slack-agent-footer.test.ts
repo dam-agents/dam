@@ -294,6 +294,20 @@ describe("renderAssistantBlocks", () => {
     });
   });
 
+  it("normalizes text at Slack's Markdown limit", () => {
+    const text = "```pwd```".padStart(12_000, "a");
+    expect(renderAssistantBlocks(footer, text)[0]?.text).toBe(
+      `${"a".repeat(11_991)}\n\`\`\`\npwd\n\`\`\``,
+    );
+  });
+
+  it.each(["```pwd```".padStart(12_001, "a"), "```a\n".repeat(8_000)])(
+    "leaves oversized text unchanged",
+    (text) => {
+      expect(renderAssistantBlocks(footer, text)[0]?.text === text).toBe(true);
+    },
+  );
+
   it("appends the link footer after the text", () => {
     expect(renderAssistantBlocks(footer, "hello")).toEqual([
       { type: "markdown", text: "hello" },

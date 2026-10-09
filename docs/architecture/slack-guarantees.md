@@ -182,7 +182,7 @@ flowchart TD
 |---|---|---|
 | Only tool calls reach Slack; answered means `reply`, `react`, `no_reply_needed`, hand-off, or a top-level post into the same channel | Platform | Prose is lost unless the reminder rescues it. A post via the owner's Connection doesn't count; close such a turn with `no_reply_needed` |
 | Answer, react, stay silent or hand off; thread vs. top-level; `alsoSendToChannel`; names not raw ids | **Agent**, prompted | A `no_reply_needed` is final. A top-level answer counts, just noisier |
-| Standard Markdown rendering for agent posts, with paired compact Slack-style code fences normalized | Platform | Ambiguous standalone fences keep Markdown semantics; tools ask for separate fence lines |
+| Standard Markdown rendering for agent posts, with paired compact Slack-style code fences normalized | Platform | Ambiguous standalone fences keep Markdown semantics; tools ask for separate fence lines. Oversized text bypasses normalization |
 | One reminder after a silent addressed turn | Platform | Never on ambient. A reply whose attachment failed still counts; the agent is told which file |
 | With two turns running, each reply, reaction, silence or hand-off names its thread; the platform never guesses | Platform | |
 | A reply after the api-server lost the agent mid-turn: accepted for 60 min | Platform | Later, one that names its thread still lands; one that doesn't is refused |
