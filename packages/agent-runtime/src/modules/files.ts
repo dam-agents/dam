@@ -74,18 +74,22 @@ async function listDir(
               !RESERVED.has(ent.name) &&
               !ent.name.startsWith(IMPORT_STAGING_PREFIX),
           )
-          .map(async (ent): Promise<DirEntry> => ({
-            name: ent.name,
-            type:
-              ent.isDirectory() ||
-              (ent.isSymbolicLink() &&
-                (await statAsync(join(abs, ent.name)).then(
-                  (s) => s.isDirectory(),
-                  () => false,
-                )))
-                ? "dir"
-                : "file",
-          })),
+          .map(async (ent): Promise<DirEntry> => {
+            if (!ent.isSymbolicLink()) {
+              return {
+                name: ent.name,
+                type: ent.isDirectory() ? "dir" : "file",
+              };
+            }
+            const target = await statAsync(join(abs, ent.name)).catch(
+              () => null,
+            );
+            return {
+              name: ent.name,
+              type: target?.isDirectory() ? "dir" : "file",
+              symlink: true,
+            };
+          }),
       )
     ).sort(compareEntries);
     return { path: rel, ok: true, entries };
@@ -219,7 +223,15 @@ export function createFilesService(workingDir: string): FilesService {
     mkdirSafe: async (rel): Promise<Result<{ ok: true }, FilesDomainError>> => {
       const abs = toWritableAbs(rel);
       if (!abs) return err(forbidden("forbidden path"));
-      await mkdir(dirname(abs), { recursive: true });
+      try {
+        await mkdir(dirname(abs), { recursive: true });
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException).code;
+        if (code === "EEXIST" || code === "ENOTDIR") {
+          return err(forbidden(`a file is in the way of "${rel}"`));
+        }
+        throw e;
+      }
       try {
         await mkdir(abs);
       } catch (e) {

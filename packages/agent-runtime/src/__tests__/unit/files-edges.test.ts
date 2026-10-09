@@ -27,7 +27,7 @@ describe("files service edge cases", () => {
     return result.entries;
   };
 
-  // TEST_SCENARIO: A symlink to a folder, like home's `.cache`, lists as a folder and lists the target's entries when expanded; a dangling link stays a file.
+  // TEST_SCENARIO: A symlink to a folder, like home's `.cache`, lists as a folder marked as a link and lists the target's entries when expanded; a dangling link stays a file.
   it("lists a symlinked folder as a folder and a broken link as a file", async () => {
     mkdirSync(join(work, "real"));
     writeFileSync(join(work, "real", "inside.txt"), "x");
@@ -35,9 +35,9 @@ describe("files service edge cases", () => {
     symlinkSync(join(work, "missing"), join(work, "dangling"));
 
     expect(await list("")).toEqual([
-      { name: "linkdir", type: "dir" },
+      { name: "linkdir", type: "dir", symlink: true },
       { name: "real", type: "dir" },
-      { name: "dangling", type: "file" },
+      { name: "dangling", type: "file", symlink: true },
     ]);
     expect(await list("linkdir")).toEqual([
       { name: "inside.txt", type: "file" },
@@ -53,6 +53,21 @@ describe("files service edge cases", () => {
     expect(result).toEqual({
       ok: false,
       error: { kind: "AlreadyExists", path: "taken" },
+    });
+  });
+
+  // TEST_SCENARIO: Creating a folder under a file is refused with a relative-path message, not a server error.
+  it("refuses to create a folder under a file", async () => {
+    writeFileSync(join(work, "notes.txt"), "x");
+
+    const result = await service().mkdirSafe("notes.txt/sub");
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        kind: "Forbidden",
+        reason: 'a file is in the way of "notes.txt/sub"',
+      },
     });
   });
 
