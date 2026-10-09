@@ -155,16 +155,22 @@ export function createImportHandlers(
         const names = await readdir(staging);
         if (req.headers[IMPORT_REPLACE_HEADER] !== "true") {
           const exists = await Promise.all(
-            names.map((n) => lstat(join(workDir, n)).then(
+            names.map((n) =>
+              lstat(join(workDir, n)).then(
                 () => true,
                 (e: NodeJS.ErrnoException) => e.code !== "ENOENT",
-              )),
+              ),
+            ),
           );
           const conflicts = names.filter((_, i) => exists[i]);
           if (conflicts.length > 0) {
-            return fail(409, `already exists in work/: ${conflicts.join(", ")}`, {
-              conflicts,
-            });
+            return fail(
+              409,
+              `already exists in work/: ${conflicts.join(", ")}`,
+              {
+                conflicts,
+              },
+            );
           }
         }
         for (const name of names) {
