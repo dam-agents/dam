@@ -14,7 +14,7 @@ Every image is a Debian system-package base and directory trees packed onto it a
 
 ## The default image and the harness tools
 
-The UI labels an Agent's image by its Template's name, resolving retired template aliases from the catalogue too. An unknown or absent Template falls back to the image reference.
+The UI labels an Agent's image by its Template's name in its settings, resolving retired template aliases from the catalogue too; the agent card leaves it out, since a session picks its own harness. An unknown or absent Template falls back to the image reference.
 
 The default image is every harness over the base at once, with none of their tools packaged. Each harness's entry points and runtime manifest sit under its name. The agent-runtime loads every manifest there and runs each harness's drivers, so one contribution kind can have several bindings, each keeping its state per harness. The harness is chosen per session ([agent-lifecycle](agent-lifecycle.md#session-inside-the-pod)); the Agent's own harness, seeded at create and handed to the pod or machine in its environment, is the default for a session that names none. The tools, the base's and every harness's, are named in the image's system mise config with the lockfile, and its `PATH` names each tool's versioned install directory under mise's system data dir, so the image fixes every version it runs without holding a byte of them. mise's own data dir stays the image's, writable, so `mise use -g` still installs there.
 

@@ -33,8 +33,10 @@ export function sandboxSubtitle(
   agent: AgentView,
   lookup: SandboxSubtitleLookup,
 ): string {
-  const { harness, provider } = sandboxSubtitleParts(agent, lookup);
-  return joinSubtitleSegments([harness, provider, sizeLabel(agent, lookup)]);
+  return joinSubtitleSegments([
+    providerLabel(agent, lookup),
+    sizeLabel(agent, lookup),
+  ]);
 }
 
 function sizeLabel(
