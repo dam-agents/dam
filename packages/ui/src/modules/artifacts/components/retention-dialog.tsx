@@ -66,7 +66,7 @@ export function RetentionDialog({ artifact, onClose }: Props) {
   };
 
   return (
-    <Modal>
+    <Modal onClose={sharing.isPending ? undefined : onClose}>
       <DialogHeader
         title={`Delete “${artifact.title}” automatically`}
         onClose={onClose}

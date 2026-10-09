@@ -61,7 +61,7 @@ export function PublishSkillModal({
   });
 
   return (
-    <Modal>
+    <Modal onClose={onClose}>
       <DialogHeader
         title={`Publishing ${skill.name} as a pull request`}
         onClose={onClose}

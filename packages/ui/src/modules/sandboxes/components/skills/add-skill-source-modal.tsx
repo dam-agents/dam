@@ -53,7 +53,7 @@ export function AddSkillSourceModal({
   });
 
   return (
-    <Modal>
+    <Modal onClose={onClose}>
       <DialogHeader
         title="Add skill source"
         onClose={onClose}

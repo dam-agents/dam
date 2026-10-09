@@ -139,7 +139,7 @@ export function ConnectionEditGithubAppScopeDialog({
   const narrowed = narrowedRepos > 0 || Object.keys(permissions).length > 0;
 
   return (
-    <Modal widthClass="w-[560px]">
+    <Modal onClose={onClose} widthClass="w-[560px]">
       <DialogHeader
         title="Edit repositories & permissions"
         subtitle={connection.name}

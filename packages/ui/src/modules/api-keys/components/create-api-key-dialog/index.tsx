@@ -12,7 +12,7 @@ export function CreateApiKeyDialog({ onClose }: Props) {
   const [plaintext, setPlaintext] = useState<string | null>(null);
 
   return (
-    <Modal>
+    <Modal onClose={plaintext ? undefined : onClose}>
       {plaintext ? (
         <RevealToken plaintext={plaintext} onClose={onClose} />
       ) : (

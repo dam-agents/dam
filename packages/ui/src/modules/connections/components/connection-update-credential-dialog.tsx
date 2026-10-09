@@ -208,7 +208,7 @@ function CredentialDialogFrame({
   children: ReactNode;
 }) {
   return (
-    <Modal widthClass="w-[505px]">
+    <Modal onClose={onClose} widthClass="w-[505px]">
       <DialogHeader
         title={title}
         subtitle={subtitle}
