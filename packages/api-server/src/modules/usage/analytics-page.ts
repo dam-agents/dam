@@ -692,7 +692,7 @@ function matrix(sizes) {
   const labels = { "1x": ["1×", "1 slot"], "2x": ["2×", "2 slots"], "4x": ["4×", "4 slots"], custom: ["Custom", "set by a kit or the team"] };
   const meter = (v, of, p, c) => \`<div class="meter"><div class="trk"><div class="fil" style="width:\${Math.max(p, v ? 2 : 0)}%;background:\${c}"></div></div><span class="n">\${p}% · \${v}</span></div>\`;
   const HEADS = [
-    ["Size", "Compute size in slots. One slot is the install's default agent size; an agent whose cpu and memory are not whole multiples of it is listed as custom."],
+    ["Size", "Compute size in slots. One slot is the install's default agent size. An agent at 1, 2 or 4 slots of both cpu and memory is listed there; any other size is custom."],
     ["Agents", "Agents that exist right now at this size, created by a non-core user, hibernated ones included, as a share of all such agents."],
     ["Always on", "Agents at this size that are set never to hibernate, so they hold their compute around the clock, as a share of the agents at this size."],
     ["Out of memory · 30 d", "Restarts in the last 30 days in which an agent exceeded its memory limit. Only agents that still exist count. Each restart is filed under the size the agent had at that moment, even if it has been resized since. The second number is how many different agents those restarts belong to."],
