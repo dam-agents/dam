@@ -45,8 +45,14 @@ with it. Such a recycle waits for an idle runtime; one that may be forced (a con
 change to which variables are set) is forced after a grace period only while no kept
 Harness Task runs: while one does, the change waits as long as the task
 does. The processes list reports a change waiting this way, with how many kept tasks it
-waits for. The user unblocks it by applying it now, which stops those tasks, by stopping
-or unkeeping them, or by a hard stop or pause. Once the last kept task is gone, the
+waits for and everything a restart now would stop: every Harness Task on the waiting
+leases, kept or not, and every running turn. Right after a user saves an agent setting
+that can reach the harness, the UI checks for such a change for a few seconds and, if
+one waits, asks whether to restart now or to apply it when the tasks finish. That
+question is not behind the `processes` feature, since every agent waits this way. A
+change made from account settings, outside one agent, does not ask. The user unblocks it
+by applying it now, which stops that work, by stopping or unkeeping the kept tasks, or by
+a hard stop or pause. Once the last kept task is gone, the
 recycle runs at once on an idle runtime, or after the grace period while a turn still
 runs. Unkept tasks never hold a recycle back, since the recycle kills them anyway; a kept
 Detached Process holds it back only as any busy runtime does, up to the grace period, and

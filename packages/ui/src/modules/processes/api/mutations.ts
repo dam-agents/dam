@@ -3,6 +3,7 @@ import type { ProcessList } from "agent-runtime-api";
 
 import { processesClientFor } from "./client.js";
 import { processKeys } from "./keys.js";
+import { applyPendingRestart } from "./pending-restart.js";
 
 function useRefreshProcesses(agentId: string) {
   const queryClient = useQueryClient();
@@ -54,8 +55,7 @@ export function useSetKeep(agentId: string) {
 export function useApplyPendingRestart(agentId: string) {
   const refresh = useRefreshProcesses(agentId);
   return useMutation({
-    mutationFn: () =>
-      processesClientFor(agentId).processes.applyPendingRestart.mutate(),
+    mutationFn: () => applyPendingRestart(agentId),
     onSettled: refresh,
     meta: { errorToast: "Couldn't apply the change" },
   });

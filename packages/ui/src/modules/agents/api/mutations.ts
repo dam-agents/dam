@@ -17,6 +17,7 @@ import {
   importRawBundle,
 } from "../../files/api/import-bundle.js";
 import { trackImport } from "../../files/track-import.js";
+import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
 import { agentsKeys } from "./queries.js";
 
 const invalidatesAgentsList = {
@@ -125,6 +126,10 @@ export function useDeleteAgent() {
 export function useUpdateAgent() {
   return useMutation({
     ...trpc.agents.update.mutationOptions(),
+    onSettled: (_agent, error, vars) => {
+      if (error || (vars.env === undefined && vars.name === undefined)) return;
+      askToRestartAfterSave(vars.id);
+    },
     meta: {
       ...invalidatesAgentsAndBudget,
       errorToast: "Failed to update agent",
@@ -285,6 +290,9 @@ export function useSetAgentConnections() {
     onError: (_err, _vars, context) => {
       if (context?.previous)
         queryClient.setQueryData(context.key, context.previous);
+    },
+    onSettled: (_data, error, vars) => {
+      if (!error) askToRestartAfterSave(vars.agentId);
     },
     meta: {
       invalidates: [

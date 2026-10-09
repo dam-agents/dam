@@ -19,6 +19,7 @@ import {
 } from "../../agents/api/queries.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
+import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
 import {
   fittingProviders,
   grantedProviderRefs,
@@ -88,6 +89,9 @@ export function useGrantProvider(agentId: string | null) {
         grant: change.grant ?? [],
         revoke: change.revoke ?? [],
       }),
+    onSettled: (_data, error) => {
+      if (!error && agentId) askToRestartAfterSave(agentId);
+    },
     meta: {
       invalidates: [
         trpc.connections.getAgentConnections.queryKey(),

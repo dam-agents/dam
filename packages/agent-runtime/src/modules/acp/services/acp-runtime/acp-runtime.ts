@@ -234,11 +234,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const at = deps.sessionMetadata?.startRun(sessionId);
         if (at) announceRunStart(sessionId, at);
       }
+      checkPendingRestart();
     },
     onTurnEnded: (sessionId) => {
       if (shuttingDown) return;
       deps.sessionMetadata?.finishRun(sessionId);
       deps.activeTurns.remove(sessionId);
+      checkPendingRestart();
     },
     onTurnInterrupted: (sessionId, turn) => {
       if (!turn.runPrompt && !isRunSession(sessionId)) return;
@@ -562,11 +564,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     );
   }
 
+  function taskCount(sessions: HeldSession[] = []): number {
+    return sessions.reduce((n, held) => n + held.items.length, 0);
+  }
+
   function keptTaskCount(): number {
-    let count = 0;
-    for (const held of deps.backgroundWork?.held() ?? [])
-      count += held.items.length;
-    return count;
+    return taskCount(deps.backgroundWork?.held());
   }
 
   const pendingRestartListeners: (() => void)[] = [];
@@ -580,6 +583,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       reason: pending.reason,
       since: new Date(pending.since).toISOString(),
       blockingTasks,
+      stops: {
+        tasks: taskCount(deps.backgroundWork?.reported()),
+        turns: promptScheduler.activeTurnCount(),
+      },
     };
   }
 

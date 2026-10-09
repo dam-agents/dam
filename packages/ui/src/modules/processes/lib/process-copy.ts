@@ -1,4 +1,9 @@
-import type { FinishedRow, ProcessKind, ProcessRow } from "agent-runtime-api";
+import type {
+  FinishedRow,
+  PendingRestart,
+  ProcessKind,
+  ProcessRow,
+} from "agent-runtime-api";
 import { match } from "ts-pattern";
 
 import type { ProcessGroupId } from "./process-groups.js";
@@ -45,4 +50,24 @@ export const NO_PID_STOP_HINT = "Can't find this task's process";
 
 export function countTasks(count: number): string {
   return count === 1 ? "1 task" : `${count} tasks`;
+}
+
+function countTurns(count: number): string {
+  return count === 1 ? "1 turn" : `${count} turns`;
+}
+
+export function countRestartStops(stops: PendingRestart["stops"]): string {
+  const tasks = countTasks(stops.tasks);
+  return stops.turns === 0 ? tasks : `${tasks}, ${countTurns(stops.turns)}`;
+}
+
+export function describeRestartStops({
+  tasks,
+  turns,
+}: PendingRestart["stops"]): string {
+  const taskText =
+    tasks === 1 ? "1 background task" : `${tasks} background tasks`;
+  if (turns === 0) return taskText;
+  const turnText = turns === 1 ? "1 running turn" : `${turns} running turns`;
+  return `${taskText} and ${turnText}`;
 }

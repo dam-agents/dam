@@ -35,6 +35,10 @@ export const pendingRestartSchema = z.object({
   reason: z.enum(["env-recycle", "config-recycle"]),
   since: z.string(),
   blockingTasks: z.number().int(),
+  stops: z.object({
+    tasks: z.number().int(),
+    turns: z.number().int(),
+  }),
 });
 
 export const processListSchema = z.object({

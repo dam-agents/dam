@@ -5,7 +5,10 @@ import { Callout } from "@/components/ui/callout";
 
 import { useStore } from "../../../store.js";
 import { useApplyPendingRestart } from "../api/mutations.js";
-import { countTasks } from "../lib/process-copy.js";
+import {
+  countRestartStops,
+  describeRestartStops,
+} from "../lib/process-copy.js";
 
 interface Props {
   agentId: string;
@@ -20,9 +23,11 @@ export function PendingRestartBanner({ agentId, pendingRestart }: Props) {
 
   async function handleApply() {
     const confirmed = await showConfirm(
-      `The agent reloads its settings, and ${one ? "the background task" : `the ${count} background tasks`} it waits for stop now. Stopping ${one ? "the task" : "the tasks"} yourself, or letting ${one ? "it" : "them"} stop at hibernation, also lets the change apply.`,
+      `The agent reloads its settings, and this stops ${describeRestartStops(pendingRestart.stops)} now. Stopping ${one ? "the task" : "the tasks"} it waits for yourself, or letting ${one ? "it" : "them"} stop at hibernation, also lets the change apply.`,
       "Apply the settings change now?",
-      { confirmLabel: `Apply now (stops ${countTasks(count)})` },
+      {
+        confirmLabel: `Apply now (stops ${countRestartStops(pendingRestart.stops)})`,
+      },
     );
     if (confirmed) apply.mutate();
   }

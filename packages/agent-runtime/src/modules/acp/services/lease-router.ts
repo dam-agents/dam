@@ -603,6 +603,10 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       return {
         ...oldest,
         blockingTasks: pending.reduce((n, p) => n + p.blockingTasks, 0),
+        stops: {
+          tasks: pending.reduce((n, p) => n + p.stops.tasks, 0),
+          turns: pending.reduce((n, p) => n + p.stops.turns, 0),
+        },
       };
     },
 
