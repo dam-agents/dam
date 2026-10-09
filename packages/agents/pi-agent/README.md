@@ -32,9 +32,7 @@ app/
     .pi/agent/
       settings.json      ← pi config (→ ~/.pi/agent/)
       auth.json          ← placeholder credentials
-    work/
-      .pi/
-        APPEND_SYSTEM.md ← appended to the system prompt (project-scoped)
+      APPEND_SYSTEM.md   ← appended to the system prompt (global)
 ```
 
 ## MCP servers
@@ -175,7 +173,7 @@ Pi system prompt conventions:
 | `.pi/APPEND_SYSTEM.md` | project (cwd) | appended to the system prompt |
 
 > **`app/working-dir/`** seeds `/home/agent/` on first boot.  
-> **`app/working-dir/work/`** seeds `/home/agent/work/` — the cwd where pi-acp spawns.  
+> Nothing seeds `/home/agent/work/`, the cwd where pi-acp spawns: a Starter Kit clones its repository there, and the seed refuses a non-empty directory.  
 > **`app/working-dir/.pi/agent/`** seeds `~/.pi/agent/` — pi's global config directory.
 
 ## pi-acp concurrent sessions
