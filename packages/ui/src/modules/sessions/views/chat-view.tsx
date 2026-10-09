@@ -990,6 +990,7 @@ export function ChatView() {
                               extra={
                                 selectedAgent && currentSession?.harness ? (
                                   <OtherProviderModels
+                                    carried={harnessStatus?.harnesses ?? []}
                                     agentId={selectedAgent}
                                     harness={currentSession.harness}
                                     provider={currentSession.provider ?? null}
