@@ -1,10 +1,15 @@
-import type { SlackMessage, SlackMessageMetadata } from "./slack-gateway.js";
+import type {
+  SlackMessage,
+  SlackMessageMetadata,
+  SlackWorkspace,
+} from "./slack-gateway.js";
 
 const WHISPER_SESSION_METADATA = "agent_whisper_session";
 
 export interface WhisperSession {
   agentId: string;
   origin: string;
+  originWorkspace: SlackWorkspace | null;
   user: string;
   checksMembership: boolean;
 }
@@ -17,6 +22,9 @@ export function whisperSessionMetadata(
     payload: {
       agent_id: session.agentId,
       origin: session.origin,
+      ...(session.originWorkspace !== null
+        ? { origin_workspace: session.originWorkspace }
+        : {}),
       user: session.user,
       checks_membership: session.checksMembership,
     },
@@ -32,6 +40,7 @@ export function parseWhisperSession(
   const {
     agent_id: agentId,
     origin,
+    origin_workspace: originWorkspace,
     user,
     checks_membership: checksMembership,
   } = root.metadata.payload;
@@ -41,5 +50,12 @@ export function parseWhisperSession(
     typeof user !== "string"
   )
     return null;
-  return { agentId, origin, user, checksMembership: checksMembership === true };
+  return {
+    agentId,
+    origin,
+    originWorkspace:
+      typeof originWorkspace === "string" ? originWorkspace : null,
+    user,
+    checksMembership: checksMembership === true,
+  };
 }
