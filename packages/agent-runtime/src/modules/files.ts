@@ -1,4 +1,4 @@
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import {
   mkdir,
   open,
@@ -66,17 +66,28 @@ async function listDir(
   if (!abs) return { path: rel, ok: false, error: "forbidden" };
   try {
     const ents = await readdir(abs, { withFileTypes: true });
-    const entries: DirEntry[] = ents
-      .filter(
-        (ent) =>
-          !RESERVED.has(ent.name) &&
-          !ent.name.startsWith(IMPORT_STAGING_PREFIX),
+    const entries: DirEntry[] = (
+      await Promise.all(
+        ents
+          .filter(
+            (ent) =>
+              !RESERVED.has(ent.name) &&
+              !ent.name.startsWith(IMPORT_STAGING_PREFIX),
+          )
+          .map(async (ent): Promise<DirEntry> => ({
+            name: ent.name,
+            type:
+              ent.isDirectory() ||
+              (ent.isSymbolicLink() &&
+                (await statAsync(join(abs, ent.name)).then(
+                  (s) => s.isDirectory(),
+                  () => false,
+                )))
+                ? "dir"
+                : "file",
+          })),
       )
-      .map((ent): DirEntry => ({
-        name: ent.name,
-        type: ent.isDirectory() ? "dir" : "file",
-      }))
-      .sort(compareEntries);
+    ).sort(compareEntries);
     return { path: rel, ok: true, entries };
   } catch {
     return { path: rel, ok: false, error: "not-found" };
@@ -208,12 +219,15 @@ export function createFilesService(workingDir: string): FilesService {
     mkdirSafe: async (rel): Promise<Result<{ ok: true }, FilesDomainError>> => {
       const abs = toWritableAbs(rel);
       if (!abs) return err(forbidden("forbidden path"));
+      await mkdir(dirname(abs), { recursive: true });
       try {
-        const s = await statAsync(abs);
-        if (!s.isDirectory()) return err({ kind: "AlreadyExists", path: rel });
-        return ok({ ok: true });
-      } catch {}
-      await mkdir(abs, { recursive: true });
+        await mkdir(abs);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "EEXIST") {
+          return err({ kind: "AlreadyExists", path: rel });
+        }
+        throw e;
+      }
       return ok({ ok: true });
     },
     renameSafe: async (
@@ -224,6 +238,9 @@ export function createFilesService(workingDir: string): FilesService {
       const fromAbs = toWritableAbs(from);
       const toAbs2 = toWritableAbs(to);
       if (!fromAbs || !toAbs2) return err(forbidden("forbidden path"));
+      if (to === from || to.startsWith(`${from}/`)) {
+        return err(forbidden(`can't move "${from}" into itself`));
+      }
       if (!overwrite) {
         try {
           await statAsync(toAbs2);
@@ -242,7 +259,7 @@ export function createFilesService(workingDir: string): FilesService {
             ),
           );
         }
-        throw e;
+        return err(forbidden(`can't move "${from}" to "${to}" (${code})`));
       }
       return ok({ ok: true });
     },
