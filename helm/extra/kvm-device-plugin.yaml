@@ -1,0 +1,61 @@
+# The KVM device plugin for a local cluster's VM runners: squat's
+# generic-device-plugin advertising /dev/kvm as `squat.ai/kvm`, which
+# values-local.yaml names in `virtualization.runner.devices`. The chart ships
+# no plugin — a plugin is per node, so a cluster runs one for every install on
+# it — so cluster:install applies this whenever the runners are pods (not the
+# Mac's host runner). It runs privileged with the kubelet's device-plugin
+# socket dir and the host's /dev; the image is pinned by digest for that.
+#
+# 16 grants per node is the cap on runners, i.e. owners, per node. /dev/kvm is
+# not consumed by opening it, so it is an accounting number the device-plugin
+# API requires, not a real resource.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kvm-device-plugin
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kvm-device-plugin
+  namespace: kvm-device-plugin
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kvm-device-plugin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kvm-device-plugin
+        istio.io/dataplane-mode: none
+    spec:
+      enableServiceLinks: false
+      automountServiceAccountToken: false
+      priorityClassName: system-node-critical
+      containers:
+        - name: generic-device-plugin
+          image: ghcr.io/squat/generic-device-plugin@sha256:dc192e164c69b03f156765793a1be62ca437709ae477b27ca7d8f3dcf5021576
+          imagePullPolicy: IfNotPresent
+          args:
+            - --domain=squat.ai
+            - --device={"name":"kvm","groups":[{"count":16,"paths":[{"path":"/dev/kvm"}]}]}
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: device-plugins
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: dev
+              mountPath: /dev
+      volumes:
+        - name: device-plugins
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: dev
+          hostPath:
+            path: /dev

@@ -560,7 +560,7 @@ differ:
 
 - **`platform-migration` ServiceAccount** in the agent namespace — the
   identity of the controller's copy Jobs, run as **uid 0** like
-  the VM runner and KVM device plugin. The storage-migration Job
+  the VM runner. The storage-migration Job
   needs root only for the target side of the copy (owning a freshly
   provisioned volume root, restoring exact file ownership); every read of
   the agent's data drops to the agent's own uid, so a root-squashing
