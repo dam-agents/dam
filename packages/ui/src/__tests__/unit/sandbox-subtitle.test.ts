@@ -53,13 +53,16 @@ const lookup: SandboxSubtitleLookup = {
   slotUnit: null,
 };
 
+describe("agent card subtitle", () => {
+  it("leaves the template out, starting with the provider", () => {
+    expect(sandboxSubtitle(agent, lookup)).toBe("IBM ETE LiteLLM Proxy");
+  });
+});
+
 describe("agent template display names", () => {
   it.each(["default", "claude-code", "codex", "pi-agent", "bob"])(
     "shows the name for %s even on an older image",
     (templateId) => {
-      expect(sandboxSubtitle({ ...agent, templateId }, lookup)).toBe(
-        "Coding agent · IBM ETE LiteLLM Proxy",
-      );
       expect(
         sandboxSubtitleParts({ ...agent, templateId }, lookup).harness,
       ).toBe("Coding agent");
