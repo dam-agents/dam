@@ -14,6 +14,7 @@ import {
   type AuthDenialKind,
   type SurfaceAttribution,
 } from "../admission/auth.js";
+import { watchApiKey } from "../admission/api-key-watch.js";
 import { addUpgradeSecurityHeaders } from "../agent-proxies/upgrade.js";
 import { logInternalError } from "./log-internal-error.js";
 
@@ -105,10 +106,8 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
         sourceIp: upgradeSourceIp(req),
       };
 
-      const admitted = await deps.authenticate(
-        info.connectionParams?.token,
-        site,
-      );
+      const token = info.connectionParams?.token;
+      const admitted = await deps.authenticate(token, site);
       if (!admitted.ok) {
         await firstRequestOrTimeout(res, DENIAL_HOLD_MS);
         throw new TRPCError(trpcDenial[admitted.kind]);
@@ -118,6 +117,12 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
       emitUserAuthenticated(admitted.principal, deps.surfaceAttribution);
       logWsAttach(user.sub, site);
       attachCredentialLifecycle(res, admitted.principal.expiresAt);
+      if (user.keyId !== undefined && res.readyState === res.OPEN) {
+        const stop = watchApiKey(deps.authenticate, token, site, () =>
+          res.close(CLOSE_CREDENTIAL_EXPIRED, "credential revoked"),
+        );
+        res.once("close", stop);
+      }
       return deps.composeApiContext(
         user,
         clientSurface(admitted.principal, deps.surfaceAttribution),
