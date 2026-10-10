@@ -304,6 +304,8 @@ export function ChatView() {
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
   const { data: harnessStatus } = useHarnessConfigStatus(selectedAgent);
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
+  const setupHasModelSettings =
+    harnessStatus !== undefined && harnessStatus.harnesses === null;
   const pickable =
     !sessionId && selectedAgent && harnessStatus?.harnesses?.length
       ? {
@@ -1026,7 +1028,7 @@ export function ChatView() {
                                 ) : undefined
                               }
                               settings={
-                                surfaceCopy.modelSettings
+                                setupHasModelSettings
                                   ? {
                                       label: surfaceCopy.modelSettings,
                                       onConfigure: handleConfigureSandbox,
