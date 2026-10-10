@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-08
+Last verified: 2026-10-10
 
 ## Overview
 
@@ -349,6 +349,9 @@ flowchart LR
   Folder membership is mutable and advisory: any artifact can be filed into
   any folder, moved to another, or taken out again from the library itself, so
   organising a library is not tied to the moment each artifact was published.
+  Filing works from the artifact's menu or by dragging it onto a folder; a
+  drag held near the top or bottom edge of the list scrolls it, so a folder
+  off screen can still take the drop.
   Nothing reads membership as a claim about provenance.
 - Each sandbox's home view gains an **Artifacts section** listing what that
   agent published, grouped into the same collapsible folder groups as the
