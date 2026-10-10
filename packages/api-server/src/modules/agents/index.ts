@@ -30,6 +30,10 @@ export {
   type WakeFailureCause,
 } from "./domain/wake-failure.js";
 export { isAgentStoppedError } from "./domain/agent-stopped.js";
+export {
+  isNewOutOfMemoryRestart,
+  type PodRestartState,
+} from "./domain/out-of-memory.js";
 export type { AgentsInstallSettings } from "./compose.js";
 export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
 export { createInputFromSetup } from "./domain/agent-setup.js";

@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-10-09
+Last verified: 2026-10-10
 
 Companion to [channels](channels.md) and [channel-turns](channel-turns.md). Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup. A change to Slack behavior updates all three in the same PR. It also serves as the source for a shareable page or deck: the "decided by" and drawback columns map to colored labels, and the two diagrams render as they are.
 
@@ -131,7 +131,7 @@ Every Slack turn carries: how to respond (tools, the thread to reply into, "plai
 | 1:1 DM | DM history (50), or catch-up; no speaker labels; a burst as `[ts] text` lines | "Every message here is addressed to you" |
 | Hand-off received | The peer's own session for that thread | "X handed this to you… files not carried over… you cannot hand it on again" |
 | Any message with files | Same as the case it arrives in | Images become prompt content where the harness accepts them (else the sender is told "answering text only"); other files are saved to the workspace and listed by path. 20 MB of files or 30 MB of images per message |
-| Reminder after a silent turn (the *nudge*) | None | "Your previous turn ended without a reply being posted. Post it now, as the answer, not as a correction; or call `no_reply_needed`" |
+| Reminder after a silent turn (the *nudge*) | None | "Your previous turn ended without a reply being posted. Post it now, as the answer, not as a correction; or call `no_reply_needed`". After an out-of-memory restart during the turn: "it was cut short because the agent ran out of memory; tell the person, and that the owner can give it more memory" |
 | Continued from the UI | None | None; a message without the frame "didn't come from Slack" |
 
 ---

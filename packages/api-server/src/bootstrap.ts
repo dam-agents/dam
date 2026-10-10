@@ -1017,6 +1017,12 @@ export async function bootstrap() {
         agentIcon: config.imgbbApiKey
           ? createImgbbAgentIcons(config.imgbbApiKey)
           : null,
+        readPodRestarts: async (agentId) => {
+          const agent = await agentsRepo.get(agentId);
+          return agent
+            ? { restarts: agent.podRestarts, reason: agent.podRestartReason }
+            : null;
+        },
       })
     : undefined;
 
