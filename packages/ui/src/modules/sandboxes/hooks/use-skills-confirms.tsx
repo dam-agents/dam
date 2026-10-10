@@ -9,6 +9,7 @@ import { externalLinkProps } from "@/lib/external-link";
 import { emitToast } from "@/lib/toast";
 
 import { useStore } from "../../../store.js";
+import type { ReadyTrackTarget } from "../components/skills/publish-target.js";
 import type { SkillsDerivations } from "./use-skills-derivations.js";
 import type { SkillsSurface } from "./use-skills-surface.js";
 
@@ -22,7 +23,7 @@ export function useSkillsConfirms(
   ) => Promise<void>;
   trackWithConfirm: (
     skill: LocalSkill,
-    pub: SkillPublishRecord,
+    target: ReadyTrackTarget,
   ) => Promise<void>;
   toggleAllWithConfirm: (
     source: SkillSource,
@@ -32,7 +33,7 @@ export function useSkillsConfirms(
   removeSourceWithConfirm: (source: SkillSource) => Promise<void>;
 } {
   const showConfirm = useStore((s) => s.showConfirm);
-  const { skillsBySource, installedRef } = surface;
+  const { installedRef } = surface;
 
   const deleteStandaloneWithConfirm = async (
     skill: LocalSkill,
@@ -59,27 +60,23 @@ export function useSkillsConfirms(
 
   const trackWithConfirm = async (
     skill: LocalSkill,
-    pub: SkillPublishRecord,
+    { source, skill: scanned }: ReadyTrackTarget,
   ) => {
-    const scanned = skillsBySource[pub.sourceId]?.find(
-      (s) => s.name === skill.name,
-    );
-    if (!scanned) return;
     const diverged = skill.contentHash !== scanned.contentHash;
     const ok = await showConfirm(
       diverged ? (
         <>
-          Your local copy differs from the version in {pub.sourceName}. Tracking
+          Your local copy differs from the version in {source.name}. Tracking
           replaces it with the published version and your local changes are
           lost. To contribute them instead, use <strong>Publish again</strong>.
         </>
       ) : (
         <>
-          This skill will be tracked from {pub.sourceName}. Updates published
-          there will keep it current.
+          This skill will be tracked from {source.name}. Updates published there
+          will keep it current.
         </>
       ),
-      `Track ${skill.name} from ${pub.sourceName}?`,
+      `Track ${skill.name} from ${source.name}?`,
       diverged
         ? { kind: "destructive", confirmLabel: "Replace and track" }
         : { confirmLabel: "Track skill" },
@@ -88,7 +85,7 @@ export function useSkillsConfirms(
     if (await surface.update(scanned)) {
       emitToast({
         kind: "success",
-        message: `Tracking ${skill.name} from ${pub.sourceName}`,
+        message: `Tracking ${skill.name} from ${source.name}`,
       });
     }
   };
