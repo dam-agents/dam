@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { repoSlug } from "@/lib/git-source";
 
 import {
+  latestPublishByName,
   resolveTrackTarget,
   type TrackTarget,
 } from "../components/skills/publish-target.js";
@@ -230,7 +231,7 @@ export function useSkillsDerivations(
 
   const trackTargets = useMemo(() => {
     const out = new Map<string, TrackTarget>();
-    for (const p of publishes) {
+    for (const p of latestPublishByName(publishes).values()) {
       if (p.prState !== "merged") continue;
       out.set(p.skillName, resolveTrackTarget(p, sources, skillsBySource));
     }

@@ -2,19 +2,12 @@ import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 
 import { ListSection } from "@/components/ui/list-section";
 
-import type { ReadyTrackTarget, TrackTarget } from "./publish-target.js";
+import {
+  latestPublishByName,
+  type ReadyTrackTarget,
+  type TrackTarget,
+} from "./publish-target.js";
 import { StandaloneSkillRow } from "./standalone-skill-row.js";
-
-function latestPublishByName(
-  publishes: SkillPublishRecord[],
-): Map<string, SkillPublishRecord> {
-  const map = new Map<string, SkillPublishRecord>();
-  for (const p of publishes) {
-    const cur = map.get(p.skillName);
-    if (!cur || p.publishedAt > cur.publishedAt) map.set(p.skillName, p);
-  }
-  return map;
-}
 
 export function StandaloneSkillsGroup({
   skills,
