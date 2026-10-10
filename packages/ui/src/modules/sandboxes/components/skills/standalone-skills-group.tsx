@@ -6,7 +6,11 @@ import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
-import type { ReadyTrackTarget, TrackTarget } from "./publish-target.js";
+import {
+  latestPublishByName,
+  type ReadyTrackTarget,
+  type TrackTarget,
+} from "./publish-target.js";
 import { StandaloneSkillRow } from "./standalone-skill-row.js";
 
 export function StandaloneSkillsEmptyState() {
@@ -24,17 +28,6 @@ export function StandaloneSkillsEmptyState() {
       </Callout>
     </section>
   );
-}
-
-function latestPublishByName(
-  publishes: SkillPublishRecord[],
-): Map<string, SkillPublishRecord> {
-  const map = new Map<string, SkillPublishRecord>();
-  for (const p of publishes) {
-    const cur = map.get(p.skillName);
-    if (!cur || p.publishedAt > cur.publishedAt) map.set(p.skillName, p);
-  }
-  return map;
 }
 
 export function StandaloneSkillsGroup({

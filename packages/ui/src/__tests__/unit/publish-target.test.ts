@@ -2,6 +2,7 @@ import type { Skill, SkillPublishRecord, SkillSource } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
+  latestPublishByName,
   publishTargetSources,
   resolveTrackTarget,
 } from "../../modules/sandboxes/components/skills/publish-target.js";
@@ -129,5 +130,18 @@ describe("resolveTrackTarget (#4030)", () => {
       reason:
         "No skill source points at github.com/acme/skills anymore. Add it as a source to track this skill",
     });
+  });
+});
+
+describe("latestPublishByName", () => {
+  it("keeps the newest publish of a skill whatever the list order", () => {
+    const newer = publish({
+      sourceId: "src-b",
+      sourceGitUrl: "https://github.com/acme/other",
+      publishedAt: "2026-09-01T00:00:00.000Z",
+    });
+    const older = publish();
+    expect(latestPublishByName([newer, older]).get("websearch")).toBe(newer);
+    expect(latestPublishByName([older, newer]).get("websearch")).toBe(newer);
   });
 });
