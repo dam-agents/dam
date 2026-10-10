@@ -86,7 +86,9 @@ import { securityLog } from "../../../core/security-log.js";
 import {
   isAgentStoppedError,
   isAgentWakeTimeoutError,
+  isNewOutOfMemoryRestart,
   wakeFailureReasonToken,
+  type PodRestartState,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
@@ -1139,15 +1141,22 @@ function mayLeaveHarnessRunning(
 
 export function undeliveredNudge(
   threadTs: string,
-  opts: { sawFailure: boolean },
+  opts: { sawFailure: boolean; outOfMemory?: boolean },
 ): string {
   return [
     "<turn-undelivered>",
     opts.sawFailure
       ? "Your previous turn in this Slack thread ended without a reply being posted, and the person was already told the turn had gone wrong — so they are waiting on an answer, knowing only that something failed."
       : "Your previous turn in this Slack thread ended without a reply being posted — the person waiting in the thread never saw an answer.",
+    ...(opts.outOfMemory
+      ? [
+          "The turn was cut short because the agent ran out of memory and restarted. " +
+            "Tell the person so, and that the agent's owner can give it more memory: " +
+            "ⵗ → Configure agent → set the Compute Resources dropdown to a higher tier.",
+        ]
+      : []),
     `Post your result now with the reply tool (threadTs="${threadTs}").`,
-    ...(opts.sawFailure
+    ...(opts.sawFailure || opts.outOfMemory
       ? []
       : [
           "Write it as the answer they are waiting for, not as a correction: " +
@@ -1292,6 +1301,7 @@ export type SlackWorkerDeps = {
   settleMs?: number;
   wakeWait?: WakeWaitOptions;
   agentIcon?: AgentIconUrl | null;
+  readPodRestarts?: (agentId: string) => Promise<PodRestartState | null>;
 };
 
 export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
@@ -1317,6 +1327,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     settleMs = 0,
     wakeWait = {},
     agentIcon = null,
+    readPodRestarts = async () => null,
   } = deps;
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
@@ -2355,6 +2366,18 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return run;
   }
 
+  const readRestarts = (agentId: string) =>
+    readPodRestarts(agentId).catch(() => null);
+
+  async function restartedOutOfMemorySince(
+    instanceName: string,
+    baseline: PodRestartState | undefined,
+  ): Promise<boolean> {
+    if (baseline === undefined) return false;
+    const current = await readRestarts(instanceName);
+    return current !== null && isNewOutOfMemoryRestart(baseline, current);
+  }
+
   async function runUndeliveredNudge(args: {
     instanceName: string;
     sessionId: string;
@@ -2365,6 +2388,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     isDelivered: () => boolean;
     isCancelled: () => boolean;
     sawFailure: boolean;
+    restartsAtStart?: PodRestartState;
     externalActorId?: string;
   }): Promise<void> {
     const { instanceName, sessionId, threadKey, threadTs } = args;
@@ -2383,13 +2407,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     try {
       await withSessionTurnLock(instanceName, threadKey, async () => {
         if (args.isDelivered() || args.isCancelled()) return;
+        const outOfMemory = await restartedOutOfMemorySince(
+          instanceName,
+          args.restartsAtStart,
+        );
         await agents().ensureReady(instanceName);
         if (args.isDelivered() || args.isCancelled()) return;
         const before = disposition();
         beginTurn(instanceName, args.anchorRef);
         try {
           await makeAcpClient(instanceName).sendPrompt(
-            undeliveredNudge(threadTs, { sawFailure: args.sawFailure }),
+            undeliveredNudge(threadTs, {
+              sawFailure: args.sawFailure,
+              outOfMemory,
+            }),
             { resumeSessionId: sessionId },
           );
         } finally {
@@ -2434,6 +2465,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     refs: TurnRef[];
     anchorRef: TurnRef;
     sawFailure: boolean;
+    restartsAtStart?: PodRestartState;
     externalActorId?: string;
     endedAs?: WatchedTurnEnd;
   }): void {
@@ -2472,6 +2504,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     buildResumePrompt: () => Promise<BuiltPrompt>;
     buildFreshPrompt: () => Promise<BuiltPrompt>;
     onWaking?: () => void;
+    onReady?: () => void;
     onImagesDropped?: () => void;
     onUpdate?: (update: PromptUpdate) => void;
     onSession?: (sessionId: string) => void;
@@ -2486,6 +2519,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await agents().ensureReady(args.instanceName, {
         onWaking: args.onWaking,
       });
+      args.onReady?.();
       const acp = makeAcpClient(args.instanceName);
       const existing = await findThreadSession(
         acp,
@@ -2600,7 +2634,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       sessionId: string,
       refs: TurnRef[],
       sawFailure: boolean,
-      endedAs?: WatchedTurnEnd,
+      ending:
+        { endedAs: WatchedTurnEnd } | { restartsAtStart?: PodRestartState },
     ) =>
       watchUndeliveredTurn({
         instanceName,
@@ -2613,7 +2648,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ...(ctx.externalActorId
           ? { externalActorId: ctx.externalActorId }
           : {}),
-        ...(endedAs !== undefined ? { endedAs } : {}),
+        ...ending,
       });
 
     const presenter = privateReply
@@ -2707,11 +2742,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }));
 
     let ghostTurn = false;
+    let restartsAtStart: Promise<PodRestartState | null> | undefined;
     const runTurn = async () => {
       await runSessionTurn({
         instanceName,
         threadKey,
         legacyThreadKey: ctx.threadTs,
+        onReady: () => {
+          restartsAtStart = readRestarts(instanceName);
+        },
         buildResumePrompt: async () => {
           const delivered = await deliverFiles();
           const caught = await buildCatchUp(gw, {
@@ -2814,7 +2853,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await postFailure(err);
       const sessionId = turnSessionId();
       if (err instanceof AcpTurnAbandonedError && sessionId !== undefined) {
-        watchTurn(sessionId, verdictRefs(), failurePosted);
+        watchTurn(sessionId, verdictRefs(), failurePosted, {
+          restartsAtStart: (await restartsAtStart) ?? undefined,
+        });
       }
     } finally {
       for (const ref of turnRefs) {
@@ -2844,7 +2885,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             "posting a reply or a reaction",
         );
         if (nudgeSessionId !== undefined)
-          watchTurn(nudgeSessionId, settledRefs, false, "clean");
+          watchTurn(nudgeSessionId, settledRefs, false, { endedAs: "clean" });
       }
       await presenter.clearStatus();
       emit({
