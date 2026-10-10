@@ -28,7 +28,11 @@ export function edgeScrollStep(pointer: Point, box: Box): number {
 
 function scrollContainerOf(source: Element): Element {
   for (let el = source.parentElement; el; el = el.parentElement) {
-    if (SCROLLABLE_OVERFLOW.has(getComputedStyle(el).overflowY)) return el;
+    if (
+      el.scrollHeight > el.clientHeight &&
+      SCROLLABLE_OVERFLOW.has(getComputedStyle(el).overflowY)
+    )
+      return el;
   }
   return document.scrollingElement ?? document.documentElement;
 }
@@ -52,6 +56,9 @@ export function startDragAutoScroll(source: Element): () => void {
   const track = (e: DragEvent) => {
     pointer = { x: e.clientX, y: e.clientY };
   };
+  const leave = (e: DragEvent) => {
+    if (e.relatedTarget === null) pointer = null;
+  };
   const tick = () => {
     if (pointer) {
       const step = edgeScrollStep(pointer, visibleBox(container));
@@ -62,11 +69,13 @@ export function startDragAutoScroll(source: Element): () => void {
   const stop = () => {
     cancelAnimationFrame(frame);
     window.removeEventListener("dragover", track, true);
+    window.removeEventListener("dragleave", leave, true);
     window.removeEventListener("drop", stop, true);
     window.removeEventListener("dragend", stop, true);
   };
 
   window.addEventListener("dragover", track, true);
+  window.addEventListener("dragleave", leave, true);
   window.addEventListener("drop", stop, true);
   window.addEventListener("dragend", stop, true);
   frame = requestAnimationFrame(tick);
