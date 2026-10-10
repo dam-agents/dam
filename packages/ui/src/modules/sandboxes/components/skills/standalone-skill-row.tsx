@@ -21,6 +21,8 @@ import { externalLinkProps } from "@/lib/external-link";
 import { formatDateTime } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
+import type { ReadyTrackTarget, TrackTarget } from "./publish-target.js";
+
 const PR_STATE_PILL: Record<
   NonNullable<SkillPublishRecord["prState"]> | "unknown",
   { label: string; variant: "info" | "success" | "muted" }
@@ -43,7 +45,7 @@ export function StandaloneSkillRow({
   onDelete,
   onTrack,
   onOpen,
-  trackUnavailable,
+  trackTarget,
 }: {
   skill: LocalSkill;
   publish?: SkillPublishRecord;
@@ -53,9 +55,9 @@ export function StandaloneSkillRow({
   onPublish: () => void;
   onDownload: () => void;
   onDelete: () => void;
-  onTrack?: () => void;
+  onTrack: (target: ReadyTrackTarget) => void;
   onOpen?: () => void;
-  trackUnavailable?: boolean;
+  trackTarget?: TrackTarget;
 }) {
   const pill = PR_STATE_PILL[publish?.prState ?? "unknown"];
   const canRepublish = !publish || publish.prState === "closed";
@@ -121,21 +123,27 @@ export function StandaloneSkillRow({
               <span className="flex-1">Preview SKILL.md</span>
             </DropdownMenuItem>
           )}
-          {publish?.prState === "merged" && onTrack && (
+          {publish?.prState === "merged" && trackTarget && (
             <DropdownMenuItem
-              disabled={trackUnavailable}
-              onSelect={onTrack}
+              disabled={trackTarget.kind === "unavailable"}
+              onSelect={() => {
+                if (trackTarget.kind === "ready") onTrack(trackTarget);
+              }}
               title={
-                trackUnavailable
-                  ? `${publish.sourceName} hasn't been scanned yet, so this skill's published version isn't known`
+                trackTarget.kind === "unavailable"
+                  ? trackTarget.reason
                   : undefined
               }
             >
               <Renew size={14} />
-              <span className="flex-1">Track from {publish.sourceName}</span>
+              <span className="flex-1">
+                Track from{" "}
+                {trackTarget.kind === "ready"
+                  ? trackTarget.source.name
+                  : trackTarget.sourceName}
+              </span>
             </DropdownMenuItem>
           )}
-          {}
           {canRepublish && (
             <DropdownMenuItem
               disabled={!canPublish}

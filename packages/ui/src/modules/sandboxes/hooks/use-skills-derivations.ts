@@ -4,6 +4,11 @@ import { useMemo } from "react";
 
 import { repoSlug } from "@/lib/git-source";
 
+import {
+  latestPublishByName,
+  resolveTrackTarget,
+  type TrackTarget,
+} from "../components/skills/publish-target.js";
 import { publishedDuplicatesBySource } from "../components/skills/published-duplicates.js";
 import type { SaveSetGroup } from "../components/skills/save-skill-set-modal.js";
 import { isDrifted } from "../components/skills/skill-drift.js";
@@ -42,7 +47,7 @@ export interface SkillsDerivations {
   previewReady: boolean;
   anyInstalled: boolean;
   drifted: Skill[];
-  trackUnavailableNames: ReadonlySet<string>;
+  trackTargets: ReadonlyMap<string, TrackTarget>;
   snapshotRows: { label: string; names: string[]; capturedAt?: string }[];
   snapshotOnCount: number;
 }
@@ -90,8 +95,14 @@ export function useSkillsDerivations(
   );
 
   const suppressedBySource = useMemo(
-    () => publishedDuplicatesBySource(standalone, publishes, skillsBySource),
-    [standalone, publishes, skillsBySource],
+    () =>
+      publishedDuplicatesBySource(
+        standalone,
+        publishes,
+        sources,
+        skillsBySource,
+      ),
+    [standalone, publishes, sources, skillsBySource],
   );
 
   const q = readOnly ? "" : query.trim().toLowerCase();
@@ -218,17 +229,14 @@ export function useSkillsDerivations(
     return out;
   }, [listBySource, installedRef]);
 
-  const trackUnavailableNames = useMemo(() => {
-    const out = new Set<string>();
-    for (const p of publishes) {
+  const trackTargets = useMemo(() => {
+    const out = new Map<string, TrackTarget>();
+    for (const p of latestPublishByName(publishes).values()) {
       if (p.prState !== "merged") continue;
-      const scanned = skillsBySource[p.sourceId]?.find(
-        (s) => s.name === p.skillName,
-      );
-      if (!scanned) out.add(p.skillName);
+      out.set(p.skillName, resolveTrackTarget(p, sources, skillsBySource));
     }
     return out;
-  }, [publishes, skillsBySource]);
+  }, [publishes, sources, skillsBySource]);
 
   const snapshotRows = useMemo(() => {
     const rows: { label: string; names: string[]; capturedAt?: string }[] = [];
@@ -289,7 +297,7 @@ export function useSkillsDerivations(
     previewReady,
     anyInstalled: totals.on > 0,
     drifted,
-    trackUnavailableNames,
+    trackTargets,
     snapshotRows,
     snapshotOnCount: installed.length,
   };

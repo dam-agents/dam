@@ -72,7 +72,7 @@ export function SkillsSurface({
     previewReady,
     anyInstalled,
     drifted,
-    trackUnavailableNames,
+    trackTargets,
     snapshotRows,
     snapshotOnCount,
   } = derived;
@@ -225,13 +225,15 @@ export function SkillsSurface({
                 onDelete={(skill, pub) =>
                   void deleteStandaloneWithConfirm(skill, pub)
                 }
-                onTrack={(skill, pub) => void trackWithConfirm(skill, pub)}
+                onTrack={(skill, target) =>
+                  void trackWithConfirm(skill, target)
+                }
                 onOpenSkill={
                   agentId
                     ? (skill) => setOpenModal({ kind: "render-local", skill })
                     : undefined
                 }
-                trackUnavailableNames={trackUnavailableNames}
+                trackTargets={trackTargets}
               />
             ) : searching ? null : (
               <StandaloneSkillsEmptyState />
