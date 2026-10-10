@@ -1,4 +1,4 @@
-import { Close, Information, Time, Undo } from "@carbon/icons-react";
+import { Close, Time, Undo } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type {
   StarterKitSchedule,
@@ -33,6 +33,7 @@ import {
   overrideFromForm,
 } from "../lib/kit-schedule-form.js";
 import { kitScheduleCadence } from "../lib/setup.js";
+import { KitScheduleInstructions } from "./kit-schedule-instructions.js";
 
 interface Props {
   schedule: StarterKitSchedule;
@@ -154,12 +155,10 @@ export function KitScheduleCard({
 
       {!skipped && (
         <>
-          <div className="border-t border-kit-rule px-4 py-3">
-            <div className="flex items-start gap-2.5 rounded-lg bg-kit-tint px-3 py-2.5">
-              <Information size={16} className="mt-0.5 shrink-0 text-kit" />
-              <p className="text-sm text-foreground/80">{schedule.task}</p>
-            </div>
-          </div>
+          <KitScheduleInstructions
+            scheduleName={schedule.name}
+            task={schedule.task}
+          />
 
           <div className="border-t border-kit-rule px-4 py-2">
             <DisclosureToggle
