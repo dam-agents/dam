@@ -33,8 +33,12 @@ export function publishTargetSources(
 ): SkillSource[] {
   const repo = repoIdentity(publish.sourceGitUrl);
   const original = sources.filter((s) => s.id === publish.sourceId);
+  const originalPath = original[0]?.path ?? "";
   const sameRepo = sources.filter(
-    (s) => s.id !== publish.sourceId && repoIdentity(s.gitUrl) === repo,
+    (s) =>
+      s.id !== publish.sourceId &&
+      repoIdentity(s.gitUrl) === repo &&
+      (original.length === 0 || (s.path ?? "") === originalPath),
   );
   return [...original, ...sameRepo];
 }

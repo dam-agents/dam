@@ -47,6 +47,15 @@ describe("publishTargetSources", () => {
     expect(out.map((s) => s.id)).toEqual(["src-old", "src-new"]);
   });
 
+  it("skips a same-repository source with another path while the original exists", () => {
+    const out = publishTargetSources(publish(), [
+      { ...source("src-old", "skills"), path: "skills" },
+      { ...source("src-same", "same path"), path: "skills" },
+      { ...source("src-other", "other path"), path: "tools" },
+    ]);
+    expect(out.map((s) => s.id)).toEqual(["src-old", "src-same"]);
+  });
+
   it("matches the repository regardless of case and a trailing .git", () => {
     const out = publishTargetSources(
       publish({ sourceGitUrl: "https://github.com/Acme/Skills.git" }),
