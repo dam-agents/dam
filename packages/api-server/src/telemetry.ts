@@ -54,7 +54,15 @@ if (isOtelEnabled(process.env)) {
           return path === "/api/health" || path === "/api/ready";
         },
       }),
-      new UndiciInstrumentation(),
+      new UndiciInstrumentation({
+        // Telegram puts the bot token in the URL path; keep it out of spans.
+        requestHook: (span, request) => {
+          if (!request.path.startsWith("/bot")) return;
+          const path = request.path.replace(/^\/bot[^/]+/, "/bot<redacted>");
+          span.setAttribute("url.path", path.split("?", 1)[0]);
+          span.setAttribute("url.full", `${request.origin}${path}`);
+        },
+      }),
       new GrpcInstrumentation(),
       new IORedisInstrumentation(),
       new PinoInstrumentation(),
