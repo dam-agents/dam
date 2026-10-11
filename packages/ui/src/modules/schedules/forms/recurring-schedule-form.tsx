@@ -136,7 +136,7 @@ export function RecurringScheduleForm({
   return (
     <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
       <DialogHeader
-        title={existing ? "Edit schedule" : "Create a new schedule"}
+        title={existing ? "Edit schedule" : "New schedule"}
         onClose={onClose}
       />
 
@@ -144,9 +144,8 @@ export function RecurringScheduleForm({
         {leadingFields}
         <FormField label="Name" error={errors.name?.message}>
           <Input
-            className="h-10"
             variant={errors.name ? "invalid" : undefined}
-            placeholder={`eg. "Daily brief"`}
+            placeholder="e.g. Daily brief"
             {...register("name")}
           />
         </FormField>

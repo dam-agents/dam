@@ -74,7 +74,6 @@ export function QuietHoursEditor({ control, register, error }: Props) {
               <div key={field.id} className="flex items-center gap-2">
                 <div className="w-[120px]">
                   <Select
-                    className="h-10"
                     variant={variant}
                     {...register(`quietHours.${idx}.startTime`)}
                   >
@@ -84,7 +83,6 @@ export function QuietHoursEditor({ control, register, error }: Props) {
                 <span className="text-sm text-muted-foreground">→</span>
                 <div className="w-[120px]">
                   <Select
-                    className="h-10"
                     variant={variant}
                     {...register(`quietHours.${idx}.endTime`)}
                   >

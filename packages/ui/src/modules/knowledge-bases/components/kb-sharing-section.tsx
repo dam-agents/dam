@@ -189,7 +189,7 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
             {setName.isPending ? "Saving…" : "Save"}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           What consumers see when they connect this knowledge base.
         </p>
       </div>
@@ -240,7 +240,7 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
         </span>
       </div>
 
-      <p className="text-xs text-muted-foreground">{AWARENESS_COPY}</p>
+      <p className="text-sm text-muted-foreground">{AWARENESS_COPY}</p>
 
       <div className="flex flex-wrap gap-2">
         <Button

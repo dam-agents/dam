@@ -468,7 +468,6 @@ export function ScheduleSessionTitleField({
       hint={SESSION_TITLE_HINT}
     >
       <Input
-        className="h-10"
         variant={error ? "invalid" : undefined}
         placeholder="Derived from the prompt"
         {...registration}

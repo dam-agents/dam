@@ -21,7 +21,7 @@ export function RepositorySection({
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="text-sm font-medium">Repositories</legend>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-sm text-muted-foreground">
         Nothing ticked means every repository the installation can reach.
         {installation.repositorySelection === "all" &&
           " This app is installed on every repository in the account, so that set grows as the account does — tick the ones this agent needs to pin it."}
@@ -56,7 +56,7 @@ export function PermissionSection({
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="text-sm font-medium">Permissions</legend>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-sm text-muted-foreground">
         All off means every permission the app was granted. A permission can be
         set no higher than the installation holds it.
       </p>

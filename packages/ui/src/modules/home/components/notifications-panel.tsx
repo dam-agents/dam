@@ -216,10 +216,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
             onClose={() => setPreviewArtifactId(null)}
           />
         ) : (
-          <Modal
-            widthClass="w-[860px]"
-            onClose={() => setPreviewArtifactId(null)}
-          >
+          <Modal size="lg" onClose={() => setPreviewArtifactId(null)}>
             <DialogHeader
               title={previewFailed ? "Couldn't load the artifact" : "Loading…"}
               onClose={() => setPreviewArtifactId(null)}

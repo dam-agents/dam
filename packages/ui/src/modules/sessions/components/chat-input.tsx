@@ -197,7 +197,7 @@ export function ChatInput({
     else send();
   };
 
-  const placeholder = isComputing ? "Queue a message..." : "Message...";
+  const placeholder = isComputing ? "Queue a message…" : "Message…";
 
   return (
     <div

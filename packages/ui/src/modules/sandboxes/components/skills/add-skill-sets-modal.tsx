@@ -3,8 +3,8 @@ import { skillKey } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
@@ -179,8 +179,9 @@ export function AddSkillSetsModal({
   };
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={applying ? undefined : onClose}>
       <DialogHeader
+        closeDisabled={applying}
         title="Add skill sets"
         subtitle="Pick any number. Their skills turn on alongside what you already have — overlap is fine, and nothing gets turned off."
         onClose={onClose}
@@ -214,24 +215,25 @@ export function AddSkillSetsModal({
         )}
       </DialogBody>
 
-      <DialogFooter divided>
-        <span className="flex-1 text-sm text-muted-foreground">
-          {picked.size === 0
-            ? "No sets selected"
-            : !ready
-              ? `${picked.size} set${picked.size === 1 ? "" : "s"} selected`
-              : `${picked.size} set${picked.size === 1 ? "" : "s"} · turns on ${unionAdds} new skill${unionAdds === 1 ? "" : "s"}`}
-        </span>
-        <Button variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          disabled={picked.size === 0 || applying}
-          onClick={() => void submit()}
-        >
-          {applying ? "Adding…" : "Add skills"}
-        </Button>
-      </DialogFooter>
+      <DialogActions
+        divided
+        leading={
+          <span className="text-sm text-muted-foreground">
+            {picked.size === 0
+              ? "No sets selected"
+              : !ready
+                ? `${picked.size} set${picked.size === 1 ? "" : "s"} selected`
+                : `${picked.size} set${picked.size === 1 ? "" : "s"} · turns on ${unionAdds} new skill${unionAdds === 1 ? "" : "s"}`}
+          </span>
+        }
+        onCancel={onClose}
+        cancelDisabled={applying}
+        label="Add skills"
+        pendingLabel="Adding…"
+        pending={applying}
+        disabled={picked.size === 0}
+        onSubmit={() => void submit()}
+      />
     </Modal>
   );
 }

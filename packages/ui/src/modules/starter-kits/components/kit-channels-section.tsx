@@ -98,7 +98,6 @@ export function KitChannelsSection({
                     hint="From the channel's details in Slack — starts with C. The bot must be a member of the channel."
                   >
                     <Input
-                      className="h-10"
                       value={slackChannelId}
                       onChange={(e) => onSlackChannelIdChange(e.target.value)}
                       placeholder="C0…"

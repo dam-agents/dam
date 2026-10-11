@@ -11,15 +11,22 @@ export const MODAL_BACKDROP =
 export const MODAL_PANEL =
   "rounded-xl border border-border bg-card shadow-xl anim-scale-in";
 
+const MODAL_SIZE = {
+  sm: "w-[480px]",
+  md: "w-[560px]",
+  lg: "w-[860px]",
+  xl: "w-[980px]",
+} as const;
+
 interface ModalProps {
-  widthClass?: string;
+  size?: keyof typeof MODAL_SIZE;
   heightClass?: string;
   onClose?: () => void;
   children: ReactNode;
 }
 
 export function Modal({
-  widthClass = "w-[560px]",
+  size = "md",
   heightClass,
   onClose,
   children,
@@ -48,7 +55,8 @@ export function Modal({
           aria-modal="true"
           aria-labelledby={labelId}
           className={cn(
-            widthClass,
+            MODAL_SIZE[size],
+            "max-w-full",
             heightClass,
             MODAL_PANEL,
             "max-h-[95dvh] md:max-h-[85vh] overflow-hidden flex flex-col",
@@ -74,6 +82,7 @@ interface DialogRegionProps {
 interface DialogHeaderProps {
   children?: ReactNode;
   className?: string;
+  icon?: ReactNode;
   title?: ReactNode;
   titleAccessory?: ReactNode;
   actions?: ReactNode;
@@ -86,6 +95,7 @@ interface DialogHeaderProps {
 }
 
 export function DialogHeader({
+  icon,
   title,
   titleAccessory,
   actions,
@@ -111,7 +121,8 @@ export function DialogHeader({
     >
       {(title || subtitle || onClose || actions) && (
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+          {icon}
+          <div className="min-w-0 flex-1">
             {title && (
               <div className="flex min-h-7 items-center gap-2">
                 <h2

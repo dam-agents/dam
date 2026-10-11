@@ -29,7 +29,7 @@ export function AgentBindingField({
   return (
     <div className="mb-4">
       <SectionLabel className="mb-1 block">Agent access</SectionLabel>
-      <p className="text-xs text-muted-foreground mb-2">
+      <p className="text-sm text-muted-foreground mb-2">
         {lockedToAll && lockedReason === "serve" ? (
           <>
             <code>satellites:serve</code> keys must cover every agent — a
@@ -71,7 +71,7 @@ export function AgentBindingField({
       {effectiveMode === "specific" && (
         <div className="mt-2 ml-6 space-y-1.5">
           {agents.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               You have no agents yet — create one first, or choose “All agents”.
             </p>
           ) : (

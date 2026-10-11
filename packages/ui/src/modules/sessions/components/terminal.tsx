@@ -201,7 +201,7 @@ export function Terminal({
         <div className="absolute inset-0 z-content flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <Spinner size={18} />
-            Connecting terminal...
+            Connecting terminal…
           </div>
         </div>
       )}

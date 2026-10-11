@@ -119,7 +119,7 @@ export function OnceScheduleForm({
   return (
     <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
       <DialogHeader
-        title={existing ? "Edit one-time task" : "Create a new schedule"}
+        title={existing ? "Edit one-time task" : "New schedule"}
         onClose={onClose}
       />
 
@@ -127,9 +127,8 @@ export function OnceScheduleForm({
         {leadingFields}
         <FormField label="Name" error={errors.name?.message}>
           <Input
-            className="h-10"
             variant={errors.name ? "invalid" : undefined}
-            placeholder={`eg. "Release notes"`}
+            placeholder="e.g. Release notes"
             {...register("name")}
           />
         </FormField>
@@ -160,7 +159,6 @@ export function OnceScheduleForm({
             <FormField label="Date" error={errors.date?.message}>
               <Input
                 type="date"
-                className="h-10"
                 variant={errors.date ? "invalid" : undefined}
                 {...register("date")}
               />
@@ -168,7 +166,6 @@ export function OnceScheduleForm({
             <FormField label="Time" error={errors.time?.message}>
               <Input
                 type="time"
-                className="h-10"
                 variant={errors.time ? "invalid" : undefined}
                 {...register("time")}
               />

@@ -161,7 +161,7 @@ function AgentProviderSection({ agent }: { agent: AgentView }) {
         disabled={setConnections.isPending}
         required={agentConnections !== undefined}
       />
-      <p className="mt-3 text-xs text-muted-foreground">
+      <p className="mt-3 text-sm text-muted-foreground">
         Changing the provider swaps this agent's model credential. A
         cross-family switch (e.g. Anthropic → OpenAI on a Claude image) can
         break the agent and may need a restart.

@@ -95,7 +95,7 @@ export function ArtifactPreviewDialog({
 
   return (
     <>
-      <Modal widthClass="w-[860px]" onClose={dismiss}>
+      <Modal size="lg" onClose={dismiss}>
         <DialogHeader
           title={editor.dirty ? `● ${artifact.title}` : artifact.title}
           onClose={dismiss}

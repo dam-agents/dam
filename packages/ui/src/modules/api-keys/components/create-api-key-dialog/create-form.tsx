@@ -92,7 +92,7 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
     <form onSubmit={handleSubmit} className="contents">
       {}
       <DialogHeader
-        title="Create API key"
+        title="New API key"
         onClose={onCancel}
         closeDisabled={createApiKey.isPending}
       />
@@ -112,7 +112,7 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
 
         <div className="mb-4">
           <SectionLabel className="mb-1 block">Scopes</SectionLabel>
-          <p className="text-xs text-muted-foreground mb-2">
+          <p className="text-sm text-muted-foreground mb-2">
             Pick the narrowest scope that satisfies your use case. An
             exfiltrated key with only <code>agents:read</code> cannot change
             anything or run an agent.

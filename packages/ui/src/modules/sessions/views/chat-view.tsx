@@ -753,7 +753,7 @@ export function ChatView() {
                     {loadingSession && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
-                        Loading session...
+                        Loading session…
                       </div>
                     )}
                     {!loadingSession && sessionError && (

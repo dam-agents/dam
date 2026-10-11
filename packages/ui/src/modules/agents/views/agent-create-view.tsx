@@ -439,7 +439,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                 )}
               </div>
               {kitSlots !== null && kitSlots > 1 && (
-                <p className="mt-1.5 text-xs text-muted-foreground">
+                <p className="mt-1.5 text-sm text-muted-foreground">
                   Uses {kitSlots} of your compute slots while it runs. CPU and
                   memory stay editable on the agent; disk is fixed at create.
                 </p>

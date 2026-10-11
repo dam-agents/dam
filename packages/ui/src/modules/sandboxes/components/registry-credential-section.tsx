@@ -58,7 +58,7 @@ export function RegistryCredentialSection({
       </DisclosureToggle>
       {expanded && (
         <div className="mt-3 flex flex-col gap-3">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Credentials to pull this image from a private registry. Stored with
             the sandbox and used only by the cluster to pull the image — never
             exposed to the agent. Kept in this page only: leaving it, including

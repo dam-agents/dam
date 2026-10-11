@@ -143,10 +143,10 @@ export function AnthropicForm({
           tooltip="Verify the credential with Anthropic"
           className="shrink-0"
         >
-          {testing ? "..." : "Test"}
+          {testing ? "Testing…" : "Test"}
         </Button>
         <Button type="submit" disabled={submitDisabled} className="shrink-0">
-          {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
+          {isSubmitting ? "Saving…" : isEdit ? "Replace" : "Save"}
         </Button>
       </div>
 

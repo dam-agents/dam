@@ -3,12 +3,11 @@ import type { ConnectionView } from "api-server-api";
 import { useEffect, useState } from "react";
 
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
-import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
@@ -108,7 +107,7 @@ export function ConnectionEditGithubUserTokenScopeDialog({
   };
 
   return (
-    <Modal onClose={onClose} widthClass="w-[560px]">
+    <Modal onClose={save.isPending ? undefined : onClose}>
       <DialogHeader
         title="Edit repositories & permissions"
         subtitle={connection.name}
@@ -131,7 +130,7 @@ export function ConnectionEditGithubUserTokenScopeDialog({
           <>
             <fieldset className="flex flex-col gap-2">
               <legend className="text-sm font-medium">Account</legend>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 A narrowed token reaches one account. Your own access on each
                 repository still applies — the token never does more than you
                 can.
@@ -222,18 +221,16 @@ export function ConnectionEditGithubUserTokenScopeDialog({
           </Callout>
         )}
       </DialogBody>
-      <DialogFooter>
-        <Button variant="ghost" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          disabled={!probe.data || chosenMissing || save.isPending}
-          onClick={() => void submit()}
-          data-testid="edit-user-scope-submit"
-        >
-          {save.isPending ? "Saving…" : "Save"}
-        </Button>
-      </DialogFooter>
+      <DialogActions
+        onCancel={onClose}
+        cancelDisabled={save.isPending}
+        label="Save"
+        pendingLabel="Saving…"
+        pending={save.isPending}
+        disabled={!probe.data || chosenMissing}
+        onSubmit={() => void submit()}
+        testId="edit-user-scope-submit"
+      />
     </Modal>
   );
 }

@@ -34,7 +34,7 @@ export function HarnessGrid({
     return (
       <Callout tone="danger">
         <p className="text-sm text-foreground">
-          Couldn't load the harness catalogue.
+          Couldn't load the harness catalog.
         </p>
         <Button variant="outline" size="sm" className="mt-2" onClick={onRetry}>
           Retry

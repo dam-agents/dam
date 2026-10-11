@@ -1,6 +1,7 @@
 import type { LibraryArtifact } from "api-server-api";
 import { useEffect, useState } from "react";
 
+import { FormField } from "@/components/form-field";
 import {
   DialogActions,
   DialogBody,
@@ -58,11 +59,20 @@ export function MoveArtifactDialog({ artifact, onClose }: Props) {
         title="Move artifact"
       />
       <DialogBody>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">Folder</span>
+        <FormField
+          label="Folder"
+          error={
+            foldersFailed
+              ? "Couldn't load your folders. Close this dialog and try again."
+              : undefined
+          }
+          hint={
+            folders !== undefined &&
+            folders.length === 0 &&
+            "No folders yet — create one from the Artifacts page first."
+          }
+        >
           <Select
-            size="sm"
-            aria-label="Folder"
             value={selected}
             autoFocus
             disabled={folders === undefined}
@@ -75,17 +85,7 @@ export function MoveArtifactDialog({ artifact, onClose }: Props) {
               </option>
             ))}
           </Select>
-          {foldersFailed && (
-            <p className="text-xs text-danger">
-              Couldn’t load your folders. Close this dialog and try again.
-            </p>
-          )}
-          {folders !== undefined && folders.length === 0 && (
-            <p className="text-xs text-muted-foreground">
-              No folders yet — create one from the Artifacts page first.
-            </p>
-          )}
-        </div>
+        </FormField>
       </DialogBody>
       <DialogActions
         onCancel={onClose}

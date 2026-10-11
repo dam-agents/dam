@@ -43,7 +43,7 @@ export function BrowseKitsModal({
   );
 
   return (
-    <Modal widthClass="w-[800px]" onClose={onClose}>
+    <Modal size="lg" onClose={onClose}>
       <DialogHeader
         title="Browse starter kits"
         subtitle="Pick a starter kit to pre-fill your agent setup"

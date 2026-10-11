@@ -71,7 +71,7 @@ export function OpenAIForm({
           {...register("value")}
         />
         <Button type="submit" disabled={submitDisabled} className="shrink-0">
-          {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
+          {isSubmitting ? "Saving…" : isEdit ? "Replace" : "Save"}
         </Button>
       </div>
 

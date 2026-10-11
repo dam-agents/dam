@@ -89,8 +89,9 @@ export function SaveSkillSetModal({
   };
 
   return (
-    <Modal onClose={onClose} widthClass="w-[620px]">
+    <Modal onClose={submitting ? undefined : onClose} size="md">
       <DialogHeader
+        closeDisabled={submitting}
         title="Save as skill set"
         subtitle="Starts from what's on here — unmark anything you don't want in the set."
         onClose={onClose}
