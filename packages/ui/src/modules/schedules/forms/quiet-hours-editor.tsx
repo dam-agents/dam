@@ -40,7 +40,7 @@ export function QuietHoursEditor({ control, register, error }: Props) {
     <Button
       type="button"
       variant="outline"
-      className="h-[30px] px-2.5 text-sm"
+      size="sm"
       onClick={() =>
         append({ startTime: "22:00", endTime: "06:00", enabled: true })
       }

@@ -2,6 +2,7 @@ import { Information } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 
 import { HarnessIcons } from "@/components/harness-icons";
+import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverClose,
@@ -157,13 +158,15 @@ export function ModelIndicator({
             <li className="px-1 pb-1 pt-2 text-xs text-muted-foreground">
               To use a model from a different provider,{" "}
               <PopoverClose asChild>
-                <button
-                  type="button"
-                  className="underline underline-offset-2 hover:text-foreground"
+                <Button
+                  variant="link"
+                  size="inline"
+                  tone="muted"
+
                   onClick={onNewSession}
                 >
                   start a new session
-                </button>
+                </Button>
               </PopoverClose>
               . {CONTEXT_HINT}
             </li>

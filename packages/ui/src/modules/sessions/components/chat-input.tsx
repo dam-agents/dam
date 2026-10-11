@@ -235,8 +235,8 @@ export function ChatInput({
           <div className="flex items-end gap-1 px-2 min-h-[56px]">
             <Button
               variant="ghost"
-              size="icon-sm"
-              className="shrink-0 mb-[9px] h-10 w-10 text-muted-foreground hover:text-primary disabled:opacity-40"
+              size="icon"
+              className="shrink-0 mb-[9px] text-muted-foreground hover:text-primary disabled:opacity-40"
               onClick={() => fileInputRef.current?.click()}
               disabled={loadingSession || !key}
               aria-label="Attach file"
@@ -262,8 +262,8 @@ export function ChatInput({
               <Button
                 variant="ghost"
                 tone="danger"
-                size="icon-sm"
-                className="shrink-0 mb-[9px] h-10 w-10"
+                size="icon"
+                className="shrink-0 mb-[9px]"
                 onClick={onStop}
                 aria-label="Stop"
                 tooltip="Stop"
@@ -274,8 +274,8 @@ export function ChatInput({
             {showSend && (
               <Button
                 variant="ghost"
-                size="icon-sm"
-                className={`shrink-0 mb-[9px] h-10 w-10 ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
+                size="icon"
+                className={`shrink-0 mb-[9px] ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
                 disabled={sendDisabled || loadingSession || !key}
                 aria-label={isComputing ? "Queue" : "Send"}

@@ -50,7 +50,8 @@ export function ConnectionRowActions({
         {inlineFix && (
           <Button
             variant="outline"
-            className="h-8 shrink-0 px-3 text-sm font-normal"
+            size="sm"
+            className="shrink-0"
             disabled={maintenance?.busy}
             onClick={inlineFix.run}
             data-testid={`catalog-fix-${connection.id}`}
@@ -151,7 +152,8 @@ export function RowGrantAction({
   return (
     <Button
       variant="outline"
-      className="h-8 shrink-0 px-3 text-sm font-normal"
+      size="sm"
+      className="shrink-0"
       onClick={() => grant.onToggle(true)}
       data-testid={`catalog-add-${rowId}`}
     >

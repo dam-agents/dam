@@ -208,7 +208,7 @@ export function SessionsSidebar({
         className="text-sm max-md:mr-10"
         onClick={onNewSession}
       >
-        <Add size={12} /> New
+        <Add size={14} /> New
       </Button>
     </>
   );

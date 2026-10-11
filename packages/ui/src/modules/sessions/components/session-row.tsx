@@ -204,21 +204,21 @@ export function SessionRow({
                 data-testid="session-export-timeline-button"
                 onSelect={onExportTimeline}
               >
-                <Download size={13} /> Export telemetry
+                <Download size={14} /> Export telemetry
               </DropdownMenuItem>
             )}
             <DropdownMenuItem
               data-testid="session-rename-button"
               onSelect={onRename}
             >
-              <Edit size={13} /> Rename session
+              <Edit size={14} /> Rename session
             </DropdownMenuItem>
             <DropdownMenuItem
               data-testid="session-delete-button"
               tone="danger"
               onSelect={onDelete}
             >
-              <TrashCan size={13} /> Delete session
+              <TrashCan size={14} /> Delete session
             </DropdownMenuItem>
           </RowActionsMenu>
         </div>
@@ -266,7 +266,7 @@ export function SessionRow({
               onRename();
             }}
           >
-            <Edit size={13} /> Rename session
+            <Edit size={14} /> Rename session
           </Button>
           <Button
             variant="ghost"
@@ -279,7 +279,7 @@ export function SessionRow({
               onDelete();
             }}
           >
-            <TrashCan size={13} /> Delete session
+            <TrashCan size={14} /> Delete session
           </Button>
         </div>
       )}

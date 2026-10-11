@@ -455,7 +455,8 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
             </Button>
             <Button
               variant="ghost"
-              size="sm"
+              size="icon-sm"
+              tooltip="Create a plain agent instead"
               aria-label="Create a plain agent instead"
               onClick={() => setView("agent-new")}
             >

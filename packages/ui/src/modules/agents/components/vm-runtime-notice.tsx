@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { cn } from "@/lib/utils";
 
@@ -22,13 +23,14 @@ export function VmRuntimeNotice({ className }: { className?: string }) {
       className={cn("text-sm text-foreground", className)}
     >
       This agent runs as a microVM on the new sandbox runtime, enabled in{" "}
-      <button
-        type="button"
-        className="font-medium underline"
+      <Button
+        variant="link"
+        size="inline"
+        className="font-medium"
         onClick={() => navigateToSettings("features")}
       >
         Experimental features
-      </button>
+      </Button>
       .
     </Callout>
   );

@@ -238,6 +238,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
           variant="ghost"
           size="icon-sm"
           aria-label="Close"
+          tooltip="Close"
           onClick={() => void closePanel()}
         >
           <Close size={16} />

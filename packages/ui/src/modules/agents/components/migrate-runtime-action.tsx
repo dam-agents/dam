@@ -101,7 +101,8 @@ function OfferButton({
           <Button
             variant="ghost"
             size="sm"
-            className="shrink-0 font-medium text-accent hover:bg-accent-light hover:text-accent-hover"
+            tone="accent"
+            className="shrink-0"
             onClick={onMigrate}
           >
             <Migrate size={16} />

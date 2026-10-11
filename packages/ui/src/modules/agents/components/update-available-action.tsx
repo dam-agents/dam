@@ -36,7 +36,8 @@ export function UpdateAvailableAction({
             variant="ghost"
             size="sm"
             disabled={pending || busy}
-            className="shrink-0 font-medium text-accent hover:bg-accent-light hover:text-accent-hover"
+            tone="accent"
+            className="shrink-0"
             onClick={onUpdate}
           >
             <Renew size={16} />

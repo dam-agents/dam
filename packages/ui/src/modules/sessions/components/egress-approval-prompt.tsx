@@ -51,7 +51,7 @@ function EgressApprovalCard({
             disabled={allowOnce.disabled}
             tooltip={allowOnce.tooltip}
             onClick={() => void allowOnce.run()}
-            className="bg-background h-[26px] text-sm font-medium"
+            className="bg-background"
           >
             {allowOnce.label}
           </Button>
@@ -63,7 +63,7 @@ function EgressApprovalCard({
             disabled={denyOnce.disabled}
             tooltip={denyOnce.tooltip}
             onClick={() => void denyOnce.run()}
-            className="bg-background h-[26px] text-sm font-medium"
+            className="bg-background"
           >
             {denyOnce.label}
           </Button>
@@ -71,7 +71,7 @@ function EgressApprovalCard({
         <RowActionsMenu
           label="More approval actions"
           variant="outline"
-          className="bg-background h-[26px] px-1.5"
+          className="h-8 w-8 bg-background"
           disabled={inflight}
           contentProps={{ align: "start" }}
         >

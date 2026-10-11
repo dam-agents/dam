@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import {
@@ -138,17 +139,18 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
             filtered={filtered || needsYou}
           />
           {!needsYou && dismissible.length > 0 && (
-            <button
-              type="button"
+            <Button
+              variant="link"
+              size="inline"
               onClick={() => {
                 for (const item of dismissible) sticky.drop(item.id);
                 dismiss(dismissible);
               }}
               title="Hides these from Activity. Nothing is resolved or marked read; running work stays."
-              className="ml-auto shrink-0 text-sm text-accent transition-colors hover:text-accent/80"
+              className="ml-auto shrink-0 text-sm"
             >
               Clear all
-            </button>
+            </Button>
           )}
         </div>
 
@@ -331,13 +333,14 @@ function ActivityEmpty({
         {filtered ? "Nothing matches your filters." : emptyMessage}
       </p>
       {(filtered || offerWayBack) && (
-        <button
-          type="button"
+        <Button
+          variant="link"
+          size="inline"
           onClick={onReset}
-          className="mt-1 text-sm text-accent transition-colors hover:text-accent/80"
+          className="mt-1 text-sm"
         >
           {resetLabel}
-        </button>
+        </Button>
       )}
     </div>
   );

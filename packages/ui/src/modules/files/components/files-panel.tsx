@@ -69,21 +69,21 @@ export function FilesPanel({
             disabled={controller.isUploading}
             tooltip={controller.isUploading ? "Upload in progress…" : undefined}
           >
-            <Add size={12} /> Add
+            <Add size={14} /> Add
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => controller.openFilePickerFor("")}>
-            <Upload size={13} /> Upload file
+            <Upload size={14} /> Upload file
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={controller.openFolderPicker}>
-            <Folders size={13} /> Upload folder
+            <Folders size={14} /> Upload folder
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => controller.startNewIn("file", "")}>
-            <DocumentAdd size={13} /> New file
+            <DocumentAdd size={14} /> New file
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => controller.startNewIn("dir", "")}>
-            <FolderAdd size={13} /> New folder
+            <FolderAdd size={14} /> New folder
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

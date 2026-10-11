@@ -1,6 +1,7 @@
 import { ArrowRight } from "@carbon/icons-react";
 
 import { ExplainerPopover } from "@/components/explainer-popover";
+import { Button } from "@/components/ui/button";
 
 import { useSlackInstallRequestUrl } from "../modules/links/api/queries.js";
 import { SlackInstallRequest } from "../modules/slack/components/slack-install-request.js";
@@ -15,13 +16,14 @@ function CrossLink({
   if (!onFollow)
     return <span className="font-medium text-muted-foreground">{label}</span>;
   return (
-    <button
-      type="button"
+    <Button
+      variant="link"
+      size="inline"
       onClick={onFollow}
-      className="inline-flex w-fit items-center gap-1 font-medium text-accent hover:underline"
+      className="inline-flex w-fit items-center gap-1 font-medium"
     >
       {label} <ArrowRight size={14} />
-    </button>
+    </Button>
   );
 }
 

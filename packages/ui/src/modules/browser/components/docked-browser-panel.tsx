@@ -173,6 +173,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           variant="ghost"
           size="icon-sm"
           aria-label="Close"
+          tooltip="Close"
           onClick={() => close(null)}
         >
           <Close size={16} />

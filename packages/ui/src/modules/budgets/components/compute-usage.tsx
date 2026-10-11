@@ -1,5 +1,6 @@
 import { Help } from "@carbon/icons-react";
 
+import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
@@ -67,15 +68,16 @@ function HeldSegmentCard({ segment }: { segment: ComputeSegment }) {
           <p className="text-muted-foreground">
             Always on — holds compute even while idle.
           </p>
-          <button
-            type="button"
-            className="self-end text-accent hover:underline"
+          <Button
+            variant="link"
+            size="inline"
+            className="self-end"
             onClick={() =>
               segment.agentId && navigateToSandboxHome(segment.agentId, "setup")
             }
           >
             Manage
-          </button>
+          </Button>
         </>
       )}
     </div>

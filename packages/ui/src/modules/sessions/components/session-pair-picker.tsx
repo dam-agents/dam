@@ -3,6 +3,7 @@ import type { HarnessCapability } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
 
 import { HarnessIcons } from "@/components/harness-icons";
+import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverClose,
@@ -369,13 +370,14 @@ function ProviderModels({
                   ? "Could not list this provider's models."
                   : "No models available."}
             {operable && !isLoading && unavailable && (
-              <button
-                type="button"
-                className="ml-1 text-accent hover:underline"
+              <Button
+                variant="link"
+                size="inline"
+                className="ml-1"
                 onClick={() => void refetch()}
               >
                 Retry
-              </button>
+              </Button>
             )}
           </li>
         )}

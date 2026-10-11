@@ -94,7 +94,7 @@ export function CatalogConnectionRow({
             variant="ghost"
             size="icon-sm"
             aria-label={`Remove ${connection.name} from this agent`}
-            title="Remove from this agent"
+            tooltip="Remove from this agent"
             onClick={onRemove}
             data-testid={`catalog-remove-${connection.id}`}
           >

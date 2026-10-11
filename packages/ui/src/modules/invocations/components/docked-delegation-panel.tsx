@@ -66,6 +66,7 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
           variant="ghost"
           size="icon-sm"
           aria-label="Close"
+          tooltip="Close"
           onClick={() => close(null)}
         >
           <Close size={16} />

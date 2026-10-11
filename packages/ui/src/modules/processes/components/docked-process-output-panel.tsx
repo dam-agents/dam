@@ -56,6 +56,7 @@ export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
           size="icon-sm"
           className="shrink-0"
           aria-label="Close"
+          tooltip="Close"
           onClick={() => close(null)}
         >
           <Close size={16} />

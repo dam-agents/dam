@@ -905,9 +905,11 @@ export function ChatView() {
                           onNewSession={handleNewSession}
                         />
                       ) : selectedAgent ? (
-                        <button
-                          type="button"
-                          className="pl-3 text-sm text-muted-foreground hover:text-foreground hover:underline"
+                        <Button
+                          variant="link"
+                          size="inline"
+                          tone="muted"
+                          className="pl-3 text-sm"
                           onClick={() =>
                             navigateToSandboxHome(selectedAgent, "setup")
                           }
@@ -915,7 +917,7 @@ export function ChatView() {
                           {harnessCurrent?.model
                             ? `${harnessCurrent.model} · Configure defaults`
                             : "Configure defaults"}
-                        </button>
+                        </Button>
                       ) : null}
                     </ChatColumn>
                   </div>

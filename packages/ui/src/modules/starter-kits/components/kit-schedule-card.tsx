@@ -142,11 +142,11 @@ export function KitScheduleCard({
         />
         <Button
           variant="ghost"
-          size="sm"
+          size="icon-sm"
           aria-label={
             skipped ? `Add back ${schedule.name}` : `Skip ${schedule.name}`
           }
-          title={skipped ? "Add back" : "Skip this schedule"}
+          tooltip={skipped ? "Add back" : "Skip this schedule"}
           onClick={onToggleSkipped}
         >
           {skipped ? <Undo size={16} /> : <Close size={16} />}

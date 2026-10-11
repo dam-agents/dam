@@ -35,10 +35,10 @@ export function ProviderFormShell({
           <Button
             type="button"
             variant="ghost"
-            size="icon"
+            size="icon-sm"
             onClick={onCancel}
             aria-label="Cancel"
-            className="-mt-2 -mr-2 h-7 w-7 shrink-0"
+            className="-mt-2 -mr-2 shrink-0"
           >
             <Close size={16} />
           </Button>

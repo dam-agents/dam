@@ -115,6 +115,7 @@ export function FeedApprovalCard({
             <RowActionsMenu
               label="More approval actions"
               variant="outline"
+              className="h-8 w-8"
               disabled={inflight}
             >
               {rest.map((action) => (
