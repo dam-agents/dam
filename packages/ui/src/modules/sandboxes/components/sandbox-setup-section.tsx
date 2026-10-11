@@ -1,179 +1,171 @@
-import { Controller } from "react-hook-form";
+import { providerTypeForTemplateId } from "api-server-api";
 
-import { FormField } from "@/components/form-field";
-import { Callout } from "@/components/ui/callout";
-import { Input } from "@/components/ui/input";
-import { Inset } from "@/components/ui/inset";
-import { READ_ONLY_FIELD } from "@/components/ui/read-only-field";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
-import { AvatarPicker } from "../../agents/components/avatar/avatar-picker.js";
-import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
-import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
-import { KnowledgeSection } from "../../knowledge-bases/components/knowledge-section.js";
+import type { AgentView } from "../../../types.js";
+import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
+import {
+  useSetAgentConnections,
+  useUpdateAgent,
+} from "../../agents/api/mutations.js";
+import { useAgentConnections } from "../../agents/api/queries.js";
+import { useAppConnections } from "../../connections/api/queries.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { ProviderSelect } from "../../providers/components/provider-select.js";
-import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
+import { confirmHibernationChange } from "../lib/hibernation.js";
+import { parseCpuMilli, parseMemoryMi } from "../lib/quantity.js";
 import { HarnessSettingsSections } from "./harness-settings-sections.js";
-import { LifecycleField } from "./lifecycle-field.js";
+import { SleepAfterIdleField } from "./lifecycle-field.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
 import { SandboxSizeSection } from "./sandbox-size-section.js";
 import { ConnectionAddressingSetupSection } from "./setup/setup-sections.js";
 
-type SandboxSettingsForm = ReturnType<typeof useSandboxSettingsForm>;
-
-interface Props {
-  f: SandboxSettingsForm;
-}
-
-export function SandboxSetupSection({ f }: Props) {
+export function SandboxSetupSection({ agent }: { agent: AgentView }) {
   const showConfirm = useStore((s) => s.showConfirm);
-  const { agent } = f;
-  if (!agent) return null;
+  const { data: harnessStatus } = useHarnessConfigStatus(agent.id);
+  const carriedHarnesses = harnessStatus?.harnesses ?? null;
+  const features = useFeatures();
+  const updateAgent = useUpdateAgent();
+  const pending = updateAgent.isPending ? updateAgent.variables : undefined;
 
-  const confirmSwitch = () =>
-    showConfirm(
-      <p>
-        This will change the model provider used by{" "}
-        <strong>{agent.name}</strong>. Switching between different model
-        families (for example, Claude → OpenAI) may cause the agent to stop
-        working and can interrupt tasks in progress. The switch applies when you
-        save.
-      </p>,
-      "Switch this agent's provider?",
-      { confirmLabel: "Switch provider" },
-    );
+  const hibernationTimeoutMin =
+    pending?.hibernationTimeoutMin ?? agent.hibernationTimeoutMin;
+  const sizeCpuMilli =
+    parseCpuMilli(pending?.size?.cpu ?? agent.size.cpu) ?? 1000;
+  const sizeMemoryMi =
+    parseMemoryMi(pending?.size?.memory ?? agent.size.memory) ?? 1024;
+  const requireConnectionAddress =
+    pending?.requireConnectionAddress ?? agent.requireConnectionAddress;
+  const sizeRestartsAgent = !(agent.state === "hibernated" || agent.overBudget);
 
   return (
     <>
-      <section className="mb-8">
-        <FormField label="Name" error={f.errors.name?.message}>
-          <div className="flex items-center gap-3">
-            <Input disabled={f.saving} {...f.register("name")} />
-            {f.formReady && (
-              <AvatarPicker
-                value={f.avatar}
-                onChange={f.setAvatar}
-                disabled={f.saving}
-              />
-            )}
-          </div>
-        </FormField>
-      </section>
+      {!carriedHarnesses && <AgentProviderSection agent={agent} />}
 
       <section className="mb-8">
-        <FormField
-          label="Image"
-          hint={
-            agent.templateId ? (
-              <span className="truncate font-mono">{agent.image}</span>
-            ) : undefined
-          }
-        >
-          <div className={READ_ONLY_FIELD}>
-            <span className={`truncate ${agent.templateId ? "" : "font-mono"}`}>
-              {f.templateName ?? agent.image}
-            </span>
-          </div>
-        </FormField>
-      </section>
-
-      {!f.carriedHarnesses && (
-        <section className="mb-8">
-          <SectionLabel spaced>Provider</SectionLabel>
-          <Inset>
-            <ProviderSelect
-              selected={f.selectedProvider}
-              onSelect={f.selectProvider}
-              confirmSwitch={confirmSwitch}
-              disabled={f.saving}
-              required={f.formReady}
-            />
-          </Inset>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Changing the provider swaps this agent's model credential. A
-            cross-family switch (e.g. Anthropic → OpenAI on a Claude image) can
-            break the agent and may need a restart.
-          </p>
-        </section>
-      )}
-
-      <section className="mb-8">
-        <SectionLabel spaced>Availability</SectionLabel>
-        <Inset>
-          <Controller
-            control={f.control}
-            name="hibernationTimeoutMin"
-            render={({ field }) => (
-              <LifecycleField
-                value={field.value}
-                onChange={field.onChange}
-                sizeMi={{ cpuMilli: f.sizeCpuMilli, memoryMi: f.sizeMemoryMi }}
-                error={f.errors.hibernationTimeoutMin?.message}
-                disabled={f.saving}
-              />
-            )}
-          />
-        </Inset>
+        <SleepAfterIdleField
+          value={hibernationTimeoutMin}
+          onChange={async (next) => {
+            if (
+              await confirmHibernationChange(
+                agent.hibernationTimeoutMin,
+                next,
+                showConfirm,
+              )
+            )
+              updateAgent.mutate({ id: agent.id, hibernationTimeoutMin: next });
+          }}
+        />
       </section>
 
       <SandboxSizeSection
-        sizeCpuMilli={f.sizeCpuMilli}
-        sizeMemoryMi={f.sizeMemoryMi}
-        onChange={f.setSize}
-        disabled={f.saving}
-        currentSize={f.sizeRestartsAgent ? agent.size : undefined}
+        sizeCpuMilli={sizeCpuMilli}
+        sizeMemoryMi={sizeMemoryMi}
+        onChange={async (next) => {
+          if (
+            sizeRestartsAgent &&
+            !(await showConfirm(
+              "Changing the size restarts the agent — in-flight work is interrupted.",
+              "Restart agent?",
+              { confirmLabel: "Resize & restart" },
+            ))
+          )
+            return;
+          updateAgent.mutate({
+            id: agent.id,
+            size: {
+              cpu: `${next.sizeCpuMilli}m`,
+              memory: `${next.sizeMemoryMi}Mi`,
+            },
+          });
+        }}
+        currentSize={sizeRestartsAgent ? agent.size : undefined}
       />
 
-      {f.addressingOffered && (
+      {(features.data?.["strict-connection-addressing"] === true ||
+        agent.requireConnectionAddress) && (
         <ConnectionAddressingSetupSection
-          value={f.requireConnectionAddress}
-          onChange={f.setRequireConnectionAddress}
-          disabled={f.saving}
+          value={requireConnectionAddress}
+          onChange={async (next) => {
+            if (
+              await showConfirm(
+                "This restarts the agent's gateway to change how it injects credentials — requests in flight through it fail.",
+                "Restart gateway?",
+                { confirmLabel: "Change & restart" },
+              )
+            )
+              updateAgent.mutate({
+                id: agent.id,
+                requireConnectionAddress: next,
+              });
+          }}
         />
       )}
 
-      {!f.carriedHarnesses ? (
-        <SandboxModelSettings agentId={agent.id} draft={f.harnessDraft} />
+      {!carriedHarnesses ? (
+        <SandboxModelSettings agentId={agent.id} />
       ) : (
-        !f.carriedHarnesses.some((h) => h.sessionSettings) && (
+        !carriedHarnesses.some((h) => h.sessionSettings) && (
           <HarnessSettingsSections
             agentId={agent.id}
-            harnesses={f.carriedHarnesses}
+            harnesses={carriedHarnesses}
           />
         )
       )}
-
-      <KnowledgeSection agent={agent} />
-
-      <section className="mb-8">
-        <SectionLabel spaced>Network access</SectionLabel>
-        <Callout inset>
-          <AgentEgressEditor
-            agentId={agent.id}
-            currentPreset={f.currentPreset}
-            staged={f.egressStaged}
-          />
-        </Callout>
-      </section>
-
-      <section className="mb-8">
-        <SectionLabel spaced>Environment</SectionLabel>
-        <Callout inset>
-          <Controller
-            control={f.control}
-            name="envVars"
-            render={({ field }) => (
-              <EnvTab
-                inherited={f.inheritedEnvs}
-                envVars={field.value}
-                setEnvVars={field.onChange}
-                saving={f.saving}
-              />
-            )}
-          />
-        </Callout>
-      </section>
     </>
+  );
+}
+
+function AgentProviderSection({ agent }: { agent: AgentView }) {
+  const showConfirm = useStore((s) => s.showConfirm);
+  const { data: apps = [] } = useAppConnections();
+  const { data: agentConnections } = useAgentConnections(agent.id);
+  const setConnections = useSetAgentConnections();
+  const providerAppIds = new Set(
+    apps
+      .filter((a) => providerTypeForTemplateId(a.templateId) !== null)
+      .map((a) => a.id),
+  );
+  const connectionIds =
+    agentConnections?.connections.map((c) => c.connectionId) ?? [];
+  const selectedId = connectionIds.find((id) => providerAppIds.has(id));
+
+  return (
+    <section className="mb-8">
+      <SectionLabel spaced>Provider</SectionLabel>
+      <ProviderSelect
+        selected={selectedId ? { id: selectedId } : null}
+        onSelect={(ref) => {
+          if (!ref || !agentConnections) return;
+          setConnections.mutate({
+            agentId: agent.id,
+            connectionIds: [
+              ...connectionIds.filter((id) => !providerAppIds.has(id)),
+              ref.id,
+            ],
+          });
+        }}
+        confirmSwitch={() =>
+          showConfirm(
+            <p>
+              This changes the model provider used by{" "}
+              <strong>{agent.name}</strong> right away. Switching between
+              different model families (for example, Claude → OpenAI) may cause
+              the agent to stop working and can interrupt tasks in progress.
+            </p>,
+            "Switch this agent's provider?",
+            { confirmLabel: "Switch provider" },
+          )
+        }
+        disabled={setConnections.isPending}
+        required={agentConnections !== undefined}
+      />
+      <p className="mt-3 text-xs text-muted-foreground">
+        Changing the provider swaps this agent's model credential. A
+        cross-family switch (e.g. Anthropic → OpenAI on a Claude image) can
+        break the agent and may need a restart.
+      </p>
+    </section>
   );
 }

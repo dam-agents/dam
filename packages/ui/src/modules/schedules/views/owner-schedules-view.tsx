@@ -1,7 +1,7 @@
 import { ChevronRight, Time, WarningAlt } from "@carbon/icons-react";
 
 import { Callout } from "@/components/ui/callout";
-import { Card } from "@/components/ui/card";
+import { ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
@@ -45,21 +45,15 @@ export function OwnerSchedulesView() {
         </Callout>
       )}
 
-      {!isLoading && !isError && rows.length === 0 && (
-        <Callout inset className="bg-card">
-          <p className="py-4 text-center text-sm text-foreground/80">
-            None of your agents has a schedule yet. Set one up in an agent's
-            Schedules section, or ask the agent in chat.
-          </p>
-        </Callout>
-      )}
-
-      {rows.length > 0 && (
-        <ul className="space-y-2" aria-label="Schedules">
+      {!isLoading && !isError && (
+        <ListSection
+          isEmpty={rows.length === 0}
+          empty="None of your agents has a schedule yet. Set one up in an agent's Schedules section, or ask the agent in chat."
+        >
           {rows.map((row) => (
             <OwnerScheduleItem key={row.schedule.id} row={row} />
           ))}
-        </ul>
+        </ListSection>
       )}
     </div>
   );
@@ -75,57 +69,51 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
   const idle = schedule.type === "once" ? "Finished" : "Paused";
 
   return (
-    <li>
-      <Card className="hover:bg-muted">
-        <button
-          type="button"
-          onClick={() => navigateToSandboxHome(schedule.agentId, "schedules")}
-          className="flex w-full items-center gap-3 p-4 text-left"
-        >
-          <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-1.5 text-[15px] font-semibold text-foreground">
-              <span className="truncate">{schedule.name}</span>
-              {problem && (
-                <WarningAlt size={16} className="shrink-0 text-destructive" />
-              )}
-            </p>
+    <button
+      type="button"
+      onClick={() => navigateToSandboxHome(schedule.agentId, "schedules")}
+      className="flex w-full items-center gap-3 p-4 text-left hover:bg-muted/40"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-1.5 text-[15px] font-semibold text-foreground">
+          <span className="truncate">{schedule.name}</span>
+          {problem && (
+            <WarningAlt size={16} className="shrink-0 text-destructive" />
+          )}
+        </p>
+        <p className="mt-0.5 truncate text-sm text-muted-foreground">
+          {agentName}
+          {cadence && ` · ${cadence}`}
+          {schedule.createdBy === "agent" && " · set up by the agent"}
+        </p>
+        {problem ? (
+          <p className="mt-0.5 truncate text-sm text-destructive">{problem}</p>
+        ) : (
+          lastRun &&
+          outcome && (
             <p className="mt-0.5 truncate text-sm text-muted-foreground">
-              {agentName}
-              {cadence && ` · ${cadence}`}
-              {schedule.createdBy === "agent" && " · set up by the agent"}
+              Last run {formatRunTime(lastRun)} ·{" "}
+              <span className={outcome.className}>{outcome.label}</span>
             </p>
-            {problem ? (
-              <p className="mt-0.5 truncate text-sm text-destructive">
-                {problem}
-              </p>
-            ) : (
-              lastRun &&
-              outcome && (
-                <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                  Last run {formatRunTime(lastRun)} ·{" "}
-                  <span className={outcome.className}>{outcome.label}</span>
-                </p>
-              )
-            )}
-          </div>
-          <span
-            className={cn(
-              "inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-sm",
-              nextRun ? "text-foreground" : "text-muted-foreground",
-            )}
-            title={nextRun && `Next run: ${formatDateTime(nextRun)}`}
-          >
-            {nextRun ? (
-              <>
-                <Time size={12} /> {timeUntil(nextRun)}
-              </>
-            ) : active ? null : (
-              idle
-            )}
-          </span>
-          <ChevronRight size={16} className="shrink-0 text-muted-foreground" />
-        </button>
-      </Card>
-    </li>
+          )
+        )}
+      </div>
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-sm",
+          nextRun ? "text-foreground" : "text-muted-foreground",
+        )}
+        title={nextRun && `Next run: ${formatDateTime(nextRun)}`}
+      >
+        {nextRun ? (
+          <>
+            <Time size={12} /> {timeUntil(nextRun)}
+          </>
+        ) : active ? null : (
+          idle
+        )}
+      </span>
+      <ChevronRight size={16} className="shrink-0 text-muted-foreground" />
+    </button>
   );
 }

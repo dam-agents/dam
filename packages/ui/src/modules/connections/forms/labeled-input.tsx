@@ -30,7 +30,7 @@ export function LabeledInput({
   autoFocus?: boolean;
 }) {
   return (
-    <FormField label={label} hint={help} error={error} disableInset>
+    <FormField label={label} hint={help} error={error}>
       {multiline ? (
         <Textarea
           variant={error ? "invalid" : "monospace"}

@@ -2,28 +2,19 @@ import type { LocalSkill } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
-import { SectionLabel } from "@/components/ui/section-label";
-import { cn } from "@/lib/utils";
+import { ListSection } from "@/components/ui/list-section";
 
 function LocalSkillRow({
   skill,
-  withDivider,
   onOpen,
   trailing,
 }: {
   skill: LocalSkill;
-  withDivider: boolean;
   onOpen?: () => void;
   trailing?: ReactNode;
 }) {
   return (
-    <div
-      className={cn(
-        "flex items-center gap-3 px-4 py-2",
-        withDivider && "border-t border-border",
-      )}
-    >
+    <div className="flex items-center gap-3 px-4 py-2">
       <div className="min-w-0 flex-1">
         {onOpen ? (
           <button
@@ -67,24 +58,21 @@ export function LocalSkillsGroup({
   trailingFor?: (skill: LocalSkill) => ReactNode;
 }) {
   return (
-    <section>
-      <div className="mb-3">
-        <SectionLabel>{label}</SectionLabel>
-      </div>
-      {description && (
-        <p className="mb-3 text-sm text-muted-foreground">{description}</p>
-      )}
-      <Card>
-        {skills.map((skill, i) => (
-          <LocalSkillRow
-            key={`${skill.skillPath}::${skill.name}`}
-            skill={skill}
-            withDivider={i > 0}
-            onOpen={onOpenSkill ? () => onOpenSkill(skill) : undefined}
-            trailing={trailingFor?.(skill)}
-          />
-        ))}
-      </Card>
-    </section>
+    <ListSection
+      label={label}
+      description={description}
+      className="mb-0"
+      isEmpty={false}
+      empty={null}
+    >
+      {skills.map((skill) => (
+        <LocalSkillRow
+          key={`${skill.skillPath}::${skill.name}`}
+          skill={skill}
+          onOpen={onOpenSkill ? () => onOpenSkill(skill) : undefined}
+          trailing={trailingFor?.(skill)}
+        />
+      ))}
+    </ListSection>
   );
 }

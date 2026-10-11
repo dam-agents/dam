@@ -49,7 +49,7 @@ export function ImageSection({
       />
 
       {setupNote && (
-        <Callout tone="info" inset className="mt-3">
+        <Callout tone="info" className="mt-3">
           <p className="text-sm font-semibold text-foreground">
             {setupNote.title}
           </p>

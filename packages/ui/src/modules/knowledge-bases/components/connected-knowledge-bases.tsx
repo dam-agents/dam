@@ -1,119 +1,138 @@
-import { SHARED_KB_TEMPLATE_ID } from "api-server-api";
-import { useState } from "react";
+import { type ConnectionView, SHARED_KB_TEMPLATE_ID } from "api-server-api";
+import { type ReactNode, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { LIST_ROW, ListSection } from "@/components/ui/list-section";
+import { cn } from "@/lib/utils";
 
 import { useSetAgentConnections } from "../../agents/api/mutations.js";
 import { useAgentConnections } from "../../agents/api/queries.js";
 import { useAppConnections } from "../../connections/api/queries.js";
-import { useConnectKnowledgeBase } from "../hooks/use-connect-knowledge-base.js";
-import { KbLinkForm } from "./kb-link-form.js";
+import { KbLinkModal } from "./kb-link-modal.js";
 
-export function ConnectedKnowledgeBases({ agentId }: { agentId: string }) {
+export function ConnectedKnowledgeBases({
+  agentId,
+  label,
+}: {
+  agentId: string;
+  label?: string;
+}) {
   const connectionsQ = useAppConnections({ fresh: true });
   const agentConnectionsQ = useAgentConnections(agentId);
   const setConnections = useSetAgentConnections();
-  const form = useConnectKnowledgeBase();
   const [removingId, setRemovingId] = useState<string | null>(null);
 
   const ready = agentConnectionsQ.data != null;
   const currentIds = (): string[] =>
     agentConnectionsQ.data?.connections.map((c) => c.connectionId) ?? [];
   const grantedIds = new Set(currentIds());
-  const granted = (connectionsQ.data ?? []).filter(
-    (c) => c.templateId === SHARED_KB_TEMPLATE_ID && grantedIds.has(c.id),
-  );
-
-  const grant = (id: string) => {
-    if (!ready) return;
-    setConnections.mutate({
-      agentId,
-      connectionIds: [...new Set([...currentIds(), id])],
-    });
-  };
-  const ungrant = (id: string) => {
-    if (!ready) return;
-    setRemovingId(id);
-    setConnections.mutate(
-      { agentId, connectionIds: currentIds().filter((x) => x !== id) },
-      { onSettled: () => setRemovingId(null) },
-    );
-  };
 
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
-        Paste a knowledge base share link to give this agent read-only access to
-        it. Ask a knowledge base owner for their link.
-      </p>
-
-      <KbLinkForm
-        link={form.link}
-        setLink={form.setLink}
-        error={form.error}
-        formatOk={form.formatOk}
-        trimmed={form.trimmed}
-        busy={form.busy}
-        disabled={!ready}
-        onConnect={() => form.connect(grant)}
-      />
-
-      {agentConnectionsQ.isError && (
-        <p className="text-xs text-warning">
-          Couldn't load this agent's connections — reload before changing them.
-        </p>
+    <KnowledgeBaseList
+      label={label}
+      connections={(connectionsQ.data ?? []).filter((c) =>
+        grantedIds.has(c.id),
       )}
+      disabled={!ready}
+      removingId={removingId}
+      onAdd={(id) =>
+        setConnections.mutate({
+          agentId,
+          connectionIds: [...new Set([...currentIds(), id])],
+        })
+      }
+      onRemove={(id) => {
+        setRemovingId(id);
+        setConnections.mutate(
+          { agentId, connectionIds: currentIds().filter((x) => x !== id) },
+          { onSettled: () => setRemovingId(null) },
+        );
+      }}
+      status={
+        agentConnectionsQ.isError
+          ? "Couldn't load this agent's connections — reload before changing them."
+          : connectionsQ.isError
+            ? "Couldn't load the connected knowledge bases — reload to see the current list."
+            : connectionsQ.isPending || agentConnectionsQ.isPending
+              ? "Loading connected knowledge bases…"
+              : null
+      }
+    />
+  );
+}
 
-      {connectionsQ.isError ? (
-        <p className="text-xs text-warning">
-          Couldn't load the connected knowledge bases — reload to see the
-          current list.
-        </p>
-      ) : connectionsQ.isPending || agentConnectionsQ.isPending ? (
-        <p className="text-xs text-muted-foreground">
-          Loading connected knowledge bases…
-        </p>
-      ) : agentConnectionsQ.isError ? null : granted.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-          No knowledge bases connected yet. Paste a share link above and this
-          agent can list, search, and read the shared content.
-        </p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {granted.map((connection) => {
-            const unreachable = connection.status === "expired";
-            return (
-              <div
-                key={connection.id}
-                className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${
-                  unreachable ? "border-warning/50" : "border-border"
-                }`}
-              >
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-foreground">
-                    {connection.name}
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The list of knowledge bases an agent reads, with
+ * a modal to connect one by share link. The agent configuration page saves
+ * each change at once; the agent creation page stages them until create.
+ */
+export function KnowledgeBaseList({
+  label,
+  description,
+  connections,
+  onAdd,
+  onRemove,
+  removingId,
+  disabled,
+  status,
+}: {
+  label?: string;
+  description?: string;
+  connections: ConnectionView[];
+  onAdd: (connectionId: string) => void;
+  onRemove: (connectionId: string) => void;
+  removingId?: string | null;
+  disabled?: boolean;
+  status: ReactNode;
+}) {
+  const [adding, setAdding] = useState(false);
+  const kbs = connections.filter((c) => c.templateId === SHARED_KB_TEMPLATE_ID);
+  return (
+    <>
+      <ListSection
+        label={label}
+        description={description}
+        onNew={() => setAdding(true)}
+        newDisabled={disabled}
+        newTestId="kb-connect-new"
+        isEmpty={kbs.length === 0 && !status}
+        empty="No knowledge bases connected yet."
+      >
+        {status && (
+          <p className="px-4 py-3 text-xs text-muted-foreground">{status}</p>
+        )}
+        {kbs.map((connection) => {
+          const unreachable = connection.status === "expired";
+          return (
+            <div key={connection.id} className={LIST_ROW}>
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="truncate text-sm font-medium text-foreground">
+                  {connection.name}
+                </span>
+                {unreachable && (
+                  <span className="text-xs text-warning">
+                    Link rotated or revoked — connect the owner's current link
+                    to restore access.
                   </span>
-                  {unreachable && (
-                    <span className="text-xs text-warning">
-                      Link rotated or revoked — paste the owner's current link
-                      above to reconnect.
-                    </span>
-                  )}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-destructive hover:text-destructive"
-                  disabled={!ready || removingId === connection.id}
-                  onClick={() => ungrant(connection.id)}
-                >
-                  Remove
-                </Button>
+                )}
               </div>
-            );
-          })}
-        </div>
+              <Button
+                variant="outline"
+                size="sm"
+                tone="danger"
+                className={cn(unreachable && "border-warning/50")}
+                disabled={disabled || removingId === connection.id}
+                onClick={() => onRemove(connection.id)}
+              >
+                Remove
+              </Button>
+            </div>
+          );
+        })}
+      </ListSection>
+      {adding && (
+        <KbLinkModal onConnected={onAdd} onClose={() => setAdding(false)} />
       )}
-    </div>
+    </>
   );
 }

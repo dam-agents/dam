@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 
+import { TextSkeleton } from "@/components/ui/text-skeleton";
 import { cn } from "@/lib/utils";
 
 import { useAgentsList } from "../../agents/api/queries.js";
@@ -11,7 +12,6 @@ import {
   type SpendPeriod,
   spendRange,
 } from "../lib/spend-period.js";
-import { WidgetSkeleton } from "./home-skeletons.js";
 
 const TOP_SPENDERS = 3;
 const ROUNDS_TO_A_VISIBLE_CENT_USD = 0.005;
@@ -31,7 +31,6 @@ export function SpendWidget() {
   );
 
   if (isUnavailable) return null;
-  if (isPending) return <WidgetSkeleton rows={3} />;
 
   const total = data ? totalCostUsd(data.byModel) : 0;
   const spenders = (data?.byAgent ?? [])
@@ -65,42 +64,55 @@ export function SpendWidget() {
       </div>
 
       <p className="mb-5 text-[28px] leading-none font-bold tracking-tight text-foreground tabular-nums">
-        ${total.toFixed(2)}
+        {isPending ? <TextSkeleton width={96} /> : `$${total.toFixed(2)}`}
       </p>
 
-      {spenders.length > 0 ? (
-        <div className="space-y-3">
-          {spenders.map((spender) => (
-            <div key={spender.agentId}>
-              <div className="mb-1 flex items-center justify-between">
-                <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-                  <AgentAvatar
-                    name={spender.agentName}
-                    avatar={
-                      agents.find((a) => a.id === spender.agentId)?.avatar
-                    }
-                    size={16}
-                  />
-                  <span className="truncate">{spender.agentName}</span>
-                </span>
-                <span className="ml-2 shrink-0 text-sm text-muted-foreground tabular-nums">
-                  ${spender.costUsd.toFixed(2)}
-                </span>
+      <div className="min-h-[132px]">
+        {isPending ? (
+          <div className="space-y-3">
+            {Array.from({ length: TOP_SPENDERS }, (_, i) => (
+              <div key={i}>
+                <p className="mb-1 text-sm">
+                  <TextSkeleton width={i % 2 === 0 ? "40%" : "30%"} />
+                </p>
+                <div className="h-3 animate-pulse rounded-full bg-muted" />
               </div>
-              <div
-                className="h-3 rounded-full bg-accent"
-                style={{
-                  width: top > 0 ? `${(spender.costUsd / top) * 100}%` : "0%",
-                }}
-              />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          No spend in this period.
-        </p>
-      )}
+            ))}
+          </div>
+        ) : spenders.length > 0 ? (
+          <div className="space-y-3">
+            {spenders.map((spender) => (
+              <div key={spender.agentId}>
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+                    <AgentAvatar
+                      name={spender.agentName}
+                      avatar={
+                        agents.find((a) => a.id === spender.agentId)?.avatar
+                      }
+                      size={16}
+                    />
+                    <span className="truncate">{spender.agentName}</span>
+                  </span>
+                  <span className="ml-2 shrink-0 text-sm text-muted-foreground tabular-nums">
+                    ${spender.costUsd.toFixed(2)}
+                  </span>
+                </div>
+                <div
+                  className="h-3 rounded-full bg-accent"
+                  style={{
+                    width: top > 0 ? `${(spender.costUsd / top) * 100}%` : "0%",
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No spend in this period.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

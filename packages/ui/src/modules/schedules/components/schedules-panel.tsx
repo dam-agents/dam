@@ -1,15 +1,11 @@
-import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { DisclosureToggle } from "@/components/ui/disclosure";
-import { EmptyStateCard } from "@/components/ui/empty-state-card";
-import { Inset } from "@/components/ui/inset";
+import { ListSection } from "@/components/ui/list-section";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
-import { PlatformSkillNote } from "../../sandboxes/components/skills/platform-skill-note.js";
 import { useSchedules } from "../api/queries.js";
 import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
 import { isPastOnce } from "../lib/once-schedule.js";
@@ -26,7 +22,6 @@ export function SchedulesPanel({
   agentId: string;
   onResumeSession: (sessionId: string) => void;
 }) {
-  const navigateToSandboxHome = useStore((st) => st.navigateToSandboxHome);
   const schedulesQuery = useSchedules(agentId);
   const schedules = schedulesQuery.data ?? [];
   const upcoming = schedules.filter((s) => !isPastOnce(s));
@@ -56,56 +51,30 @@ export function SchedulesPanel({
     />
   );
 
-  const skillNote = (
-    <PlatformSkillNote
-      featureId="schedules"
-      className="mb-4"
-      onOpenSkills={() => navigateToSandboxHome(agentId, "skills")}
-    />
-  );
-
   return (
     <>
-      {schedules.length === 0 ? (
-        <>
-          <SectionLabel spaced>Schedules</SectionLabel>
-          {skillNote}
-          <EmptyStateCard
-            message="You have not set up any Schedules yet"
-            actionLabel="Create Schedule"
-            onAction={() => setForm({ mode: "create" })}
-          />
-        </>
-      ) : (
-        <>
-          <div className="mb-3 flex items-center justify-between">
-            <SectionLabel>Schedules</SectionLabel>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setForm({ mode: "create" })}
-            >
-              <Add size={16} />
-              Create Schedule
-            </Button>
-          </div>
-          {skillNote}
-          <Inset className="flex flex-col gap-3">{upcoming.map(card)}</Inset>
-          {past.length > 0 && (
-            <div className="mt-6">
-              <DisclosureToggle
-                open={pastOpen}
-                onToggle={() => setPastOpen((open) => !open)}
-                className="mb-3"
-              >
-                <SectionLabel>{`Past one-time tasks (${past.length})`}</SectionLabel>
-              </DisclosureToggle>
-              {pastOpen && (
-                <Inset className="flex flex-col gap-3">{past.map(card)}</Inset>
-              )}
-            </div>
+      <ListSection
+        onNew={() => setForm({ mode: "create" })}
+        isEmpty={upcoming.length === 0}
+        empty="No schedules yet."
+      >
+        {upcoming.map(card)}
+      </ListSection>
+      {past.length > 0 && (
+        <section className="mb-8">
+          <DisclosureToggle
+            open={pastOpen}
+            onToggle={() => setPastOpen((open) => !open)}
+            className="mb-3"
+          >
+            <SectionLabel>{`Past one-time tasks (${past.length})`}</SectionLabel>
+          </DisclosureToggle>
+          {pastOpen && (
+            <Card className="divide-y divide-border overflow-hidden">
+              {past.map(card)}
+            </Card>
           )}
-        </>
+        </section>
       )}
 
       {form && (

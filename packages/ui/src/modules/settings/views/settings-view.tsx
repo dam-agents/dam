@@ -195,7 +195,7 @@ export function SettingsView() {
             <div className="w-full max-w-2xl">
               <PageHeader
                 title="Providers"
-                description="Connect a provider to give agents access to its models. Icons show compatible harnesses."
+                description="Connect an LLM provider to give agents access to its models."
               />
 
               <section className="mb-8">

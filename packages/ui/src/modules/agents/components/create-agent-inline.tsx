@@ -46,7 +46,7 @@ export function CreateAgentInline({ onCreated }: Props) {
     <Card className="flex flex-col gap-4 p-4">
       <VmRuntimeNotice />
 
-      <FormField label="Name" labelInset>
+      <FormField label="Name">
         <Input
           value={name}
           onChange={(event) => setName(event.target.value)}

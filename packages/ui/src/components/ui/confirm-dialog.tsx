@@ -73,7 +73,13 @@ export function ConfirmDialog({
         onOpenChange(o);
       }}
     >
-      <AlertDialogContent onAnimationEnd={handleAnimationEnd}>
+      <AlertDialogContent
+        onAnimationEnd={handleAnimationEnd}
+        onBackdropClick={() => {
+          onCancel?.();
+          onOpenChange(false);
+        }}
+      >
         <AlertDialogHeader>
           <div className="flex items-center gap-3">
             <div

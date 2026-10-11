@@ -33,7 +33,7 @@ export function SlackChannelExplainer({
   const installRequestUrl = useSlackInstallRequestUrl();
   return (
     <ExplainerPopover
-      label="How a Slack Channel differs from a Slack Account connection"
+      label="How a Slack channel differs from a Slack account connection"
       footer={
         installRequestUrl && <SlackInstallRequest href={installRequestUrl} />
       }
@@ -43,7 +43,7 @@ export function SlackChannelExplainer({
         agent answers as itself always.
       </p>
       <p>
-        If you want to give this agent access to your Slack Account, that&apos;s
+        If you want to give this agent access to your Slack account, that&apos;s
         a Connection.
       </p>
       <CrossLink label="Go to Connections" onFollow={onGoToConnections} />
@@ -60,13 +60,13 @@ export function SlackAccountExplainer({
   return (
     <ExplainerPopover
       side="bottom"
-      label="How a Slack Account connection differs from a Slack Channel"
+      label="How a Slack account connection differs from a Slack channel"
       footer={
         installRequestUrl && <SlackInstallRequest href={installRequestUrl} />
       }
     >
       <p>
-        With a Slack Account connection, the agent works in your Slack as you.
+        With a Slack account connection, the agent works in your Slack as you.
         It can search, read and post anywhere your account can — including
         private channels and DMs.
       </p>

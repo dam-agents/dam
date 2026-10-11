@@ -51,7 +51,7 @@ export function NewSessionLauncher({
         {available.slack && (
           <LauncherTile
             icon={<ConnectionIcon iconSlug="slack" alt="" size={18} />}
-            title="Slack Channel"
+            title="Slack channel"
             description="Mention the agent in a connected channel"
             onClick={() => setMessenger("slack")}
           />

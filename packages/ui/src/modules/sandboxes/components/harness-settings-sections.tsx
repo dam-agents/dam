@@ -63,7 +63,7 @@ export function HarnessSettingsSections({
   return (
     <section className="mb-8" data-testid="harness-settings">
       <SectionLabel spaced>Harness settings</SectionLabel>
-      <Callout inset>
+      <Callout>
         {configurable.map((h) => (
           <HarnessSettings
             key={h.name}

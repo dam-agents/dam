@@ -112,7 +112,7 @@ export function SessionsSidebar({
     title: string | null | undefined,
   ) => {
     const label = title || sid.slice(0, 12);
-    if (await showConfirm(`Delete session "${label}"?`, "Delete Session")) {
+    if (await showConfirm(`Delete session "${label}"?`, "Delete session")) {
       deleteSession(sid);
     }
   };

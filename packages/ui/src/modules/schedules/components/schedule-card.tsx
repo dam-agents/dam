@@ -8,7 +8,6 @@ import {
 } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,7 +81,7 @@ export function ScheduleCard({
       await showConfirm(
         "Are you sure you want to delete this schedule?",
         `Delete ${name}?`,
-        { kind: "destructive", confirmLabel: "Delete Schedule" },
+        { kind: "destructive", confirmLabel: "Delete schedule" },
       )
     )
       deleteSchedule.mutate({ id });
@@ -118,7 +117,7 @@ export function ScheduleCard({
   };
 
   return (
-    <Card>
+    <div>
       <div className="flex items-center gap-3 p-4">
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 text-[15px] font-semibold text-foreground">
@@ -248,6 +247,6 @@ export function ScheduleCard({
       </button>
 
       {isExpanded && <ScheduleDetails schedule={schedule} />}
-    </Card>
+    </div>
   );
 }

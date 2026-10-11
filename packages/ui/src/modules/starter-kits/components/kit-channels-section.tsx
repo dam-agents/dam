@@ -4,7 +4,6 @@ import { FormField } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { FIELD_INSET } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +12,7 @@ import { ConnectionIcon } from "../../connections/components/connection-icon.js"
 const CHANNELS = [
   {
     type: "slack" as const,
-    title: "Slack Channel",
+    title: "Slack channel",
     blurb:
       "Your team can interact with the agent in a Slack channel or their DMs.",
   },
@@ -41,7 +40,7 @@ export function KitChannelsSection({
         Channels <span className="font-normal">(optional)</span>
       </SectionLabel>
 
-      <ul className={cn(FIELD_INSET, "flex flex-col gap-2")}>
+      <ul className="flex flex-col gap-2">
         {CHANNELS.map((channel) => {
           const fromKit = kit.channels.find((c) => c.type === channel.type);
           return (
@@ -95,7 +94,7 @@ export function KitChannelsSection({
                 <div className="mt-3 pl-7">
                   <FormField
                     label="Slack channel ID"
-                    disableInset
+
                     hint="From the channel's details in Slack — starts with C. The bot must be a member of the channel."
                   >
                     <Input

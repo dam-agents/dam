@@ -17,6 +17,9 @@ const CHECK_FOR_MS = 12_000;
 const checkUntil = new Map<string, number>();
 
 export function askToRestartAfterSave(agentId: string): void {
+  const { view, agentId: openAgentId } = useStore.getState();
+  const restartBarShown = view === "sandbox-home" && openAgentId === agentId;
+  if (restartBarShown) return;
   const checking = checkUntil.has(agentId);
   checkUntil.set(agentId, Date.now() + CHECK_FOR_MS);
   if (checking) return;

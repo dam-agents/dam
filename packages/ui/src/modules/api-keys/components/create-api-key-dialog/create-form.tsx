@@ -117,7 +117,7 @@ export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
             exfiltrated key with only <code>agents:read</code> cannot change
             anything or run an agent.
           </p>
-          <Callout inset className="space-y-4">
+          <Callout className="space-y-4">
             {SCOPE_GROUPS.map((group) => (
               <div key={group.label}>
                 <SectionLabel className="mb-1.5 block">

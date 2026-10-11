@@ -1,6 +1,7 @@
 import type { DirEntry } from "agent-runtime-api";
 import { Fragment } from "react";
 
+import { useStore } from "../../../store.js";
 import { useDirSnapshot } from "../api/queries.js";
 import { FileRow } from "./file-row.js";
 import { useFilesPanel } from "./files-panel-controller.js";
@@ -14,19 +15,22 @@ interface DirContentsProps {
 export function DirContents({ path, depth }: DirContentsProps) {
   const panel = useFilesPanel();
   const { data: snapshot } = useDirSnapshot(panel.agentId, path);
+  const showHiddenFiles = useStore((s) => s.showHiddenFiles);
 
   if (!snapshot || !snapshot.ok) return null;
 
   return (
     <>
-      {snapshot.entries.map((entry) => (
-        <DirEntryRow
-          key={entry.name}
-          entry={entry}
-          parentPath={path}
-          depth={depth}
-        />
-      ))}
+      {snapshot.entries
+        .filter((entry) => showHiddenFiles || !entry.name.startsWith("."))
+        .map((entry) => (
+          <DirEntryRow
+            key={entry.name}
+            entry={entry}
+            parentPath={path}
+            depth={depth}
+          />
+        ))}
     </>
   );
 }

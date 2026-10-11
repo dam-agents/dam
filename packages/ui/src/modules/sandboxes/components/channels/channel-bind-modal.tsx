@@ -21,7 +21,7 @@ interface BindStep {
 }
 
 const MESSENGER_TITLE: Record<BindMessenger, string> = {
-  slack: "Add to Slack Channel",
+  slack: "Add to Slack channel",
   telegram: "Add to Telegram Chat",
 };
 

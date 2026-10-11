@@ -13,7 +13,6 @@ import { useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +22,6 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
-import { cn } from "@/lib/utils";
 
 import { isDrifted } from "./skill-drift.js";
 import { SkillRow } from "./skill-row.js";
@@ -153,7 +151,7 @@ export function SkillSourceCard({
   const canRemove = !source.system && !source.fromTemplate;
 
   return (
-    <Card className={cn(readOnly && "bg-muted")}>
+    <div>
       <div className="flex items-center gap-3 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -296,6 +294,6 @@ export function SkillSourceCard({
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
       )}
-    </Card>
+    </div>
   );
 }

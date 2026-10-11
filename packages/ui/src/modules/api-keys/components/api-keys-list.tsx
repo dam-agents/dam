@@ -1,9 +1,8 @@
 import type { ApiKeyView } from "api-server-api";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import { PageEmptyState } from "@/components/ui/page-empty-state";
+import { ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { useRevokeApiKey } from "../api/mutations.js";
@@ -29,7 +28,7 @@ export function ApiKeysList() {
   }
 
   return (
-    <div className="anim-in">
+    <div className="anim-in w-full max-w-2xl">
       <PageHeader
         title="API keys"
         description="Long-lived tokens for headless / CI use. Pass the value as a bearer credential when calling the API. Plaintext is shown once on creation and never recoverable."
@@ -49,31 +48,21 @@ export function ApiKeysList() {
         </Callout>
       )}
 
-      {!isLoading && !isError && keys && keys.length === 0 && (
-        <PageEmptyState
-          title="No API keys yet"
-          message="Create one to authenticate the CLI without a browser."
-          actionLabel="Create key"
-          onAction={() => setCreateOpen(true)}
-        />
-      )}
-
-      {!isLoading && !isError && keys && keys.length > 0 && (
-        <>
-          <Button className="mb-4" onClick={() => setCreateOpen(true)}>
-            Create key
-          </Button>
-          <ul className="space-y-2">
-            {keys.map((k) => (
-              <ApiKeyRow
-                key={k.id}
-                apiKey={k}
-                onRevoke={(id, name) => setRevokeTarget({ id, name })}
-                revoking={revokeApiKey.isPending && revokeTarget?.id === k.id}
-              />
-            ))}
-          </ul>
-        </>
+      {!isLoading && !isError && keys && (
+        <ListSection
+          onNew={() => setCreateOpen(true)}
+          isEmpty={keys.length === 0}
+          empty="No API keys yet. Create one to authenticate the CLI without a browser."
+        >
+          {keys.map((k) => (
+            <ApiKeyRow
+              key={k.id}
+              apiKey={k}
+              onRevoke={(id, name) => setRevokeTarget({ id, name })}
+              revoking={revokeApiKey.isPending && revokeTarget?.id === k.id}
+            />
+          ))}
+        </ListSection>
       )}
 
       {createOpen && (

@@ -1,10 +1,7 @@
-import { Information } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 import { useState } from "react";
 
-import { Callout } from "@/components/ui/callout";
-import { Card } from "@/components/ui/card";
-import { SectionLabel } from "@/components/ui/section-label";
+import { ListSection } from "@/components/ui/list-section";
 
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
 import { folderDisplayNames } from "../lib/folders.js";
@@ -15,14 +12,6 @@ import { MoveArtifactDialog } from "./move-artifact-dialog.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { RetentionDialog } from "./retention-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
-
-function ToolChip({ name }: { name: string }) {
-  return (
-    <code className="rounded bg-muted px-1 py-px font-mono text-xs text-foreground">
-      {name}
-    </code>
-  );
-}
 
 export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   const { data: artifacts = [], isLoading } = useArtifacts({ agentId });
@@ -42,40 +31,14 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   } | null>(null);
 
   return (
-    <section className="mb-8">
-      <SectionLabel spaced>Artifacts</SectionLabel>
-      <p className="mb-3 text-sm text-muted-foreground">
-        Pages and files this agent has published to your artifact library.
-      </p>
-
-      <Callout
-        tone="info"
-        size="sm"
-        className="mb-4 flex items-start gap-2.5 text-sm text-muted-foreground"
+    <>
+      <ListSection
+        isEmpty={!isLoading && !foldersPending && artifacts.length === 0}
+        empty="Nothing published yet — ask the agent to share its work as an artifact."
       >
-        <Information size={16} className="mt-0.5 shrink-0 text-accent" />
-        <span>
-          Agents publish through the built-in platform MCP tools —{" "}
-          <ToolChip name="create_artifact" /> for inline content,{" "}
-          <ToolChip name="create_artifact_upload_url" /> for direct-to-storage
-          uploads. They read artifacts back the same way, with{" "}
-          <ToolChip name="create_artifact_download_url" /> to pull any file into
-          the sandbox. No extra credentials needed in the sandbox.
-        </span>
-      </Callout>
-
-      {isLoading || foldersPending ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : artifacts.length === 0 ? (
-        <Card className="px-5 py-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            Nothing published yet — ask the agent to share its work as an
-            artifact.
-          </p>
-        </Card>
-      ) : (
-        <Card className="overflow-hidden">
-          {}
+        {isLoading || foldersPending ? (
+          <p className="px-4 py-3 text-sm text-muted-foreground">Loading…</p>
+        ) : (
           <div className="-mt-px">
             {groupArtifactsByFolder(artifacts, folders, {
               omitEmptyFolders: true,
@@ -101,8 +64,8 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
               />
             ))}
           </div>
-        </Card>
-      )}
+        )}
+      </ListSection>
 
       {renameTarget && (
         <RenameArtifactDialog
@@ -135,6 +98,6 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
           initialEdit={previewTarget.edit}
         />
       )}
-    </section>
+    </>
   );
 }

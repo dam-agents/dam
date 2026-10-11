@@ -45,7 +45,7 @@ export function SandboxList({
           temporaryDraw={drawByDriver.get(agent.id)}
           onSelect={() => selectAgent(agent.id)}
           onConfigure={() => navigateToSandboxHome(agent.id)}
-          onShare={() => navigateToSandboxHome(agent.id, "setup", "knowledge")}
+          onShare={() => navigateToSandboxHome(agent.id, "knowledge")}
           configureLabel="Configure agent"
           onStop={() => onStop(agent)}
           onDelete={() => onDelete(agent)}

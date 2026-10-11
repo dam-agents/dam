@@ -51,8 +51,7 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
 
   return (
     <section className="mb-8">
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <SectionLabel>Usage</SectionLabel>
+      <div className="mb-3 flex items-center justify-end gap-4">
         {state !== "unavailable" && (
           <div className="flex items-center gap-3">
             <UsageStaleLabel freshness={freshness} />
@@ -64,10 +63,6 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
           </div>
         )}
       </div>
-      <p className="mb-4 text-sm text-muted-foreground">
-        LLM spend for this agent, including work it delegated to other agents.
-      </p>
-
       <HarnessSpendCard agentId={agentId} month={month} />
 
       {}

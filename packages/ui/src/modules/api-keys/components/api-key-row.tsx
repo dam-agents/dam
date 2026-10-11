@@ -2,7 +2,7 @@ import { Password, TrashCan } from "@carbon/icons-react";
 import type { ApiKeyView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
-import { CARD_SURFACE } from "@/components/ui/card";
+import { LIST_ROW } from "@/components/ui/list-section";
 import { formatDate } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -21,7 +21,7 @@ export function ApiKeyRow({ apiKey, onRevoke, revoking }: Props) {
       : `${agentIds.length} agent${agentIds.length === 1 ? "" : "s"}`;
 
   return (
-    <li className={cn(CARD_SURFACE, "flex items-start gap-3 rounded-xl p-4")}>
+    <div className={cn(LIST_ROW, "items-start")}>
       <Password size={20} className="text-muted-foreground mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
@@ -53,6 +53,6 @@ export function ApiKeyRow({ apiKey, onRevoke, revoking }: Props) {
       >
         <TrashCan size={14} />
       </Button>
-    </li>
+    </div>
   );
 }

@@ -35,7 +35,6 @@ const PR_STATE_PILL: Record<
 export function StandaloneSkillRow({
   skill,
   publish,
-  divided,
   readOnly,
   canPublish,
   onPublish,
@@ -47,7 +46,6 @@ export function StandaloneSkillRow({
 }: {
   skill: LocalSkill;
   publish?: SkillPublishRecord;
-  divided: boolean;
   readOnly: boolean;
   canPublish: boolean;
   onPublish: () => void;
@@ -61,12 +59,7 @@ export function StandaloneSkillRow({
   const canRepublish = !publish || publish.prState === "closed";
 
   return (
-    <div
-      className={cn(
-        "flex items-center gap-3 px-4 py-2",
-        divided && "border-t border-border",
-      )}
-    >
+    <div className="flex items-center gap-3 px-4 py-2">
       <div className="min-w-0 flex-1">
         {onOpen ? (
           <button

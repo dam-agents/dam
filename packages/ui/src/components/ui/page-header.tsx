@@ -2,8 +2,11 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
+export const PAGE_TITLE =
+  "text-2xl font-semibold tracking-[-0.65px] text-foreground md:text-[28px] md:leading-[1.25]";
+
 interface PageHeaderProps {
-  title: ReactNode;
+  title?: ReactNode;
   leading?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
@@ -25,12 +28,14 @@ export function PageHeader({
         {}
         <div className="order-1 flex min-h-10 min-w-0 items-center gap-3 @lg:flex-1">
           {leading}
-          <h1
-            title={typeof title === "string" ? title : undefined}
-            className="truncate text-2xl font-semibold tracking-[-0.65px] text-foreground md:text-[28px] md:leading-[1.25]"
-          >
-            {title}
-          </h1>
+          {title !== undefined && (
+            <h1
+              title={typeof title === "string" ? title : undefined}
+              className={cn("truncate", PAGE_TITLE)}
+            >
+              {title}
+            </h1>
+          )}
           {adornment}
         </div>
         {actions && (

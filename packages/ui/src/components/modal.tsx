@@ -6,6 +6,11 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+export const MODAL_BACKDROP =
+  "fixed inset-0 z-overlay flex items-center justify-center px-4 md:px-0 bg-black/50 backdrop-blur-[4px] anim-in";
+export const MODAL_PANEL =
+  "rounded-xl border border-border bg-card shadow-xl anim-scale-in";
+
 interface ModalProps {
   widthClass?: string;
   heightClass?: string;
@@ -24,9 +29,19 @@ export function Modal({
   useFocusTrap(panelRef);
   useBodyScrollLock();
   useEscapeWhenTopmost(labelId, onClose);
+  const pressStartedOnBackdrop = useRef(false);
   return createPortal(
     <ModalContext.Provider value={{ labelId }}>
-      <div className="fixed inset-0 z-overlay flex items-center justify-center px-4 md:px-0 bg-black/50 backdrop-blur-[4px] anim-in">
+      <div
+        className={MODAL_BACKDROP}
+        onMouseDown={(e) => {
+          pressStartedOnBackdrop.current = e.target === e.currentTarget;
+        }}
+        onClick={(e) => {
+          if (pressStartedOnBackdrop.current && e.target === e.currentTarget)
+            onClose?.();
+        }}
+      >
         <div
           ref={panelRef}
           role="dialog"
@@ -35,7 +50,8 @@ export function Modal({
           className={cn(
             widthClass,
             heightClass,
-            "max-h-[95dvh] md:max-h-[85vh] overflow-hidden rounded-xl border border-border bg-card flex flex-col anim-scale-in shadow-xl",
+            MODAL_PANEL,
+            "max-h-[95dvh] md:max-h-[85vh] overflow-hidden flex flex-col",
           )}
         >
           {children}

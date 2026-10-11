@@ -1,8 +1,8 @@
 import {
   ArrowDown,
   ArrowLeft,
-  OverflowMenuVertical,
   Renew,
+  Tools,
   TrashCan,
   Warning,
 } from "@carbon/icons-react";
@@ -22,12 +22,6 @@ import { stateDotClass } from "@/components/status-indicator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
@@ -45,7 +39,6 @@ import {
   useHarnessConfigCurrent,
   useHarnessConfigStatus,
 } from "../../agents/api/harness-config.js";
-import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
   useAgents,
   useIsAgentInaccessible,
@@ -53,15 +46,13 @@ import {
 } from "../../agents/api/queries.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
-import {
-  AgentAvatar,
-  avatarMood,
-} from "../../agents/components/avatar/agent-avatar.js";
+import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
 } from "../../agents/components/contribution-failures-badge.js";
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
+import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
@@ -70,17 +61,12 @@ import { WorkspaceFailureNotice } from "../../agents/components/workspace-failur
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
-import {
-  useRestartAgent,
-  useSyncRestartingAgents,
-} from "../../agents/hooks/use-restart-agent.js";
+import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js";
 import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
-import { sharesKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
-import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
@@ -215,7 +201,6 @@ export function ChatView() {
   const openBrowserAgentId = useStore((s) =>
     s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
   );
-  const openBrowser = useOpenBrowser();
   const browserMaximized = useStore((s) => s.browserMaximized);
   const openDelegation = useStore((s) =>
     s.openDelegation?.driverAgentId === s.selectedAgent
@@ -232,7 +217,6 @@ export function ChatView() {
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const setView = useStore((s) => s.setView);
   const sessionsSectionOpen = useStore((s) => s.sessionsSectionOpen);
   const setSessionsSectionOpen = useStore((s) => s.setSessionsSectionOpen);
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
@@ -297,8 +281,6 @@ export function ChatView() {
   });
 
   const { openFileHandler } = useFileTree(selectedAgent);
-  const { restart } = useRestartAgent();
-  const deleteAgent = useDeleteAgent();
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
   const { data: harnessStatus } = useHarnessConfigStatus(selectedAgent);
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
@@ -541,8 +523,6 @@ export function ChatView() {
     pushSessionUrl,
   ]);
 
-  const showConfirm = useStore((s) => s.showConfirm);
-
   const handleNewTerminal = useCallback(() => {
     resetSession();
     const id = crypto.randomUUID();
@@ -552,8 +532,6 @@ export function ChatView() {
     setMobileScreen("chat");
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
-  const canShareKnowledge =
-    agentView !== null && sharesKnowledgeBase(agentView);
   const canOpenBrowser =
     features?.["strict-connection-addressing"] === true &&
     agentView?.requireConnectionAddress === true;
@@ -574,37 +552,10 @@ export function ChatView() {
     rightW !== null && sidePanelMaxW !== null
       ? Math.min(rightW, Math.max(SIDE_PANEL_MIN_W, sidePanelMaxW))
       : rightW;
-  const surfaceCopy = {
-    actionsAria: "Agent actions",
-    configure: "Configure agent",
-    delete: "Delete agent",
-  };
-
   const handleConfigureSandbox = useCallback(() => {
     if (!selectedAgent) return;
     navigateToSandboxHome(selectedAgent);
   }, [selectedAgent, navigateToSandboxHome]);
-
-  const handleShareKnowledgeBase = () => {
-    if (!selectedAgent) return;
-    navigateToSandboxHome(selectedAgent, "setup", "knowledge");
-  };
-
-  const handleRestartSandbox = () => {
-    if (selectedAgent) restart(selectedAgent);
-  };
-
-  const handleDeleteSandbox = async () => {
-    if (!selectedAgent) return;
-    const ok = await showConfirm(
-      "Delete this agent? This also deletes all persistent data and cannot be undone.",
-      "Delete agent",
-      { kind: "destructive" },
-    );
-    if (!ok) return;
-    deleteAgent.mutate({ id: selectedAgent });
-    setView("home");
-  };
 
   const handleBack = useCallback(() => {
     if (isMobile() && mobileScreen === "chat") {
@@ -644,37 +595,32 @@ export function ChatView() {
           >
             <ArrowLeft size={14} />
           </Button>
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <span
+              aria-hidden
+              className={cn(
+                "h-2 w-2 shrink-0 rounded-full",
+                agentView && "hidden @max-[149px]:block",
+                dotColor,
+              )}
+            />
             {agentView ? (
-              <>
-                <AgentAvatar
-                  name={agentView.name}
-                  avatar={agentView.avatar}
-                  size={32}
-                  mood={avatarMood(
-                    agentDisplay?.state,
-                    agentView.stopRequested,
-                    busy,
-                  )}
-                  className="@max-[149px]:hidden"
-                />
-                <span
-                  aria-hidden
-                  className={cn(
-                    "hidden h-2 w-2 shrink-0 rounded-full @max-[149px]:block",
-                    dotColor,
-                  )}
-                />
-              </>
-            ) : (
-              <span
-                aria-hidden
-                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+              <EditableAgentIdentity
+                agent={agentView}
+                avatarSize={32}
+                mood={avatarMood(
+                  agentDisplay?.state,
+                  agentView.stopRequested,
+                  busy,
+                )}
+                avatarClassName="@max-[149px]:hidden"
+                nameClassName="text-sm font-bold text-foreground"
               />
+            ) : (
+              <h1 className="text-sm font-bold text-foreground truncate">
+                {selectedAgentName}
+              </h1>
             )}
-            <h1 className="text-sm font-bold text-foreground truncate">
-              {selectedAgentName}
-            </h1>
             {agentView && (
               <span className="flex shrink-0 @max-[119px]:hidden">
                 <VmRuntimeBadge
@@ -683,44 +629,16 @@ export function ChatView() {
                 />
               </span>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={surfaceCopy.actionsAria}
-                  className="shrink-0"
-                >
-                  <OverflowMenuVertical size={16} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onSelect={handleConfigureSandbox}>
-                  {surfaceCopy.configure}
-                </DropdownMenuItem>
-                {canShareKnowledge && (
-                  <DropdownMenuItem onSelect={handleShareKnowledgeBase}>
-                    Share knowledge base
-                  </DropdownMenuItem>
-                )}
-                {canOpenBrowser && selectedAgent && (
-                  <DropdownMenuItem
-                    onSelect={() => void openBrowser(selectedAgent)}
-                  >
-                    Open browser
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onSelect={handleRestartSandbox}>
-                  Restart
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onSelect={handleDeleteSandbox}
-                >
-                  {surfaceCopy.delete}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Configure agent"
+              tooltip="Configure agent"
+              onClick={handleConfigureSandbox}
+              className="ml-auto shrink-0"
+            >
+              <Tools size={16} />
+            </Button>
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2 pl-6 pr-14 md:pr-16">

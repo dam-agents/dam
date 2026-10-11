@@ -375,7 +375,6 @@ export function SchedulePrecheckField({
         label="Precheck (optional)"
         error={errors.precheck?.message}
         hint={PRECHECK_HINT}
-        disableInset
       >
         {input}
       </FormField>
@@ -433,7 +432,7 @@ export function ScheduleModelField({
     });
 
   return (
-    <FormField label="Model" hint={MODEL_HINT} disableInset>
+    <FormField label="Model" hint={MODEL_HINT}>
       <OptionPicker
         title="Model"
         choices={options}
@@ -467,7 +466,6 @@ export function ScheduleSessionTitleField({
       label="Session title (optional)"
       error={error}
       hint={SESSION_TITLE_HINT}
-      disableInset
     >
       <Input
         className="h-10"

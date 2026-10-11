@@ -123,7 +123,7 @@ export function ModelSettingsPanel({
         <SectionLabel>Model settings</SectionLabel>
         {headerAction}
       </div>
-      <Callout inset>
+      <Callout>
         {fromSnapshot && capturedAt && <SnapshotNote capturedAt={capturedAt} />}
         {groups}
         {note}

@@ -22,15 +22,18 @@ export function ProviderSection() {
     item?: ProviderItem;
   } | null>(null);
 
-  const removeProvider = async (item: ProviderItem) => {
+  const disconnectProvider = async (item: ProviderItem) => {
     const ok = await showConfirm(
-      "Are you sure you want to remove this provider? Any agent currently using this provider will no longer work as expected.",
-      "Remove Provider?",
-      { kind: "destructive", confirmLabel: "Remove provider" },
+      "Are you sure you want to disconnect this provider? Any agent currently using this provider will no longer work as expected.",
+      "Disconnect provider?",
+      { kind: "destructive", confirmLabel: "Disconnect provider" },
     );
     if (!ok) return;
     deleteConnection.mutate({ id: item.id });
+    setDialog(null);
   };
+
+  const connectedItem = dialog?.item;
 
   return (
     <>
@@ -60,11 +63,7 @@ export function ProviderSection() {
                       <ProviderBalance connectionId={item.id} />
                     )
                   }
-                  onConnect={() => setDialog({ provider: row.type })}
-                  onEditKey={() =>
-                    item && setDialog({ provider: row.type, item })
-                  }
-                  onRemoveKey={() => item && void removeProvider(item)}
+                  onOpen={() => setDialog({ provider: row.type, item })}
                 />
               );
             })}
@@ -75,6 +74,9 @@ export function ProviderSection() {
           provider={dialog.provider}
           item={dialog.item}
           onConnected={() => setDialog(null)}
+          onDisconnect={
+            connectedItem && (() => void disconnectProvider(connectedItem))
+          }
           onClose={() => setDialog(null)}
         />
       )}

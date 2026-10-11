@@ -3,6 +3,8 @@ import type {
   ConnectionUpdateInput,
 } from "api-server-api";
 
+import { Button } from "@/components/ui/button";
+
 import { Modal } from "../../../components/modal.js";
 import {
   BEDROCK_TEMPLATE_ID,
@@ -33,6 +35,7 @@ interface Props {
   item?: ProviderItem;
   onConnected: (ref: ProviderRef) => void;
   onClose: () => void;
+  onDisconnect?: () => void;
 }
 
 export function ProviderConnectDialog({
@@ -40,6 +43,7 @@ export function ProviderConnectDialog({
   item,
   onConnected,
   onClose,
+  onDisconnect,
 }: Props) {
   const createConnection = useCreateConnection();
   const updateConnection = useUpdateConnection();
@@ -166,6 +170,19 @@ export function ProviderConnectDialog({
               })
             }
           />
+        )}
+        {onDisconnect && (
+          <div className="border-t border-border px-6 py-4">
+            <Button
+              type="button"
+              variant="ghost"
+              tone="danger"
+              size="sm"
+              onClick={onDisconnect}
+            >
+              Disconnect this provider
+            </Button>
+          </div>
         )}
       </div>
     </Modal>

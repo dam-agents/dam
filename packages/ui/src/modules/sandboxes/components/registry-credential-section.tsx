@@ -64,21 +64,21 @@ export function RegistryCredentialSection({
             exposed to the agent. Kept in this page only: leaving it, including
             to authorize a connection, clears them.
           </p>
-          <FormField label="Server" labelInset>
+          <FormField label="Server">
             <Input
               placeholder="ghcr.io"
               value={value.server}
               onChange={(e) => set("server", e.target.value)}
             />
           </FormField>
-          <FormField label="Username" labelInset>
+          <FormField label="Username">
             <Input
               placeholder="octocat"
               value={value.username}
               onChange={(e) => set("username", e.target.value)}
             />
           </FormField>
-          <FormField label="Password" labelInset>
+          <FormField label="Password">
             <Input
               type="password"
               placeholder="PAT, robot account, or access token"

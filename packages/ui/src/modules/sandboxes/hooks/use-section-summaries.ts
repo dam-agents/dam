@@ -1,9 +1,13 @@
-import { providerTypeForTemplateId } from "api-server-api";
+import {
+  type EgressPreset,
+  isProtectedAgentEnvName,
+  providerTypeForTemplateId,
+  SHARED_KB_TEMPLATE_ID,
+} from "api-server-api";
 import { useMemo } from "react";
 
 import type { AgentView } from "../../../types.js";
 import {
-  useHarnessConfigCurrent,
   useHarnessConfigStatus,
   useResolvedHarnessConfig,
   useStaleModel,
@@ -13,16 +17,19 @@ import {
   useSkillSourceCount,
   useSkillsState,
 } from "../../agents/api/skills.js";
-import {
-  type SandboxSubtitleLookup,
-  sandboxSubtitleParts,
-} from "../../agents/utils/sandbox-subtitle.js";
 import { useArtifacts } from "../../artifacts/api/queries.js";
+import { useBudgetReserved } from "../../budgets/api/queries.js";
+import {
+  formatSizeLabel,
+  sizeInMi,
+  slotUnitOf,
+} from "../../budgets/lib/slots.js";
 import {
   useAppConnections,
   useConnectionTemplates,
 } from "../../connections/api/queries.js";
 import { catalogProviderTitle } from "../../connections/lib/catalog-providers.js";
+import { useCurrentPreset } from "../../egress-rules/api/queries.js";
 import { useAgentMonthSpend } from "../../metrics/api/queries.js";
 import { formatUsdCents } from "../../metrics/lib/format.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
@@ -30,7 +37,6 @@ import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { useSchedules } from "../../schedules/api/queries.js";
 import { isUpcoming } from "../../schedules/lib/once-schedule.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
-import { useTemplates } from "../../templates/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
 type SectionWarnings = Partial<Record<SandboxSection, string>>;
@@ -38,6 +44,12 @@ type SectionWarnings = Partial<Record<SandboxSection, string>>;
 const STALE_MODEL_WARNING = "Saved model not offered by the current provider";
 const NO_PROVIDER_WARNING =
   "No provider connected — the agent cannot reach a model";
+
+const PRESET_SUMMARY: Record<EgressPreset, string> = {
+  trusted: "Trusted defaults",
+  none: "Default-deny",
+  all: "Allow everything",
+};
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -52,7 +64,6 @@ export function useSectionSummaries(agent: AgentView | null): {
   summaries: SectionSummaries;
   warnings: SectionWarnings;
 } {
-  const { data: templates = [] } = useTemplates();
   const { data: apps = [], isSuccess: appsLoaded } = useAppConnections();
   const connectionsQuery = useAgentConnections(agent?.id ?? null);
   const { data: satellites = NO_SATELLITES } = useSatellites();
@@ -60,16 +71,6 @@ export function useSectionSummaries(agent: AgentView | null): {
   const { data: schedules = [] } = useSchedules(agent?.id ?? null);
   const skillsState = useSkillsState(agent?.id ?? null);
   const { data: configStatus } = useHarnessConfigStatus(agent?.id ?? null);
-  const { data: currentConfig } = useHarnessConfigCurrent(agent?.id ?? null);
-
-  const modelName = useMemo(() => {
-    const value = currentConfig?.model;
-    if (!value) return null;
-    const modelGroup = configStatus?.catalog?.options.find(
-      (g) => g.id === "model",
-    );
-    return modelGroup?.choices.find((c) => c.value === value)?.name ?? value;
-  }, [currentConfig?.model, configStatus?.catalog]);
 
   const providerAppIds = useMemo(
     () =>
@@ -94,35 +95,24 @@ export function useSectionSummaries(agent: AgentView | null): {
     agent?.id ?? null,
   );
 
-  const setup = useMemo(() => {
-    if (!agent) return undefined;
-    const lookup: SandboxSubtitleLookup = {
-      templates,
-      connectionTemplateIdById: new Map(apps.map((a) => [a.id, a.templateId])),
-      slotUnit: null,
-    };
-    const { harness, provider } = sandboxSubtitleParts(agent, lookup);
-    if (configStatus?.harnesses) {
-      const providers = apps
-        .filter(
-          (a) =>
-            providerAppIds.has(a.id) &&
-            agent.grantedConnectionIds.includes(a.id),
-        )
-        .map((a) => a.name);
-      return [harness, formatNameList(providers)].filter(Boolean).join(", ");
-    }
-    const base = [harness, provider, modelName].filter(Boolean).join(", ");
-    return staleModel.stale ? `${base} · not offered` : base;
-  }, [
-    agent,
-    templates,
-    apps,
-    modelName,
-    staleModel.stale,
-    configStatus?.harnesses,
-    providerAppIds,
-  ]);
+  const { data: budget } = useBudgetReserved();
+  const setup =
+    agent && budget
+      ? formatSizeLabel(sizeInMi(agent.size), slotUnitOf(budget))
+      : undefined;
+
+  const { data: currentPreset } = useCurrentPreset(agent?.id ?? null);
+  const network = currentPreset ? PRESET_SUMMARY[currentPreset] : undefined;
+
+  const envCount = agent?.env?.filter(
+    (e) => !isProtectedAgentEnvName(e.name),
+  ).length;
+  const environment =
+    envCount === undefined
+      ? undefined
+      : envCount === 0
+        ? "No variables"
+        : plural(envCount, "variable");
 
   const connectionTemplates = useConnectionTemplates();
   const templateById = useMemo(
@@ -189,7 +179,7 @@ export function useSectionSummaries(agent: AgentView | null): {
     if (!agent) return undefined;
     const running = schedules.filter(isUpcoming).length;
     if (running === 0) return "No schedules";
-    return `${running} Schedule${running === 1 ? "" : "s"} running`;
+    return `${plural(running, "schedule")} running`;
   }, [agent, schedules]);
 
   const { data: agentArtifacts } = useArtifacts(
@@ -203,23 +193,40 @@ export function useSectionSummaries(agent: AgentView | null): {
     return shared > 0 ? `${base} · ${shared} shared` : base;
   }, [agent, agentArtifacts]);
 
-  const { data: monthSpend } = useAgentMonthSpend(agent?.id ?? null);
+  const knowledgeSummary = useMemo(() => {
+    if (!appsLoaded || !connectionsQuery.data) return undefined;
+    const granted = new Set(
+      connectionsQuery.data.connections.map((c) => c.connectionId),
+    );
+    const count = apps.filter(
+      (a) => a.templateId === SHARED_KB_TEMPLATE_ID && granted.has(a.id),
+    ).length;
+    return count === 0 ? "No knowledge bases" : plural(count, "knowledge base");
+  }, [apps, appsLoaded, connectionsQuery.data]);
+
+  const { data: monthSpend, isError: spendUnavailable } = useAgentMonthSpend(
+    agent?.id ?? null,
+  );
   const usageSummary = useMemo(() => {
+    if (spendUnavailable) return "Not available";
     if (monthSpend === undefined) return undefined;
     return monthSpend > 0
       ? `${formatUsdCents(monthSpend)} this month`
       : "No spend this month";
-  }, [monthSpend]);
+  }, [monthSpend, spendUnavailable]);
 
   return {
     summaries: {
       setup,
       connections,
+      network,
+      environment,
       channels: channelsSummary,
       skills,
       schedules: schedulesSummary,
       artifacts: artifactsSummary,
       usage: usageSummary,
+      knowledge: knowledgeSummary,
     },
     warnings: missingProvider
       ? { setup: NO_PROVIDER_WARNING }

@@ -119,13 +119,13 @@ export function OnceScheduleForm({
   return (
     <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
       <DialogHeader
-        title={existing ? "Edit one-time task" : "Create a new Schedule"}
+        title={existing ? "Edit one-time task" : "Create a new schedule"}
         onClose={onClose}
       />
 
       <DialogBody className="flex flex-col gap-4">
         {leadingFields}
-        <FormField label="Name" error={errors.name?.message} disableInset>
+        <FormField label="Name" error={errors.name?.message}>
           <Input
             className="h-10"
             variant={errors.name ? "invalid" : undefined}
@@ -157,7 +157,7 @@ export function OnceScheduleForm({
 
         {when === "at" && (
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Date" error={errors.date?.message} disableInset>
+            <FormField label="Date" error={errors.date?.message}>
               <Input
                 type="date"
                 className="h-10"
@@ -165,7 +165,7 @@ export function OnceScheduleForm({
                 {...register("date")}
               />
             </FormField>
-            <FormField label="Time" error={errors.time?.message} disableInset>
+            <FormField label="Time" error={errors.time?.message}>
               <Input
                 type="time"
                 className="h-10"
@@ -177,11 +177,7 @@ export function OnceScheduleForm({
         )}
 
         {when === "at" && (
-          <FormField
-            label="Timezone"
-            error={errors.timezone?.message}
-            disableInset
-          >
+          <FormField label="Timezone" error={errors.timezone?.message}>
             <Controller
               control={control}
               name="timezone"
@@ -198,7 +194,7 @@ export function OnceScheduleForm({
           </FormField>
         )}
 
-        <FormField label="Prompt" error={errors.task?.message} disableInset>
+        <FormField label="Prompt" error={errors.task?.message}>
           <Textarea
             className="min-h-[80px] resize-y"
             variant={errors.task ? "invalid" : undefined}

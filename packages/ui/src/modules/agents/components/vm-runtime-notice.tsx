@@ -18,7 +18,7 @@ export function VmRuntimeNotice({ className }: { className?: string }) {
   return (
     <Callout
       tone="info"
-      inset
+
       className={cn("text-sm text-foreground", className)}
     >
       This agent runs as a microVM on the new sandbox runtime, enabled in{" "}
