@@ -1,13 +1,7 @@
-import { OverflowMenuHorizontal } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { LIST_ROW } from "@/components/ui/list-section";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 
 export function ChannelRow({
   title,
@@ -35,19 +29,9 @@ export function ChannelRow({
           <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
         )}
       </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={actionsLabel}
-            data-testid={menuTestId}
-          >
-            <OverflowMenuHorizontal size={16} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>{actions}</DropdownMenuContent>
-      </DropdownMenu>
+      <RowActionsMenu label={actionsLabel} testId={menuTestId}>
+        {actions}
+      </RowActionsMenu>
     </div>
   );
 }

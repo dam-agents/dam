@@ -2,7 +2,6 @@ import {
   ChevronDown,
   ChevronUp,
   Launch,
-  OverflowMenuHorizontal,
   Renew,
   Time,
   TrashCan,
@@ -13,12 +12,8 @@ import { useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
@@ -209,40 +204,28 @@ export function SkillSourceCard({
             </Button>
           )}
           {}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Source actions"
-                className="shrink-0 text-muted-foreground"
-              >
-                <OverflowMenuHorizontal size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem
-                disabled={loading || revalidating}
-                onSelect={onRescan}
-              >
-                Re-scan
+          <RowActionsMenu label="Source actions">
+            <DropdownMenuItem
+              disabled={loading || revalidating}
+              onSelect={onRescan}
+            >
+              Re-scan
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() =>
+                window.open(source.gitUrl, "_blank", "noopener,noreferrer")
+              }
+            >
+              <span className="flex-1">View repo</span>
+              <Launch size={14} />
+            </DropdownMenuItem>
+            {canRemove && (
+              <DropdownMenuItem tone="danger" onSelect={onRemove}>
+                <TrashCan size={14} />
+                <span className="flex-1">Remove source</span>
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() =>
-                  window.open(source.gitUrl, "_blank", "noopener,noreferrer")
-                }
-              >
-                <span className="flex-1">View repo</span>
-                <Launch size={14} />
-              </DropdownMenuItem>
-              {canRemove && (
-                <DropdownMenuItem tone="danger" onSelect={onRemove}>
-                  <TrashCan size={14} />
-                  <span className="flex-1">Remove source</span>
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            )}
+          </RowActionsMenu>
         </div>
       </div>
 

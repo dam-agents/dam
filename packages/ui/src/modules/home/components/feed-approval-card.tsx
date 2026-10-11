@@ -1,15 +1,13 @@
-import { OverflowMenuVertical, Settings } from "@carbon/icons-react";
+import { Settings } from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { cn } from "@/lib/utils";
 
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
@@ -116,41 +114,32 @@ export function FeedApprovalCard({
                 Allow
               </Button>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="px-2"
-                  disabled={inflight}
-                  aria-label="More approval actions"
+            <RowActionsMenu
+              label="More approval actions"
+              variant="outline"
+              disabled={inflight}
+            >
+              {rest.map((action) => (
+                <DropdownMenuItem
+                  key={action.id}
+                  disabled={action.disabled}
+                  className={action.danger ? "text-destructive" : undefined}
+                  onSelect={() => void act(action.run, action.resolvedLabel)}
+                  title={action.tooltip}
                 >
-                  <OverflowMenuVertical size={16} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {rest.map((action) => (
-                  <DropdownMenuItem
-                    key={action.id}
-                    disabled={action.disabled}
-                    className={action.danger ? "text-destructive" : undefined}
-                    onSelect={() => void act(action.run, action.resolvedLabel)}
-                    title={action.tooltip}
-                  >
-                    {action.label}
+                  {action.label}
+                </DropdownMenuItem>
+              ))}
+              {hostLabel !== null && (
+                <>
+                  <DropdownMenuSeparator className="-mx-1" />
+                  <DropdownMenuItem onSelect={openSettings}>
+                    <Settings size={16} />
+                    Network settings
                   </DropdownMenuItem>
-                ))}
-                {hostLabel !== null && (
-                  <>
-                    <DropdownMenuSeparator className="-mx-1" />
-                    <DropdownMenuItem onSelect={openSettings}>
-                      <Settings size={16} />
-                      Network settings
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                </>
+              )}
+            </RowActionsMenu>
           </div>
         )}
       </div>

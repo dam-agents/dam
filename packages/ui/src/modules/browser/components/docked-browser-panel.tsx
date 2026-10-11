@@ -6,20 +6,15 @@ import {
   Globe,
   Maximize,
   Minimize,
-  OverflowMenuVertical,
   Renew,
 } from "@carbon/icons-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Spinner } from "@/components/ui/spinner";
 
 import {
@@ -157,21 +152,14 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             <Renew size={16} />
           </Button>
         )}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="Browser actions">
-              <OverflowMenuVertical size={16} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={stream.restartBrowser}>
-              Restart browser
-            </DropdownMenuItem>
-            <DropdownMenuItem tone="danger" onSelect={() => void clearData()}>
-              Clear browser data
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <RowActionsMenu label="Browser actions">
+          <DropdownMenuItem onSelect={stream.restartBrowser}>
+            Restart browser
+          </DropdownMenuItem>
+          <DropdownMenuItem tone="danger" onSelect={() => void clearData()}>
+            Clear browser data
+          </DropdownMenuItem>
+        </RowActionsMenu>
         <Button
           variant="ghost"
           size="icon-sm"

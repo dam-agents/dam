@@ -1,11 +1,4 @@
-import {
-  Code,
-  Download,
-  Edit,
-  OverflowMenuVertical,
-  Time,
-  TrashCan,
-} from "@carbon/icons-react";
+import { Code, Download, Edit, Time, TrashCan } from "@carbon/icons-react";
 import {
   type BackgroundWorkItemView,
   ChannelType,
@@ -19,17 +12,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
   HOVER_ACTION,
   HOVER_ROOM,
   HOVER_YIELD,
 } from "@/components/ui/hover-action";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
@@ -199,46 +188,39 @@ export function SessionRow({
             harness={s.harness ?? null}
           />
           {}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                data-testid="session-menu-button"
-                variant="ghost"
-                size="icon-xs"
-                className={cn(
-                  "absolute top-1/2 -right-1 -translate-y-1/2",
-                  HOVER_ACTION,
-                )}
-                onClick={(e) => e.stopPropagation()}
-                aria-label="More actions"
-              >
-                <OverflowMenuVertical size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent onClick={(event) => event.stopPropagation()}>
-              {onExportTimeline && (
-                <DropdownMenuItem
-                  data-testid="session-export-timeline-button"
-                  onSelect={onExportTimeline}
-                >
-                  <Download size={13} /> Export telemetry
-                </DropdownMenuItem>
-              )}
+          <RowActionsMenu
+            label="More actions"
+            testId="session-menu-button"
+            dense
+            className={cn(
+              "absolute top-1/2 -right-1 -translate-y-1/2",
+              HOVER_ACTION,
+            )}
+            stopPropagation
+            contentProps={{ onClick: (event) => event.stopPropagation() }}
+          >
+            {onExportTimeline && (
               <DropdownMenuItem
-                data-testid="session-rename-button"
-                onSelect={onRename}
+                data-testid="session-export-timeline-button"
+                onSelect={onExportTimeline}
               >
-                <Edit size={13} /> Rename session
+                <Download size={13} /> Export telemetry
               </DropdownMenuItem>
-              <DropdownMenuItem
-                data-testid="session-delete-button"
-                tone="danger"
-                onSelect={onDelete}
-              >
-                <TrashCan size={13} /> Delete session
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            )}
+            <DropdownMenuItem
+              data-testid="session-rename-button"
+              onSelect={onRename}
+            >
+              <Edit size={13} /> Rename session
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-testid="session-delete-button"
+              tone="danger"
+              onSelect={onDelete}
+            >
+              <TrashCan size={13} /> Delete session
+            </DropdownMenuItem>
+          </RowActionsMenu>
         </div>
         <span className="text-[11px] text-muted-foreground truncate">
           {conversation ? `${conversation} · ` : ""}

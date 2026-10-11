@@ -1,14 +1,9 @@
-import { Box, OverflowMenuVertical, View } from "@carbon/icons-react";
+import { Box, View } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 import { useCallback, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { clickableProps } from "@/lib/clickable";
 import { timeAgo } from "@/lib/format-time";
@@ -129,23 +124,16 @@ export function ArtifactRow({
           />
         )}
         <ArtifactStatusBadge artifact={artifact} onShare={onShare} />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="More actions">
-              <OverflowMenuVertical size={16} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <ArtifactRowMenuItems
-              artifact={artifact}
-              onEdit={onEdit}
-              onRename={onRename}
-              onMove={onMove}
-              onShare={onShare}
-              onSetRetention={onSetRetention}
-            />
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <RowActionsMenu label="More actions">
+          <ArtifactRowMenuItems
+            artifact={artifact}
+            onEdit={onEdit}
+            onRename={onRename}
+            onMove={onMove}
+            onShare={onShare}
+            onSetRetention={onSetRetention}
+          />
+        </RowActionsMenu>
       </div>
     </div>
   );

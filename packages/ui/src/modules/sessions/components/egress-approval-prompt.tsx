@@ -1,14 +1,12 @@
-import { OverflowMenuVertical, Settings } from "@carbon/icons-react";
+import { Settings } from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 
 import { useNow } from "../../../hooks/use-now.js";
 import { useStore } from "../../../store.js";
@@ -70,41 +68,34 @@ function EgressApprovalCard({
             {denyOnce.label}
           </Button>
         )}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="bg-background h-[26px] px-1.5"
-              disabled={inflight}
-              aria-label="More approval actions"
+        <RowActionsMenu
+          label="More approval actions"
+          variant="outline"
+          className="bg-background h-[26px] px-1.5"
+          disabled={inflight}
+          contentProps={{ align: "start" }}
+        >
+          {rest.map((action) => (
+            <DropdownMenuItem
+              key={action.id}
+              disabled={action.disabled}
+              className={action.danger ? "text-destructive" : undefined}
+              onSelect={() => void action.run()}
+              title={action.tooltip}
             >
-              <OverflowMenuVertical size={16} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {rest.map((action) => (
-              <DropdownMenuItem
-                key={action.id}
-                disabled={action.disabled}
-                className={action.danger ? "text-destructive" : undefined}
-                onSelect={() => void action.run()}
-                title={action.tooltip}
-              >
-                {action.label}
+              {action.label}
+            </DropdownMenuItem>
+          ))}
+          {hostLabel !== null && (
+            <>
+              <DropdownMenuSeparator className="-mx-1" />
+              <DropdownMenuItem onSelect={openSettings}>
+                <Settings size={16} />
+                Network settings
               </DropdownMenuItem>
-            ))}
-            {hostLabel !== null && (
-              <>
-                <DropdownMenuSeparator className="-mx-1" />
-                <DropdownMenuItem onSelect={openSettings}>
-                  <Settings size={16} />
-                  Network settings
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </>
+          )}
+        </RowActionsMenu>
       </div>
       {queued > 0 && (
         <div className="text-[11px] text-muted-foreground">

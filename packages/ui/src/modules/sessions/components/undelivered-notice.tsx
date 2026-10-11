@@ -1,12 +1,7 @@
-import { OverflowMenuVertical, Warning } from "@carbon/icons-react";
+import { Warning } from "@carbon/icons-react";
 
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { useCopy } from "@/hooks/use-copy";
 
 import { emitToast } from "../../../lib/toast.js";
@@ -72,51 +67,42 @@ export function UndeliveredNotice({
           </span>
         )}
       </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Undelivered message actions"
-            data-testid="undelivered-actions"
-            className="-my-1 shrink-0"
-          >
-            <OverflowMenuVertical size={16} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {retry && (
-            <DropdownMenuItem
-              data-testid="undelivered-retry-button"
-              onSelect={retry}
-            >
-              Retry
-            </DropdownMenuItem>
-          )}
+      <RowActionsMenu
+        label="Undelivered message actions"
+        testId="undelivered-actions"
+        className="-my-1"
+      >
+        {retry && (
           <DropdownMenuItem
-            disabled={text === ""}
-            onSelect={() => {
-              void copy(text).then((state) => {
-                if (state === "failed")
-                  emitToast({
-                    kind: "error",
-                    message: "Couldn't copy the message text.",
-                  });
-              });
-            }}
+            data-testid="undelivered-retry-button"
+            onSelect={retry}
           >
-            Copy text
+            Retry
           </DropdownMenuItem>
-          <DropdownMenuItem
-            className="text-danger"
-            onSelect={() => {
-              onDelete(message.id);
-            }}
-          >
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        )}
+        <DropdownMenuItem
+          disabled={text === ""}
+          onSelect={() => {
+            void copy(text).then((state) => {
+              if (state === "failed")
+                emitToast({
+                  kind: "error",
+                  message: "Couldn't copy the message text.",
+                });
+            });
+          }}
+        >
+          Copy text
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-danger"
+          onSelect={() => {
+            onDelete(message.id);
+          }}
+        >
+          Delete
+        </DropdownMenuItem>
+      </RowActionsMenu>
     </div>
   );
 }

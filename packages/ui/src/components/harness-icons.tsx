@@ -42,13 +42,15 @@ const ICONS: Record<
 export function HarnessIcons({
   harnesses = ["bob", "claude-code", "codex", "pi"],
   size = "md",
+  className,
 }: {
   harnesses?: readonly string[];
   size?: "xs" | "sm" | "md";
+  className?: string;
 }) {
   if (harnesses.length === 0) return null;
   return (
-    <span className="flex items-center gap-2">
+    <span className={cn("flex items-center gap-2", className)}>
       {harnesses
         .filter((name): name is HarnessFamily =>
           Object.keys(ICONS).includes(name),

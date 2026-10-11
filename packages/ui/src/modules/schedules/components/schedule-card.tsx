@@ -2,18 +2,13 @@ import {
   ChevronDown,
   ChevronUp,
   Launch,
-  OverflowMenuVertical,
   Time,
   WarningAlt,
 } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Switch } from "@/components/ui/switch";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
 import { emitToast } from "@/lib/toast";
@@ -196,38 +191,24 @@ export function ScheduleCard({
           />
         )}
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground"
-              aria-label="Schedule actions"
-            >
-              <OverflowMenuVertical size={16} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            {onceState === null && (
-              <DropdownMenuItem onSelect={handleRunNow}>
-                Run now
-              </DropdownMenuItem>
-            )}
-            {(onceState === null || onceState === "pending") && (
-              <DropdownMenuItem onSelect={handleEdit}>
-                Edit schedule
-              </DropdownMenuItem>
-            )}
-            {sessionMode === "continuous" && (
-              <DropdownMenuItem onSelect={handleReset}>
-                Reset session
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem tone="danger" onSelect={handleDelete}>
-              Delete schedule
+        <RowActionsMenu label="Schedule actions">
+          {onceState === null && (
+            <DropdownMenuItem onSelect={handleRunNow}>Run now</DropdownMenuItem>
+          )}
+          {(onceState === null || onceState === "pending") && (
+            <DropdownMenuItem onSelect={handleEdit}>
+              Edit schedule
             </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          )}
+          {sessionMode === "continuous" && (
+            <DropdownMenuItem onSelect={handleReset}>
+              Reset session
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem tone="danger" onSelect={handleDelete}>
+            Delete schedule
+          </DropdownMenuItem>
+        </RowActionsMenu>
       </div>
 
       <button

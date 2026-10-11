@@ -1,21 +1,9 @@
-import {
-  Download,
-  Export,
-  OverflowMenuHorizontal,
-  Renew,
-  TrashCan,
-  View,
-} from "@carbon/icons-react";
+import { Download, Export, Renew, TrashCan, View } from "@carbon/icons-react";
 import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 
 import { badgeVariants } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
 import { formatDateTime } from "@/lib/format-time";
@@ -96,65 +84,53 @@ export function StandaloneSkillRow({
         </Tooltip>
       )}
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Skill actions"
-            className="shrink-0 text-muted-foreground"
+      <RowActionsMenu label="Skill actions">
+        {onOpen && (
+          <DropdownMenuItem onSelect={onOpen}>
+            <View size={14} />
+            <span className="flex-1">Preview SKILL.md</span>
+          </DropdownMenuItem>
+        )}
+        {publish?.prState === "merged" && onTrack && (
+          <DropdownMenuItem
+            disabled={trackUnavailable}
+            onSelect={onTrack}
+            title={
+              trackUnavailable
+                ? `${publish.sourceName} hasn't been scanned yet, so this skill's published version isn't known`
+                : undefined
+            }
           >
-            <OverflowMenuHorizontal size={16} />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          {onOpen && (
-            <DropdownMenuItem onSelect={onOpen}>
-              <View size={14} />
-              <span className="flex-1">Preview SKILL.md</span>
-            </DropdownMenuItem>
-          )}
-          {publish?.prState === "merged" && onTrack && (
-            <DropdownMenuItem
-              disabled={trackUnavailable}
-              onSelect={onTrack}
-              title={
-                trackUnavailable
-                  ? `${publish.sourceName} hasn't been scanned yet, so this skill's published version isn't known`
-                  : undefined
-              }
-            >
-              <Renew size={14} />
-              <span className="flex-1">Track from {publish.sourceName}</span>
-            </DropdownMenuItem>
-          )}
-          {}
-          {canRepublish && (
-            <DropdownMenuItem
-              disabled={!canPublish}
-              onSelect={onPublish}
-              title={
-                canPublish
-                  ? undefined
-                  : "Add a GitHub source first to publish there"
-              }
-            >
-              <Export size={14} />
-              <span className="flex-1">
-                {publish ? "Publish again…" : "Publish…"}
-              </span>
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem onSelect={onDownload}>
-            <Download size={14} />
-            <span className="flex-1">Download skill</span>
+            <Renew size={14} />
+            <span className="flex-1">Track from {publish.sourceName}</span>
           </DropdownMenuItem>
-          <DropdownMenuItem tone="danger" onSelect={onDelete}>
-            <TrashCan size={14} />
-            <span className="flex-1">Delete skill</span>
+        )}
+        {}
+        {canRepublish && (
+          <DropdownMenuItem
+            disabled={!canPublish}
+            onSelect={onPublish}
+            title={
+              canPublish
+                ? undefined
+                : "Add a GitHub source first to publish there"
+            }
+          >
+            <Export size={14} />
+            <span className="flex-1">
+              {publish ? "Publish again…" : "Publish…"}
+            </span>
           </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        )}
+        <DropdownMenuItem onSelect={onDownload}>
+          <Download size={14} />
+          <span className="flex-1">Download skill</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem tone="danger" onSelect={onDelete}>
+          <TrashCan size={14} />
+          <span className="flex-1">Delete skill</span>
+        </DropdownMenuItem>
+      </RowActionsMenu>
     </div>
   );
 }

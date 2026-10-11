@@ -44,6 +44,8 @@ type SectionWarnings = Partial<Record<SandboxSection, string>>;
 const STALE_MODEL_WARNING = "Saved model not offered by the current provider";
 const NO_PROVIDER_WARNING =
   "No provider connected — the agent cannot reach a model";
+const NO_PROVIDER_CHAT_WARNING =
+  "No model provider granted — the agent cannot reach a model. Pick one when you start a session in chat.";
 
 const PRESET_SUMMARY: Record<EgressPreset, string> = {
   trusted: "Trusted defaults",
@@ -229,7 +231,11 @@ export function useSectionSummaries(agent: AgentView | null): {
       knowledge: knowledgeSummary,
     },
     warnings: missingProvider
-      ? { setup: NO_PROVIDER_WARNING }
+      ? {
+          setup: configStatus?.harnesses
+            ? NO_PROVIDER_CHAT_WARNING
+            : NO_PROVIDER_WARNING,
+        }
       : staleModel.stale && !configStatus?.harnesses
         ? { setup: STALE_MODEL_WARNING }
         : {},

@@ -52,7 +52,11 @@ export function ProviderRow({
           <div className="flex shrink-0 items-center gap-2">
             <span className="text-xs text-muted-foreground">supports:</span>
             {harnesses?.length ? (
-              <HarnessIcons harnesses={harnesses} size="sm" />
+              <HarnessIcons
+                harnesses={harnesses}
+                size="sm"
+                className="text-muted-foreground"
+              />
             ) : (
               <span className="text-xs text-muted-foreground">
                 {harnesses ? "None" : "Compatibility unavailable"}
