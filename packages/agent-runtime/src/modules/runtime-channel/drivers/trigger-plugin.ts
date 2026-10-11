@@ -66,6 +66,7 @@ export function createTriggerPlugin(deps: {
       ...(payload.provider !== undefined && { provider: payload.provider }),
       ...(model !== undefined && { model }),
       ...(payload.sessionTitle && { customTitle: payload.sessionTitle }),
+      ...(payload.settings !== undefined && { settings: payload.settings }),
     };
     const origin = payload.origin;
     if (origin?.mode === "continue") {

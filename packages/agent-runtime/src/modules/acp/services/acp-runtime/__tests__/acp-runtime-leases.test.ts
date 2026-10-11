@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { PIN_MODEL_METHOD } from "agent-runtime-api";
+import { CONFIGURE_SESSION_METHOD, PIN_MODEL_METHOD } from "agent-runtime-api";
 import {
   IDLE_REAP_DELAY_MS,
   createClient,
@@ -36,13 +36,18 @@ import {
 
 const IDLE_CHECK_MS = 10_000;
 
+const SESSION_SETTINGS: Record<string, "process" | "session"> = {
+  mode: "session",
+  cacheTtl: "process",
+};
+
 function createLeaseWorld(opts: { providers: string[] }) {
   let providers = opts.providers;
   let keptProcesses = 0;
   const metadata = createSessionMetadata();
   const harnesses = new Map<string, Harness[]>();
   const key = (pair: LeasePair): string =>
-    `${pair.harness}/${pair.provider ?? "-"}${pair.model ? `/${pair.model}` : ""}`;
+    `${pair.harness}/${pair.provider ?? "-"}${pair.model ? `/${pair.model}` : ""}${pair.settings?.cacheTtl ? `/cache-${pair.settings.cacheTtl}` : ""}`;
   const backgroundWork = createBackgroundWorkRegistry({
     keepPolicy: keepsEveryTask,
   });
@@ -50,6 +55,11 @@ function createLeaseWorld(opts: { providers: string[] }) {
     defaultHarness: "claude-code",
     harnessKnown: (h) => ["claude-code", "codex"].includes(h),
     providers: () => providers,
+    settingScope: (_harness, id) => SESSION_SETTINGS[id] ?? null,
+    settingsError: (_harness, settings) =>
+      Object.keys(settings).some((id) => !SESSION_SETTINGS[id])
+        ? "unsupported setting"
+        : undefined,
     sessionMetadata: metadata.store,
     backgroundWork,
     keepPolicy: { keptProcessCount: () => keptProcesses },
@@ -65,6 +75,17 @@ function createLeaseWorld(opts: { providers: string[] }) {
         sessionMetadata: metadata.store,
         backgroundWork: scoped.backgroundWork,
         onHarnessExited: scoped.onHarnessExited,
+        sessionSettingFrames: (sessionId) => {
+          const mode = metadata.store.get(sessionId)?.meta.settings?.mode;
+          return mode
+            ? [
+                {
+                  method: "session/set_mode",
+                  params: { sessionId, modeId: mode },
+                },
+              ]
+            : [];
+        },
         spawnAgent: () => {
           scoped.harnessSpawned();
           const { harness, process } = createHarness();
@@ -583,5 +604,147 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     expect(world.harnessCount("claude-code/conn-b")).toBe(1);
     expect(client.isOpen()).toBe(false);
     expect(world.router.leases().map((l) => l.provider)).toEqual(["conn-a"]);
+  });
+  /** TEST_SCENARIO: A mode picked during a turn belongs to the session's next
+   * turn: it reaches the harness only once the running turn ends, and the
+   * prompt sent after it waits for the harness to take the mode first. Another
+   * session on the same process is untouched and the process is not
+   * restarted. */
+  it("applies a session setting to that session's next turn only", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    startSession(world, client, "claude-code/conn-a", "s", 1, {});
+    startSession(world, client, "claude-code/conn-a", "other", 2, {});
+    const harness = world.harness("claude-code/conn-a");
+    client.send(frames.prompt(3, "s", "first"));
+    client.send({
+      jsonrpc: "2.0",
+      id: 4,
+      method: CONFIGURE_SESSION_METHOD,
+      params: { sessionId: "s", settings: { mode: "plan" } },
+    });
+    expect(client.reply(4)?.result).toEqual({ settings: { mode: "plan" } });
+    client.send(frames.prompt(5, "s", "second"));
+    expect(harness.received("session/set_mode")).toEqual([]);
+
+    harness.replyToSession("session/prompt", "s", { stopReason: "end_turn" });
+    expect(harness.received("session/set_mode")).toEqual([
+      expect.objectContaining({ params: { sessionId: "s", modeId: "plan" } }),
+    ]);
+    expect(promptTextsOf(harness)).toEqual(["first"]);
+    harness.replyTo("session/set_mode", {});
+    expect(promptTextsOf(harness)).toEqual(["first", "second"]);
+    expect(world.harnessCount("claude-code/conn-a")).toBe(1);
+    expect(world.metadata.store.get("other")?.meta.settings).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: A mode picked while the session is idle reaches the
+   * harness before the session's next prompt. */
+  it("applies a setting picked between turns before the next prompt", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    startSession(world, client, "claude-code/conn-a", "s", 1, {});
+    const harness = world.harness("claude-code/conn-a");
+    client.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: CONFIGURE_SESSION_METHOD,
+      params: { sessionId: "s", settings: { mode: "plan" } },
+    });
+    expect(client.reply(2)?.result).toEqual({ settings: { mode: "plan" } });
+    expect(harness.received("session/set_mode")).toEqual([
+      expect.objectContaining({ params: { sessionId: "s", modeId: "plan" } }),
+    ]);
+    client.send(frames.prompt(3, "s", "next"));
+    expect(promptTextsOf(harness)).toEqual([]);
+    harness.replyTo("session/set_mode", {});
+    expect(promptTextsOf(harness)).toEqual(["next"]);
+  });
+
+  /** TEST_SCENARIO: After the agent restarts, a client that loads a saved
+   * session gets its saved mode on the new harness process before it can
+   * prompt, so the setting survives the restart. */
+  it("re-applies a saved setting when a client loads the session", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    world.metadata.store.set("saved", {
+      mode: "chat",
+      harness: "claude-code",
+      provider: "conn-a",
+      settings: { mode: "plan" },
+    });
+    const client = world.connect();
+    client.send(frames.loadSession(1, "saved"));
+    const harness = world.harness("claude-code/conn-a");
+    harness.replyToSession("session/load", "saved", {});
+    expect(harness.received("session/set_mode")).toEqual([
+      expect.objectContaining({
+        params: { sessionId: "saved", modeId: "plan" },
+      }),
+    ]);
+  });
+
+  /** TEST_SCENARIO: A setting the harness reads only at start moves the
+   * session to a process started with it, so the process other sessions run
+   * on is neither restarted nor changed. A session in the middle of a turn
+   * cannot move, so the change is refused until the turn ends. */
+  it("runs a session with a start-time setting in a process of its own", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    startSession(world, client, "claude-code/conn-a", "s", 1, {});
+    startSession(world, client, "claude-code/conn-a", "other", 2, {});
+    const shared = world.harness("claude-code/conn-a");
+    client.send(frames.prompt(3, "s", "busy"));
+    const configure = (id: number) =>
+      client.send({
+        jsonrpc: "2.0",
+        id,
+        method: CONFIGURE_SESSION_METHOD,
+        params: { sessionId: "s", settings: { cacheTtl: "1h" } },
+      });
+    configure(4);
+    expect(client.reply(4)?.error).toMatchObject({ code: -32000 });
+
+    shared.replyToSession("session/prompt", "s", { stopReason: "end_turn" });
+    configure(5);
+    expect(client.reply(5)?.result).toEqual({ settings: { cacheTtl: "1h" } });
+    client.send(frames.prompt(6, "s", "cached"));
+    const own = world.harness("claude-code/conn-a/cache-1h");
+    const load = own
+      .receivedMethods()
+      .find((m) => ["session/load", "session/resume"].includes(m));
+    own.replyTo(load!, {});
+    expect(promptTextsOf(own)).toEqual(["cached"]);
+    expect(shared.killed()).toBe(false);
+    client.send(frames.prompt(7, "other", "unchanged"));
+    expect(promptTextsOf(shared)).toEqual(["busy", "unchanged"]);
+  });
+
+  /** TEST_SCENARIO: A setting the session's harness does not offer is refused
+   * when the session is created and when it is changed, so a session never
+   * runs on a value the harness would ignore. */
+  it("refuses a setting the harness cannot apply to one session", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    client.send(newSessionOn(1, {}));
+    client.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/new",
+      params: {
+        cwd: ".",
+        _meta: { platform: { settings: { approvals: "ask" } } },
+      },
+    });
+    expect(client.reply(2)?.error).toMatchObject({ code: -32602 });
+    world
+      .harness("claude-code/conn-a")
+      .replyTo("session/new", { sessionId: "s" });
+    client.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: CONFIGURE_SESSION_METHOD,
+      params: { sessionId: "s", settings: { approvals: "ask" } },
+    });
+    expect(client.reply(3)?.error).toMatchObject({ code: -32602 });
   });
 });

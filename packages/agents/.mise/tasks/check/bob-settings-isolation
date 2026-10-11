@@ -1,0 +1,43 @@
+#!/usr/bin/env node
+//MISE description="Each Bob process reads and writes its own settings file, never the shared one"
+//MISE sources=["bob/rootfs/usr/local/lib/bob-settings-file.mjs", ".mise/tasks/check/bob-settings-isolation"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const preload = fileURLToPath(new URL("../../../bob/rootfs/usr/local/lib/bob-settings-file.mjs", import.meta.url));
+const home = mkdtempSync(join(tmpdir(), "bob-settings-isolation-"));
+const shared = join(home, ".bob/settings/settings.json");
+const own = join(home, ".bob/platform-processes/a/settings.json");
+mkdirSync(join(home, ".bob/settings"), { recursive: true });
+mkdirSync(join(home, ".bob/platform-processes/a"), { recursive: true });
+writeFileSync(shared, '{"session":{"model":"shared"}}');
+writeFileSync(own, '{"session":{"model":"own"}}');
+// TEST_SCENARIO: Bob reads its settings sync, backs them up, writes async and renames a staged copy over them; every step must stay on the process's own file.
+const bob = `
+import fs from "node:fs";
+import { readFileSync } from "node:fs";
+const p = ${JSON.stringify(shared)};
+const seen = JSON.parse(readFileSync(p, "utf8")).session.model;
+fs.copyFileSync(p, p + ".bak");
+await fs.promises.writeFile(p + ".tmp", '{"session":{"model":"written"}}');
+fs.renameSync(p + ".tmp", p);
+console.log(seen, fs.existsSync(p));
+`;
+try {
+  const out = execFileSync(process.execPath, ["--import", preload, "--input-type=module", "-e", bob], {
+    env: { ...process.env, HOME: home, BOB_SETTINGS_FILE: own },
+    encoding: "utf8",
+  });
+  assert.equal(out.trim(), "own true");
+  assert.equal(readFileSync(shared, "utf8"), '{"session":{"model":"shared"}}');
+  assert.equal(readFileSync(own, "utf8"), '{"session":{"model":"written"}}');
+  assert.equal(readFileSync(`${own}.bak`, "utf8"), '{"session":{"model":"own"}}');
+  console.log("a Bob process keeps to its own settings file");
+} finally {
+  rmSync(home, { recursive: true, force: true });
+}

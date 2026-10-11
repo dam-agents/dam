@@ -16,7 +16,6 @@ import { ProviderSelect } from "../../providers/components/provider-select.js";
 import type { useSandboxSettingsForm } from "../hooks/use-sandbox-settings-form.js";
 import { HarnessSettingsSections } from "./harness-settings-sections.js";
 import { LifecycleField } from "./lifecycle-field.js";
-import { ProviderGrantsSection } from "./provider-grants-section.js";
 import { SandboxModelSettings } from "./sandbox-model-settings.js";
 import { SandboxSizeSection } from "./sandbox-size-section.js";
 import { ConnectionAddressingSetupSection } from "./setup/setup-sections.js";
@@ -79,9 +78,7 @@ export function SandboxSetupSection({ f }: Props) {
         </FormField>
       </section>
 
-      {f.carriedHarnesses ? (
-        <ProviderGrantsSection agentId={agent.id} />
-      ) : (
+      {!f.carriedHarnesses && (
         <section className="mb-8">
           <SectionLabel spaced>Provider</SectionLabel>
           <Inset>
@@ -136,13 +133,15 @@ export function SandboxSetupSection({ f }: Props) {
         />
       )}
 
-      {f.carriedHarnesses ? (
-        <HarnessSettingsSections
-          agentId={agent.id}
-          harnesses={f.carriedHarnesses}
-        />
-      ) : (
+      {!f.carriedHarnesses ? (
         <SandboxModelSettings agentId={agent.id} draft={f.harnessDraft} />
+      ) : (
+        !f.carriedHarnesses.some((h) => h.sessionSettings) && (
+          <HarnessSettingsSections
+            agentId={agent.id}
+            harnesses={f.carriedHarnesses}
+          />
+        )
       )}
 
       <KnowledgeSection agent={agent} />

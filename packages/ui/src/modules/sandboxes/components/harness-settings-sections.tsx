@@ -6,9 +6,12 @@ import { SectionLabel } from "@/components/ui/section-label";
 
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
-import { agentTrpc } from "../../agents/agent-trpc.js";
+import { agentTrpc, agentTrpcHttp } from "../../agents/agent-trpc.js";
 import { useApplyHarnessConfig } from "../../agents/api/harness-config.js";
-import { useIsAgentOperable } from "../../agents/api/queries.js";
+import {
+  useAgentLacksLiveUpdates,
+  useIsAgentOperable,
+} from "../../agents/api/queries.js";
 import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
 import { OptionPicker } from "../../sessions/components/model-settings-panel.js";
 import { OptionField } from "../../sessions/components/option-field.js";
@@ -18,10 +21,15 @@ const harnessCurrentKey = (agentId: string, harness: string) =>
 
 function useHarnessValues(agentId: string, harness: string) {
   const operable = useIsAgentOperable(agentId);
+  const compat = useAgentLacksLiveUpdates(agentId);
   const live = useQuery({
     queryKey: harnessCurrentKey(agentId, harness),
     queryFn: operable
-      ? () => agentTrpc(agentId).harnessConfig.current.query({ harness })
+      ? () =>
+          (compat
+            ? agentTrpcHttp(agentId)
+            : agentTrpc(agentId)
+          ).harnessConfig.current.query({ harness })
       : skipToken,
     retry: false,
   });
@@ -29,7 +37,13 @@ function useHarnessValues(agentId: string, harness: string) {
     ...trpc.harnessConfig.snapshot.queryOptions({ agentId, harness }),
     retry: false,
   });
-  return live.data ?? snapshot.data?.snapshot ?? null;
+  return {
+    values:
+      (operable ? live.data : undefined) ?? snapshot.data?.snapshot ?? null,
+    loading: live.isLoading || snapshot.isLoading,
+    liveFailed: operable && live.isError,
+    refetch: operable ? live.refetch : snapshot.refetch,
+  };
 }
 
 export function HarnessSettingsSections({
@@ -79,7 +93,10 @@ function HarnessSettings({
   harness: HarnessCapability;
   displayName: string;
 }) {
-  const values = useHarnessValues(agentId, harness.name);
+  const { values, loading, liveFailed, refetch } = useHarnessValues(
+    agentId,
+    harness.name,
+  );
   const apply = useApplyHarnessConfig();
   const groups =
     harness.harnessConfigCatalog?.options.filter(
@@ -111,20 +128,42 @@ function HarnessSettings({
   return (
     <div className="mb-4 last:mb-0">
       <h3 className="mb-2 text-sm font-medium">{displayName}</h3>
-      {groups.map((group) => (
-        <OptionField key={group.id} title={group.name}>
-          <OptionPicker
-            title={`${displayName} ${group.name}`}
-            choices={group.choices.map((c) => ({
-              id: c.value,
-              name: c.name,
-              description: c.description,
-            }))}
-            value={valueOf(group.id)}
-            onSelect={(id) => choose(group.id, id)}
-          />
-        </OptionField>
-      ))}
+      {liveFailed && values && (
+        <p className="mb-2 text-xs text-muted-foreground">
+          Live settings unavailable. Showing the last recorded values.
+        </p>
+      )}
+      {!values && (
+        <p className="text-sm text-muted-foreground">
+          {loading
+            ? "Loading settings…"
+            : "Settings unavailable. Start or upgrade the agent to read its settings."}
+          {!loading && (
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="ml-1 underline"
+            >
+              Retry
+            </button>
+          )}
+        </p>
+      )}
+      {values &&
+        groups.map((group) => (
+          <OptionField key={group.id} title={group.name}>
+            <OptionPicker
+              title={`${displayName} ${group.name}`}
+              choices={group.choices.map((c) => ({
+                id: c.value,
+                name: c.name,
+                description: c.description,
+              }))}
+              value={valueOf(group.id)}
+              onSelect={(id) => choose(group.id, id)}
+            />
+          </OptionField>
+        ))}
     </div>
   );
 }

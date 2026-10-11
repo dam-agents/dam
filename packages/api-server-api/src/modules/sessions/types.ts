@@ -64,6 +64,7 @@ export interface SessionView {
   harness?: string | null;
   provider?: string | null;
   model?: string | null;
+  settings?: Record<string, string>;
   spend?: { unit: string; cost: number };
 }
 

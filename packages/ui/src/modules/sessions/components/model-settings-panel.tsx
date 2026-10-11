@@ -131,7 +131,7 @@ export function ModelSettingsPanel({
   );
 }
 
-const CLEARED_LABEL = "Default";
+const CLEARED_LABEL = "Harness default";
 const CLEARED_DESCRIPTION = "Determined by harness settings";
 
 function OptionGroup({
@@ -152,7 +152,7 @@ function OptionGroup({
       value === null ? null : choices.find((c) => c.id === value);
     return (
       <OptionField title={title}>
-        <ReadOnlyOptionFace label={selected?.name ?? CLEARED_LABEL} />
+        <ReadOnlyOptionFace label={selected?.name ?? value ?? CLEARED_LABEL} />
       </OptionField>
     );
   }
@@ -196,7 +196,9 @@ export function OptionPicker({
           aria-label={title}
           className="flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-4 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="truncate">{selected?.name ?? placeholder}</span>
+          <span className="truncate">
+            {selected?.name ?? value ?? placeholder}
+          </span>
           <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>

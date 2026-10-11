@@ -14,7 +14,8 @@ import {
 import { dirname, join } from "node:path";
 
 const HOME = process.env.HOME || "/home/agent";
-const SETTINGS_PATH = join(HOME, ".bob", "settings", "settings.json");
+const SHARED_SETTINGS_PATH = join(HOME, ".bob", "settings", "settings.json");
+const SETTINGS_PATH = process.env.BOB_SETTINGS_FILE || SHARED_SETTINGS_PATH;
 const RULES_DIR = join(HOME, ".bob", "rules");
 const PLATFORM_RULE_PATH = join(RULES_DIR, "platform.md");
 const PLATFORM_INSTRUCTIONS = "/etc/AGENTS.md";
@@ -42,7 +43,7 @@ function normalizeMode(mode) {
 function readExistingSettings() {
   let raw;
   try {
-    raw = readFileSync(SETTINGS_PATH, "utf8");
+    raw = readFileSync(SHARED_SETTINGS_PATH, "utf8");
   } catch (err) {
     if (err.code === "ENOENT") return {};
     throw err;
@@ -89,7 +90,7 @@ function withPinSessionHook(hooks) {
 }
 
 function resolveApprovals(panel) {
-  const chosen = firstNonBlank(panel.approvals);
+  const chosen = firstNonBlank(process.env.BOB_SESSION_APPROVALS, panel.approvals);
   if (chosen && APPROVALS.includes(chosen)) return chosen;
   return process.env.BOB_AUTO_APPROVE === "0" ? "ask" : "auto";
 }

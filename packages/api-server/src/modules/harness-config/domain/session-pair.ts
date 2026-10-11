@@ -28,7 +28,8 @@ export interface SessionPairInputs {
  * way; a model chosen for a removed provider is dropped there. Otherwise the
  * platform default harness runs on the first granted provider it can, with
  * that harness's own default model, because a model chosen for another
- * provider would not exist there. Null when no granted provider fits either,
+ * provider would not exist there. Settings saved with the pair stay with its
+ * harness and are dropped when the run falls back to another harness. Null when no granted provider fits either,
  * which the caller reports as a failed run.
  */
 export function resolveSessionPair(
@@ -52,6 +53,7 @@ export function resolveSessionPair(
         harness: remembered.harness,
         provider: null,
         model: remembered.provider === null ? remembered.model : null,
+        ...(remembered.settings && { settings: remembered.settings }),
       };
   } else {
     const provider = firstFitting(input.agentHarness);

@@ -1,4 +1,4 @@
-import { PIN_MODEL_METHOD } from "agent-runtime-api";
+import { CONFIGURE_SESSION_METHOD, PIN_MODEL_METHOD } from "agent-runtime-api";
 import { SessionMode } from "api-server-api";
 import {
   useCallback,
@@ -241,6 +241,30 @@ export function useAcpSession(
     [connectionRef, ensureLive, selectedAgent],
   );
 
+  const configureSession = useCallback(
+    async (settings: Record<string, string | null>) => {
+      const sid = useStore.getState().sessionId;
+      if (!sid || !selectedAgent) return;
+      try {
+        const live = connectionRef.current ?? (await ensureLive());
+        if (!live) throw new Error("the agent is not connected");
+        await live.connection.agent.request(CONFIGURE_SESSION_METHOD, {
+          sessionId: sid,
+          settings,
+        });
+        await queryClient.invalidateQueries({
+          queryKey: acpSessionsKeys.agent(selectedAgent),
+        });
+      } catch (err) {
+        emitToast({
+          kind: "error",
+          message: `Couldn't change this session's settings: ${extractErrorMessage(err)}`,
+        });
+      }
+    },
+    [connectionRef, ensureLive, selectedAgent],
+  );
+
   const sendPrompt = useCallback(
     (
       text: string,
@@ -260,6 +284,7 @@ export function useAcpSession(
     sendPrompt,
     stopAgent,
     chooseSessionModel,
+    configureSession,
     busy,
     loadingSession,
     connectionState,

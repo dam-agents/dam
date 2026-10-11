@@ -28,7 +28,7 @@ type ConfigState = {
 const BEDROCK_PROVIDER = "amazon-bedrock";
 const BEDROCK_API = "bedrock-converse-stream";
 const BUILTIN_PROVIDERS_MODULE: string = "@earendil-works/pi-ai/providers/all";
-const OPENAI_COMPLETIONS_MODULE: string = "@earendil-works/pi-ai/api/openai-completions";
+const OPENAI_COMPLETIONS_MODULE: string = "@earendil-works/pi-ai/compat";
 const REASONING_FIELDS = ["reasoning_content", "reasoning", "reasoning_text"];
 
 type StreamSimple = NonNullable<ProviderConfig["streamSimple"]>;
@@ -75,7 +75,7 @@ async function activateSpec(pi: ExtensionAPI, spec: ProviderSpec, state: ConfigS
 
 	const baseUrl = /\/v\d+$/.test(url) ? url : `${url}/v1`;
 	const apiKey = env(`${spec.envPrefix}_API_KEY`) ?? "dummy-placeholder";
-	const requestedModel = env(`${spec.envPrefix}_MODEL`);
+	const requestedModel = env("PLATFORM_MODEL") ?? env(`${spec.envPrefix}_MODEL`);
 
 	const discovered = await discoverModels(`${baseUrl}/models`);
 	const models = discovered.length > 0 ? discovered : requestedModel ? [{ id: requestedModel }] : [];
@@ -103,9 +103,14 @@ async function activateSpec(pi: ExtensionAPI, spec: ProviderSpec, state: ConfigS
 
 async function loadReasoningFirstStream(): Promise<StreamSimple | undefined> {
 	try {
-		const { streamSimple } = (await import(OPENAI_COMPLETIONS_MODULE)) as { streamSimple: StreamSimple };
-		return (model, context, options) =>
-			streamSimple(model, context, { ...options, fetch: reasoningBeforeContent(options?.fetch ?? fetch) });
+		const { openAICompletionsApi, openAIResponsesApi } = (await import(OPENAI_COMPLETIONS_MODULE)) as {
+			openAICompletionsApi: () => { streamSimple: StreamSimple };
+			openAIResponsesApi: () => { streamSimple: StreamSimple };
+		};
+		return (model, context, options) => {
+			const { streamSimple } = model.api === "openai-responses" ? openAIResponsesApi() : openAICompletionsApi();
+			return streamSimple(model, context, { ...options, fetch: reasoningBeforeContent(options?.fetch ?? fetch) });
+		};
 	} catch (err) {
 		console.warn(`[pi-dynamic-providers] ${OPENAI_COMPLETIONS_MODULE} unavailable: ${err instanceof Error ? err.message : String(err)}`);
 		return undefined;
@@ -278,14 +283,17 @@ function applyShadows(pi: ExtensionAPI, spec: ProviderSpec, url: string, state: 
 	}
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: OpenAI-named proxy models use Responses for tools with reasoning, and GPT-5+ and o-series models reason, so Pi keeps their thinking level. Opaque aliases stay on Chat Completions until discovery supplies API metadata.
 function buildModelConfig(envPrefix: string, model: DiscoveredModel): ProviderModelConfig {
 	const contextWindow = model.contextWindow ?? intEnv(`${envPrefix}_CONTEXT_WINDOW`, 128000);
 	const maxTokens = Math.min(intEnv(`${envPrefix}_MAX_TOKENS`, 16384), contextWindow);
+	const responses = envPrefix === "OPENAI_PROXY" && /(^|\/)(gpt-([5-9]|\d{2,})|o[1-9](?:-|$))/i.test(model.id);
 	return {
 		id: model.id,
 		name: model.id,
+		...(responses || (envPrefix === "OPENAI_PROXY" && /(^|\/)gpt-/i.test(model.id)) ? { api: "openai-responses" } : {}),
 		input: ["text"] as const,
-		reasoning: boolEnv(`${envPrefix}_REASONING`, false),
+		reasoning: responses || boolEnv(`${envPrefix}_REASONING`, false),
 		contextWindow,
 		maxTokens,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -293,7 +301,7 @@ function buildModelConfig(envPrefix: string, model: DiscoveredModel): ProviderMo
 			supportsDeveloperRole: false,
 			supportsReasoningEffort: true,
 			supportsUsageInStreaming: false,
-			maxTokensField: "max_tokens",
+			...(envPrefix === "RITS" ? { maxTokensField: "max_tokens" as const } : {}),
 			requiresThinkingAsText: boolEnv(`${envPrefix}_THINKING_AS_TEXT`, false),
 			thinkingFormat: env(`${envPrefix}_THINKING_FORMAT`) as any,
 		},

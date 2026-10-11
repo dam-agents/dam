@@ -3,6 +3,7 @@ import { emit, EventType } from "../../../events.js";
 import {
   harnessCapability,
   harnessConfigCatalog,
+  sessionSettingsError,
   type HarnessCapability,
   type HarnessConfigCatalog,
 } from "agent-runtime-api";
@@ -142,6 +143,20 @@ export function createHarnessConfigService(deps: {
           code: "BAD_REQUEST",
           message: `the ${pair.harness} harness cannot run on that provider`,
         });
+      const harness = carried.find((h) => h.name === pair.harness);
+      const unsupported = Object.keys(pair.settings ?? {}).find(
+        (id) => !harness?.sessionSettings?.includes(id),
+      );
+      const invalid = unsupported
+        ? `the ${pair.harness} harness cannot keep ${unsupported} as a default`
+        : pair.settings &&
+          sessionSettingsError(
+            harness?.harnessConfigCatalog,
+            pair.settings,
+            pair.model,
+          );
+      if (invalid)
+        throw new TRPCError({ code: "BAD_REQUEST", message: invalid });
       await deps.pairRepo.write(agentId, pair);
     },
   };

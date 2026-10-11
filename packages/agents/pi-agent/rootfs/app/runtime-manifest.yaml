@@ -23,6 +23,8 @@ drivers:
   # discovered at runtime (modelDiscovery) rather than listed statically.
   harness-config:
     file: "$HOME/.pi/agent/settings.json"
+    sessionSettings:
+      mode: { mode: true }
     keys:
       model: "defaultModel"
       mode: "defaultThinkingLevel"

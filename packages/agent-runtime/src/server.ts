@@ -71,6 +71,7 @@ import {
   pluginStateRoot,
   readSkillInstallBootState,
   resolveDrivers,
+  harnessConfigBindingOf,
   sessionModelOf,
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
@@ -242,6 +243,8 @@ const {
           ),
         }),
         sessionModel: sessionModelOf(manifest),
+        sessionSettings: harnessConfigBindingOf(manifest)?.sessionSettings,
+        catalog: harnessConfigBindingOf(manifest)?.catalog,
       },
     ]),
   ),

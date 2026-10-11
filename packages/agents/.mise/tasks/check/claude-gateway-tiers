@@ -1,0 +1,54 @@
+#!/usr/bin/env node
+//MISE description="Claude's model gateway never forwards a tier name the provider does not serve"
+//MISE sources=["claude-code/rootfs/usr/local/lib/model-gateway.mjs", ".mise/tasks/check/claude-gateway-tiers"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const gateway = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/model-gateway.mjs", import.meta.url));
+const home = mkdtempSync(join(tmpdir(), "claude-gateway-tiers-"));
+let listings = 0;
+const forwarded = [];
+const upstream = createServer((req, res) => {
+  let body = "";
+  req.on("data", (chunk) => { body += chunk; });
+  req.on("end", () => {
+    res.setHeader("content-type", "application/json");
+    if (req.url.startsWith("/v1/models")) {
+      // TEST_SCENARIO: The first listing is refused, as when the credential gateway is not ready yet, so the gateway must list again before it maps a tier.
+      if (listings++ === 0) { res.statusCode = 401; res.end("{}"); return; }
+      res.end(JSON.stringify({ data: [{ id: "rits/zai-org/glm-5-3" }, { id: "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4" }] }));
+      return;
+    }
+    forwarded.push(JSON.parse(body).model);
+    res.end("{}");
+  });
+});
+upstream.listen(0, "::1");
+await once(upstream, "listening");
+const base = `http://[::1]:${upstream.address().port}`;
+mkdirSync(join(home, ".platform"));
+writeFileSync(join(home, ".platform/pod-service-env.json"), JSON.stringify({ env: {}, providers: { cb: { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: "t" } } }));
+const child = spawn(process.execPath, [gateway], { env: { ...process.env, HOME: home }, stdio: ["ignore", "ignore", "pipe"] });
+try {
+  let log = "";
+  child.stderr.on("data", (chunk) => { log += chunk; });
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`gateway did not start:\n${log}`)), 15_000);
+    child.stderr.on("data", () => { if (log.includes("listening")) { clearTimeout(timer); resolve(); } });
+  });
+  const send = (model) => fetch("http://127.0.0.1:24180/p/cb/v1/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model }) });
+  for (const model of ["claude-opus-5-5", "claude/rits/zai-org/glm-5-3", "claude-haiku-4-5", "custom-name"]) await send(model);
+  assert.deepEqual(forwarded, ["rits/zai-org/glm-5-3", "rits/zai-org/glm-5-3", "rits/zai-org/glm-5-3", "custom-name"]);
+  console.log("unserved tier names go to the provider's own tier models");
+} finally {
+  child.kill();
+  upstream.close();
+  rmSync(home, { recursive: true, force: true });
+}

@@ -139,6 +139,8 @@ For non-Bearer auth, override `injectionConfig` on the secret instead of changin
 
 ### RITS (custom provider via extension)
 
+The `pi-platform` launcher passes the lease's provider and explicit model through Pi's command-line options. Pi reads saved defaults before loading extensions, so an extension writing new defaults cannot select the first turn's model by itself. This also keeps a saved Anthropic default from redirecting a LiteLLM session. OpenAI-named models on the proxy use Responses, which supports GPT tools together with reasoning. Opaque aliases still use Chat Completions until discovery supplies API metadata. The proxy uses Pi AI's token-limit defaults; only the direct RITS adapter forces `max_tokens`.
+
 The [`pi-dynamic-providers`](rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts) extension ships in the image, not the home seed: the home is seeded once, so an extension copied there would never pick up a later image's fix. `pi-platform` loads it with `-e` on every start (pi-acp runs pi through it via `PI_ACP_PI_COMMAND`, and the terminal entrypoint calls it directly), and removes the copy that homes seeded before the move still carry, so it never loads twice. It registers a `rits` provider (tuned for vLLM, what RITS runs) and/or an `openai-proxy` provider — each activates only when its env vars are set — and mirrors the resulting config into `~/.pi/agent/models.json` and `~/.pi/agent/auth.json`. Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
 
 | Env var | Required | Default | Purpose |

@@ -3,7 +3,7 @@ import { createElement, Fragment, type PropsWithChildren } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { OtherProviderModels } from "../../modules/sessions/components/other-provider-models.js";
+import { ModelIndicator } from "../../modules/sessions/components/model-indicator.js";
 import { SessionPairPicker } from "../../modules/sessions/components/session-pair-picker.js";
 
 const carried: HarnessCapability[] = [
@@ -11,6 +11,7 @@ const carried: HarnessCapability[] = [
     name: "pi",
     harnessConfig: true,
     sessionModel: true,
+    sessionSettings: ["mode"],
     harnessConfigCatalog: {
       options: [
         {
@@ -18,6 +19,12 @@ const carried: HarnessCapability[] = [
           name: "Model",
           category: "model",
           choices: [{ value: "static", name: "Static model" }],
+        },
+        {
+          id: "mode",
+          name: "Thinking",
+          category: "mode",
+          choices: [{ value: "high", name: "High" }],
         },
       ],
     },
@@ -33,11 +40,19 @@ const state = vi.hoisted(() => ({
   fetching: false,
   operable: true,
   refetch: vi.fn(),
+  providersAsked: [] as string[],
+  owned: [] as { id: string; name: string; type: string }[],
+  navigateToSettings: vi.fn(),
+  newSession: vi.fn(),
 }));
 
 vi.mock("../../store.js", () => ({
   useStore: (select: (store: unknown) => unknown) =>
-    select({ nextSessionPair: {}, setNextSessionPair: vi.fn() }),
+    select({
+      nextSessionPair: {},
+      setNextSessionPair: vi.fn(),
+      navigateToSettings: state.navigateToSettings,
+    }),
 }));
 
 vi.mock("@/components/ui/popover", () => {
@@ -50,6 +65,11 @@ vi.mock("@/components/ui/popover", () => {
     PopoverClose: passthrough,
   };
 });
+
+vi.mock("@/components/ui/tooltip", () => ({
+  Tooltip: ({ children }: PropsWithChildren) =>
+    createElement(Fragment, null, children),
+}));
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({
@@ -71,17 +91,29 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
       { id: "ibm", name: "IBM", type: "ibm-litellm" },
       { id: "curve", name: "Curve", type: "curve-bender" },
     ],
-    owned: [],
+    owned: [
+      { id: "ibm", name: "IBM", type: "ibm-litellm" },
+      { id: "curve", name: "Curve", type: "curve-bender" },
+      ...state.owned,
+    ],
   }),
-  useGrantProvider: () => ({ grant: vi.fn(), pending: false }),
-  useProviderModels: (_agent: string, _harness: string, provider: string) => ({
-    data: state.models[provider],
-    isLoading: state.loading,
-    isFetching: state.loading || state.fetching,
-    isError: false,
-    operable: state.operable,
-    refetch: state.refetch,
+  useGrantProvider: () => ({
+    grant: vi.fn(),
+    revoke: vi.fn(),
+    pending: false,
   }),
+  rememberSessionPair: vi.fn(),
+  useProviderModels: (_agent: string, _harness: string, provider: string) => {
+    state.providersAsked.push(provider);
+    return {
+      data: state.models[provider],
+      isLoading: state.loading,
+      isFetching: state.loading || state.fetching,
+      isError: false,
+      operable: state.operable,
+      refetch: state.refetch,
+    };
+  },
 }));
 
 function renderPicker() {
@@ -100,6 +132,8 @@ describe("session pair model choices", () => {
     state.loading = false;
     state.fetching = false;
     state.operable = true;
+    state.providersAsked = [];
+    state.owned = [];
   });
 
   it("lists each provider's models without a default-model choice", () => {
@@ -115,6 +149,22 @@ describe("session pair model choices", () => {
     expect(html).not.toMatch(/default model/i);
     expect(html).not.toContain("choose a model");
     expect(html).not.toContain("Static model");
+    expect(html).not.toContain("New session runs on");
+    expect(html).not.toContain('aria-label="Close"');
+    expect(html).toContain("Connect providers");
+    expect(html).toMatch(/disabled=""[^>]*>Default<\/button>/);
+    expect(html).not.toContain("Configure defaults");
+    expect(html).toContain('aria-label="Disconnect IBM"');
+    expect(html).toContain('aria-label="Session settings"');
+    expect(html).toContain("Harness default");
+  });
+
+  it("lists unattached providers in place with an attach action", () => {
+    state.owned = [{ id: "other", name: "Other", type: "curve-bender" }];
+    const html = renderPicker();
+    expect(html.indexOf("IBM")).toBeLessThan(html.indexOf("Other"));
+    expect(html).toContain("Attach this provider");
+    expect(state.providersAsked).not.toContain("other");
   });
 
   it("reports unavailable discovery instead of substituting defaults or catalog models", () => {
@@ -154,20 +204,32 @@ describe("session pair model choices", () => {
       expected: "Could not list this provider&#x27;s models.",
     },
   ])(
-    "renders other providers with $expected during background polls",
+    "renders the active provider with $expected during background polls",
     ({ availableModels, expected }) => {
       state.models = { curve: { availableModels } };
       state.fetching = true;
       const html = renderToStaticMarkup(
-        createElement(OtherProviderModels, {
+        createElement(ModelIndicator, {
           agentId: "agent",
           harness: "pi",
-          provider: "ibm",
+          provider: "curve",
+          model: "static",
           carried,
+          onChoose: vi.fn(),
+          onConfigure: vi.fn(),
+          onNewSession: state.newSession,
         }),
       );
       expect(html).toContain(expected);
       expect(html).not.toContain("Loading models…");
+      expect(state.providersAsked).toEqual(["curve"]);
+      expect(html).not.toContain("IBM");
+      expect(html).not.toContain("Current model");
+      expect(html).not.toContain("Configure model");
+      expect(html).not.toContain("Connect providers");
+      expect(html).not.toContain('aria-label="Close"');
+      expect(html).toContain("Other harnesses and models need a");
+      expect(html).toContain("new session</button>");
       if (availableModels !== null) expect(html).not.toContain("Static model");
     },
   );
