@@ -38,6 +38,7 @@ interface Props {
 
 export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
+  const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
   const { data: remembered } = useRememberedPair(agentId);
   const chosen = useStore((s) => s.nextSessionPair[agentId] ?? null);
@@ -141,7 +142,17 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
                 current={pair?.provider === p.id ? pair.model : undefined}
                 fallback={catalogModels(carried, harness)}
                 disconnecting={pending}
-                onDisconnect={() => void revoke(p.id)}
+                onDisconnect={() =>
+                  void showConfirm(
+                    <p>
+                      Sessions running on <strong>{p.name}</strong> stop until
+                      it is attached again. Schedules and channels that use it
+                      move to another provider.
+                    </p>,
+                    `Disconnect ${p.name} from this agent?`,
+                    { confirmLabel: "Disconnect" },
+                  ).then((ok) => ok && revoke(p.id))
+                }
                 onChoose={(model) =>
                   choose(withSettings({ harness, provider: p.id, model }))
                 }
@@ -272,15 +283,17 @@ function ProviderHeading({
       </h3>
       {onDisconnect && (
         <Tooltip content="Disconnect">
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label={`Disconnect ${name}`}
-            onClick={onDisconnect}
-            className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover/provider:opacity-100 disabled:opacity-50"
-          >
-            <Unlink size={14} />
-          </button>
+          <PopoverClose asChild>
+            <button
+              type="button"
+              disabled={disabled}
+              aria-label={`Disconnect ${name}`}
+              onClick={onDisconnect}
+              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover/provider:opacity-100 disabled:opacity-50"
+            >
+              <Unlink size={14} />
+            </button>
+          </PopoverClose>
         </Tooltip>
       )}
     </div>

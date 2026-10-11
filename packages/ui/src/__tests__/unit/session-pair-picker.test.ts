@@ -43,6 +43,9 @@ const state = vi.hoisted(() => ({
   providersAsked: [] as string[],
   owned: [] as { id: string; name: string; type: string }[],
   navigateToSettings: vi.fn(),
+  showConfirm: vi.fn(),
+  revoke: vi.fn(),
+  buttons: {} as Record<string, () => void>,
   newSession: vi.fn(),
 }));
 
@@ -52,6 +55,7 @@ vi.mock("../../store.js", () => ({
       nextSessionPair: {},
       setNextSessionPair: vi.fn(),
       navigateToSettings: state.navigateToSettings,
+      showConfirm: state.showConfirm,
     }),
 }));
 
@@ -67,8 +71,15 @@ vi.mock("@/components/ui/popover", () => {
 });
 
 vi.mock("@/components/ui/tooltip", () => ({
-  Tooltip: ({ children }: PropsWithChildren) =>
-    createElement(Fragment, null, children),
+  Tooltip: ({ children }: PropsWithChildren) => {
+    const child = children as { props?: Record<string, unknown> };
+    const props = (
+      child.props?.children as { props?: Record<string, unknown> } | undefined
+    )?.props;
+    if (typeof props?.["aria-label"] === "string")
+      state.buttons[props["aria-label"]] = props.onClick as () => void;
+    return createElement(Fragment, null, children);
+  },
 }));
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
@@ -99,7 +110,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   }),
   useGrantProvider: () => ({
     grant: vi.fn(),
-    revoke: vi.fn(),
+    revoke: state.revoke,
     pending: false,
   }),
   rememberSessionPair: vi.fn(),
@@ -157,6 +168,22 @@ describe("session pair model choices", () => {
     expect(html).toContain('aria-label="Disconnect IBM"');
     expect(html).toContain('aria-label="Session settings"');
     expect(html).toContain("Harness default");
+  });
+
+  it("asks before disconnecting a provider, and disconnects only on yes", async () => {
+    renderPicker();
+    state.showConfirm.mockResolvedValueOnce(false);
+    state.buttons["Disconnect IBM"]!();
+    await Promise.resolve();
+    expect(state.showConfirm).toHaveBeenCalledWith(
+      expect.anything(),
+      "Disconnect IBM from this agent?",
+      { confirmLabel: "Disconnect" },
+    );
+    expect(state.revoke).not.toHaveBeenCalled();
+    state.showConfirm.mockResolvedValueOnce(true);
+    state.buttons["Disconnect IBM"]!();
+    await vi.waitFor(() => expect(state.revoke).toHaveBeenCalledWith("ibm"));
   });
 
   it("lists unattached providers in place with an attach action", () => {

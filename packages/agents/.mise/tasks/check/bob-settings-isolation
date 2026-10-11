@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 //MISE description="Each Bob process reads and writes its own settings file, never the shared one"
-//MISE sources=["bob/rootfs/usr/local/lib/bob-settings-file.mjs", ".mise/tasks/check/bob-settings-isolation"]
+//MISE sources=["bob/rootfs/usr/local/lib/bob-settings-file.mjs", "bob/rootfs/usr/local/bin/harness-chat", "bob/rootfs/app/bob-settings.mjs", ".mise/tasks/check/bob-settings-isolation"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const preload = fileURLToPath(new URL("../../../bob/rootfs/usr/local/lib/bob-settings-file.mjs", import.meta.url));
+const rootfs = fileURLToPath(new URL("../../../bob/rootfs/", import.meta.url));
 const home = mkdtempSync(join(tmpdir(), "bob-settings-isolation-"));
 const shared = join(home, ".bob/settings/settings.json");
 const own = join(home, ".bob/platform-processes/a/settings.json");
@@ -37,7 +38,28 @@ try {
   assert.equal(readFileSync(shared, "utf8"), '{"session":{"model":"shared"}}');
   assert.equal(readFileSync(own, "utf8"), '{"session":{"model":"written"}}');
   assert.equal(readFileSync(`${own}.bak`, "utf8"), '{"session":{"model":"own"}}');
-  console.log("a Bob process keeps to its own settings file");
+
+  // TEST_SCENARIO: harness-chat starts a per-model Bob process. Its bootstrap must read the agent-wide panel choices from the shared file (an existing process copy must not hide them), and only Bob itself runs with the preload.
+  writeFileSync(shared, '{"platform":{"approvals":"ask","mode":"plan"}}');
+  mkdirSync(join(home, "bin"));
+  writeFileSync(join(home, "bin/bob"), '#!/bin/sh\nprintf "%s\\n" "$NODE_OPTIONS" "$*" > "$HOME/bob-args"\n', { mode: 0o755 });
+  const chat = readFileSync(join(rootfs, "usr/local/bin/harness-chat"), "utf8")
+    .replaceAll("/app/bob-settings.mjs", join(rootfs, "app/bob-settings.mjs"))
+    .replaceAll("/usr/local/lib/bob-settings-file.mjs", preload);
+  writeFileSync(join(home, "harness-chat"), chat);
+  const run = () => execFileSync("/bin/sh", [join(home, "harness-chat")], {
+    env: { PATH: `${join(home, "bin")}:${process.env.PATH}`, HOME: home, PLATFORM_MODEL: "m-1" },
+    encoding: "utf8",
+  });
+  run();
+  const [nodeOptions, args] = readFileSync(join(home, "bob-args"), "utf8").split("\n");
+  assert.match(nodeOptions, /--import=\S*bob-settings-file\.mjs/);
+  assert.equal(args.includes("--auto-approve"), false, args);
+  writeFileSync(shared, '{"platform":{"approvals":"auto","mode":"plan"}}');
+  run();
+  assert.equal(readFileSync(join(home, "bob-args"), "utf8").split("\n")[1].includes("--auto-approve"), true);
+  assert.equal(readFileSync(shared, "utf8"), '{"platform":{"approvals":"auto","mode":"plan"}}');
+  console.log("a Bob process keeps to its own settings file; its bootstrap reads the shared one");
 } finally {
   rmSync(home, { recursive: true, force: true });
 }

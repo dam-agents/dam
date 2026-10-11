@@ -118,9 +118,6 @@ export function createSessionMetadataStore(
                 provider: lease.provider,
               }),
               ...(lease?.model !== undefined && { model: lease.model }),
-              ...(lease?.settings !== undefined && {
-                settings: lease.settings,
-              }),
               ...meta,
             },
             createdAt: existing?.createdAt ?? now(),

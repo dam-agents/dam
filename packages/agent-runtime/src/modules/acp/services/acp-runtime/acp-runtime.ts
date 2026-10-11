@@ -367,6 +367,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const harnessColdSessions = new Set<string>();
   const appliedSettings = new Map<string, Map<string, string>>();
+  const harnessDefaults = new Map<string, Map<string, string>>();
   const settingsChannel: ClientChannel = {
     send() {},
     close() {},
@@ -520,16 +521,46 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     promptScheduler.refuseQueue(sessionId, rehydrateFailureMessage(error));
   }
 
+  function recordHarnessDefaults(sessionId: string, result: unknown): void {
+    if (!isNonNullObject(result)) return;
+    const own = new Set(
+      (deps.sessionSettingFrames?.(sessionId) ?? []).map(settingKeyOf),
+    );
+    const defaults =
+      harnessDefaults.get(sessionId) ?? new Map<string, string>();
+    harnessDefaults.set(sessionId, defaults);
+    const mode = isNonNullObject(result.modes)
+      ? result.modes.currentModeId
+      : undefined;
+    if (typeof mode === "string" && !own.has(MODE_SETTING_KEY))
+      defaults.set(MODE_SETTING_KEY, mode);
+    if (!Array.isArray(result.configOptions)) return;
+    for (const option of result.configOptions) {
+      if (!isNonNullObject(option) || typeof option.id !== "string") continue;
+      const key = `session/set_config_option:${option.id}`;
+      if (typeof option.currentValue === "string" && !own.has(key))
+        defaults.set(key, option.currentValue);
+    }
+  }
+
   function syncSettings(sessionId: string): void {
     if (harnessColdSessions.has(sessionId)) return;
     const applied = appliedSettings.get(sessionId) ?? new Map<string, string>();
     appliedSettings.set(sessionId, applied);
-    for (const { method, params } of deps.sessionSettingFrames?.(sessionId) ??
-      []) {
-      const key = `${method}:${String(params.configId ?? "")}`;
+    const frames = deps.sessionSettingFrames?.(sessionId) ?? [];
+    const wanted = new Set(frames.map(settingKeyOf));
+    for (const key of applied.keys()) {
+      if (wanted.has(key)) continue;
+      applied.delete(key);
+      const fallback = harnessDefaults.get(sessionId)?.get(key);
+      if (fallback !== undefined)
+        frames.push(defaultFrame(sessionId, key, fallback));
+    }
+    for (const { method, params } of frames) {
+      const key = settingKeyOf({ method, params });
       const value = JSON.stringify(params);
       if (applied.get(key) === value) continue;
-      applied.set(key, value);
+      if (wanted.has(key)) applied.set(key, value);
       const outboundId = nextOutboundId++;
       outboundIdToClient.set(outboundId, {
         channel: settingsChannel,
@@ -591,6 +622,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     turnModels.clear();
     harnessColdSessions.clear();
     appliedSettings.clear();
+    harnessDefaults.clear();
     rehydratingSessions.clear();
     sessionCloseSupported = true;
     sessionResumeSupported = false;
@@ -790,6 +822,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
     harnessColdSessions.delete(sessionId);
     appliedSettings.delete(sessionId);
+    harnessDefaults.delete(sessionId);
     rehydratingSessions.delete(sessionId);
     const rehydrateTimer = rehydrateTimers.get(sessionId);
     if (rehydrateTimer) clearTimeout(rehydrateTimer);
@@ -893,6 +926,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           const result = (frame as { result?: unknown }).result;
           if (cacheable && result !== undefined) {
             transcript.cacheMetadata(sidForChannel, result);
+            recordHarnessDefaults(sidForChannel, result);
           }
           if (
             mapping.method === "session/new" &&
@@ -1031,12 +1065,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (reportedModel !== null) turnModels.set(sessionId, reportedModel);
         const reportedMode = extractReportedMode(frame);
         if (reportedMode !== null) {
-          appliedSettings
-            .get(sessionId)
-            ?.set(
-              "session/set_mode:",
+          const applied = appliedSettings.get(sessionId);
+          if (applied?.has(MODE_SETTING_KEY))
+            applied.set(
+              MODE_SETTING_KEY,
               JSON.stringify({ sessionId, modeId: reportedMode }),
             );
+          else
+            harnessDefaults.get(sessionId)?.set(MODE_SETTING_KEY, reportedMode);
           const entry = deps.sessionMetadata?.get(sessionId);
           const id = deps.modeSettingId;
           if (
@@ -1685,6 +1721,29 @@ function extractReportedModel(frame: unknown): string | null {
   return typeof model === "string" && model !== "" && model !== "<synthetic>"
     ? model
     : null;
+}
+
+const MODE_SETTING_KEY = "session/set_mode:";
+
+function settingKeyOf({ method, params }: SessionSettingFrame): string {
+  return `${method}:${String(params.configId ?? "")}`;
+}
+
+function defaultFrame(
+  sessionId: string,
+  key: string,
+  value: string,
+): SessionSettingFrame {
+  return key === MODE_SETTING_KEY
+    ? { method: "session/set_mode", params: { sessionId, modeId: value } }
+    : {
+        method: "session/set_config_option",
+        params: {
+          sessionId,
+          configId: key.slice("session/set_config_option:".length),
+          value,
+        },
+      };
 }
 
 function extractReportedMode(frame: unknown): string | null {
