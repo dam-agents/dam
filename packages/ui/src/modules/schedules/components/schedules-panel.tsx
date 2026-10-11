@@ -55,6 +55,8 @@ export function SchedulesPanel({
     <>
       <ListSection
         onNew={() => setForm({ mode: "create" })}
+        loading={schedulesQuery.isPending}
+        error={schedulesQuery.isError && "Couldn't load schedules."}
         isEmpty={upcoming.length === 0}
         empty="No schedules yet."
       >

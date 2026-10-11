@@ -7,13 +7,13 @@ const invalidatesList = { invalidates: [trpc.apiKeys.list.queryKey()] };
 export function useCreateApiKey() {
   return useMutation({
     ...trpc.apiKeys.create.mutationOptions(),
-    meta: { ...invalidatesList, errorToast: "Failed to create API key" },
+    meta: { ...invalidatesList, errorToast: "Couldn't create API key" },
   });
 }
 
 export function useRevokeApiKey() {
   return useMutation({
     ...trpc.apiKeys.revoke.mutationOptions(),
-    meta: { ...invalidatesList, errorToast: "Failed to revoke API key" },
+    meta: { ...invalidatesList, errorToast: "Couldn't revoke API key" },
   });
 }

@@ -18,6 +18,7 @@ import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
+import { useConfirmDeleteAgent } from "../../agents/hooks/use-confirm-delete-agent.js";
 import { useConfirmStopAgent } from "../../agents/hooks/use-confirm-stop-agent.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
 import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
@@ -64,7 +65,7 @@ export function SandboxHomeHeader({
 }: Props & { title: string; description?: string }) {
   const setView = useStore((s) => s.setView);
   const selectAgent = useStore((s) => s.selectAgent);
-  const showConfirm = useStore((s) => s.showConfirm);
+  const confirmDelete = useConfirmDeleteAgent();
   const wakeAgent = useWakeAgent();
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
@@ -80,20 +81,7 @@ export function SandboxHomeHeader({
   };
 
   const onDelete = async () => {
-    const msg = (
-      <>
-        Delete agent <strong className="text-foreground">"{agent.name}"</strong>
-        ? This will also delete <strong>all persistent data</strong> and cannot
-        be undone.
-      </>
-    );
-    if (
-      !(await showConfirm(msg, "Delete agent?", {
-        kind: "destructive",
-        confirmLabel: "Delete agent",
-      }))
-    )
-      return;
+    if (!(await confirmDelete(agent))) return;
     deleteAgent.mutate({ id: agent.id });
     setView("home");
   };

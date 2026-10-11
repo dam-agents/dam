@@ -53,7 +53,11 @@ const EMPTY_DRAFT: RuleDraft = {
 };
 
 export function AgentEgressEditor({ agentId }: { agentId: string }) {
-  const { data: rules = EMPTY, isLoading } = useEgressRulesForAgent(agentId);
+  const {
+    data: rules = EMPTY,
+    isLoading,
+    isError,
+  } = useEgressRulesForAgent(agentId);
   const { data: currentPreset = null } = useCurrentPreset(agentId);
   const revokeRule = useRevokeEgressRule();
   const showConfirm = useStore((s) => s.showConfirm);
@@ -87,12 +91,11 @@ export function AgentEgressEditor({ agentId }: { agentId: string }) {
             Use preset…
           </Button>
         }
-        isEmpty={!isLoading && rules.length === 0}
+        loading={isLoading}
+        error={isError && "Couldn't load the rules."}
+        isEmpty={rules.length === 0}
         empty="No rules yet. Every outbound request will need your approval."
       >
-        {isLoading && (
-          <p className="px-4 py-3 text-xs text-muted-foreground">loading…</p>
-        )}
         {rules.map((r) => (
           <RuleRow
             key={r.id}

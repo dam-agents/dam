@@ -39,7 +39,7 @@ export function HarnessSpendCard({
     return (
       <HarnessSpendShell>
         <p className="text-sm text-muted-foreground">
-          Couldn't read the harness spend for {label}.
+          Couldn't load the harness spend for {label}.
         </p>
       </HarnessSpendShell>
     );

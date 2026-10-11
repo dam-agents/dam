@@ -10,7 +10,7 @@ export async function fetchUsageInspectAvailability(): Promise<boolean> {
   if (routeIsNotMounted) return false;
   if (!res.ok) {
     throw new Error(
-      `Could not check the usage analytics access (${res.status})`,
+      `Couldn't check the usage analytics access (${res.status})`,
     );
   }
   return inspectStatusSchema.parse(await res.json()).canInspect;
@@ -19,7 +19,7 @@ export async function fetchUsageInspectAvailability(): Promise<boolean> {
 export async function fetchUsageReportPage(): Promise<string> {
   const res = await authFetch("/api/usage/report");
   if (!res.ok) {
-    throw new Error(`Could not build the usage report (${res.status})`);
+    throw new Error(`Couldn't build the usage report (${res.status})`);
   }
   const html = await res.text();
   const blob = new Blob([html], { type: "text/html" });

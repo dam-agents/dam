@@ -17,7 +17,6 @@ export function useTermsDocument() {
       return termsDocumentSchema.parse(await res.json());
     },
     staleTime: Infinity,
-    meta: { errorToast: "Couldn't load Terms of Use" },
   });
 }
 

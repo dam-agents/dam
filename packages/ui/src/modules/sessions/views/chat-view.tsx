@@ -1099,7 +1099,7 @@ function SessionErrorCard({
         <div className="flex items-center gap-2 flex-wrap">
           {error.kind === "connection" ? (
             <Button variant="outline" size="sm" onClick={onRetry}>
-              <Renew size={12} /> Try again
+              <Renew size={14} /> Retry
             </Button>
           ) : (
             <Button variant="destructive" size="sm" onClick={onDelete}>

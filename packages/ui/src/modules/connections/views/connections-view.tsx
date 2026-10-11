@@ -3,7 +3,6 @@ import { useState } from "react";
 import { ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
 
-import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { SatellitesGroup } from "../../satellites/components/satellites-group.js";
 import { useRemoveSatelliteWithConfirm } from "../../satellites/hooks/use-remove-satellite.js";
@@ -34,34 +33,32 @@ export function ConnectionsView() {
         description="Connections are the services and credentials your agents can reach."
       />
 
-      {connectionsQ.isPending ? (
-        <ListSkeleton />
-      ) : (
-        <ListSection
-          onNew={() => setCatalogOpen(true)}
-          newTestId="open-connection-catalog"
-          isEmpty={groups.length === 0 && satellites.length === 0}
-          empty="No connections set up yet."
-        >
-          {groups.map((group) => (
-            <ConnectionGroup
-              key={group.provider.id}
-              group={group}
-              templateById={templateById}
-              onDelete={(id, name) => void confirmAndDelete(id, name)}
-              deletingId={deletingId}
-              maintenance={maintenance.rowActions}
-            />
-          ))}
-          {satellites.length > 0 && (
-            <SatellitesGroup
-              satellites={satellites}
-              onRemove={(s) => void confirmAndRemove(s)}
-              removingName={removingName}
-            />
-          )}
-        </ListSection>
-      )}
+      <ListSection
+        loading={connectionsQ.isPending}
+        error={connectionsQ.isError && "Couldn't load connections."}
+        onNew={() => setCatalogOpen(true)}
+        newTestId="open-connection-catalog"
+        isEmpty={groups.length === 0 && satellites.length === 0}
+        empty="No connections set up yet."
+      >
+        {groups.map((group) => (
+          <ConnectionGroup
+            key={group.provider.id}
+            group={group}
+            templateById={templateById}
+            onDelete={(id, name) => void confirmAndDelete(id, name)}
+            deletingId={deletingId}
+            maintenance={maintenance.rowActions}
+          />
+        ))}
+        {satellites.length > 0 && (
+          <SatellitesGroup
+            satellites={satellites}
+            onRemove={(s) => void confirmAndRemove(s)}
+            removingName={removingName}
+          />
+        )}
+      </ListSection>
 
       {catalogOpen && (
         <ConnectionCatalogModal onClose={() => setCatalogOpen(false)} />

@@ -19,12 +19,10 @@ export function ConnectedKnowledgeBasesSetup({
       connections={(connectionsQ.data ?? []).filter((c) => staged.has(c.id))}
       onAdd={(id) => onToggle(id, true)}
       onRemove={(id) => onToggle(id, false)}
-      status={
-        connectionsQ.isError
-          ? "Couldn't load the knowledge bases already added — they stay selected and reappear once the list loads."
-          : connectionsQ.isPending && connectionIds.length > 0
-            ? "Loading the knowledge bases already added…"
-            : null
+      loading={connectionsQ.isPending && connectionIds.length > 0}
+      error={
+        connectionsQ.isError &&
+        "Couldn't load the knowledge bases already added. They stay selected."
       }
     />
   );

@@ -111,7 +111,7 @@ export function ScheduleResultsModal({
               onClick={() => void sessionsQuery.refetch()}
               disabled={sessionsQuery.isFetching}
             >
-              <Renew size={14} /> Try again
+              <Renew size={14} /> Retry
             </Button>
           </div>
         )}

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
+import { TextSkeleton } from "@/components/ui/text-skeleton";
 import { cn } from "@/lib/utils";
 
 /**
@@ -23,6 +24,8 @@ export function ListSection({
   headerExtra,
   empty,
   isEmpty,
+  error,
+  loading = false,
   footer,
   className,
   children,
@@ -36,6 +39,8 @@ export function ListSection({
   headerExtra?: ReactNode;
   empty: ReactNode;
   isEmpty: boolean;
+  error?: ReactNode;
+  loading?: boolean;
   footer?: ReactNode;
   className?: string;
   children?: ReactNode;
@@ -55,12 +60,12 @@ export function ListSection({
     );
   return (
     <section className={cn("mb-8", className)}>
-      {(label || headerExtra || (onNew && !isEmpty)) && (
+      {(label || headerExtra || (onNew && !isEmpty && !loading)) && (
         <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
           {label && <SectionLabel>{label}</SectionLabel>}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {headerExtra}
-            {!isEmpty && newButton(newTestId)}
+            {!isEmpty && !loading && newButton(newTestId)}
           </div>
         </div>
       )}
@@ -68,7 +73,21 @@ export function ListSection({
         <p className="mb-3 text-sm text-muted-foreground">{description}</p>
       )}
       <Card className="overflow-hidden">
-        {isEmpty ? (
+        {loading ? (
+          <div className="divide-y divide-border" aria-busy="true">
+            {[0, 1].map((i) => (
+              <div key={i} className={LIST_ROW}>
+                <span className="text-sm">
+                  <TextSkeleton width={i === 0 ? 160 : 120} />
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : isEmpty && error ? (
+          <p role="alert" className="px-5 py-8 text-center text-sm text-danger">
+            {error}
+          </p>
+        ) : isEmpty ? (
           <div className="flex flex-col items-center gap-4 px-5 py-8 text-center">
             <div className="text-sm text-muted-foreground">{empty}</div>
             {newButton(newTestId)}

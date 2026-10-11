@@ -9,7 +9,14 @@ import { emitToast } from "@/lib/toast";
 
 import { timeAgo } from "../../../lib/format-time.js";
 import { useStore } from "../../../store.js";
-import { useRefreshKbShare, useRevealKbShare, useRevokeKbShare, useRotateKbShare, useSetKbShareName, useShareKb } from "../api/kb-share-mutations.js";
+import {
+  useRefreshKbShare,
+  useRevealKbShare,
+  useRevokeKbShare,
+  useRotateKbShare,
+  useSetKbShareName,
+  useShareKb,
+} from "../api/kb-share-mutations.js";
 import { useKbShareStatus } from "../api/kb-share-queries.js";
 import { KbShareRootsDialog } from "./kb-share-roots-dialog.js";
 

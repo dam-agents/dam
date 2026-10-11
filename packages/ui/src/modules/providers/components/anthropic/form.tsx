@@ -89,7 +89,7 @@ export function AnthropicForm({
       );
     } catch {
       if (token !== testTokenRef.current) return;
-      setTestResult({ ok: false, message: "Could not verify credential." });
+      setTestResult({ ok: false, message: "Couldn't verify the credential." });
     }
   };
 

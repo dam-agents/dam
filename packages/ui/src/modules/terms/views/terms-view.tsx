@@ -21,7 +21,9 @@ export function TermsView() {
   }
   if (document.error || !document.data) {
     return (
-      <CenteredMessage tone="error">Failed to load Terms.</CenteredMessage>
+      <CenteredMessage tone="error">
+        Couldn't load the Terms of Use.
+      </CenteredMessage>
     );
   }
 
@@ -115,7 +117,7 @@ function CenteredMessage({
   return (
     <div className="mx-auto w-full max-w-200 px-4 py-10">
       <div
-        className={tone === "error" ? "text-red-600" : "text-muted-foreground"}
+        className={tone === "error" ? "text-danger" : "text-muted-foreground"}
       >
         {children}
       </div>

@@ -151,7 +151,7 @@ export function ModelIndicator({
                     : isLoading
                       ? "Loading models…"
                       : isError || data?.availableModels === undefined
-                        ? "Could not list this provider's models."
+                        ? "Couldn't load this provider's models."
                         : "No models available."}
               </li>
             )}

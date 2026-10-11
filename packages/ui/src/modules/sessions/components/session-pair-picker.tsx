@@ -367,7 +367,7 @@ function ProviderModels({
               : isLoading
                 ? "Loading models…"
                 : unavailable
-                  ? "Could not list this provider's models."
+                  ? "Couldn't load this provider's models."
                   : "No models available."}
             {operable && !isLoading && unavailable && (
               <Button

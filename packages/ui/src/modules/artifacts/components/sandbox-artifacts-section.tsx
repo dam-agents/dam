@@ -14,7 +14,11 @@ import { RetentionDialog } from "./retention-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
 
 export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
-  const { data: artifacts = [], isLoading } = useArtifacts({ agentId });
+  const {
+    data: artifacts = [],
+    isLoading,
+    isError,
+  } = useArtifacts({ agentId });
   const { data: folders = [], isPending: foldersPending } =
     useArtifactFolders();
   const folderNames = folderDisplayNames(folders);
@@ -33,38 +37,34 @@ export function SandboxArtifactsSection({ agentId }: { agentId: string }) {
   return (
     <>
       <ListSection
-        isEmpty={!isLoading && !foldersPending && artifacts.length === 0}
+        loading={isLoading || foldersPending}
+        error={isError && "Couldn't load artifacts."}
+        isEmpty={artifacts.length === 0}
         empty="Nothing published yet — ask the agent to share its work as an artifact."
       >
-        {isLoading || foldersPending ? (
-          <p className="px-4 py-3 text-sm text-muted-foreground">Loading…</p>
-        ) : (
-          <div className="-mt-px">
-            {groupArtifactsByFolder(artifacts, folders, {
-              omitEmptyFolders: true,
-            }).map((group) => (
-              <FolderGroup
-                key={group.key}
-                folder={group.folder}
-                artifacts={group.artifacts}
-                displayName={
-                  group.folder ? folderNames.get(group.folder.id) : undefined
-                }
-                nested
-                defaultCollapsed={group.artifacts.length === 0}
-                showAgent={false}
-                onPreview={(artifact) => setPreviewTarget({ artifact })}
-                onEdit={(artifact) =>
-                  setPreviewTarget({ artifact, edit: true })
-                }
-                onRename={setRenameTarget}
-                onMove={setMoveTarget}
-                onShare={setShareTarget}
-                onSetRetention={setRetentionTarget}
-              />
-            ))}
-          </div>
-        )}
+        <div className="-mt-px">
+          {groupArtifactsByFolder(artifacts, folders, {
+            omitEmptyFolders: true,
+          }).map((group) => (
+            <FolderGroup
+              key={group.key}
+              folder={group.folder}
+              artifacts={group.artifacts}
+              displayName={
+                group.folder ? folderNames.get(group.folder.id) : undefined
+              }
+              nested
+              defaultCollapsed={group.artifacts.length === 0}
+              showAgent={false}
+              onPreview={(artifact) => setPreviewTarget({ artifact })}
+              onEdit={(artifact) => setPreviewTarget({ artifact, edit: true })}
+              onRename={setRenameTarget}
+              onMove={setMoveTarget}
+              onShare={setShareTarget}
+              onSetRetention={setRetentionTarget}
+            />
+          ))}
+        </div>
       </ListSection>
 
       {renameTarget && (

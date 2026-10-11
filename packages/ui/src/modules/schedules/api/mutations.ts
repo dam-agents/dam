@@ -31,7 +31,7 @@ export function useCreateSchedule() {
       }),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Failed to create schedule",
+      errorToast: "Couldn't create schedule",
     },
   });
 }
@@ -59,7 +59,7 @@ export function useUpdateSchedule() {
       }),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Failed to update schedule",
+      errorToast: "Couldn't update schedule",
     },
   });
 }
@@ -80,7 +80,7 @@ export function useCreateOnceSchedule() {
       api.schedules.createOnce.mutate(input),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Failed to create one-time task",
+      errorToast: "Couldn't create one-time task",
     },
   });
 }
@@ -101,7 +101,7 @@ export function useUpdateOnceSchedule() {
       api.schedules.updateOnce.mutate(input),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Failed to update one-time task",
+      errorToast: "Couldn't update one-time task",
     },
   });
 }
@@ -111,7 +111,7 @@ export function useToggleSchedule() {
     ...trpc.schedules.toggle.mutationOptions(),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Failed to toggle schedule",
+      errorToast: "Couldn't toggle schedule",
     },
   });
 }
@@ -121,7 +121,7 @@ export function useDeleteSchedule() {
     ...trpc.schedules.delete.mutationOptions(),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Failed to delete schedule",
+      errorToast: "Couldn't delete schedule",
     },
   });
 }
@@ -131,7 +131,7 @@ export function useResetScheduleSession() {
     ...trpc.schedules.resetSession.mutationOptions(),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Failed to reset schedule session",
+      errorToast: "Couldn't reset schedule session",
     },
   });
 }
@@ -141,7 +141,7 @@ export function useRunScheduleNow() {
     ...trpc.schedules.runNow.mutationOptions(),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Failed to run schedule",
+      errorToast: "Couldn't run schedule",
     },
   });
 }

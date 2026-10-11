@@ -11,7 +11,7 @@ export function VmRuntimeNotice({ className }: { className?: string }) {
   if (vmRuntime.unknown)
     return (
       <p className={cn("text-sm text-muted-foreground", className)}>
-        Could not read the sandbox runtime for this install, so this agent runs
+        Couldn't read the sandbox runtime for this install, so this agent runs
         as a container.
       </p>
     );

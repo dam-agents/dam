@@ -48,14 +48,10 @@ export function ConnectedKnowledgeBases({
           { onSettled: () => setRemovingId(null) },
         );
       }}
-      status={
-        agentConnectionsQ.isError
-          ? "Couldn't load this agent's connections — reload before changing them."
-          : connectionsQ.isError
-            ? "Couldn't load the connected knowledge bases — reload to see the current list."
-            : connectionsQ.isPending || agentConnectionsQ.isPending
-              ? "Loading connected knowledge bases…"
-              : null
+      loading={connectionsQ.isPending || agentConnectionsQ.isPending}
+      error={
+        (connectionsQ.isError || agentConnectionsQ.isError) &&
+        "Couldn't load the connected knowledge bases."
       }
     />
   );
@@ -74,7 +70,8 @@ export function KnowledgeBaseList({
   onRemove,
   removingId,
   disabled,
-  status,
+  loading,
+  error,
 }: {
   label?: string;
   description?: string;
@@ -83,7 +80,8 @@ export function KnowledgeBaseList({
   onRemove: (connectionId: string) => void;
   removingId?: string | null;
   disabled?: boolean;
-  status: ReactNode;
+  loading?: boolean;
+  error?: ReactNode;
 }) {
   const [adding, setAdding] = useState(false);
   const kbs = connections.filter((c) => c.templateId === SHARED_KB_TEMPLATE_ID);
@@ -95,12 +93,11 @@ export function KnowledgeBaseList({
         onNew={() => setAdding(true)}
         newDisabled={disabled}
         newTestId="kb-connect-new"
-        isEmpty={kbs.length === 0 && !status}
+        loading={loading}
+        error={error}
+        isEmpty={kbs.length === 0}
         empty="No knowledge bases connected yet."
       >
-        {status && (
-          <p className="px-4 py-3 text-xs text-muted-foreground">{status}</p>
-        )}
         {kbs.map((connection) => {
           const unreachable = connection.status === "expired";
           return (

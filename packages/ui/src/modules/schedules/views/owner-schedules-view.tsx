@@ -1,6 +1,5 @@
 import { ChevronRight, Time, WarningAlt } from "@carbon/icons-react";
 
-import { Callout } from "@/components/ui/callout";
 import { ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
@@ -31,30 +30,16 @@ export function OwnerSchedulesView() {
         description="Everything that runs on its own across your agents. Open one to change, pause or delete it in its agent."
       />
 
-      {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-
-      {isError && (
-        <Callout tone="danger">
-          <p className="text-sm text-danger font-semibold mb-1">
-            Couldn't load schedules
-          </p>
-          <p className="text-xs text-muted-foreground">
-            The server returned an error. Try again or check your network
-            connection.
-          </p>
-        </Callout>
-      )}
-
-      {!isLoading && !isError && (
-        <ListSection
-          isEmpty={rows.length === 0}
-          empty="None of your agents has a schedule yet. Set one up in an agent's Schedules section, or ask the agent in chat."
-        >
-          {rows.map((row) => (
-            <OwnerScheduleItem key={row.schedule.id} row={row} />
-          ))}
-        </ListSection>
-      )}
+      <ListSection
+        loading={isLoading}
+        error={isError && "Couldn't load schedules."}
+        isEmpty={rows.length === 0}
+        empty="None of your agents has a schedule yet. Set one up in an agent's Schedules section, or ask the agent in chat."
+      >
+        {rows.map((row) => (
+          <OwnerScheduleItem key={row.schedule.id} row={row} />
+        ))}
+      </ListSection>
     </div>
   );
 }

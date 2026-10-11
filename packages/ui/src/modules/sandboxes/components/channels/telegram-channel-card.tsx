@@ -36,19 +36,11 @@ export function TelegramChannelCard({ agentId }: { agentId: string }) {
         }
         onNew={() => setInstructionsOpen(true)}
         newTestId="telegram-connect"
-        isEmpty={chats.isSuccess && list.length === 0}
+        loading={chats.isPending}
+        error={chats.isError && "Couldn't load the connected chats."}
+        isEmpty={list.length === 0}
         empty="No chats connected yet."
       >
-        {chats.isPending && (
-          <p className="px-4 py-3 text-sm text-muted-foreground">
-            Loading connected chats…
-          </p>
-        )}
-        {chats.isError && (
-          <p className="px-4 py-3 text-sm text-warning">
-            Couldn't load the connected chats — reload to see them.
-          </p>
-        )}
         {list.map((chat) => (
           <ChannelRow
             key={chat.conversationId}

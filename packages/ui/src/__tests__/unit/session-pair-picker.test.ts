@@ -234,7 +234,7 @@ describe("session pair model choices", () => {
   it("reports unavailable discovery instead of substituting defaults or catalog models", () => {
     state.models = { ibm: {}, curve: { availableModels: [] } };
     const html = renderPicker();
-    expect(html).toContain("Could not list this provider&#x27;s models.");
+    expect(html).toContain("Couldn&#x27;t load this provider&#x27;s models.");
     expect(html).toContain("Retry");
     expect(html).toContain("No models available.");
     expect(html).not.toContain("Static model");
@@ -265,7 +265,7 @@ describe("session pair model choices", () => {
     { availableModels: [], expected: "No models available." },
     {
       availableModels: undefined,
-      expected: "Could not list this provider&#x27;s models.",
+      expected: "Couldn&#x27;t load this provider&#x27;s models.",
     },
   ])(
     "renders the active provider with $expected during background polls",

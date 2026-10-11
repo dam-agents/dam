@@ -239,7 +239,7 @@ export function SessionsSidebar({
         {loading && <SessionListSkeleton />}
         {!loading && visibleSessions.length === 0 && (
           <p className="px-4 py-5 text-xs text-muted-foreground">
-            {filtered ? "No sessions match the filter" : "No sessions yet"}
+            {filtered ? "No sessions match the filter." : "No sessions yet."}
           </p>
         )}
         {visibleSessions.map(renderRow)}
