@@ -79,7 +79,7 @@ function EgressApprovalCard({
             <DropdownMenuItem
               key={action.id}
               disabled={action.disabled}
-              className={action.danger ? "text-destructive" : undefined}
+              tone={action.danger ? "danger" : "default"}
               onSelect={() => void action.run()}
               title={action.tooltip}
             >

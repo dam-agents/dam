@@ -74,9 +74,9 @@ export function OnceScheduleForm({
   const handleDelete = async () => {
     if (!existing) return;
     const confirmed = await showConfirm(
-      "Are you sure you want to cancel this one-time task?",
-      `Cancel ${existing.name}?`,
-      { kind: "destructive", confirmLabel: "Cancel task" },
+      "It will not run.",
+      `Delete ${existing.name}?`,
+      { kind: "destructive", confirmLabel: "Delete task" },
     );
     if (!confirmed) return;
     deleteSchedule.mutate({ id: existing.id });
@@ -233,11 +233,10 @@ export function OnceScheduleForm({
               type="button"
               variant="ghost"
               tone="danger"
-              className="text-danger"
               disabled={deleteSchedule.isPending}
               onClick={() => void handleDelete()}
             >
-              Cancel task
+              Delete task
             </Button>
           ) : undefined
         }

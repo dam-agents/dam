@@ -78,9 +78,7 @@ export function TurnTelemetry({
           {summaryBits(turn).join(" · ")}
         </span>
         {turn.errorCount > 0 && (
-          <span className="font-mono text-destructive">
-            {turn.errorCount} err
-          </span>
+          <span className="font-mono text-danger">{turn.errorCount} err</span>
         )}
       </button>
 

@@ -114,7 +114,7 @@ export function TraceWaterfall({
               className={cn(
                 "absolute top-[2px] h-3 rounded-[2px]",
                 row.span.statusCode.includes("ERROR") &&
-                  "outline outline-1 outline-destructive",
+                  "outline outline-1 outline-danger",
               )}
               style={{
                 left: `${row.offsetPct}%`,

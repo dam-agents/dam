@@ -1,10 +1,4 @@
-import {
-  Edit,
-  Locked,
-  Password,
-  TrashCan,
-  WarningAlt,
-} from "@carbon/icons-react";
+import { Edit, Locked, Password, WarningAlt } from "@carbon/icons-react";
 import { isProtectedAgentEnvName } from "api-server-api";
 import { useMemo, useState } from "react";
 
@@ -19,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
 import { LIST_ROW, ListSection } from "@/components/ui/list-section";
+import { RemoveButton } from "@/components/ui/remove-button";
 import { cn } from "@/lib/utils";
 
 import { sanitizeEnvVars } from "../../../../components/env-vars-editor.js";
@@ -140,17 +135,11 @@ export function EnvTab({ agent }: { agent: AgentView }) {
             >
               <Edit size={14} />
             </Button>
-            <Button
-              variant="ghost"
-              tone="danger"
-              size="icon-sm"
-              aria-label={`Remove ${v.name}`}
-              tooltip="Remove"
-              disabled={saving}
+            <RemoveButton
+              label={`Remove ${v.name}`}
               onClick={() => setEnvVars(envVars.filter((_, idx) => idx !== i))}
-            >
-              <TrashCan size={14} />
-            </Button>
+              disabled={saving}
+            />
           </div>
         ))}
       </ListSection>

@@ -78,7 +78,7 @@ export function OpenAIForm({
       {errors.value &&
         value.length > 0 &&
         errors.value.message !== "Required" && (
-          <div className="text-xs font-medium text-destructive">
+          <div className="text-xs font-medium text-danger">
             {errors.value.message}
           </div>
         )}

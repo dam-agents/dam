@@ -348,7 +348,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       footer={
         <>
           {registryPartial && (
-            <p className="text-sm text-destructive">
+            <p className="text-sm text-danger">
               Finish or clear the private-registry credentials.
             </p>
           )}

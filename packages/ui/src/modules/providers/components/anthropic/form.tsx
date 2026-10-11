@@ -154,7 +154,7 @@ export function AnthropicForm({
       {errors.value &&
         value.length > 0 &&
         errors.value.message !== "Required" && (
-          <div className="text-xs font-medium text-destructive">
+          <div className="text-xs font-medium text-danger">
             {errors.value.message}
           </div>
         )}
@@ -164,7 +164,7 @@ export function AnthropicForm({
         </div>
       )}
       {!errors.value && testResult && !testResult.ok && (
-        <div className="text-xs font-medium text-destructive">
+        <div className="text-xs font-medium text-danger">
           {testResult.message}
         </div>
       )}

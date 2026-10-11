@@ -12,7 +12,7 @@ const selectVariants = cva(
         standard: "border-input",
         ghost:
           "border-transparent bg-transparent hover:border-input hover:bg-background",
-        invalid: "border-destructive focus-visible:ring-destructive",
+        invalid: "border-danger focus-visible:ring-danger",
       },
       size: {
         default: "h-10 pl-4 py-2 text-sm",

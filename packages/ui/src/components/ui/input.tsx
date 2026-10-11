@@ -10,7 +10,7 @@ const inputVariants = cva(
       variant: {
         standard: "border-input",
         monospace: "border-input font-mono",
-        invalid: "border-destructive focus-visible:ring-destructive",
+        invalid: "border-danger focus-visible:ring-danger",
       },
       size: {
         default: "h-10 px-4 py-2 text-sm",

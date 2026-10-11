@@ -81,8 +81,8 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
         <strong>Everyone with the current link loses access</strong> until you
         hand them the new one.
       </>,
-      "Rotate share link",
-      { kind: "destructive" },
+      "Rotate share link?",
+      { kind: "destructive", confirmLabel: "Rotate link" },
     );
     if (!confirmed) return;
     rotate.mutate(
@@ -106,8 +106,8 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
         share link stops working immediately.{" "}
         <strong>Your knowledge base itself is untouched.</strong>
       </>,
-      "Stop sharing",
-      { kind: "destructive" },
+      "Stop sharing?",
+      { kind: "destructive", confirmLabel: "Stop sharing" },
     );
     if (!confirmed) return;
     setRevealedLink(null);
@@ -284,7 +284,7 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
         <Button
           variant="outline"
           size="sm"
-          className="text-destructive hover:text-destructive"
+          tone="danger"
           disabled={revoke.isPending}
           onClick={() => void onUnshare()}
         >

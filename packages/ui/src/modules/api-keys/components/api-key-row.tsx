@@ -1,8 +1,8 @@
-import { Password, TrashCan } from "@carbon/icons-react";
+import { Password } from "@carbon/icons-react";
 import type { ApiKeyView } from "api-server-api";
 
-import { Button } from "@/components/ui/button";
 import { LIST_ROW } from "@/components/ui/list-section";
+import { RemoveButton } from "@/components/ui/remove-button";
 import { formatDate } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -41,18 +41,11 @@ export function ApiKeyRow({ apiKey, onRevoke, revoking }: Props) {
             : " · never used"}
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        tone="danger"
+      <RemoveButton
+        label="Revoke key"
         onClick={() => onRevoke(id, name)}
         disabled={revoking}
-        className="shrink-0 text-muted-foreground"
-        aria-label="Revoke"
-        tooltip="Revoke"
-      >
-        <TrashCan size={14} />
-      </Button>
+      />
     </div>
   );
 }

@@ -158,7 +158,7 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
                       move to another provider.
                     </p>,
                     `Disconnect ${p.name} from this agent?`,
-                    { confirmLabel: "Disconnect" },
+                    { kind: "destructive", confirmLabel: "Disconnect" },
                   ).then((ok) => ok && revoke(p.id))
                 }
                 onChoose={(model) =>

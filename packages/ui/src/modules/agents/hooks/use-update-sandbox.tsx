@@ -80,7 +80,10 @@ export function useUpdateSandbox() {
           />
         </>
       );
-      if (!(await showConfirm(msg, "Update agent"))) return;
+      if (
+        !(await showConfirm(msg, "Update agent?", { confirmLabel: "Update" }))
+      )
+        return;
       upgrade.mutate({ id: agent.id, expectedToImage: update.toImage });
     },
     [showConfirm, upgrade, templates],
@@ -119,7 +122,12 @@ export function useUpdateSandbox() {
           {batchApplyNote(restarting, pending.length)}
         </>
       );
-      if (!(await showConfirm(msg, "Update agents"))) return;
+      if (
+        !(await showConfirm(msg, "Update agents?", {
+          confirmLabel: "Update all",
+        }))
+      )
+        return;
 
       let updated = 0;
       const failures: string[] = [];

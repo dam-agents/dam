@@ -1,4 +1,4 @@
-import { Add, TrashCan } from "@carbon/icons-react";
+import { Add } from "@carbon/icons-react";
 import {
   type Control,
   Controller,
@@ -8,6 +8,7 @@ import {
 } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
+import { RemoveButton } from "@/components/ui/remove-button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -102,15 +103,11 @@ export function QuietHoursEditor({ control, register, error }: Props) {
                     />
                   )}
                 />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="ml-auto text-muted-foreground hover:text-destructive"
+                <RemoveButton
+                  label="Remove quiet hours"
                   onClick={() => remove(idx)}
-                >
-                  <TrashCan size={13} />
-                </Button>
+                  className="ml-auto"
+                />
               </div>
             );
           })}

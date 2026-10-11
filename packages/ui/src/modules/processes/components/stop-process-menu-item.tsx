@@ -20,7 +20,7 @@ export function StopProcessMenuItem({ agentId, row }: Props) {
   async function handleStop() {
     const confirmed = await showConfirm(
       <StopConfirmMessage row={row} />,
-      "Stop process",
+      "Stop process?",
       { confirmLabel: "Stop" },
     );
     if (confirmed) stop.mutate(row.key);

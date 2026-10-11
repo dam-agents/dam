@@ -215,7 +215,7 @@ describe("session pair model choices", () => {
     expect(state.showConfirm).toHaveBeenCalledWith(
       expect.anything(),
       "Disconnect IBM from this agent?",
-      { confirmLabel: "Disconnect" },
+      { kind: "destructive", confirmLabel: "Disconnect" },
     );
     expect(state.revoke).not.toHaveBeenCalled();
     state.showConfirm.mockResolvedValueOnce(true);

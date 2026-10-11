@@ -95,9 +95,7 @@ export function FeedApprovalCard({
           <span
             className={cn(
               "text-sm",
-              resolved.startsWith("Denied")
-                ? "text-destructive"
-                : "text-success",
+              resolved.startsWith("Denied") ? "text-danger" : "text-success",
             )}
           >
             {resolved}
@@ -123,7 +121,7 @@ export function FeedApprovalCard({
                 <DropdownMenuItem
                   key={action.id}
                   disabled={action.disabled}
-                  className={action.danger ? "text-destructive" : undefined}
+                  tone={action.danger ? "danger" : "default"}
                   onSelect={() => void act(action.run, action.resolvedLabel)}
                   title={action.tooltip}
                 >

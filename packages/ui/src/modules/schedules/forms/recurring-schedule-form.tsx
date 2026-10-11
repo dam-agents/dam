@@ -58,7 +58,7 @@ export function RecurringScheduleForm({
   const handleDelete = async () => {
     if (!existing) return;
     const confirmed = await showConfirm(
-      "Are you sure you want to delete this schedule?",
+      "It stops running and cannot be recovered.",
       `Delete ${existing.name}?`,
       { kind: "destructive", confirmLabel: "Delete schedule" },
     );
@@ -208,7 +208,6 @@ export function RecurringScheduleForm({
               type="button"
               variant="ghost"
               tone="danger"
-              className="text-danger"
               disabled={deleteSchedule.isPending}
               onClick={() => void handleDelete()}
             >

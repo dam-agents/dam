@@ -1,4 +1,3 @@
-import { TrashCan } from "@carbon/icons-react";
 import {
   type EgressPreset,
   type EgressRuleView,
@@ -18,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { CardButton } from "@/components/ui/card-button";
 import { Input } from "@/components/ui/input";
 import { ListSection } from "@/components/ui/list-section";
+import { RemoveButton } from "@/components/ui/remove-button";
 import { Select } from "@/components/ui/select";
 
 import { useStore } from "../../../store.js";
@@ -368,18 +368,11 @@ function RuleRow({
       <span className="ml-auto text-[10px] text-muted-foreground hidden sm:block">
         by {rule.decidedBy.slice(0, 8)}
       </span>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-6 w-6 text-muted-foreground hover:text-destructive"
+      <RemoveButton
+        label="Revoke rule"
         onClick={onRevoke}
         disabled={disabled}
-        aria-label="Revoke rule"
-        tooltip="Revoke rule"
-      >
-        <TrashCan size={11} />
-      </Button>
+      />
     </div>
   );
 }

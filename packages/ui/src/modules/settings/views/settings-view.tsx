@@ -170,11 +170,7 @@ export function SettingsView() {
                 </div>
                 <div className="text-xs text-muted-foreground">Signed in</div>
               </div>
-              <Button
-                variant="ghost"
-                onClick={() => logout()}
-                className="text-foreground/80 hover:text-destructive hover:bg-destructive/10"
-              >
+              <Button variant="ghost" onClick={() => logout()} tone="danger">
                 <Logout size={14} />
                 Log out
               </Button>

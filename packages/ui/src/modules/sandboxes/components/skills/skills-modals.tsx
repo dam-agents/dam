@@ -164,7 +164,7 @@ export function SkillsModals({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-danger hover:bg-danger-light hover:text-danger"
+                  tone="danger"
                   onClick={() => {
                     onClose();
                     onDeleteLocal(skill, publish);

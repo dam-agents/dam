@@ -95,7 +95,7 @@ export function UndeliveredNotice({
           Copy text
         </DropdownMenuItem>
         <DropdownMenuItem
-          className="text-danger"
+          tone="danger"
           onSelect={() => {
             onDelete(message.id);
           }}

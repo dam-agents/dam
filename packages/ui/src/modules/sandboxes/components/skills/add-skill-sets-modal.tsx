@@ -1,4 +1,3 @@
-import { TrashCan } from "@carbon/icons-react";
 import type { SkillSet } from "api-server-api";
 import { skillKey } from "api-server-api";
 import { useMemo, useState } from "react";
@@ -11,6 +10,7 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RemoveButton } from "@/components/ui/remove-button";
 import { useToggleSet } from "@/hooks/use-toggle-set";
 
 interface SetPreview {
@@ -87,7 +87,7 @@ function SetRow({
           <Button
             variant="link"
             size="inline"
-            className="text-danger"
+            tone="danger"
             disabled={deleting}
             onClick={onDelete}
           >
@@ -103,16 +103,10 @@ function SetRow({
           </Button>
         </span>
       ) : (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={`Delete ${set.name}`}
-          tooltip="Delete set"
-          className="shrink-0 text-muted-foreground"
+        <RemoveButton
+          label={`Delete ${set.name}`}
           onClick={() => setConfirming(true)}
-        >
-          <TrashCan size={16} />
-        </Button>
+        />
       )}
     </div>
   );

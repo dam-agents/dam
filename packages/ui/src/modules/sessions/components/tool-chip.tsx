@@ -59,7 +59,7 @@ export function ToolChip({ chip }: { chip: T }) {
 
   return (
     <ActivityBlock
-      className={chip.status === "failed" ? "text-destructive" : undefined}
+      className={chip.status === "failed" ? "text-danger" : undefined}
       label={
         <span className="flex items-start gap-1.5 min-w-0 flex-1">
           {running && (

@@ -135,6 +135,7 @@ function StopDelegation({
         const ok = await showConfirm(
           "The agent is removed and the driver gets a failed result.",
           "Stop this temporary agent?",
+          { kind: "destructive", confirmLabel: "Stop agent" },
         );
         if (ok) stop.mutate({ driverAgentId, id: node.id });
       }}

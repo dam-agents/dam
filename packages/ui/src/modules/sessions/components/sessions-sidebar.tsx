@@ -112,7 +112,13 @@ export function SessionsSidebar({
     title: string | null | undefined,
   ) => {
     const label = title || sid.slice(0, 12);
-    if (await showConfirm(`Delete session "${label}"?`, "Delete session")) {
+    if (
+      await showConfirm(
+        "Its transcript is deleted and cannot be recovered.",
+        `Delete session “${label}”?`,
+        { kind: "destructive", confirmLabel: "Delete session" },
+      )
+    ) {
       deleteSession(sid);
     }
   };

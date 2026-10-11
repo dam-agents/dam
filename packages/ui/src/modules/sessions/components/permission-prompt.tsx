@@ -81,7 +81,7 @@ export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
         {verdict.allowed ? (
           <Checkmark size={16} className="text-success shrink-0 mt-0.5" />
         ) : (
-          <Close size={16} className="text-destructive shrink-0 mt-0.5" />
+          <Close size={16} className="text-danger shrink-0 mt-0.5" />
         )}
         <span className="text-muted-foreground shrink-0">
           {verdict.label} —

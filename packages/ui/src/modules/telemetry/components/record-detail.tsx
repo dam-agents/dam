@@ -92,9 +92,7 @@ export function SpanDetail({
       </div>
 
       {span.statusMessage !== "" && (
-        <p className="font-mono text-xs text-destructive">
-          {span.statusMessage}
-        </p>
+        <p className="font-mono text-xs text-danger">{span.statusMessage}</p>
       )}
 
       <div>

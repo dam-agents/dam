@@ -74,7 +74,7 @@ export function ScheduleCard({
   const handleDelete = async () => {
     if (
       await showConfirm(
-        "Are you sure you want to delete this schedule?",
+        "It stops running and cannot be recovered.",
         `Delete ${name}?`,
         { kind: "destructive", confirmLabel: "Delete schedule" },
       )
@@ -84,7 +84,7 @@ export function ScheduleCard({
 
   const handleRunNow = async () => {
     if (
-      await showConfirm(runNowConfirmText(schedule), "Run now", {
+      await showConfirm(runNowConfirmText(schedule), "Run now?", {
         confirmLabel: "Run now",
       })
     )
@@ -104,7 +104,7 @@ export function ScheduleCard({
     if (
       await showConfirm(
         `Reset the session for "${name}"? The next run starts a fresh conversation.`,
-        "Reset session",
+        "Reset session?",
         { confirmLabel: "Reset session" },
       )
     )
@@ -122,7 +122,7 @@ export function ScheduleCard({
                 size={16}
                 className={cn(
                   "shrink-0",
-                  alert.urgent ? "text-destructive" : "text-muted-foreground",
+                  alert.urgent ? "text-danger" : "text-muted-foreground",
                 )}
               >
                 <title>{`${alert.text}: ${alert.reason}`}</title>
@@ -132,9 +132,7 @@ export function ScheduleCard({
           <div className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
             {alert && (
               <>
-                <span
-                  className={cn("truncate", alert.urgent && "text-destructive")}
-                >
+                <span className={cn("truncate", alert.urgent && "text-danger")}>
                   {alert.text}
                 </span>
                 <span aria-hidden>·</span>
@@ -167,7 +165,7 @@ export function ScheduleCard({
               <>
                 <span aria-hidden>·</span>
                 <span
-                  className="inline-flex items-center gap-1 whitespace-nowrap text-destructive"
+                  className="inline-flex items-center gap-1 whitespace-nowrap text-danger"
                   title={stopReason}
                 >
                   <WarningAlt size={12} /> Stopped

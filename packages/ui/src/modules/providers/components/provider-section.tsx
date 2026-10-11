@@ -24,7 +24,7 @@ export function ProviderSection() {
 
   const disconnectProvider = async (item: ProviderItem) => {
     const ok = await showConfirm(
-      "Are you sure you want to disconnect this provider? Any agent currently using this provider will no longer work as expected.",
+      "Agents using this provider can no longer reach its models.",
       "Disconnect provider?",
       { kind: "destructive", confirmLabel: "Disconnect provider" },
     );

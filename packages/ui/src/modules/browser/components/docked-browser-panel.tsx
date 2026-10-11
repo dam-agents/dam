@@ -72,7 +72,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     const ok = await showConfirm(
       "Sign-ins, cookies and site data stored in this agent's browser are deleted.",
       "Clear browser data?",
-      { confirmLabel: "Clear" },
+      { kind: "destructive", confirmLabel: "Clear data" },
     );
     if (ok) stream.clearData();
   };

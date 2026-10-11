@@ -1,9 +1,10 @@
-import { Edit, TrashCan, Upload } from "@carbon/icons-react";
+import { Edit, Upload } from "@carbon/icons-react";
 import { useRef, useState } from "react";
 
 import { DialogActions, DialogBody } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RemoveButton } from "@/components/ui/remove-button";
 import { cn } from "@/lib/utils";
 
 import type {
@@ -92,10 +93,10 @@ export function UploadSkillsTab({
           }}
         />
 
-        {notice && <p className="text-sm text-destructive">{notice}</p>}
-        {topError && <p className="text-sm text-destructive">{topError}</p>}
+        {notice && <p className="text-sm text-danger">{notice}</p>}
+        {topError && <p className="text-sm text-danger">{topError}</p>}
         {hasDuplicate && (
-          <p className="text-sm text-destructive">
+          <p className="text-sm text-danger">
             Two staged skills resolve to the same skill id — rename one before
             adding.
           </p>
@@ -158,7 +159,7 @@ function StagedSkillRow({
     <div
       className={cn(
         "flex items-center gap-3 rounded-lg border px-4 py-3",
-        conflict || unsluggable ? "border-destructive" : "border-border",
+        conflict || unsluggable ? "border-danger" : "border-border",
       )}
     >
       <div className="min-w-0 flex-1">
@@ -184,12 +185,12 @@ function StagedSkillRow({
           </>
         )}
         {conflict && (
-          <p className="mt-1 text-xs text-destructive">
+          <p className="mt-1 text-xs text-danger">
             This agent already has a skill with this name.
           </p>
         )}
         {!conflict && unsluggable && (
-          <p className="mt-1 text-xs text-destructive">
+          <p className="mt-1 text-xs text-danger">
             Name needs at least one letter or number.
           </p>
         )}
@@ -204,16 +205,7 @@ function StagedSkillRow({
       >
         <Edit size={16} />
       </Button>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label="Remove skill"
-        tooltip="Remove skill"
-        onClick={onRemove}
-        className="shrink-0 text-muted-foreground"
-      >
-        <TrashCan size={16} />
-      </Button>
+      <RemoveButton label="Remove skill" onClick={onRemove} />
     </div>
   );
 }

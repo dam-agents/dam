@@ -30,7 +30,11 @@ export function DockedFilePanel({ onOpenFile }: Props) {
   const close = useCallback(async () => {
     if (
       openFileDirty &&
-      !(await showConfirm("Discard unsaved changes?", "Unsaved changes"))
+      !(await showConfirm("Your edits are lost.", "Discard unsaved changes?", {
+        kind: "destructive",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+      }))
     )
       return;
     setOpenFilePath(null);

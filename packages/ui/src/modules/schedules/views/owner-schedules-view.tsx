@@ -77,9 +77,7 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1.5 text-[15px] font-semibold text-foreground">
           <span className="truncate">{schedule.name}</span>
-          {problem && (
-            <WarningAlt size={16} className="shrink-0 text-destructive" />
-          )}
+          {problem && <WarningAlt size={16} className="shrink-0 text-danger" />}
         </p>
         <p className="mt-0.5 truncate text-sm text-muted-foreground">
           {agentName}
@@ -87,7 +85,7 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
           {schedule.createdBy === "agent" && " · set up by the agent"}
         </p>
         {problem ? (
-          <p className="mt-0.5 truncate text-sm text-destructive">{problem}</p>
+          <p className="mt-0.5 truncate text-sm text-danger">{problem}</p>
         ) : (
           lastRun &&
           outcome && (

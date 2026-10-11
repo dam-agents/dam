@@ -95,8 +95,8 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
       write: (input) => writeMutation.mutateAsync({ path, ...input }),
       confirmOverwrite: () =>
         showConfirm(
-          "This file changed on disk since you opened it. Overwrite with your changes?",
-          "File changed on disk",
+          "This file changed on disk since you opened it. Saving replaces that version with yours.",
+          "Overwrite the newer version?",
         ),
     });
     if (outcome.kind === "saved") {
@@ -119,8 +119,13 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const cancelEdit = async () => {
     if (dirty) {
       const ok = await showConfirm(
+        "Your edits are lost.",
         "Discard unsaved changes?",
-        "Unsaved changes",
+        {
+          kind: "destructive",
+          confirmLabel: "Discard",
+          cancelLabel: "Keep editing",
+        },
       );
       if (!ok) return;
     }

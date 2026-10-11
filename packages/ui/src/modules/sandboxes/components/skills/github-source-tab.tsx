@@ -40,7 +40,7 @@ export function GithubSourceTab({
             {...register("gitUrl")}
           />
           {errors.gitUrl?.message && (
-            <p className="text-sm text-destructive">{errors.gitUrl.message}</p>
+            <p className="text-sm text-danger">{errors.gitUrl.message}</p>
           )}
           {!errors.gitUrl && resolved && (
             <p className="text-sm text-muted-foreground">
