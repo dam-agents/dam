@@ -147,6 +147,7 @@ export interface AcpRuntimeDeps {
   onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
   onHarnessExited?: () => void;
   sessionSettingFrames?: (sessionId: string) => SessionSettingFrame[];
+  modeSettingId?: string;
 }
 
 export interface SessionSettingFrame {
@@ -1028,6 +1029,26 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       } else {
         const reportedModel = extractReportedModel(frame);
         if (reportedModel !== null) turnModels.set(sessionId, reportedModel);
+        const reportedMode = extractReportedMode(frame);
+        if (reportedMode !== null) {
+          appliedSettings
+            .get(sessionId)
+            ?.set(
+              "session/set_mode:",
+              JSON.stringify({ sessionId, modeId: reportedMode }),
+            );
+          const entry = deps.sessionMetadata?.get(sessionId);
+          const id = deps.modeSettingId;
+          if (
+            id &&
+            entry?.meta.settings?.[id] !== undefined &&
+            entry.meta.settings[id] !== reportedMode
+          )
+            deps.sessionMetadata?.set(sessionId, {
+              ...entry.meta,
+              settings: { ...entry.meta.settings, [id]: reportedMode },
+            });
+        }
         const text = extractAgentTextChunk(frame);
         if (
           text !== null &&
@@ -1663,6 +1684,18 @@ function extractReportedModel(frame: unknown): string | null {
   const model = update._meta[REPORTED_MODEL_META_KEY];
   return typeof model === "string" && model !== "" && model !== "<synthetic>"
     ? model
+    : null;
+}
+
+function extractReportedMode(frame: unknown): string | null {
+  if (!isNonNullObject(frame) || frame.method !== "session/update") return null;
+  const params = frame.params;
+  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return null;
+  const { sessionUpdate, currentModeId } = params.update;
+  return sessionUpdate === "current_mode_update" &&
+    typeof currentModeId === "string" &&
+    currentModeId !== ""
+    ? currentModeId
     : null;
 }
 

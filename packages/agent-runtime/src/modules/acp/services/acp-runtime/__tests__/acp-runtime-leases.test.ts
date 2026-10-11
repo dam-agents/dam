@@ -75,6 +75,7 @@ function createLeaseWorld(opts: { providers: string[] }) {
         sessionMetadata: metadata.store,
         backgroundWork: scoped.backgroundWork,
         onHarnessExited: scoped.onHarnessExited,
+        modeSettingId: "mode",
         sessionSettingFrames: (sessionId) => {
           const mode = metadata.store.get(sessionId)?.meta.settings?.mode;
           return mode
@@ -295,8 +296,8 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
   });
 
   /** TEST_SCENARIO: Taking provider B away recycles B's process and leaves
-   * A's running; a prompt to B's session then fails naming the provider,
-   * instead of running on another one. */
+   * A's running. Reopening B's session starts no process on credentials B no
+   * longer has, and prompting it fails naming the provider. */
   it("recycles only the removed provider's process and refuses its sessions", () => {
     const world = createLeaseWorld({ providers: ["conn-a", "conn-b"] });
     const client = world.connect();
@@ -310,6 +311,13 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     expect(world.harness("claude-code/conn-a").killed()).toBe(false);
 
     const fresh = world.connect();
+    fresh.send({
+      jsonrpc: "2.0",
+      id: 6,
+      method: "session/resume",
+      params: { sessionId: "s-b", cwd: "." },
+    });
+    expect(world.harnessCount("claude-code/conn-b")).toBe(1);
     fresh.send(frames.prompt(7, "s-b", "still there?"));
     expect(fresh.reply(7)?.error).toMatchObject({
       data: {
@@ -589,6 +597,33 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     );
   });
 
+  /** TEST_SCENARIO: Another tab can pick a new model while the session's
+   * turn runs. The move would leave the running turn on a process about to
+   * shut down, so the change is refused until the turn ends. */
+  it("refuses a model change while the session's turn runs", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    startSession(world, client, "claude-code/conn-a/sonnet", "s", 1, {
+      model: "sonnet",
+    });
+    const pin = (id: number) =>
+      client.send({
+        jsonrpc: "2.0",
+        id,
+        method: PIN_MODEL_METHOD,
+        params: { sessionId: "s", model: "opus" },
+      });
+    client.send(frames.prompt(2, "s", "busy"));
+    pin(3);
+    expect(client.reply(3)?.error).toMatchObject({ code: -32000 });
+    expect(world.harness("claude-code/conn-a/sonnet").killed()).toBe(false);
+    world
+      .harness("claude-code/conn-a/sonnet")
+      .replyToSession("session/prompt", "s", { stopReason: "end_turn" });
+    pin(4);
+    expect(client.reply(4)?.result).toEqual({ model: "opus" });
+  });
+
   /** TEST_SCENARIO: A process whose provider was taken away holds no
    * credential the agent may still use, so it is shut down rather than
    * restarted without one, and a client that used it is told, so a turn it
@@ -659,6 +694,40 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     expect(promptTextsOf(harness)).toEqual([]);
     harness.replyTo("session/set_mode", {});
     expect(promptTextsOf(harness)).toEqual(["next"]);
+  });
+
+  /** TEST_SCENARIO: A harness can leave a mode on its own, as Claude Code
+   * and Bob do when plan mode hands over to implementation. The session's
+   * saved mode follows the harness, so the picker shows the mode the session
+   * runs on, and picking plan again reaches the harness. */
+  it("sends a mode again after the harness left it on its own", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    startSession(world, client, "claude-code/conn-a", "s", 1, {});
+    const harness = world.harness("claude-code/conn-a");
+    const configure = (id: number) => {
+      client.send({
+        jsonrpc: "2.0",
+        id,
+        method: CONFIGURE_SESSION_METHOD,
+        params: { sessionId: "s", settings: { mode: "plan" } },
+      });
+      harness.replyTo("session/set_mode", {});
+    };
+    configure(2);
+    harness.emit({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "s",
+        update: { sessionUpdate: "current_mode_update", currentModeId: "auto" },
+      },
+    });
+    expect(world.metadata.store.get("s")?.meta.settings).toEqual({
+      mode: "auto",
+    });
+    configure(3);
+    expect(harness.received("session/set_mode")).toHaveLength(2);
   });
 
   /** TEST_SCENARIO: After the agent restarts, a client that loads a saved

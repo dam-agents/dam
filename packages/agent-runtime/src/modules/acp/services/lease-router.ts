@@ -437,6 +437,11 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       refuse(real, frame.id, providerRemoved(pair.provider!));
       return;
     }
+    if (revoked && method === "session/resume" && isRequest(frame)) {
+      if (real.isOpen())
+        real.send(JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }));
+      return;
+    }
     const lease = leaseFor(pair);
     const v = channelOn(real, lease);
     v.used = true;
@@ -469,6 +474,13 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       return;
     }
     const from = leases.get(keyOf(pair));
+    if (model !== pair.model && from?.runtime.isSessionRunning(sessionId)) {
+      refuse(real, id, {
+        code: -32000,
+        message: "The model can change once the current turn ends",
+      });
+      return;
+    }
     const { model: _previous, settings: previous, ...meta } = entry.meta;
     const settings = Object.fromEntries(
       Object.entries(previous ?? {}).filter(
@@ -537,8 +549,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     if (moving && from?.runtime.isSessionRunning(sessionId)) {
       refuse(real, id, {
         code: -32000,
-        message:
-          "This setting starts the session's harness again, so it can change once the current turn ends",
+        message: "This setting can change once the current turn ends",
       });
       return;
     }

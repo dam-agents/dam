@@ -278,6 +278,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
               ];
             return [];
           }),
+        modeSettingId: Object.entries(harness?.sessionSettings ?? {}).find(
+          ([, binding]) => "mode" in binding,
+        )?.[0],
         workingDir: opts.workingDir,
         sessionMetadata,
         isTerminalSessionActive: opts.isTerminalSessionActive,
