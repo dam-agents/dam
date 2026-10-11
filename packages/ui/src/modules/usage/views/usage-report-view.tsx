@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef } from "react";
+import { z } from "zod";
 
 import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { Spinner } from "@/components/ui/spinner";
@@ -11,6 +12,8 @@ import {
 } from "../api/queries.js";
 import { UsageNoAccessView } from "./usage-no-access-view.js";
 
+const frameReadyMessage = z.object({ type: z.literal("ready") });
+
 export function UsageReportView() {
   useEffect(() => {
     const previous = document.title;
@@ -20,7 +23,7 @@ export function UsageReportView() {
     };
   }, []);
 
-  const access = useUsageInspectAvailability();
+  const access = useUsageInspectAvailability({ toast: false });
   if (access.isPending) return <Waiting>Checking your access…</Waiting>;
   if (access.isError) {
     return (
@@ -50,7 +53,7 @@ function UsageReportFrame() {
       );
     const onMessage = (e: MessageEvent) => {
       if (e.source !== frame.current?.contentWindow) return;
-      if ((e.data as { type?: unknown } | null)?.type === "ready") postTheme();
+      if (frameReadyMessage.safeParse(e.data).success) postTheme();
     };
     window.addEventListener("message", onMessage);
     postTheme();

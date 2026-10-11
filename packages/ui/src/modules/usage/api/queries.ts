@@ -10,12 +10,14 @@ const usageInspectKeys = {
   report: () => ["usage", "inspect", "report"] as const,
 };
 
-export function useUsageInspectAvailability() {
+export function useUsageInspectAvailability({ toast = true } = {}) {
   return useQuery({
     queryKey: usageInspectKeys.availability(),
     queryFn: fetchUsageInspectAvailability,
     staleTime: 5 * 60_000,
-    meta: { errorToast: "Couldn't check whether you can see usage analytics" },
+    meta: toast
+      ? { errorToast: "Couldn't check whether you can see usage analytics" }
+      : {},
   });
 }
 
