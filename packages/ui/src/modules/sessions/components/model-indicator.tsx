@@ -189,6 +189,7 @@ export function ModelIndicator({
               model,
               settings: { ...defaults, ...settings },
             }}
+            defaults={defaults}
             remembered={remembered}
           />
         </div>

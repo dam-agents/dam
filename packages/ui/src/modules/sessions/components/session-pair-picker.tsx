@@ -229,6 +229,7 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
             <SetAsDefault
               agentId={agentId}
               pair={{ ...pair, settings: { ...defaults, ...settings } }}
+              defaults={defaults}
               remembered={remembered}
             />
           )}
@@ -241,10 +242,12 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
 export function SetAsDefault({
   agentId,
   pair,
+  defaults,
   remembered,
 }: {
   agentId: string;
   pair: SessionPair;
+  defaults: Readonly<Record<string, string>>;
   remembered: SessionPair | null | undefined;
 }) {
   const saved =
@@ -253,7 +256,7 @@ export function SetAsDefault({
     remembered.provider === pair.provider &&
     remembered.model === pair.model &&
     Object.entries(pair.settings ?? {}).every(
-      ([id, value]) => (remembered.settings?.[id] ?? value) === value,
+      ([id, value]) => (remembered.settings?.[id] ?? defaults[id]) === value,
     );
   return (
     <button

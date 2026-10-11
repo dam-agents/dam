@@ -46,6 +46,12 @@ const state = vi.hoisted(() => ({
   refetch: vi.fn(),
   providersAsked: [] as string[],
   owned: [] as { id: string; name: string; type: string }[],
+  chosen: null as {
+    harness: string;
+    provider: string | null;
+    model: string | null;
+    settings?: Record<string, string>;
+  } | null,
   configured: undefined as
     { mode: string | null; configOptions: Record<string, string> } | undefined,
   navigateToSettings: vi.fn(),
@@ -58,7 +64,7 @@ const state = vi.hoisted(() => ({
 vi.mock("../../store.js", () => ({
   useStore: (select: (store: unknown) => unknown) =>
     select({
-      nextSessionPair: {},
+      nextSessionPair: state.chosen ? { agent: state.chosen } : {},
       setNextSessionPair: vi.fn(),
       navigateToSettings: state.navigateToSettings,
       showConfirm: state.showConfirm,
@@ -153,6 +159,7 @@ describe("session pair model choices", () => {
     state.providersAsked = [];
     state.owned = [];
     state.configured = undefined;
+    state.chosen = null;
   });
 
   it("lists each provider's models without a default-model choice", () => {
@@ -177,6 +184,20 @@ describe("session pair model choices", () => {
     expect(html).toContain('aria-label="Session settings"');
     expect(html).not.toContain("Harness default");
     expect(html).toContain('<option value="low" selected="">Low</option>');
+  });
+
+  it("offers Set as default when a picked setting differs from a remembered pair saved without settings", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "ibm",
+      model: null,
+      settings: { mode: "high" },
+    };
+    const html = renderPicker();
+    expect(html).toContain('<option value="high" selected="">High</option>');
+    expect(html).toContain(">Set as default</button>");
+    state.chosen = { ...state.chosen, settings: { mode: "low" } };
+    expect(renderPicker()).toMatch(/disabled=""[^>]*>Default<\/button>/);
   });
 
   it("starts a setting on the harness's configured value over the catalog default", () => {
