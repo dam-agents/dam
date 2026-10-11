@@ -91,9 +91,7 @@ export function EnvTab({ agent }: { agent: AgentView }) {
         >
           <div className="flex items-center gap-2 text-warning">
             <WarningAlt size={12} />
-            <span className="font-bold uppercase tracking-[0.05em] text-[10px]">
-              Shadowing inherited values
-            </span>
+            <span className="font-semibold">Shadowing inherited values</span>
           </div>
           <ul className="list-disc pl-5 text-muted-foreground">
             {warnings.map((w) => (

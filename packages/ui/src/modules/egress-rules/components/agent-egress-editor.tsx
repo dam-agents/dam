@@ -356,11 +356,11 @@ function RuleRow({
       >
         {rule.verdict}
       </Badge>
-      <span className="font-mono text-[11px] text-muted-foreground w-[60px]">
+      <span className="font-mono text-2xs text-muted-foreground w-[60px]">
         {rule.method}
       </span>
       <span className="font-medium truncate">{formatHostPort(rule)}</span>
-      <span className="font-mono text-[11px] text-muted-foreground truncate">
+      <span className="font-mono text-2xs text-muted-foreground truncate">
         {rule.pathPattern}
       </span>
       {sourceLabel && (

@@ -185,7 +185,7 @@ function OpenConversation({
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <div className="text-[11px] text-placeholder">{label}</div>
+      <div className="text-2xs text-placeholder">{label}</div>
       {children}
     </div>
   );

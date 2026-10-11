@@ -39,7 +39,7 @@ export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
           </TruncateStart>
           {listed?.outputPath && (
             <TruncateStart
-              className="font-mono text-[11px] text-muted-foreground"
+              className="font-mono text-2xs text-muted-foreground"
               title={listed.outputPath}
             >
               {listed.outputPath}

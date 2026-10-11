@@ -69,7 +69,7 @@ export function CatalogConnectionRow({
               className="shrink-0 text-foreground/80"
             />
           )}
-          <p className="max-w-[50%] shrink-0 truncate text-[15px] text-foreground">
+          <p className="max-w-[50%] shrink-0 truncate text-md font-medium text-foreground">
             {connection.name}
           </p>
           <Badge variant="muted" className="min-w-0 font-normal" title={tag}>

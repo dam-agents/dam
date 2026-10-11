@@ -60,12 +60,12 @@ function FrontmatterBlock({ source }: { source: string }) {
         chevronSize={12}
         className="gap-1.5 text-muted-foreground hover:text-foreground"
       >
-        <span className="font-mono uppercase tracking-[0.05em] text-[11px]">
+        <span className="font-mono uppercase tracking-[0.05em] text-2xs">
           Frontmatter
         </span>
       </DisclosureToggle>
       {open && (
-        <pre className="mt-1.5 font-mono text-[11px] leading-[1.6] text-muted-foreground whitespace-pre-wrap overflow-x-auto">
+        <pre className="mt-1.5 font-mono text-2xs leading-[1.6] text-muted-foreground whitespace-pre-wrap overflow-x-auto">
           {source}
         </pre>
       )}

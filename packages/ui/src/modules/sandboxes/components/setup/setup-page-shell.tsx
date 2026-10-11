@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { PageHeader } from "@/components/ui/page-header";
+
 interface Props {
   title: string;
   subtitle: string;
@@ -10,12 +12,7 @@ interface Props {
 export function SetupPageShell({ title, subtitle, footer, children }: Props) {
   return (
     <div>
-      <header className="mb-8">
-        <h1 className="text-[22px] font-semibold tracking-[-0.4px] text-foreground">
-          {title}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
-      </header>
+      <PageHeader title={title} description={subtitle} />
 
       {children}
 

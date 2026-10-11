@@ -48,7 +48,7 @@ export function HarnessSpendCard({
 
   return (
     <HarnessSpendShell>
-      <p className="font-mono text-xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
+      <p className="font-mono text-2xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
         {formatHarnessSpend(data)}
       </p>
       <p className="mt-1.5 text-sm text-muted-foreground">

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { Callout } from "@/components/ui/callout";
+import { SectionHeader } from "@/components/ui/list-section";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import {
@@ -99,9 +100,7 @@ function ModelSettingsSkeleton() {
       aria-busy="true"
       aria-label="Model settings loading"
     >
-      <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-        <SectionLabel>Model settings</SectionLabel>
-      </div>
+      <SectionHeader label="Model settings" />
       <Callout>
         <div className="animate-pulse">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -129,10 +128,9 @@ function Section({
 }) {
   return (
     <section className="mb-8">
-      <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-        <SectionLabel>Model settings</SectionLabel>
+      <SectionHeader label="Model settings">
         <WakeToEditButton agentId={agentId} comingUp={comingUp} />
-      </div>
+      </SectionHeader>
       <Callout>{children}</Callout>
     </section>
   );

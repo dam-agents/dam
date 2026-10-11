@@ -25,15 +25,15 @@ export function ApiKeyRow({ apiKey, onRevoke, revoking }: Props) {
       <Password size={20} className="text-muted-foreground mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold truncate">{name}</span>
-          <span className="text-[11px] text-muted-foreground font-mono">
-            {id}
+          <span className="truncate text-md font-medium text-foreground">
+            {name}
           </span>
+          <span className="font-mono text-xs text-muted-foreground">{id}</span>
         </div>
-        <div className="text-xs text-muted-foreground mt-1">
+        <div className="mt-0.5 text-sm text-muted-foreground">
           {scopes.join(", ")} · {binding}
         </div>
-        <div className="text-[11px] text-muted-foreground mt-0.5">
+        <div className="mt-0.5 text-xs text-muted-foreground">
           created {formatDate(createdAt)}
           {expiresAt && ` · expires ${formatDate(expiresAt)}`}
           {lastUsedAt

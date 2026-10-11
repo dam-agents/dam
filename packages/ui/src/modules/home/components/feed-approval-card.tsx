@@ -65,7 +65,7 @@ export function FeedApprovalCard({
             )}
             <span className="truncate">{agentName}</span>
           </div>
-          <p className="text-[15px] leading-snug font-semibold text-foreground">
+          <p className="text-md leading-snug font-semibold text-foreground">
             {approvalHeadline(approval)}
           </p>
         </div>

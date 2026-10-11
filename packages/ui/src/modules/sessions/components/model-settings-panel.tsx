@@ -8,7 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SectionLabel } from "@/components/ui/section-label";
+import { SectionHeader } from "@/components/ui/list-section";
 
 import {
   useHarnessConfigStatus,
@@ -107,7 +107,7 @@ export function ModelSettingsPanel({
   });
 
   const note = (
-    <p className="pt-3 text-[11px] leading-snug text-muted-foreground">
+    <p className="pt-3 text-2xs leading-snug text-muted-foreground">
       Applies to new sessions. A session that's already running keeps the
       settings it started with — start a new session to use these.
     </p>
@@ -119,10 +119,7 @@ export function ModelSettingsPanel({
   return (
     <section className="mb-8">
       {staleModel && <StaleModelCallout model={staleModel} />}
-      <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-        <SectionLabel>Model settings</SectionLabel>
-        {headerAction}
-      </div>
+      <SectionHeader label="Model settings">{headerAction}</SectionHeader>
       <Callout>
         {fromSnapshot && capturedAt && <SnapshotNote capturedAt={capturedAt} />}
         {groups}
@@ -256,12 +253,12 @@ function OptionItem({
         <span className={active ? "" : "pl-[18px]"}>{label}</span>
       </span>
       {detail && (
-        <span className="pl-[18px] font-mono text-[11px] text-muted-foreground">
+        <span className="pl-[18px] font-mono text-2xs text-muted-foreground">
           {detail}
         </span>
       )}
       {description && (
-        <span className="pl-[18px] text-[11px] text-muted-foreground">
+        <span className="pl-[18px] text-2xs text-muted-foreground">
           {description}
         </span>
       )}

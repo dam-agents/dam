@@ -63,7 +63,7 @@ export function SpendWidget() {
         </div>
       </div>
 
-      <p className="mb-5 text-[28px] leading-none font-bold tracking-tight text-foreground tabular-nums">
+      <p className="mb-5 text-2xl font-semibold tabular-nums text-foreground">
         {isPending ? <TextSkeleton width={96} /> : `$${total.toFixed(2)}`}
       </p>
 

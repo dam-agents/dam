@@ -78,7 +78,7 @@ export function RichSelect<T extends string>({
               </div>
             </>
           ) : (
-            <p className="flex-1 text-[15px] text-muted-foreground">
+            <p className="flex-1 text-md text-muted-foreground">
               {placeholder}
             </p>
           )}

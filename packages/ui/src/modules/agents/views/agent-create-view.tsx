@@ -410,7 +410,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
               <Box size={16} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-semibold leading-6 text-kit">
+              <p className="text-md font-semibold leading-6 text-kit">
                 {kit.name}
               </p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">

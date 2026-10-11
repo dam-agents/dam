@@ -72,12 +72,12 @@ function LoadOlderMarker({
         <button
           type="button"
           onClick={fire}
-          className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60 hover:text-foreground"
+          className="text-2xs italic text-muted-foreground px-3 py-1 border-t border-b border-border/60 hover:text-foreground"
         >
           Couldn&apos;t load earlier messages — tap to retry
         </button>
       ) : (
-        <span className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
+        <span className="text-2xs italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
           Loading earlier messages…
         </span>
       )}
@@ -111,7 +111,7 @@ export const ChatMessage = memo(function ChatMessage({
     }
     return (
       <div className="flex justify-center anim-in">
-        <span className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
+        <span className="text-2xs italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
           {message.parts.find((p) => p.kind === "text")?.text ?? "…"}
         </span>
       </div>
@@ -145,12 +145,12 @@ export const ChatMessage = memo(function ChatMessage({
             size={24}
           />
         )}
-        <span className="text-[11px] font-medium text-muted-foreground">
+        <span className="text-2xs font-medium text-muted-foreground">
           {isAssistant ? (avatarAgent?.name ?? "Agent") : userLabel}
         </span>
         {timeLabel !== undefined && (
           <Tooltip side="top" content={timeTitle}>
-            <span className="text-[11px] text-muted-foreground cursor-default">
+            <span className="text-2xs text-muted-foreground cursor-default">
               {timeLabel}
             </span>
           </Tooltip>
@@ -212,7 +212,7 @@ export const ChatMessage = memo(function ChatMessage({
         <Tooltip side="top" content={message.model}>
           <span
             data-testid="reply-model"
-            className="text-[11px] text-muted-foreground cursor-default"
+            className="text-2xs text-muted-foreground cursor-default"
           >
             {modelDisplayName(message.model)}
           </span>

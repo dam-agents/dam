@@ -216,7 +216,7 @@ export function PermissionPrompt({
             ))}
           </div>
           {pending.length > 1 && (
-            <div className="text-[11px] text-muted-foreground">
+            <div className="text-2xs text-muted-foreground">
               {pending.length - 1} more request
               {pending.length - 1 === 1 ? "" : "s"} queued
             </div>

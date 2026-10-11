@@ -310,7 +310,7 @@ function AttachmentChip({
       ) : (
         <div className="h-14 px-3 rounded-md border border-border bg-muted flex items-center gap-2">
           <Document size={14} className="text-muted-foreground shrink-0" />
-          <span className="text-[11px] text-foreground/80 truncate max-w-[120px]">
+          <span className="text-2xs text-foreground/80 truncate max-w-[120px]">
             {name}
           </span>
         </div>

@@ -4,6 +4,7 @@ import type { SessionPair } from "api-server-api";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Button } from "@/components/ui/button";
+import { labelVariants } from "@/components/ui/label";
 import {
   Popover,
   PopoverClose,
@@ -282,9 +283,7 @@ function ProviderHeading({
 }) {
   return (
     <div className="group/provider flex h-6 items-center justify-between gap-2">
-      <h3 className="truncate text-xs font-medium uppercase text-muted-foreground">
-        {name}
-      </h3>
+      <h3 className={cn("truncate", labelVariants())}>{name}</h3>
       {onDisconnect && (
         <Tooltip content="Disconnect">
           <PopoverClose asChild>

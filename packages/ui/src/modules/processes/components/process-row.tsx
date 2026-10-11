@@ -47,7 +47,7 @@ export function ProcessRow({
           />
           <ProcessCommand command={row.command} />
         </div>
-        <span className="truncate text-[11px] text-muted-foreground">
+        <span className="truncate text-2xs text-muted-foreground">
           {row.kind !== "turn" && `${BACKGROUND_KIND_LABEL[row.kind]} · `}
           <ProcessStats row={row} now={now} />
         </span>

@@ -3,6 +3,7 @@ import type { HarnessCapability } from "agent-runtime-api";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Button } from "@/components/ui/button";
+import { labelVariants } from "@/components/ui/label";
 import {
   Popover,
   PopoverClose,
@@ -120,9 +121,7 @@ export function ModelIndicator({
         </div>
         <section aria-label={activeProvider?.name ?? "Active provider"}>
           {activeProvider && (
-            <h3 className="text-xs font-medium uppercase text-muted-foreground">
-              {activeProvider.name}
-            </h3>
+            <h3 className={labelVariants()}>{activeProvider.name}</h3>
           )}
           <ul
             aria-label="Models for this session"

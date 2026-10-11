@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { SectionHeader } from "@/components/ui/list-section";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -78,10 +79,9 @@ export function SkillsNeverRunPanel({
       </section>
 
       <section>
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <SectionLabel>Connected sources</SectionLabel>
+        <SectionHeader label="Connected sources">
           {addSourceButton}
-        </div>
+        </SectionHeader>
         <SkillSourceList
           sources={sources}
           loaded={sourcesLoaded}

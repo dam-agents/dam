@@ -75,7 +75,7 @@ export function HarnessSettingsSections({
             }
           />
         ))}
-        <p className="pt-3 text-[11px] leading-snug text-muted-foreground">
+        <p className="pt-3 text-2xs leading-snug text-muted-foreground">
           Defaults for new sessions on each harness. A session&rsquo;s model is
           chosen when it starts.
         </p>

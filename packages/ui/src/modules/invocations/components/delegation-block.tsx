@@ -51,7 +51,7 @@ function SourceFold({ chip }: { chip: ToolChip }) {
     <ActivityBlock
       open={open}
       onToggle={() => setOpen((o) => !o)}
-      className="mt-2 border-l-0 pl-0 text-[11px]"
+      className="mt-2 border-l-0 pl-0 text-2xs"
       label={
         <span className="truncate">
           {viaTool ? "Tool" : "Script"}{" "}

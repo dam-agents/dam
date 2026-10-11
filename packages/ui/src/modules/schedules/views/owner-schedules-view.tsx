@@ -57,10 +57,10 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
     <button
       type="button"
       onClick={() => navigateToSandboxHome(schedule.agentId, "schedules")}
-      className="flex w-full items-center gap-3 p-4 text-left hover:bg-muted/40"
+      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40"
     >
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1.5 text-[15px] font-semibold text-foreground">
+        <p className="flex items-center gap-1.5 text-md font-medium text-foreground">
           <span className="truncate">{schedule.name}</span>
           {problem && <WarningAlt size={16} className="shrink-0 text-danger" />}
         </p>

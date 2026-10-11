@@ -98,7 +98,7 @@ function EgressApprovalCard({
         </RowActionsMenu>
       </div>
       {queued > 0 && (
-        <div className="text-[11px] text-muted-foreground">
+        <div className="text-2xs text-muted-foreground">
           {queued} more request{queued === 1 ? "" : "s"} queued
         </div>
       )}

@@ -22,7 +22,9 @@ export function ChannelRow({
     <div className={LIST_ROW}>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <p className="truncate text-[15px] text-foreground">{title}</p>
+          <p className="truncate text-md font-medium text-foreground">
+            {title}
+          </p>
           {badge}
         </div>
         {subtitle && (

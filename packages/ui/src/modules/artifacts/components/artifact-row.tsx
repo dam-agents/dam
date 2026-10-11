@@ -82,7 +82,7 @@ export function ArtifactRow({
       onMouseEnter={warmPreview}
       onFocus={warmPreview}
       className={cn(
-        "group flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-2.5 text-left transition-colors hover:bg-muted/60",
+        "group flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-3 text-left transition-colors hover:bg-muted/60",
         deletion.state === "expired" && "opacity-55",
         dragging && "opacity-50",
       )}
@@ -90,7 +90,7 @@ export function ArtifactRow({
     >
       <ArtifactKindBadge kind={artifact.kind} />
       <div className="min-w-0 flex flex-col gap-0.5">
-        <span className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
+        <span className="flex items-center gap-1.5 truncate text-md font-medium text-foreground">
           {artifact.title}
         </span>
         <span className="flex min-w-0 items-center gap-2.5 overflow-hidden text-xs text-muted-foreground">

@@ -80,7 +80,7 @@ export function TraceWaterfall({
             <span
               aria-hidden
               className={cn(
-                "shrink-0 text-[8px]",
+                "shrink-0 text-2xs",
                 placement?.exact ? "text-amber-600" : "text-amber-600/45",
               )}
             >
@@ -90,7 +90,7 @@ export function TraceWaterfall({
           <span
             className={cn(
               "truncate font-mono",
-              isSpan ? "text-xs" : "text-[11px] text-muted-foreground",
+              isSpan ? "text-xs" : "text-2xs text-muted-foreground",
             )}
             title={isSpan ? row.span.name : row.log.event}
           >
@@ -100,7 +100,7 @@ export function TraceWaterfall({
           </span>
           {!isSpan && row.log.attachedBy === "request-id" && (
             <span
-              className="shrink-0 rounded-sm bg-muted px-1 text-[9px] uppercase tracking-wide text-muted-foreground"
+              className="shrink-0 rounded-sm bg-muted px-1 text-2xs uppercase tracking-wide text-muted-foreground"
               title="Matched to this call by its request id"
             >
               call
@@ -134,7 +134,7 @@ export function TraceWaterfall({
           )}
         </span>
 
-        <span className="text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+        <span className="text-right font-mono text-2xs tabular-nums text-muted-foreground">
           {isSpan
             ? formatDurationMs(row.span.durationMs)
             : cost !== null
@@ -151,7 +151,7 @@ export function TraceWaterfall({
         {wf.rows.map((row) => render(row, row.depth))}
 
         {wf.traceCount > 1 && (
-          <p className="mt-2 border-t border-border pt-2 text-[11px] text-muted-foreground">
+          <p className="mt-2 border-t border-border pt-2 text-2xs text-muted-foreground">
             This turn spans {wf.traceCount} traces; rows sit on one time axis.
           </p>
         )}

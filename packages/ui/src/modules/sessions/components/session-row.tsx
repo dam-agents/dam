@@ -169,7 +169,7 @@ export function SessionRow({
             onboarding && !hasIndicators && !s.harness && HOVER_ROOM,
           )}
         >
-          <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
+          <span className={`text-sm min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
           {onboarding && (
@@ -222,7 +222,7 @@ export function SessionRow({
             </DropdownMenuItem>
           </RowActionsMenu>
         </div>
-        <span className="text-[11px] text-muted-foreground truncate">
+        <span className="text-2xs text-muted-foreground truncate">
           {conversation ? `${conversation} · ` : ""}
           <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
             {timeAgo(s.updatedAt ?? s.createdAt)}

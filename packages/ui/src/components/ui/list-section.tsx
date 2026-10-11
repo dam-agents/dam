@@ -61,13 +61,10 @@ export function ListSection({
   return (
     <section className={cn("mb-8", className)}>
       {(label || headerExtra || (onNew && !isEmpty && !loading)) && (
-        <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-          {label && <SectionLabel>{label}</SectionLabel>}
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            {headerExtra}
-            {!isEmpty && !loading && newButton(newTestId)}
-          </div>
-        </div>
+        <SectionHeader label={label}>
+          {headerExtra}
+          {!isEmpty && !loading && newButton(newTestId)}
+        </SectionHeader>
       )}
       {description && (
         <p className="mb-3 text-sm text-muted-foreground">{description}</p>
@@ -98,6 +95,26 @@ export function ListSection({
         {footer}
       </Card>
     </section>
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The row above a page section: its label on the
+ * left and the section's actions on the right, at one fixed height so labels
+ * line up whether or not a section has actions.
+ */
+export function SectionHeader({
+  label,
+  children,
+}: {
+  label?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
+      {label && <SectionLabel>{label}</SectionLabel>}
+      <div className="ml-auto flex shrink-0 items-center gap-2">{children}</div>
+    </div>
   );
 }
 

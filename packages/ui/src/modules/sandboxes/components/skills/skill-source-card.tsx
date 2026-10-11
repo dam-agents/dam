@@ -150,7 +150,7 @@ export function SkillSourceCard({
       <div className="flex items-center gap-3 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className="truncate text-[15px] font-semibold text-foreground">
+            <p className="truncate text-md font-medium text-foreground">
               {source.name}
             </p>
             {loaded && (

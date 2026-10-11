@@ -113,9 +113,9 @@ export function ScheduleCard({
 
   return (
     <div>
-      <div className="flex items-center gap-3 p-4">
+      <div className="flex items-center gap-3 px-4 py-3">
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 text-[15px] font-semibold text-foreground">
+          <p className="flex items-center gap-1.5 text-md font-medium text-foreground">
             <span className="truncate">{name}</span>
             {alert && (
               <WarningAlt

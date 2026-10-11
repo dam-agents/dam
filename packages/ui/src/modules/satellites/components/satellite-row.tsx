@@ -72,7 +72,7 @@ export function SatelliteRow({
         <div className="flex min-w-[160px] flex-1 flex-wrap items-center gap-2">
           <Satellite size={16} className="shrink-0 text-foreground/80" />
           <p
-            className="max-w-full shrink-0 truncate text-[15px] text-foreground"
+            className="max-w-full shrink-0 truncate text-md font-medium text-foreground"
             title={satellite.description ?? undefined}
           >
             {satellite.name}

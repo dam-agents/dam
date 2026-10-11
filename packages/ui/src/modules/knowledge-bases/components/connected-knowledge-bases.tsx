@@ -103,7 +103,7 @@ export function KnowledgeBaseList({
           return (
             <div key={connection.id} className={LIST_ROW}>
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="truncate text-sm font-medium text-foreground">
+                <span className="truncate text-md font-medium text-foreground">
                   {connection.name}
                 </span>
                 {unreachable && (

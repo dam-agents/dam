@@ -796,7 +796,7 @@ export function ChatView() {
                               className="flex items-center gap-3 py-2"
                             >
                               <span className="h-px flex-1 bg-border/60" />
-                              <span className="text-[11px] text-muted-foreground">
+                              <span className="text-2xs text-muted-foreground">
                                 {dividerLabel(item, now)}
                               </span>
                               <span className="h-px flex-1 bg-border/60" />
@@ -837,17 +837,17 @@ export function ChatView() {
                       />
                     )}
                     {telemetryEnabled && sessionTurns.isError && (
-                      <p className="py-1 text-[11px] text-muted-foreground/70">
+                      <p className="py-1 text-2xs text-muted-foreground/70">
                         Telemetry for this session could not be read.
                       </p>
                     )}
                     {turnsUnavailable && (
-                      <p className="py-1 text-[11px] text-muted-foreground/70">
+                      <p className="py-1 text-2xs text-muted-foreground/70">
                         {turnsUnavailable}
                       </p>
                     )}
                     {turnsTruncated && (
-                      <p className="py-1 text-[11px] text-muted-foreground/70">
+                      <p className="py-1 text-2xs text-muted-foreground/70">
                         Older turns in this session are past the telemetry
                         display cap and are not shown.
                       </p>
@@ -1088,9 +1088,7 @@ function SessionErrorCard({
       <div className="flex items-start gap-3">
         <Warning size={20} className="text-danger shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <h3 className="text-[15px] font-bold text-foreground mb-1">
-            {title}
-          </h3>
+          <h3 className="text-md font-bold text-foreground mb-1">{title}</h3>
           <p className="text-sm text-muted-foreground break-words">{body}</p>
         </div>
       </div>

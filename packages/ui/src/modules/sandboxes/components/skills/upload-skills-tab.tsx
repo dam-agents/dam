@@ -176,7 +176,7 @@ function StagedSkillRow({
           />
         ) : (
           <>
-            <p className="truncate text-[15px] font-medium text-foreground">
+            <p className="truncate text-md font-medium text-foreground">
               {skill.name || "Untitled skill"}
             </p>
             <p className="truncate text-sm text-muted-foreground">

@@ -17,7 +17,7 @@ export function ToolContentBlock({ text }: { text: string }) {
 
   return (
     <div className="group/content relative my-1 rounded bg-muted/40 border border-border/40 p-2">
-      <pre className="text-[11px] font-mono whitespace-pre-wrap break-words overflow-x-auto w-full leading-[1.5] m-0 pr-6 select-text text-foreground/90">
+      <pre className="text-2xs font-mono whitespace-pre-wrap break-words overflow-x-auto w-full leading-[1.5] m-0 pr-6 select-text text-foreground/90">
         {stripped}
       </pre>
       <CopyButton

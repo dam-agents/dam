@@ -1,5 +1,7 @@
 import { Button } from "@/components/ui/button";
+import { PAGE_TITLE } from "@/components/ui/page-header";
 import { formatDate } from "@/lib/format-time";
+import { cn } from "@/lib/utils";
 
 import { Markdown } from "../../../components/markdown.js";
 import { takeReturnPath } from "../../../lib/return-path.js";
@@ -33,7 +35,7 @@ export function TermsView() {
 
   return (
     <div className="mx-auto w-full max-w-200 px-4 py-10">
-      <h1 className="text-2xl font-semibold mb-2">Terms of Use</h1>
+      <h1 className={cn(PAGE_TITLE, "mb-2")}>Terms of Use</h1>
       {isStaleReaccept && (
         <p className="text-sm text-muted-foreground mb-4">
           The Terms of Use have been updated — please review and accept to
