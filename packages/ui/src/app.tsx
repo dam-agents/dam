@@ -31,6 +31,7 @@ import { StarterKitDetailView } from "./modules/starter-kits/views/starter-kit-v
 import { StarterKitsView } from "./modules/starter-kits/views/starter-kits-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
+import { UsageReportView } from "./modules/usage/views/usage-report-view.js";
 import { useStore } from "./store.js";
 
 export default function App() {
@@ -55,6 +56,7 @@ export default function App() {
   if (view === "terms") return <TermsView />;
   if (view === "telegram-bind") return <TelegramBindView />;
   if (view === "slack-bind") return <SlackBindView />;
+  if (view === "analytics") return <UsageReportView />;
   return <MainApp />;
 }
 
