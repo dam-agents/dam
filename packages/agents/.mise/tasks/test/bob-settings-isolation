@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-//MISE description="Each Bob process reads and writes its own settings file, never the shared one"
-//MISE sources=["bob/rootfs/usr/local/lib/bob-settings-file.mjs", "bob/rootfs/usr/local/bin/harness-chat", "bob/rootfs/app/bob-settings.mjs", ".mise/tasks/check/bob-settings-isolation"]
+//MISE description="Test that each Bob process reads and writes its own settings file, while its bootstrap reads the shared one"
+//MISE sources=["bob/rootfs/usr/local/lib/bob-settings-file.mjs", "bob/rootfs/usr/local/bin/harness-chat", "bob/rootfs/app/bob-settings.mjs", ".mise/tasks/test/bob-settings-isolation"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

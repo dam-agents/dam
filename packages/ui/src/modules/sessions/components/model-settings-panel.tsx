@@ -82,7 +82,7 @@ export function ModelSettingsPanel({
         name: c.name,
         description: c.description,
       }));
-    const cur = valueOf(group.id);
+    const cur = valueOf(group.id) ?? group.default ?? null;
     if (cur && !choices.some((c) => c.id === cur)) {
       choices.push({
         id: cur,
@@ -99,6 +99,7 @@ export function ModelSettingsPanel({
         title={group.name}
         choices={choices}
         value={cur}
+        clearable={group.id === "model"}
         disabled={disabled}
         onSelect={(id) => change(group.id, id)}
       />
@@ -131,19 +132,21 @@ export function ModelSettingsPanel({
   );
 }
 
-const CLEARED_LABEL = "Harness default";
-const CLEARED_DESCRIPTION = "Determined by harness settings";
+const CLEARED_LABEL = "Agent default";
+const CLEARED_DESCRIPTION = "The model the agent's harness starts on";
 
 function OptionGroup({
   title,
   choices,
   value,
+  clearable,
   disabled = false,
   onSelect,
 }: {
   title: string;
   choices: Choice[];
   value: string | null;
+  clearable: boolean;
   disabled?: boolean;
   onSelect: (id: string | null) => void;
 }) {
@@ -162,6 +165,7 @@ function OptionGroup({
         title={title}
         choices={choices}
         value={value}
+        clearable={clearable}
         onSelect={onSelect}
       />
     </OptionField>
@@ -172,7 +176,7 @@ export function OptionPicker({
   title,
   choices,
   value,
-  clearable = true,
+  clearable = false,
   placeholder = CLEARED_LABEL,
   clearedLabel = CLEARED_LABEL,
   clearedDescription = CLEARED_DESCRIPTION,

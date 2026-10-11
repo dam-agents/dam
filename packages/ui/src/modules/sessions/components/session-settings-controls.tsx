@@ -1,4 +1,7 @@
-import type { HarnessCapability } from "agent-runtime-api";
+import type {
+  HarnessCapability,
+  HarnessConfigCurrent,
+} from "agent-runtime-api";
 import { Fragment, useId } from "react";
 
 import { Select } from "@/components/ui/select";
@@ -14,18 +17,37 @@ export function sessionSettingOptions(
   );
 }
 
+export function settingDefaults(
+  capability: HarnessCapability | undefined,
+  configured: HarnessConfigCurrent | null | undefined,
+): Record<string, string> {
+  return Object.fromEntries(
+    sessionSettingOptions(capability).flatMap((o) => {
+      const value =
+        (o.id === "mode"
+          ? configured?.mode
+          : configured?.configOptions[o.id]) ?? o.default;
+      return value && o.choices.some((c) => c.value === value)
+        ? [[o.id, value]]
+        : [];
+    }),
+  );
+}
+
 export function SessionSettingsControls({
   capability,
   model,
   settings,
+  defaults,
   disabled = false,
   onChange,
 }: {
   capability: HarnessCapability | undefined;
   model: string | null;
   settings: Readonly<Record<string, string>>;
+  defaults: Readonly<Record<string, string>>;
   disabled?: boolean;
-  onChange: (id: string, value: string | null) => void;
+  onChange: (id: string, value: string) => void;
 }) {
   const id = useId();
   const options = sessionSettingOptions(capability);
@@ -40,7 +62,7 @@ export function SessionSettingsControls({
         const allowed = model
           ? capability?.harnessConfigCatalog?.modelConstraints?.[model]?.[o.id]
           : undefined;
-        const value = settings[o.id];
+        const value = settings[o.id] ?? defaults[o.id] ?? o.choices[0]?.value;
         const choices = o.choices.filter(
           (c) => !allowed || allowed.includes(c.value) || c.value === value,
         );
@@ -55,9 +77,8 @@ export function SessionSettingsControls({
               variant="ghost"
               disabled={disabled}
               value={value ?? ""}
-              onChange={(e) => onChange(o.id, e.target.value || null)}
+              onChange={(e) => onChange(o.id, e.target.value)}
             >
-              <option value="">Harness default</option>
               {value !== undefined &&
                 !choices.some((c) => c.value === value) && (
                   <option value={value}>{value}</option>

@@ -242,7 +242,7 @@ export function useAcpSession(
   );
 
   const configureSession = useCallback(
-    async (settings: Record<string, string | null>) => {
+    async (settings: Record<string, string>) => {
       const sid = useStore.getState().sessionId;
       if (!sid || !selectedAgent) return;
       try {

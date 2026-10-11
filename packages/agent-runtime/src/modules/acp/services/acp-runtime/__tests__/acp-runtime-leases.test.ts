@@ -696,70 +696,68 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     expect(promptTextsOf(harness)).toEqual(["next"]);
   });
 
-  /** TEST_SCENARIO: The session picks plan and then "Harness default". The
-   * harness must go back to the mode it started the session on, the one its
-   * session/new answer reported, before the next prompt. Another session on
-   * the same process keeps its own mode. */
-  it("puts the harness back on its default when a setting is cleared", () => {
+  /** TEST_SCENARIO: Every session setting holds a real value, so the harness
+   * is never left to guess what an unset one means. A change that names no
+   * value is refused, and the saved value stays. */
+  it("refuses to clear a session setting", () => {
     const world = createLeaseWorld({ providers: ["conn-a"] });
     const client = world.connect();
-    client.send(newSessionOn(1, {}));
-    const harness = world.harness("claude-code/conn-a");
-    harness.replyTo("session/new", {
-      sessionId: "s",
-      modes: { currentModeId: "default", availableModes: [] },
-    });
-    const configure = (id: number, mode: string | null) => {
+    startSession(world, client, "claude-code/conn-a", "s", 1, {});
+    const configure = (id: number, mode: string | null) =>
       client.send({
         jsonrpc: "2.0",
         id,
         method: CONFIGURE_SESSION_METHOD,
         params: { sessionId: "s", settings: { mode } },
       });
-      harness.replyTo("session/set_mode", {});
-    };
     configure(2, "plan");
     configure(3, null);
-    expect(harness.received("session/set_mode").map((f) => f.params)).toEqual([
-      { sessionId: "s", modeId: "plan" },
-      { sessionId: "s", modeId: "default" },
-    ]);
-    expect(world.metadata.store.get("s")?.meta.settings).toBeUndefined();
-    client.send(frames.prompt(4, "s", "on default"));
-    expect(promptTextsOf(harness)).toEqual(["on default"]);
+    expect(client.reply(3)?.error).toMatchObject({ code: -32602 });
+    expect(world.metadata.store.get("s")?.meta.settings).toEqual({
+      mode: "plan",
+    });
   });
 
-  /** TEST_SCENARIO: A harness can leave a mode on its own, as Claude Code
-   * and Bob do when plan mode hands over to implementation. The session's
-   * saved mode follows the harness, so the picker shows the mode the session
-   * runs on, and picking plan again reaches the harness. */
-  it("sends a mode again after the harness left it on its own", () => {
+  /** TEST_SCENARIO: A harness can switch a session's mode on its own, as
+   * Claude Code and Bob do when plan mode hands over to implementation. The
+   * session's saved mode follows the harness, also when the session never
+   * picked one, so the picker shows the mode the session runs on, a load into
+   * another process restores it, and picking plan again reaches the harness. */
+  it("follows a mode the harness switched to on its own", () => {
     const world = createLeaseWorld({ providers: ["conn-a"] });
     const client = world.connect();
     startSession(world, client, "claude-code/conn-a", "s", 1, {});
     const harness = world.harness("claude-code/conn-a");
-    const configure = (id: number) => {
-      client.send({
+    const report = (mode: string) =>
+      harness.emit({
         jsonrpc: "2.0",
-        id,
-        method: CONFIGURE_SESSION_METHOD,
-        params: { sessionId: "s", settings: { mode: "plan" } },
+        method: "session/update",
+        params: {
+          sessionId: "s",
+          update: { sessionUpdate: "current_mode_update", currentModeId: mode },
+        },
       });
-      harness.replyTo("session/set_mode", {});
-    };
-    configure(2);
-    harness.emit({
-      jsonrpc: "2.0",
-      method: "session/update",
-      params: {
-        sessionId: "s",
-        update: { sessionUpdate: "current_mode_update", currentModeId: "auto" },
-      },
+    report("acceptEdits");
+    expect(world.metadata.store.get("s")?.meta.settings).toEqual({
+      mode: "acceptEdits",
     });
+    client.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: CONFIGURE_SESSION_METHOD,
+      params: { sessionId: "s", settings: { mode: "plan" } },
+    });
+    harness.replyTo("session/set_mode", {});
+    report("auto");
     expect(world.metadata.store.get("s")?.meta.settings).toEqual({
       mode: "auto",
     });
-    configure(3);
+    client.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: CONFIGURE_SESSION_METHOD,
+      params: { sessionId: "s", settings: { mode: "plan" } },
+    });
     expect(harness.received("session/set_mode")).toHaveLength(2);
   });
 

@@ -66,6 +66,7 @@ drivers:
           name: Mode
           description: Which persona Bob starts a session in
           category: mode
+          default: "agent"
           choices:
             - value: agent
               name: "Agent"
@@ -80,6 +81,7 @@ drivers:
           name: Approvals
           description: Whether Bob asks before a tool call
           category: approvals
+          default: "auto"
           choices:
             - value: auto
               name: "Auto-approve"

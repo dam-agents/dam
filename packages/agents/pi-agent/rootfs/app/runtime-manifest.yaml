@@ -39,6 +39,7 @@ drivers:
           name: Thinking
           description: Reasoning effort level
           category: thought_level
+          default: "medium"
           choices:
             - value: "off"
               name: "Off"

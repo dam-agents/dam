@@ -64,7 +64,11 @@ function render() {
                 id: "effort",
                 name: "Effort",
                 category: "config",
-                choices: [{ value: "high", name: "High" }],
+                default: "medium",
+                choices: [
+                  { value: "medium", name: "Medium" },
+                  { value: "high", name: "High" },
+                ],
               },
             ],
           },
@@ -91,10 +95,10 @@ it("does not show unset defaults while settings are loading or unavailable", () 
   expect(render()).not.toContain("Harness default");
 });
 
-it("distinguishes an unset value from an unlisted saved value", () => {
+it("shows the catalog default for an unset value, and an unlisted saved value verbatim", () => {
   state.values = { model: null, mode: null, configOptions: {} };
-  expect(render()).toContain("Harness default");
+  expect(render()).not.toContain("Harness default");
+  expect(render()).toContain(">Medium<");
   state.values.configOptions.effort = "custom-effort";
   expect(render()).toContain("custom-effort");
-  expect(render()).not.toContain("Harness default");
 });

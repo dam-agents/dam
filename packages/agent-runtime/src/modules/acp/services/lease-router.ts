@@ -525,10 +525,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     }
     const changes = isNonNullObject(params?.settings) ? params.settings : {};
     const merged: Record<string, unknown> = { ...entry.meta.settings };
-    for (const [key, value] of Object.entries(changes)) {
-      if (value === null) delete merged[key];
-      else merged[key] = value;
-    }
+    for (const [key, value] of Object.entries(changes)) merged[key] = value;
     const parsed = sessionSettingsSchema.safeParse(merged);
     const pair = pairOfSession(sessionId, true);
     const invalid = parsed.success

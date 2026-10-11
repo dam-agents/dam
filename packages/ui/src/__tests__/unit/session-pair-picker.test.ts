@@ -24,7 +24,11 @@ const carried: HarnessCapability[] = [
           id: "mode",
           name: "Thinking",
           category: "mode",
-          choices: [{ value: "high", name: "High" }],
+          default: "low",
+          choices: [
+            { value: "low", name: "Low" },
+            { value: "high", name: "High" },
+          ],
         },
       ],
     },
@@ -42,6 +46,8 @@ const state = vi.hoisted(() => ({
   refetch: vi.fn(),
   providersAsked: [] as string[],
   owned: [] as { id: string; name: string; type: string }[],
+  configured: undefined as
+    { mode: string | null; configOptions: Record<string, string> } | undefined,
   navigateToSettings: vi.fn(),
   showConfirm: vi.fn(),
   revoke: vi.fn(),
@@ -114,6 +120,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
     pending: false,
   }),
   rememberSessionPair: vi.fn(),
+  useHarnessConfigured: () => state.configured,
   useProviderModels: (_agent: string, _harness: string, provider: string) => {
     state.providersAsked.push(provider);
     return {
@@ -145,6 +152,7 @@ describe("session pair model choices", () => {
     state.operable = true;
     state.providersAsked = [];
     state.owned = [];
+    state.configured = undefined;
   });
 
   it("lists each provider's models without a default-model choice", () => {
@@ -167,7 +175,15 @@ describe("session pair model choices", () => {
     expect(html).not.toContain("Configure defaults");
     expect(html).toContain('aria-label="Disconnect IBM"');
     expect(html).toContain('aria-label="Session settings"');
-    expect(html).toContain("Harness default");
+    expect(html).not.toContain("Harness default");
+    expect(html).toContain('<option value="low" selected="">Low</option>');
+  });
+
+  it("starts a setting on the harness's configured value over the catalog default", () => {
+    state.configured = { mode: "high", configOptions: {} };
+    expect(renderPicker()).toContain(
+      '<option value="high" selected="">High</option>',
+    );
   });
 
   it("asks before disconnecting a provider, and disconnects only on yes", async () => {

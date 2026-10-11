@@ -159,7 +159,8 @@ function HarnessSettings({
                 name: c.name,
                 description: c.description,
               }))}
-              value={valueOf(group.id)}
+              value={valueOf(group.id) ?? group.default ?? null}
+              clearable={false}
               onSelect={(id) => choose(group.id, id)}
             />
           </OptionField>

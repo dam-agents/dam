@@ -326,6 +326,7 @@ export const harnessConfigOptionGroup = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   category: z.string().min(1),
+  default: z.string().min(1).optional(),
   choices: z.array(harnessConfigChoice),
 });
 

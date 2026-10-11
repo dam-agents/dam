@@ -12,12 +12,16 @@ import { Tooltip } from "@/components/ui/tooltip";
 
 import {
   useHarnessCatalog,
+  useHarnessConfigured,
   useProviderConnections,
   useProviderModels,
   useRememberedPair,
 } from "../api/session-pair.js";
 import { SetAsDefault } from "./session-pair-picker.js";
-import { SessionSettingsControls } from "./session-settings-controls.js";
+import {
+  SessionSettingsControls,
+  settingDefaults,
+} from "./session-settings-controls.js";
 
 const CONTEXT_HINT =
   "If you need to move over context from this conversation, ask the agent to save it to a file.";
@@ -31,7 +35,7 @@ interface Props {
   settings?: Readonly<Record<string, string>>;
   carried: readonly HarnessCapability[];
   onChoose: (model: string) => void;
-  onConfigure: (settings: Record<string, string | null>) => void;
+  onConfigure: (settings: Record<string, string>) => void;
   onNewSession: () => void;
 }
 
@@ -49,6 +53,10 @@ export function ModelIndicator({
   const { data: catalog } = useHarnessCatalog();
   const { data: remembered } = useRememberedPair(agentId);
   const capability = carried.find((h) => h.name === harness);
+  const defaults = settingDefaults(
+    capability,
+    useHarnessConfigured(agentId, harness),
+  );
   const { granted, loaded } = useProviderConnections(agentId);
   const activeProvider = granted.find((p) => p.id === provider);
   const removed = loaded && provider !== null && !activeProvider;
@@ -167,6 +175,7 @@ export function ModelIndicator({
               capability={capability}
               model={model}
               settings={settings}
+              defaults={defaults}
               onChange={(id, value) => onConfigure({ [id]: value })}
             />
           </div>
@@ -178,7 +187,7 @@ export function ModelIndicator({
               harness,
               provider,
               model,
-              ...(Object.keys(settings).length > 0 && { settings }),
+              settings: { ...defaults, ...settings },
             }}
             remembered={remembered}
           />

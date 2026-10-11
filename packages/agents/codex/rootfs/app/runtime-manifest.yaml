@@ -46,6 +46,7 @@ drivers:
           name: Effort
           description: Reasoning effort level
           category: thought_level
+          default: "medium"
           choices:
             - value: minimal
               name: "Minimal"

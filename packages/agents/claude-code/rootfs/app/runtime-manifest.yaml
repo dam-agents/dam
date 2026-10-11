@@ -63,6 +63,7 @@ drivers:
           name: Mode
           description: Session permission mode
           category: mode
+          default: "default"
           choices:
             - value: auto
               name: "Auto"
@@ -90,6 +91,7 @@ drivers:
           name: Effort
           description: Reasoning effort level
           category: thought_level
+          default: "medium"
           choices:
             - value: low
               name: "Low"
@@ -107,6 +109,7 @@ drivers:
           name: Prompt cache
           description: How long the prompt cache of the conversation and its subagents survives between turns
           category: cache
+          default: "5m"
           choices:
             - value: 5m
               name: "5 minutes"

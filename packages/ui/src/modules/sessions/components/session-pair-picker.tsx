@@ -17,6 +17,7 @@ import {
   rememberSessionPair,
   useGrantProvider,
   useHarnessCatalog,
+  useHarnessConfigured,
   useProviderConnections,
   useProviderModels,
   useRememberedPair,
@@ -28,7 +29,10 @@ import {
   type ProviderConnectionRef,
   providerOptions,
 } from "../lib/session-pair-options.js";
-import { SessionSettingsControls } from "./session-settings-controls.js";
+import {
+  SessionSettingsControls,
+  settingDefaults,
+} from "./session-settings-controls.js";
 
 interface Props {
   agentId: string;
@@ -73,6 +77,10 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
   const harnessName = (name: string | undefined) =>
     harnesses.find((h) => h.name === name)?.displayName ?? name;
   const capability = carried.find((h) => h.name === harness);
+  const defaults = settingDefaults(
+    capability,
+    useHarnessConfigured(agentId, harness),
+  );
   const settings = pair?.harness === harness ? (pair.settings ?? {}) : {};
   const choose = (next: SessionPair) => setPair(agentId, next);
   const withSettings = (next: SessionPair): SessionPair =>
@@ -200,19 +208,10 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
               capability={capability}
               model={pair.model}
               settings={settings}
-              onChange={(id, value) => {
-                const next = Object.fromEntries(
-                  Object.entries({ ...settings, [id]: value }).filter(
-                    (entry): entry is [string, string] => entry[1] !== null,
-                  ),
-                );
-                choose({
-                  harness: pair.harness,
-                  provider: pair.provider,
-                  model: pair.model,
-                  ...(Object.keys(next).length > 0 && { settings: next }),
-                });
-              }}
+              defaults={defaults}
+              onChange={(id, value) =>
+                choose({ ...pair, settings: { ...settings, [id]: value } })
+              }
             />
           </div>
         )}
@@ -229,7 +228,7 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
           {pair && (
             <SetAsDefault
               agentId={agentId}
-              pair={pair}
+              pair={{ ...pair, settings: { ...defaults, ...settings } }}
               remembered={remembered}
             />
           )}
@@ -253,8 +252,9 @@ export function SetAsDefault({
     remembered.harness === pair.harness &&
     remembered.provider === pair.provider &&
     remembered.model === pair.model &&
-    JSON.stringify(remembered.settings ?? {}) ===
-      JSON.stringify(pair.settings ?? {});
+    Object.entries(pair.settings ?? {}).every(
+      ([id, value]) => (remembered.settings?.[id] ?? value) === value,
+    );
   return (
     <button
       type="button"

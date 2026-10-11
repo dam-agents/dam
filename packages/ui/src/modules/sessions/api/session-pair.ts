@@ -65,6 +65,18 @@ export function useProviderModels(
   return { ...query, operable };
 }
 
+export function useHarnessConfigured(agentId: string, harness: string) {
+  const operable = useIsAgentOperable(agentId);
+  return useQuery({
+    queryKey: ["harness-config-current", agentId, harness],
+    queryFn: operable
+      ? () => agentTrpc(agentId).harnessConfig.current.query({ harness })
+      : skipToken,
+    staleTime: 60_000,
+    retry: false,
+  }).data;
+}
+
 export function useProviderConnections(agentId: string | null): {
   granted: ProviderConnectionRef[];
   owned: ProviderConnectionRef[];
