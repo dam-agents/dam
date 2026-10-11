@@ -57,7 +57,7 @@ export function PermissionStatusLine() {
   if (!current) return null;
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 min-h-11 text-sm anim-in">
-      <span className="h-2 w-2 rounded-full bg-accent shrink-0" />
+      <span className="h-2 w-2 rounded-full bg-warning shrink-0" />
       <span className="text-muted-foreground shrink-0">
         Awaiting approval —
       </span>
@@ -179,7 +179,7 @@ export function PermissionPrompt({
       <ChatColumn className="flex flex-col gap-2">
         <div className="rounded-xl border border-border bg-muted/30 px-4 py-3.5 flex flex-col gap-3">
           <div className="flex items-start gap-2 text-sm font-semibold text-foreground">
-            <span className="h-2 w-2 rounded-full bg-accent shrink-0 mt-1.5" />
+            <span className="h-2 w-2 rounded-full bg-warning shrink-0 mt-1.5" />
             <span
               ref={titleRef}
               className={cn("break-all min-w-0", !expanded && "line-clamp-3")}

@@ -302,7 +302,7 @@ export function ActivityButton({ onOpen }: { onOpen: () => void }) {
       {waiting > 0 && (
         <Badge
           data-testid="activity-badge"
-          className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-accent px-1 text-[10px] font-bold text-white hover:bg-accent"
+          className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-warning px-1 text-[10px] font-bold text-white hover:bg-warning"
         >
           {waiting > 9 ? "9+" : waiting}
         </Badge>

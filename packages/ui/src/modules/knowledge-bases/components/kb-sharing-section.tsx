@@ -141,7 +141,7 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
         {view.publishState === "publishing" ? (
           <Badge variant="info">Publishing…</Badge>
         ) : view.publishState === "failed" ? (
-          <Badge variant="warning">Update failed</Badge>
+          <Badge variant="danger">Update failed</Badge>
         ) : view.snapshotCreatedAt !== null ? (
           <Badge variant="success">Shared</Badge>
         ) : (

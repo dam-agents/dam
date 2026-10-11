@@ -22,14 +22,9 @@ import {
   type SlotUnit,
   slotUnitOf,
 } from "../lib/slots.js";
-import { SlotBar } from "./slot-bar.js";
+import { SEGMENT_FILL, SlotBar } from "./slot-bar.js";
 
 type HeldState = Exclude<ComputeCellState, "available">;
-
-const STATE_DOT: Record<HeldState, string> = {
-  running: "bg-success",
-  awake: "bg-accent",
-};
 
 const STATE_LABEL: Record<HeldState, string> = {
   running: "Working",
@@ -152,7 +147,7 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
                 <span
                   className={cn(
                     "inline-block size-2 shrink-0 rounded-full",
-                    STATE_DOT[group.state],
+                    SEGMENT_FILL[group.state],
                   )}
                 />
                 {STATE_LABEL[group.state]}

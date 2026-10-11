@@ -78,7 +78,7 @@ export function SpanDetail({
     <div className="flex flex-col gap-4 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-sm font-medium">{span.name}</span>
-        <Badge variant={failed ? "destructive" : "secondary"}>
+        <Badge variant={failed ? "danger" : "secondary"}>
           {span.statusCode === "" ? "span" : span.statusCode}
         </Badge>
         <span className="font-mono text-xs text-muted-foreground">

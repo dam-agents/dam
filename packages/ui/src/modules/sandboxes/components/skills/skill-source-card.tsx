@@ -40,7 +40,7 @@ function ScanFreshness({
   return (
     <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
       {rescanning ? (
-        <Spinner size={13} label="Re-scanning this source" />
+        <Spinner size={14} label="Re-scanning this source" />
       ) : (
         <Time size={13} />
       )}
@@ -161,7 +161,7 @@ export function SkillSourceCard({
             {}
             {visibility === "private" && (
               <Badge
-                variant="template"
+                variant="muted"
                 className="shrink-0"
                 title="Only readable through this agent's GitHub connection"
               >
@@ -183,7 +183,7 @@ export function SkillSourceCard({
             />
           )}
           {!scannedAt && loading && (
-            <Spinner size={15} label="Scanning this source" />
+            <Spinner size={14} label="Scanning this source" />
           )}
           {}
           {onToggleAll && !readOnly && loaded && (
@@ -195,7 +195,7 @@ export function SkillSourceCard({
                 onToggleAll(!bulkAllOn, filtering ? visible : undefined)
               }
             >
-              {bulkBusy && <Spinner size={13} />}
+              {bulkBusy && <Spinner size={14} />}
               {filtering
                 ? `${bulkAllOn ? "Disable" : "Enable"} ${bulkList.length} matching`
                 : bulkAllOn

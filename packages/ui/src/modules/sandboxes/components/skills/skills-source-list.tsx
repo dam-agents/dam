@@ -43,7 +43,7 @@ function SourceListRow({
               {source.name}
             </p>
             {visibility === "private" && (
-              <Badge variant="template" className="shrink-0">
+              <Badge variant="muted" className="shrink-0">
                 Private
               </Badge>
             )}
@@ -55,7 +55,7 @@ function SourceListRow({
         </div>
         {scanning ? (
           <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
-            <Spinner size={13} /> Scanning…
+            <Spinner size={14} /> Scanning…
           </span>
         ) : (
           scannedAt &&
