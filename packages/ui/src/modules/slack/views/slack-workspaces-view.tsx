@@ -1,9 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { CopyField } from "@/components/ui/copy-field";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { getBrand } from "../../../brand.js";
-import { useCopy } from "../../../hooks/use-copy.js";
 import {
   useSlackInvitationLink,
   useStartSlackInstall,
@@ -13,15 +13,7 @@ export function SlackWorkspacesView() {
   const brandShort = getBrand().short;
   const start = useStartSlackInstall();
   const invitation = useSlackInvitationLink();
-  const { copy, state: copyState } = useCopy();
   const link = invitation.data;
-
-  const copyLabel =
-    copyState === "copied"
-      ? "Copied"
-      : copyState === "failed"
-        ? "Couldn't copy — select it instead"
-        : "Copy";
 
   return (
     <div className="anim-in">
@@ -57,16 +49,7 @@ export function SlackWorkspacesView() {
 
         {link && (
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <input
-              readOnly
-              value={link}
-              aria-label="Slack invitation link"
-              onFocus={(e) => e.currentTarget.select()}
-              className="min-w-0 flex-1 rounded-md border bg-muted/40 px-3 py-2 font-mono text-xs"
-            />
-            <Button variant="outline" size="sm" onClick={() => copy(link)}>
-              {copyLabel}
-            </Button>
+            <CopyField value={link} label="Slack invitation link" />
           </div>
         )}
       </Card>

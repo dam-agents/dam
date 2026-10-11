@@ -1,12 +1,12 @@
-import { Checkmark, Copy } from "@carbon/icons-react";
+import { Checkmark } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
-import { useCopy } from "@/hooks/use-copy";
 
 import { useTestAnthropic } from "../../../connections/api/mutations.js";
 import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
@@ -173,8 +173,6 @@ export function AnthropicForm({
 }
 
 function QuickSetupHint() {
-  const { copy: copyText, copied } = useCopy();
-  const copy = () => void copyText("claude setup-token");
   return (
     <div className="text-sm text-foreground/80">
       Run{" "}
@@ -182,20 +180,7 @@ function QuickSetupHint() {
         <code className="font-mono font-semibold text-primary">
           claude setup-token
         </code>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          onClick={copy}
-          aria-label="Copy command"
-          tooltip="Copy command"
-        >
-          {copied ? (
-            <Checkmark size={12} className="text-success" />
-          ) : (
-            <Copy size={12} />
-          )}
-        </Button>
+        <CopyButton value="claude setup-token" label="Copy command" />
       </span>{" "}
       on your own machine (with Claude Code installed) to generate a token.
     </div>

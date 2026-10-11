@@ -1,9 +1,9 @@
-import { Checkmark, Close, Copy, Warning } from "@carbon/icons-react";
+import { Checkmark, Close } from "@carbon/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
-import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -70,7 +70,6 @@ export function PermissionStatusLine() {
 
 export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
   const [expanded, setExpanded] = useState(false);
-  const { copy, copied, state: copyState } = useCopy();
 
   return (
     <div
@@ -96,31 +95,12 @@ export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
           {verdict.subject}
         </span>
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        aria-label={copied ? "Copied" : "Copy"}
-        tooltip={copied ? "Copied" : "Copy"}
-        onClick={(e) => {
-          e.stopPropagation();
-          void copy(`${verdict.label} — ${verdict.subject}`);
-        }}
-        className={cn(
-          "text-muted-foreground hover:text-foreground shrink-0",
-          HOVER_ACTION,
-          copied && "text-success hover:text-success opacity-100",
-          copyState === "failed" && "text-danger hover:text-danger opacity-100",
-        )}
-      >
-        {copied ? (
-          <Checkmark size={12} />
-        ) : copyState === "failed" ? (
-          <Warning size={12} />
-        ) : (
-          <Copy size={12} />
-        )}
-      </Button>
+      <CopyButton
+        value={`${verdict.label} — ${verdict.subject}`}
+        label="Copy"
+        stopPropagation
+        className={HOVER_ACTION}
+      />
     </div>
   );
 }

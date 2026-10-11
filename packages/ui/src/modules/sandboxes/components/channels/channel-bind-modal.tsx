@@ -1,11 +1,11 @@
-import { Copy as CopyIcon, Launch } from "@carbon/icons-react";
+import { Launch } from "@carbon/icons-react";
 import { useState } from "react";
 
+import { CopyableCommand } from "@/components/copyable-command";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 
 import { getBrand } from "../../../../brand.js";
-import { useCopy } from "../../../../hooks/use-copy.js";
 import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
 import { useSlackInstallRequestUrl } from "../../../links/api/queries.js";
 import { SlackInstallRequest } from "../../../slack/components/slack-install-request.js";
@@ -162,22 +162,5 @@ function MessengerInstructions({ messenger }: { messenger: BindMessenger }) {
         </li>
       ))}
     </ol>
-  );
-}
-
-function CopyableCommand({ command }: { command: string }) {
-  const { copy, copied } = useCopy();
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-md bg-muted px-3 py-2">
-      <code className="truncate font-mono text-sm">{command}</code>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => void copy(command)}
-        aria-label={`Copy ${command}`}
-      >
-        <CopyIcon size={14} /> {copied ? "Copied" : "Copy"}
-      </Button>
-    </div>
   );
 }

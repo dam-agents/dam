@@ -1,23 +1,15 @@
-import { Checkmark, Copy } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { CopyField } from "@/components/ui/copy-field";
 import { Input } from "@/components/ui/input";
-import { useCopy } from "@/hooks/use-copy";
 import { emitToast } from "@/lib/toast";
 
 import { timeAgo } from "../../../lib/format-time.js";
 import { useStore } from "../../../store.js";
-import {
-  useRefreshKbShare,
-  useRevealKbShare,
-  useRevokeKbShare,
-  useRotateKbShare,
-  useSetKbShareName,
-  useShareKb,
-} from "../api/kb-share-mutations.js";
+import { useRefreshKbShare, useRevealKbShare, useRevokeKbShare, useRotateKbShare, useSetKbShareName, useShareKb } from "../api/kb-share-mutations.js";
 import { useKbShareStatus } from "../api/kb-share-queries.js";
 import { KbShareRootsDialog } from "./kb-share-roots-dialog.js";
 
@@ -33,7 +25,6 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
   const reveal = useRevealKbShare();
   const setName = useSetKbShareName();
   const showConfirm = useStore((s) => s.showConfirm);
-  const { copy, copied } = useCopy();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [revealedLink, setRevealedLink] = useState<string | null>(null);
@@ -215,27 +206,7 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
       <div className="flex items-center gap-2">
         {revealedLink ? (
           <>
-            <Input
-              readOnly
-              aria-label="Share link"
-              value={revealedLink}
-              size="sm"
-              variant="monospace"
-              onFocus={(e) => e.currentTarget.select()}
-            />
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Copy share link"
-              tooltip="Copy share link"
-              onClick={() => void copy(revealedLink)}
-            >
-              {copied ? (
-                <Checkmark size={14} className="text-success" />
-              ) : (
-                <Copy size={14} />
-              )}
-            </Button>
+            <CopyField value={revealedLink} label="Share link" />
           </>
         ) : (
           <Button
