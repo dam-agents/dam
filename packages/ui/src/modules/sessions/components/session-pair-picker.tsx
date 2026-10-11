@@ -249,7 +249,7 @@ export function SetAsDefault({
       type="button"
       disabled={saved}
       onClick={() => rememberSessionPair(agentId, pair)}
-      className="shrink-0 whitespace-nowrap hover:text-foreground hover:underline disabled:no-underline disabled:opacity-60"
+      className="shrink-0 whitespace-nowrap underline underline-offset-2 hover:text-foreground disabled:no-underline disabled:opacity-60"
     >
       {saved ? "Default" : "Set as default"}
     </button>

@@ -1,11 +1,14 @@
+import { Information } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 
+import { HarnessIcons } from "@/components/harness-icons";
 import {
   Popover,
   PopoverClose,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import {
   useHarnessCatalog,
@@ -15,6 +18,10 @@ import {
 } from "../api/session-pair.js";
 import { SetAsDefault } from "./session-pair-picker.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
+
+const CONTEXT_HINT =
+  "If you need to move over context from this conversation, ask the agent to save it to a file.";
+const NEW_SESSION_HINT = `start a new session. ${CONTEXT_HINT}`;
 
 interface Props {
   agentId: string;
@@ -87,6 +94,21 @@ export function ModelIndicator({
         collisionPadding={8}
         className="flex max-h-[var(--radix-popover-content-available-height)] w-[340px] flex-col gap-3 overflow-y-auto text-sm"
       >
+        <div className="flex items-center gap-2 px-1 font-medium text-foreground">
+          <span className="text-muted-foreground">
+            <HarnessIcons harnesses={[harness]} size="xs" />
+          </span>
+          <span className="flex-1 truncate">{harnessName}</span>
+          <Tooltip content={`To use a different harness, ${NEW_SESSION_HINT}`}>
+            <button
+              type="button"
+              aria-label="About changing the harness"
+              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+            >
+              <Information size={16} />
+            </button>
+          </Tooltip>
+        </div>
         <section aria-label={activeProvider?.name ?? "Active provider"}>
           {activeProvider && (
             <h3 className="text-xs font-medium uppercase text-muted-foreground">
@@ -124,6 +146,19 @@ export function ModelIndicator({
                         : "No models available."}
               </li>
             )}
+            <li className="px-1 pb-1 pt-2 text-xs text-muted-foreground">
+              To use a model from a different provider,{" "}
+              <PopoverClose asChild>
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  onClick={onNewSession}
+                >
+                  start a new session
+                </button>
+              </PopoverClose>
+              . {CONTEXT_HINT}
+            </li>
           </ul>
         </section>
         {capability?.sessionSettings && (
@@ -136,20 +171,7 @@ export function ModelIndicator({
             />
           </div>
         )}
-        <div className="flex items-start justify-between gap-3 border-t border-border pt-2 text-xs text-muted-foreground">
-          <p>
-            Other harnesses and models need a{" "}
-            <PopoverClose asChild>
-              <button
-                type="button"
-                className="underline underline-offset-2 hover:text-foreground"
-                onClick={onNewSession}
-              >
-                new session
-              </button>
-            </PopoverClose>
-            .
-          </p>
+        <div className="flex justify-end border-t border-border pt-2 text-xs text-muted-foreground">
           <SetAsDefault
             agentId={agentId}
             pair={{
