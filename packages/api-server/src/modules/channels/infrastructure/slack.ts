@@ -6126,8 +6126,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         info: SlackFileInfo;
         target: SlackBoundConversation;
       } | null = null;
-      try {
-        for (const teamId of new Set(bound.map((c) => c.teamId))) {
+      let lookupError: string | null = null;
+      for (const teamId of new Set(bound.map((c) => c.teamId))) {
+        try {
           const info = await gw.getFileInfo(query.fileId, teamId);
           const target = bound.find(
             (c) => c.teamId === teamId && info?.sharedIn.includes(c.id),
@@ -6136,16 +6137,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             found = { info, target };
             break;
           }
-        }
-      } catch (err) {
-        return {
-          error: formatError(err).includes("missing_scope")
+        } catch (err) {
+          lookupError = formatError(err).includes("missing_scope")
             ? "this workspace's install lacks the `files:read` permission, " +
               "so it cannot read attachments. Ask the owner to reinstall the " +
               "app with that scope"
-            : formatError(err),
-        };
+            : formatError(err);
+        }
       }
+      if (!found && lookupError !== null) return { error: lookupError };
       if (!found) {
         return {
           error:

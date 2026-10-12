@@ -140,6 +140,26 @@ describe("an attachment on an earlier message", () => {
   });
 
   /**
+   * TEST_SCENARIO: A workspace installed without `files:read` cannot say where
+   * a file is shared. The agent is told which permission is missing, not that
+   * the file is outside its conversations.
+   */
+  it("names the missing files:read scope when Slack refuses the lookup", async () => {
+    const h = harness();
+    h.gw.getFileInfo = async () => {
+      throw new Error("An API error occurred: missing_scope");
+    };
+    await h.worker.connect();
+
+    const fetched = await h.worker.fetchAttachment("agent-1", {
+      fileId: TABLE.id,
+    });
+
+    expect((fetched as { error: string }).error).toContain("`files:read`");
+    expect(h.written).toEqual([]);
+  });
+
+  /**
    * TEST_SCENARIO: A file Slack will not hand over is named to the agent as a
    * failure, not delivered as an empty file it might read as the answer.
    */
