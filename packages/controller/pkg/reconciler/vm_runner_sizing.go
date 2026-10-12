@@ -178,7 +178,7 @@ func runnerMemoryRequest(demandMiB, reserveMiB int, floor, limit resource.Quanti
 	return want
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every machine of an owner is a VMM process inside the runner pod, so with no CPU limit one runaway VMM can take every core of the node and slow every pod there. The limit is the vCPUs of the machines that should be running, plus one machine's worth for the runner itself and the VMMs' own I/O threads. A guest is never throttled below the vCPUs it was given, so normal load is never slowed. With no machine running the runner keeps that one machine's worth, so the first start is not throttled before the next resize lands. It is never below the CPU request, which the API refuses, and never above a CPU limit the install set.
+// UNIT_BOUNDARY_DESCRIPTION: every machine of an owner is a VMM process inside the runner pod, so with no CPU limit one runaway VMM can take every core of the node and slow every pod there. The limit is the vCPUs of the machines that should be running, plus one machine's worth for the runner itself and the VMMs' own I/O threads. Unless the install caps it lower, a guest is never throttled below the vCPUs it was given. With no machine running the runner keeps that one machine's worth, so the first start is not throttled before the next resize lands. It is never below the CPU request, which the API refuses, and never above a CPU limit the install set.
 func runnerCPULimit(running, machineCPUs int, request resource.Quantity, ceiling *resource.Quantity) resource.Quantity {
 	want := *resource.NewQuantity(int64((running+1)*max(machineCPUs, 1)), resource.DecimalSI)
 	if ceiling != nil && want.Cmp(*ceiling) > 0 {
