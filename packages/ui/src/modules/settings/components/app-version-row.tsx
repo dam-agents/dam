@@ -26,7 +26,7 @@ export function AppVersionRow() {
     setTaps(0);
     const revealed = !featuresMenuRevealed;
     setFeaturesMenuRevealed(revealed);
-    navigateToSettings(revealed ? "features" : "account");
+    navigateToSettings(revealed ? "features" : "about");
   };
 
   return (

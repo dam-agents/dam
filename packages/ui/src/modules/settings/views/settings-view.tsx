@@ -9,6 +9,7 @@ import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
+import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
 import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
@@ -22,7 +23,7 @@ import { useSlackInstallAvailability } from "../../slack/api/queries.js";
 import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
 import { useUsageInspectAvailability } from "../../usage/api/queries.js";
 import { UsageAnalyticsView } from "../../usage/views/usage-analytics-view.js";
-import { AppVersionRow } from "../components/app-version-row.js";
+import { AboutTab } from "../components/about-tab.js";
 
 const baseTabs: readonly TabDef<SettingsTab>[] = [
   { value: "account", label: "Account" },
@@ -77,6 +78,7 @@ export function SettingsView() {
     ...(showFeatures
       ? [{ value: "features" as const, label: "Experimental features" }]
       : []),
+    { value: "about" as const, label: `About ${getBrand().name}` },
   ];
   const rawTab = useStore((s) => s.settingsTab);
   const hiddenTab =
@@ -184,17 +186,7 @@ export function SettingsView() {
               </Button>
             </Card>
 
-            <div className="mt-6">
-              <Button
-                variant="link"
-                size="inline"
-                onClick={() => setView("terms")}
-              >
-                View Terms of Use
-              </Button>
-            </div>
 
-            <AppVersionRow />
           </div>
         )}
 
@@ -232,6 +224,8 @@ export function SettingsView() {
         {activeTab === "analytics" && <UsageAnalyticsView />}
 
         {activeTab === "features" && <FeaturesTab />}
+
+        {activeTab === "about" && <AboutTab />}
       </div>
     </div>
   );

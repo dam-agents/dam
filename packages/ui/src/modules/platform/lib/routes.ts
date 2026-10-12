@@ -12,6 +12,7 @@ const settingsTabSchema = z.enum([
   "slack-workspaces",
   "analytics",
   "features",
+  "about",
 ]);
 export type SettingsTab = z.infer<typeof settingsTabSchema>;
 

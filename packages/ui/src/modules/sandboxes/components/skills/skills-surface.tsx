@@ -222,7 +222,7 @@ export function SkillsSurface({
             {(shownCreatedHere.length > 0 || !searching) && (
               <StandaloneSkillsGroup
                 skills={shownCreatedHere}
-                readOnly={readOnly}
+                readOnly={false}
                 publishes={publishes}
                 canPublish={publishableSources.length > 0}
                 onPublish={(skill) => setOpenModal({ kind: "publish", skill })}
@@ -251,18 +251,15 @@ export function SkillsSurface({
             )}
 
             <SkillSourcesSection
-              readOnly={readOnly}
+              readOnly={false}
               surface={surface}
               derived={derived}
-              onAddSource={
-                readOnly
-                  ? undefined
-                  : () =>
-                      setOpenModal({
-                        kind: "add-source",
-                        mode: "github",
-                        files: [],
-                      })
+              onAddSource={() =>
+                setOpenModal({
+                  kind: "add-source",
+                  mode: "github",
+                  files: [],
+                })
               }
               onOpenSkill={(source, skill) =>
                 setOpenModal({ kind: "render", source, skill })
