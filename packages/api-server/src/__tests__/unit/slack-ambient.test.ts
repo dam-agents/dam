@@ -17,6 +17,7 @@ import { AgentWakeTimeoutError } from "../../modules/agents/index.js";
 
 const OWNER = "kc|owner-1";
 const STRANGER = "U-STRANGER";
+const signed = (t: string) => `:robot_face: *agent-1*\n\n${t}`;
 
 const logLines: string[] = [];
 configureLogger({ level: "info", write: (l) => logLines.push(l) });
@@ -254,7 +255,7 @@ describe("slack ambient inbound", () => {
     expect(h.messages()[0]).toMatchObject({
       channel: "C1",
       threadTs: "7.7",
-      text: "here's the runbook",
+      text: signed("here's the runbook"),
     });
 
     pending[0]!("");
@@ -456,7 +457,7 @@ describe("slack ambient inbound", () => {
     expect(ok).toEqual({ ok: true });
     expect(h.messages()[0]).toMatchObject({
       threadTs: "2.2",
-      text: "answering two",
+      text: signed("answering two"),
     });
 
     pending[1]!("on it");
@@ -490,7 +491,10 @@ describe("slack ambient inbound", () => {
     }
 
     await h.worker.reply("agent-1", { text: "on it" });
-    expect(h.messages()[0]).toMatchObject({ threadTs: "T.0", text: "on it" });
+    expect(h.messages()[0]).toMatchObject({
+      threadTs: "T.0",
+      text: signed("on it"),
+    });
 
     pending[1]!("on it");
     await h.settled(() => h.turnEvents().length === 2);

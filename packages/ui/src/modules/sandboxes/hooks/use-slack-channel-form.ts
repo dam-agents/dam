@@ -4,16 +4,32 @@ import { useForm } from "react-hook-form";
 import { match } from "ts-pattern";
 import { z } from "zod";
 
+import { getBrand } from "../../../brand.js";
 import type { AgentView } from "../../../types.js";
 import { useConnectSlack } from "../../agents/api/mutations.js";
 import { planSlackChannelSave } from "../lib/slack-channel-save.js";
 
 export type { SlackChannel };
 
-const slackChannelFormSchema = z.object({
-  channelId: z.string().trim().min(1, "Enter the Slack channel ID."),
-  ambient: z.boolean(),
-});
+const slackChannelFormSchema = z
+  .object({
+    channelId: z.string().trim().min(1, "Enter the Slack channel ID."),
+    ambient: z.boolean(),
+    customEmojiEnabled: z.boolean(),
+    customEmoji: z.array(z.string()),
+  })
+  .superRefine((values, ctx) => {
+    if (!values.customEmojiEnabled) return;
+    values.customEmoji.forEach((name, i) => {
+      if (!/^:?[a-z0-9_'+-]{1,100}:?$/.test(name.trim()))
+        ctx.addIssue({
+          code: "custom",
+          path: ["customEmoji", i],
+          message:
+            "Use the emoji's name: lowercase letters, digits, - _ + or '.",
+        });
+    });
+  });
 
 type SlackChannelFormValues = z.infer<typeof slackChannelFormSchema>;
 
@@ -57,6 +73,13 @@ export function useSlackChannelForm(
     defaultValues: {
       channelId: channel?.slackChannelId ?? "",
       ambient: channel?.ambient ?? false,
+      customEmojiEnabled: !!channel?.customEmoji,
+      customEmoji:
+        channel?.customEmoji ??
+        Array.from(
+          { length: 8 },
+          (_, i) => `${getBrand().short}-agent-${i + 1}`,
+        ),
     },
   });
 
@@ -64,7 +87,12 @@ export function useSlackChannelForm(
     const connect = planSlackChannelSave({
       agentId: agent.id,
       channel,
-      values,
+      values: {
+        ...values,
+        customEmoji: values.customEmojiEnabled
+          ? values.customEmoji.map((n) => n.trim().replace(/^:|:$/g, ""))
+          : null,
+      },
     });
     if (connect) await connectSlack.mutateAsync(connect);
     onSaved();

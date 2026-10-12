@@ -274,5 +274,5 @@ Everything else (DM people, attach files, look people up, react) is within the o
 
 - A binding belongs to the workspace whose bot is a member of the conversation. A pasted DM id resolves to the workspace whose bot is in that DM.
 - An Agent in **two** workspaces: `describe_channel_users` looks in the workspace of the conversation being answered, or of a passed chat; outside a turn with no chat it refuses and says to pass one. `send_channel_message` outside a turn must name the conversation.
-- Optional scopes a workspace withheld degrade quietly: no channel list, no emails, raw ids for people and for connected 1:1 DMs.
+- Optional scopes a workspace withheld degrade quietly: no channel list, no emails, raw ids for people and for connected 1:1 DMs. Without the persona scope an Agent's post goes out as the app and opens with an emoji and the Agent's name; the emoji is the robot face unless the connection names custom emoji for the Agents.
 - A revoked workspace credential is marked, never cleaned up: bindings stay, everything goes silent until re-install.

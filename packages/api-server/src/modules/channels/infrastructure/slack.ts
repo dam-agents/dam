@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { avatarCharacter } from "api-server-api/avatar/svg";
+import { avatarCharacter, SLACK_EMOJI_INDEX } from "api-server-api/avatar/svg";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
 import {
@@ -958,6 +958,7 @@ async function getContextMessages(read: {
 export interface SlackBoundConversation {
   id: string;
   teamId: SlackWorkspace;
+  customEmoji?: string[] | null;
 }
 
 export interface SlackBindingInfo {
@@ -1219,6 +1220,21 @@ const SCOPE_WITHHELD_USERS =
   "this workspace did not grant the permission to look people up (users:read)";
 const SCOPE_WITHHELD_REACTIONS =
   "this workspace did not grant the permission to read reactions (reactions:read)";
+
+const AGENT_SIGNATURE_RE = /^:[a-z0-9_'+-]+: \*[^*\n]*\*\n\n/;
+
+type AgentPersona = {
+  persona: Pick<SlackPostMessage, "username" | "iconUrl">;
+  sign: (text: string, bold: "*" | "**") => string;
+};
+
+function withoutAgentSignature<T extends { text: string; sender: SlackSender }>(
+  event: T,
+): T {
+  return event.sender.kind === "agent"
+    ? { ...event, text: event.text.replace(AGENT_SIGNATURE_RE, "") }
+    : event;
+}
 
 const SCOPE_CAPABILITIES: Array<{ scope: string; backs: string }> = [
   { scope: "app_mentions:read", backs: "answering mentions" },
@@ -2001,19 +2017,44 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   async function agentPersona(
     gw: SlackGateway,
     instanceName: string,
-    teamId: SlackWorkspace,
-  ): Promise<Pick<SlackPostMessage, "username" | "iconUrl">> {
-    const scopes = await grantedScopes(gw, teamId);
-    if (!scopes?.has("chat:write.customize")) return {};
-    const [{ name: username, avatar }, owner] = await Promise.all([
+    conversation: { id: string; teamId: SlackWorkspace },
+  ): Promise<AgentPersona> {
+    const scopes = await grantedScopes(gw, conversation.teamId);
+    const customize = scopes?.has("chat:write.customize");
+    const [{ name: username, avatar }, owner, bound] = await Promise.all([
       resolveAgentIdentity(instanceName),
       getInstanceOwner(instanceName).catch(() => null),
+      customize
+        ? []
+        : channelRegistry
+            .resolveSlackChannelsByInstance(instanceName)
+            .catch((err: unknown) => {
+              getLogger().warn(
+                { instanceName, err: formatError(err) },
+                "slack.persona.bindings_unavailable: posting with the robot face",
+              );
+              return [];
+            }),
     ]);
-    const iconUrl =
-      agentIcon && owner
-        ? await agentIcon(avatarCharacter(avatar, owner, username))
-        : null;
-    return { username, ...(iconUrl ? { iconUrl } : {}) };
+    const character = owner ? avatarCharacter(avatar, owner, username) : null;
+    if (!customize) {
+      const custom =
+        character &&
+        bound.find((c) => c.id === conversation.id)?.customEmoji?.[
+          SLACK_EMOJI_INDEX[character]
+        ];
+      const emoji = custom ? `:${custom}:` : ":robot_face:";
+      const name = username.replace(/[*<>&]/g, "");
+      return {
+        persona: {},
+        sign: (text, bold) => `${emoji} ${bold}${name}${bold}\n\n${text}`,
+      };
+    }
+    const iconUrl = agentIcon && character ? await agentIcon(character) : null;
+    return {
+      persona: { username, ...(iconUrl ? { iconUrl } : {}) },
+      sign: (text) => text,
+    };
   }
 
   async function agentFooter(
@@ -2365,17 +2406,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           "This was whispered to you privately, so its answer is never sent " +
           "to the channel. Reply without alsoSendToChannel.",
       };
-    const [footer, persona] = await Promise.all([
+    const [footer, { persona, sign }] = await Promise.all([
       agentFooter(instanceName, turn.sessionId),
-      agentPersona(gw, instanceName, turn.teamId),
+      agentPersona(gw, instanceName, {
+        id: turn.channel,
+        teamId: turn.teamId,
+      }),
     ]);
     try {
       await gw.postEphemeral({
         channel: turn.channel,
         user: whisper.whisperer,
         teamId: turn.teamId,
-        text: args.text,
-        blocks: renderAssistantBlocks(footer, args.text),
+        text: sign(args.text, "*"),
+        blocks: renderAssistantBlocks(footer, sign(args.text, "**")),
         ...persona,
       });
     } catch (err) {
@@ -4438,11 +4482,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   }
 
   async function handleInbound(
-    event: SlackMentionEvent,
+    signedEvent: SlackMentionEvent,
     opts: { directMessage: boolean },
   ) {
     if (!gateway) return;
 
+    const event = withoutAgentSignature(signedEvent);
     const sender = event.sender;
     if (opts.directMessage && sender.kind !== "person") return;
     if (
@@ -5214,8 +5259,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     void queue.submit(msg);
   }
 
-  async function handleChannelMessage(event: SlackChannelMessageEvent) {
+  async function handleChannelMessage(signedEvent: SlackChannelMessageEvent) {
     if (!gateway) return;
+    const event = withoutAgentSignature(signedEvent);
     const sender = event.sender;
     const slackUserId = sender.kind === "person" ? sender.user : "";
     const conversation = botPostConversation(event.channel, event.threadTs);
@@ -5441,9 +5487,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return target;
       }
 
-      const [footer, persona] = await Promise.all([
+      const [footer, { persona, sign }] = await Promise.all([
         agentFooter(instanceName),
-        agentPersona(gw, instanceName, target.teamId),
+        agentPersona(gw, instanceName, target),
       ]);
       const contextBlock = agentContextBlock(footer);
 
@@ -5460,9 +5506,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               gw.postMessage({
                 channel: target.id,
                 teamId: target.teamId,
-                text,
+                text: sign(text, "*"),
                 ...persona,
-                blocks: renderAssistantBlocks(footer, text),
+                blocks: renderAssistantBlocks(footer, sign(text, "**")),
                 metadata: agentPostMetadata(fileIds),
                 ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
                 ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
@@ -5742,9 +5788,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             );
       if ("error" in target) return target;
 
-      const [footer, persona] = await Promise.all([
+      const [footer, { persona, sign }] = await Promise.all([
         agentFooter(instanceName, turn?.sessionId, turn?.ambient),
-        agentPersona(gw, instanceName, target.teamId),
+        agentPersona(gw, instanceName, target),
       ]);
       if (attachmentOnly) {
         try {
@@ -5779,9 +5825,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               channel: target.id,
               teamId: target.teamId,
               threadTs,
-              text: args.text,
+              text: sign(args.text, "*"),
               ...persona,
-              blocks: renderAssistantBlocks(footer, args.text),
+              blocks: renderAssistantBlocks(footer, sign(args.text, "**")),
               metadata: agentPostMetadata(fileIds),
               ...(args.alsoSendToChannel ? { replyBroadcast: true } : {}),
               ...(args.unfurlLinks !== undefined
