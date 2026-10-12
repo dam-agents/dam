@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -181,6 +181,7 @@ Both verbs are runtime-mediated: a hot `session/resume` engages the channel and 
 A cold request parks as a waiter.
 An image may declare a **session-history provider**: it fills the log with no harness process, and the first prompt rehydrates the harness silently, replay dropped — with `session/resume` where the harness advertises that session capability, `session/load` otherwise.
 Resume is the better fit: the log already holds the history, so a harness that streams its replay only after answering the load would otherwise duplicate it.
+A provider hosted in a worker thread is started once the runtime listens, after the boot path to readiness, so the first load after a wake does not pay its start.
 Otherwise, or on provider failure, the runtime's own `session/load` fills the log, reaching no client.
 Waiters are then served from the log, shielding the UI from per-harness gaps and the cold-subprocess problem.
 
