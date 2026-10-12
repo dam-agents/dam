@@ -239,7 +239,9 @@ describe("slack ambient inbound", () => {
         channel: "C1",
         threadTs: "1.1",
         user: STRANGER,
-        text: expect.stringContaining("agent-1 won't see this reply unless you tag"),
+        text: expect.stringContaining(
+          "agent-1 won't see this reply unless you tag",
+        ),
       }),
       expect.objectContaining({
         kind: "ephemeral",

@@ -5315,9 +5315,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       .catch(() => null);
     const tag = botUserId ? `<@${botUserId}>` : `@${brand.name}`;
     const named =
-      bindings.length > 1 && !inThread.isDefault
-        ? " followed by its name"
-        : "";
+      bindings.length > 1 && !inThread.isDefault ? " followed by its name" : "";
     await ephemeral(
       event.channel,
       user,
