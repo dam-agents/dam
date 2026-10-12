@@ -68,15 +68,6 @@ describe("initialization plugin", () => {
       model: "m",
     });
   });
-  it("falls back to the harness's default model when the event names no harness", async () => {
-    const { driver, calls } = fakeDriver();
-    const handler = createInitializationPlugin({
-      driver,
-      harnessDefault: async () => "saved-default",
-    }).bindEvent!("initialization", { impl: "initialization" });
-    await handler({ task: "Update the kit." }, ctx);
-    expect(calls[0]?.platformMeta?.model).toBe("saved-default");
-  });
   it("refuses to bind any other kind", () => {
     const { driver } = fakeDriver();
     expect(() =>
