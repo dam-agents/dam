@@ -13,6 +13,8 @@ import {
   type ChannelMessageSent,
 } from "../../events.js";
 import type {
+  AttachmentQuery,
+  AttachmentResult,
   ChannelReply,
   MessageReactionsResult,
   ReactionsQuery,
@@ -37,11 +39,13 @@ async function mcpHarness(opts?: {
   postResult?: { ok: true } | { error: string };
   reactions?: MessageReactionsResult | { error: string };
   thread?: ThreadResult | { error: string };
+  attachment?: AttachmentResult | { error: string };
 }) {
   const replies: ChannelReply[] = [];
   const posts: { text: string; options: Record<string, unknown> }[] = [];
   const reactionQueries: ReactionsQuery[] = [];
   const threadQueries: ThreadQuery[] = [];
+  const attachmentQueries: AttachmentQuery[] = [];
   const channelManager = {
     postMessage: vi.fn(
       async (
@@ -85,6 +89,20 @@ async function mcpHarness(opts?: {
         );
       },
     ),
+    fetchAttachment: vi.fn(
+      async (_agentId: string, _type: ChannelType, query: AttachmentQuery) => {
+        attachmentQueries.push(query);
+        return (
+          opts?.attachment ?? {
+            path: "/home/agent/.uploads/C-BOUND/1a2b3c4d-table.png",
+            name: "table.png",
+            size: 2048,
+            contentType: "image/png",
+            conversationId: "C-BOUND",
+          }
+        );
+      },
+    ),
   };
 
   const session = createMcpSession("agent-1", {
@@ -106,6 +124,7 @@ async function mcpHarness(opts?: {
     replies,
     reactionQueries,
     threadQueries,
+    attachmentQueries,
     channelManager,
   };
 }
@@ -417,6 +436,68 @@ describe("read_thread MCP tool", () => {
     expect(result.isError).toBe(true);
     expect(auditLines).toEqual([
       { event: "channel.thread_read", detail: { threadTs: "1.1" } },
+    ]);
+  });
+});
+
+describe("fetch_message_attachment MCP tool", () => {
+  beforeEach(() => {
+    auditLines.length = 0;
+  });
+
+  /**
+   * TEST_SCENARIO: An agent asked about a screenshot posted earlier fetches it
+   * by the fileId from the history tag. The tool hands back where the file was
+   * written, and the fetch is logged, because it moves a person's file into the
+   * agent's workspace.
+   */
+  it("advertises itself, passes the fileId through, and logs the fetch", async () => {
+    const h = await mcpHarness();
+
+    const tools = (await h.client.listTools()).tools;
+    expect(tools.some((t) => t.name === "fetch_message_attachment")).toBe(true);
+
+    const result = await h.client.callTool({
+      name: "fetch_message_attachment",
+      arguments: { channel: ChannelType.Slack, fileId: "F0TABLE" },
+    });
+
+    expect(h.attachmentQueries).toEqual([{ fileId: "F0TABLE" }]);
+    expect(JSON.parse((result.content as { text: string }[])[0]!.text)).toEqual(
+      {
+        path: "/home/agent/.uploads/C-BOUND/1a2b3c4d-table.png",
+        name: "table.png",
+        size: 2048,
+        contentType: "image/png",
+        conversationId: "C-BOUND",
+      },
+    );
+    expect(auditLines).toEqual([
+      {
+        event: "channel.attachment_fetch",
+        detail: { conversationId: "C-BOUND", fileId: "F0TABLE", bytes: 2048 },
+      },
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: A fileId the agent was never shown is refused by the offer
+   * registry. The refusal reaches the agent as a tool error and is logged with
+   * the id it asked for.
+   */
+  it("surfaces a refusal to the agent and records the fileId", async () => {
+    const h = await mcpHarness({
+      attachment: { error: "not an attachment you were shown" },
+    });
+
+    const result = await h.client.callTool({
+      name: "fetch_message_attachment",
+      arguments: { channel: ChannelType.Slack, fileId: "F0NOPE" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(auditLines).toEqual([
+      { event: "channel.attachment_fetch", detail: { fileId: "F0NOPE" } },
     ]);
   });
 });

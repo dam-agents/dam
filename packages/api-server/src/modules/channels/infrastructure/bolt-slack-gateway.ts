@@ -88,7 +88,14 @@ function toSlackMessage(m: {
   username?: string;
   bot_profile?: { name?: string };
   metadata?: { event_type?: string; event_payload?: Record<string, unknown> };
-  files?: Array<{ id?: string }>;
+  files?: Array<{
+    id?: string;
+    name?: string;
+    title?: string;
+    mimetype?: string;
+    size?: number;
+    url_private?: string;
+  }>;
 }): SlackMessage {
   const metadata = m.metadata?.event_type
     ? {
@@ -97,6 +104,19 @@ function toSlackMessage(m: {
       }
     : null;
   const fileIds = (m.files ?? []).flatMap((f) => (f.id ? [f.id] : []));
+  const attachments = (m.files ?? []).flatMap((f): SlackImageFile[] =>
+    f.id && f.url_private
+      ? [
+          {
+            id: f.id,
+            name: f.name ?? f.title ?? "",
+            mimetype: f.mimetype ?? "",
+            url_private: f.url_private,
+            size: f.size ?? 0,
+          },
+        ]
+      : [],
+  );
   return {
     ts: m.ts,
     user: m.user,
@@ -113,6 +133,7 @@ function toSlackMessage(m: {
       : {}),
     ...(metadata ? { metadata } : {}),
     ...(fileIds.length ? { fileIds } : {}),
+    ...(attachments.length ? { attachments } : {}),
   };
 }
 

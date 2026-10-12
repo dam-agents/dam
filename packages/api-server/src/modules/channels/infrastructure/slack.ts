@@ -30,6 +30,7 @@ import {
 import {
   inboundFilePath,
   looksLikeSignInPage,
+  promptSafeName,
   wasSentAsImage,
   MAX_FILE_BYTES,
   TOTAL_FILE_BYTES_CAP,
@@ -43,6 +44,8 @@ import {
 } from "../attachment-budget.js";
 import type { AgentWorkspaceFilesFactory } from "./agent-workspace-files.js";
 import type {
+  AttachmentQuery,
+  AttachmentResult,
   ChannelAttachment,
   ChannelReaction,
   ChannelReply,
@@ -236,16 +239,6 @@ function framePrompt(opts: {
   ];
 }
 
-function promptSafeName(name: string): string {
-  return (
-    name
-      .replace(/[<>\r\n\t]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 120) || "file"
-  );
-}
-
 function isDirectMessageId(channelId: string): boolean {
   return channelId.startsWith("D");
 }
@@ -384,14 +377,13 @@ async function fetchSlackAttachments(
   uploader: string,
   budget: AttachmentBudget,
   teamId: SlackWorkspace,
+  pictureDelivery: "shown" | "handed" = "shown",
 ): Promise<FetchAttachmentsResult> {
   const attachments = files ?? [];
-  const pictures = attachments.filter((f) =>
-    wasSentAsImage(describeSlackFile(f)),
-  );
-  const documents = attachments.filter(
-    (f) => !wasSentAsImage(describeSlackFile(f)),
-  );
+  const shownAsPicture = (f: SlackImageFile) =>
+    pictureDelivery === "shown" && wasSentAsImage(describeSlackFile(f));
+  const pictures = attachments.filter(shownAsPicture);
+  const documents = attachments.filter((f) => !shownAsPicture(f));
 
   const release = await imageFetchSemaphore.acquire();
   try {
@@ -867,6 +859,20 @@ async function resolveAuthorNames(
   );
 }
 
+interface OfferedAttachment {
+  file: SlackImageFile;
+  uploader: string;
+}
+
+function attachmentsOf(entries: readonly LabelledEntry[]): OfferedAttachment[] {
+  return entries.flatMap(({ message }) =>
+    (message.attachments ?? []).map((file) => ({
+      file,
+      uploader: message.user ?? message.botId ?? "unknown",
+    })),
+  );
+}
+
 async function getContextMessages(read: {
   gateway: SlackGateway;
   channel: string;
@@ -880,6 +886,7 @@ async function getContextMessages(read: {
 }): Promise<{
   lines: string[];
   offeredThreads: string[];
+  offeredAttachments: OfferedAttachment[];
   hasThreadMarker: boolean;
   hasAgentAuthored: boolean;
   hasUnattributedBot: boolean;
@@ -941,6 +948,7 @@ async function getContextMessages(read: {
   return {
     lines: marked.lines,
     offeredThreads: offered,
+    offeredAttachments: attachmentsOf(entries),
     hasThreadMarker: offered.length > 0,
     hasAgentAuthored: entries.some((e) => e.footer !== null),
     hasUnattributedBot: entries.some(
@@ -1024,6 +1032,10 @@ export interface SlackWorker {
     instanceName: string,
     query: ThreadQuery,
   ): Promise<ThreadResult | { error: string }>;
+  fetchAttachment(
+    instanceName: string,
+    query: AttachmentQuery,
+  ): Promise<AttachmentResult | { error: string }>;
 }
 
 export interface SlackOAuthPending {
@@ -1982,6 +1994,47 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     if (!entry) return null;
     if (entry.expiresAt <= Date.now()) return null;
     return { channel: entry.channel };
+  }
+
+  const offeredAttachments = new Map<
+    string,
+    Map<string, OfferedAttachment & { channel: string; expiresAt: number }>
+  >();
+
+  function noteOfferedAttachments(
+    instanceName: string,
+    channel: string,
+    attachments: OfferedAttachment[],
+  ): void {
+    if (attachments.length === 0) return;
+    const now = Date.now();
+    let offers = offeredAttachments.get(instanceName);
+    if (!offers) {
+      offers = new Map();
+      offeredAttachments.set(instanceName, offers);
+    }
+    if (offers.size > 5_000) {
+      for (const [id, entry] of offers) {
+        if (entry.expiresAt <= now) offers.delete(id);
+      }
+    }
+    for (const offer of attachments) {
+      offers.set(offer.file.id, {
+        ...offer,
+        channel,
+        expiresAt: now + OFFERED_THREAD_TTL_MS,
+      });
+    }
+  }
+
+  function readOfferedAttachment(
+    instanceName: string,
+    fileId: string,
+  ): (OfferedAttachment & { channel: string }) | null {
+    const entry = offeredAttachments.get(instanceName)?.get(fileId);
+    if (!entry) return null;
+    if (entry.expiresAt <= Date.now()) return null;
+    return entry;
   }
 
   async function resolveRoster(slackChannelId: string): Promise<RosterEntry[]> {
@@ -3032,6 +3085,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       hasUnattributedBot,
       hasThreadMarker,
       offeredThreads: offeredHere,
+      offeredAttachments: attachmentsHere,
       readNewestTs,
       readHasMore,
       threadWindow,
@@ -3053,13 +3107,18 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ? [...offeredHere, ctx.threadTs]
         : offeredHere,
     );
+    noteOfferedAttachments(ctx.instanceName, ctx.channel, attachmentsHere);
     const preamble = historyPreamble(
       ctx.hasThread
         ? "thread"
         : isDirectMessageId(ctx.channel)
           ? "direct-message"
           : "channel",
-      { hasThreadMarker, windowed: threadWindow.windowed },
+      {
+        hasThreadMarker,
+        hasAttachmentMarker: attachmentsHere.length > 0,
+        windowed: threadWindow.windowed,
+      },
     );
     const attribution =
       hasAgentAuthored || hasUnattributedBot
@@ -3172,6 +3231,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         hasUnattributedBot,
         hasThreadMarker,
         offeredThreads: offeredHere,
+        offeredAttachments: attachmentsHere,
         readNewestTs,
         readHasMore,
       } = await getContextMessages({
@@ -3203,6 +3263,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         });
       if (lines.length === 0) return { frame: {}, commit };
       noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
+      noteOfferedAttachments(ctx.instanceName, ctx.channel, attachmentsHere);
       return {
         frame: {
           context: lines,
@@ -3212,6 +3273,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               botLabel: hasUnattributedBot ? bot.label : null,
               someOmitted: readHasMore,
               hasThreadMarker,
+              hasAttachmentMarker: attachmentsHere.length > 0,
             },
           ),
         },
@@ -6089,6 +6151,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         const labelled = labelMessages(entries, names, instanceName, bot, {
           showThreadMarkers: false,
         });
+        noteOfferedAttachments(instanceName, target.id, attachmentsOf(entries));
         return {
           messages: markThreadWindow(labelled, offsets, {
             threadTs: query.threadTs,
@@ -6104,6 +6167,72 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         };
       } catch (err) {
         return { error: formatError(err) };
+      }
+    },
+
+    async fetchAttachment(instanceName: string, query: AttachmentQuery) {
+      const bound =
+        await channelRegistry.resolveSlackChannelsByInstance(instanceName);
+      if (bound.length === 0) return { error: "no channel connected" };
+      const gw = await ensureGateway();
+      if (!gw) return { error: "slack bot not running" };
+
+      const offered = readOfferedAttachment(instanceName, query.fileId);
+      if (!offered) {
+        return {
+          error:
+            "not an attachment you were shown — only a fileId taken from an " +
+            "[attachment: ...] tag in the conversation history handed to " +
+            "you can be fetched, and offers age out. If someone wants you " +
+            "to look at an older file, ask them to post it again with their " +
+            "message",
+        };
+      }
+      const target = bound.find((c) => c.id === offered.channel);
+      if (!target) {
+        return {
+          error:
+            "the conversation this attachment was shown in is no longer " +
+            "connected to this agent",
+        };
+      }
+
+      const fetched = await fetchSlackAttachments(
+        gw,
+        [offered.file],
+        offered.uploader,
+        heldBudget,
+        target.teamId,
+        "handed",
+      );
+      try {
+        const [failure] = fetched.failures;
+        if (failure)
+          return { error: `couldn't fetch ${failure.name}: ${failure.reason}` };
+        let withheld: FetchedFailure | undefined;
+        const delivery = await deliverTurnFiles({
+          agentId: instanceName,
+          conversation: target.id,
+          files: fetched.files,
+          onWithheld: async (f) => {
+            withheld = f;
+          },
+        });
+        const [file] = delivery.files;
+        if (!file) {
+          return {
+            error: `couldn't fetch ${withheld?.name ?? attachmentName(offered.file)}: ${withheld?.reason ?? "nothing came back. Try again."}`,
+          };
+        }
+        return {
+          path: file.path,
+          name: file.name,
+          size: file.size,
+          ...(file.contentType ? { contentType: file.contentType } : {}),
+          conversationId: target.id,
+        };
+      } finally {
+        fetched.release();
       }
     },
   };

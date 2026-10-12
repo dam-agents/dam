@@ -31,7 +31,7 @@ The owner's **Slack Account Connection** is a separate thing: it gives the Agent
 
 Two paths, both by tool call; plain assistant text is never posted.
 
-- **As the bot**, through the platform's MCP server. Four tools dispose of the turn being answered: `reply`, `react`, `no_reply_needed`, `hand_off_to_agent`. Five work from any session, UI or scheduled included: `send_channel_message`, `describe_channel`, `describe_channel_users`, `read_thread`, `describe_message_reactions`. Every post carries a footer naming the Agent and linking to the session that wrote it. The owner removes one with `/dam delete <message link> [reason]`: confirmation dialog, post and files go, the agent's session is told.
+- **As the bot**, through the platform's MCP server. Four tools dispose of the turn being answered: `reply`, `react`, `no_reply_needed`, `hand_off_to_agent`. Six work from any session, UI or scheduled included: `send_channel_message`, `describe_channel`, `describe_channel_users`, `read_thread`, `fetch_message_attachment`, `describe_message_reactions`. Every post carries a footer naming the Agent and linking to the session that wrote it. The owner removes one with `/dam delete <message link> [reason]`: confirmation dialog, post and files go, the agent's session is told.
 - **As the owner**, through Slack's own MCP server, when the Agent holds the owner's Slack Account Connection. Posts carry no footer, `/dam delete` doesn't apply, and the platform doesn't see them (§2).
 
 A message sent from the UI carries no Slack framing, so the agent answers in the UI and posts to Slack only if asked.
@@ -134,7 +134,7 @@ Every Slack turn carries: how to respond (tools, the thread to reply into, "plai
 | Ambient, thread reply | The thread, or catch-up | Same reading-along frame |
 | 1:1 DM | DM history (50), or catch-up; no speaker labels; a burst as `[ts] text` lines | "Every message here is addressed to you" |
 | Hand-off received | The peer's own session for that thread | "X handed this to you… files not carried over… you cannot hand it on again" |
-| Any message with files | Same as the case it arrives in | Images become prompt content where the harness accepts them (else the sender is told "answering text only"); other files are saved to the workspace and listed by path. 20 MB of files or 30 MB of images per message |
+| Any message with files | Same as the case it arrives in | Images become prompt content where the harness accepts them (else the sender is told "answering text only"); other files are saved to the workspace and listed by path. 20 MB of files or 30 MB of images per message. A file on an *earlier* message is not fetched: its history line names it, and `fetch_message_attachment` saves it to the workspace on request |
 | Reminder after a silent turn (the *nudge*) | None | "Your previous turn ended without a reply being posted. Post it now, as the answer, not as a correction; or call `no_reply_needed`". After an out-of-memory restart during the turn: "it was cut short because the agent ran out of memory; tell the person, and that the owner can give it more memory" |
 | Continued from the UI | None | None; a message without the frame "didn't come from Slack" |
 
@@ -198,7 +198,7 @@ flowchart TD
 |---|---|---|
 | The platform's tools are always present; refused without a binding. A Connection's tools exist only while it is granted | Platform | |
 | Where it may post (§1.6); attach any file from the agent's home | Platform allows, **Agent** decides | |
-| Look up any member by id (name, title, email, timezone); `read_thread` only on threads it was shown, 48 h | Platform | Shown threads live in api-server memory; after a restart they must be shown again |
+| Look up any member by id (name, title, email, timezone); `read_thread` and `fetch_message_attachment` only on threads and files it was shown, 48 h | Platform | Shown threads and files live in api-server memory; after a restart they must be shown again |
 | The owner's Slack Connection is usable on a channel turn | **Setup**: whether the harness asks before running tools (below) | |
 
 ### Safety gates

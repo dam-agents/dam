@@ -125,6 +125,7 @@ export interface SlackMessage {
   botName?: string;
   metadata?: SlackMessageMetadata;
   fileIds?: string[];
+  attachments?: SlackImageFile[];
 }
 
 export type SlackBlock = Record<string, unknown>;
