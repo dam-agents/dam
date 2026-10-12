@@ -83,6 +83,16 @@ export function looksLikeSignInPage(head: string): boolean {
   );
 }
 
+export function promptSafeName(name: string): string {
+  return (
+    name
+      .replace(/[<>\r\n\t]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120) || "file"
+  );
+}
+
 const INBOUND_FILE_ROOT = ".uploads";
 
 function sanitizeSegment(s: string): string {

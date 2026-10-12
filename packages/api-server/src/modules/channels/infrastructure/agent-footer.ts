@@ -1,6 +1,11 @@
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
+import { promptSafeName } from "../inbound-file.js";
 
-import type { SlackBlock, SlackMessage } from "./slack-gateway.js";
+import type {
+  SlackBlock,
+  SlackImageFile,
+  SlackMessage,
+} from "./slack-gateway.js";
 
 const PUBLIC_AGENT_PATH = "/a/";
 
@@ -108,6 +113,12 @@ const THREAD_MARKER_NOTE =
   `${OUTBOUND_TOOL_PREFIX}read_thread, passing that ts as threadTs, ` +
   "before treating the line as unanswered.";
 
+const ATTACHMENT_MARKER_NOTE =
+  "A line with an [attachment: ...] tag had that file or image attached, " +
+  "and its contents are not shown here. When what you are asked depends on " +
+  `it, fetch it with ${OUTBOUND_TOOL_PREFIX}fetch_message_attachment, ` +
+  "passing the tag's fileId — do not guess at what it contains.";
+
 export type HistoryShape = "thread" | "direct-message" | "channel";
 
 const THREAD_WINDOW_NOTE =
@@ -116,13 +127,21 @@ const THREAD_WINDOW_NOTE =
 
 export function historyPreamble(
   shape: HistoryShape,
-  opts: { hasThreadMarker?: boolean; windowed?: boolean } = {},
+  opts: {
+    hasThreadMarker?: boolean;
+    hasAttachmentMarker?: boolean;
+    windowed?: boolean;
+  } = {},
 ): string {
+  const attachments = opts.hasAttachmentMarker
+    ? `${ATTACHMENT_MARKER_NOTE} `
+    : "";
   if (shape === "thread") {
     return (
       "The conversation history below is the thread this turn was posted " +
       "into: one conversation, and the context for answering it. " +
       (opts.windowed ? `${THREAD_WINDOW_NOTE} ` : "") +
+      attachments +
       "Answer what follows the history, not the history itself."
     );
   }
@@ -132,6 +151,7 @@ export function historyPreamble(
       "person: one conversation, and the context for answering what " +
       "follows. " +
       (opts.hasThreadMarker ? `${THREAD_MARKER_NOTE} ` : "") +
+      attachments +
       "Answer what follows the history, not the history itself."
     );
   }
@@ -142,6 +162,7 @@ export function historyPreamble(
     "be interleaved here, and the time on each line is the cue for where " +
     "one ends and the next begins. " +
     (opts.hasThreadMarker ? `${THREAD_MARKER_NOTE} ` : "") +
+    attachments +
     "It is background — it tells you what has been going on here. Answer " +
     "what follows the history, not the history itself, and leave an older " +
     "topic alone unless what follows asks about it."
@@ -200,6 +221,7 @@ export function catchUpLegend(
     botLabel: string | null;
     someOmitted?: boolean;
     hasThreadMarker?: boolean;
+    hasAttachmentMarker?: boolean;
   },
 ): string {
   const omitted = opts.someOmitted
@@ -216,6 +238,7 @@ export function catchUpLegend(
     "on it is the right outcome, not a failure. Don't repeat or contradict " +
     "what another agent already said. " +
     (opts.hasThreadMarker === true ? `${THREAD_MARKER_NOTE} ` : "") +
+    (opts.hasAttachmentMarker === true ? `${ATTACHMENT_MARKER_NOTE} ` : "") +
     historyLegend(canLookupUsers, opts)
   );
 }
@@ -253,7 +276,15 @@ export function labelHistoryMessage(
   const when = message.ts ? ` [${formatSlackTs(message.ts)}]` : "";
   const edited = message.edited ? " (edited)" : "";
   const marker = opts.showThreadMarkers ? threadMarker(message) : "";
-  return `${label}${when}: ${message.text ?? ""}${edited}${marker}`;
+  const attached = (message.attachments ?? []).map(attachmentMarker).join("");
+  return `${label}${when}: ${message.text ?? ""}${edited}${attached}${marker}`;
+}
+
+function attachmentMarker(file: SlackImageFile): string {
+  const name = promptSafeName(file.name.replace(/[[\]"]/g, " "));
+  const type = file.mimetype ? `, ${file.mimetype}` : "";
+  const size = file.size ? `, ${(file.size / 1_000_000).toFixed(1)} MB` : "";
+  return ` [attachment: "${name}"${type}${size}, fileId ${file.id}]`;
 }
 
 function threadMarker(message: SlackMessage): string {

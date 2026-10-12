@@ -88,7 +88,14 @@ function toSlackMessage(m: {
   username?: string;
   bot_profile?: { name?: string };
   metadata?: { event_type?: string; event_payload?: Record<string, unknown> };
-  files?: Array<{ id?: string }>;
+  files?: Array<{
+    id?: string;
+    name?: string;
+    title?: string;
+    mimetype?: string;
+    size?: number;
+    url_private?: string;
+  }>;
 }): SlackMessage {
   const metadata = m.metadata?.event_type
     ? {
@@ -97,6 +104,19 @@ function toSlackMessage(m: {
       }
     : null;
   const fileIds = (m.files ?? []).flatMap((f) => (f.id ? [f.id] : []));
+  const attachments = (m.files ?? []).flatMap((f): SlackImageFile[] =>
+    f.id && f.url_private
+      ? [
+          {
+            id: f.id,
+            name: f.name ?? f.title ?? "",
+            mimetype: f.mimetype ?? "",
+            url_private: f.url_private,
+            size: f.size ?? 0,
+          },
+        ]
+      : [],
+  );
   return {
     ts: m.ts,
     user: m.user,
@@ -113,6 +133,7 @@ function toSlackMessage(m: {
       : {}),
     ...(metadata ? { metadata } : {}),
     ...(fileIds.length ? { fileIds } : {}),
+    ...(attachments.length ? { attachments } : {}),
   };
 }
 
@@ -905,6 +926,39 @@ export function createBoltSlackGateway(
         count: r.count ?? 0,
         users: r.users ?? [],
       }));
+    },
+
+    async getFileInfo(fileId, teamId) {
+      if (!app) return null;
+      const token = await tokenFor(teamId);
+      if (!token) return null;
+      let result;
+      try {
+        result = await app.client.files.info({ token, file: fileId });
+      } catch (err) {
+        if (slackRefusal(err) === "file_not_found") return null;
+        throw err;
+      }
+      const f = result.file;
+      if (!f?.id || !f.url_private) return null;
+      const sharedIn = new Set([
+        ...(f.channels ?? []),
+        ...(f.groups ?? []),
+        ...(f.ims ?? []),
+        ...Object.keys(f.shares?.public ?? {}),
+        ...Object.keys(f.shares?.private ?? {}),
+      ]);
+      return {
+        file: {
+          id: f.id,
+          name: f.name ?? f.title ?? "",
+          mimetype: f.mimetype ?? "",
+          url_private: f.url_private,
+          size: f.size ?? 0,
+        },
+        uploader: f.user ?? null,
+        sharedIn: [...sharedIn],
+      };
     },
 
     async getPermalink(
