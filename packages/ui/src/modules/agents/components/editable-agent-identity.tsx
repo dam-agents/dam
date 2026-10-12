@@ -1,6 +1,6 @@
 import { Checkmark, Edit } from "@carbon/icons-react";
 import type { AvatarMood } from "api-server-api/avatar/svg";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import {
   Popover,
@@ -39,20 +39,35 @@ export function EditableAgentIdentity({
   nameClassName?: string;
   nameTag?: "h1" | "h2";
 }) {
-  const updateAgent = useUpdateAgent();
+  const rename = useUpdateAgent();
+  const changeAvatar = useUpdateAgent();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
-  const pending = updateAgent.isPending ? updateAgent.variables : undefined;
-  const name = pending?.name ?? agent.name;
-  const avatar = pending?.avatar ?? agent.avatar;
+  const editEnded = useRef(false);
+  const name =
+    (rename.isPending ? rename.variables.name : undefined) ?? agent.name;
+  const avatar =
+    (changeAvatar.isPending ? changeAvatar.variables.avatar : undefined) ??
+    (rename.isPending ? rename.variables.avatar : undefined) ??
+    agent.avatar;
   const character = resolveCharacter(name, avatar);
 
+  const startEdit = () => {
+    editEnded.current = false;
+    setDraft(name);
+  };
+  const cancelEdit = () => {
+    editEnded.current = true;
+    setDraft(null);
+  };
   const commitName = () => {
+    if (editEnded.current) return;
+    editEnded.current = true;
     const next = draft?.trim();
     setDraft(null);
     if (!next || next === agent.name) return;
     const keepNameDerivedAvatar = agent.avatar ? {} : { avatar: character };
-    updateAgent.mutate({ id: agent.id, name: next, ...keepNameDerivedAvatar });
+    rename.mutate({ id: agent.id, name: next, ...keepNameDerivedAvatar });
   };
 
   return (
@@ -85,7 +100,7 @@ export function EditableAgentIdentity({
             onPick={(next) => {
               setPickerOpen(false);
               if (next !== character)
-                updateAgent.mutate({ id: agent.id, avatar: next });
+                changeAvatar.mutate({ id: agent.id, avatar: next });
             }}
           />
         </PopoverContent>
@@ -94,7 +109,7 @@ export function EditableAgentIdentity({
         <NameTag className={cn("flex min-w-0", nameClassName)}>
           <button
             type="button"
-            onClick={() => setDraft(name)}
+            onClick={startEdit}
             title={`Rename ${name}`}
             className="group flex min-w-0 items-center gap-1.5 text-left"
           >
@@ -118,7 +133,7 @@ export function EditableAgentIdentity({
             onBlur={commitName}
             onKeyDown={(e) => {
               if (e.key === "Enter") commitName();
-              if (e.key === "Escape") setDraft(null);
+              if (e.key === "Escape") cancelEdit();
             }}
             className={cn(
               "min-w-0 flex-1 rounded-sm bg-transparent px-1 -mx-1 outline-hidden ring-1 ring-border focus-visible:ring-ring",

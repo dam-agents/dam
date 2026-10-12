@@ -77,8 +77,11 @@ export function EnvTab({ agent }: { agent: AgentView }) {
     envVars,
   });
   const saving = updateAgent.isPending;
-  const setEnvVars = (next: EnvVar[]) =>
-    updateAgent.mutate({ id: agent.id, env: sanitizeEnvVars(next) });
+  const setEnvVars = (next: EnvVar[], onSaved?: () => void) =>
+    updateAgent.mutate(
+      { id: agent.id, env: sanitizeEnvVars(next) },
+      { onSuccess: onSaved },
+    );
   const [editing, setEditing] = useState<number | "new" | null>(null);
   const warnings = shadowWarnings(envVars, inherited);
   return (
@@ -161,14 +164,15 @@ export function EnvTab({ agent }: { agent: AgentView }) {
           takenNames={envVars
             .filter((_, idx) => idx !== editing)
             .map((v) => v.name)}
-          onSave={(next) => {
+          pending={saving}
+          onSave={(next) =>
             setEnvVars(
               editing === "new"
                 ? [...envVars, next]
                 : envVars.map((v, idx) => (idx === editing ? next : v)),
-            );
-            setEditing(null);
-          }}
+              () => setEditing(null),
+            )
+          }
           onClose={() => setEditing(null)}
         />
       )}
@@ -181,10 +185,12 @@ function EnvVarModal({
   takenNames,
   onSave,
   onClose,
+  pending,
 }: {
   initial?: EnvVar;
   takenNames: string[];
   onSave: (next: EnvVar) => void;
+  pending: boolean;
   onClose: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
@@ -200,12 +206,13 @@ function EnvVarModal({
           : undefined;
   const canSave = trimmed.length > 0 && !error;
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={pending ? undefined : onClose}>
       <form
         className="contents"
         onSubmit={(e) => {
           e.preventDefault();
-          if (canSave) onSave({ name: trimmed, value: value.trim() });
+          if (canSave && !pending)
+            onSave({ name: trimmed, value: value.trim() });
         }}
       >
         <DialogHeader
@@ -234,6 +241,8 @@ function EnvVarModal({
         </DialogBody>
         <DialogActions
           onCancel={onClose}
+          cancelDisabled={pending}
+          pending={pending}
           label={initial ? "Save" : "Add variable"}
           pendingLabel="Saving…"
           disabled={!canSave}

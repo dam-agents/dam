@@ -87,6 +87,7 @@ export function useFilesPanelController({
   const openFilePath = useStore((s) => s.openFilePath);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
   const toggleExpandedDir = useStore((s) => s.toggleExpandedDir);
+  const setShowHiddenFiles = useStore((s) => s.setShowHiddenFiles);
   const expandedDirs = useStore((s) =>
     selectedAgent
       ? (s.expandedDirs[selectedAgent] ?? DEFAULT_EXPANDED_DIRS)
@@ -246,9 +247,10 @@ export function useFilesPanelController({
       if (!pendingNew) return;
       const { kind, dir } = pendingNew;
       setPendingNew(null);
+      if (rawName.trim().startsWith(".")) setShowHiddenFiles(true);
       void createEntry({ kind, dir, name: rawName });
     },
-    [pendingNew, createEntry],
+    [pendingNew, createEntry, setShowHiddenFiles],
   );
 
   const handleCancelRename = useCallback(() => setRenamingPath(null), []);

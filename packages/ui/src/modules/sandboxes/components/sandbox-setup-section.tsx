@@ -26,17 +26,25 @@ export function SandboxSetupSection({ agent }: { agent: AgentView }) {
   const { data: harnessStatus } = useHarnessConfigStatus(agent.id);
   const carriedHarnesses = harnessStatus?.harnesses ?? null;
   const features = useFeatures();
-  const updateAgent = useUpdateAgent();
-  const pending = updateAgent.isPending ? updateAgent.variables : undefined;
+  const updateSleep = useUpdateAgent();
+  const updateSize = useUpdateAgent();
+  const updateAddressing = useUpdateAgent();
+  const pendingSize = updateSize.isPending
+    ? updateSize.variables.size
+    : undefined;
 
   const hibernationTimeoutMin =
-    pending?.hibernationTimeoutMin ?? agent.hibernationTimeoutMin;
+    (updateSleep.isPending
+      ? updateSleep.variables.hibernationTimeoutMin
+      : undefined) ?? agent.hibernationTimeoutMin;
   const sizeCpuMilli =
-    parseCpuMilli(pending?.size?.cpu ?? agent.size.cpu) ?? 1000;
+    parseCpuMilli(pendingSize?.cpu ?? agent.size.cpu) ?? 1000;
   const sizeMemoryMi =
-    parseMemoryMi(pending?.size?.memory ?? agent.size.memory) ?? 1024;
+    parseMemoryMi(pendingSize?.memory ?? agent.size.memory) ?? 1024;
   const requireConnectionAddress =
-    pending?.requireConnectionAddress ?? agent.requireConnectionAddress;
+    (updateAddressing.isPending
+      ? updateAddressing.variables.requireConnectionAddress
+      : undefined) ?? agent.requireConnectionAddress;
   const sizeRestartsAgent = !(agent.state === "hibernated" || agent.overBudget);
 
   return (
@@ -54,7 +62,7 @@ export function SandboxSetupSection({ agent }: { agent: AgentView }) {
                 showConfirm,
               )
             )
-              updateAgent.mutate({ id: agent.id, hibernationTimeoutMin: next });
+              updateSleep.mutate({ id: agent.id, hibernationTimeoutMin: next });
           }}
         />
       </section>
@@ -72,7 +80,7 @@ export function SandboxSetupSection({ agent }: { agent: AgentView }) {
             ))
           )
             return;
-          updateAgent.mutate({
+          updateSize.mutate({
             id: agent.id,
             size: {
               cpu: `${next.sizeCpuMilli}m`,
@@ -95,7 +103,7 @@ export function SandboxSetupSection({ agent }: { agent: AgentView }) {
                 { confirmLabel: "Change & restart" },
               )
             )
-              updateAgent.mutate({
+              updateAddressing.mutate({
                 id: agent.id,
                 requireConnectionAddress: next,
               });

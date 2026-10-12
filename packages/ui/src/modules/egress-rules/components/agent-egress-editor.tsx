@@ -155,7 +155,20 @@ function PresetModal({
   onClose: () => void;
 }) {
   const applyPreset = useApplyEgressPreset();
+  const showConfirm = useStore((s) => s.showConfirm);
   const [picked, setPicked] = useState<EgressPreset>(current ?? "trusted");
+  const apply = async () => {
+    if (
+      picked === "all" &&
+      !(await showConfirm(
+        "The agent can reach any host. You can still narrow it with deny rules.",
+        "Allow everything?",
+        { kind: "destructive", confirmLabel: "Allow everything" },
+      ))
+    )
+      return;
+    applyPreset.mutate({ agentId, preset: picked }, { onSuccess: onClose });
+  };
   return (
     <Modal onClose={applyPreset.isPending ? undefined : onClose}>
       <DialogHeader
@@ -197,12 +210,7 @@ function PresetModal({
         label="Apply preset"
         pendingLabel="Applying…"
         pending={applyPreset.isPending}
-        onSubmit={() =>
-          applyPreset.mutate(
-            { agentId, preset: picked },
-            { onSuccess: onClose },
-          )
-        }
+        onSubmit={() => void apply()}
         testId="egress-preset-apply"
       />
     </Modal>
