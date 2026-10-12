@@ -308,9 +308,8 @@ describe("session pair model choices", () => {
       expect(html).not.toContain("Connect providers");
       expect(html).not.toContain('aria-label="Close"');
       expect(html).not.toContain("Other harnesses and models need a");
-      expect(html).toContain('aria-label="About changing the harness"');
-      expect(html).toContain("To use a model from a different provider,");
-      expect(html).toContain("start a new session</button>");
+      expect(html).toContain(">Change</button>");
+      expect(html).not.toContain("start a new session");
       expect(html).toContain(">Pi</span>");
       if (availableModels !== null) expect(html).not.toContain("Static model");
     },

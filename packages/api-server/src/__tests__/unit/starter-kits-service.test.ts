@@ -113,7 +113,6 @@ function makeHarness(
     preferred: boolean;
   }[] = [],
   virtualizationEnabled = true,
-  pinnedKit = "",
 ) {
   const calls = {
     created: [] as AgentCreateInput[],
@@ -257,7 +256,6 @@ function makeHarness(
       },
     },
     virtualizationEnabled,
-    pinnedKit,
   });
   return { service, calls };
 }
@@ -485,18 +483,18 @@ describe("starter kits: apply", () => {
     expect(calls.created).toEqual([]);
   });
 
-  it("requires a harness when the kit brings no image, and uses the image when it does", async () => {
-    const { service } = makeHarness(LOADED);
-    await expect(
-      service.apply({
-        catalog: "platform",
-        kitId: "code-reviewer",
-        name: "r",
-        connectionIds: ["c-gh"],
-        skipSchedules: [],
-        scheduleOverrides: [],
-      }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  it("leaves the template to create's default when the kit brings no image, and uses the image when it does", async () => {
+    const { service, calls } = makeHarness(LOADED);
+    await service.apply({
+      catalog: "platform",
+      kitId: "code-reviewer",
+      name: "r",
+      connectionIds: ["c-gh"],
+      skipSchedules: [],
+      scheduleOverrides: [],
+    });
+    expect(calls.created[0].templateId).toBeUndefined();
+    expect(calls.created[0].image).toBeUndefined();
 
     const pinned = makeHarness({
       ...LOADED,
@@ -1183,23 +1181,6 @@ describe("starter kits: egress preset", () => {
     expect(calls.egressRules).toEqual([
       { agentId: "agent-1", hosts: ["api.example.com"] },
     ]);
-  });
-});
-
-describe("starter kits: pinned kit", () => {
-  // TEST_SCENARIO: the pin names a kit as <catalog>/<kit>, so the same id in another catalog is not pinned.
-  it("flags only the kit the install pins", async () => {
-    const pinned = makeHarness(
-      LOADED,
-      null,
-      [],
-      true,
-      "platform/code-reviewer",
-    );
-    expect((await pinned.service.list())[0]?.pinned).toBe(true);
-
-    const other = makeHarness(LOADED, null, [], true, "curated/code-reviewer");
-    expect((await other.service.list())[0]?.pinned).toBe(false);
   });
 });
 

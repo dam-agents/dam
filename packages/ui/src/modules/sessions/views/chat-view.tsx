@@ -510,29 +510,38 @@ export function ChatView() {
     ],
   );
 
-  const handleNewSession = useCallback(() => {
-    const focusComposer = () =>
-      requestAnimationFrame(() => textareaRef.current?.focus());
-    if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
-    if (!sessionId && messages.length === 0) {
+  const [pairPickerOpen, setPairPickerOpen] = useState(false);
+  useEffect(() => {
+    if (sessionId) setPairPickerOpen(false);
+  }, [sessionId]);
+  const handleNewSession = useCallback(
+    (pickPair = false) => {
+      const afterReset = () =>
+        pickPair
+          ? setPairPickerOpen(true)
+          : requestAnimationFrame(() => textareaRef.current?.focus());
+      if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
+      if (!sessionId && messages.length === 0) {
+        setMobileScreen("chat");
+        afterReset();
+        return;
+      }
+      pushSessionUrl(null, null);
+      setSessionMode(SessionMode.Chat);
+      resetSession();
       setMobileScreen("chat");
-      focusComposer();
-      return;
-    }
-    pushSessionUrl(null, null);
-    setSessionMode(SessionMode.Chat);
-    resetSession();
-    setMobileScreen("chat");
-    focusComposer();
-  }, [
-    selectedAgent,
-    sessionId,
-    messages.length,
-    resetSession,
-    setMobileScreen,
-    setSessionMode,
-    pushSessionUrl,
-  ]);
+      afterReset();
+    },
+    [
+      selectedAgent,
+      sessionId,
+      messages.length,
+      resetSession,
+      setMobileScreen,
+      setSessionMode,
+      pushSessionUrl,
+    ],
+  );
 
   const handleNewTerminal = useCallback(() => {
     resetSession();
@@ -909,7 +918,11 @@ export function ChatView() {
                 {!hasPendingPermission && pickable && (
                   <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
                     <ChatColumn>
-                      <SessionPairPicker {...pickable} />
+                      <SessionPairPicker
+                        {...pickable}
+                        open={pairPickerOpen}
+                        onOpenChange={setPairPickerOpen}
+                      />
                     </ChatColumn>
                   </div>
                 )}
@@ -928,7 +941,7 @@ export function ChatView() {
                           onConfigure={(change) =>
                             void configureSession(change)
                           }
-                          onNewSession={handleNewSession}
+                          onNewSession={() => handleNewSession(true)}
                         />
                       ) : selectedAgent ? (
                         <Button

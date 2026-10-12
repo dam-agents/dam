@@ -27,6 +27,7 @@ export function useBrowserHistory(): void {
         useStore.getState().resetChatContext();
         useStore.setState({
           ...routeToNavigationState(route),
+          kitBrowserOpen: false,
           selectedAgent: route.agent,
           ...("session" in route && route.session
             ? {
@@ -41,6 +42,7 @@ export function useBrowserHistory(): void {
       if (wasChat) useStore.getState().resetChatContext();
       useStore.setState({
         ...routeToNavigationState(route),
+        kitBrowserOpen: false,
         ...(wasChat ? { selectedAgent: null } : {}),
       });
     };

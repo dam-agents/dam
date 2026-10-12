@@ -15,7 +15,7 @@ export function WelcomeEntryPoints() {
         environment, with your credentials and tools already set up.
       </p>
       <div>
-        <EntryPointButtons surface="welcome" />
+        <EntryPointButtons />
       </div>
     </Callout>
   );
