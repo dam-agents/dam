@@ -14,7 +14,7 @@ python = "3.12"
 kubectl = "latest"
 k3s = "latest"
 "npm:playwright" = "1.63.0"
-"npm:agent-browser" = "0.38.1"
+"npm:agent-browser" = "0.38.2"
 
 # The static bundle: trixie's docker.io is a release line behind.
 # 29.9.0 (2026-10-08) is younger than the release-age floor; it fixes the Go
