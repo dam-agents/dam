@@ -115,8 +115,8 @@ for run in 1 2 3; do
 done
 dmesg | grep -E 'Bad page map|Bad rss-counter' | head -5`;
 
-// TEST_SCENARIO: the guest kernel is the pinned Linux 6.12, and a 6 GiB guest with the tools DAX-mapped keeps node running while other processes open its binary. From Linux 6.15 on, each open drops the DAX pages that the running process still maps, and that process dies of SIGBUS, exit 135 (smol-machines/smolvm#1741). A throwaway smolvm machine in the agent's runner boots the staged default image with the node's tools where the image reads them, and asks for DAX itself, so the guard holds whatever the runner sets for its own machines. It runs only on an x86 runner in the cluster: smolvm maps no DAX window on arm64, and the Mac's host runner has no pod.
-test("a 6 GiB guest runs node from DAX-mapped tools while its binary is opened", async () => {
+// TEST_SCENARIO: the guest kernel is the pinned Linux 6.12, and a 6 GiB guest with the tools DAX-mapped keeps node running while other processes open its binary. From Linux 6.15 on, each open drops the DAX pages that the running process still maps, and that process dies of SIGBUS, exit 135 (smol-machines/smolvm#1741). A throwaway smolvm machine in the agent's runner boots the staged default image with the node's tools where the image reads them, and asks for DAX itself, so the guard holds whatever the runner sets for its own machines. The runner does set it: every mount of its own machines, the tools among them, is DAX-mapped. It runs only on an x86 runner in the cluster: smolvm maps no DAX window on arm64, and the Mac's host runner has no pod.
+test("a 6 GiB guest runs node from DAX-mapped tools while its binary is opened, and the runner maps its machines' mounts with DAX", async () => {
   test.setTimeout(300_000);
   const owner = kubectl(
     "-n",
@@ -178,4 +178,20 @@ test("a 6 GiB guest runs node from DAX-mapped tools while its binary is opened",
     "run 3 rc=0",
   ]);
   expect(guest).not.toMatch(/Bad page map|Bad rss-counter/);
+
+  const mounts = inRunner(
+    "sh",
+    "-c",
+    "grep -h '\"virtiofs mount active\"' /var/lib/platform/disks/.cache/smolvm/vms/*/agent-console.log",
+  )
+    .split("\n")
+    .filter(Boolean);
+  expect(
+    mounts.length,
+    "the runner's machines log their mounts",
+  ).toBeGreaterThan(0);
+  expect(
+    mounts.filter((line) => !line.includes('"dax":true')),
+    "every mount of the runner's own machines is DAX-mapped",
+  ).toEqual([]);
 });
