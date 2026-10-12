@@ -47,6 +47,7 @@ import {
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
+import { AgentStartingBar } from "../../agents/components/agent-starting-bar.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import {
@@ -187,6 +188,9 @@ export function ChatView() {
     ? resolveAgentDisplay(agentView, restartingIds, undefined, slowStartIds)
     : null;
   const selectedAgentName = agentView?.name ?? selectedAgent;
+  const agentStarting =
+    agentDisplay?.state === "starting" ||
+    agentDisplay?.state === "preparing_workspace";
   const sessionId = useStore((s) => s.sessionId);
   const sessionMode = useStore((s) => s.sessionMode);
   const setSessionMode = useStore((s) => s.setSessionMode);
@@ -853,6 +857,7 @@ export function ChatView() {
                               showModel={runStarts.length > 0}
                               {...timeProps(item.message.at, now)}
                               hasPendingPermission={hasPendingPermission}
+                              waitingForAgent={agentStarting}
                               onRetry={sendPrompt}
                               onFileClick={openFileHandler}
                               onDelete={deleteMessage}
@@ -913,6 +918,9 @@ export function ChatView() {
                   agentId={selectedAgent}
                 />
                 <KitUpdateBar agentId={selectedAgent} />
+                {agentStarting && agentView && agentDisplay && (
+                  <AgentStartingBar agent={agentView} display={agentDisplay} />
+                )}
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}
@@ -1050,7 +1058,10 @@ export function ChatView() {
 
       {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />
-      ) : selectedAgent && !agentInaccessible && !agentOperable ? (
+      ) : selectedAgent &&
+        !agentInaccessible &&
+        !agentOperable &&
+        !agentStarting ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}
