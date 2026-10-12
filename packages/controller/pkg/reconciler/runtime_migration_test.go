@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -287,6 +288,21 @@ func TestThePreflightMachineTakesTheTargetShapeAndReportsWhyItIsNotReady(t *test
 	assert.Equal(t, "ghcr.io/myorg/agent:latest", node.spec("my-agent").Image)
 	assert.Equal(t, 25, node.spec("my-agent").StorageGiB)
 	assert.Equal(t, int32(1), agentReplicas(t, r), "a preflight that cannot pass leaves the container serving")
+}
+
+// TEST_SCENARIO: a home volume larger than the target's disk, because it never shrank when storageSize was lowered or a pool handed out a larger one, raises the disk to its capacity before the machine is made, and the raised size is recorded so the switch keeps it.
+func TestThePreflightMachineIsNeverSmallerThanTheHomeVolume(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	pvc := homePVC("home-my-agent-0")
+	pvc.Spec.Resources.Requests = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("5Gi")}
+	pvc.Status.Capacity = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("12Gi")}
+	createAll(t, r, pvc)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, 12, node.spec("my-agent").StorageGiB)
+	assert.JSONEq(t, `{"storageSize":"12Gi"}`, reloaded(t, r, agent).Annotations[annRuntimeMigrationTarget])
 }
 
 // TEST_SCENARIO: an abort before the verified boot removes what the vm side made — the copy Job, the machine with its seed, the record of the source volume and the condition — and the container comes back on the volumes it had, which never lost their labels.

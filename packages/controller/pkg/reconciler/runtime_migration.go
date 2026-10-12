@@ -357,7 +357,48 @@ func (r *AgentReconciler) reconcileMigrationMachine(ctx context.Context, agent *
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, err
 	}
+	if agent.Annotations[annRuntimeMigrationSource] == "" {
+		if err := r.raiseRuntimeMigrationDisk(ctx, agent, target); err != nil {
+			return vmrunner.MachineStatus{}, false, err
+		}
+	}
 	return r.reconcileVMAgent(ctx, target, ownerRef, gatewayIP, running, false)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a home volume never shrinks when the Agent's storageSize is lowered, and a pool can hand out a larger one, so the volume the copy reads can be larger than the disk the request asked for. Before the machine and its disk are made, the target is raised to the volume's capacity and recorded, so the disk holds what the volume could and the switch keeps that size. Only until the source is recorded: the machine exists by then, and a retry clears the source and starts with a fresh one.
+func (r *AgentReconciler) raiseRuntimeMigrationDisk(ctx context.Context, agent, target *apiv1.Agent) error {
+	source, err := r.runtimeMigrationVolume(ctx, agent, agentHomeDir)
+	if err != nil || source == "" {
+		return err
+	}
+	pvc, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Get(ctx, source, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("reading the home volume %s to size the disk: %w", source, err)
+	}
+	disk, err := resolveVMDiskGiB(&target.Spec, r.config.AgentTemplateDefaults)
+	if err != nil {
+		return err
+	}
+	size := pvcSize(pvc)
+	if size.Cmp(resource.MustParse(fmt.Sprintf("%dGi", disk))) <= 0 {
+		return nil
+	}
+	target.Spec.StorageSize = size.String()
+	raw, err := json.Marshal(runtimeMigrationTarget{StorageSize: target.Spec.StorageSize})
+	if err != nil {
+		return err
+	}
+	slog.Info("runtime migration: raising the disk to the home volume's size", "agent", agent.Name, "pvc", source, "size", target.Spec.StorageSize)
+	return patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, agent.Name, map[string]*string{annRuntimeMigrationTarget: new(string(raw))})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a volume can hold: its capacity when the backend gave it more than it asked for.
+func pvcSize(pvc *corev1.PersistentVolumeClaim) resource.Quantity {
+	size := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	if capacity, ok := pvc.Status.Capacity[corev1.ResourceStorage]; ok && capacity.Cmp(size) > 0 {
+		return capacity
+	}
+	return size
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: advances the migration by at most one phase, from what the runner said about the machine this reconcile. `vmErr` is why the vm side could not be ensured, shown on the phase that waits for it rather than failing the container's reconcile.
@@ -804,10 +845,7 @@ func (r *AgentReconciler) runtimeMigrationCopySource(ctx context.Context, agent 
 	if pv.Spec.CSI == nil {
 		return source, nil
 	}
-	size := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
-	if capacity, ok := pvc.Status.Capacity[corev1.ResourceStorage]; ok && capacity.Cmp(size) > 0 {
-		size = capacity
-	}
+	size := pvcSize(pvc)
 	clone := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            runtimeMigrationCloneName(agent.Name, attempt),
@@ -1590,7 +1628,7 @@ func migrationAgentIdentity(cfg *config.Config) (int64, int64) {
 	return uid, gid
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the seed sits on the owner's runner claim from the moment the copy starts until the guest has booted from it, beside the disk it is restored into, so the claim needs room for both at once. The seed is never larger than the home volume it was read from, so that volume's requested size bounds it.
+// UNIT_BOUNDARY_DESCRIPTION: the seed sits on the owner's runner claim from the moment the copy starts until the guest has booted from it, beside the disk it is restored into, so the claim needs room for both at once. The seed is never larger than the home volume it was read from, so that volume's capacity bounds it.
 func (r *AgentReconciler) runtimeMigrationSeedBytes(ctx context.Context, agent *apiv1.Agent) int64 {
 	switch runtimeMigrationOf(agent.Annotations, agent.Status).phase {
 	case apiv1.ReasonRuntimeMigrationCopying, apiv1.ReasonRuntimeMigrationBooting:
@@ -1605,6 +1643,6 @@ func (r *AgentReconciler) runtimeMigrationSeedBytes(ctx context.Context, agent *
 	if err != nil {
 		return 0
 	}
-	size := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	size := pvcSize(pvc)
 	return size.Value()
 }
