@@ -6,6 +6,7 @@ import {
   harnessOptions,
   nextPair,
   providerOptions,
+  routesSessionPairs,
 } from "../../modules/sessions/lib/session-pair-options.js";
 
 const CATALOG: HarnessView[] = [
@@ -116,5 +117,32 @@ describe("session pair options", () => {
     expect(
       nextPair(chosen, remembered, ["codex", "claude-code"], fits),
     ).toEqual(remembered);
+  });
+});
+
+describe("routesSessionPairs", () => {
+  // TEST_SCENARIO: A current image declares session settings on every harness that has a harness config, so it routes the session's pair.
+  it("accepts a runtime whose configured harnesses declare session settings", () => {
+    expect(
+      routesSessionPairs([
+        { harnessConfig: true, sessionSettings: ["mode"] },
+        { harnessConfig: true, sessionSettings: ["effort"] },
+      ]),
+    ).toBe(true);
+  });
+
+  // TEST_SCENARIO: An image built before per-session settings has a configured harness without them, and its harness drops the pair's model.
+  it("rejects a runtime with a configured harness but no session settings", () => {
+    expect(
+      routesSessionPairs([
+        { harnessConfig: true, sessionSettings: ["mode"] },
+        { harnessConfig: true },
+      ]),
+    ).toBe(false);
+  });
+
+  // TEST_SCENARIO: A kit image may replace a harness manifest with one that has no harness config; that harness is not a sign of an old image.
+  it("ignores a harness without a harness config", () => {
+    expect(routesSessionPairs([{ harnessConfig: false }])).toBe(true);
   });
 });

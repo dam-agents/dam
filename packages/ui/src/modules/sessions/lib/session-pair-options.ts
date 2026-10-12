@@ -1,3 +1,4 @@
+import type { HarnessCapability } from "agent-runtime-api";
 import {
   harnessFits,
   type HarnessView,
@@ -87,4 +88,13 @@ export function fittingProviders(
 ): (harness: string) => string[] {
   return (harness) =>
     providerOptions(harness, catalog, granted, []).granted.map((p) => p.id);
+}
+
+export function routesSessionPairs(
+  carried: readonly Pick<
+    HarnessCapability,
+    "harnessConfig" | "sessionSettings"
+  >[],
+): boolean {
+  return !carried.some((h) => h.harnessConfig && !h.sessionSettings);
 }

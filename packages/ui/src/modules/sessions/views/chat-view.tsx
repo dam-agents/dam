@@ -125,6 +125,7 @@ import {
   useSidebarPanels,
 } from "../hooks/use-sidebar-panels.js";
 import { draftKey } from "../lib/draft-key.js";
+import { routesSessionPairs } from "../lib/session-pair-options.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
 import { dividerLabel, threadItems, timeProps } from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
@@ -290,8 +291,7 @@ export function ChatView() {
   const { data: harnessStatus } = useHarnessConfigStatus(selectedAgent);
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
   const carried = (selectedAgent && harnessStatus?.harnesses) || [];
-  const pairOutdated =
-    carried.length > 0 && !carried.some((h) => h.sessionSettings);
+  const pairOutdated = carried.length > 0 && !routesSessionPairs(carried);
   const newSessionAgent =
     !sessionId && carried.length > 0 ? selectedAgent : null;
   const pickable =

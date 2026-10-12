@@ -25,6 +25,7 @@ import {
   grantedProviderRefs,
   nextPair,
   type ProviderConnectionRef,
+  routesSessionPairs,
 } from "../lib/session-pair-options.js";
 import { acpSessionsKeys } from "./keys.js";
 
@@ -131,8 +132,8 @@ export function readNextSessionPair(
   const status = queryClient.getQueryData<HarnessConfigStatus>(
     trpc.harnessConfig.status.queryKey({ agentId }),
   );
-  const carried = status?.harnesses?.some((h) => h.sessionSettings)
-    ? status.harnesses.map((h) => h.name)
+  const carried = routesSessionPairs(status?.harnesses ?? [])
+    ? (status?.harnesses?.map((h) => h.name) ?? [])
     : [];
   const chosen = useStore.getState().nextSessionPair[agentId] ?? null;
   const remembered =
