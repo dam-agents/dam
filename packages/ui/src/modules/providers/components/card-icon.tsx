@@ -5,6 +5,7 @@ import {
   AnthropicIcon,
   BobFilledIcon,
   BobIcon,
+  CurveBenderIcon,
   LiteLLMIcon,
   OpenAIIcon,
 } from "@/components/brand-icons";
@@ -29,7 +30,7 @@ const STYLES: Record<
     bg: "bg-icon-blue",
   },
   "curve-bender": {
-    Icon: LiteLLMIcon,
+    Icon: CurveBenderIcon,
     bg: "bg-icon-violet",
   },
   bob: { Icon: BobIcon, bg: "bg-icon-blue" },

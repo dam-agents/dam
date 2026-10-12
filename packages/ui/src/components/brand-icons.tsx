@@ -115,3 +115,27 @@ export function CodexIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function CurveBenderIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="52 135 960 960"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <g opacity="0.6">
+        <path d="M240 735C400 740 600 850 722 984A167 167 0 0 1 915 800C820 705 720 630 600 580L240 720Z" />
+        <path d="M860 842h28v253h-28z" />
+        <path
+          d="M934 906C920 888 898 890 868 890C838 890 815 900 815 922C815 946 840 954 868 962C900 972 925 984 925 1012C925 1036 902 1047 868 1047C838 1047 815 1040 805 1024"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="34"
+        />
+      </g>
+      <path d="M83 469H230C400 462 580 360 722 226A160 160 0 0 0 925 389C770 570 540 705 240 735H83Z" />
+      <circle cx="882" cy="235" r="100" />
+    </svg>
+  );
+}
