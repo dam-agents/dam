@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@trpc/server": "^11.19.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "dev-config": "workspace:*",

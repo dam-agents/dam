@@ -13,7 +13,10 @@ export interface AgentFooter {
   agentId: string;
   label: string;
   sessionId?: string;
+  ambientRound?: boolean;
 }
+
+const AMBIENT_ROUND_PARAM = "via=ambient";
 
 function escapeLinkLabel(name: string): string {
   return name
@@ -36,10 +39,12 @@ export function agentFooterLabel(
 
 export function agentFooterMrkdwn(footer: AgentFooter): string {
   const label = escapeLinkLabel(footer.label);
-  const session = footer.sessionId
-    ? `?s=${encodeURIComponent(footer.sessionId)}`
-    : "";
-  return `<${footer.uiBaseUrl}${PUBLIC_AGENT_PATH}${footer.agentId}${session}|${label || footer.agentId}>`;
+  const params = [
+    ...(footer.sessionId ? [`s=${encodeURIComponent(footer.sessionId)}`] : []),
+    ...(footer.ambientRound ? [AMBIENT_ROUND_PARAM] : []),
+  ];
+  const query = params.length > 0 ? `?${params.join("&")}` : "";
+  return `<${footer.uiBaseUrl}${PUBLIC_AGENT_PATH}${footer.agentId}${query}|${label || footer.agentId}>`;
 }
 
 export function agentContextBlock(footer: AgentFooter): SlackBlock {
@@ -51,6 +56,10 @@ export function agentContextBlock(footer: AgentFooter): SlackBlock {
 
 const FOOTER_RE = new RegExp(
   `<[^>|]*(?:${PUBLIC_AGENT_PATH}|${CHAT_PATH}|${LEGACY_AGENT_PATH})(agent-[A-Za-z0-9]+)(?:[/?][^>|]*)?\\|[^>]*>`,
+);
+
+const FOOTER_AMBIENT_ROUND_RE = new RegExp(
+  `${PUBLIC_AGENT_PATH}agent-[A-Za-z0-9]+\\?(?:[^|>]*&)?${AMBIENT_ROUND_PARAM}(?:[&|>])`,
 );
 
 const FOOTER_SESSION_RE = new RegExp(
@@ -76,6 +85,12 @@ export function parseAgentFooter(
     if (match) return { agentId: match[1] };
   }
   return null;
+}
+
+export function footerMarksAmbientRound(message: SlackMessage): boolean {
+  return footerTexts(message).some((text) =>
+    FOOTER_AMBIENT_ROUND_RE.test(text),
+  );
 }
 
 export function footerSessionId(message: SlackMessage): string | null {

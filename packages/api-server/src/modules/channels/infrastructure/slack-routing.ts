@@ -1,3 +1,6 @@
+import { match } from "ts-pattern";
+import type { SlackSender } from "./slack-sender.js";
+
 export interface RosterEntry {
   teamId: string;
   instanceName: string;
@@ -47,6 +50,28 @@ export function orderAmbientReaders(
     [rest[i], rest[j]] = [rest[j]!, rest[i]!];
   }
   return [...primary, ...rest];
+}
+
+export function senderReaches(
+  sender: SlackSender,
+  binding: { instanceName: string },
+): boolean {
+  return match(sender)
+    .with({ kind: "person" }, () => true)
+    .with({ kind: "agent" }, ({ agentId }) => agentId !== binding.instanceName)
+    .with({ kind: "app" }, () => true)
+    .exhaustive();
+}
+
+export function peerTaggedBy(
+  text: string,
+  author: string,
+  roster: RosterEntry[],
+  botUserId: string | null,
+): RosterEntry | null {
+  if (!botUserId || !text.includes(`<@${botUserId}>`)) return null;
+  const target = routeMention(text, roster)?.target ?? null;
+  return target && target.instanceName !== author ? target : null;
 }
 
 export function matchRosterName(

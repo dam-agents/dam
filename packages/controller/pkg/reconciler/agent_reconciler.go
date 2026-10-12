@@ -10,7 +10,6 @@ import (
 	"time"
 
 	stderrors "errors"
-	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
@@ -875,18 +874,18 @@ func (r *AgentReconciler) applyService(ctx context.Context, desired *corev1.Serv
 }
 
 var certificateGVR = schema.GroupVersionResource{
-	Group:    cmv1.SchemeGroupVersion.Group,
-	Version:  cmv1.SchemeGroupVersion.Version,
+	Group:    "cert-manager.io",
+	Version:  "v1",
 	Resource: "certificates",
 }
 
-func (r *AgentReconciler) applyCertificate(ctx context.Context, desired *cmv1.Certificate) error {
+func (r *AgentReconciler) applyCertificate(ctx context.Context, desired *Certificate) error {
 	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(desired)
 	if err != nil {
 		return fmt.Errorf("encoding Certificate: %w", err)
 	}
 	desiredU := &unstructured.Unstructured{Object: raw}
-	desiredU.SetAPIVersion(cmv1.SchemeGroupVersion.String())
+	desiredU.SetAPIVersion(certificateGVR.GroupVersion().String())
 	desiredU.SetKind("Certificate")
 	return r.applyUnstructured(ctx, certificateGVR, desiredU)
 }

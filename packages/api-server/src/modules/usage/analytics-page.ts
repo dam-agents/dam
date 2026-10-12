@@ -1,3 +1,5 @@
+import { USAGE_REPORT_FRAME } from "api-server-api";
+
 import type { AnalyticsReport } from "./domain/analytics-report.js";
 import { escapeHtml } from "../../core/escape-html.js";
 
@@ -88,6 +90,8 @@ h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
 nav.jump { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
 nav.jump a { font-size: 13px; color: var(--ink-2); text-decoration: none; padding: 5px 10px; border-radius: 6px; }
 nav.jump a:hover, nav.jump a:focus-visible { background: var(--surface); color: var(--ink); outline: none; box-shadow: 0 0 0 1px var(--hair); }
+.dl { font: inherit; font-size: 13px; color: var(--ink-2); background: var(--surface); border: 1px solid var(--hair); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+.dl:hover, .dl:focus-visible { color: var(--ink); outline: none; box-shadow: 0 0 0 1px var(--hair); }
 
 .facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 6px; }
 .chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hair); color: var(--ink-2); display: inline-flex; gap: 6px; align-items: center; }
@@ -185,6 +189,7 @@ const PAGE_BODY = `<header class="top">
       <a href="#use">All use</a>
       <a href="#agents">Agents now</a>
     </nav>
+    <button type="button" class="dl" id="download" title="Save this page as a file that opens anywhere, hover definitions included">Download</button>
   </div>
 </header>
 
@@ -366,6 +371,7 @@ const PAGE_BODY = `<header class="top">
 
 const PAGE_SCRIPT = `(() => {
 const R = JSON.parse(document.getElementById("report-data").textContent);
+const PRISTINE = "<!doctype html>\\n" + document.documentElement.outerHTML;
 const NS = "http://www.w3.org/2000/svg";
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const fmt = (iso) => { const [, m, d] = iso.split("-"); return \`\${Number(d)} \${MONTHS[Number(m) - 1]}\`; };
@@ -761,6 +767,22 @@ renderText();
 let raf, lastW = 0;
 const ro = new ResizeObserver(([e]) => { const w = Math.round(e.contentRect.width); if (w === lastW) return; lastW = w; cancelAnimationFrame(raf); raf = requestAnimationFrame(renderAll); });
 ro.observe(document.querySelector("main"));
+document.getElementById("download").addEventListener("click", () => {
+  const url = URL.createObjectURL(new Blob([PRISTINE], { type: "text/html" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = \`usage-analytics-\${R.today}.html\`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+});
+window.addEventListener("message", (e) => {
+  if (e.source !== window.parent || !e.data || e.data.type !== FRAME.theme) return;
+  if (e.data.value === "dark" || e.data.value === "light") document.documentElement.dataset.theme = e.data.value;
+  else delete document.documentElement.dataset.theme;
+});
+if (window.parent !== window) window.parent.postMessage({ type: FRAME.ready }, "*");
 })();
 `;
 
@@ -795,7 +817,7 @@ function page(body: string, script: string): string {
 export function renderAnalyticsPage(report: AnalyticsReport): string {
   return page(
     PAGE_BODY,
-    `<script type="application/json" id="report-data">${embedJson(report)}</script>\n<script>${PAGE_SCRIPT}</script>`,
+    `<script type="application/json" id="report-data">${embedJson(report)}</script>\n<script>const FRAME = ${embedJson(USAGE_REPORT_FRAME)};\n${PAGE_SCRIPT}</script>`,
   );
 }
 

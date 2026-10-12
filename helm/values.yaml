@@ -706,7 +706,7 @@ clickstack:
     podAnnotations: {}
     # Mirror of otel/opentelemetry-collector-contrib. Registered in
     # .mise/tasks/image/mirror, which CI runs on every main push.
-    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.161.0
+    image: quay.io/dam-agents/opentelemetry-collector-contrib:0.162.0
     # Retention for the otel_* tables, matching the ClickStack bundled collector's
     # default. Only applied when the exporter creates the tables — changing it later
     # requires ALTER TABLE ... MODIFY TTL by hand.

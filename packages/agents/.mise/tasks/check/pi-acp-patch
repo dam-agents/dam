@@ -14,8 +14,10 @@ const patched = read("pi-agent/rootfs/usr/local/share/pi-platform/pi-acp-patch.m
 if (pinned === undefined || pinned !== patched) {
   console.error(
     `pi-acp-patch: the image pins pi-acp ${pinned} but the patch targets ${patched}. ` +
-      "If that release fixes https://github.com/svkozak/pi-acp/issues/152 and https://github.com/svkozak/pi-acp/issues/72, remove the patch " +
-      "(packages/agents/pi-agent/README.md, \"pi-acp concurrent sessions\"); " +
+      "If that release keeps concurrent sessions apart (https://github.com/svkozak/pi-acp/issues/152), " +
+      "can turn off its update notice (https://github.com/svkozak/pi-acp/issues/72) " +
+      "or reports a reply cut at the output limit as max_tokens, drop the edits it makes unnecessary " +
+      "(packages/agents/pi-agent/README.md, \"pi-acp patch\"); " +
       "otherwise confirm its edits still apply and update PATCHED_VERSION.",
   );
   process.exit(1);
