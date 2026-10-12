@@ -447,6 +447,36 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     expect(onB.isOpen()).toBe(true);
   });
 
+  /** TEST_SCENARIO: A connection that never opened a session, such as one
+   * that only makes control calls, keeps its connection when an env change
+   * restarts the default process. A request it had in flight is answered with
+   * the restart reason, so the caller does not wait forever. Its next request
+   * reaches a new process. */
+  it("answers a sessionless request cut off by a restart, and serves the next one", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    client.send(frames.initialize(1));
+    world.harness("claude-code/conn-a").replyTo("initialize", {});
+    const control = (id: number) => ({
+      jsonrpc: "2.0",
+      id,
+      method: "control/getEnv",
+      params: {},
+    });
+    client.send(control(2));
+
+    world.router.refreshEnv({ force: false });
+
+    expect(client.reply(2)).toMatchObject({
+      error: { message: "agent recycled for env change" },
+    });
+    expect(client.isOpen()).toBe(true);
+    client.send(control(3));
+    expect(world.harnessCount("claude-code/conn-a")).toBe(2);
+    expect(
+      world.harness("claude-code/conn-a").received("control/getEnv"),
+    ).toHaveLength(1);
+  });
   /** TEST_SCENARIO: A model that a harness chose from the provider's env is
    * stale once that env changes, so an idle process holding such a model is
    * shut down, and the next session opens a fresh one. */

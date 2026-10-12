@@ -119,8 +119,9 @@ export function startAgentWatch(
       connection = null;
       link.stop();
       if (stopped) return;
-      if (err) opts.log(`agent watch ended: ${String(err)}`);
-      retryTimer = setTimeout(connect, RECONNECT_MS);
+      const onTime = err instanceof Error && err.name === "TimeoutError";
+      if (err && !onTime) opts.log(`agent watch ended: ${String(err)}`);
+      retryTimer = setTimeout(connect, onTime ? 0 : RECONNECT_MS);
       retryTimer.unref();
     });
   };

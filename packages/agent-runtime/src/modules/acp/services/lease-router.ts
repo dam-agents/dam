@@ -118,7 +118,9 @@ const keyOf = (pair: LeasePair): string =>
  * default lease opened before any provider was granted takes the first one
  * granted and restarts on its env, so a client attached early and the next
  * session meet on the same lease. A lease's going away closes a client
- * connection only when that client used the lease. A session's settings
+ * connection only when that client used the lease; for any other client the
+ * router lets go of its channel on that lease, so its next frame reaches the
+ * respawned process instead of the one that went away. A session's settings
  * apply to its next turn: one the harness can take inside a live session goes
  * to the session's own process as an ACP call, and one the harness reads only
  * at start, such as a CLI flag or an env value, is part of the lease key, so
@@ -296,7 +298,13 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       close(code, reason) {
         if (!open) return;
         open = false;
-        if (!v.quiet && v.used) real.close(code, reason);
+        if (v.quiet) return;
+        if (v.used) {
+          real.close(code, reason);
+          return;
+        }
+        if (lease.channels.get(real) === v) lease.channels.delete(real);
+        v.fireClose();
       },
       isOpen: () => open && real.isOpen(),
       onMessage(handler) {
