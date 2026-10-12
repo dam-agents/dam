@@ -1,3 +1,5 @@
+import { USAGE_REPORT_FRAME } from "api-server-api";
+
 import type { AnalyticsReport } from "./domain/analytics-report.js";
 import { escapeHtml } from "../../core/escape-html.js";
 
@@ -776,11 +778,11 @@ document.getElementById("download").addEventListener("click", () => {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 });
 window.addEventListener("message", (e) => {
-  if (e.source !== window.parent || !e.data || e.data.type !== "theme") return;
+  if (e.source !== window.parent || !e.data || e.data.type !== FRAME.theme) return;
   if (e.data.value === "dark" || e.data.value === "light") document.documentElement.dataset.theme = e.data.value;
   else delete document.documentElement.dataset.theme;
 });
-if (window.parent !== window) window.parent.postMessage({ type: "ready" }, "*");
+if (window.parent !== window) window.parent.postMessage({ type: FRAME.ready }, "*");
 })();
 `;
 
@@ -815,7 +817,7 @@ function page(body: string, script: string): string {
 export function renderAnalyticsPage(report: AnalyticsReport): string {
   return page(
     PAGE_BODY,
-    `<script type="application/json" id="report-data">${embedJson(report)}</script>\n<script>${PAGE_SCRIPT}</script>`,
+    `<script type="application/json" id="report-data">${embedJson(report)}</script>\n<script>const FRAME = ${embedJson(USAGE_REPORT_FRAME)};\n${PAGE_SCRIPT}</script>`,
   );
 }
 

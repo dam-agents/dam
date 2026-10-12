@@ -1,5 +1,8 @@
+import {
+  USAGE_REPORT_FRAME,
+  usageReportFrameReadySchema,
+} from "api-server-api";
 import { type ReactNode, useEffect, useRef } from "react";
-import { z } from "zod";
 
 import { PageEmptyState } from "@/components/ui/page-empty-state";
 import { Spinner } from "@/components/ui/spinner";
@@ -11,8 +14,6 @@ import {
   useUsageReportHtml,
 } from "../api/queries.js";
 import { UsageNoAccessView } from "./usage-no-access-view.js";
-
-const frameReadyMessage = z.object({ type: z.literal("ready") });
 
 export function UsageReportView() {
   useEffect(() => {
@@ -48,12 +49,12 @@ function UsageReportFrame() {
   useEffect(() => {
     const postTheme = () =>
       frame.current?.contentWindow?.postMessage(
-        { type: "theme", value: theme },
+        { type: USAGE_REPORT_FRAME.theme, value: theme },
         "*",
       );
     const onMessage = (e: MessageEvent) => {
       if (e.source !== frame.current?.contentWindow) return;
-      if (frameReadyMessage.safeParse(e.data).success) postTheme();
+      if (usageReportFrameReadySchema.safeParse(e.data).success) postTheme();
     };
     window.addEventListener("message", onMessage);
     postTheme();
