@@ -189,7 +189,7 @@ export function DialogBody({
 export function DialogFooter({
   children,
   className,
-  divided,
+  divided = true,
 }: DialogRegionProps & { divided?: boolean }) {
   return (
     <div
@@ -234,7 +234,7 @@ export function DialogActions({
   onSubmit,
   testId,
   className,
-  divided,
+  divided = true,
 }: DialogActionsProps) {
   return (
     <DialogFooter className={className} divided={divided}>

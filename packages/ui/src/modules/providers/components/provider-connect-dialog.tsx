@@ -171,7 +171,7 @@ export function ProviderConnectDialog({
         />
       )}
       {onDisconnect && (
-        <DialogFooter divided className="justify-start">
+        <DialogFooter className="justify-start">
           <Button
             type="button"
             variant="ghost"

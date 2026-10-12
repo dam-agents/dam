@@ -91,7 +91,6 @@ export function PublishSkillModal({
         </DialogBody>
 
         <DialogActions
-          divided
           onCancel={onClose}
           label="Publish"
           pendingLabel="Publishing…"

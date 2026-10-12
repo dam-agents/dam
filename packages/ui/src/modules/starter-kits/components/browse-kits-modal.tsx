@@ -103,7 +103,7 @@ export function BrowseKitsModal({
           </p>
         )}
       </DialogBody>
-      <DialogFooter divided>
+      <DialogFooter>
         <Button variant="outline" onClick={onStartFromScratch}>
           Start from scratch instead
         </Button>

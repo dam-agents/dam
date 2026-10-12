@@ -235,7 +235,7 @@ function KitDetailSkeleton({ onClose }: { onClose: () => void }) {
         <DialogBody>
           <ListSkeleton rows={4} rowHeight={72} />
         </DialogBody>
-        <DialogFooter divided className="justify-between">
+        <DialogFooter className="justify-between">
           <Button variant="ghost" onClick={onClose}>
             <ArrowLeft size={16} /> Back
           </Button>
@@ -547,7 +547,7 @@ function KitDetail({
           )}
         </DialogBody>
 
-        <DialogFooter divided className="justify-between">
+        <DialogFooter className="justify-between">
           <Button variant="ghost" onClick={onClose}>
             <ArrowLeft size={16} /> Back
           </Button>

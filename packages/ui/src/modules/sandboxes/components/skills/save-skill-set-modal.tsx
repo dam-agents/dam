@@ -95,7 +95,6 @@ export function SaveSkillSetModal({
         title="Save as skill set"
         subtitle="Starts from what's on here — unmark anything you don't want in the set."
         onClose={onClose}
-        divided={false}
       />
 
       <form
@@ -196,7 +195,6 @@ export function SaveSkillSetModal({
         </DialogBody>
 
         <DialogActions
-          divided
           onCancel={onClose}
           label="Create"
           pendingLabel="Creating…"

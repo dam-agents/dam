@@ -185,7 +185,6 @@ export function AddSkillSetsModal({
         title="Add skill sets"
         subtitle="Pick any number. Their skills turn on alongside what you already have — overlap is fine, and nothing gets turned off."
         onClose={onClose}
-        divided={false}
       />
 
       <DialogBody flush>
@@ -216,7 +215,6 @@ export function AddSkillSetsModal({
       </DialogBody>
 
       <DialogActions
-        divided
         leading={
           <span className="text-sm text-muted-foreground">
             {picked.size === 0

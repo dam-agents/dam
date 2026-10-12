@@ -124,7 +124,6 @@ export function UploadSkillsTab({
       </DialogBody>
 
       <DialogActions
-        divided
         onCancel={onClose}
         label={submitLabel}
         pendingLabel="Adding…"

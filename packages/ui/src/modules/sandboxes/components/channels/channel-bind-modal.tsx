@@ -82,7 +82,6 @@ export function ChannelBindModal({
   return (
     <Modal onClose={onClose}>
       <DialogHeader
-        divided
         title={
           <span className="flex items-center gap-2">
             <ConnectionIcon iconSlug={messenger} alt="" size={20} />
