@@ -21,19 +21,26 @@ fi
 # which a host the gateway passes through can still be intercepted by.
 ca_dir=/etc/platform/ca
 ca_files=$(find "$ca_dir" -maxdepth 1 -name '*.crt' -size +0 2>/dev/null | sort)
-# Each store records the CA set it last trusted, and is rebuilt only when the
-# set differs: a machine's root and every home outlive a boot, and
-# update-ca-certificates forks per bundled root, seconds on a machine.
+# Each store records what it was last built from, and is rebuilt only when that
+# differs: a machine's root and every home outlive a boot, and
+# update-ca-certificates forks per bundled root, seconds on a machine. A
+# machine's root also outlives a new image, so the system record holds the
+# image's distribution roots as well.
 ca_set() { for f in $ca_files; do echo "$f"; cat "$f"; done; }
+system_inputs() {
+	ca_set
+	cat /etc/ca-certificates.conf
+	find /usr/share/ca-certificates -type f -print0 | sort -z | xargs -0r cat
+} 2>/dev/null
 system_set=/usr/local/share/ca-certificates/.platform-ca-set
 nssdb="$home/.pki/nssdb"
-if [ -n "$ca_files" ] && ! ca_set | cmp -s - "$system_set"; then
+if [ -n "$ca_files" ] && ! system_inputs | cmp -s - "$system_set"; then
 	rm -f /usr/local/share/ca-certificates/platform-*.crt "$system_set"
 	trusted=true
 	for f in $ca_files; do
 		cp "$f" "/usr/local/share/ca-certificates/platform-${f##*/}" || trusted=false
 	done
-	{ $trusted && update-ca-certificates >/dev/null 2>&1 && ca_set >"$system_set"; } ||
+	{ $trusted && update-ca-certificates >/dev/null 2>&1 && system_inputs >"$system_set"; } ||
 		echo "agent-entrypoint: WARNING: could not trust the platform CAs; intercepted hosts may fail TLS" >&2
 fi
 # Chromium trusts its own NSS store in the home, not the system bundle, and

@@ -11,8 +11,13 @@ import { fileURLToPath } from "node:url";
 
 const entrypoint = fileURLToPath(new URL("../../../base/rootfs/usr/local/bin/agent-entrypoint", import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), "entrypoint-ca-trust-"));
-const [ca, share, home, bin, workingDir] = ["ca", "share", "home", "bin", "working-dir"].map((d) => join(dir, d));
-for (const d of [ca, share, home, bin, workingDir]) mkdirSync(d);
+const [ca, share, distro, home, bin, workingDir] = ["ca", "share", "distro", "home", "bin", "working-dir"].map((d) =>
+  join(dir, d),
+);
+for (const d of [ca, share, distro, home, bin, workingDir]) mkdirSync(d);
+const distroConf = join(dir, "ca-certificates.conf");
+writeFileSync(distroConf, "mozilla/root.crt\n");
+writeFileSync(join(distro, "root.crt"), "root one\n");
 const calls = join(dir, "calls");
 writeFileSync(join(bin, "update-ca-certificates"), `#!/bin/sh\necho uca >> ${calls}\n[ ! -e ${dir}/uca-fails ]\n`, { mode: 0o755 });
 writeFileSync(
@@ -26,6 +31,8 @@ writeFileSync(
     .replaceAll('"$(id -u)" = 0', '"$(id -u)" = never')
     .replaceAll("/etc/platform/ca", ca)
     .replaceAll("/usr/local/share/ca-certificates", share)
+    .replaceAll("/usr/share/ca-certificates", distro)
+    .replaceAll("/etc/ca-certificates.conf", distroConf)
     .replaceAll("/app/working-dir", workingDir),
 );
 const pem = (body) => `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----\n`;
@@ -46,6 +53,13 @@ try {
   assert.equal(readFileSync(join(share, "platform-ca.crt"), "utf8"), pem("one") + pem("two"));
 
   // TEST_SCENARIO: a machine keeps its root and its home across a stop, so a boot with the same CA set rebuilds neither store. This is the seconds a machine boot saves.
+  assert.deepEqual(boot(), []);
+
+  // TEST_SCENARIO: a machine keeps its root across a new image, so an image that ships other distribution roots rebuilds the system bundle, while the NSS store, which holds only the platform CAs, stays.
+  writeFileSync(join(distro, "root.crt"), "root two\n");
+  assert.deepEqual(boot(), ["uca"]);
+  writeFileSync(distroConf, "mozilla/root.crt\n!mozilla/old.crt\n");
+  assert.deepEqual(boot(), ["uca"]);
   assert.deepEqual(boot(), []);
 
   // TEST_SCENARIO: a rotated CA rebuilds both stores, and the system store drops the copy of a CA that went away.
