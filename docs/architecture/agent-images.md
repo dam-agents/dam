@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -77,6 +77,8 @@ Layers are packed as plain tars: a local cluster imports them as they are, and C
 On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-entrypoint) trusts every CA under `/etc/platform/ca` in the system bundle — the gateway's MITM CA, and the extra CAs the install names for a TLS-inspecting proxy beyond it — and the agent's environment sets `NODE_USE_SYSTEM_CA`, so Node reads that bundle like every other client, seeds a new home from the working-dir seed, and discards the caches on the home that no tool it ships reads ([persistence](persistence.md#per-agent-pvcs) owns the rule).
 The bundle, and Chromium's store below, record what they were last built from and are rebuilt only when it changes: a machine's root and every home outlive a boot, and `update-ca-certificates` forks several times for each root the distribution ships, which takes seconds on a machine.
 The bundle's record also holds the image's distribution roots, since a machine's root outlives a new image too.
+A store no boot has touched yet, on a container's or a new machine root, is the one the image's build made, so the entrypoint adds only the platform CAs to it, with the same result as `update-ca-certificates` but not its pass over every root.
+Every other rebuild, and any store with an update hook such as Java's keystore, runs `update-ca-certificates` itself.
 On a machine it also points docker's client at the gateway, so containers and builds the agent starts go through it too, and puts the share's runtime wrapper in front of docker's and k3s's runc, so they trust the MITM CA as well.
 A container's root is its own image, which trusts only public roots; when the container starts, the wrapper gives it copies of the image's own bundle with the CA appended, at a path of its own mounted read-only, and points the common CA variables there; a variable the image sets to a bundle is pointed at a copy of that file.
 The image's own files are never mounted over, so a build that regenerates its trust store still works, nothing lands in a built image, and no Dockerfile changes.

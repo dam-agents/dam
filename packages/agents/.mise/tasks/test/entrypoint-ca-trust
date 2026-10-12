@@ -4,22 +4,50 @@
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const entrypoint = fileURLToPath(new URL("../../../base/rootfs/usr/local/bin/agent-entrypoint", import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), "entrypoint-ca-trust-"));
-const [ca, share, distro, home, bin, workingDir] = ["ca", "share", "distro", "home", "bin", "working-dir"].map((d) =>
-  join(dir, d),
-);
-for (const d of [ca, share, distro, home, bin, workingDir]) mkdirSync(d);
+const [ca, share, distro, home, bin, workingDir, certs, hooks] = [
+  "ca",
+  "share",
+  "distro",
+  "home",
+  "bin",
+  "working-dir",
+  "certs",
+  "hooks",
+].map((d) => join(dir, d));
+for (const d of [ca, distro, home, bin, workingDir, hooks]) mkdirSync(d);
 const distroConf = join(dir, "ca-certificates.conf");
 writeFileSync(distroConf, "mozilla/root.crt\n");
 writeFileSync(join(distro, "root.crt"), "root one\n");
+const bundle = join(certs, "ca-certificates.crt");
+const imageBundle = "image roots\n";
+const newRoot = () => {
+  rmSync(share, { recursive: true, force: true });
+  rmSync(certs, { recursive: true, force: true });
+  mkdirSync(share);
+  mkdirSync(certs);
+  writeFileSync(bundle, imageBundle);
+};
+newRoot();
 const calls = join(dir, "calls");
 writeFileSync(join(bin, "update-ca-certificates"), `#!/bin/sh\necho uca >> ${calls}\n[ ! -e ${dir}/uca-fails ]\n`, { mode: 0o755 });
+writeFileSync(join(bin, "openssl"), `#!/bin/sh\necho "openssl $1 $2" >> ${calls}\n[ ! -e ${dir}/rehash-fails ]\n`, {
+  mode: 0o755,
+});
 writeFileSync(
   join(bin, "certutil"),
   `#!/bin/sh\necho "certutil $3" >> ${calls}\n[ "$3" = -N ] && touch "\${2#sql:}/cert9.db"\nexit 0\n`,
@@ -33,6 +61,8 @@ writeFileSync(
     .replaceAll("/usr/local/share/ca-certificates", share)
     .replaceAll("/usr/share/ca-certificates", distro)
     .replaceAll("/etc/ca-certificates.conf", distroConf)
+    .replaceAll("/etc/ca-certificates/update.d", hooks)
+    .replaceAll("/etc/ssl/certs", certs)
     .replaceAll("/app/working-dir", workingDir),
 );
 const pem = (body) => `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----\n`;
@@ -45,17 +75,23 @@ const boot = () => {
   });
   return existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n") : [];
 };
+const rehash = `openssl rehash ${certs}`;
 
 try {
-  // TEST_SCENARIO: the first boot with a CA trusts it in the system bundle and in Chromium's NSS store, one certificate per PEM block.
+  // TEST_SCENARIO: the first boot on a new root adds the CAs to the image's own store without update-ca-certificates: a link per CA, the CAs after the image's bundle with a newline after each, and the hash links. Chromium's NSS store gets one certificate per PEM block.
   writeFileSync(join(ca, "ca.crt"), pem("one") + pem("two"));
-  assert.deepEqual(boot(), ["uca", "certutil -N", "certutil -L", "certutil -A", "certutil -A"]);
+  writeFileSync(join(ca, "extra.crt"), pem("three").trimEnd());
+  assert.deepEqual(boot(), [rehash, "certutil -N", "certutil -L", "certutil -A", "certutil -A", "certutil -A"]);
+  assert.equal(readFileSync(bundle, "utf8"), imageBundle + pem("one") + pem("two") + pem("three"));
+  assert.equal(readlinkSync(join(certs, "platform-ca.pem")), join(share, "platform-ca.crt"));
+  assert.equal(readlinkSync(join(certs, "platform-extra.pem")), join(share, "platform-extra.crt"));
   assert.equal(readFileSync(join(share, "platform-ca.crt"), "utf8"), pem("one") + pem("two"));
+  assert.equal(existsSync(`${bundle}.new`), false);
 
   // TEST_SCENARIO: a machine keeps its root and its home across a stop, so a boot with the same CA set rebuilds neither store. This is the seconds a machine boot saves.
   assert.deepEqual(boot(), []);
 
-  // TEST_SCENARIO: a machine keeps its root across a new image, so an image that ships other distribution roots rebuilds the system bundle, while the NSS store, which holds only the platform CAs, stays.
+  // TEST_SCENARIO: a machine keeps its root across a new image, so an image that ships other distribution roots rebuilds the system bundle with update-ca-certificates, since the store is no longer the image's own, while the NSS store, which holds only the platform CAs, stays.
   writeFileSync(join(distro, "root.crt"), "root two\n");
   assert.deepEqual(boot(), ["uca"]);
   writeFileSync(distroConf, "mozilla/root.crt\n!mozilla/old.crt\n");
@@ -63,8 +99,7 @@ try {
   assert.deepEqual(boot(), []);
 
   // TEST_SCENARIO: a rotated CA rebuilds both stores, and the system store drops the copy of a CA that went away.
-  writeFileSync(join(ca, "ca.crt"), pem("three"));
-  writeFileSync(join(ca, "extra.crt"), pem("four"));
+  writeFileSync(join(ca, "ca.crt"), pem("four"));
   assert.deepEqual(boot(), ["uca", "certutil -L", "certutil -A", "certutil -A"]);
   rmSync(join(ca, "extra.crt"));
   assert.deepEqual(boot(), ["uca", "certutil -L", "certutil -A"]);
@@ -80,6 +115,31 @@ try {
   // TEST_SCENARIO: a new home under an unchanged root, such as a container's volume replaced, gets its NSS store built while the system store stays.
   rmSync(join(home, ".pki"), { recursive: true });
   assert.deepEqual(boot(), ["certutil -N", "certutil -L", "certutil -A"]);
+
+  // TEST_SCENARIO: a failed first-boot add records nothing and leaves no half-built bundle, which update-ca-certificates would append to; the next boot finds the local CA copies and rebuilds with update-ca-certificates.
+  newRoot();
+  writeFileSync(join(dir, "rehash-fails"), "");
+  assert.deepEqual(boot(), [rehash]);
+  assert.equal(readFileSync(bundle, "utf8"), imageBundle);
+  assert.equal(existsSync(`${bundle}.new`), false);
+  rmSync(join(dir, "rehash-fails"));
+  assert.deepEqual(boot(), ["uca"]);
+  assert.deepEqual(boot(), []);
+
+  // TEST_SCENARIO: a root that a boot before the record existed already trusted holds the CA copies and no record, so it rebuilds with update-ca-certificates.
+  newRoot();
+  writeFileSync(join(share, "platform-ca.crt"), pem("old"));
+  assert.deepEqual(boot(), ["uca"]);
+
+  // TEST_SCENARIO: a hook that update-ca-certificates runs, such as Java's keystore, is never skipped.
+  newRoot();
+  writeFileSync(join(hooks, "jks-keystore"), "");
+  assert.deepEqual(boot(), ["uca"]);
+
+  // TEST_SCENARIO: an image without the hook directory still boots and takes the fast path.
+  newRoot();
+  rmSync(hooks, { recursive: true });
+  assert.deepEqual(boot(), [rehash]);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

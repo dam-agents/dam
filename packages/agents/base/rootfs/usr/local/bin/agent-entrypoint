@@ -32,15 +32,37 @@ system_inputs() {
 	cat /etc/ca-certificates.conf
 	find /usr/share/ca-certificates -type f -print0 | sort -z | xargs -0r cat
 } 2>/dev/null
-system_set=/usr/local/share/ca-certificates/.platform-ca-set
+local_cas=/usr/local/share/ca-certificates
+system_set="$local_cas/.platform-ca-set"
+certs=/etc/ssl/certs
+# A store no boot has touched is the one the image's own update-ca-certificates
+# built, so the platform CAs are added the way it would add them alone: a link
+# per CA, the CAs after the bundle's, each ending in a newline, and the hash
+# links. That takes a few forks, not several for each distribution root. A
+# Secret's or ConfigMap's key holds no character it would rewrite in a name.
+add_platform_cas() {
+	for crt in "$local_cas"/platform-*.crt; do
+		name=${crt##*/}
+		ln -sf "$crt" "$certs/${name%.crt}.pem" || return
+	done
+	# update-ca-certificates appends to a leftover .new bundle, so none is left.
+	new="$certs/ca-certificates.crt.new"
+	{ { cat "$certs/ca-certificates.crt" && awk 1 "$local_cas"/platform-*.crt; } >"$new" &&
+		openssl rehash "$certs" && chmod 0644 "$new" && mv -f "$new" "$certs/ca-certificates.crt"; } ||
+		{ rm -f "$new"; return 1; }
+}
 nssdb="$home/.pki/nssdb"
 if [ -n "$ca_files" ] && ! system_inputs | cmp -s - "$system_set"; then
-	rm -f /usr/local/share/ca-certificates/platform-*.crt "$system_set"
+	# A record, a local CA or a hook (which only update-ca-certificates runs)
+	# means the store is no longer the image's own.
+	touched=$(find "$local_cas" /etc/ca-certificates/update.d -mindepth 1 -print -quit 2>/dev/null || true)
+	rm -f "$local_cas"/platform-*.crt "$system_set"
 	trusted=true
 	for f in $ca_files; do
-		cp "$f" "/usr/local/share/ca-certificates/platform-${f##*/}" || trusted=false
+		cp "$f" "$local_cas/platform-${f##*/}" || trusted=false
 	done
-	{ $trusted && update-ca-certificates >/dev/null 2>&1 && system_inputs >"$system_set"; } ||
+	if [ -z "$touched" ]; then update=add_platform_cas; else update=update-ca-certificates; fi
+	{ $trusted && $update >/dev/null 2>&1 && system_inputs >"$system_set"; } ||
 		echo "agent-entrypoint: WARNING: could not trust the platform CAs; intercepted hosts may fail TLS" >&2
 fi
 # Chromium trusts its own NSS store in the home, not the system bundle, and
