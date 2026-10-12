@@ -227,7 +227,7 @@ export function useSectionSummaries(agent: AgentView | null): {
     },
     warnings:
       missingProvider && !configStatus?.harnesses
-        ? { setup: NO_PROVIDER_WARNING }
+        ? { providers: NO_PROVIDER_WARNING }
         : staleModel.stale && !configStatus?.harnesses
           ? { setup: STALE_MODEL_WARNING }
           : {},
