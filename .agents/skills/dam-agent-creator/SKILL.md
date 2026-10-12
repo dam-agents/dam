@@ -4,8 +4,9 @@ description: >
   Design and scaffold a shared service-account agent for the DAM agent platform — an
   autonomous Claude agent with its own definition repository, a `kit.yaml` Starter Kit the
   platform creates it from, onboarding runbook, runtime configuration, instruction trust
-  boundary, versioning with migrations, weekly self-audit, logging, and (when it has
-  scheduled runs) deterministic pre-flight scripts with schedule prechecks. Use whenever
+  boundary, versioning with migrations, weekly self-audit, a health monitor, logging, and
+  (when it has scheduled runs) deterministic pre-flight scripts with schedule prechecks
+  and per-item fan-out. Use whenever
   the user wants a new unattended platform agent (shared, team-owned, scheduled or
   channel-driven) or its definition repository or `kit.yaml`. Built for unattended
   service-tool agents operating on shared systems — not for personal assistants. Runs a
@@ -47,8 +48,24 @@ One operating architecture for every agent:
   computes the worklist, so idle wakeups cost almost nothing and every action is driven by
   an auditable, versioned script. The kit attaches it to each schedule as its
   **Precheck**, so an idle occurrence is declined before any model wakes.
+- **One fire, one pass**: the Precheck keeps the worklist in a file and the run reads it
+  instead of recomputing it; when one tick finds several items, the run keeps the first
+  and **fans the rest out** into one-time sessions of their own, each pinned to the
+  configured model and titled by a script.
+- **A health monitor** between audits: a frequent gated tick over local files that
+  alerts on model or integration outages, classifier refusals, a silent heartbeat, a
+  failing backup and harness drift, with a claim-then-ack ledger so no alert is lost or
+  repeated; optionally delivered by the script itself with no model in the loop.
 - **Weekly self-audit**: deterministic health checks plus judgment checks, reported
-  traffic-light style. Recommended for every agent, even purely reactive ones.
+  traffic-light style against a recorded trend history. Recommended for every agent,
+  even purely reactive ones.
+- **A harness adapter** where the harness has hooks: logging hooks, the auto-mode
+  classifier rules for the agent's documented writes, a deny list of unused tools (tool
+  definitions dominate every request) and a lean subagent type, all installed per
+  instance and checked for drift.
+- **Anonymous writes to the definition repo**: a tracking issue there is opt-in, filed
+  only through a script that scans the draft for instance data, and refused on every
+  other path.
 - **Versioned definition**: semver `VERSION` + `CHANGELOG.md` of idempotent upgrade steps
   (migration instructions, not a change log), so instances detect drift and migrate
   deliberately; offline tests + CI check every definition PR.
@@ -87,7 +104,18 @@ plus `references/preflight.md` if any run is scheduled and `references/communica
 if the agent talks to people or listens on channels. Present one proposal:
 
 - **Run types**: schedule, entry command, what each does. Recommend the weekly audit even
-  for reactive agents; it may be the only scheduled run.
+  for reactive agents; it may be the only scheduled run. With any scheduled run, add the
+  monitor (`references/architecture.md` → Monitor) and the fan-out decision
+  (`references/architecture.md` → Fan-out: which items run in parallel, which state they
+  share). Cadence defaults to around the clock (`references/preflight.md` → Cadence).
+- **Model and titles**: the `run_model` key every scheduled session is pinned to, and
+  each run's `sessionTitle` (`references/platform-dam.md` → Scheduling).
+- **Harness adapter** (when the harness has hooks): the hooks, the auto-mode rules for
+  the agent's documented writes, the tool deny list, the lean subagent type
+  (`references/architecture.md` → Harness adapters).
+- **Definition-repo writes**: whether the agent may file anonymous tracking issues on its
+  own repo, and the scan that guards them (`references/architecture.md` → Writes to the
+  definition repo).
 - **Kit surface**: what `kit.yaml` declares and onboarding therefore never asks —
   connection requirements (`required` vs suggested), schedules (which ship suggested-off,
   which carry a Precheck), channels, size, fixed env — and which values stay in the config
@@ -128,7 +156,9 @@ contract for an agent with no scheduled runs).
 | `templates/docs/persistence.md.template` | `docs/persistence.md` | State backup + definition evolution + version check. |
 | `templates/verify-onboarding.sh.template` | `scripts/verify-onboarding.sh` | Structure verification by mode: `--config` mid-onboarding, bare at the end, `--live` for reachability; every `FAIL` carries its `fix:` (Phase 4). |
 | `templates/preflight.sh.template` | `scripts/preflight.sh` | Only with scheduled runs (Phase 4). |
-| `templates/precheck.sh.template` | `scripts/precheck.sh` | With the pre-flight: adapter from its JSON to the Precheck's exit code. Copied verbatim; no domain logic. |
+| `templates/precheck.sh.template` | `scripts/precheck.sh` | With the pre-flight: the schedule gate — one pass per fire under a budget, the worklist in a file, the exit code. Copied verbatim; no domain logic. Runs `monitor.sh` for the monitor. |
+| `templates/monitor.sh.template` | `scripts/monitor.sh` | With scheduled runs: the monitor's detector — conditions from local files, the claim/ack ledger (Phase 4). |
+| `templates/docs/monitor.md.template` | `docs/monitor.md` | With the monitor: the alert catalogue and the one-message run. |
 | `templates/config-lib.sh.template` | `scripts/lib/config.sh` | The one `work/CONFIG.md` reader; every config-reading script sources it, none re-implements it. |
 | `templates/toolpath.sh.template` | `scripts/lib/toolpath.sh` | Only when a script execs a shimmed CLI in a loop: the pod's `mise` shim tax (Phase 4). |
 | `templates/work-backup.sh.template` | `scripts/work-backup.sh` | Only with git-backed state backup: tmpfs-clone persist/restore. |
@@ -154,9 +184,28 @@ re-include from `.gitignore` and the `LICENSE` path from the `git add` allowlist
   toward external systems, local writes only for bookkeeping and logs, one JSON object on
   stdout, `nothing_to_do: true` short-circuits the run.
 - `scripts/precheck.sh` — with every pre-flight, copied verbatim: it holds the one
-  translation from pre-flight JSON to the Precheck exit code and the fail-open rules that
-  keep a broken check from silencing a schedule (`references/preflight.md` → **The
-  Precheck**). Reference it from each schedule's `precheck:` in `kit.yaml`.
+  translation from a pass's JSON to the Precheck exit code, the budget, the worklist file
+  and the fail-open rules that keep a broken check from silencing a schedule
+  (`references/preflight.md` → **The Precheck**). Reference it from each schedule's
+  `precheck:` in `kit.yaml`.
+- `scripts/monitor.sh` (scheduled runs) — the generic conditions ship in the template;
+  add the domain ones (a stuck pipeline, stalls, per-item anomalies) as `cand` blocks with
+  a stable id and a clear (`references/architecture.md` → Monitor). Direct delivery and
+  the technical history are optional additions (`scripts/monitor-direct.sh`,
+  `scripts/health.sh`, `scripts/lib/mcp.sh`), written from the reference when designed.
+- `scripts/dispatch.sh` (fan-out) — `plan <worklist>` cuts one unit worklist per item
+  after the first and prints the `schedule_once` calls; `rest <worklist> <ids>` writes
+  the run's own worklist without them and prints its title. Titles from ids and work
+  kinds alone (`references/architecture.md` → Fan-out).
+- `scripts/harness/<harness>/` (a harness with hooks) — `install.sh` (idempotent,
+  `--check`), the hook scripts, `denied-tools.txt`, `agents/<lean-subagent>.md`
+  (`references/architecture.md` → Harness adapters); the tests that keep the deny list
+  honest and the allow rules complete.
+- `scripts/definition-issue.sh` (when the agent files issues on its definition repo) —
+  `file <title> <body-file>` and `check <body-file>`: the switch, the scan against the
+  instance's values, shapes and foreign terms, the title dedup, the create
+  (`references/architecture.md` → Writes to the definition repo); plus the `PreToolUse`
+  guard in the harness adapter.
 - `scripts/verify-onboarding.sh` — always. One check per file, key and table ONBOARDING
   creates, one `--live` probe per integration, one read-only pre-flight per scheduled
   mode. Detect-never-repair; judges *shape*, never data; an unknown config bullet FAILs
@@ -187,7 +236,9 @@ bash scripts/validate-definition.sh --reference code-guardian <path-to-generated
 It checks required files, allowlist `.gitignore` shape, semver/changelog agreement,
 mandatory CLAUDE.md sections, leftover placeholders or `TODO(creator)`, `bash -n` on all
 scripts, dead relative links, the `kit.yaml` invariants a mis-declared kit would otherwise
-fail at only silently (dropped from the catalog, or stamped onboarded at create), and, with
+fail at only silently (dropped from the catalog, or stamped onboarded at create), that
+every kit schedule is named in ONBOARDING and its task text equals an ONBOARDING
+blockquote verbatim (the runbook is the source of truth, the kit its copy), and, with
 `--reference`, any copied mention of the reference implementation this skill came from.
 Then the judgment pass it can't do: no instance
 values hard-coded (they belong in `work/CONFIG.md`), no concept stated twice, CLAUDE.md
@@ -207,7 +258,8 @@ Commit (initial commit, version `1.0.0`) and give the operator this checklist:
 1. Create the GitHub repo (or chosen host) and push. A `self: true` kit's repo must be
    **public**: catalogs are read anonymously (`references/kit.md` → Constraints).
 2. Create/choose the **service account** the agent acts as, with minimal scopes; never a
-   personal account.
+   personal account. A push under `.github/workflows/` of the definition repo needs the
+   `workflow` scope; without it a CI change in an agent-made PR is an operator-only step.
 3. Optionally create an empty state-backup repo (git-backed state only).
 4. **List the kit in a catalog**: one entry in the catalog repo's `catalog.yaml` pointing
    at the repo. The refresh job picks it up without a redeploy; it appears in **Starter
@@ -256,5 +308,9 @@ line.
   violated silently (a state-file shape, a file layout, a resource two concurrent runs
   could share, a "never do X" whose violation still produces output) gets a deterministic
   home alongside its prose: a validator check, pre-flight gate, audit check or test.
+- **One fire, one gate pass.** A gated run consumes the worklist file its prompt names
+  and never recomputes it; a pass's bookkeeping is one-shot.
+- **The definition repo learns nothing about the instance.** Any write there is
+  anonymous and generic, opt-in, and goes through the scanning script or not at all.
 - **English definitions**, placeholder examples only (`acme/widgets`, `alice`,
   `U0123ABCD`).

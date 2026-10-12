@@ -89,9 +89,14 @@ The definition is project-agnostic: everything specific to one deployment lives 
   `mcp__platform-outbound__*` tools for schedules and channel messages.
 - **Identity:** the agent acts as the account behind its token — use a **dedicated
   machine/bot account**, never a personal one.
-  <!-- TODO(creator): name the required scopes/permissions per integration, minimal set. -->
+  <!-- TODO(creator): name the required scopes/permissions per integration, minimal set.
+       On the definition repo: a push under `.github/workflows/` needs the `workflow`
+       scope; without it a CI change is an operator-only step of the PR. -->
 - **External surfaces:** <!-- TODO(creator): list every surface the agent publishes to
-     and its visibility caveats (e.g. "unlisted ≠ private"), or state "none". -->
+     and its visibility caveats (e.g. "unlisted ≠ private"; a published page in the
+     Artifact Library is public to anyone holding its link), or state "none". The
+     definition repo itself is one when `definition_issues` is enabled: anonymous
+     tracking issues, nothing of the instance. -->
 
 ## Persistence
 

@@ -15,7 +15,7 @@ and pastes the ONBOARDING.md link; with it they pick the kit from the catalog.
 | Definition checked out at `$HOME` | ONBOARDING derives the repo from the runbook URL, then init + fetch + reset | the platform seeds it at the commit the kit was read at, before the first turn |
 | Required connections | the operator reads README and grants them | `connections:` — apply refuses before anything is created when one is missing |
 | Fixed env vars | the operator sets them on the agent | `env:` |
-| Schedules | ONBOARDING creates each one over MCP | `schedules:` — apply creates them; suggested ones arrive disabled |
+| Schedules | ONBOARDING creates each one over MCP | `schedules:` — apply creates them; suggested ones arrive disabled; ONBOARDING still re-registers each with its `model` and `sessionTitle` |
 | Size, hibernation | install defaults | `resources:`, `hibernationTimeoutMin:` |
 | First turn | the operator pastes the ONBOARDING.md link | the platform composes the briefing and opens the session itself |
 | Idle scheduled fire | a turn wakes, runs the pre-flight, reads `nothing_to_do`, ends | the `precheck` declines and **no model is woken at all** |
@@ -128,8 +128,21 @@ schedules:
 - `enabled: false` makes a schedule **suggested**: created off, the operator turns it on.
 - `precheck` declares the check the repo carries (`references/preflight.md` → **The
   Precheck**). Only a kit that seeds its definition may declare one: the command must exist
-  in the checkout by the first fire.
+  in the checkout by the first fire. Every scheduled run gets one except the audit, whose
+  worklist always carries work; the monitor's is `precheck.sh monitor`.
 - The apply form shows each precheck with its schedule, to keep, replace or drop.
+- **The kit schema has no `model` or `sessionTitle`** (`references/platform-dam.md` →
+  Scheduling), so a kit-created schedule starts on the platform's default model and
+  untitled. ONBOARDING's reconcile compares every designed schedule on `name`, cron,
+  `task`, `precheck`, `model` and `sessionTitle`; a differing one is created corrected and
+  the old id deleted (`create_schedule` never updates). Declare the fields in the kit and
+  drop the reconcile step for them once the schema carries them.
+- A cron is the platform's default cadence; an instance's window or timezone is its own
+  (`work/CONFIG.md`), registered by ONBOARDING. Default to 24/7 at the active interval
+  (`references/preflight.md` → Cadence).
+- The `description` is the catalog's promise: it names every run and every outward
+  surface the kit creates (a monitor, a dashboard, a channel), so a new run or surface
+  updates it in the same commit.
 
 ## The rest of the fields
 

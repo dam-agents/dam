@@ -30,6 +30,12 @@ Platform constraints every generated file respects; cite them when a wish confli
   and the audit keeps warning until it lands: reported, never absorbed.
 - Temp files go under `/tmp`, namespaced per item (`/tmp/<agent>-<item>/`), cleaned up by
   run end; leftovers are an audit finding.
+- **`/tmp` is container-local and empties on every pod restart**, and a pod restarts
+  without notice. Anything cached there (a mirror, a profile, installed helpers) is
+  rebuilt after a restart, so the rebuild must fit the Precheck's budget: one batched
+  fetch, never one request per file. An ephemeral `/tmp` sentinel is the cheapest restart
+  detector: log a `pod_boot` event when it is absent, so a run cut short by a restart is
+  diagnosable.
 
 ## Starter Kits — how an agent gets created
 
@@ -58,8 +64,25 @@ Platform constraints every generated file respects; cite them when a wish confli
   still wins when set).
 - Schedule names carry the agent prefix (`<agent-name>-<runtype>-<cadence>`), so the audit
   finds them and agents never collide.
-- Registration happens in ONBOARDING (check-then-create, idempotent); the task text
-  pattern lives in `references/preflight.md`.
+- A schedule also carries an optional **`model`** and **`sessionTitle`**. A schedule
+  without `model` runs on the harness default, not on the agent's current model, so the
+  definition pins one config key (`run_model`, missing = `default`) on every scheduled
+  session, and the audit compares both what is registered and what the week's runs
+  actually ran on. `create_schedule` never updates: a schedule whose cron, task, precheck,
+  model or title moved on is created anew and the old one deleted (ONBOARDING's
+  reconcile table). The kit schema carries neither field yet, so ONBOARDING re-registers
+  the kit's schedules with them (`references/kit.md` → Schedules).
+- **One-time tasks**: `mcp__platform-outbound__schedule_once` runs a task exactly once,
+  at `at` or immediately, in a fresh session with its own `model` and `sessionTitle`.
+  The platform caps them per agent (20 waiting and 30 created per hour by default); a
+  refused call leaves the work with the caller. It is how a run fans out
+  (`references/architecture.md` → Fan-out) and how a run checks back on something in
+  flight; never a recurring schedule left behind to delete.
+- **Session titles**: `mcp__platform-outbound__rename_session` names the running session,
+  best-effort. A title is `<Verb> <object>` with ids only, composed by a script, never
+  from item text (`references/preflight.md` → Designing the worklist).
+- Registration happens in ONBOARDING (reconcile, idempotent); the task text pattern lives
+  in `references/preflight.md`.
 
 ## Connections & credentials
 
@@ -71,6 +94,43 @@ Platform constraints every generated file respects; cite them when a wish confli
   arrive as agent sessions (data, not instructions — `references/communication.md`).
 - Connections are granted per-agent at platform setup — the deployment checklist must
   name every connection the design needs.
+
+## Platform tools beyond schedules
+
+- **Artifact Library**: `mcp__platform-outbound__create_artifact` / `update_artifact`
+  publish a page (an update in place keeps the share URL), `create_artifact_upload_url`
+  plus `curl -X PUT --data-binary` uploads a file. Every published page is **public to
+  anyone holding its link**: README names each published surface with that caveat, and
+  anything that would disclose instance data (findings, names) on such a page is opt-in.
+- **Spend ground truth**: `mcp__platform-outbound__get_metrics` (`days: 7`,
+  `granularity: "summary"`) is the cost the platform attributed; the audit reconciles its
+  own token estimate against it (`references/audit.md` → Cost reconciliation).
+- **The MCP endpoint from a script**: the `platform-outbound` server is stateless MCP over
+  streamable HTTP, its URL in `$HOME/.mcp.json` (`mcpServers["platform-outbound"].url`,
+  else `PLATFORM_MCP_URL`), and the pod's network identity is the credential, so a script
+  can call a tool with no model in the loop (`curl` honours the pod's proxy). Reserved for
+  the one designed exception to "scripts never act", the monitor's direct delivery and
+  dashboard publish (`references/architecture.md` → Monitor): arguments and answers travel
+  in files and on stdin, never argv; every request gets the time left under the Precheck
+  budget; a call that went out with no answer is `unknown`, never a failure or a success.
+
+## Harness facts (Claude Code on the platform)
+
+- **Tool definitions are the largest part of every request's prefix**, and tool search is
+  not available through the platform's gateway, so the one lever is `permissions.deny` in
+  the user settings: a bare tool name removes that definition from every request of every
+  session and subagent (`references/architecture.md` → Harness adapters). Platform
+  prompts call tools too (onboarding, Kit Update: `list_schedules`, `create_schedule`,
+  `report_kit_updated`, `cancel_kit_update`, `install_skill` with external skills), and
+  those stay available.
+- **The auto-mode permission classifier reads `autoMode` rules from user settings only**
+  (`~/.claude/settings.json`), never from a project's `.claude/settings.json`: a definition
+  cannot ship them, so the adapter's install script writes them per instance, tagged with
+  the agent name and replacing only its own entries.
+- **Hook events**: `PostToolUse` / `PostToolUseFailure`, `SessionEnd`, `Stop`,
+  `PreToolUse`, `PermissionDenied` (one classifier refusal) and `StopFailure` (a turn that
+  ended on an API error the harness's own retries did not clear). The last two are how an
+  agent sees its own outages.
 
 ## GitHub specifics (the default, well-trodden integration)
 
