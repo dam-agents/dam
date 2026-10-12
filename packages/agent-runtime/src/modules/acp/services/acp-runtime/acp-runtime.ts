@@ -188,6 +188,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   let sessionCloseSupported = true;
   let sessionResumeSupported = false;
   let harnessSteers = false;
+  const openToolCalls = new Map<string, Set<string>>();
   let sessionForkSupported = false;
   const ownRequests = new Map<number, (frame: unknown) => void>();
   let initializeAnswer: { result?: unknown; error?: unknown } | null = null;
@@ -250,6 +251,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       }
     },
     canSteer: () => harnessSteers,
+    toolsIdle: (sessionId) => !(openToolCalls.get(sessionId)?.size ?? 0),
     steer: (entry) => steerIntoTurn(entry),
     onSteered: (
       { sessionId, typed, channel, promptId, outboundId, originalId, queuedAt },
@@ -576,6 +578,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     promptScheduler.clear();
     autonomousTurns.clear();
     runTextBuffers.clear();
+    openToolCalls.clear();
     turnModels.clear();
     harnessColdSessions.clear();
     rehydratingSessions.clear();
@@ -733,6 +736,21 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         result: { stopReason: stopReason ?? "end_turn" },
       }),
     );
+  }
+
+  function trackToolCall(sessionId: string, frame: unknown): void {
+    const call = toolCallStateOf(frame);
+    if (call === null) return;
+    const open = openToolCalls.get(sessionId) ?? new Set<string>();
+    if (!call.settled) {
+      open.add(call.toolCallId);
+      openToolCalls.set(sessionId, open);
+      return;
+    }
+    if (!open.delete(call.toolCallId)) return;
+    if (open.size > 0) return;
+    openToolCalls.delete(sessionId);
+    promptScheduler.onToolsIdle(sessionId);
   }
 
   function requestFromHarness(
@@ -1030,6 +1048,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateLoadIds.delete(sessionId);
     autonomousTurns.end(sessionId);
     transcript.forget(sessionId);
+    openToolCalls.delete(sessionId);
     supersededEchoes.delete(sessionId);
     promptScheduler.forget(sessionId);
     runTextBuffers.delete(sessionId);
@@ -1183,6 +1202,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           }
           const { turnEnded, promptId, turnId, runPrompt, steered } =
             promptScheduler.onPromptResponse(sid, outboundId);
+          if (turnEnded) openToolCalls.delete(sid);
           for (const follower of steered)
             answerSteered(follower, extractStopReason(frame));
           if (
@@ -1262,6 +1282,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           promptTurn ?? autonomousTurns.turnFor(sessionId, update),
         );
         if (promptTurn === null) autonomousTurns.afterFrame(sessionId, update);
+        else trackToolCall(sessionId, frame);
       }
     } else {
       broadcastToAll(line);
@@ -1798,6 +1819,21 @@ function hasSessionCapability(
   const session = caps.sessionCapabilities;
   if (!isNonNullObject(session)) return false;
   return isNonNullObject(session[name]);
+}
+
+function toolCallStateOf(
+  frame: unknown,
+): { toolCallId: string; settled: boolean } | null {
+  if (!isNonNullObject(frame) || frame.method !== "session/update") return null;
+  const params = frame.params;
+  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return null;
+  const { sessionUpdate, toolCallId, status } = params.update;
+  if (sessionUpdate !== "tool_call" && sessionUpdate !== "tool_call_update")
+    return null;
+  if (typeof toolCallId !== "string") return null;
+  const settled = status === "completed" || status === "failed";
+  if (sessionUpdate === "tool_call_update" && !settled) return null;
+  return { toolCallId, settled };
 }
 
 function steerOutcomeOf(frame: unknown): SteerOutcome {

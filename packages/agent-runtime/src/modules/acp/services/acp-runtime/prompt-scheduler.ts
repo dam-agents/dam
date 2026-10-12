@@ -13,6 +13,7 @@ import type { ClientChannel } from "../../infrastructure/client-channel.js";
 
 const PROMPT_QUEUE_CAP = 32;
 const DEFAULT_QUEUE_PARK_MS = 90 * 1000;
+const DEFAULT_STEER_WAIT_MS = 60 * 1000;
 
 export type PromptFate = "started" | "queued" | "steering" | "refused";
 
@@ -35,6 +36,7 @@ export interface PromptSubmission {
   blocks?: PromptBlock[];
   editable?: boolean;
   steerable?: boolean;
+  steerRefused?: boolean;
   queuedAt?: string;
 }
 
@@ -70,6 +72,7 @@ export interface PromptScheduler {
     ) => Pick<PromptSubmission, "source" | "frame" | "typed" | "blocks">,
   ): boolean;
   remove(sessionId: string, promptId: string): PromptSubmission | null;
+  onToolsIdle(sessionId: string): void;
   forget(sessionId: string): void;
   clear(): void;
 }
@@ -93,7 +96,9 @@ export interface PromptSchedulerDeps {
     sessionId: string,
     turn: { promptId: string | null; runPrompt: boolean },
   ) => void;
+  toolsIdle?: (sessionId: string) => boolean;
   queueParkMs?: number;
+  steerWaitMs?: number;
 }
 
 /**
@@ -108,7 +113,10 @@ export interface PromptSchedulerDeps {
  * A steerable prompt that arrives while a turn runs and nothing waits ahead of
  * it is steered into that turn instead of queued, when the harness steers; so
  * is the head of the queue, one at a time, whenever a turn is running and no
- * steer is out, so a queue drains into the turn in order. The steer is a round
+ * steer is out, so a queue drains into the turn in order. A steer waits for
+ * the turn's open tool calls to finish, so the agent reads it next to their
+ * results; until then the prompt is an ordinary queued one, editable, and a
+ * prompt that has waited steerWaitMs is steered regardless. The steer is a round
  * trip: while it is out, the queue holds, so a turn ending in that window
  * cannot start a later prompt ahead of it. Injected, the prompt is part of the
  * running turn and its sender is answered when that turn ends; refused, it
@@ -157,10 +165,25 @@ export function createPromptScheduler(
     }
   >();
   const steering = new Map<string, PromptSubmission>();
+  const steerTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const queues = new Map<string, PromptSubmission[]>();
   const pendingSettings = new Map<string, PromptSubmission[]>();
   const parkTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const queueParkMs = deps.queueParkMs ?? DEFAULT_QUEUE_PARK_MS;
+  const steerWaitMs = deps.steerWaitMs ?? DEFAULT_STEER_WAIT_MS;
+
+  function clearSteerTimer(sessionId: string): void {
+    const timer = steerTimers.get(sessionId);
+    if (timer !== undefined) clearTimeout(timer);
+    steerTimers.delete(sessionId);
+  }
+
+  function waitedOut(entry: PromptSubmission): boolean {
+    return (
+      entry.queuedAt !== undefined &&
+      Date.now() - Date.parse(entry.queuedAt) >= steerWaitMs
+    );
+  }
 
   function clearParkTimer(sessionId: string): void {
     const timer = parkTimers.get(sessionId);
@@ -201,6 +224,7 @@ export function createPromptScheduler(
   }
 
   function dropQueue(sessionId: string, cause: QueueDropCause): void {
+    clearSteerTimer(sessionId);
     refuseSettings(
       sessionId,
       `the setting was not applied: the session's queue was dropped (${cause})`,
@@ -254,6 +278,8 @@ export function createPromptScheduler(
     const sessionId = entry.sessionId;
     return (
       entry.steerable === true &&
+      entry.steerRefused !== true &&
+      ((deps.toolsIdle?.(sessionId) ?? true) || waitedOut(entry)) &&
       deps.steer !== undefined &&
       activeTurns.has(sessionId) &&
       !steering.has(sessionId) &&
@@ -273,13 +299,31 @@ export function createPromptScheduler(
   }
 
   function steerFromQueue(sessionId: string): void {
+    clearSteerTimer(sessionId);
     const queue = queues.get(sessionId);
     const head = queue?.[0];
-    if (queue === undefined || head === undefined || !canSteerNow(head)) return;
-    queue.shift();
-    if (queue.length === 0) queues.delete(sessionId);
-    deps.onQueueChanged?.(sessionId);
-    beginSteer(head);
+    if (queue === undefined || head === undefined) return;
+    if (canSteerNow(head)) {
+      queue.shift();
+      if (queue.length === 0) queues.delete(sessionId);
+      deps.onQueueChanged?.(sessionId);
+      beginSteer(head);
+      return;
+    }
+    if (
+      head.steerable !== true ||
+      head.steerRefused === true ||
+      head.queuedAt === undefined ||
+      !activeTurns.has(sessionId) ||
+      !(deps.canSteer?.(sessionId) ?? false)
+    )
+      return;
+    const wait = steerWaitMs - (Date.now() - Date.parse(head.queuedAt));
+    if (wait <= 0) return;
+    steerTimers.set(
+      sessionId,
+      setTimeout(() => steerFromQueue(sessionId), wait),
+    );
   }
 
   function settleSteer(entry: PromptSubmission, outcome: SteerOutcome): void {
@@ -287,6 +331,7 @@ export function createPromptScheduler(
     if (steering.get(sessionId) !== entry) return;
     steering.delete(sessionId);
     if (outcome === "refused") {
+      entry.steerRefused = true;
       enqueue(entry, true);
       notifyAccepted(entry, true);
       maybeStartNext(sessionId);
@@ -380,6 +425,8 @@ export function createPromptScheduler(
         }
         enqueue(submission, false);
         notifyAccepted(submission, true);
+        if (queues.get(sessionId)?.[0] === submission)
+          steerFromQueue(sessionId);
         return "queued";
       }
       notifyAccepted(submission, false);
@@ -417,6 +464,7 @@ export function createPromptScheduler(
         };
       }
       activeTurns.delete(sessionId);
+      clearSteerTimer(sessionId);
       deps.onTurnEnded?.(sessionId);
       if (queues.get(sessionId)?.length) maybeStartNext(sessionId);
       else queues.delete(sessionId);
@@ -473,6 +521,7 @@ export function createPromptScheduler(
     },
 
     refuseQueue(sessionId, message) {
+      clearSteerTimer(sessionId);
       refuseSettings(sessionId, message);
       const queue = queues.get(sessionId);
       if (queue === undefined) return;
@@ -505,7 +554,12 @@ export function createPromptScheduler(
         clearParkTimer(sessionId);
       }
       deps.onQueueChanged?.(sessionId);
+      if (index === 0) steerFromQueue(sessionId);
       return entry ?? null;
+    },
+
+    onToolsIdle(sessionId) {
+      steerFromQueue(sessionId);
     },
 
     snapshot(sessionId) {
@@ -544,6 +598,8 @@ export function createPromptScheduler(
     clear() {
       for (const timer of parkTimers.values()) clearTimeout(timer);
       parkTimers.clear();
+      for (const timer of steerTimers.values()) clearTimeout(timer);
+      steerTimers.clear();
       for (const sessionId of [...pendingSettings.keys()])
         refuseSettings(
           sessionId,

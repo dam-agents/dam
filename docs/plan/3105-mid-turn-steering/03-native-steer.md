@@ -67,3 +67,11 @@ On a Claude Code agent: send "list every file under /etc one tool call at a time
 send "stop at 5 files and summarize". The message shows as sent at once, the agent reacts within
 the same turn, and the session shows one assistant reply. Reload: the steered message sits inside
 that turn. Repeat with a pasted screenshot: the agent describes it.
+
+## Follow-up after review (operator)
+
+- A steer waits until the turn has no open tool call (tracked from the agent's own tool-call
+  frames), at most 60 s; meanwhile the prompt is an ordinary queued one, editable and removable.
+  After 60 s it is steered regardless. This keeps the agent from being cut off mid-tool, which
+  the Claude Code adapter's immediate delivery does.
+- Stop is the way to cut in at once; Esc in the message box stops too.

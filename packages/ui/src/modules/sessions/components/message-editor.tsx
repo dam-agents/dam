@@ -39,11 +39,10 @@ export function MessageEditor({
         }}
       />
       <div className="flex gap-2">
-        <Button variant="ghost" size="xs" disabled={pending} onClick={onCancel}>
+        <Button variant="ghost" disabled={pending} onClick={onCancel}>
           Cancel
         </Button>
         <Button
-          size="xs"
           variant={saveVariant}
           disabled={pending || !draft.trim()}
           onClick={save}

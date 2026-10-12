@@ -1,4 +1,4 @@
-import { Edit, TrashCan } from "@carbon/icons-react";
+import { Edit, Time, TrashCan } from "@carbon/icons-react";
 import type { PromptBlock, QueuedPrompt } from "api-server-api";
 import { useState } from "react";
 
@@ -114,37 +114,49 @@ function QueuedPromptItem({
   }
 
   return (
-    <div className="flex flex-col items-end gap-1">
-      <ChatMessage
-        message={queuedMessage(item, index)}
-        isLast={false}
-        hasPendingPermission={false}
-        onRetry={noop}
-        onFileClick={onFileClick}
-        onDelete={noop}
-      />
-      {target !== null && (
-        <div className="flex gap-1">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Edit queued message"
-            disabled={pending}
-            onClick={() => setDraft(textOf(item.blocks))}
-          >
-            <Edit size={14} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Delete queued message"
-            disabled={pending}
-            onClick={remove}
-          >
-            <TrashCan size={14} />
-          </Button>
-        </div>
-      )}
+    <div className="group relative flex flex-col items-end gap-1">
+      <div className="w-full opacity-60 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        <ChatMessage
+          message={queuedMessage(item, index)}
+          isLast={false}
+          hasPendingPermission={false}
+          onRetry={noop}
+          onFileClick={onFileClick}
+          onDelete={noop}
+        />
+      </div>
+      <div className="flex items-center gap-1 transition-opacity md:absolute md:right-0 md:top-full md:z-10 md:pt-0.5 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+        <span
+          data-testid="prompt-queued-indicator"
+          className="inline-flex items-center gap-1.5 px-2 text-xs text-muted-foreground"
+        >
+          <Time size={14} />
+          Queued
+        </span>
+        {target !== null && (
+          <>
+            <Button
+              variant="ghost"
+              size="xs"
+              disabled={pending}
+              onClick={() => setDraft(textOf(item.blocks))}
+            >
+              <Edit size={14} />
+              Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="xs"
+              tone="danger"
+              disabled={pending}
+              onClick={remove}
+            >
+              <TrashCan size={14} />
+              Remove
+            </Button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

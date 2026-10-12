@@ -66,10 +66,10 @@ export function RewritableMessage({
   }
 
   return (
-    <div className="group flex flex-col items-end gap-1">
+    <div className="group relative flex flex-col items-end gap-1">
       {children}
       {rewriting === null && (
-        <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <div className="flex gap-1 transition-opacity md:absolute md:right-0 md:top-full md:z-10 md:pt-0.5 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
           <Button
             variant="ghost"
             size="xs"

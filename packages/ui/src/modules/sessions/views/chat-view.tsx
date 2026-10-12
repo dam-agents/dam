@@ -879,28 +879,31 @@ export function ChatView() {
                           item.index > rewriteIndex;
                         return (
                           <Fragment key={item.message.id}>
-                            {rewritable && upTo !== undefined ? (
-                              <RewritableMessage
-                                message={item.message}
-                                onRewrite={(mode, text) =>
-                                  rewriteFrom({
-                                    messageId: item.message.id,
-                                    upToMessageId: upTo,
-                                    mode,
-                                    text,
-                                    title: sessionView?.title ?? null,
-                                  })
-                                }
-                              >
-                                {chatMessage}
-                              </RewritableMessage>
-                            ) : doomed ? (
-                              <div className="opacity-30 grayscale transition-opacity">
-                                {chatMessage}
-                              </div>
-                            ) : (
-                              chatMessage
-                            )}
+                            <div
+                              className={cn(
+                                doomed && "opacity-30 grayscale",
+                                "transition-opacity",
+                              )}
+                            >
+                              {rewritable && upTo !== undefined ? (
+                                <RewritableMessage
+                                  message={item.message}
+                                  onRewrite={(mode, text) =>
+                                    rewriteFrom({
+                                      messageId: item.message.id,
+                                      upToMessageId: upTo,
+                                      mode,
+                                      text,
+                                      title: sessionView?.title ?? null,
+                                    })
+                                  }
+                                >
+                                  {chatMessage}
+                                </RewritableMessage>
+                              ) : (
+                                chatMessage
+                              )}
+                            </div>
                             {editingHere && rewriting && (
                               <RewriteMarker
                                 mode={rewriting.mode}
