@@ -13,7 +13,7 @@ export function frameMetaOf(meta: unknown): FrameMeta {
   if (typeof meta !== "object" || meta === null) return {};
   const platform = (meta as Record<string, unknown>).platform;
   if (typeof platform !== "object" || platform === null) return {};
-  const { replayFor, at, telemetryPromptId, model, turnId } =
+  const { replayFor, at, telemetryPromptId, model, turnId, stopReason } =
     platform as Record<string, unknown>;
   const parsedAt = platformFrameMetaSchema.shape.at.safeParse(at);
   return {
@@ -26,6 +26,9 @@ export function frameMetaOf(meta: unknown): FrameMeta {
       : {}),
     ...(typeof model === "string" && model !== "" ? { model } : {}),
     ...(typeof turnId === "string" && turnId !== "" ? { turnId } : {}),
+    ...(typeof stopReason === "string" && stopReason !== ""
+      ? { stopReason }
+      : {}),
   };
 }
 

@@ -96,6 +96,7 @@ export interface Message {
   telemetryPromptId?: string;
   model?: string;
   stopped?: boolean;
+  stoppedAtOutputLimit?: boolean;
   turnId?: string;
   error?: {
     message: string;
