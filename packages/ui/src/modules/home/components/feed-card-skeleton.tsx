@@ -8,7 +8,7 @@ export function FeedCardSkeleton({ rows = 1 }: { rows?: number }) {
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}
-          className="w-full rounded-2xl border border-border bg-card/80 p-5"
+          className="w-full rounded-lg border border-border bg-card/80 p-5"
         >
           <div className="mb-1 flex items-center gap-1.5 text-sm">
             <TextSkeleton width={16} tone="muted" className="h-4 rounded-md" />

@@ -15,7 +15,7 @@ export function ApprovalsBanner() {
       type="button"
       onClick={() => setActivityView("feed")}
       data-testid="approvals-banner"
-      className="mb-6 flex w-full items-center gap-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-left transition-colors hover:bg-warning/10 dark:border-warning/20 dark:bg-warning/10 dark:hover:bg-warning/15"
+      className="mb-6 flex w-full items-center gap-3 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-left transition-colors hover:bg-warning/10 dark:border-warning/20 dark:bg-warning/10 dark:hover:bg-warning/15"
     >
       <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-warning/15 dark:bg-warning/20">
         <Warning size={16} className="text-warning" />

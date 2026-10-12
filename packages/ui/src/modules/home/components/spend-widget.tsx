@@ -40,7 +40,7 @@ export function SpendWidget() {
   const top = spenders[0]?.costUsd ?? 0;
 
   return (
-    <div className="flex flex-col rounded-2xl border border-border bg-card p-6">
+    <div className="flex flex-col rounded-lg border border-border bg-card p-6">
       <div className="mb-1 flex min-h-[32px] items-center justify-between">
         <p className="text-sm text-muted-foreground">Spend</p>
         <div className="flex shrink-0 gap-0.5 rounded-md border border-border/50 bg-muted/40 p-0.5">

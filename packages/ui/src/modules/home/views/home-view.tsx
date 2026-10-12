@@ -58,7 +58,7 @@ export function HomeView() {
       <OutdatedTemplatesBanner agents={visible} />
       <ApprovalsBanner />
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-card p-6">
+        <div className="rounded-lg border border-border bg-card p-6">
           <ComputeUsage
             agents={agentsData?.list ?? []}
             workingAgentIds={workingAgentIds}

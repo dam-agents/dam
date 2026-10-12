@@ -185,7 +185,11 @@ export function SettingsView() {
             </Card>
 
             <div className="mt-6">
-              <Button variant="link" onClick={() => setView("terms")}>
+              <Button
+                variant="link"
+                size="inline"
+                onClick={() => setView("terms")}
+              >
                 View Terms of Use
               </Button>
             </div>
