@@ -44,7 +44,7 @@ version = "latest"
 user = "65532"
 workdir = "/app"
 entrypoint = ["/usr/bin/catatonit", "--", "/usr/local/bin/agent-entrypoint"]
-cmd = ["node", "dist/server.js"]
+cmd = ["node", "dist/main.js"]
 
 [oci.env]
 # mise prepends the tool bin directories. The agent's own aube globals come

@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -73,6 +73,8 @@ Layers are packed as plain tars: a local cluster imports them as they are, and C
 - **Container Backend:** the image runs as the agent user, whose account comes from a static extra-users database.
 - **vm Backend:** the machine boots the image as root after platform-init has mounted the home and bound the MITM CA, and platform-init stays the entrypoint's parent, so the image's init is not the first process of its PID namespace ([vm-runner](vm-runner.md)).
   The entrypoint maps `agent` to uid 0 for SSH logins and prepares sshd.
+  The agent-runtime keeps Node's compile cache beside its own code here, since the root outlives a boot; a container's root is new on every start, so writing the cache would only cost it time.
+  The cache is the runtime's alone: no harness or command it starts inherits it.
 
 On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-entrypoint) trusts every CA under `/etc/platform/ca` in the system bundle — the gateway's MITM CA, and the extra CAs the install names for a TLS-inspecting proxy beyond it — and the agent's environment sets `NODE_USE_SYSTEM_CA`, so Node reads that bundle like every other client, seeds a new home from the working-dir seed, and discards the caches on the home that no tool it ships reads ([persistence](persistence.md#per-agent-pvcs) owns the rule).
 The bundle, and Chromium's store below, record what they were last built from and are rebuilt only when it changes: a machine's root and every home outlive a boot, and `update-ca-certificates` forks several times for each root the distribution ships, which takes seconds on a machine.
