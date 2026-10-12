@@ -779,6 +779,7 @@ async fn a_new_size_is_applied_at_the_next_start_and_not_before() {
     let woken = h.settle("m1").await;
     assert_eq!(woken.state, STATE_RUNNING);
     assert_eq!((woken.cpus, woken.memory_mib), (4, 4096));
+    assert_eq!(locked(&h.fake.booted_mib).last(), Some(&4096));
 
     let rolled = MachineSpec {
         cpus: 1,
@@ -789,6 +790,49 @@ async fn a_new_size_is_applied_at_the_next_start_and_not_before() {
     assert_eq!(h.server.put("m1", rolled).unwrap().state, STATE_RESTARTING);
     let restarted = h.settle("m1").await;
     assert_eq!((restarted.cpus, restarted.memory_mib), (1, 1024));
+}
+
+// TEST_SCENARIO: a machine boots at the boot estimate and grows to its size on every start, and the size it grows to is the one stored when that start runs. A new size sent while it runs is not grown into the running guest; the next start boots small again and grows to it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_deferred_size_is_what_the_next_start_grows_to() {
+    let h = Harness::with("resize-grow", |c| c.boot_mib = 1024);
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let resized = MachineSpec {
+        memory_mib: 4096,
+        ..spec(true)
+    };
+    h.server.put("m1", resized.clone()).unwrap();
+    assert_eq!(
+        h.fake.calls(),
+        vec!["create m1", "start m1", "grow m1 2048"]
+    );
+
+    h.server
+        .put(
+            "m1",
+            MachineSpec {
+                running: false,
+                ..resized.clone()
+            },
+        )
+        .unwrap();
+    h.settle("m1").await;
+    h.server.put("m1", resized).unwrap();
+    assert_eq!(h.settle("m1").await.memory_mib, 4096);
+    assert_eq!(
+        h.fake.calls(),
+        vec![
+            "create m1",
+            "start m1",
+            "grow m1 2048",
+            "stop m1",
+            "update m1",
+            "start m1",
+            "grow m1 4096"
+        ]
+    );
+    assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 1024]);
 }
 
 // TEST_SCENARIO: the status says a machine nests only when its spec asks for it and its runner grants it, so the controller can tell the owner who asked whether they got it. A machine on the same runner that does not ask never reads as nested.
