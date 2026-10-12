@@ -30,6 +30,25 @@ metadata:
     app.kubernetes.io/component: harness-tools
 automountServiceAccountToken: false
 ---
+{{- with $tools.githubToken }}
+{{- /*
+The token the installer's mise reads for GitHub's API. Without one, every
+lookup counts against the node's anonymous limit of 60 an hour, which a CI
+runner's shared address can spend before the installer starts.
+*/}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}-github
+  namespace: {{ $.Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: harness-tools
+type: Opaque
+stringData:
+  token: {{ trim . | quote }}
+---
+{{- end }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -110,6 +129,14 @@ spec:
               type: spc_t
               level: s0
             {{- end }}
+          {{- if $tools.githubToken }}
+          env:
+            - name: MISE_GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-github
+                  key: token
+          {{- end }}
           resources:
             {{- toYaml $tools.resources | nindent 12 }}
           volumeMounts:

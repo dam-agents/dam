@@ -35,7 +35,8 @@ project-root/
             └── index.ts          exports AppRouter type + re-exports
 ```
 
-Package names are **not enforced** (`api-server`, `backend`, `web`, `ui`, `dashboard`…); the role (server, client, contract) and the internal structure matter. A project may have several server or client packages.
+Package names are **not enforced** (`api-server`, `backend`, `web`, `ui`, `dashboard`…); the role (server, client, contract) and the internal structure matter.
+A project may have several server or client packages.
 
 ## Package Responsibilities
 
@@ -47,11 +48,14 @@ Backend logic in modules, each a bounded context as a vertical slice with three 
 
 ### Client packages
 
-Consume the API through a typed tRPC client; any UI framework. **Required:** `@trpc/client`.
+Consume the API through a typed tRPC client; any UI framework.
+**Required:** `@trpc/client`.
 
 ### API contract package
 
-Defines the contract: router types, router implementations and service interfaces. Clients consume its `AppRouter` type for end-to-end type safety. **Flat modules, no layers**, each with:
+Defines the contract: router types, router implementations and service interfaces.
+Clients consume its `AppRouter` type for end-to-end type safety.
+**Flat modules, no layers**, each with:
 
 - **Types + service interface**: Zod schemas, input/output types, and the interface between router and implementation.
 - **Router**: a tRPC router taking a service implementation and delegating every call to it; no business logic.

@@ -11,48 +11,36 @@ description: >-
 
 # Nous — hypothesis-driven experimentation
 
-Nous runs the **scientific method on software systems**. An AI planner formulates
-falsifiable hypotheses about a target system, designs controlled experiments,
-an executor runs them, and Nous extracts reusable **principles** from the
-results — whether the hypothesis is confirmed or refuted. Knowledge accumulates
-across iterations so the same mistake is not repeated.
+Nous runs the **scientific method on software systems**.
+An AI planner formulates falsifiable hypotheses about a target system, designs controlled experiments, an executor runs them, and Nous extracts reusable **principles** from the results — whether the hypothesis is confirmed or refuted.
+Knowledge accumulates across iterations so the same mistake is not repeated.
 
-It fits systems with **observable metrics, controllable knobs, reproducible
-execution, and decomposable mechanisms**: LLM serving, query optimizers,
-schedulers, routers, caches, load balancers.
+It fits systems with **observable metrics, controllable knobs, reproducible execution, and decomposable mechanisms**: LLM serving, query optimizers, schedulers, routers, caches, load balancers.
 
 > Repo: https://github.com/AI-native-Systems-Research/agentic-strategy-evolution
 
 ## This is a Nous agent pod
 
-`nous` is **pre-installed** in this pod (pinned, on `PATH`) and `claude` is
-authenticated through the platform's credential gateway — Nous's Claude Agent
-SDK calls work **with no API key in this pod**. Never ask the user for a
-credential, never write one to disk, and never `pip install` Nous yourself.
+`nous` is **pre-installed** in this pod (pinned, on `PATH`) and `claude` is authenticated through the platform's credential gateway — Nous's Claude Agent SDK calls work **with no API key in this pod**.
+Never ask the user for a credential, never write one to disk, and never `pip install` Nous yourself.
 
-The pod-level workflow (per-campaign directories, unique run ids, always
-`--auto-approve`, running campaigns in the background, resume-on-restart) is
-defined in this pod's system context (`AGENTS.md`).
+The pod-level workflow (per-campaign directories, unique run ids, always `--auto-approve`, running campaigns in the background, resume-on-restart) is defined in this pod's system context (`AGENTS.md`).
 
 ## The loop
 
-Each iteration is a deterministic state machine; the LLM only acts inside the
-phases, never the orchestration:
+Each iteration is a deterministic state machine; the LLM only acts inside the phases, never the orchestration:
 
 ```
 INIT → DESIGN → HUMAN_DESIGN_GATE → EXECUTE_ANALYZE → HUMAN_FINDINGS_GATE → DONE → (next iteration)
 ```
 
-- **DESIGN** (planner, Opus by default) — authors a `bundle.yaml`: a hypothesis
-  with multiple falsifiable arms (see below) plus an experiment plan.
+- **DESIGN** (planner, Opus by default) — authors a `bundle.yaml`: a hypothesis with multiple falsifiable arms (see below) plus an experiment plan.
 - **HUMAN_DESIGN_GATE** — approve the design before expensive compute runs.
-- **EXECUTE_ANALYZE** (executor, Sonnet by default) — runs each arm in an
-  isolated git worktree, collects metrics, classifies prediction errors.
+- **EXECUTE_ANALYZE** (executor, Sonnet by default) — runs each arm in an isolated git worktree, collects metrics, classifies prediction errors.
 - **HUMAN_FINDINGS_GATE** — approve findings before they enter the knowledge base.
 
-This pod always runs `--auto-approve` (both gates auto-pass) so campaigns run
-unattended to completion. Front-loading `locked_parameters` is what keeps a run
-defensible — see below.
+This pod always runs `--auto-approve` (both gates auto-pass) so campaigns run unattended to completion.
+Front-loading `locked_parameters` is what keeps a run defensible — see below.
 
 ## Quick start (full workflow)
 
@@ -87,9 +75,7 @@ nous package campaign.yaml
 
 ## Worked example: a BLIS campaign end-to-end
 
-A concrete campaign against **BLIS** (the `inference-sim` discrete-event
-LLM-serving simulator) — the whole arc: clone, author, run, then harvest the
-findings into the wiki.
+A concrete campaign against **BLIS** (the `inference-sim` discrete-event LLM-serving simulator) — the whole arc: clone, author, run, then harvest the findings into the wiki.
 
 ```bash
 # 1. Per-campaign dir + clone the target into it (see AGENTS.md for the convention).
@@ -167,8 +153,8 @@ nous status "$run_id" --watch
 
 ## Authoring a campaign
 
-`nous schema campaign` is the single source of truth. The **minimal** required
-shape:
+`nous schema campaign` is the single source of truth.
+The **minimal** required shape:
 
 ```yaml
 research_question: >
@@ -194,31 +180,23 @@ prompts:
 
 Key authoring discipline (see [`reference/campaign-schema.md`](reference/campaign-schema.md) for the full field list):
 
-- **`locked_parameters`** / **`locked_workload`** — hard-pin every knob whose
-  deviation would invalidate the experiment (model, concurrency, duration,
-  warmup, KV blocks, workload distributions). Mismatches are hard validation
-  failures **even under `--auto-approve`**. In this pod every campaign runs
-  auto-approved, so this inventory is mandatory — a campaign with no
-  `locked_parameters` will refuse to run. Front-load it; adding locks reactively
-  after each review round turns a 2-week campaign into a 5-round dance.
-- **`iterations: [{mode: rehearsal}, {mode: real}]`** — schedule iter-1 as a
-  cheap *rehearsal* (does the apparatus parse? does the regime engage the
-  mechanism?) and iter-2+ as full *real* runs.
-- **`live_target: true`** (under `target_system`) — for probing a *running*
-  system (cluster, service, non-git dataset) with no code to evolve. No
-  per-iteration worktree; bundles must contain no `code_changes` arms. The
-  target must be reachable from this pod's egress rules.
-- **`ground_truth`** — pre-register `direction_claim`, `pass_condition`,
-  `primary_metric`, and `seeds` before any iteration so the agent can't move the goalposts.
-- **`models`** — **always set this explicitly** (see below). Per-phase:
-  `design`, `execute_analyze`, `report`.
+- **`locked_parameters`** / **`locked_workload`** — hard-pin every knob whose deviation would invalidate the experiment (model, concurrency, duration, warmup, KV blocks, workload distributions).
+  Mismatches are hard validation failures **even under `--auto-approve`**.
+  In this pod every campaign runs auto-approved, so this inventory is mandatory — a campaign with no `locked_parameters` will refuse to run.
+  Front-load it; adding locks reactively after each review round turns a 2-week campaign into a 5-round dance.
+- **`iterations: [{mode: rehearsal}, {mode: real}]`** — schedule iter-1 as a cheap *rehearsal* (does the apparatus parse?
+  does the regime engage the mechanism?) and iter-2+ as full *real* runs.
+- **`live_target: true`** (under `target_system`) — for probing a *running* system (cluster, service, non-git dataset) with no code to evolve.
+  No per-iteration worktree; bundles must contain no `code_changes` arms.
+  The target must be reachable from this pod's egress rules.
+- **`ground_truth`** — pre-register `direction_claim`, `pass_condition`, `primary_metric`, and `seeds` before any iteration so the agent can't move the goalposts.
+- **`models`** — **always set this explicitly** (see below).
+  Per-phase: `design`, `execute_analyze`, `report`.
 
 ### Selecting models (don't trust the defaults)
 
-Nous's built-in defaults are `claude-opus-4-6` / `claude-sonnet-4-6`, but the
-model gateway in this pod fronts a specific upstream whose catalog usually
-**doesn't** include those exact IDs — and a campaign that requests a model the
-gateway can't serve **hangs**. So discover the catalog and pin `models:` to it:
+Nous's built-in defaults are `claude-opus-4-6` / `claude-sonnet-4-6`, but the model gateway in this pod fronts a specific upstream whose catalog usually **doesn't** include those exact IDs — and a campaign that requests a model the gateway can't serve **hangs**.
+So discover the catalog and pin `models:` to it:
 
 ```sh
 # Newest opus + sonnet the gateway resolves (exported into this harness's env):
@@ -227,33 +205,21 @@ echo "opus=$ANTHROPIC_DEFAULT_OPUS_MODEL  sonnet=$ANTHROPIC_DEFAULT_SONNET_MODEL
 curl --noproxy '*' -fsS 'http://127.0.0.1:24180/v1/models?limit=1000' | jq -r '.data[].id'
 ```
 
-Use the IDs **verbatim** (they may be namespaced, e.g.
-`claude/aws/claude-opus-4-8`): `design` → newest **opus**, `execute_analyze` and
-`report` → newest **sonnet**. If a tier is absent, fall back to the most capable
-model the catalog does list (opus → sonnet → anything).
+Use the IDs **verbatim** (they may be namespaced, e.g. `claude/aws/claude-opus-4-8`): `design` → newest **opus**, `execute_analyze` and `report` → newest **sonnet**.
+If a tier is absent, fall back to the most capable model the catalog does list (opus → sonnet → anything).
 
 ### Author *with* the user (assume they're a Nous beginner)
 
-Assume the user has never run a Nous campaign and doesn't know its knobs. **Don't
-silently pick everything and launch** — propose, explain briefly, confirm, then
-run. A good flow:
+Assume the user has never run a Nous campaign and doesn't know its knobs.
+**Don't silently pick everything and launch** — propose, explain briefly, confirm, then run.
+A good flow:
 
-1. **Gather what you can decide yourself.** Read
-   [`reference/campaign-schema.md`](reference/campaign-schema.md) for the full
-   field set, and discover the gateway model catalog (above, "Selecting models")
-   so you already know which model IDs are usable — never make the user supply a
-   model. Skim the target repo for likely `observable_metrics` /
-   `controllable_knobs`.
-2. **Draft a full `campaign.yaml` from what you inferred** — research question,
-   `target_system.description`, gateway-served `models`, a rehearsal+real
-   `iterations` schedule, and a first pass at `locked_parameters`.
-3. **Ask the user to make the vague parts concrete**, in plain language and one
-   short round — e.g. *how many real iterations* (more = more confidence, more
-   cost/time), *how long each run / how many seeds*, *which knob they actually
-   care about*, *which parameters must stay fixed*. Explain the tradeoff behind
-   each question rather than dumping schema jargon on them.
-4. **Show the final `campaign.yaml` and get an explicit go-ahead before
-   `nous run`.** Call out the rough cost/time and the model IDs you pinned.
+1. **Gather what you can decide yourself.** Read [`reference/campaign-schema.md`](reference/campaign-schema.md) for the full field set, and discover the gateway model catalog (above, "Selecting models") so you already know which model IDs are usable — never make the user supply a model.
+   Skim the target repo for likely `observable_metrics` / `controllable_knobs`.
+2. **Draft a full `campaign.yaml` from what you inferred** — research question, `target_system.description`, gateway-served `models`, a rehearsal+real `iterations` schedule, and a first pass at `locked_parameters`.
+3. **Ask the user to make the vague parts concrete**, in plain language and one short round — e.g. *how many real iterations* (more = more confidence, more cost/time), *how long each run / how many seeds*, *which knob they actually care about*, *which parameters must stay fixed*.
+   Explain the tradeoff behind each question rather than dumping schema jargon on them.
+4. **Show the final `campaign.yaml` and get an explicit go-ahead before `nous run`.** Call out the rough cost/time and the model IDs you pinned.
 
 ## The five hypothesis arms
 
@@ -296,44 +262,28 @@ nous report campaign.yaml
 ```
 
 Notes:
-- `--agent sdk` is the **default** backend (Claude Agent SDK, gateway-authenticated
-  here). `--agent inline` emits prompts to stdout for an enclosing agent framework.
-- Default per-phase timeout is 1800s (30 min); `--max-cli-retries` default 10,
-  `-1` = unbounded.
-- If `--auto-approve` refuses to proceed, the run is missing required
-  `locked_parameters` — declare the locks first. (`NOUS_ALLOW_AUTO_APPROVE=1` is
-  already set in this image, so that gate is not the cause here.)
+- `--agent sdk` is the **default** backend (Claude Agent SDK, gateway-authenticated here).
+  `--agent inline` emits prompts to stdout for an enclosing agent framework.
+- Default per-phase timeout is 1800s (30 min); `--max-cli-retries` default 10, `-1` = unbounded.
+- If `--auto-approve` refuses to proceed, the run is missing required `locked_parameters` — declare the locks first.
+  (`NOUS_ALLOW_AUTO_APPROVE=1` is already set in this image, so that gate is not the cause here.)
 
-**Reading liveness (don't be fooled):** `nous status --line` gives phase/iteration;
-for fine-grained progress watch the executor log mtime under `runs/iter-N/` (e.g.
-`runs/iter-N/inputs/executor_log.jsonl`) and the result-file count — they advance
-continuously during EXECUTE_ANALYZE. A backgrounded run's `campaign.log` only
-writes at phase transitions, so it looks frozen mid-phase — don't read "no new log
-lines" as "stuck". The `STUCK` marker is a ~5-min-silence heuristic that fires
-during legitimate long batches: treat it as "look closer", not "it died". Phases
-are long (DESIGN ~10–15 min) — poll infrequently with wide spacing; looking more
-often doesn't make it go faster.
+**Reading liveness (don't be fooled):** `nous status --line` gives phase/iteration; for fine-grained progress watch the executor log mtime under `runs/iter-N/` (e.g. `runs/iter-N/inputs/executor_log.jsonl`) and the result-file count — they advance continuously during EXECUTE_ANALYZE.
+A backgrounded run's `campaign.log` only writes at phase transitions, so it looks frozen mid-phase — don't read "no new log lines" as "stuck".
+The `STUCK` marker is a ~5-min-silence heuristic that fires during legitimate long batches: treat it as "look closer", not "it died".
+Phases are long (DESIGN ~10–15 min) — poll infrequently with wide spacing; looking more often doesn't make it go faster.
 
 ## Reporting progress to Slack/Telegram (the channel bridge)
 
-Nous's native `channels:` feature POSTs a markdown summary at every DESIGN/FINDINGS
-gate — and it fires under `--auto-approve` (the notify runs before the gate
-auto-passes), so it serves as unattended progress reporting. In this pod, don't
-point it at an external webhook (that needs egress allowlisting + a secret on
-disk); point it at the in-pod **channel bridge**, which relays each summary to
-the agent's bound Slack/Telegram thread via the platform's `send_channel_message`
-— no external egress, no secret.
+Nous's native `channels:` feature POSTs a markdown summary at every DESIGN/FINDINGS gate — and it fires under `--auto-approve` (the notify runs before the gate auto-passes), so it serves as unattended progress reporting.
+In this pod, don't point it at an external webhook (that needs egress allowlisting + a secret on disk); point it at the in-pod **channel bridge**, which relays each summary to the agent's bound Slack/Telegram thread via the platform's `send_channel_message` — no external egress, no secret.
 
-The agent wires this in **automatically when a channel is bound** to the agent
-(it checks `describe_channel` before each run); you don't have to ask. See
-`AGENTS.md` for the operate-in-this-pod steps (incl. resume-on-restart).
+The agent wires this in **automatically when a channel is bound** to the agent (it checks `describe_channel` before each run); you don't have to ask.
+See `AGENTS.md` for the operate-in-this-pod steps (incl. resume-on-restart).
 
-One bridge serves the whole pod — it's stateless per request (each POST carries
-its own `channel` + text and does a fresh MCP call), so every campaign and
-session shares the single `127.0.0.1:8765` listener. Launches are idempotent and
-a duplicate start is a harmless no-op (the bridge exits cleanly if the port is
-already taken). Bridges in *other* agent pods are isolated — `127.0.0.1` is
-pod-local, and each posts only to its own agent's bound channel.
+One bridge serves the whole pod — it's stateless per request (each POST carries its own `channel` + text and does a fresh MCP call), so every campaign and session shares the single `127.0.0.1:8765` listener.
+Launches are idempotent and a duplicate start is a harmless no-op (the bridge exits cleanly if the port is already taken).
+Bridges in *other* agent pods are isolated — `127.0.0.1` is pod-local, and each posts only to its own agent's bound channel.
 
 ```bash
 # Start the shared bridge (idempotent — one per pod):
@@ -347,10 +297,8 @@ channels:
     url: http://127.0.0.1:8765/gate?channel=slack
 ```
 
-How it holds together: `NO_PROXY=127.0.0.1` (set in the image) keeps Nous's POST
-local; the bridge's own call to the MCP endpoint routes back out through the
-egress gateway and is authorized by the pod's mesh identity (no token). Delivery
-is best-effort — a hiccup logs a warning and never blocks the campaign.
+How it holds together: `NO_PROXY=127.0.0.1` (set in the image) keeps Nous's POST local; the bridge's own call to the MCP endpoint routes back out through the egress gateway and is authorized by the pod's mesh identity (no token).
+Delivery is best-effort — a hiccup logs a warning and never blocks the campaign.
 
 ## Output artifacts
 
@@ -365,10 +313,8 @@ Under `$NOUS_CAMPAIGN_PARENT/<run_id>/`:
 
 ## Post-campaign knowledge (the wiki)
 
-When a campaign finishes, harvest its `ledger.json` / `principles.json` into a
-cross-campaign **wiki** at `~/.nous/wiki/` so knowledge compounds across runs.
-These are skills shipped with this agent (in `~/.agents/skills/`); the
-rendering scripts live at `~/scripts/`:
+When a campaign finishes, harvest its `ledger.json` / `principles.json` into a cross-campaign **wiki** at `~/.nous/wiki/` so knowledge compounds across runs.
+These are skills shipped with this agent (in `~/.agents/skills/`); the rendering scripts live at `~/scripts/`:
 
 ```bash
 # Extract knowledge, index it into the registry, generate an interactive HTML viz.
@@ -385,13 +331,9 @@ rendering scripts live at `~/scripts/`:
 /suggest-next <repo-path-or-name> "your research question"
 ```
 
-The wiki commands turn raw `ledger.json` / `principles.json` into structured
-knowledge — **dead-ends** (refuted approaches), **frontiers** (boundary
-conditions), and untested **interactions** — plus interactive HTML
-visualizations.
+The wiki commands turn raw `ledger.json` / `principles.json` into structured knowledge — **dead-ends** (refuted approaches), **frontiers** (boundary conditions), and untested **interactions** — plus interactive HTML visualizations.
 
-> The viz commands invoke `python scripts/<name>.py`; run them from `$HOME`
-> (where the shipped `scripts/` live) or call `~/scripts/<name>.py` directly.
+> The viz commands invoke `python scripts/<name>.py`; run them from `$HOME` (where the shipped `scripts/` live) or call `~/scripts/<name>.py` directly.
 > The scripts read/write only under `~/.nous/wiki/`.
 
 ## Full CLI surface (13 subcommands)
@@ -399,50 +341,35 @@ visualizations.
 Run `nous <cmd> --help` for exact flags.
 
 **Lifecycle — run & control**
-- `nous run <campaign>` — run end-to-end. Flags: `--max-iterations`, `--model`,
-  `--run-id`, `--auto-approve`, `--timeout` (default 1800s), `--max-cli-retries`
-  (default 10, `-1`=unbounded), `--agent {sdk,inline}` (default `sdk`),
-  `--sandbox {bypass,default}`, `--bundle` (skip DESIGN), `--problem-md`, `--handoff-md`.
-- `nous resume <target>` — pick up an interrupted run at the last checkpoint
-  (`--max-iterations`, `--model`, `--auto-approve`, `--timeout`, `--max-cli-retries`, `--agent`).
-- `nous stop <target>` — halt cleanly at the next phase boundary; `--reason`,
-  `--immediate` (abort mid-turn within seconds).
+- `nous run <campaign>` — run end-to-end.
+  Flags: `--max-iterations`, `--model`, `--run-id`, `--auto-approve`, `--timeout` (default 1800s), `--max-cli-retries` (default 10, `-1`=unbounded), `--agent {sdk,inline}` (default `sdk`), `--sandbox {bypass,default}`, `--bundle` (skip DESIGN), `--problem-md`, `--handoff-md`.
+- `nous resume <target>` — pick up an interrupted run at the last checkpoint (`--max-iterations`, `--model`, `--auto-approve`, `--timeout`, `--max-cli-retries`, `--agent`).
+- `nous stop <target>` — halt cleanly at the next phase boundary; `--reason`, `--immediate` (abort mid-turn within seconds).
 
 **Author & inspect**
-- `nous create-campaign --to <path>` — scaffold a commented `campaign.yaml`
-  (`--target-name`, `--target-description`, `--research-question`, `--run-id`,
-  `--target-repo-path`, `--force`).
-- `nous schema [campaign|bundle|findings]` — print the authoritative artifact
-  schema (`--format {md,json,yaml}`).
-- `nous validate {design|execution} --dir <DIR>` — validate a work-dir against
-  the schema (the same gate the orchestrator runs internally).
+- `nous create-campaign --to <path>` — scaffold a commented `campaign.yaml` (`--target-name`, `--target-description`, `--research-question`, `--run-id`, `--target-repo-path`, `--force`).
+- `nous schema [campaign|bundle|findings]` — print the authoritative artifact schema (`--format {md,json,yaml}`).
+- `nous validate {design|execution} --dir <DIR>` — validate a work-dir against the schema (the same gate the orchestrator runs internally).
 
 **Monitor & report**
-- `nous status <target>` — phase/iteration/principles snapshot; `--watch`,
-  `--line`, `--interval`.
+- `nous status <target>` — phase/iteration/principles snapshot; `--watch`, `--line`, `--interval`.
 - `nous cost <target>` — token/cost totals; `--cache-stats` for cache hit-rate.
-- `nous report <target>` — (re)generate the **LLM** markdown findings report
-  (`--model`, `--agent`, `--timeout`; costs tokens).
-- `nous reports <target>` — re-emit `meta_findings.json` **deterministically,
-  zero LLM tokens**; works on legacy/aborted runs. (Note the trailing `s` — different command.)
+- `nous report <target>` — (re)generate the **LLM** markdown findings report (`--model`, `--agent`, `--timeout`; costs tokens).
+- `nous reports <target>` — re-emit `meta_findings.json` **deterministically, zero LLM tokens**; works on legacy/aborted runs.
+  (Note the trailing `s` — different command.)
 
 **Provenance & reproducibility**
-- `nous lineage <target>` — derivation chain + per-iteration `cumulative.patch`
-  availability (what `derived_from` inherited); `--json`.
+- `nous lineage <target>` — derivation chain + per-iteration `cumulative.patch` availability (what `derived_from` inherited); `--json`.
 - `nous replay <target> --iter <N>` — replay a specific recorded iteration from its artifacts.
-- `nous package <target>` — tarball work_dir + `reproduce.sh` + Dockerfile +
-  README for paper artifact evaluation; `--output`.
+- `nous package <target>` — tarball work_dir + `reproduce.sh` + Dockerfile + README for paper artifact evaluation; `--output`.
 
 **Housekeeping**
-- `nous clean` — remove stale `nous-exp-*` worktrees/branches. `--orphaned`
-  (default: prune worktrees whose owning run is dead), `--target-repo`,
-  `--campaign`, `--dry-run`.
+- `nous clean` — remove stale `nous-exp-*` worktrees/branches.
+  `--orphaned` (default: prune worktrees whose owning run is dead), `--target-repo`, `--campaign`, `--dry-run`.
 
-`<target>` is generally a `campaign.yaml`, a work_dir, or a `run_id` resolvable
-under `$NOUS_CAMPAIGN_PARENT`.
+`<target>` is generally a `campaign.yaml`, a work_dir, or a `run_id` resolvable under `$NOUS_CAMPAIGN_PARENT`.
 
 ## When NOT to use Nous
 
-Skip it for one-off tweaks, systems with no observable metrics, or
-non-reproducible environments. Nous pays off when the question is a real
-*mechanism* question and you want defensible, cumulative findings.
+Skip it for one-off tweaks, systems with no observable metrics, or non-reproducible environments.
+Nous pays off when the question is a real *mechanism* question and you want defensible, cumulative findings.

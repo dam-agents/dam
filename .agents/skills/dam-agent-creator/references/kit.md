@@ -1,12 +1,9 @@
 # The kit (`kit.yaml`)
 
-A **Starter Kit** is how the platform creates an agent: the connections, schedules,
-channels, size and seed a job needs, declared in a `kit.yaml` read from git. Here **the
-definition repository *is* the kit**: `kit.yaml` sits at the root beside `CLAUDE.md`, so a
-definition change and the matching kit change are one commit.
+A **Starter Kit** is how the platform creates an agent: the connections, schedules, channels, size and seed a job needs, declared in a `kit.yaml` read from git.
+Here **the definition repository *is* the kit**: `kit.yaml` sits at the root beside `CLAUDE.md`, so a definition change and the matching kit change are one commit.
 
-Without it the operator wires the agent by hand from README
-and pastes the ONBOARDING.md link; with it they pick the kit from the catalog.
+Without it the operator wires the agent by hand from README and pastes the ONBOARDING.md link; with it they pick the kit from the catalog.
 
 ## What the kit does and what ONBOARDING still owns
 
@@ -20,9 +17,8 @@ and pastes the ONBOARDING.md link; with it they pick the kit from the catalog.
 | First turn | the operator pastes the ONBOARDING.md link | the platform composes the briefing and opens the session itself |
 | Idle scheduled fire | a turn wakes, runs the pre-flight, reads `nothing_to_do`, ends | the `precheck` declines and **no model is woken at all** |
 
-ONBOARDING still owns everything only the operator can answer: config dialog, roster,
-state seeds, state reconstruction, sentinel, verification pass. The kit declares what the
-*platform* can set up; `ONBOARDING.md` settles what only a conversation can.
+ONBOARDING still owns everything only the operator can answer: config dialog, roster, state seeds, state reconstruction, sentinel, verification pass.
+The kit declares what the *platform* can set up; `ONBOARDING.md` settles what only a conversation can.
 
 ## The shape a generated definition uses
 
@@ -37,51 +33,36 @@ seed:
   into: home                # the definition IS $HOME — this skill's shape
 ```
 
-- **`seed.self: true`**: never repeat the repo's own URL. A seed names exactly one of
-  `self` or `url`; `self` pins the definition to the commit the kit was resolved at, so a
-  kit never describes a definition it wasn't read with.
-- **`seed.into: home`**: the repo lives at `$HOME` with `work/` git-ignored beside it. The
-  home seed is init + fetch + hard-reset of tracked paths, never a clone, so nothing the
-  platform or harness put in `$HOME` is removed; it also registers `$HOME` as a git
-  `safe.directory`, which every later `git` in the pod needs.
-- **`id`** is the agent name and must match `{{AGENT_NAME}}`: sentinel, schedule prefix
-  and kit id name the same agent.
+- **`seed.self: true`**: never repeat the repo's own URL.
+  A seed names exactly one of `self` or `url`; `self` pins the definition to the commit the kit was resolved at, so a kit never describes a definition it wasn't read with.
+- **`seed.into: home`**: the repo lives at `$HOME` with `work/` git-ignored beside it.
+  The home seed is init + fetch + hard-reset of tracked paths, never a clone, so nothing the platform or harness put in `$HOME` is removed; it also registers `$HOME` as a git `safe.directory`, which every later `git` in the pod needs.
+- **`id`** is the agent name and must match `{{AGENT_NAME}}`: sentinel, schedule prefix and kit id name the same agent.
 
 ## Never declare `onboarding`
 
 Leave the field out; the consequence is not cosmetic:
 
-- **Absent**: the platform composes the briefing from live agent state (checkout and
-  commit, each connection and whether it is *actually* connected now, the real schedules
-  and which are disabled, the bound channel) and ends with "follow `ONBOARDING.md`":
-  exactly the entry this runbook is written for.
-- **`onboarding: { command: … }`**: a bare harness command is a mechanical trigger, so
-  the platform stamps the agent **onboarded at create**, dropping the onboarding gate, the
-  progress tools and the schedule hold. A generated agent needs all three; its first act
-  is asking the operator for values only they have.
-- **`onboarding: false`**: no first session. Only for a workload briefed by the user's
-  first prompt; never for an agent with a config dialog.
+- **Absent**: the platform composes the briefing from live agent state (checkout and commit, each connection and whether it is *actually* connected now, the real schedules and which are disabled, the bound channel) and ends with "follow `ONBOARDING.md`": exactly the entry this runbook is written for.
+- **`onboarding: { command: … }`**: a bare harness command is a mechanical trigger, so the platform stamps the agent **onboarded at create**, dropping the onboarding gate, the progress tools and the schedule hold.
+  A generated agent needs all three; its first act is asking the operator for values only they have.
+- **`onboarding: false`**: no first session.
+  Only for a workload briefed by the user's first prompt; never for an agent with a config dialog.
 
 ## The onboarding gate
 
-A kit-created agent is **not fully configured** until it says so, and the scheduler **holds
-every schedule** until then: the occurrence is skipped, the next armed as normal, and the
-schedule records `held: onboarding not complete`. It cannot half-configure itself into
-doing the wrong work on a cadence.
+A kit-created agent is **not fully configured** until it says so, and the scheduler **holds every schedule** until then: the occurrence is skipped, the next armed as normal, and the schedule records `held: onboarding not complete`.
+It cannot half-configure itself into doing the wrong work on a cadence.
 
-Three MCP tools exist only while onboarding is pending; the generated `ONBOARDING.md` must
-use them:
+Three MCP tools exist only while onboarding is pending; the generated `ONBOARDING.md` must use them:
 
-- `set_onboarding_checklist`: at the start, one step per value **only the operator can
-  supply**, decision only they can make, or action only they can take; never the agent's
-  own work. Callable again to add, rename or drop steps.
+- `set_onboarding_checklist`: at the start, one step per value **only the operator can supply**, decision only they can make, or action only they can take; never the agent's own work.
+  Callable again to add, rename or drop steps.
 - `complete_onboarding_step`: ticked as each answer arrives.
-- `mark_onboarding_complete`: once the configuration is genuinely in place; releases the
-  schedules; idempotent.
+- `mark_onboarding_complete`: once the configuration is genuinely in place; releases the schedules; idempotent.
 
-The sentinel stays: it guards the runbook against re-running on the same volume, while the
-stamp is what the *platform* gates schedules on. Different questions, so ONBOARDING writes
-both.
+The sentinel stays: it guards the runbook against re-running on the same volume, while the stamp is what the *platform* gates schedules on.
+Different questions, so ONBOARDING writes both.
 
 ## Connections
 
@@ -95,12 +76,10 @@ connections:
     note: Only needed when proactive nudges are enabled.
 ```
 
-- `accepts` takes connection **families** (`github`, `github-enterprise`, `slack`, …) or a
-  named Connection Template. Prefer the family (any auth method satisfies it); name a
-  template only when the design must insist on one method.
-- `required: true` is checked **before create** and refuses with nothing to clean up. Only
-  what the agent cannot start without; anything behind an opt-in config key is
-  `required: false`.
+- `accepts` takes connection **families** (`github`, `github-enterprise`, `slack`, …) or a named Connection Template.
+  Prefer the family (any auth method satisfies it); name a template only when the design must insist on one method.
+- `required: true` is checked **before create** and refuses with nothing to clean up.
+  Only what the agent cannot start without; anything behind an opt-in config key is `required: false`.
 - The provider is never a connection requirement; it goes in `providers:`.
 
 ## Schedules, and the precheck
@@ -121,14 +100,11 @@ schedules:
     enabled: false          # suggested — the operator turns it on
 ```
 
-- Names carry the agent prefix exactly as ONBOARDING's check-then-create expects, or the
-  runbook creates a second copy of every schedule.
-- `task` is the text ONBOARDING would register: the one source of truth for the entry
-  command (`references/preflight.md` → Schedule task text).
+- Names carry the agent prefix exactly as ONBOARDING's check-then-create expects, or the runbook creates a second copy of every schedule.
+- `task` is the text ONBOARDING would register: the one source of truth for the entry command (`references/preflight.md` → Schedule task text).
 - `enabled: false` makes a schedule **suggested**: created off, the operator turns it on.
-- `precheck` declares the check the repo carries (`references/preflight.md` → **The
-  Precheck**). Only a kit that seeds its definition may declare one: the command must exist
-  in the checkout by the first fire.
+- `precheck` declares the check the repo carries (`references/preflight.md` → **The Precheck**).
+  Only a kit that seeds its definition may declare one: the command must exist in the checkout by the first fire.
 - The apply form shows each precheck with its schedule, to keep, replace or drop.
 
 ## The rest of the fields
@@ -155,24 +131,19 @@ All optional; declare only what the design needs.
 
 ## Constraints
 
-- **A `self: true` kit's repository must be public**: catalogs are read anonymously over
-  the public raw-file endpoint. A private definition can't be its own kit: put `kit.yaml`
-  in the catalog repo and point `seed.url` at the private repo, which clones through the
-  granted GitHub connection.
-- **`self` literally means the repository the kit was read from**, so the catalog entry
-  must name the definition by its own `url`. A kit listed as a `path:` in the catalog repo
-  would seed *the catalog repo*, and one in the chart's built-in catalog has no repository:
-  the refresh rejects it with *"the kit's seed says `self` but the kit was not read from a
-  repository"*, and it never reaches the listing.
-- **A version is written one way**: a plain `url` plus optional `ref`. A URL with a `#ref`
-  fragment or `/tree/<ref>/…` path is refused, never read at the default branch.
+- **A `self: true` kit's repository must be public**: catalogs are read anonymously over the public raw-file endpoint.
+  A private definition can't be its own kit: put `kit.yaml` in the catalog repo and point `seed.url` at the private repo, which clones through the granted GitHub connection.
+- **`self` literally means the repository the kit was read from**, so the catalog entry must name the definition by its own `url`.
+  A kit listed as a `path:` in the catalog repo would seed *the catalog repo*, and one in the chart's built-in catalog has no repository: the refresh rejects it with *"the kit's seed says `self` but the kit was not read from a repository"*, and it never reaches the listing.
+- **A version is written one way**: a plain `url` plus optional `ref`.
+  A URL with a `#ref` fragment or `/tree/<ref>/…` path is refused, never read at the default branch.
 - **A kit failing schema validation is dropped from the listing** with a logged reason.
   Validate before publishing (`scripts/validate-definition.sh` covers the shape).
 
 ## Publishing the kit
 
-A kit reaches an install through a **catalog**: a public repo holding `catalog.yaml`. Adding
-a definition kit is one entry:
+A kit reaches an install through a **catalog**: a public repo holding `catalog.yaml`.
+Adding a definition kit is one entry:
 
 ```yaml
 kits:
@@ -180,7 +151,5 @@ kits:
   # - ref: v1.0.0      # optional; unpinned means the refresh job follows the default branch
 ```
 
-The refresh job periodically re-reads every catalog and resolves each entry to a commit, so
-a new entry reaches the install without a redeploy, and an unpinned catalog still yields
-exact, immutable kits. The operator picks the catalog; the install's
-`starterKits.catalogs` names them (`curated` by default).
+The refresh job periodically re-reads every catalog and resolves each entry to a commit, so a new entry reaches the install without a redeploy, and an unpinned catalog still yields exact, immutable kits.
+The operator picks the catalog; the install's `starterKits.catalogs` names them (`curated` by default).

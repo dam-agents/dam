@@ -153,7 +153,7 @@ func TestPeersCountByWhetherTheyShouldRun(t *testing.T) {
 
 	d, err := r.ownerRunnerDemand(context.Background(), testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, runnerDemand{memoryMiB: 3072 + 2048, diskGiB: 10 + 20 + 30, machines: 3, running: 2}, d)
+	assert.Equal(t, runnerDemand{memoryMiB: 3072 + 2048, diskGiB: 10 + 20 + 30, machines: 3, vCPUs: 2 * max(r.config.VM.Runner.MachineCPUs, 1)}, d)
 
 	d, err = r.ownerRunnerDemand(context.Background(), testOwner, agent, false)
 	require.NoError(t, err)
@@ -218,10 +218,10 @@ func TestTheRunnerCPULimitStaysBetweenTheRequestAndTheInstallsLimit(t *testing.T
 	none := resource.Quantity{}
 	idle := runnerCPULimit(0, 4, none, nil)
 	assert.Equal(t, "4", idle.String())
-	busy := runnerCPULimit(5, 4, none, nil)
+	busy := runnerCPULimit(20, 4, none, nil)
 	assert.Equal(t, "24", busy.String())
 	ceiling := resource.MustParse("16")
-	capped := runnerCPULimit(5, 4, none, &ceiling)
+	capped := runnerCPULimit(20, 4, none, &ceiling)
 	assert.Equal(t, "16", capped.String())
 	floored := runnerCPULimit(0, 4, resource.MustParse("6"), nil)
 	assert.Equal(t, "6", floored.String())

@@ -4,7 +4,8 @@ Ports & Adapters: domain and services define port interfaces for what they need;
 
 ## Repositories
 
-Repositories hide data access behind domain-oriented interfaces; services depend on the interface (port), never the storage. Interfaces live in `infrastructure/` as types and speak the domain language: method names are domain operations, not storage operations.
+Repositories hide data access behind domain-oriented interfaces; services depend on the interface (port), never the storage.
+Interfaces live in `infrastructure/` as types and speak the domain language: method names are domain operations, not storage operations.
 
 ```typescript
 // modules/orders/infrastructure/OrdersRepository.ts
@@ -82,7 +83,8 @@ function patchSpecField(existing: ConfigMap, field: string, value: unknown): Con
 
 ## External System Adapters
 
-For non-storage systems (queues, third-party APIs, platform services), define a port and an adapter. Services depend on the port; switching channels means a new adapter, no service changes.
+For non-storage systems (queues, third-party APIs, platform services), define a port and an adapter.
+Services depend on the port; switching channels means a new adapter, no service changes.
 
 ```typescript
 export interface NotificationSender {
@@ -100,7 +102,8 @@ export function createSlackNotificationSender(client: SlackClient): Notification
 
 ## Dependency Injection via Service Factories
 
-No DI container: services get repositories, adapters and config through a factory's `deps` object, wired explicitly at the composition root. Services know only port interfaces.
+No DI container: services get repositories, adapters and config through a factory's `deps` object, wired explicitly at the composition root.
+Services know only port interfaces.
 
 ```typescript
 // modules/orders/services/OrdersService.ts
@@ -134,9 +137,11 @@ export function composeOrdersModule(db: Database, slackClient: SlackClient, owne
 
 ### Dependencies are required, never optional
 
-A dependency exists because the service needs it. An optional dep (`notifier?: NotificationSender`) turns a capability toggle into a wiring question: every call site branches on presence (`if (deps.notifier) …`), a missing wiring becomes a silent skip instead of a type error, and readers can't tell intended absence from a bug.
+A dependency exists because the service needs it.
+An optional dep (`notifier?: NotificationSender`) turns a capability toggle into a wiring question: every call site branches on presence (`if (deps.notifier) …`), a missing wiring becomes a silent skip instead of a type error, and readers can't tell intended absence from a bug.
 
-The consumer calls its dependency unconditionally and doesn't know the capability is toggleable. Whether the dependency does anything, like every other knob on it, is **owned by the dependency** and configured where it is built, at the composition root; never hoist it into the consumer's `deps`.
+The consumer calls its dependency unconditionally and doesn't know the capability is toggleable.
+Whether the dependency does anything, like every other knob on it, is **owned by the dependency** and configured where it is built, at the composition root; never hoist it into the consumer's `deps`.
 
 ```typescript
 // Bad: optional dep, the consumer carries a toggle that isn't its concern
