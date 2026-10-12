@@ -11,6 +11,7 @@ import {
   readFileSync,
   readlinkSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -78,15 +79,17 @@ const boot = () => {
 const rehash = `openssl rehash ${certs}`;
 
 try {
-  // TEST_SCENARIO: the first boot on a new root adds the CAs to the image's own store without update-ca-certificates: a link per CA, the CAs after the image's bundle with a newline after each, and the hash links. Chromium's NSS store gets one certificate per PEM block.
+  // TEST_SCENARIO: the first boot on a new root adds the CAs to the image's own store without update-ca-certificates: a link per CA, the CAs after the image's bundle with a newline after each, and the hash links, once a dangling link that would fail openssl rehash is gone. Chromium's NSS store gets one certificate per PEM block.
   writeFileSync(join(ca, "ca.crt"), pem("one") + pem("two"));
   writeFileSync(join(ca, "extra.crt"), pem("three").trimEnd());
+  symlinkSync(join(dir, "gone.crt"), join(certs, "gone.pem"));
   assert.deepEqual(boot(), [rehash, "certutil -N", "certutil -L", "certutil -A", "certutil -A", "certutil -A"]);
   assert.equal(readFileSync(bundle, "utf8"), imageBundle + pem("one") + pem("two") + pem("three"));
   assert.equal(readlinkSync(join(certs, "platform-ca.pem")), join(share, "platform-ca.crt"));
   assert.equal(readlinkSync(join(certs, "platform-extra.pem")), join(share, "platform-extra.crt"));
   assert.equal(readFileSync(join(share, "platform-ca.crt"), "utf8"), pem("one") + pem("two"));
   assert.equal(existsSync(`${bundle}.new`), false);
+  assert.equal(existsSync(join(certs, "gone.pem")), false);
 
   // TEST_SCENARIO: a machine keeps its root and its home across a stop, so a boot with the same CA set rebuilds neither store. This is the seconds a machine boot saves.
   assert.deepEqual(boot(), []);
@@ -116,14 +119,13 @@ try {
   rmSync(join(home, ".pki"), { recursive: true });
   assert.deepEqual(boot(), ["certutil -N", "certutil -L", "certutil -A"]);
 
-  // TEST_SCENARIO: a failed first-boot add records nothing and leaves no half-built bundle, which update-ca-certificates would append to; the next boot finds the local CA copies and rebuilds with update-ca-certificates.
+  // TEST_SCENARIO: a failed first-boot add leaves no half-built bundle, which update-ca-certificates would append to, and update-ca-certificates builds the store in the same boot, so that boot already trusts the CAs.
   newRoot();
   writeFileSync(join(dir, "rehash-fails"), "");
-  assert.deepEqual(boot(), [rehash]);
+  assert.deepEqual(boot(), [rehash, "uca"]);
   assert.equal(readFileSync(bundle, "utf8"), imageBundle);
   assert.equal(existsSync(`${bundle}.new`), false);
   rmSync(join(dir, "rehash-fails"));
-  assert.deepEqual(boot(), ["uca"]);
   assert.deepEqual(boot(), []);
 
   // TEST_SCENARIO: a root that a boot before the record existed already trusted holds the CA copies and no record, so it rebuilds with update-ca-certificates.

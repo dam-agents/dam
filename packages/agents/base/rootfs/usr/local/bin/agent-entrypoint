@@ -38,8 +38,9 @@ certs=/etc/ssl/certs
 # A store no boot has touched is the one the image's own update-ca-certificates
 # built, so the platform CAs are added the way it would add them alone: a link
 # per CA, the CAs after the bundle's, each ending in a newline, and the hash
-# links. That takes a few forks, not several for each distribution root. A
-# Secret's or ConfigMap's key holds no character it would rewrite in a name.
+# links, once dangling links, which fail openssl rehash, are gone. That takes a
+# few forks, not several for each distribution root. A Secret's or ConfigMap's
+# key holds no character it would rewrite in a name.
 add_platform_cas() {
 	for crt in "$local_cas"/platform-*.crt; do
 		name=${crt##*/}
@@ -48,7 +49,8 @@ add_platform_cas() {
 	# update-ca-certificates appends to a leftover .new bundle, so none is left.
 	new="$certs/ca-certificates.crt.new"
 	{ { cat "$certs/ca-certificates.crt" && awk 1 "$local_cas"/platform-*.crt; } >"$new" &&
-		openssl rehash "$certs" && chmod 0644 "$new" && mv -f "$new" "$certs/ca-certificates.crt"; } ||
+		find -L "$certs" -maxdepth 1 -type l -exec rm -f {} + && openssl rehash "$certs" &&
+		chmod 0644 "$new" && mv -f "$new" "$certs/ca-certificates.crt"; } ||
 		{ rm -f "$new"; return 1; }
 }
 nssdb="$home/.pki/nssdb"
@@ -61,8 +63,9 @@ if [ -n "$ca_files" ] && ! system_inputs | cmp -s - "$system_set"; then
 	for f in $ca_files; do
 		cp "$f" "$local_cas/platform-${f##*/}" || trusted=false
 	done
-	if [ -z "$touched" ]; then update=add_platform_cas; else update=update-ca-certificates; fi
-	{ $trusted && $update >/dev/null 2>&1 && system_inputs >"$system_set"; } ||
+	# A failed add leaves the store to update-ca-certificates in the same boot.
+	{ $trusted && { { [ -z "$touched" ] && add_platform_cas; } || update-ca-certificates; } >/dev/null 2>&1 &&
+		system_inputs >"$system_set"; } ||
 		echo "agent-entrypoint: WARNING: could not trust the platform CAs; intercepted hosts may fail TLS" >&2
 fi
 # Chromium trusts its own NSS store in the home, not the system bundle, and
