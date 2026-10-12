@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-10-08
+Last verified: 2026-10-12
 
 ## Overview
 
@@ -24,7 +24,7 @@ The panel shows **the browser agent-browser drives**. The image sets agent-brows
 
 ## The display
 
-`platform-display`, run by agent-runtime for as long as it runs, is the display stack: Xvfb (the virtual display), i3 keeping every window full-screen, PipeWire with its PulseAudio server for sound, and **[Selkies](https://github.com/selkies-project/selkies)**, a stream server for Linux displays. It exits as soon as any part of it dies, and agent-runtime kills what it left and starts it again, with a growing delay while it keeps failing, so a crashed stream server or display comes back by itself.
+`platform-display` is the display stack: Xvfb (the virtual display), i3 keeping every window full-screen, PipeWire with its PulseAudio server for sound, and **[Selkies](https://github.com/selkies-project/selkies)**, a stream server for Linux displays. agent-runtime does not start it at boot, where it would take the CPU a small machine needs to come up and run the first turn: it starts it on first use — a harness, terminal or SSH session starting, which is how the agent's own `agent-browser` finds a display, or the panel asking for its browser or its stream — or ten seconds after it starts answering its health check, whichever comes first, and keeps it running from then on. That delay is the limit: a command run by anything else in those ten seconds finds no display yet. It exits as soon as any part of it dies, and agent-runtime kills what it left and starts it again, with a growing delay while it keeps failing, so a crashed stream server or display comes back by itself.
 
 Selkies captures the screen, encodes it as VP8 and sends it over a WebSocket to its web client, which decodes it with WebCodecs and sends pointer and keys back as X input. The client asks for the panel's size and Selkies resizes the display to it, at a pixel ratio of 1: the browser fills the screen, so the page lays out at the panel's size, and the agent's screenshot pixels are the CSS pixels its mouse commands take. Sound travels on the same socket: Chromium plays into PipeWire, Selkies captures it as Opus, and pages may play without a click, since the user's click lands in the panel, not in the sandbox.
 
