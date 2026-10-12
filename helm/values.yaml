@@ -274,8 +274,11 @@ virtualization:
     # It needs in-place pod resize (the `pods/resize` subresource,
     # Kubernetes 1.33+); on an older cluster the request stays where it is
     # set, and the controller logs that once. A node with no room defers or
-    # refuses the resize, which the controller reports too. Leave the CPU
-    # limit unset: it would throttle every guest at once.
+    # refuses the resize, which the controller reports too. The controller
+    # also sets the running pod's CPU limit in place, to `machineCPUs` for
+    # every machine that should run plus one more for the runner, so one
+    # owner's runaway VMM cannot take the node. A `limits.cpu` here caps that
+    # limit: below the machines' vCPUs it throttles every guest at once.
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
@@ -287,11 +290,13 @@ virtualization:
     # Counting a boot at its full size, half the pool, would let only two
     # machines boot at once, so a runner roll or a few wakes together would
     # refuse the rest. A guest that touches more than this before its first
-    # measurement is under-counted until then.
+    # measurement is under-counted until then. Each machine also boots with
+    # this much RAM, or its size when that is less, and is grown to its size
+    # once the guest is up: a boot costs time for every GiB it starts with.
     bootMiB: 2048
-    # vCPUs every machine gets. They are threads of the runner, which has no
-    # CPU limit, so an idle machine costs nothing and a busy one shares the
-    # node with the owner's other machines.
+    # vCPUs every machine gets. They are threads of the runner, so an idle
+    # machine costs nothing; the runner's CPU limit covers these vCPUs for
+    # every machine that should run (see `resources`).
     machineCPUs: 4
     # true = runners may give the node's virtualization extensions to the
     # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization,
