@@ -516,7 +516,7 @@ virtualization:
   # total leaves the cache permanently over it and saying so in its log.
   imageCache:
     hostPath: ""
-    budget: 50Gi
+    budget: 20Gi
     preloadInterval: 5m
     # Unpacking is I/O rather than CPU, and the tree is streamed rather than
     # held, so this is small on purpose. Leave the CPU limit unset: a
