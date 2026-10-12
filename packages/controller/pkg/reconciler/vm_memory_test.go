@@ -116,3 +116,13 @@ func TestAMachineIsSizedToHalfThePoolAndCountedAtTheBootEstimateUntilMeasured(t 
 	require.NoError(t, err)
 	assert.Equal(t, 2048+6000+256, d.memoryMiB, "a measured machine counts at its use, past the boot estimate")
 }
+
+// TEST_SCENARIO: the host runner admits against a share of the Mac's memory, not the chart's pod limit the install still has to set, so half of that limit would be a machine it refuses. There the agent's spec still sets the machine's memory.
+func TestAHostRunnerMachineTakesItsMemoryFromTheSpec(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("12Gi")}}
+	r.config.VM.Runner.HostAddress = "192.168.5.2"
+
+	assert.Equal(t, 3072, r.machineMemoryMiB(&agent.Spec), "the host runner's machine was sized from the chart's pod limit")
+}

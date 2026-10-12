@@ -33,9 +33,9 @@ type runnerDemand struct {
 	seedBytes int64
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no size of its own: every machine may grow to half of what its owner's runner hands out, so one agent can use most of the pool while a runaway guest meets its own OOM killer before it takes the runner, and every sibling, over the limit. A runner with no memory limit — the host runner — admits anything, so the agent's spec still sizes its machine there.
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no size of its own: every machine may grow to half of what its owner's runner hands out, so one agent can use most of the pool while a runaway guest meets its own OOM killer before it takes the runner, and every sibling, over the limit. The host runner admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the agent's spec still sets its machine's memory.
 func (r *AgentReconciler) machineMemoryMiB(spec *apiv1.AgentSpec) int {
-	if limit := r.runnerLimitMiB(); limit > 0 {
+	if limit := r.runnerLimitMiB(); limit > 0 && r.config.VM.Runner.HostAddress == "" {
 		return max((limit-r.config.VM.Runner.ReserveMiB)/2, 1)
 	}
 	_, mem := r.limitsOf(spec)
