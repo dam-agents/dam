@@ -80,7 +80,7 @@ func agentEvents(t *testing.T, r *AgentReconciler) map[string][]string {
 	return out
 }
 
-// TEST_SCENARIO: the copy pod runs confined — no privilege escalation, a read-only root with a scratch directory, the runtime's default seccomp profile, a bound on its scratch disk — and keeps the agent pods' RuntimeClass, since it only reads. Its credentials are readable by whichever identity it runs as.
+// TEST_SCENARIO: the copy pod runs confined — no privilege escalation, a read-only root with a scratch directory, the runtime's default seccomp profile, a bound on its scratch disk — and runs under the default runtime even when the agent pods use Kata, whose memory cgroup is far smaller than its guest, so a copy that reads a large home gets the VMM killed and leaves a pod nothing can stop. Its credentials are readable by whichever identity it runs as.
 func TestTheCopyJobRunsConfined(t *testing.T) {
 	agent := copyingAgentCR()
 	agent.Spec.RuntimeClassName = "kata"
@@ -95,8 +95,7 @@ func TestTheCopyJobRunsConfined(t *testing.T) {
 	assert.True(t, *sc.ReadOnlyRootFilesystem)
 	assert.Equal(t, []corev1.Capability{"ALL"}, sc.Capabilities.Drop)
 	assert.Equal(t, corev1.SeccompProfileTypeRuntimeDefault, sc.SeccompProfile.Type)
-	require.NotNil(t, pod.RuntimeClassName)
-	assert.Equal(t, "kata", *pod.RuntimeClassName)
+	assert.Nil(t, pod.RuntimeClassName)
 
 	res := pod.Containers[0].Resources
 	assert.False(t, res.Requests.StorageEphemeral().IsZero())
