@@ -511,6 +511,9 @@ export function ChatView() {
   );
 
   const [pairPickerOpen, setPairPickerOpen] = useState(false);
+  useEffect(() => {
+    if (sessionId) setPairPickerOpen(false);
+  }, [sessionId]);
   const handleNewSession = useCallback(
     (pickPair = false) => {
       const focusComposer = () =>

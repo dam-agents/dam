@@ -8,7 +8,7 @@ Every Agent shows one of eight fixed characters built from the Eye-Bee-M rebus, 
 
 ## Choosing a character
 
-The owner picks the character in the Agent's settings, and the choice is stored on the Agent spec, so renaming keeps it. A create from the UI stores the character the owner uses least, so new Agents differ by default. An Agent with no stored choice, or one the platform does not know, shows a character picked by a hash of its name and its owner's identity. A rename from the settings page stores the character the page shows, so the Agent keeps it; a rename by any other path can change it.
+The owner picks the character in the Agent's settings, and the choice is stored on the Agent spec, so renaming keeps it. A create from the UI stores the character the owner uses least, so new Agents differ by default; the kit modal shows it and lets the owner pick another before applying. An Agent with no stored choice, or one the platform does not know, shows a character picked by a hash of its name and its owner's identity. A rename from the settings page stores the character the page shows, so the Agent keeps it; a rename by any other path can change it.
 
 ## State
 
