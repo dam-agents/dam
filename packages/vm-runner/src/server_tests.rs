@@ -1601,6 +1601,24 @@ async fn the_prober_reports_a_guest_that_comes_up_to_a_waiting_read() {
     assert_ne!(ready.version, booted.version);
 }
 
+// TEST_SCENARIO: the probe cadence is what the user waits on between the guest answering and the controller hearing of it, so a fresh boot is asked every FRESH_BOOT_PROBE. Each probe is also a console line, so a boot still quiet after SLOW_BOOT_AFTER falls back to BOOT_PROBE, and a guest that has answered is asked only at the steady cadence.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fresh_boot_is_probed_tightly_and_an_old_or_answered_one_is_not() {
+    let h = Harness::new("probe-cadence");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(h.machine("m1", |m| probe_every(m)), Some(FRESH_BOOT_PROBE));
+    h.machine("m1", |m| {
+        m.boot.as_mut().unwrap().at = Instant::now()
+            .checked_sub(SLOW_BOOT_AFTER + Duration::from_secs(1))
+            .unwrap()
+    });
+    assert_eq!(h.machine("m1", |m| probe_every(m)), Some(BOOT_PROBE));
+    let _guest = guest(h.base);
+    h.until("m1", "ready", |s| s.ready).await;
+    assert_eq!(h.machine("m1", |m| probe_every(m)), Some(STEADY_PROBE));
+}
+
 // TEST_SCENARIO: a guest that accepts its health check and never answers holds its probe for the whole health timeout. The other machines on their way up must still be probed at the boot cadence, or one hung guest would delay every wake on the runner by that timeout.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_hung_guest_does_not_hold_up_the_probes_of_the_others() {
