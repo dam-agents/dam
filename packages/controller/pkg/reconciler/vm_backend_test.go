@@ -230,7 +230,7 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	}
 	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), pod)
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
-		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256,
+		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
@@ -319,7 +319,7 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	agent.Labels[envoyOwnerLabel] = testOwner
 	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), readyRunnerPod(), runnerSecret(), runnerTLSSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
-		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256,
+		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
 	}}
 	r.config.AgentBase.ToolsHostPath = "/var/lib/platform-tools"
@@ -378,7 +378,7 @@ func TestAVMAgentWithNoPullSecretFetchesAnonymously(t *testing.T) {
 	assert.Empty(t, node.spec("my-agent").PullAuths)
 }
 
-// TEST_SCENARIO: a vm agent wakes: the node gets a running machine shaped by the agent's size and mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and since no pod event will come the reconciler watches the machine itself.
+// TEST_SCENARIO: a vm agent wakes: the node gets a running machine with the install's vCPUs, sized by the agent's spec where the runner has no memory limit, and its mounts, wired to its gateway alone and carrying the restart revision; the cluster gets an agent Service that selects the owner's runner and maps the agent port onto the one this machine publishes there, and no agent StatefulSet; the Agent reads not-ready until the guest answers, and since no pod event will come the reconciler watches the machine itself.
 func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, requeued := setupVMReconciler(t, agent)
@@ -388,7 +388,7 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	spec := node.spec("my-agent")
 	assert.True(t, spec.Running)
 	assert.Equal(t, "quay.io/example/claude-code-vm:1", spec.Image)
-	assert.Equal(t, 2, spec.CPUs)
+	assert.Equal(t, 4, spec.CPUs)
 	assert.Equal(t, 3072, spec.MemoryMiB)
 	assert.Equal(t, 10, spec.StorageGiB)
 	assert.Equal(t, "MITM-CA", spec.CACert)

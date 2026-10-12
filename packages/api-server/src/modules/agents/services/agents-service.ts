@@ -40,6 +40,7 @@ import {
   assembleSpecFromImage,
   resolveEffectiveHibernationTimeoutMin,
   type DefaultResourceLimits,
+  type IdleTimeoutMinutes,
 } from "../domain/spec-assembly.js";
 import {
   ANN_AGENT_KIND,
@@ -56,9 +57,10 @@ import {
   executeRuntimeMigration,
   type RuntimeMigrationWrite,
 } from "./runtime-migration.js";
-import type {
-  AgentMount,
-  RuntimeMigrationContext,
+import {
+  type AgentMount,
+  isVmBackend,
+  type RuntimeMigrationContext,
 } from "../domain/runtime-migration.js";
 import { runtimeMigrationPlan } from "../domain/runtime-migration-plan.js";
 import {
@@ -530,7 +532,7 @@ export interface ResizeGatePort {
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   agentEnvRepo: AgentEnvRepository;
-  agentIdleTimeoutMinutes: number;
+  agentIdleTimeoutMinutes: IdleTimeoutMinutes;
   owner: string | undefined;
   readTemplateSpec: ReadTemplateSpec;
   presetSeeder?: PresetSeeder;
@@ -1249,6 +1251,13 @@ export function createAgentsService(deps: {
           deps.resizeLock(`resize:${deps.owner ?? ""}`, async () => {
             const current = await deps.repo.get(input.id, deps.owner);
             if (!current) return null;
+            if (isVmBackend(current.spec)) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message:
+                  "A VM agent has no size: it shares its owner's VM runner.",
+              });
+            }
             if (!current.hibernated && !current.overBudget) {
               const gate = deps.resizeGate;
               if (!gate) {
@@ -1424,6 +1433,7 @@ export function createAgentsService(deps: {
       if (!current) return null;
       const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
         current.spec.hibernationTimeout,
+        current.spec.backend?.type === "vm",
         deps.agentIdleTimeoutMinutes,
       );
       const infra =

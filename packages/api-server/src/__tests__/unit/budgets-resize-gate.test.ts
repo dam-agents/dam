@@ -103,6 +103,27 @@ describe("budgets meter (#1900)", () => {
     });
   });
 
+  it("leaves vm agents out: they draw on their owner's runner", async () => {
+    const svc = createBudgetsService({
+      listAgents: async () => [
+        agent("up", { cpu: "1", memory: "1Gi" }),
+        {
+          ...agent("vm", { cpu: "4", memory: "8Gi" }),
+          spec: {
+            resources: { limits: { cpu: "4", memory: "8Gi" } },
+            backend: { type: "vm" },
+          },
+        },
+      ],
+      readCeilingOverride: async () => null,
+      defaultCeiling: { cpu: "4", memory: "8Gi" },
+      slotSize: { cpu: "1", memory: "2Gi" },
+    });
+    const reserved = await svc.reserved();
+    expect(reserved.cpu.reservedMilli).toBe(1000);
+    expect(reserved.memory.reservedBytes).toBe(1024 ** 3);
+  });
+
   it("prefers the UserBudget override over the chart default", async () => {
     const svc = createBudgetsService({
       listAgents: async () => [],

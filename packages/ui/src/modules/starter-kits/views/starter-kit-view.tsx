@@ -393,12 +393,12 @@ function KitDetail({
   };
 
   const size = useMemo(() => {
-    if (!kit.resources || !budget.data) return null;
+    if (!kit.resources || !budget.data || kit.backend === "vm") return null;
     const unit = slotUnitOf(budget.data);
     const mi = sizeInMi(kit.resources);
     if (mi.cpuMilli === 0 && mi.memoryMi === 0) return null;
     return { label: formatSizeLabel(mi, unit) };
-  }, [kit.resources, budget.data]);
+  }, [kit.resources, kit.backend, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
   const kbSeed = kit.knowledgeBase ? kit.seed : undefined;

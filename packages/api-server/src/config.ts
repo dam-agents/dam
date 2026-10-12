@@ -152,7 +152,10 @@ const configSchema = z.object({
   keycloakSlackInstallerRole: z.string().optional(),
   agentHome: z.string().default("/home/agent"),
   agentWorkDir: z.string().default("/home/agent/work"),
-  agentIdleTimeoutMinutes: z.number().int().min(0),
+  agentIdleTimeoutMinutes: z.object({
+    container: z.number().int().min(0),
+    vm: z.number().int().min(0),
+  }),
   agentDefaultCpuLimit: positiveQuantitySchema.default("1"),
   agentDefaultMemoryLimit: positiveQuantitySchema.default("1Gi"),
   agentDefaultStorageSize: positiveQuantitySchema.default("10Gi"),
@@ -329,9 +332,12 @@ export function loadConfig(): Config {
     keycloakSlackInstallerRole: process.env.KEYCLOAK_SLACK_INSTALLER_ROLE,
     agentHome: process.env.AGENT_HOME,
     agentWorkDir: process.env.AGENT_WORK_DIR,
-    agentIdleTimeoutMinutes: durationToMinutesStrict(
-      process.env.AGENT_IDLE_TIMEOUT ?? "1h",
-    ),
+    agentIdleTimeoutMinutes: {
+      container: durationToMinutesStrict(
+        process.env.AGENT_IDLE_TIMEOUT ?? "1h",
+      ),
+      vm: durationToMinutesStrict(process.env.AGENT_VM_IDLE_TIMEOUT ?? "5m"),
+    },
     agentDefaultCpuLimit: process.env.AGENT_DEFAULT_CPU_LIMIT,
     agentDefaultMemoryLimit: process.env.AGENT_DEFAULT_MEMORY_LIMIT,
     agentDefaultStorageSize: process.env.AGENT_DEFAULT_STORAGE_SIZE,

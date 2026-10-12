@@ -1,3 +1,5 @@
+import type { IdleTimeoutMinutes } from "../../agents/domain/spec-assembly.js";
+
 export const CORE_FEATURES = [
   "starter_kit",
   "artifact",
@@ -35,13 +37,14 @@ export type LiveAgentFact = {
   cpu: string | undefined;
   memory: string | undefined;
   hibernationTimeout: string | undefined;
+  vm: boolean;
   storageSize: string | undefined;
   grantedConnectionIds: ReadonlyArray<string>;
 };
 export type AgentSizing = {
   slot: { cpu: string; memory: string };
   defaultStorage: string;
-  idleTimeoutMin: number;
+  idleTimeoutMinutes: IdleTimeoutMinutes;
 };
 
 export type OutOfMemoryRestart = {

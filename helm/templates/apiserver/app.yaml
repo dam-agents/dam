@@ -336,6 +336,8 @@ spec:
               value: "/home/agent/work"
             - name: AGENT_IDLE_TIMEOUT
               value: {{ .Values.controller.agent.base.idleTimeout | quote }}
+            - name: AGENT_VM_IDLE_TIMEOUT
+              value: {{ .Values.controller.agent.base.vmIdleTimeout | quote }}
             # Same Helm value the controller's AGENT_TEMPLATE_DEFAULTS carries,
             # so create-time resource stamping (#1900) cannot drift from the
             # controller's render-time defaults.

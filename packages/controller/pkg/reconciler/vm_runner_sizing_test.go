@@ -123,7 +123,7 @@ func TestTheRunnerRequestFollowsTheMachinesThatShouldRun(t *testing.T) {
 	ctx := context.Background()
 
 	require.NoError(t, r.Reconcile(ctx, agent))
-	assert.Equal(t, "3584Mi", runnerPodRequest(t, r), "the running 3Gi machine plus the 512Mi reserve")
+	assert.Equal(t, "8704Mi", runnerPodRequest(t, r), "the unmeasured machine at half the runner's 15.5Gi plus the 512Mi reserve, in 512Mi steps")
 	assert.Equal(t, 1, resizeCalls(r), "changed through the pod's resize subresource")
 
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})

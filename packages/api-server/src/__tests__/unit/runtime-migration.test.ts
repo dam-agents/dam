@@ -597,7 +597,7 @@ function viewOf(
     infra,
     [],
     [],
-    60,
+    { container: 60, vm: 5 },
     false,
     undefined,
     runtimeFeaturesOf(null),

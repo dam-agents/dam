@@ -74,6 +74,7 @@ pub struct Config {
     pub memory_mib: i32,
     pub reserve_mib: i32,
     pub headroom_mib: i32,
+    pub boot_mib: i32,
     pub listen: Option<Arc<Listen>>,
     // UNIT_BOUNDARY_DESCRIPTION: the VM runtime this runner's release was built against, which every machine it starts boots. None where the runner's release names none, which makes no machine foreign.
     pub runtime: Option<String>,
@@ -1218,6 +1219,7 @@ impl Server {
             limit_mib: self.config.memory_mib,
             reserve_mib: self.config.reserve_mib,
             headroom_mib: self.config.headroom_mib,
+            boot_mib: self.config.boot_mib,
         }
     }
 

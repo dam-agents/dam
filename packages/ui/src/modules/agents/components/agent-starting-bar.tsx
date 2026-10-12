@@ -90,7 +90,7 @@ export function AgentStartingBar({
 function SkipTheWait({ agent }: { agent: AgentView }) {
   const updateAgent = useUpdateAgent();
   const showConfirm = useStore((s) => s.showConfirm);
-  if (agent.hibernationTimeoutMin === 0) return null;
+  if (agent.vm || agent.hibernationTimeoutMin === 0) return null;
 
   const keepAlwaysOn = async () => {
     const ok = await showConfirm(
