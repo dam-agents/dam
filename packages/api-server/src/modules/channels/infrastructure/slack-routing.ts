@@ -1,9 +1,13 @@
+import { match } from "ts-pattern";
+import type { SlackSender } from "./slack-sender.js";
+
 export interface RosterEntry {
   teamId: string;
   instanceName: string;
   name: string;
   owner: string;
   ambient: boolean;
+  ignoreApps?: boolean;
   isDefault: boolean;
 }
 
@@ -47,6 +51,17 @@ export function orderAmbientReaders(
     [rest[i], rest[j]] = [rest[j]!, rest[i]!];
   }
   return [...primary, ...rest];
+}
+
+export function senderReaches(
+  sender: SlackSender,
+  binding: { instanceName: string; ignoreApps?: boolean },
+): boolean {
+  return match(sender)
+    .with({ kind: "person" }, () => true)
+    .with({ kind: "agent" }, ({ agentId }) => agentId !== binding.instanceName)
+    .with({ kind: "app" }, () => binding.ignoreApps !== true)
+    .exhaustive();
 }
 
 export function matchRosterName(

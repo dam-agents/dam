@@ -1,6 +1,8 @@
 import { App, LogLevel } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
 import { FileTooLargeError } from "./slack-gateway.js";
+import { classifySlackSender } from "./slack-sender.js";
+import type { SlackInboundPost, SlackSelf } from "./slack-sender.js";
 import type {
   SlackChannelInfo,
   SlackConversationLookup,
@@ -44,6 +46,7 @@ export interface BoltSlackGatewayDeps {
 interface WorkspaceAuth {
   token: string;
   botUserId: string | null;
+  botId: string | null;
   scopes: Set<string> | null;
   tested: Promise<void> | null;
 }
@@ -162,6 +165,7 @@ export function createBoltSlackGateway(
     const fresh: WorkspaceAuth = {
       token,
       botUserId: null,
+      botId: null,
       scopes: null,
       tested: null,
     };
@@ -184,6 +188,7 @@ export function createBoltSlackGateway(
         const scopes = result.response_metadata?.scopes;
         if (scopes) auth.scopes = new Set(scopes);
         if (typeof result.user_id === "string") auth.botUserId = result.user_id;
+        if (typeof result.bot_id === "string") auth.botId = result.bot_id;
       } catch {
         auth.tested = null;
       }
@@ -232,6 +237,7 @@ export function createBoltSlackGateway(
       const bolt = new App({
         appToken: deps.appToken,
         socketMode: true,
+        ignoreSelf: false,
         logLevel: LogLevel.DEBUG,
         authorize: async ({ teamId }) => {
           const auth = await testedAuthFor(teamId ?? NO_WORKSPACE);
@@ -243,37 +249,54 @@ export function createBoltSlackGateway(
         },
       });
 
+      const selfOf = async (
+        workspace: SlackWorkspace,
+        botUserId: string | undefined,
+      ): Promise<SlackSelf> => {
+        const auth = await testedAuthFor(workspace);
+        return {
+          userId: botUserId ?? auth?.botUserId ?? null,
+          botId: auth?.botId ?? null,
+        };
+      };
+
       bolt.event("app_mention", async ({ event, context }) => {
+        const workspace = event.team ?? context.teamId ?? NO_WORKSPACE;
+        const sender = classifySlackSender(
+          event as SlackInboundPost,
+          await selfOf(workspace, context.botUserId),
+        );
+        if (!sender) return;
         await handlers.onMention({
           user: event.user,
+          sender,
           channel: event.channel,
           ts: event.ts,
           threadTs: event.thread_ts,
           text: event.text ?? "",
           files: (event as { files?: SlackImageFile[] }).files,
-          teamId: event.team ?? context.teamId ?? NO_WORKSPACE,
+          teamId: workspace,
           channelType: (event as { channel_type?: string }).channel_type,
         });
       });
 
       bolt.event("message", async ({ event, context }) => {
-        const msg = event as {
+        const msg = event as SlackInboundPost & {
           channel: string;
           channel_type?: string;
-          subtype?: string;
-          bot_id?: string;
-          user?: string;
           ts: string;
           thread_ts?: string;
           text?: string;
           team?: string;
           files?: SlackImageFile[];
         };
-        if (msg.subtype !== undefined && msg.subtype !== "file_share") return;
-        if (msg.bot_id || !msg.user) return;
         const workspace = msg.team ?? context.teamId ?? NO_WORKSPACE;
+        const self = await selfOf(workspace, context.botUserId);
+        const sender = classifySlackSender(msg, self);
+        if (!sender) return;
         const payload = {
           user: msg.user,
+          sender,
           channel: msg.channel,
           ts: msg.ts,
           threadTs: msg.thread_ts,
@@ -283,13 +306,14 @@ export function createBoltSlackGateway(
           channelType: msg.channel_type,
         };
         if (msg.channel_type === "im") {
-          await handlers.onDirectMessage(payload);
+          if (sender.kind === "person") await handlers.onDirectMessage(payload);
           return;
         }
         const text = msg.text ?? "";
-        const selfId =
-          context.botUserId ?? (await testedAuthFor(workspace))?.botUserId;
-        if (selfId && text.includes(`<@${selfId}>`)) return;
+        if (self.userId && text.includes(`<@${self.userId}>`)) {
+          if (sender.kind !== "person") await handlers.onMention(payload);
+          return;
+        }
         if (msg.channel_type === "channel" || msg.channel_type === "group") {
           await handlers.onMessage(payload);
         }
@@ -467,7 +491,7 @@ export function createBoltSlackGateway(
     },
 
     async postEphemeral(args) {
-      if (!app) return;
+      if (!app || !args.user) return;
       const token = await tokenFor(args.teamId);
       if (!token) return;
       await app.client.chat.postEphemeral({

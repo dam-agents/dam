@@ -1,4 +1,5 @@
 import type { SlackConversationLabel } from "api-server-api";
+import type { SlackSender } from "./slack-sender.js";
 
 export interface SlackImageFile {
   id: string;
@@ -25,6 +26,7 @@ export type SlackWorkspace = string;
 
 export interface SlackMentionEvent {
   user?: string;
+  sender: SlackSender;
   channel: string;
   ts: string;
   threadTs?: string;

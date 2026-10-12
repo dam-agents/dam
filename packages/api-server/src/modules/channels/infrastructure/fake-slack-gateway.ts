@@ -1,5 +1,6 @@
 import type { SlackOutboundRecord } from "api-server-api";
 import { FileTooLargeError } from "./slack-gateway.js";
+import type { SlackSender } from "./slack-sender.js";
 import type {
   SlackViewSubmission,
   SlackBotJoinedChannelEvent,
@@ -23,9 +24,18 @@ export interface FakeSlackChannel {
   members?: string[];
 }
 
-export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId"> & {
+export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId" | "sender"> & {
   teamId?: string;
+  sender?: SlackSender;
 };
+
+function firedEvent(input: FiredSlackEvent): SlackMentionEvent | null {
+  const sender =
+    input.sender ??
+    (input.user ? ({ kind: "person", user: input.user } as const) : null);
+  if (!sender) return null;
+  return { ...input, sender, teamId: input.teamId ?? FAKE_WORKSPACE };
+}
 export type FiredSlackCommand = Omit<
   SlackSlashCommand,
   "teamId" | "triggerId"
@@ -232,6 +242,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async openModal() {},
 
     async postEphemeral(args) {
+      if (!args.user) return;
       outbound.push({
         kind: "ephemeral",
         teamId: args.teamId,
@@ -411,19 +422,13 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async fireMention(input) {
-      const event: SlackMentionEvent = {
-        ...input,
-        teamId: input.teamId ?? FAKE_WORKSPACE,
-      };
-      await requireHandlers().onMention(event);
+      const event = firedEvent(input);
+      if (event) await requireHandlers().onMention(event);
     },
 
     async fireMessage(input) {
-      const event: SlackMentionEvent = {
-        ...input,
-        teamId: input.teamId ?? FAKE_WORKSPACE,
-      };
-      await requireHandlers().onMessage(event);
+      const event = firedEvent(input);
+      if (event) await requireHandlers().onMessage(event);
     },
 
     async fireViewSubmission(event) {
@@ -438,11 +443,8 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async fireDirectMessage(input) {
-      const event: SlackMentionEvent = {
-        ...input,
-        teamId: input.teamId ?? FAKE_WORKSPACE,
-      };
-      await requireHandlers().onDirectMessage(event);
+      const event = firedEvent(input);
+      if (event) await requireHandlers().onDirectMessage(event);
     },
 
     async fireCommand(input) {

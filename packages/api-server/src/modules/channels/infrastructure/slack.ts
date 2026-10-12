@@ -165,8 +165,11 @@ import {
   orderAmbientReaders,
   parseWhisperRequest,
   routeMention,
+  senderReaches,
   type RosterEntry,
 } from "./slack-routing.js";
+import type { SlackSender } from "./slack-sender.js";
+import { createBotPostLoopBound } from "../domain/bot-post-loop-bound.js";
 import {
   parseWhisperSession,
   whisperSessionMetadata,
@@ -957,6 +960,7 @@ export interface SlackBindingInfo {
   owner: string;
   teamId: SlackWorkspace;
   ambient: boolean;
+  ignoreApps?: boolean;
   isDefault: boolean;
 }
 
@@ -1287,6 +1291,11 @@ export type SlackWorkerDeps = {
     slackChannelId: string,
     ambient: boolean,
   ) => Promise<void>;
+  setSlackChannelIgnoreApps?: (
+    agentId: string,
+    slackChannelId: string,
+    ignoreApps: boolean,
+  ) => Promise<void>;
   setSlackDefault: (
     agentId: string,
     slackChannelId: string,
@@ -1316,6 +1325,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     channelRegistry,
     unbindSlackChannel,
     setSlackChannelAmbient,
+    setSlackChannelIgnoreApps = async () => {},
     setSlackDefault,
     brand,
     isTermsAccepted,
@@ -1407,8 +1417,74 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     text: string;
     eventTs: string;
     slackUserId: string;
+    speaker?: string;
+    sender?: SlackSender;
     inThread: boolean;
   };
+
+  const botPosts = createBotPostLoopBound();
+
+  const BOT_MENTION_SEEN_TTL_MS = 10 * 60 * 1000;
+  const botMentionsSeen = new Map<string, number>();
+
+  function firstBotMentionSighting(channel: string, ts: string): boolean {
+    const now = Date.now();
+    for (const [key, expiresAt] of botMentionsSeen) {
+      if (expiresAt > now) break;
+      botMentionsSeen.delete(key);
+    }
+    const key = `${channel} ${ts}`;
+    if (botMentionsSeen.has(key)) return false;
+    botMentionsSeen.set(key, now + BOT_MENTION_SEEN_TTL_MS);
+    return true;
+  }
+
+  function botPostConversation(channel: string, threadTs?: string): string {
+    return `${channel} ${threadTs ?? "top"}`;
+  }
+
+  async function speakerOf(sender: SlackSender): Promise<string> {
+    return match(sender)
+      .with({ kind: "person" }, ({ user }) => `<@${user}>`)
+      .with(
+        { kind: "agent" },
+        async ({ agentId }) =>
+          `${(await resolveAgentName(agentId)) || agentId} (another agent)`,
+      )
+      .with({ kind: "app" }, ({ name, botId }) => `${name || botId} (an app)`)
+      .exhaustive();
+  }
+
+  function senderDetail(sender: SlackSender | undefined) {
+    return match(sender)
+      .with(undefined, { kind: "person" }, () => ({}))
+      .with({ kind: "agent" }, ({ agentId }) => ({
+        sender: "agent",
+        senderAgentId: agentId,
+      }))
+      .with({ kind: "app" }, ({ botId }) => ({
+        sender: "app",
+        senderBotId: botId,
+      }))
+      .exhaustive();
+  }
+
+  function admitBotPost(
+    sender: SlackSender,
+    conversation: string,
+    channelId: string,
+  ): boolean {
+    if (sender.kind === "person") {
+      botPosts.notePersonPost(conversation);
+      return true;
+    }
+    if (botPosts.admitBotPost(conversation)) return true;
+    getLogger().info(
+      { channelId, sender: sender.kind },
+      "slack.bot_post.loop_bound",
+    );
+    return false;
+  }
 
   const inFlightTurns = new Map<string, Set<TurnRef>>();
 
@@ -1894,6 +1970,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         owner: binding.owner,
         teamId: binding.teamId,
         ambient: binding.ambient,
+        ignoreApps: binding.ignoreApps === true,
         isDefault: binding.isDefault,
       })),
     );
@@ -3400,6 +3477,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       .with("ambient", async () => {
         await handleAmbientCommand(rest, command, ack);
       })
+      .with("apps", async () => {
+        await handleAppsCommand(rest, command, ack);
+      })
       .with("delete", async () => {
         await handleDeleteCommand(command, ack);
       })
@@ -3411,7 +3491,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} whisper [agent] ["message"]\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
+          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} apps [agent] on|off\`, \`/${brandShort} whisper [agent] ["message"]\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
         });
       })
       .exhaustive();
@@ -3706,6 +3786,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         text: event.text + fetched.withheldNote,
         eventTs: event.ts,
         slackUserId,
+        sender: event.sender,
+        speaker: await speakerOf(event.sender),
         inThread: true,
         images: fetched.images,
         files: fetched.files,
@@ -3838,15 +3920,148 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     });
   }
 
+  async function authorizeBindingSwitch(
+    command: SlackSlashCommand,
+    ack: SlackAck,
+    binding: RosterEntry,
+    subcommand: string,
+    setting: string,
+  ): Promise<string | null> {
+    const invoker = await identityLinks.resolve("slack", command.userId);
+    if (!invoker) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: null,
+        actorKind: "external",
+        surface: "slack",
+        agentId: binding.instanceName,
+        decision: "deny",
+        reason: "unlinked",
+        detail: {
+          slackUserId: command.userId,
+          channelId: command.channelId,
+        },
+      });
+      await ack({
+        text: `Link your account first — run \`/${brandShort} login\`, then \`/${brandShort} ${subcommand}\` again.`,
+      });
+      return null;
+    }
+
+    const agentOwner = await getInstanceOwner(binding.instanceName);
+    const allowed = invoker === binding.owner || invoker === agentOwner;
+    if (!allowed) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: invoker,
+        actorKind: "user",
+        surface: "slack",
+        agentId: binding.instanceName,
+        decision: "deny",
+        reason: "not-binder-or-owner",
+        detail: {
+          slackUserId: command.userId,
+          channelId: command.channelId,
+        },
+      });
+      await ack({
+        text: `Only the person who connected this channel, or the agent's owner, can change ${setting}.`,
+      });
+      return null;
+    }
+    return invoker;
+  }
+
+  function parseSwitchArgs(rest: string): {
+    action: "on" | "off" | null;
+    nameArg: string;
+  } {
+    const words = rest.split(/\s+/).filter(Boolean);
+    const tail = words.at(-1)?.toLowerCase();
+    const action = tail === "on" || tail === "off" ? tail : null;
+    return { action, nameArg: (action ? words.slice(0, -1) : words).join(" ") };
+  }
+
+  async function handleAppsCommand(
+    rest: string,
+    command: SlackSlashCommand,
+    ack: SlackAck,
+  ) {
+    const { action, nameArg } = parseSwitchArgs(rest);
+    const subcommand = action ? `apps ${action}` : "apps";
+
+    const picked = await pickRosterAgent(
+      command.channelId,
+      nameArg,
+      (name) => `/${brandShort} apps ${name}${action ? ` ${action}` : ""}`,
+    );
+    if (!picked.ok) {
+      await ack({ text: picked.text });
+      return;
+    }
+    const binding = picked.entry;
+    const hearsApps = binding.ignoreApps !== true;
+    if (!action) {
+      await ack({
+        text:
+          `Posts from other apps and webhooks ${
+            hearsApps
+              ? `reach \`${binding.name}\` here the same way a person's posts do`
+              : `are ignored by \`${binding.name}\` here`
+          }. Use \`/${brandShort} apps ${binding.name} on\` or \`/${brandShort} apps ${binding.name} off\` to change it. ` +
+          "Posts by other agents always reach it.",
+      });
+      return;
+    }
+    const enable = action === "on";
+
+    const invoker = await authorizeBindingSwitch(
+      command,
+      ack,
+      binding,
+      subcommand,
+      "whether app posts reach the agent",
+    );
+    if (!invoker) return;
+
+    if (enable === hearsApps) {
+      await ack({
+        text: `App posts already ${enable ? "reach" : "are ignored by"} \`${binding.name}\` here.`,
+      });
+      return;
+    }
+
+    await setSlackChannelIgnoreApps(
+      binding.instanceName,
+      command.channelId,
+      !enable,
+    );
+    securityLog("info", "channel.ignore_apps_toggled", {
+      category: "authz-list",
+      actor: invoker,
+      actorKind: "user",
+      surface: "slack",
+      agentId: binding.instanceName,
+      result: "success",
+      detail: {
+        slackUserId: command.userId,
+        channelId: command.channelId,
+        ignoreApps: !enable,
+      },
+    });
+    await ack({
+      text: enable
+        ? `Posts from other apps and webhooks now reach \`${binding.name}\` here, the same way a person's posts do.`
+        : `\`${binding.name}\` now ignores posts from other apps and webhooks here. People and other agents still reach it.`,
+    });
+  }
+
   async function handleAmbientCommand(
     rest: string,
     command: SlackSlashCommand,
     ack: SlackAck,
   ) {
-    const words = rest.split(/\s+/).filter(Boolean);
-    const tail = words.at(-1)?.toLowerCase();
-    const action = tail === "on" || tail === "off" ? tail : null;
-    const nameArg = (action ? words.slice(0, -1) : words).join(" ");
+    const { action, nameArg } = parseSwitchArgs(rest);
     const subcommand = action ? `ambient ${action}` : "ambient";
 
     const picked = await pickRosterAgent(
@@ -3884,48 +4099,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     const enable = action === "on";
 
-    const invoker = await identityLinks.resolve("slack", command.userId);
-    if (!invoker) {
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
-        actor: null,
-        actorKind: "external",
-        surface: "slack",
-        agentId: binding.instanceName,
-        decision: "deny",
-        reason: "unlinked",
-        detail: {
-          slackUserId: command.userId,
-          channelId: command.channelId,
-        },
-      });
-      await ack({
-        text: `Link your account first — run \`/${brandShort} login\`, then \`/${brandShort} ${subcommand}\` again.`,
-      });
-      return;
-    }
-
-    const agentOwner = await getInstanceOwner(binding.instanceName);
-    const allowed = invoker === binding.owner || invoker === agentOwner;
-    if (!allowed) {
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
-        actor: invoker,
-        actorKind: "user",
-        surface: "slack",
-        agentId: binding.instanceName,
-        decision: "deny",
-        reason: "not-binder-or-owner",
-        detail: {
-          slackUserId: command.userId,
-          channelId: command.channelId,
-        },
-      });
-      await ack({
-        text: "Only the person who connected this channel, or the agent's owner, can change ambient mode.",
-      });
-      return;
-    }
+    const invoker = await authorizeBindingSwitch(
+      command,
+      ack,
+      binding,
+      subcommand,
+      "ambient mode",
+    );
+    if (!invoker) return;
 
     if (enable === isAmbient) {
       await ack({ text: `Ambient mode is already ${enable ? "on" : "off"}.` });
@@ -4097,8 +4278,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ) {
     if (!gateway) return;
 
-    const slackUserId = event.user;
-    if (!slackUserId) return;
+    const sender = event.sender;
+    if (opts.directMessage && sender.kind !== "person") return;
+    if (
+      sender.kind !== "person" &&
+      !firstBotMentionSighting(event.channel, event.ts)
+    )
+      return;
+    const slackUserId = sender.kind === "person" ? sender.user : "";
+    const conversation = botPostConversation(event.channel, event.threadTs);
+    if (sender.kind === "person") botPosts.notePersonPost(conversation);
 
     const threadTs = event.threadTs ?? event.ts;
     if (opts.directMessage && event.threadTs) {
@@ -4150,6 +4339,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return;
     }
     const binding = routed.target;
+    if (!senderReaches(sender, binding)) return;
+    if (!admitBotPost(sender, conversation, event.channel)) return;
 
     const fetched = await fetchTurnAttachments(event, slackUserId);
     if (fetched === null) return;
@@ -4170,6 +4361,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         text: event.text + fetched.withheldNote,
         eventTs: event.ts,
         slackUserId,
+        sender,
+        speaker: await speakerOf(sender),
         inThread,
         images: fetched.images,
         files: fetched.files,
@@ -4240,7 +4433,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         : [
             "Several messages now share this turn, so pass the [ts …] tag of the message you are answering as threadTs — a reply naming none is refused.",
           ]),
-      ...batch.map((m) => `[ts ${m.eventTs}] <@${m.slackUserId}>: ${m.text}`),
+      ...batch.map((m) => `[ts ${m.eventTs}] ${m.speaker}: ${m.text}`),
       "</new-messages>",
     ].join("\n");
   }
@@ -4260,12 +4453,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           channel: conversation.channelId,
           teamId: conversation.teamId,
           threadTs: conversation.threadTs,
-          messages: batch.map(({ text, eventTs, slackUserId, inThread }) => ({
-            text,
-            eventTs,
-            slackUserId,
-            inThread,
-          })),
+          messages: batch.map(
+            ({ text, eventTs, slackUserId, speaker, sender, inThread }) => ({
+              text,
+              eventTs,
+              slackUserId,
+              speaker,
+              sender,
+              inThread,
+            }),
+          ),
           slackUserId: latest.slackUserId,
           instanceName: conversation.instanceName,
           owner: latest.turn.owner,
@@ -4410,6 +4607,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         detail: {
           basis: "place",
           slackUserId: message.slackUserId,
+          ...senderDetail(message.sender),
           channelId: args.whisper?.origin ?? args.channel,
           ...(args.forwardedFrom
             ? { trigger: "forward", forwardedFrom: args.forwardedFrom }
@@ -4445,7 +4643,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         text:
           args.speakerLabel === false
             ? message.text
-            : `<@${message.slackUserId}>: ${message.text}`,
+            : `${message.speaker ?? `<@${message.slackUserId}>`}: ${message.text}`,
       })),
       actorSub: null,
       externalActorId: args.slackUserId,
@@ -4678,6 +4876,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     text: string;
     eventTs: string;
     slackUserId: string;
+    sender: SlackSender;
+    speaker: string;
     images: FetchedImage[];
     files: FetchedFile[];
     release: () => void;
@@ -4725,8 +4925,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return createConversationQueue<PendingMessage>({
       settleMs,
       runTurn: async (batch) => {
-        const last = batch.at(-1);
-        if (!last) return;
+        if (batch.length === 0) return;
         const roster = await resolveRoster(channelId);
         const readers: RosterEntry[] = [];
         for (const entry of roster) {
@@ -4743,9 +4942,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         if (readers.length === 0) return;
 
         const inThread = threadTs !== null;
-        const { kept, dropped } = batchFiles(batch);
         const answeredAlready: AmbientPeerReply[] = [];
         for (const reader of orderAmbientReaders(readers)) {
+          const shown = batch.filter((m) => senderReaches(m.sender, reader));
+          const last = shown.at(-1);
+          if (!last) continue;
+          const { kept, dropped } = batchFiles(shown);
           securityLog("info", "channel.authz", {
             category: "channel",
             actor: null,
@@ -4757,6 +4959,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               basis: "place",
               trigger: "ambient",
               slackUserId: last.slackUserId,
+              ...senderDetail(last.sender),
               channelId,
             },
           });
@@ -4774,12 +4977,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             replyThreadTs: inThread ? threadTs : last.eventTs,
             eventTs: last.eventTs,
             hasThread: inThread,
-            messages: batch.map(({ text, eventTs, slackUserId }) => ({
+            messages: shown.map(({ text, eventTs, slackUserId }) => ({
               text,
               eventTs,
               slackUserId,
             })),
-            images: batch.flatMap((m) => m.images),
+            images: shown.flatMap((m) => m.images),
             files: kept,
             droppedFiles: dropped.map((f) => f.name),
             externalActorId: last.slackUserId,
@@ -4820,11 +5023,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   async function handleChannelMessage(event: SlackChannelMessageEvent) {
     if (!gateway) return;
-    const slackUserId = event.user;
-    if (!slackUserId) return;
+    const sender = event.sender;
+    const slackUserId = sender.kind === "person" ? sender.user : "";
+    const conversation = botPostConversation(event.channel, event.threadTs);
+    if (sender.kind === "person") botPosts.notePersonPost(conversation);
 
     const bindings = await channelRegistry.resolveSlackBindings(event.channel);
-    if (!bindings.some((binding) => binding.ambient)) return;
+    const reached = bindings.some(
+      (binding) => binding.ambient && senderReaches(sender, binding),
+    );
+    if (!reached) return;
+    if (!admitBotPost(sender, conversation, event.channel)) return;
 
     const { images, files, failures, release } = await fetchSlackAttachments(
       gateway,
@@ -4835,11 +5044,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     );
     const withheldNote = renderWithheldNote(failures);
 
-    const text = `<@${slackUserId}>: ${event.text}${withheldNote}`;
+    const speaker = await speakerOf(sender);
+    const text = `${speaker}: ${event.text}${withheldNote}`;
     enqueueAmbient(event.channel, event.threadTs ?? null, {
       text,
       eventTs: event.ts,
       slackUserId,
+      sender,
+      speaker,
       images,
       files,
       release,

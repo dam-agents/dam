@@ -54,5 +54,6 @@ export {
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
+  setSlackChannelIgnoreApps,
   setSlackChannelDefault,
 } from "./infrastructure/channel-bindings-repository.js";
