@@ -18,6 +18,7 @@ const statusSchema = z.object({
     )
     .catch([]),
   keptProcesses: z.number().int().nonnegative().catch(0),
+  idle: z.boolean().catch(false),
 });
 
 const STATUS_TIMEOUT_MS = 3_000;
@@ -26,15 +27,29 @@ export interface PodStatusClient {
   backgroundWork(agentId: string): Promise<AgentBackgroundWork>;
 }
 
+async function readStatus(
+  agentId: string,
+  namespace: string,
+): Promise<z.infer<typeof statusSchema>> {
+  const res = await fetch(
+    `http://${podBaseUrl(agentId, namespace)}/api/status`,
+    { signal: AbortSignal.timeout(STATUS_TIMEOUT_MS) },
+  );
+  if (!res.ok) throw new Error(`pod status returned ${res.status}`);
+  return statusSchema.parse(await res.json());
+}
+
+export async function podIsIdle(
+  agentId: string,
+  namespace: string,
+): Promise<boolean> {
+  return (await readStatus(agentId, namespace)).idle;
+}
+
 export function createPodStatusClient(namespace: string): PodStatusClient {
   return {
     async backgroundWork(agentId) {
-      const res = await fetch(
-        `http://${podBaseUrl(agentId, namespace)}/api/status`,
-        { signal: AbortSignal.timeout(STATUS_TIMEOUT_MS) },
-      );
-      if (!res.ok) throw new Error(`pod status returned ${res.status}`);
-      const status = statusSchema.parse(await res.json());
+      const status = await readStatus(agentId, namespace);
       return {
         sessions: status.backgroundWork,
         keptProcesses: status.keptProcesses,
