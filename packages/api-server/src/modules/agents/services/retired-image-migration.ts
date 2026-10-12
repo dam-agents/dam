@@ -74,6 +74,8 @@ export function createRetiredImageMigration(deps: {
         return written.ok ? written.value : null;
       },
     })(id, defaultImage);
+    if (!result.ok && result.error.type !== "AgentNotFound")
+      deps.log(`[retired-image-migration] ${id} refused: ${result.error.type}`);
     return result.ok;
   }
 

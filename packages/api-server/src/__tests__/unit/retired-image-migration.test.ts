@@ -224,6 +224,7 @@ describe("retired image migration tick", () => {
   // TEST_SCENARIO: something other than the default Template is not moved.
   it("refuses an agent whose template is not the default", async () => {
     const writeSpec = vi.fn();
+    const log = vi.fn();
     await createRetiredImageMigration({
       listAgents: async () => [agent({ templateId: "custom" })],
       getAgent: async () => agent({ templateId: "custom" }),
@@ -232,9 +233,12 @@ describe("retired image migration tick", () => {
           ? { spec: { ...defaultTemplate().spec, image: "repo:custom" } }
           : defaultTemplate(),
       writeSpec,
-      log: () => {},
+      log,
     }).tick();
     expect(writeSpec).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(
+      "[retired-image-migration] agent-1 refused: TemplateMoved",
+    );
   });
 
   it("does nothing without a default template", async () => {
