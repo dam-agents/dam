@@ -45,6 +45,17 @@ function updateListedSessions(
   );
 }
 
+export function seedEmptySessionList(
+  agentId: string,
+  categories: readonly SessionCategory[],
+): void {
+  queryClient.setQueryData<SessionPages>(
+    acpSessionsKeys.pagesOf(agentId, categories),
+    { pages: [{ sessions: [], nextCursor: null }], pageParams: [null] },
+    { updatedAt: 0 },
+  );
+}
+
 export function optimisticInsertSession(
   agentId: string,
   sessionId: string,
