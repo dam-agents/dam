@@ -1537,6 +1537,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     live.add(ref);
     ref.releaseAttendance ??= attendance.openChannelTurn(instanceName);
+    if (!ref.whisper) noteAgentThread(instanceName, ref.channel, ref.threadTs);
   }
 
   function endTurn(
@@ -1999,6 +2000,42 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     if (!entry) return null;
     if (entry.expiresAt <= Date.now()) return null;
     return { channel: entry.channel };
+  }
+
+  const AGENT_THREAD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  const agentThreads = new Map<string, number>();
+  const untaggedNoticesShown = new Map<string, number>();
+
+  function noteExpiring(entries: Map<string, number>, key: string): void {
+    const now = Date.now();
+    if (entries.size > 5_000) {
+      for (const [stale, expiresAt] of entries) {
+        if (expiresAt <= now) entries.delete(stale);
+      }
+    }
+    entries.delete(key);
+    entries.set(key, now + AGENT_THREAD_TTL_MS);
+  }
+
+  function isLive(entries: Map<string, number>, key: string): boolean {
+    const expiresAt = entries.get(key);
+    return expiresAt !== undefined && expiresAt > Date.now();
+  }
+
+  function noteAgentThread(
+    instanceName: string,
+    channel: string,
+    threadTs: string,
+  ): void {
+    noteExpiring(agentThreads, `${instanceName} ${channel} ${threadTs}`);
+  }
+
+  function isAgentThread(
+    instanceName: string,
+    channel: string,
+    threadTs: string,
+  ): boolean {
+    return isLive(agentThreads, `${instanceName} ${channel} ${threadTs}`);
   }
 
   async function resolveRoster(slackChannelId: string): Promise<RosterEntry[]> {
@@ -5267,6 +5304,35 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     void queue.submit(msg);
   }
 
+  async function noticeUntaggedReply(
+    event: SlackChannelMessageEvent,
+    user: string,
+    threadTs: string,
+    bindings: SlackBindingInfo[],
+  ): Promise<void> {
+    const inThread = bindings.find((binding) =>
+      isAgentThread(binding.instanceName, event.channel, threadTs),
+    );
+    if (!inThread) return;
+    const shownKey = `${event.channel} ${threadTs} ${user}`;
+    if (isLive(untaggedNoticesShown, shownKey)) return;
+    noteExpiring(untaggedNoticesShown, shownKey);
+    const name = await resolveAgentName(inThread.instanceName);
+    const botUserId = await gateway
+      ?.getBotUserId(event.teamId)
+      .catch(() => null);
+    const tag = botUserId ? `<@${botUserId}>` : `@${brand.name}`;
+    const named =
+      bindings.length > 1 && !inThread.isDefault ? " followed by its name" : "";
+    await ephemeral(
+      event.channel,
+      user,
+      threadTs,
+      `${name} won't see this reply unless you tag ${tag}${named}. Only you can see this note, and it won't show again in this thread.`,
+      event.teamId,
+    );
+  }
+
   async function handleChannelMessage(signedEvent: SlackChannelMessageEvent) {
     if (!gateway) return;
     const event = withoutAgentSignature(signedEvent);
@@ -5288,7 +5354,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const reached = bindings.some(
       (binding) => binding.ambient && senderReaches(sender, binding),
     );
-    if (!reached) return;
+    if (!reached) {
+      if (sender.kind === "person" && event.threadTs)
+        await noticeUntaggedReply(event, sender.user, event.threadTs, bindings);
+      return;
+    }
     if (!admitBotPost(sender, conversation, event.channel)) return;
 
     const { images, files, failures, release } = await fetchSlackAttachments(
