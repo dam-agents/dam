@@ -52,6 +52,31 @@ cleanup() {
         echo ""
       done
     done
+    if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
+      # A vm agent logs inside its guest, so nothing above shows why one went
+      # quiet. The runtime's log is on the guest's storage disk; debugfs reads
+      # it without mounting the image the running VMM holds.
+      echo ""
+      echo "--- VM guests: agent-runtime logs (tail) ---"
+      for disk in $(sudo -n find / -xdev -path '*/smolvm/vms/*/storage.raw' 2>/dev/null); do
+        echo "### $disk"
+        sudo -n debugfs -R 'cat /system/log/agent-runtime.log' "$disk" 2>/dev/null | tail -300 || true
+      done
+      echo ""
+      echo "--- VM guests: kernel and VMM lines ---"
+      for pod in $(kubectl get pods -n platform-agents -o name 2>/dev/null | grep 'vm-runner-[0-9a-f]'); do
+        kubectl exec -n platform-agents "$pod" -- sh -c '
+          for f in $(find /var/lib/platform -name agent-startup-error.log 2>/dev/null); do
+            echo "### $f"; grep -v "virtio-net:" "$f" | tail -100
+          done' 2>&1 || true
+      done
+      echo ""
+      echo "--- VMM threads (CPU over 5 s) ---"
+      uptime || true
+      for pid in $(pgrep '^VM:' 2>/dev/null); do
+        top -H -b -n 2 -d 5 -p "$pid" 2>/dev/null | awk '/^top -/{n++} n==2' | head -16 || true
+      done
+    fi
     echo ""
     echo "--- Mesh cert-expiry check (ztunnel) ---"
     # Rules mesh certs in or out as the failure cause.
