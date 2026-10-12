@@ -1,4 +1,6 @@
-min_version = "2026.10.3"
+# 2026.10.4 (2026-10-07) is under the 7-day floor: it builds pipx venvs on
+# mise's own Python, not whichever one uv finds. Floor passes 2026-10-14.
+min_version = "2026.10.4"
 monorepo_root = true
 
 [monorepo]
