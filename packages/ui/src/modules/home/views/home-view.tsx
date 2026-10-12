@@ -51,7 +51,7 @@ export function HomeView() {
 
   return (
     <div>
-      <PageHeader title="Home" actions={<EntryPointButtons surface="home" />} />
+      <PageHeader title="Home" actions={<EntryPointButtons />} />
       <OutdatedTemplatesBanner agents={visible} />
       <ApprovalsBanner />
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">

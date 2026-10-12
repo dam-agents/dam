@@ -18,16 +18,7 @@ const BROWSE_KITS: EntryPoint = {
   label: "Browse starter kits",
 };
 
-const CREATE_AGENT_FROM_KITS: EntryPoint = {
-  ...BROWSE_KITS,
-  label: "Create agent",
-};
-
-export function EntryPointButtons({
-  surface,
-}: {
-  surface: "home" | "welcome";
-}) {
+export function EntryPointButtons() {
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   const defaultAgent = useCreateDefaultAgent();
   const recordEntryPoint = useRecordEntryPoint();
@@ -36,27 +27,21 @@ export function EntryPointButtons({
     if (entryPoint === CREATE_AGENT) void defaultAgent.create();
     else setKitBrowserOpen(true);
   };
-  const [lead, second] =
-    surface === "welcome"
-      ? [CREATE_AGENT_FROM_KITS]
-      : [CREATE_AGENT, BROWSE_KITS];
   return (
     <>
-      {second && (
-        <Button
-          variant="outline"
-          onClick={() => enter(second)}
-          data-testid="entry-point-second"
-        >
-          {second.label}
-        </Button>
-      )}
       <Button
-        onClick={() => enter(lead)}
-        disabled={lead === CREATE_AGENT && !defaultAgent.ready}
+        variant="outline"
+        onClick={() => enter(BROWSE_KITS)}
+        data-testid="entry-point-second"
+      >
+        {BROWSE_KITS.label}
+      </Button>
+      <Button
+        onClick={() => enter(CREATE_AGENT)}
+        disabled={!defaultAgent.ready}
         data-testid="entry-point-lead"
       >
-        {lead.label}
+        {CREATE_AGENT.label}
       </Button>
     </>
   );

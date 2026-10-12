@@ -1,7 +1,11 @@
 import { expect, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
-import { deleteAgentIfPresent, waitForAgentRunning } from "../../lib/agents.js";
+import {
+  deleteAgentIfPresent,
+  waitForAgentIdRunning,
+  waitForAgentRunning,
+} from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import { bootTimeoutMs, onLaneBackend } from "../../lib/backend.js";
@@ -11,7 +15,7 @@ import { agentName, connectionName, harnessName } from "../../lib/fixtures.js";
 test("one-click create from the Default kit, then the mock agent with the connection attached", async ({
   page,
 }) => {
-  test.setTimeout(bootTimeoutMs(60_000));
+  test.setTimeout(bootTimeoutMs(300_000));
 
   const token = await getAccessToken();
   const api = createApiClient(token);
@@ -71,6 +75,7 @@ test("one-click create from the Default kit, then the mock agent with the connec
       agentId: agent!.id,
     });
     expect(connections.map((c) => c.connectionId)).toContain(openai!.id);
+    await waitForAgentIdRunning(api, agent!.id);
     await deleteAgentIfPresent(api, agent!.name);
   });
 
