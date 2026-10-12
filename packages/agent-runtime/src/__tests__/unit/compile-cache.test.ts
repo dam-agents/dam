@@ -1,5 +1,5 @@
 // TEST_OVERVIEW: The runtime's launcher (src/main.ts) turns on Node's compile cache for the server bundle on a vm Backend machine only, keeps the cache in a directory next to the bundle, writes it before the process exits, and does not pass the cache on to a process the runtime starts.
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import {
   copyFileSync,
   existsSync,
@@ -34,17 +34,21 @@ process.stdout.write(execFileSync(process.execPath, ["-p", "process.env.NODE_COM
     rmSync(join(dist, ".."), { recursive: true, force: true });
   });
 
-  const start = (backend?: string) =>
-    execFileSync(process.execPath, [join(dist, "main.ts")], {
+  const start = (backend?: string) => {
+    const run = spawnSync(process.execPath, [join(dist, "main.ts")], {
+      encoding: "utf8",
       env: {
         PATH: process.env.PATH,
         ...(backend ? { PLATFORM_BACKEND: backend } : {}),
       },
-    }).toString();
+    });
+    expect(run.status).toBe(0);
+    return { stdout: run.stdout, stderr: run.stderr };
+  };
 
   // TEST_SCENARIO: A machine's root outlives a boot, so the next start must find the bundle's compiled code in the cache directory next to it; the process the runtime starts must see no cache of its own.
   it("caches the bundle on a vm machine without passing the cache on", () => {
-    expect(start("vm").trim()).toBe("undefined undefined");
+    expect(start("vm").stdout.trim()).toBe("undefined undefined");
     const cache = join(dist, "compile-cache");
     expect(readdirSync(cache, { recursive: true }).length).toBeGreaterThan(1);
   });
@@ -53,5 +57,13 @@ process.stdout.write(execFileSync(process.execPath, ["-p", "process.env.NODE_COM
   it("writes no cache in a container", () => {
     start();
     expect(existsSync(join(dist, "compile-cache"))).toBe(false);
+  });
+
+  // TEST_SCENARIO: A cache directory the runtime cannot create must not stop the runtime from starting, and the log must say the cache is off.
+  it("starts without the cache when it cannot be created, and says so", () => {
+    writeFileSync(join(dist, "compile-cache"), "");
+    const { stdout, stderr } = start("vm");
+    expect(stdout.trim()).toBe("undefined undefined");
+    expect(stderr).toContain("[runtime] compile cache off:");
   });
 });
