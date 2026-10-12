@@ -52,6 +52,19 @@ cleanup() {
         echo ""
       done
     done
+    if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
+      echo ""
+      echo "--- VM host: load, busiest threads, VMM threads by name and state ---"
+      uptime || true
+      ps -eLo pid,tid,stat,pcpu,comm --sort=-pcpu 2>/dev/null | head -25 || true
+      ps -eLo pid,stat,comm 2>/dev/null | awk '$3 ~ /^smolvm/ {n[$1" "$3" "substr($2,1,1)]++} END {for (k in n) print n[k], k}' | sort -rn | head -40 || true
+      echo ""
+      echo "--- VM guest consoles (tail) ---"
+      for pod in $(kubectl get pods -n platform-agents -o name 2>/dev/null | grep vm-runner-[0-9a-f]); do
+        kubectl exec -n platform-agents "$pod" -- sh -c \
+          'for f in $(find /var/lib/platform -name "agent-console.log" -o -name "agent-startup-error.log" 2>/dev/null); do echo "### $f"; tail -c 30000 "$f"; done' 2>&1 || true
+      done
+    fi
     echo ""
     echo "--- Mesh cert-expiry check (ztunnel) ---"
     # Rules mesh certs in or out as the failure cause.
