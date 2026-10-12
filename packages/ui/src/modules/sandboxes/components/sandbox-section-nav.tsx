@@ -32,12 +32,6 @@ export const SECTIONS: SectionEntry[] = [
       "Connections let your agent talk to MCP servers and external services like GitHub.",
   },
   {
-    section: "knowledge",
-    title: "Knowledge",
-    description:
-      "Give this agent read-only access to other knowledge bases: it can list, search and read their content.",
-  },
-  {
     section: "network",
     title: "Network access",
     description:

@@ -19,7 +19,6 @@ const sandboxSectionSchema = z.enum([
   "setup",
   "providers",
   "connections",
-  "knowledge",
   "network",
   "environment",
   "channels",
