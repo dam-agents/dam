@@ -177,7 +177,7 @@ func (m runtimeMigration) machineMayRun() bool {
 	return !m.active() || m.vmSideRuns()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the shape the machine takes, recorded by the api-server with the request: the disk's size when HOME asked for more than the Agent does. The rest of the spec is the Agent's own, so an image changed meanwhile is the image the machine runs.
+// UNIT_BOUNDARY_DESCRIPTION: the shape the machine takes, recorded by the api-server with the request: the disk's size when HOME asked for more than the Agent does, raised by the preflight to the home volume's capacity when that is larger. The rest of the spec is the Agent's own, so an image changed meanwhile is the image the machine runs.
 type runtimeMigrationTarget struct {
 	StorageSize string `json:"storageSize,omitempty"`
 }
