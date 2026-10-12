@@ -47,7 +47,10 @@ import {
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
-import { AgentStartingBar } from "../../agents/components/agent-starting-bar.js";
+import {
+  AgentStartNotice,
+  hasStartNotice,
+} from "../../agents/components/agent-start-notice.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import {
@@ -191,6 +194,12 @@ export function ChatView() {
   const agentStarting =
     agentDisplay?.state === "starting" ||
     agentDisplay?.state === "preparing_workspace";
+  const startNotice = agentStarting &&
+    agentView &&
+    agentDisplay &&
+    hasStartNotice(agentView, agentDisplay) && (
+      <AgentStartNotice agent={agentView} display={agentDisplay} />
+    );
   const sessionId = useStore((s) => s.sessionId);
   const sessionMode = useStore((s) => s.sessionMode);
   const setSessionMode = useStore((s) => s.setSessionMode);
@@ -800,6 +809,9 @@ export function ChatView() {
                         Loading session…
                       </div>
                     )}
+                    {loadingSession && startNotice && (
+                      <div className="flex justify-center">{startNotice}</div>
+                    )}
                     {!loadingSession && sessionError && (
                       <SessionErrorCard
                         error={sessionError}
@@ -829,6 +841,9 @@ export function ChatView() {
                               onNewTerminal={handleNewTerminal}
                             />
                           )}
+                          {startNotice && (
+                            <div className="mt-6">{startNotice}</div>
+                          )}
                         </div>
                       )}
                     <DelegationOwnersProvider value={delegationOwners}>
@@ -857,7 +872,11 @@ export function ChatView() {
                               showModel={runStarts.length > 0}
                               {...timeProps(item.message.at, now)}
                               hasPendingPermission={hasPendingPermission}
-                              waitingForAgent={agentStarting}
+                              pendingNotice={
+                                item.index === messages.length - 1
+                                  ? startNotice
+                                  : undefined
+                              }
                               onRetry={sendPrompt}
                               onFileClick={openFileHandler}
                               onDelete={deleteMessage}
@@ -918,9 +937,6 @@ export function ChatView() {
                   agentId={selectedAgent}
                 />
                 <KitUpdateBar agentId={selectedAgent} />
-                {agentStarting && agentView && agentDisplay && (
-                  <AgentStartingBar agent={agentView} display={agentDisplay} />
-                )}
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}
