@@ -516,21 +516,21 @@ export function ChatView() {
   }, [sessionId]);
   const handleNewSession = useCallback(
     (pickPair = false) => {
-      const focusComposer = () =>
+      const afterReset = () =>
         pickPair
           ? setPairPickerOpen(true)
           : requestAnimationFrame(() => textareaRef.current?.focus());
       if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
       if (!sessionId && messages.length === 0) {
         setMobileScreen("chat");
-        focusComposer();
+        afterReset();
         return;
       }
       pushSessionUrl(null, null);
       setSessionMode(SessionMode.Chat);
       resetSession();
       setMobileScreen("chat");
-      focusComposer();
+      afterReset();
     },
     [
       selectedAgent,
