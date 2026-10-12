@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-10-10
+Last verified: 2026-10-12
 
 Companion to [channels](channels.md) and [channel-turns](channel-turns.md). Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup. A change to Slack behavior updates all three in the same PR. It also serves as the source for a shareable page or deck: the "decided by" and drawback columns map to colored labels, and the two diagrams render as they are.
 
@@ -25,7 +25,7 @@ A **binding** puts one Agent into one conversation; whoever Slack lets into that
 
 The owner's **Slack Account Connection** is a separate thing: it gives the Agent the owner's personal Slack access as an MCP server. On a bound Agent, channel members get that access too unless the harness refuses the calls (§3 safety gates).
 
-`/dam login` links a Slack user to a platform user. It authorizes `/dam bind|unbind|ambient|default|delete`, never who may talk to the Agent.
+`/dam login` links a Slack user to a platform user. It authorizes `/dam bind|unbind|ambient|ignore|unignore|default|delete`, never who may talk to the Agent.
 
 ### How the agent reaches Slack
 
@@ -66,8 +66,8 @@ flowchart TD
 | Reply in the thread without `@DAM` | **Dropped silently**, even under the agent's own answer, even mid-turn | The natural follow-up doesn't work |
 | `@DAM Reviewer …` | Reaches the Agent named Reviewer (name must open the message; case-insensitive, whole word) | `@DAM hey Reviewer` goes to the default |
 | Edit a message to add the tag | Ignored | none |
-| Another bot or workflow posts a plain message | Ignored (also what keeps an agent from answering its own posts) | none |
-| Another bot or workflow posts a message that tags `@DAM` | Not filtered by the platform; up to Slack | Another bot can start a turn |
+| Another bot, workflow or Agent posts a plain message | Reaches readers only, like a person's; never the Agent that posted it | Each reader spends a turn; `/dam ignore` silences one app |
+| Another bot, workflow or Agent posts a message that tags `@DAM` | Routed like a person's mention | Three bot posts in a row per thread start turns, until a person posts |
 
 ### 1.2 Channel, ambient (reads along)
 
@@ -105,6 +105,10 @@ flowchart TD
 | An Agent hands the message to a peer | The peer, bound to the same conversation, takes the whole turn as its own in the same thread | Once only; attachments dropped; the receiver's owner must have accepted the terms |
 | Mixed bindings: one reads along, another is mention-only | Ambient is per binding. Plain messages reach only readers. A tagged mention reaches one Agent, default or named; readers aren't handed it live | A reader may meet it later as history and take it as open if the answer sits in a thread |
 | A plain message names an Agent without `@` | Readers only; the named one answers if it reads along, the others are told to stay silent | A mention-only Agent gets nothing; the silence is prompt only |
+| An Agent's post tags the bot and names a peer | The peer gets a turn, as if a person had asked; the post never starts a turn for its author | At most three bot posts in a row per thread start turns, until a person posts |
+| An Agent posts where others read along | Every reader but the author gets it; a reply in an ambient round does not, since the round already handed it on | A reader that went before it in the round never sees that reply live; each reader spends a turn per post, even to stay silent |
+| A reader tags a peer in its ambient reply | The peer answers once, as an addressed turn, and skips its turn in that round; its answer reaches the asker | The peer answers only the request, not the person's message on its own |
+| Another app or a webhook posts (CI, alerts, deploys) | Routed like a person's post: a tag reaches one Agent, readers get plain posts | On by default; `/dam ignore <link to its post>` makes the channel ignore that app; same three-in-a-row limit |
 
 ### 1.6 Proactive and cross-channel posts
 
@@ -157,7 +161,7 @@ Outside its bound conversations, the bot never reaches a channel the owner could
 
 | Behavior | Decided by | Caveat |
 |---|---|---|
-| Which messages start a turn: tagged ones on a normal binding, every message on ambient or in a 1:1 DM | Platform | On a normal binding, untagged thread replies never arrive |
+| Which messages start a turn: tagged ones on a normal binding, every message on ambient (not an Agent's own, its ambient-round replies, or an ignored app's), a person's in a 1:1 DM | Platform | On a normal binding, untagged thread replies never arrive |
 | Which Agent a mention reaches | Platform | Two Agents sharing a name: default, sender not told |
 | One turn per top-level mention; DM bursts merged; a tagged reply joins a running turn | Platform; joining needs a harness that supports it (**Setup**), else next turn | Read-along messages never join a running turn |
 | Whether the turn runs at all | Platform, from the Agent's state: stopped by its owner, over budget, migrating, terms not re-accepted | Addressed: a notice. Ambient: nothing |
@@ -218,7 +222,9 @@ flowchart TD
 | Untagged reply in the agent's thread (normal binding) | Dropped |
 | Untagged message in a group DM | Dropped |
 | Edited a message to add the tag | Edits are ignored |
-| A bot or workflow wrote to the agent without tagging it | Bot plain messages are ignored (loop prevention) |
+| A bot or workflow wrote to the agent without tagging it | Plain posts reach readers only; a mention-only Agent needs a tag |
+| An app's posts reach no Agent in one channel | The channel ignores that app (`/dam ignore` lists them) |
+| Agents or apps went quiet after a few posts back and forth | Three bot posts in a row per thread is the limit; a person's post resets it |
 | Mentioned a name two connected Agents share | Went to the default; sender not told |
 | An ambient agent went quiet | Every failure on ambient turns is invisible |
 | The agent did less than asked | A tool call was auto-refused or a host blocked; only the agent can explain |

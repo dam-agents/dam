@@ -86,6 +86,20 @@ export const slackInstalls = pgTable("slack_installs", {
     .notNull(),
 });
 
+export const slackIgnoredApps = pgTable(
+  "slack_ignored_apps",
+  {
+    channelId: text("channel_id").notNull(),
+    botId: text("bot_id").notNull(),
+    name: text("name").notNull(),
+    ignoredBy: text("ignored_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.channelId, table.botId] })],
+);
+
 export const telegramConversations = pgTable(
   "telegram_conversations",
   {
