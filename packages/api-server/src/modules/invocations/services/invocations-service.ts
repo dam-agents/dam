@@ -187,6 +187,7 @@ export function createInvocationsService(deps: {
             ? { templateId: input.target.templateId }
             : {}),
           ...(created.size ? { size: created.size } : {}),
+          ...(created.vm ? { vm: true } : {}),
         });
       }
 

@@ -801,7 +801,7 @@ export async function bootstrap() {
         memory: config.agentDefaultMemoryLimit,
       },
       defaultStorage: config.agentDefaultStorageSize,
-      idleTimeoutMin: config.agentIdleTimeoutMinutes,
+      idleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     },
   });
   usage.start();

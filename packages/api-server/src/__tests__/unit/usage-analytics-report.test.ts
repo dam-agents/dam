@@ -30,7 +30,7 @@ function facts(overrides: Partial<AnalyticsFacts> = {}): AnalyticsFacts {
     sizing: {
       slot: { cpu: "1", memory: "2Gi" },
       defaultStorage: "10Gi",
-      idleTimeoutMin: 30,
+      idleTimeoutMinutes: { container: 30, vm: 5 },
     },
     ...overrides,
   };
@@ -188,6 +188,7 @@ describe("usage analytics report", () => {
   // TEST_SCENARIO: are grouped by the size the agent had when it ran out, so x1 (now 1x)
   // TEST_SCENARIO: keeps its event under 4x, the deleted agent's event is dropped, and
   // TEST_SCENARIO: agents are the distinct agents behind the events.
+  // TEST_SCENARIO: A vm agent is never always on, even with a "0s" override (x3).
   it("sizes live agents and leaves out agents nobody counted", () => {
     const live = (
       id: string,
@@ -197,6 +198,7 @@ describe("usage analytics report", () => {
       cpu: undefined,
       memory: undefined,
       hibernationTimeout: undefined,
+      vm: false,
       storageSize: undefined,
       grantedConnectionIds: [],
       ...extra,
@@ -215,6 +217,8 @@ describe("usage analytics report", () => {
           live("x3", {
             cpu: "2",
             memory: "2Gi",
+            hibernationTimeout: "0s",
+            vm: true,
             grantedConnectionIds: ["kb", "c", "provider-key"],
           }),
           live("core-agent", { cpu: "4", memory: "8Gi" }),

@@ -11,6 +11,7 @@ export interface TargetAdmission {
   assertCanEverFit(input: {
     templateId?: string;
     size?: { cpu?: string; memory?: string };
+    vm?: boolean;
   }): Promise<void>;
 }
 
@@ -21,6 +22,7 @@ export function createTargetAdmission(deps: {
 }): TargetAdmission {
   return {
     async assertCanEverFit(input) {
+      if (input.vm) return;
       const templateResources = input.templateId
         ? await deps.readTemplateResources(input.templateId)
         : undefined;

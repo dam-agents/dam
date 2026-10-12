@@ -40,6 +40,15 @@ describe("target admission", () => {
     ).rejects.toThrow(/8\.0 CPU.*6\.0 CPU/);
   });
 
+  // TEST_SCENARIO: A vm target has no size to hold to the Ceiling — its machine draws on its owner's VM runner — so even a size past the Ceiling is admitted.
+  test("admits a vm target whatever size it names", async () => {
+    const a = admission({ ceiling: { cpu: "6", memory: "14Gi" } });
+
+    await expect(
+      a.assertCanEverFit({ size: { cpu: "8", memory: "4Gi" }, vm: true }),
+    ).resolves.toBeUndefined();
+  });
+
   // TEST_SCENARIO: No explicit size — the template's limits are what the create would stamp, so they are what admission judges.
   test("judges the template limits when no size is given", async () => {
     const a = admission({

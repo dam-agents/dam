@@ -57,7 +57,10 @@ import {
   ANN_KIT_UPDATE_PENDING,
   ANN_KIT_UPDATE_SKIPPED,
 } from "./labels.js";
-import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
+import {
+  type IdleTimeoutMinutes,
+  resolveEffectiveHibernationTimeoutMin,
+} from "../domain/spec-assembly.js";
 import {
   runtimeMigrationHold,
   runtimeMigrationOf,
@@ -348,7 +351,7 @@ export function assembleAgent(
   infra: InfraAgent,
   channels: ChannelConfig[],
   contributionFailures: DriverFailure[],
-  globalIdleTimeoutMin: number,
+  idleTimeoutMinutes: IdleTimeoutMinutes,
   preparingWorkspace: boolean,
   templateUpdate: TemplateUpdate | undefined,
   features: RuntimeFeatures,
@@ -372,7 +375,8 @@ export function assembleAgent(
     state: computeAgentState(infra, preparingWorkspace),
     effectiveHibernationTimeoutMin: resolveEffectiveHibernationTimeoutMin(
       infra.spec.hibernationTimeout,
-      globalIdleTimeoutMin,
+      infra.spec.backend?.type === "vm",
+      idleTimeoutMinutes,
     ),
     error: infra.error,
     stopRequested: infra.stopRequested,
