@@ -31,7 +31,8 @@ vm-runner owns a machine API — one persistent microVM per vm Agent — and tak
 The runner keeps only the latest ensure for each machine and one worker converging it, one whole action at a time, so a spec that arrives mid-action — a stop sent while a machine boots — replaces any not yet acted on and is honoured when that action returns.
 A guest starting to answer changes nothing the cluster can watch, so the runner watches for it: a **health prober** asks each machine on its way up often, most in the first minute of its boot, and a steady one rarely, and a status is built from what it last heard rather than probing on the read.
 An ensure that reaches a runner already closing is refused, not stored.
-A live VMM whose guest agent is slow to answer smolvm's ping reads as running, not stopped: a busy guest looks the same as a dead agent there, so only the prober's silence past the unhealthy grace restarts it, and it keeps its memory counted meanwhile.
+A live VMM whose guest agent is slow to answer smolvm's ping reads as running, not stopped: a busy guest looks the same as a dead agent there, so only the prober's silence restarts it: the prober itself, within a minute after an answer, ten for slow boots and repeat stalls.
+Its memory stays counted meanwhile.
 A failure stays on the status until an action succeeds or a spec arrives that needs none.
 Each status carries a version that moves whenever the status does, and a status read may name the version it last saw and wait, up to half a minute, for it to move.
 The controller holds one such long poll per vm Agent whose machine is on its way up, and a change only requeues the Agent, so the ordinary reconcile is the one place readiness is written; beyond that, every vm Agent is reconciled once a minute, which is also what notices a ready guest going quiet.
@@ -55,7 +56,7 @@ The command line has no defaults anyone relies on: the image sets the paths that
 **A change to the runner pod rolls across owners, not all at once**, and a new runner image need not roll the pod at all: [upgrades](vm-runner-upgrades.md) owns both.
 
 A machine may reach only its paired gateway, so the guest cannot fetch its own image: it is fetched for it, with the pull secrets a pod would list — resolving through the node's resolver rather than the cluster's, whose Service address its own egress policy drops (an install whose registry sits inside the cluster, with that range left reachable, asks for cluster resolution instead) — into a cache that unpacks each image once, evicting inside a stated budget and never freeing a tree a machine is still running from.
-Every machine of an image boots that one tree rather than extracting its own copy, which is what the sharing is for: an archive is unpacked again into each machine's disk, seconds of boot and a gigabyte of disk apiece for bytes that are identical.
+Every machine of an image boots that one tree rather than extracting its own copy: an archive is unpacked again into each machine's disk, seconds of boot and a gigabyte of disk apiece for identical bytes.
 A tree is not enough on its own, because what a machine runs — the entrypoint, the environment, the directory it starts in — is named by the image and not carried by its files, so that is read with the tree and kept beside it — a staged tree carries the same record — or read out of a staged archive; a machine whose image names none is refused rather than booted to a filesystem with nothing running in it, and so is an image the cache cannot serve, which is never booted from the registry instead.
 The cache has exactly one writer — the runner on its own claim, or a per-node **image cache service** where the install shares a node directory, which runners mount read-only ([vm-image-cache](vm-image-cache.md)).
 An install with no registry stages images in a read-only image directory instead, and the runner boots from them: a tree with its launch record, which boots in place, or a `docker save` archive, which is flattened inside every guest on its first boot under smolvm's fixed pull window — a slow host outran that window, which is why the local install stages trees.
@@ -80,7 +81,7 @@ A new MITM CA reaches every agent's leaf at once when the CA rotates, and every 
 A new image is fetched before the old machine is touched, so a pull that fails leaves it running as it was.
 A stopped machine takes the change when it next starts.
 A start also checks that what the record names to boot is still on the host, and resolves the image again when it is not: the record holds a path, so a tree evicted or relaid under a stopped machine would otherwise fail every start it makes.
-Each runner has its own limits, so a machine is admitted against its owner's memory alone, counted by what the machines use, and the controller resizes the pod's memory request in place to match ([vm-memory](vm-memory.md)).
+Each runner has its own limits, so a machine is admitted against its owner's memory alone, counted by what the machines use, and the controller resizes the pod's memory request in place to match; each boots with part of its memory and grows once up ([vm-memory](vm-memory.md)).
 Without in-place resize, or on a node that defers or refuses it, the request stays put and the controller reports it.
 
 ## Runner lifecycle

@@ -1,5 +1,12 @@
 import { StopFilledAlt } from "@carbon/icons-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -28,7 +35,7 @@ interface BaseProps {
   showModel?: boolean;
   isLast: boolean;
   hasPendingPermission: boolean;
-  waitingForAgent?: boolean;
+  pendingNotice?: ReactNode;
   onRetry: OnRetry;
   onFileClick: (path: string) => void;
   onDelete: (id: string) => void;
@@ -97,7 +104,7 @@ export const ChatMessage = memo(function ChatMessage({
   timeLabel,
   timeTitle,
   hasPendingPermission,
-  waitingForAgent = false,
+  pendingNotice,
   onRetry,
   onFileClick,
   onDelete,
@@ -187,27 +194,13 @@ export const ChatMessage = memo(function ChatMessage({
             </span>
           )}
           {isAssistant && isLast && !readOnly && <PermissionStatusLine />}
-          {isAssistant &&
-            streaming &&
-            waitingForAgent &&
-            parts.length === 0 && (
-              <span
-                data-testid="prompt-waits-for-start-indicator"
-                className="text-xs text-muted-foreground italic"
-              >
-                Sends when the agent is ready…
-              </span>
-            )}
-          {isAssistant &&
-            streaming &&
-            !queued &&
-            !(waitingForAgent && parts.length === 0) &&
-            !hasPendingPermission && (
-              <span role="status" className="inline-flex items-center py-1">
-                <WorkingDots size="md" className="text-accent" />
-                <span className="sr-only">Working</span>
-              </span>
-            )}
+          {isAssistant && streaming && !queued && !hasPendingPermission && (
+            <span role="status" className="inline-flex items-center py-1">
+              <WorkingDots size="md" className="text-accent" />
+              <span className="sr-only">Working</span>
+            </span>
+          )}
+          {isAssistant && streaming && parts.length === 0 && pendingNotice}
           {isAssistant && stopped && !streaming && (
             <p
               data-testid="reply-stopped-marker"

@@ -55,8 +55,11 @@ CI calls it from [`image:ci-build`](../../.mise/tasks/image/ci-build) and pushes
   The tar is the OCI layout itself, named by its `io.containerd.image.name` annotation for `k3s ctr images import`, with a `docker save`-style `manifest.json` beside it, by which crane reads the tar.
 - **Staged outside the repo.** Every agent directory is a mise config root in the repo, so the task stages a separate mise project where the base always loads and each agent's environment loads only when selected.
 - **One system-package layer, then crane.** The shared Debian packages are installed into the repo's pinned Debian base by that base's own `apt-get`, run in its exported root under chroot as a Dockerfile's `RUN` would, and the root becomes one layer, again when the list or the base changes and once a day.
+  That layer follows the packages alone: what the install stamps with the build's time (logs, caches, password dates, the mtimes of the paths it touched) is dropped or set to the base's creation time, so a rebuild with no package update keeps its digest.
   Every image is then packed by [`image:pack`](../../.mise/tasks/image/pack), the platform images' own packer: the default image onto that base, each workload and the mock onto the default image, a sorted tree per layer so a digest follows content alone.
   The images share the base's layers, so a node stores them once.
+- **Layers by how often they change.** A node pulls only the layers it lacks, and extracting a big one stalls every pod start on it, so the default image stacks Selkies, then mise, then everything else: the agent-runtime, the harnesses' files and the shipped skills, a few megabytes and the only layer a typical deploy changes.
+  Selkies' Python bytecode is checked by source hash, since a packed layer's mtimes are zero.
 - **Pins live in the environment files and one lockfile.** The lockfile fixes every tool's version and checksum for both Linux architectures, and the npm tools' whole dependency trees, except the workloads' Python packages, which mise cannot lock and their files pin exactly; CI caches the tool installs under it, so they change only with it.
   k-search's GPU venv is gigabytes the repository's cache cannot hold, so each k-search build installs it afresh, which also picks up its unpinned dependencies' releases.
   There are no build-arg overrides.

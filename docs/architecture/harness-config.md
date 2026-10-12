@@ -99,6 +99,11 @@ The Connection disables unsupported tool search and declares the deployment's su
 These are provider-scoped defaults, not a change of permission mode; a session's model and explicit agent settings still take precedence.
 Its model listing remains the upstream catalog, so Nemotron can still be selected explicitly but is not a work-model default.
 
+The ETE LiteLLM proxy cannot carry the classifier reliably: its failed classifier requests deny tool calls that are safe.
+So when an agent holds that provider, every Claude Code start changes an agent mode of `auto`, or no mode, to `bypassPermissions`.
+Other modes stay, and so does a mode that one session picks for itself.
+The pod's isolation is the boundary then, also for what channel members ask a bound agent to do.
+
 The runtime also reports the harness's **default**, what a session runs on when the config file names no model: a model the provider pins through its environment, otherwise a manifest-declared value that selects the harness's built-in default for one session.
 Only a harness that can switch a session's model reports one.
 A [schedule](schedules.md#session-model) with no model runs on it on a runtime with one harness process; where each session picks its harness, it runs on the pair a person last picked.

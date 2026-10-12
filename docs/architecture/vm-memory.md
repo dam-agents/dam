@@ -11,6 +11,7 @@ The controller keeps the runner pod's CPU limit, resized in place, at the vCPUs 
 Unless the install caps it lower, a guest is never throttled below its vCPUs, and one runaway VMM cannot take the whole node.
 A cluster without in-place resize sets no CPU limit.
 The [host runner](vm-host-runner.md) admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the Agent's spec still sets its machine's memory; its vCPUs still come from the install.
+A new size reaches a running machine at its next start, not by rebooting it ([vm-runner](vm-runner.md)); until then the controller counts it at the larger of the two sizes, in memory and in vCPUs.
 A machine's size is the most its guest can see; the host commits only the pages the guest touches, and the guest hands freed pages back through free-page reporting, so an idle agent on a 2 GiB machine holds a few hundred MiB.
 
 **Guest RAM and the guest kernel are mapped for huge pages.** KVM maps guest memory in 2 MiB pages only where the host address agrees with the guest address modulo 2 MiB, and an ordinary allocation almost never does.
