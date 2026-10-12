@@ -941,6 +941,7 @@ server.on("upgrade", (req, socket, head) => {
     startDisplay();
     preparedSshd ??= prepareSshd(homeDir, sshLog).catch((err: Error) => {
       sshLog(`could not prepare sshd: ${err.message}`);
+      preparedSshd = undefined;
       return null;
     });
     void preparedSshd.then((prepared) => {
