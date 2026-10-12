@@ -178,7 +178,7 @@ export function createMcpSession(
     deps.kbShares
       ? {
           instructions:
-            "This agent is a knowledge base. You can publish it as a read-only endpoint teammates query without copying it: call share_knowledge_base to start sharing (idempotent), refresh_knowledge_base_share after substantial edits, and get_share_status to check. Sharing is read-only — curation stays with you — and the share link itself is only revealed to the owner in the UI, never to you.",
+            "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.",
         }
       : undefined,
   );

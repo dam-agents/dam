@@ -2,7 +2,6 @@ import {
   type EgressPreset,
   isProtectedAgentEnvName,
   providerTypeForTemplateId,
-  SHARED_KB_TEMPLATE_ID,
 } from "api-server-api";
 import { useMemo } from "react";
 
@@ -183,17 +182,6 @@ export function useSectionSummaries(agent: AgentView | null): {
     return `${plural(running, "schedule")} running`;
   }, [agent, schedules]);
 
-  const knowledgeSummary = useMemo(() => {
-    if (!appsLoaded || !connectionsQuery.data) return undefined;
-    const granted = new Set(
-      connectionsQuery.data.connections.map((c) => c.connectionId),
-    );
-    const count = apps.filter(
-      (a) => a.templateId === SHARED_KB_TEMPLATE_ID && granted.has(a.id),
-    ).length;
-    return count === 0 ? "No knowledge bases" : plural(count, "knowledge base");
-  }, [apps, appsLoaded, connectionsQuery.data]);
-
   const providers = useProviderConnections(agent?.id ?? null);
   const providersSummary = providers.loaded
     ? providers.granted.length === 0
@@ -223,7 +211,6 @@ export function useSectionSummaries(agent: AgentView | null): {
       skills,
       schedules: schedulesSummary,
       usage: usageSummary,
-      knowledge: knowledgeSummary,
     },
     warnings:
       missingProvider && !configStatus?.harnesses
