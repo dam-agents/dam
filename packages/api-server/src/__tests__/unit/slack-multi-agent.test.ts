@@ -106,7 +106,11 @@ function harness(
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
-    setSlackChannelIgnoreApps: async () => {},
+    ignoredApps: {
+      list: async () => [],
+      ignore: async () => true,
+      unignore: async () => true,
+    },
     setSlackDefault: async (agentId: string, channelId: string) => {
       defaultCalls.push({ agentId, channelId });
       return true;

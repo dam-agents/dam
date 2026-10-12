@@ -103,7 +103,11 @@ function harness(opts: {
     ) => {
       ambientCalls.push({ agentId, channelId, ambient });
     },
-    setSlackChannelIgnoreApps: async () => {},
+    ignoredApps: {
+      list: async () => [],
+      ignore: async () => true,
+      unignore: async () => true,
+    },
     setSlackDefault: async () => true,
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async (sub) => opts.termsAccepted?.(sub) ?? true,

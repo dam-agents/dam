@@ -139,7 +139,6 @@ export interface SlackBindingRow {
   owner: string;
   teamId: string;
   ambient: boolean;
-  ignoreApps: boolean;
   isDefault: boolean;
 }
 
@@ -157,7 +156,6 @@ export function findSlackBindingsByChannelId(db: Db) {
         owner: channels.owner,
         teamId: sql<string | null>`${channels.config}->>'teamId'`,
         ambient: sql<string | null>`${channels.config}->>'ambient'`,
-        ignoreApps: sql<string | null>`${channels.config}->>'ignoreApps'`,
         isDefault: sql<string | null>`${channels.config}->>'default'`,
         createdAt: channels.createdAt,
       })
@@ -169,7 +167,6 @@ export function findSlackBindingsByChannelId(db: Db) {
       owner: row.owner,
       teamId: row.teamId ?? "",
       ambient: row.ambient === "true",
-      ignoreApps: row.ignoreApps === "true",
       isDefault: row.isDefault === "true",
     }));
   };
@@ -229,25 +226,6 @@ export function setSlackChannelAmbient(db: Db) {
         config: ambient
           ? sql`${channels.config} || '{"ambient": true}'::jsonb`
           : sql`${channels.config} - 'ambient'`,
-      })
-      .where(
-        and(eq(channels.agentId, agentId), slackChannelIs(slackChannelId)),
-      );
-  };
-}
-
-export function setSlackChannelIgnoreApps(db: Db) {
-  return async (
-    agentId: string,
-    slackChannelId: string,
-    ignoreApps: boolean,
-  ): Promise<void> => {
-    await db
-      .update(channels)
-      .set({
-        config: ignoreApps
-          ? sql`${channels.config} || '{"ignoreApps": true}'::jsonb`
-          : sql`${channels.config} - 'ignoreApps'`,
       })
       .where(
         and(eq(channels.agentId, agentId), slackChannelIs(slackChannelId)),

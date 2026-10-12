@@ -36,7 +36,6 @@ import {
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
-  setSlackChannelIgnoreApps,
   setSlackChannelDefault,
   createAgentSweep,
   createRuntimeMigrationSwitch,
@@ -68,6 +67,7 @@ import { createImgbbAgentIcons } from "./modules/channels/infrastructure/agent-a
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
 import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
+import { createSlackIgnoredAppsRepository } from "./modules/channels/infrastructure/slack-ignored-apps-repository.js";
 import {
   createFakeSlackGateway,
   FAKE_WORKSPACE,
@@ -954,7 +954,6 @@ export async function bootstrap() {
         owner: row.owner,
         teamId: row.teamId,
         ambient: row.ambient,
-        ignoreApps: row.ignoreApps,
         isDefault: row.isDefault,
       }));
     },
@@ -1005,7 +1004,7 @@ export async function bootstrap() {
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
         setSlackChannelAmbient: setSlackChannelAmbient(db),
-        setSlackChannelIgnoreApps: setSlackChannelIgnoreApps(db),
+        ignoredApps: createSlackIgnoredAppsRepository(db),
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,

@@ -121,6 +121,8 @@ export interface SlackMessage {
   replyCount?: number;
   latestReplyTs?: string;
   subtype?: string;
+  botId?: string;
+  botName?: string;
   metadata?: SlackMessageMetadata;
   fileIds?: string[];
 }

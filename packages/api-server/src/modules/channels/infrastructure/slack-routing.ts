@@ -7,7 +7,6 @@ export interface RosterEntry {
   name: string;
   owner: string;
   ambient: boolean;
-  ignoreApps?: boolean;
   isDefault: boolean;
 }
 
@@ -55,12 +54,12 @@ export function orderAmbientReaders(
 
 export function senderReaches(
   sender: SlackSender,
-  binding: { instanceName: string; ignoreApps?: boolean },
+  binding: { instanceName: string },
 ): boolean {
   return match(sender)
     .with({ kind: "person" }, () => true)
     .with({ kind: "agent" }, ({ agentId }) => agentId !== binding.instanceName)
-    .with({ kind: "app" }, () => binding.ignoreApps !== true)
+    .with({ kind: "app" }, () => true)
     .exhaustive();
 }
 

@@ -2,8 +2,9 @@
  * TEST_OVERVIEW: Posts by bots reach Agents the way a person's posts do. All
  * Agents post through the one bot, so an Agent's post is told apart by its
  * Agent Footer, and it never starts a turn for the Agent that wrote it. Posts
- * by other apps and incoming webhooks reach every binding that has not opted
- * out with `/dam apps <agent> off`. A run of bot posts in one conversation
+ * by other apps and incoming webhooks reach the Agents too, unless the channel
+ * ignores that app with `/dam ignore <link to one of its posts>`. A run of bot
+ * posts in one conversation
  * starts turns only up to a limit, until a person posts there again. Bot
  * senders get no private notices, because a notice needs a person.
  */
@@ -16,6 +17,10 @@ import {
   classifySlackSender,
   type SlackSender,
 } from "../../modules/channels/infrastructure/slack-sender.js";
+import type {
+  SlackIgnoredApp,
+  SlackIgnoredApps,
+} from "../../modules/channels/infrastructure/slack-ignored-apps-repository.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient } from "../../core/acp-client.js";
@@ -30,7 +35,7 @@ beforeEach(() => {
   logLines.length = 0;
 });
 
-type BindingOpts = { ambient?: boolean; ignoreApps?: boolean };
+type BindingOpts = { ambient?: boolean };
 
 const fromAlpha: SlackSender = {
   kind: "agent",
@@ -45,6 +50,7 @@ function harness(
     b?: BindingOpts;
     noDefault?: boolean;
     linkedSub?: string | null;
+    ignored?: SlackIgnoredApp[];
     replies?: Partial<Record<string, (nth: number) => string | null>>;
     replyThread?: string;
   } = {},
@@ -78,7 +84,21 @@ function harness(
     },
   };
   const prompts: Record<string, string[]> = { "agent-a": [], "agent-b": [] };
-  const ignoreAppsCalls: Array<[string, string, boolean]> = [];
+  const ignored: SlackIgnoredApp[] = [...(opts.ignored ?? [])];
+  const ignoredApps: SlackIgnoredApps = {
+    list: async () => [...ignored],
+    ignore: async (_channel, app) => {
+      if (ignored.some((entry) => entry.botId === app.botId)) return false;
+      ignored.push(app);
+      return true;
+    },
+    unignore: async (_channel, botId) => {
+      const at = ignored.findIndex((entry) => entry.botId === botId);
+      if (at < 0) return false;
+      ignored.splice(at, 1);
+      return true;
+    },
+  };
   const acpFor = (agentId: string): AcpClient => ({
     steer: async () => "unsupported" as const,
     listSessions: async () => [],
@@ -104,7 +124,6 @@ function harness(
     owner: OWNER,
     teamId: "",
     ambient: b?.ambient === true,
-    ignoreApps: b?.ignoreApps === true,
     isDefault: instanceName === "agent-a" && !opts.noDefault,
   });
 
@@ -125,9 +144,7 @@ function harness(
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
-    setSlackChannelIgnoreApps: async (agentId, channelId, ignoreApps) => {
-      ignoreAppsCalls.push([agentId, channelId, ignoreApps]);
-    },
+    ignoredApps,
     setSlackDefault: async () => true,
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
@@ -147,7 +164,7 @@ function harness(
   return {
     gw,
     prompts,
-    ignoreAppsCalls,
+    ignored,
     async mention(sender: SlackSender, text: string, ts = "1.1") {
       await worker.connect();
       await gw.fireMention({ sender, channel: "C1", ts, text });
@@ -310,16 +327,25 @@ describe("a post by another app or webhook", () => {
     expect(h.prompts["agent-a"]![0]).toContain("FluxCD (an app):");
   });
 
-  /** TEST_SCENARIO: Beta's binding ignores apps. The FluxCD post reaches
-   *  Alpha only. */
-  it("skips a binding that ignores apps", async () => {
+  /** TEST_SCENARIO: The channel ignores FluxCD. Its posts reach no Agent
+   *  there, neither plain nor tagged, while another app still gets through. */
+  it("reaches no agent once the channel ignores the app", async () => {
     const h = harness({
       a: { ambient: true },
-      b: { ambient: true, ignoreApps: true },
+      b: { ambient: true },
+      ignored: [{ botId: "B-FLUX", name: "FluxCD" }],
     });
     await h.message(fromFlux, "Reconciliation failed");
-    expect(h.prompts["agent-a"]).toHaveLength(1);
+    await h.mention(fromFlux, "<@UBOT> Beta, look at this", "3.3");
+    expect(h.prompts["agent-a"]).toHaveLength(0);
     expect(h.prompts["agent-b"]).toHaveLength(0);
+
+    await h.message(
+      { kind: "app", botId: "B-CI", name: "CI" },
+      "build failed",
+      { ts: "4.4" },
+    );
+    expect(h.prompts["agent-a"]).toHaveLength(1);
   });
 
   /** TEST_SCENARIO: An app tags the bot in a channel with no default Agent and
@@ -372,30 +398,87 @@ describe("the loop bound", () => {
   });
 });
 
-describe("/dam apps", () => {
-  /** TEST_SCENARIO: The owner turns app posts off for Beta. The switch is
-   *  stored as ignoreApps on Beta's binding in this channel. */
-  it("stores ignoreApps on the named binding", async () => {
+const FLUX_POST_TS = "1700000000.123456";
+const FLUX_LINK = "https://acme.slack.com/archives/C1/p1700000000123456";
+
+describe("/dam ignore and /dam unignore", () => {
+  function withPost(h: ReturnType<typeof harness>, post: object) {
+    h.gw.setMessage("C1", { ts: FLUX_POST_TS, text: "status", ...post });
+  }
+
+  /** TEST_SCENARIO: Someone who owns an Agent here points at one of FluxCD's
+   *  posts. The app that wrote it is added to the channel's ignore list. */
+  it("ignores the app that wrote the linked post", async () => {
     const h = harness({ linkedSub: OWNER });
-    const reply = await h.command("apps Beta off");
-    expect(h.ignoreAppsCalls).toEqual([["agent-b", "C1", true]]);
-    expect(reply).toContain("now ignores posts from other apps");
+    withPost(h, { botId: "B-FLUX", botName: "FluxCD" });
+    const reply = await h.command(`ignore ${FLUX_LINK}`);
+    expect(h.ignored).toEqual([{ botId: "B-FLUX", name: "FluxCD" }]);
+    expect(reply).toContain("now ignore posts from `FluxCD`");
   });
 
-  /** TEST_SCENARIO: Changing the switch needs a linked account, like ambient
-   *  mode. */
-  it("asks an unlinked user to link first", async () => {
-    const h = harness({ linkedSub: null });
-    const reply = await h.command("apps Beta off");
-    expect(h.ignoreAppsCalls).toEqual([]);
-    expect(reply).toContain("Link your account first");
+  /** TEST_SCENARIO: Only apps and webhooks can be ignored. A link to an
+   *  Agent's post or a person's post is refused and changes nothing. */
+  it.each([
+    [
+      "an agent's post",
+      {
+        botId: "B-SELF",
+        user: "U-BOT",
+        blocks: [
+          {
+            type: "context",
+            elements: [{ type: "mrkdwn", text: "<http://ui/a/agent-a|Alpha>" }],
+          },
+        ],
+      },
+      "That is an agent's post",
+    ],
+    ["a person's post", { user: "U1" }, "from a person"],
+  ])("refuses a link to %s", async (_what, post, expected) => {
+    const h = harness({ linkedSub: OWNER });
+    withPost(h, post);
+    const reply = await h.command(`ignore ${FLUX_LINK}`);
+    expect(h.ignored).toEqual([]);
+    expect(reply).toContain(expected);
   });
 
-  /** TEST_SCENARIO: Without on or off the command reports the current
-   *  setting. */
-  it("reports the current setting", async () => {
-    const h = harness({ b: { ignoreApps: true } });
-    const reply = await h.command("apps Beta");
-    expect(reply).toContain("are ignored by `Beta`");
+  /** TEST_SCENARIO: Changing the list needs a linked account, and that
+   *  account must have connected or own an Agent connected here. */
+  it.each([
+    [null, "Link your account first"],
+    ["kc|stranger", "Only someone who connected an agent here"],
+  ])("refuses %s", async (linkedSub, expected) => {
+    const h = harness({ linkedSub });
+    withPost(h, { botId: "B-FLUX", botName: "FluxCD" });
+    const reply = await h.command(`ignore ${FLUX_LINK}`);
+    expect(h.ignored).toEqual([]);
+    expect(reply).toContain(expected);
+  });
+
+  it("lists the ignored apps when given no link", async () => {
+    const h = harness({ ignored: [{ botId: "B-FLUX", name: "FluxCD" }] });
+    expect(await h.command("ignore")).toContain("ignore posts from `FluxCD`");
+  });
+
+  /** TEST_SCENARIO: An ignored app is named back by the name it was stored
+   *  with, in any case, and the agents hear it again. */
+  it("unignores an app by name", async () => {
+    const h = harness({
+      linkedSub: OWNER,
+      ignored: [{ botId: "B-FLUX", name: "FluxCD" }],
+    });
+    const reply = await h.command("unignore fluxcd");
+    expect(h.ignored).toEqual([]);
+    expect(reply).toContain("hear `FluxCD` again");
+  });
+
+  it("names the ignored apps when the name matches none", async () => {
+    const h = harness({
+      linkedSub: OWNER,
+      ignored: [{ botId: "B-FLUX", name: "FluxCD" }],
+    });
+    const reply = await h.command("unignore Jenkins");
+    expect(h.ignored).toHaveLength(1);
+    expect(reply).toContain("No ignored app here is called `Jenkins`");
   });
 });

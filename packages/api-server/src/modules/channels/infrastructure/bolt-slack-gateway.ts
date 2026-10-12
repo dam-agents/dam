@@ -84,6 +84,9 @@ function toSlackMessage(m: {
   reply_count?: number;
   latest_reply?: string;
   subtype?: string;
+  bot_id?: string;
+  username?: string;
+  bot_profile?: { name?: string };
   metadata?: { event_type?: string; event_payload?: Record<string, unknown> };
   files?: Array<{ id?: string }>;
 }): SlackMessage {
@@ -104,6 +107,10 @@ function toSlackMessage(m: {
     ...(m.reply_count ? { replyCount: m.reply_count } : {}),
     ...(m.latest_reply ? { latestReplyTs: m.latest_reply } : {}),
     ...(m.subtype ? { subtype: m.subtype } : {}),
+    ...(m.bot_id ? { botId: m.bot_id } : {}),
+    ...((m.username ?? m.bot_profile?.name)
+      ? { botName: m.username ?? m.bot_profile?.name }
+      : {}),
     ...(metadata ? { metadata } : {}),
     ...(fileIds.length ? { fileIds } : {}),
   };

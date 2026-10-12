@@ -170,6 +170,10 @@ import {
   type RosterEntry,
 } from "./slack-routing.js";
 import type { SlackSender } from "./slack-sender.js";
+import type {
+  SlackIgnoredApp,
+  SlackIgnoredApps,
+} from "./slack-ignored-apps-repository.js";
 import { createBotPostLoopBound } from "../domain/bot-post-loop-bound.js";
 import {
   parseWhisperSession,
@@ -961,7 +965,6 @@ export interface SlackBindingInfo {
   owner: string;
   teamId: SlackWorkspace;
   ambient: boolean;
-  ignoreApps?: boolean;
   isDefault: boolean;
 }
 
@@ -1292,11 +1295,7 @@ export type SlackWorkerDeps = {
     slackChannelId: string,
     ambient: boolean,
   ) => Promise<void>;
-  setSlackChannelIgnoreApps: (
-    agentId: string,
-    slackChannelId: string,
-    ignoreApps: boolean,
-  ) => Promise<void>;
+  ignoredApps: SlackIgnoredApps;
   setSlackDefault: (
     agentId: string,
     slackChannelId: string,
@@ -1326,7 +1325,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     channelRegistry,
     unbindSlackChannel,
     setSlackChannelAmbient,
-    setSlackChannelIgnoreApps,
+    ignoredApps,
     setSlackDefault,
     brand,
     isTermsAccepted,
@@ -1470,6 +1469,29 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         senderBotId: botId,
       }))
       .exhaustive();
+  }
+
+  async function isIgnoredApp(
+    sender: SlackSender,
+    channelId: string,
+  ): Promise<boolean> {
+    if (sender.kind !== "app") return false;
+    let ignored: SlackIgnoredApp[];
+    try {
+      ignored = await ignoredApps.list(channelId);
+    } catch (err) {
+      getLogger().warn(
+        { channelId, error: formatError(err) },
+        "slack.ignored_apps.unread",
+      );
+      return false;
+    }
+    if (!ignored.some((app) => app.botId === sender.botId)) return false;
+    getLogger().debug(
+      { channelId, botId: sender.botId },
+      "slack.app_post.ignored",
+    );
+    return true;
   }
 
   function admitBotPost(
@@ -1971,7 +1993,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         owner: binding.owner,
         teamId: binding.teamId,
         ambient: binding.ambient,
-        ignoreApps: binding.ignoreApps === true,
         isDefault: binding.isDefault,
       })),
     );
@@ -3480,8 +3501,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       .with("ambient", async () => {
         await handleAmbientCommand(rest, command, ack);
       })
-      .with("apps", async () => {
-        await handleAppsCommand(rest, command, ack);
+      .with("ignore", async () => {
+        await handleIgnoreCommand(rest, command, ack);
+      })
+      .with("unignore", async () => {
+        await handleUnignoreCommand(rest, command, ack);
       })
       .with("delete", async () => {
         await handleDeleteCommand(command, ack);
@@ -3494,7 +3518,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} apps [agent] on|off\`, \`/${brandShort} whisper [agent] ["message"]\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
+          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
         });
       })
       .exhaustive();
@@ -3985,77 +4009,215 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return { action, nameArg: (action ? words.slice(0, -1) : words).join(" ") };
   }
 
-  async function handleAppsCommand(
+  async function authorizeChannelSetting(
+    command: SlackSlashCommand,
+    ack: SlackAck,
+    roster: RosterEntry[],
+    subcommand: string,
+  ): Promise<string | null> {
+    const invoker = await identityLinks.resolve("slack", command.userId);
+    const detail = {
+      slackUserId: command.userId,
+      channelId: command.channelId,
+    };
+    if (!invoker) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: null,
+        actorKind: "external",
+        surface: "slack",
+        agentId: roster[0]?.instanceName ?? null,
+        decision: "deny",
+        reason: "unlinked",
+        detail,
+      });
+      await ack({
+        text: `Link your account first — run \`/${brandShort} login\`, then \`/${brandShort} ${subcommand}\` again.`,
+      });
+      return null;
+    }
+    for (const entry of roster) {
+      if (entry.owner === invoker) return invoker;
+      if ((await getInstanceOwner(entry.instanceName)) === invoker)
+        return invoker;
+    }
+    securityLog("warn", "channel.authz_deny", {
+      category: "channel",
+      actor: invoker,
+      actorKind: "user",
+      surface: "slack",
+      agentId: roster[0]?.instanceName ?? null,
+      decision: "deny",
+      reason: "not-binder-or-owner-here",
+      detail,
+    });
+    await ack({
+      text: "Only someone who connected an agent here, or owns one connected here, can change which apps the agents here ignore.",
+    });
+    return null;
+  }
+
+  function appLabel(app: SlackIgnoredApp): string {
+    return `\`${app.name || app.botId}\``;
+  }
+
+  function ignoredListCopy(ignored: SlackIgnoredApp[]): string {
+    return ignored.length === 0
+      ? `The agents here hear every app and webhook. To ignore one, run \`/${brandShort} ignore <link to one of its posts>\`.`
+      : `The agents here ignore posts from ${ignored.map(appLabel).join(", ")}. Run \`/${brandShort} unignore <app>\` to hear one again.`;
+  }
+
+  async function resolveLinkedApp(
+    linkText: string,
+    teamId: SlackWorkspace,
+  ): Promise<{ ok: true; app: SlackIgnoredApp } | { ok: false; text: string }> {
+    const link = parseAgentPostLink(linkText);
+    if (!link)
+      return {
+        ok: false,
+        text: `That isn't a message link. Use the post's "Copy link" action.`,
+      };
+    const post = gateway
+      ? await gateway.getMessage({ ...link, teamId }).catch(() => null)
+      : null;
+    if (!post)
+      return {
+        ok: false,
+        text: "I can't find that message. Check the link points at a message in this workspace, and that I am in that conversation.",
+      };
+    if (parseAgentFooter(post))
+      return {
+        ok: false,
+        text: "That is an agent's post. Posts by agents always reach the other agents here; only apps and webhooks can be ignored.",
+      };
+    if (!post.botId)
+      return {
+        ok: false,
+        text: "That message is from a person. Only apps and webhooks can be ignored.",
+      };
+    return { ok: true, app: { botId: post.botId, name: post.botName ?? "" } };
+  }
+
+  async function handleIgnoreCommand(
     rest: string,
     command: SlackSlashCommand,
     ack: SlackAck,
   ) {
-    const { action, nameArg } = parseSwitchArgs(rest);
-    const subcommand = action ? `apps ${action}` : "apps";
-
-    const picked = await pickRosterAgent(
-      command.channelId,
-      nameArg,
-      (name) => `/${brandShort} apps ${name}${action ? ` ${action}` : ""}`,
-    );
-    if (!picked.ok) {
-      await ack({ text: picked.text });
-      return;
-    }
-    const binding = picked.entry;
-    const hearsApps = binding.ignoreApps !== true;
-    if (!action) {
+    const roster = await resolveRoster(command.channelId);
+    if (roster.length === 0) {
       await ack({
-        text:
-          `Posts from other apps and webhooks ${
-            hearsApps
-              ? `reach \`${binding.name}\` here the same way a person's posts do`
-              : `are ignored by \`${binding.name}\` here`
-          }. Use \`/${brandShort} apps ${binding.name} on\` or \`/${brandShort} apps ${binding.name} off\` to change it. ` +
-          "Posts by other agents always reach it.",
+        text: `No agent is connected here, so there is nothing to ignore apps for. Run \`/${brandShort} bind\` to connect one.`,
       });
       return;
     }
-    const enable = action === "on";
-
-    const invoker = await authorizeBindingSwitch(
+    const linkText = /^\S+/.exec(rest)?.[0] ?? "";
+    if (!linkText) {
+      await ack({
+        text: ignoredListCopy(await ignoredApps.list(command.channelId)),
+      });
+      return;
+    }
+    const resolved = await resolveLinkedApp(linkText, command.teamId);
+    if (!resolved.ok) {
+      await ack({ text: resolved.text });
+      return;
+    }
+    const invoker = await authorizeChannelSetting(
       command,
       ack,
-      binding,
-      subcommand,
-      "whether app posts reach the agent",
+      roster,
+      "ignore <message link>",
     );
     if (!invoker) return;
-
-    if (enable === hearsApps) {
-      await ack({
-        text: `App posts already ${enable ? "reach" : "are ignored by"} \`${binding.name}\` here.`,
+    const added = await ignoredApps.ignore(
+      command.channelId,
+      resolved.app,
+      invoker,
+    );
+    if (added)
+      securityLog("info", "channel.app_ignored", {
+        category: "authz-list",
+        actor: invoker,
+        actorKind: "user",
+        surface: "slack",
+        agentId: roster[0]!.instanceName,
+        result: "success",
+        detail: {
+          slackUserId: command.userId,
+          channelId: command.channelId,
+          botId: resolved.app.botId,
+        },
       });
+    await ack({
+      text: added
+        ? `The agents here now ignore posts from ${appLabel(resolved.app)}. Run \`/${brandShort} unignore ${resolved.app.name || resolved.app.botId}\` to hear it again.`
+        : `The agents here already ignore ${appLabel(resolved.app)}.`,
+    });
+  }
+
+  async function handleUnignoreCommand(
+    rest: string,
+    command: SlackSlashCommand,
+    ack: SlackAck,
+  ) {
+    const roster = await resolveRoster(command.channelId);
+    const ignored = await ignoredApps.list(command.channelId);
+    const wanted = rest.trim();
+    if (!wanted || roster.length === 0) {
+      await ack({ text: ignoredListCopy(ignored) });
       return;
     }
-
-    await setSlackChannelIgnoreApps(
-      binding.instanceName,
-      command.channelId,
-      !enable,
+    let app: SlackIgnoredApp;
+    if (parseAgentPostLink(wanted)) {
+      const resolved = await resolveLinkedApp(wanted, command.teamId);
+      if (!resolved.ok) {
+        await ack({ text: resolved.text });
+        return;
+      }
+      app = resolved.app;
+    } else {
+      const name = wanted.toLowerCase();
+      const matches = ignored.filter(
+        (entry) => (entry.name || entry.botId).toLowerCase() === name,
+      );
+      if (matches.length !== 1) {
+        await ack({
+          text:
+            (matches.length === 0
+              ? `No ignored app here is called \`${wanted}\`. `
+              : `More than one ignored app here is called \`${wanted}\`; run \`/${brandShort} unignore <link to one of its posts>\` instead. `) +
+            ignoredListCopy(ignored),
+        });
+        return;
+      }
+      app = matches[0]!;
+    }
+    const invoker = await authorizeChannelSetting(
+      command,
+      ack,
+      roster,
+      `unignore ${wanted}`,
     );
-    securityLog("info", "channel.ignore_apps_toggled", {
-      category: "authz-list",
-      actor: invoker,
-      actorKind: "user",
-      surface: "slack",
-      agentId: binding.instanceName,
-      result: "success",
-      detail: {
-        slackUserId: command.userId,
-        channelId: command.channelId,
-        ignoreApps: !enable,
-      },
-    });
+    if (!invoker) return;
+    const removed = await ignoredApps.unignore(command.channelId, app.botId);
+    if (removed)
+      securityLog("info", "channel.app_unignored", {
+        category: "authz-list",
+        actor: invoker,
+        actorKind: "user",
+        surface: "slack",
+        agentId: roster[0]!.instanceName,
+        result: "success",
+        detail: {
+          slackUserId: command.userId,
+          channelId: command.channelId,
+          botId: app.botId,
+        },
+      });
     await ack({
-      text: enable
-        ? `Posts from other apps and webhooks now reach \`${binding.name}\` here, the same way a person's posts do.`
-        : `\`${binding.name}\` now ignores posts from other apps and webhooks here. People and other agents still reach it.`,
+      text: removed
+        ? `The agents here hear ${appLabel(app)} again.`
+        : `The agents here don't ignore ${appLabel(app)}.`,
     });
   }
 
@@ -4288,6 +4450,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       !firstBotMentionSighting(event.channel, event.ts)
     )
       return;
+    if (await isIgnoredApp(sender, event.channel)) return;
     const slackUserId = sender.kind === "person" ? sender.user : "";
     const conversation = botPostConversation(event.channel, event.threadTs);
     if (sender.kind === "person") botPosts.notePersonPost(conversation);
@@ -5065,6 +5228,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       );
       return;
     }
+    if (await isIgnoredApp(sender, event.channel)) return;
 
     const bindings = await channelRegistry.resolveSlackBindings(event.channel);
     const reached = bindings.some(
