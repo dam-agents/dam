@@ -78,7 +78,7 @@ func (r *AgentReconciler) WithAgentCache(lister cache.GenericLister) *AgentRecon
 	return r
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how work the reconciler starts outside a reconcile — a machine watch — puts an Agent back on the queue, and the lifetime that work is bound to: the leader context, so it ends with the leadership that owns the queue.
+// UNIT_BOUNDARY_DESCRIPTION: how work the reconciler starts outside a reconcile — a machine watch — puts an Agent back on the queue, and the lifetime that work is bound to: the leader context, so it ends with the leadership that owns the queue. A requeue with no delay says the machine moved, which a person waiting on a wake needs now; a delayed one is a poll and can wait its turn.
 func (r *AgentReconciler) WithRequeue(lifetime context.Context, fn func(name string, after time.Duration)) *AgentReconciler {
 	r.lifetime = lifetime
 	r.requeue = fn
