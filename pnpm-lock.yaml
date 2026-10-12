@@ -39,21 +39,40 @@ importers:
       '@lydell/node-pty':
         specifier: 1.1.0
         version: 1.1.0
+    devDependencies:
       '@trpc/client':
         specifier: ^11.19.0
         version: 11.19.0(@trpc/server@11.19.0(typescript@6.0.3))(typescript@6.0.3)
       '@trpc/server':
         specifier: ^11.19.0
         version: 11.19.0(typescript@6.0.3)
+      '@types/busboy':
+        specifier: ^1.5.4
+        version: 1.5.4
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.4
+      '@types/ws':
+        specifier: ^8.18.2
+        version: 8.18.2
       '@xterm/addon-serialize':
         specifier: 0.14.0
         version: 0.14.0
       '@xterm/headless':
         specifier: 6.0.0
         version: 6.0.0
+      agent-runtime-api:
+        specifier: workspace:*
+        version: link:../agent-runtime-api
+      api-server-api:
+        specifier: workspace:*
+        version: link:../api-server-api
       busboy:
         specifier: ^1.6.0
         version: 1.6.0
+      dev-config:
+        specifier: workspace:*
+        version: link:../dev-config
       file-type:
         specifier: ^22.1.1
         version: 22.1.1
@@ -69,31 +88,6 @@ importers:
       ts-pattern:
         specifier: ^5.9.0
         version: 5.9.0
-      ws:
-        specifier: ^8.22.0
-        version: 8.22.0
-      zod:
-        specifier: ^4.6.6
-        version: 4.6.6
-    devDependencies:
-      '@types/busboy':
-        specifier: ^1.5.4
-        version: 1.5.4
-      '@types/node':
-        specifier: ^26.6.4
-        version: 26.6.4
-      '@types/ws':
-        specifier: ^8.18.2
-        version: 8.18.2
-      agent-runtime-api:
-        specifier: workspace:*
-        version: link:../agent-runtime-api
-      api-server-api:
-        specifier: workspace:*
-        version: link:../api-server-api
-      dev-config:
-        specifier: workspace:*
-        version: link:../dev-config
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.28)(tsx@4.23.15)(typescript@6.0.3)(yaml@2.9.0)
@@ -106,6 +100,12 @@ importers:
       vitest:
         specifier: ^5.0.3
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@26.6.4)(vite@8.3.3(@types/node@26.6.4)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
+      ws:
+        specifier: ^8.22.0
+        version: 8.22.0
+      zod:
+        specifier: ^4.6.6
+        version: 4.6.6
 
   packages/agent-runtime-api:
     dependencies:

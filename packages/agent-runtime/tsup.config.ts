@@ -5,8 +5,13 @@ export default defineConfig({
   format: "esm",
   target: "node26",
   platform: "node",
-  noExternal: ["agent-runtime-api", "api-server-api"],
-  external: ["@lydell/node-pty", "@xterm/headless", "@xterm/addon-serialize"],
+  noExternal: [/^(?!@lydell\/node-pty)/],
+  esbuildOptions(options) {
+    options.mainFields = ["main", "module"];
+  },
+  banner: {
+    js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
+  },
   outDir: "dist/js",
   splitting: false,
   clean: true,
