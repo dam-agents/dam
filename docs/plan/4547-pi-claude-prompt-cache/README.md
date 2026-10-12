@@ -96,5 +96,10 @@ The dev cluster reaches IBM LiteLLM only from the IBM VPC.
 
 ## Delivery
 
-One atomic commit. The whole feature lands as a single PR for
+Two atomic commits, one per slice:
+
+- [x] [01 — Pi marks Claude prompts for caching](./01-pi-claude-prompt-cache.md)
+- [x] [02 — Pi starts when its lease names no model](./02-pi-default-lease-model.md) (added during implementation)
+
+The whole feature lands as a single PR for
 https://github.com/dam-agents/dam/issues/4547.
