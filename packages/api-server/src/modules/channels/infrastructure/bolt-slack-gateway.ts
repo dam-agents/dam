@@ -928,6 +928,39 @@ export function createBoltSlackGateway(
       }));
     },
 
+    async getFileInfo(fileId, teamId) {
+      if (!app) return null;
+      const token = await tokenFor(teamId);
+      if (!token) return null;
+      let result;
+      try {
+        result = await app.client.files.info({ token, file: fileId });
+      } catch (err) {
+        if (slackRefusal(err) === "file_not_found") return null;
+        throw err;
+      }
+      const f = result.file;
+      if (!f?.id || !f.url_private) return null;
+      const sharedIn = new Set([
+        ...(f.channels ?? []),
+        ...(f.groups ?? []),
+        ...(f.ims ?? []),
+        ...Object.keys(f.shares?.public ?? {}),
+        ...Object.keys(f.shares?.private ?? {}),
+      ]);
+      return {
+        file: {
+          id: f.id,
+          name: f.name ?? f.title ?? "",
+          mimetype: f.mimetype ?? "",
+          url_private: f.url_private,
+          size: f.size ?? 0,
+        },
+        uploader: f.user ?? null,
+        sharedIn: [...sharedIn],
+      };
+    },
+
     async getPermalink(
       channel: string,
       ts: string,

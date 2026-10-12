@@ -110,6 +110,7 @@ import type {
   SlackGateway,
   SlackPostMessage,
   SlackReservedFile,
+  SlackFileInfo,
   SlackImageFile,
   SlackMentionEvent,
   SlackMessage,
@@ -859,20 +860,6 @@ async function resolveAuthorNames(
   );
 }
 
-interface OfferedAttachment {
-  file: SlackImageFile;
-  uploader: string;
-}
-
-function attachmentsOf(entries: readonly LabelledEntry[]): OfferedAttachment[] {
-  return entries.flatMap(({ message }) =>
-    (message.attachments ?? []).map((file) => ({
-      file,
-      uploader: message.user ?? message.botId ?? "unknown",
-    })),
-  );
-}
-
 async function getContextMessages(read: {
   gateway: SlackGateway;
   channel: string;
@@ -886,8 +873,8 @@ async function getContextMessages(read: {
 }): Promise<{
   lines: string[];
   offeredThreads: string[];
-  offeredAttachments: OfferedAttachment[];
   hasThreadMarker: boolean;
+  hasAttachmentMarker: boolean;
   hasAgentAuthored: boolean;
   hasUnattributedBot: boolean;
   readNewestTs: string | null;
@@ -948,8 +935,10 @@ async function getContextMessages(read: {
   return {
     lines: marked.lines,
     offeredThreads: offered,
-    offeredAttachments: attachmentsOf(entries),
     hasThreadMarker: offered.length > 0,
+    hasAttachmentMarker: entries.some(
+      (e) => (e.message.attachments ?? []).length > 0,
+    ),
     hasAgentAuthored: entries.some((e) => e.footer !== null),
     hasUnattributedBot: entries.some(
       (e) => !e.footer && !!bot.userId && e.message.user === bot.userId,
@@ -1994,47 +1983,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     if (!entry) return null;
     if (entry.expiresAt <= Date.now()) return null;
     return { channel: entry.channel };
-  }
-
-  const offeredAttachments = new Map<
-    string,
-    Map<string, OfferedAttachment & { channel: string; expiresAt: number }>
-  >();
-
-  function noteOfferedAttachments(
-    instanceName: string,
-    channel: string,
-    attachments: OfferedAttachment[],
-  ): void {
-    if (attachments.length === 0) return;
-    const now = Date.now();
-    let offers = offeredAttachments.get(instanceName);
-    if (!offers) {
-      offers = new Map();
-      offeredAttachments.set(instanceName, offers);
-    }
-    if (offers.size > 5_000) {
-      for (const [id, entry] of offers) {
-        if (entry.expiresAt <= now) offers.delete(id);
-      }
-    }
-    for (const offer of attachments) {
-      offers.set(offer.file.id, {
-        ...offer,
-        channel,
-        expiresAt: now + OFFERED_THREAD_TTL_MS,
-      });
-    }
-  }
-
-  function readOfferedAttachment(
-    instanceName: string,
-    fileId: string,
-  ): (OfferedAttachment & { channel: string }) | null {
-    const entry = offeredAttachments.get(instanceName)?.get(fileId);
-    if (!entry) return null;
-    if (entry.expiresAt <= Date.now()) return null;
-    return entry;
   }
 
   async function resolveRoster(slackChannelId: string): Promise<RosterEntry[]> {
@@ -3084,8 +3032,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       hasAgentAuthored,
       hasUnattributedBot,
       hasThreadMarker,
+      hasAttachmentMarker,
       offeredThreads: offeredHere,
-      offeredAttachments: attachmentsHere,
       readNewestTs,
       readHasMore,
       threadWindow,
@@ -3107,7 +3055,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ? [...offeredHere, ctx.threadTs]
         : offeredHere,
     );
-    noteOfferedAttachments(ctx.instanceName, ctx.channel, attachmentsHere);
     const preamble = historyPreamble(
       ctx.hasThread
         ? "thread"
@@ -3116,7 +3063,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           : "channel",
       {
         hasThreadMarker,
-        hasAttachmentMarker: attachmentsHere.length > 0,
+        hasAttachmentMarker,
         windowed: threadWindow.windowed,
       },
     );
@@ -3230,8 +3177,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         lines,
         hasUnattributedBot,
         hasThreadMarker,
+        hasAttachmentMarker,
         offeredThreads: offeredHere,
-        offeredAttachments: attachmentsHere,
         readNewestTs,
         readHasMore,
       } = await getContextMessages({
@@ -3263,7 +3210,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         });
       if (lines.length === 0) return { frame: {}, commit };
       noteOfferedThreads(ctx.instanceName, ctx.channel, offeredHere);
-      noteOfferedAttachments(ctx.instanceName, ctx.channel, attachmentsHere);
       return {
         frame: {
           context: lines,
@@ -3273,7 +3219,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               botLabel: hasUnattributedBot ? bot.label : null,
               someOmitted: readHasMore,
               hasThreadMarker,
-              hasAttachmentMarker: attachmentsHere.length > 0,
+              hasAttachmentMarker,
             },
           ),
         },
@@ -6151,7 +6097,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         const labelled = labelMessages(entries, names, instanceName, bot, {
           showThreadMarkers: false,
         });
-        noteOfferedAttachments(instanceName, target.id, attachmentsOf(entries));
         return {
           messages: markThreadWindow(labelled, offsets, {
             threadTs: query.threadTs,
@@ -6177,30 +6122,44 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       const gw = await ensureGateway();
       if (!gw) return { error: "slack bot not running" };
 
-      const offered = readOfferedAttachment(instanceName, query.fileId);
-      if (!offered) {
+      let found: {
+        info: SlackFileInfo;
+        target: SlackBoundConversation;
+      } | null = null;
+      try {
+        for (const teamId of new Set(bound.map((c) => c.teamId))) {
+          const info = await gw.getFileInfo(query.fileId, teamId);
+          const target = bound.find(
+            (c) => c.teamId === teamId && info?.sharedIn.includes(c.id),
+          );
+          if (info && target) {
+            found = { info, target };
+            break;
+          }
+        }
+      } catch (err) {
         return {
-          error:
-            "not an attachment you were shown — only a fileId taken from an " +
-            "[attachment: ...] tag in the conversation history handed to " +
-            "you can be fetched, and offers age out. If someone wants you " +
-            "to look at an older file, ask them to post it again with their " +
-            "message",
+          error: formatError(err).includes("missing_scope")
+            ? "this workspace's install lacks the `files:read` permission, " +
+              "so it cannot read attachments. Ask the owner to reinstall the " +
+              "app with that scope"
+            : formatError(err),
         };
       }
-      const target = bound.find((c) => c.id === offered.channel);
-      if (!target) {
+      if (!found) {
         return {
           error:
-            "the conversation this attachment was shown in is no longer " +
-            "connected to this agent",
+            "not a file shared in a conversation connected to this agent — " +
+            "pass the fileId from an [attachment: ...] tag in your " +
+            "conversation history",
         };
       }
+      const { info, target } = found;
 
       const fetched = await fetchSlackAttachments(
         gw,
-        [offered.file],
-        offered.uploader,
+        [info.file],
+        info.uploader ?? "unknown",
         heldBudget,
         target.teamId,
         "handed",
@@ -6221,7 +6180,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         const [file] = delivery.files;
         if (!file) {
           return {
-            error: `couldn't fetch ${withheld?.name ?? attachmentName(offered.file)}: ${withheld?.reason ?? "nothing came back. Try again."}`,
+            error: `couldn't fetch ${withheld?.name ?? attachmentName(info.file)}: ${withheld?.reason ?? "nothing came back. Try again."}`,
           };
         }
         return {

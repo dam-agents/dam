@@ -481,13 +481,15 @@ describe("fetch_message_attachment MCP tool", () => {
   });
 
   /**
-   * TEST_SCENARIO: A fileId the agent was never shown is refused by the offer
-   * registry. The refusal reaches the agent as a tool error and is logged with
+   * TEST_SCENARIO: A file outside the agent's connected conversations is
+   * refused. The refusal reaches the agent as a tool error and is logged with
    * the id it asked for.
    */
   it("surfaces a refusal to the agent and records the fileId", async () => {
     const h = await mcpHarness({
-      attachment: { error: "not an attachment you were shown" },
+      attachment: {
+        error: "not a file shared in a conversation connected to this agent",
+      },
     });
 
     const result = await h.client.callTool({

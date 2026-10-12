@@ -521,7 +521,7 @@ export function createMcpSession(
 
   server.tool(
     "fetch_message_attachment",
-    "Fetch a file or image attached to an earlier message. Attachments on the message you are answering are handed to you with it, but those on earlier messages are not: in your conversation history, and in what read_thread returns, such a message carries an [attachment: ...] tag naming the file, its type and size, and its fileId. Pass that fileId and the file is written into your workspace. Returns { path, name, size, contentType, conversationId }; open the file at path with your own tools — an image too, so read it to see it. Only a fileId from such a tag is accepted, and the platform already knows which conversation it belongs to; any other id, or one whose tag has aged out, is refused. Fetch an attachment when the request depends on it, rather than guessing at what it shows. Slack only.",
+    "Fetch a file or image attached to an earlier message. Attachments on the message you are answering are handed to you with it, but those on earlier messages are not: in your conversation history, and in what read_thread returns, such a message carries an [attachment: ...] tag naming the file, its type and size, and its fileId. Pass that fileId and the file is written into your workspace. Returns { path, name, size, contentType, conversationId }; open the file at path with your own tools — an image too, so read it to see it. A file is fetched only while it is shared in a conversation connected to this agent; any other id is refused. Fetch an attachment when the request depends on it, rather than guessing at what it shows. Slack only.",
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
       fileId: z

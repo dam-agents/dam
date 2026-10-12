@@ -198,7 +198,7 @@ flowchart TD
 |---|---|---|
 | The platform's tools are always present; refused without a binding. A Connection's tools exist only while it is granted | Platform | |
 | Where it may post (§1.6); attach any file from the agent's home | Platform allows, **Agent** decides | |
-| Look up any member by id (name, title, email, timezone); `read_thread` and `fetch_message_attachment` only on threads and files it was shown, 48 h | Platform | Shown threads and files live in api-server memory; after a restart they must be shown again |
+| Look up any member by id (name, title, email, timezone); `read_thread` only on threads it was shown, 48 h; `fetch_message_attachment` on any file shared in a bound conversation | Platform | Shown threads live in api-server memory; after a restart they must be shown again |
 | The owner's Slack Connection is usable on a channel turn | **Setup**: whether the harness asks before running tools (below) | |
 
 ### Safety gates

@@ -9,6 +9,12 @@ export interface SlackImageFile {
   size: number;
 }
 
+export interface SlackFileInfo {
+  file: SlackImageFile;
+  uploader: string | null;
+  sharedIn: string[];
+}
+
 export class FileTooLargeError extends Error {
   constructor(public readonly maxBytes: number) {
     super(`file is larger than ${maxBytes} bytes`);
@@ -339,6 +345,10 @@ export interface SlackGateway {
     ts: string,
     teamId: SlackWorkspace,
   ): Promise<SlackMessageReaction[] | null>;
+  getFileInfo(
+    fileId: string,
+    teamId: SlackWorkspace,
+  ): Promise<SlackFileInfo | null>;
   openDirectMessage(userId: string, teamId: SlackWorkspace): Promise<string>;
   getPermalink(
     channel: string,
