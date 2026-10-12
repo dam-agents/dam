@@ -1,4 +1,9 @@
-import { Add, Unlink, WarningAltFilled } from "@carbon/icons-react";
+import {
+  Add,
+  Information,
+  Unlink,
+  WarningAltFilled,
+} from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
 
@@ -42,6 +47,7 @@ interface Props {
   defaultHarness: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  onConnectProviders: () => void;
 }
 
 export function SessionPairPicker({
@@ -50,8 +56,9 @@ export function SessionPairPicker({
   defaultHarness,
   open,
   onOpenChange,
+  onConnectProviders,
 }: Props) {
-  const navigateToSettings = useStore((s) => s.navigateToSettings);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
   const { data: remembered } = useRememberedPair(agentId);
@@ -84,6 +91,15 @@ export function SessionPairPicker({
   );
   const attached = (id: string) => offered.granted.some((p) => p.id === id);
   const provider = providers.granted.find((p) => p.id === pair?.provider);
+  const unsupported = (name: string) => {
+    const fit = providerOptions(
+      name,
+      views,
+      providers.granted,
+      providers.owned,
+    );
+    return fit.granted.length === 0 && fit.addable.length === 0;
+  };
   const harnessName = (name: string | undefined) =>
     harnesses.find((h) => h.name === name)?.displayName ?? name;
   const capability = carried.find((h) => h.name === harness);
@@ -98,20 +114,19 @@ export function SessionPairPicker({
 
   if (providers.loaded && providers.owned.length === 0)
     return (
-      <p
-        role="status"
-        className="flex items-center gap-1.5 pl-3 text-sm text-muted-foreground"
+      <button
+        type="button"
+        onClick={onConnectProviders}
+        className="flex items-center gap-1.5 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <WarningAltFilled size={14} className="shrink-0 text-warning" />
-        No LLM providers connected.
-        <Button
-          variant="link"
-          size="inline"
-          onClick={() => navigateToSettings("providers")}
-        >
-          Connect one in Settings
-        </Button>
-      </p>
+        <span>
+          <span className="underline underline-offset-2">
+            Connect an LLM provider
+          </span>{" "}
+          first.
+        </span>
+      </button>
     );
 
   return (
@@ -139,9 +154,10 @@ export function SessionPairPicker({
           {harnesses.length > 0 && (
             <ul role="group" aria-label="Harness" className="flex flex-col">
               {harnesses.map((h) => (
-                <li key={h.name}>
+                <li key={h.name} className="flex items-center">
                   <button
                     type="button"
+                    disabled={unsupported(h.name)}
                     aria-pressed={h.name === harness}
                     onClick={() =>
                       choose({
@@ -156,13 +172,24 @@ export function SessionPairPicker({
                         model: null,
                       })
                     }
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground"
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50 aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground"
                   >
                     <span className="text-muted-foreground">
                       <HarnessIcons harnesses={[h.name]} size="xs" />
                     </span>
                     {h.displayName}
                   </button>
+                  {unsupported(h.name) && (
+                    <Tooltip content="This harness does not support any of the LLM providers you have configured.">
+                      <span
+                        tabIndex={0}
+                        aria-label={`Why ${h.displayName} is unavailable`}
+                        className="px-2 text-muted-foreground"
+                      >
+                        <Information size={14} />
+                      </span>
+                    </Tooltip>
+                  )}
                 </li>
               ))}
             </ul>
@@ -243,24 +270,16 @@ export function SessionPairPicker({
             />
           </div>
         )}
-        <div className="flex items-center justify-between gap-2 border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground">
+        <div className="border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground">
           <PopoverClose asChild>
             <button
               type="button"
-              onClick={() => navigateToSettings("providers")}
-              className="inline-flex items-center gap-1 hover:text-foreground hover:underline"
+              onClick={() => navigateToSandboxHome(agentId, "providers")}
+              className="underline underline-offset-2 hover:text-foreground"
             >
-              <Add size={14} /> Connect providers
+              Configure providers and defaults
             </button>
           </PopoverClose>
-          {pair && (
-            <SetAsDefault
-              agentId={agentId}
-              pair={{ ...pair, settings: { ...defaults, ...settings } }}
-              defaults={defaults}
-              remembered={remembered}
-            />
-          )}
         </div>
       </PopoverContent>
     </Popover>

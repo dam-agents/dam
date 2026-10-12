@@ -55,11 +55,11 @@ const state = vi.hoisted(() => ({
   } | null,
   configured: undefined as
     { mode: string | null; configOptions: Record<string, string> } | undefined,
-  navigateToSettings: vi.fn(),
   showConfirm: vi.fn(),
   revoke: vi.fn(),
   buttons: {} as Record<string, () => void>,
   newSession: vi.fn(),
+  connectProviders: vi.fn(),
 }));
 
 vi.mock("../../store.js", () => ({
@@ -67,7 +67,7 @@ vi.mock("../../store.js", () => ({
     select({
       nextSessionPair: state.chosen ? { agent: state.chosen } : {},
       setNextSessionPair: vi.fn(),
-      navigateToSettings: state.navigateToSettings,
+      navigateToSandboxHome: vi.fn(),
       showConfirm: state.showConfirm,
     }),
 }));
@@ -104,6 +104,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
           displayName: "Pi",
           providers: ["ibm-litellm", "curve-bender"],
         },
+        { name: "codex", displayName: "Codex", providers: ["openai"] },
       ],
     },
   }),
@@ -151,6 +152,7 @@ function renderPicker() {
       agentId: "agent",
       defaultHarness: "pi",
       carried,
+      onConnectProviders: state.connectProviders,
     }),
   );
 }
@@ -183,27 +185,30 @@ describe("session pair model choices", () => {
     expect(html).not.toContain("Static model");
     expect(html).not.toContain("New session runs on");
     expect(html).not.toContain('aria-label="Close"');
-    expect(html).toContain("Connect providers");
-    expect(html).toMatch(/disabled=""[^>]*>Default<\/button>/);
-    expect(html).not.toContain("Configure defaults");
+    expect(html).toContain("Configure providers and defaults");
+    expect(html).not.toContain("Set as default");
     expect(html).toContain('aria-label="Disconnect IBM"');
     expect(html).toContain('aria-label="Session settings"');
     expect(html).not.toContain("Harness default");
     expect(html).toContain('<option value="low" selected="">Low</option>');
   });
 
-  it("offers Set as default when a picked setting differs from a remembered pair saved without settings", () => {
-    state.chosen = {
-      harness: "pi",
-      provider: "ibm",
-      model: null,
-      settings: { mode: "high" },
-    };
-    const html = renderPicker();
-    expect(html).toContain('<option value="high" selected="">High</option>');
-    expect(html).toContain(">Set as default</button>");
-    state.chosen = { ...state.chosen, settings: { mode: "low" } };
-    expect(renderPicker()).toMatch(/disabled=""[^>]*>Default<\/button>/);
+  // TEST_SCENARIO: A harness that none of the person's providers can run stays listed but cannot be picked, and says why.
+  it("grays out a harness no configured provider supports", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried: [
+          ...carried,
+          { name: "codex", harnessConfig: true, sessionModel: true },
+        ],
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toMatch(/<button type="button" disabled=""[^>]*>.*?Codex/);
+    expect(html).not.toMatch(/<button type="button" disabled=""[^>]*>.*?Pi</);
+    expect(html).toContain('aria-label="Why Codex is unavailable"');
   });
 
   it("starts a setting on the harness's configured value over the catalog default", () => {
@@ -229,12 +234,11 @@ describe("session pair model choices", () => {
     await vi.waitFor(() => expect(state.revoke).toHaveBeenCalledWith("ibm"));
   });
 
-  // TEST_SCENARIO: With no provider connection at all there is nothing to pick, so the picker says so and links to the Providers settings instead of offering an empty menu.
-  it("points to the Providers settings when no provider is connected", () => {
+  // TEST_SCENARIO: With no provider connection at all there is nothing to pick, so the picker warns in its place and opens the provider modal instead of offering an empty menu.
+  it("warns in place of the picker when no provider is connected", () => {
     state.noProviders = true;
     const html = renderPicker();
-    expect(html).toContain("No LLM providers connected.");
-    expect(html).toContain("Connect one in Settings");
+    expect(html).toContain("Connect an LLM provider</span> first.");
     expect(html).not.toContain('data-testid="session-pair-picker"');
   });
 
