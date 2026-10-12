@@ -146,4 +146,4 @@ PLATFORM_BASE_URL="http://localhost:5555" \
 PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
   mise run //packages/e2e/playwright:run ${PLAYWRIGHT_ARGS[@]+-- "${PLAYWRIGHT_ARGS[@]}"} || suite_rc=$?
 e2e_mark "suite finished"
-exit "$suite_rc"
+exit 1 # DEBUG: force the failure dump
