@@ -305,6 +305,21 @@ url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-she
 url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/580851820"
 provenance = "github-attestations"
 
+[[tools."github:razziel89/mdslw"]]
+version = "0.18.0"
+backend = "github:razziel89/mdslw"
+specifiers = ["0.18.0"]
+
+[tools."github:razziel89/mdslw"."platforms.linux-x64"]
+checksum = "sha256:ecd2cbbb78264fc12cb843e304f07a700be1e35a12a2201130a3c1ef71b8290a"
+url = "https://github.com/razziel89/mdslw/releases/download/0.18.0/mdslw_x86_64-unknown-linux-musl"
+url_api = "https://api.github.com/repos/razziel89/mdslw/releases/assets/622530097"
+
+[tools."github:razziel89/mdslw"."platforms.macos-arm64"]
+checksum = "sha256:2a51c043c7b6fbbd5b1672a1d48eb1e272e33137e4987ac40a150d997829ea90"
+url = "https://github.com/razziel89/mdslw/releases/download/0.18.0/mdslw_aarch64-apple-darwin"
+url_api = "https://api.github.com/repos/razziel89/mdslw/releases/assets/622530100"
+
 [[tools.go]]
 version = "1.27.2"
 backend = "core:go"

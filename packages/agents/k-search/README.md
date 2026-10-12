@@ -1,40 +1,31 @@
 # K-Search workload
 
-LLM-driven GPU kernel optimization ([K-Search](https://github.com/caoshiyi/K-Search),
-[paper](https://arxiv.org/abs/2602.19128)). Opening a terminal session runs a
-kernel-optimization job out of the box.
+LLM-driven GPU kernel optimization ([K-Search](https://github.com/caoshiyi/K-Search), [paper](https://arxiv.org/abs/2602.19128)).
+Opening a terminal session runs a kernel-optimization job out of the box.
 
 ## How it runs
 
-Terminal-mode launches `ksearch-run`, which drives
-`generate_kernels_and_eval.py` with the co-evolving world model enabled.
+Terminal-mode launches `ksearch-run`, which drives `generate_kernels_and_eval.py` with the co-evolving world model enabled.
 
-LLM calls use the OpenAI-compatible endpoint injected by DAM (`OPENAI_BASE_URL`,
-`OPENAI_API_KEY`, `OPENAI_MODEL`) — i.e. the LiteLLM proxy.
+LLM calls use the OpenAI-compatible endpoint injected by DAM (`OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`) — i.e. the LiteLLM proxy.
 
-KernelBench problems are read from the copy baked into the image
-(`dataset_src=local`, patched at build time), not fetched from Hugging Face — so
-the only egress an eval needs is the LLM endpoint. This keeps Hugging Face off
-the platform-wide egress allowlist.
+KernelBench problems are read from the copy baked into the image (`dataset_src=local`, patched at build time), not fetched from Hugging Face — so the only egress an eval needs is the LLM endpoint.
+This keeps Hugging Face off the platform-wide egress allowlist.
 
 ## Eval backend: Modal vs local GPU
 
 Pick by selecting the workload at sandbox creation:
 
-- **`k-search`** — kernels benchmarked on **Modal cloud GPUs** (`KSEARCH_EVAL_MODE=modal`);
-  no in-cluster GPU needed. Requires the Modal connection.
-- **`k-search-local`** — kernels benchmarked on an **in-cluster NVIDIA GPU**
-  (`KSEARCH_EVAL_MODE=local`); the pod requests `nvidia.com/gpu` and schedules onto
-  a GPU node. No Modal connection needed.
+- **`k-search`** — kernels benchmarked on **Modal cloud GPUs** (`KSEARCH_EVAL_MODE=modal`); no in-cluster GPU needed.
+  Requires the Modal connection.
+- **`k-search-local`** — kernels benchmarked on an **in-cluster NVIDIA GPU** (`KSEARCH_EVAL_MODE=local`); the pod requests `nvidia.com/gpu` and schedules onto a GPU node.
+  No Modal connection needed.
 
 Both are the same image — only the eval backend (env) and GPU request differ.
 
-> **Kata note:** agents run under a sandboxed Kata runtime. GPU passthrough
-> needs a GPU-capable Kata runtime class (VFIO) distinct from the default agent
-> class, so `k-search-local` sets `runtimeClassName` + `nodeSelector`
-> per-template (the chart-wide class can't carry the GPU VM config for every
-> agent). The operator fills in the cluster's actual GPU Kata class and GPU node
-> label — see the `k-search-local` block in `helm/values.yaml`.
+> **Kata note:** agents run under a sandboxed Kata runtime.
+> GPU passthrough needs a GPU-capable Kata runtime class (VFIO) distinct from the default agent class, so `k-search-local` sets `runtimeClassName` + `nodeSelector` per-template (the chart-wide class can't carry the GPU VM config for every agent).
+> The operator fills in the cluster's actual GPU Kata class and GPU node label — see the `k-search-local` block in `helm/values.yaml`.
 
 ## Configuration (env)
 
@@ -50,15 +41,11 @@ Both are the same image — only the eval backend (env) and GPU request differ.
 
 ## Modal through the DAM gateway
 
-DAM's egress is proxy-only. The modal client is installed with its
-`api-proxy-support` extra, so both its transports, gRPC and the aiohttp blob
-session, CONNECT through `HTTPS_PROXY`. All modal traffic then flows through
-the gateway.
+DAM's egress is proxy-only.
+The modal client is installed with its `api-proxy-support` extra, so both its transports, gRPC and the aiohttp blob session, CONNECT through `HTTPS_PROXY`.
+All modal traffic then flows through the gateway.
 
 Requirements — supplied by the **Modal connection** granted to the agent:
-- `MODAL_TOKEN_SECRET` — the secret; gateway-injected into the
-  `x-modal-token-secret` header over the HTTP/2 chain (the pod env holds only a
-  placeholder, never the real value).
+- `MODAL_TOKEN_SECRET` — the secret; gateway-injected into the `x-modal-token-secret` header over the HTTP/2 chain (the pod env holds only a placeholder, never the real value).
 - `MODAL_TOKEN_ID` — non-secret identifier, delivered as a plain pod env.
-- Egress allow-rules for `api.modal.com` (control plane) plus the blob hosts
-  `storage.googleapis.com` and `s3.amazonaws.com`.
+- Egress allow-rules for `api.modal.com` (control plane) plus the blob hosts `storage.googleapis.com` and `s3.amazonaws.com`.

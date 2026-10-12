@@ -94,7 +94,8 @@ bot.onSubscribedMessage(async (thread, message) => {
 
 ## Streaming
 
-Pass any `AsyncIterable<string>` to `thread.post()`. For AI SDK, prefer `result.fullStream` over `result.textStream` when available so step boundaries are preserved.
+Pass any `AsyncIterable<string>` to `thread.post()`.
+For AI SDK, prefer `result.fullStream` over `result.textStream` when available so step boundaries are preserved.
 
 ```typescript
 import { ToolLoopAgent } from "ai";
@@ -191,8 +192,11 @@ Also inspect:
 - `node_modules/@chat-adapter/shared/dist/index.d.ts` — shared errors and utilities
 - Installed official adapter `dist/index.d.ts` files — reference implementations for config and APIs
 
-A custom adapter needs request verification, webhook parsing, message/thread/channel operations, ID encoding/decoding, and a format converter. Use `BaseFormatConverter` from `chat` and shared utilities from `@chat-adapter/shared`.
+A custom adapter needs request verification, webhook parsing, message/thread/channel operations, ID encoding/decoding, and a format converter.
+Use `BaseFormatConverter` from `chat` and shared utilities from `@chat-adapter/shared`.
 
 ## Webhook setup
 
-Each registered adapter exposes `bot.webhooks.<name>`. Wire those directly to your HTTP framework routes. See `node_modules/chat/docs/guides/slack-nextjs.mdx` and `node_modules/chat/docs/guides/discord-nuxt.mdx` for framework-specific route patterns.
+Each registered adapter exposes `bot.webhooks.<name>`.
+Wire those directly to your HTTP framework routes.
+See `node_modules/chat/docs/guides/slack-nextjs.mdx` and `node_modules/chat/docs/guides/discord-nuxt.mdx` for framework-specific route patterns.
