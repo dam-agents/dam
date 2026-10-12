@@ -1,0 +1,71 @@
+#!/usr/bin/env node
+//MISE description="Test that the entrypoint rebuilds the system and Chromium CA stores only when the platform CA set changes"
+//MISE sources=["base/rootfs/usr/local/bin/agent-entrypoint", ".mise/tasks/test/entrypoint-ca-trust"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const entrypoint = fileURLToPath(new URL("../../../base/rootfs/usr/local/bin/agent-entrypoint", import.meta.url));
+const dir = mkdtempSync(join(tmpdir(), "entrypoint-ca-trust-"));
+const [ca, share, home, bin, workingDir] = ["ca", "share", "home", "bin", "working-dir"].map((d) => join(dir, d));
+for (const d of [ca, share, home, bin, workingDir]) mkdirSync(d);
+const calls = join(dir, "calls");
+writeFileSync(join(bin, "update-ca-certificates"), `#!/bin/sh\necho uca >> ${calls}\n[ ! -e ${dir}/uca-fails ]\n`, { mode: 0o755 });
+writeFileSync(
+  join(bin, "certutil"),
+  `#!/bin/sh\necho "certutil $3" >> ${calls}\n[ "$3" = -N ] && touch "\${2#sql:}/cert9.db"\nexit 0\n`,
+  { mode: 0o755 },
+);
+writeFileSync(
+  join(dir, "agent-entrypoint"),
+  readFileSync(entrypoint, "utf8")
+    .replaceAll('"$(id -u)" = 0', '"$(id -u)" = never')
+    .replaceAll("/etc/platform/ca", ca)
+    .replaceAll("/usr/local/share/ca-certificates", share)
+    .replaceAll("/app/working-dir", workingDir),
+);
+const pem = (body) => `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----\n`;
+const boot = () => {
+  rmSync(calls, { force: true });
+  execFileSync("/bin/sh", [join(dir, "agent-entrypoint"), "true"], {
+    env: { PATH: `${bin}:${process.env.PATH}`, HOME: home },
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n") : [];
+};
+
+try {
+  // TEST_SCENARIO: the first boot with a CA trusts it in the system bundle and in Chromium's NSS store, one certificate per PEM block.
+  writeFileSync(join(ca, "ca.crt"), pem("one") + pem("two"));
+  assert.deepEqual(boot(), ["uca", "certutil -N", "certutil -L", "certutil -A", "certutil -A"]);
+  assert.equal(readFileSync(join(share, "platform-ca.crt"), "utf8"), pem("one") + pem("two"));
+
+  // TEST_SCENARIO: a machine keeps its root and its home across a stop, so a boot with the same CA set rebuilds neither store. This is the seconds a machine boot saves.
+  assert.deepEqual(boot(), []);
+
+  // TEST_SCENARIO: a rotated CA rebuilds both stores, and the system store drops the copy of a CA that went away.
+  writeFileSync(join(ca, "ca.crt"), pem("three"));
+  writeFileSync(join(ca, "extra.crt"), pem("four"));
+  assert.deepEqual(boot(), ["uca", "certutil -L", "certutil -A", "certutil -A"]);
+  rmSync(join(ca, "extra.crt"));
+  assert.deepEqual(boot(), ["uca", "certutil -L", "certutil -A"]);
+  assert.equal(existsSync(join(share, "platform-extra.crt")), false);
+
+  // TEST_SCENARIO: a failed update-ca-certificates records nothing, so the next boot tries again instead of trusting a store it never built.
+  writeFileSync(join(ca, "ca.crt"), pem("five"));
+  writeFileSync(join(dir, "uca-fails"), "");
+  assert.deepEqual(boot(), ["uca", "certutil -L", "certutil -A"]);
+  rmSync(join(dir, "uca-fails"));
+  assert.deepEqual(boot(), ["uca"]);
+
+  // TEST_SCENARIO: a new home under an unchanged root, such as a container's volume replaced, gets its NSS store built while the system store stays.
+  rmSync(join(home, ".pki"), { recursive: true });
+  assert.deepEqual(boot(), ["certutil -N", "certutil -L", "certutil -A"]);
+} finally {
+  rmSync(dir, { recursive: true, force: true });
+}
