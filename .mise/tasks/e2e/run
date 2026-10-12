@@ -58,18 +58,11 @@ cleanup() {
       uptime || true
       ps -eLo pid,tid,stat,pcpu,comm --sort=-pcpu 2>/dev/null | head -25 || true
       for pid in $(pgrep '^VM:' 2>/dev/null); do
-        echo "### VMM $pid: tid comm state cpu-ticks-in-5s cpu-ticks-total"
-        declare -A t0=()
-        for t in /proc/$pid/task/*; do t0[${t##*/}]=$(awk '{print $14+$15}' "$t/stat" 2>/dev/null); done
-        sleep 5
-        for t in /proc/$pid/task/*; do
-          tid=${t##*/}; now=$(awk '{print $14+$15}' "$t/stat" 2>/dev/null)
-          echo "$tid $(cat "$t/comm" 2>/dev/null | tr ' ' _) $(awk '{print $3}' "$t/stat" 2>/dev/null) $((now - ${t0[$tid]:-0})) $now"
-        done | sort -k4 -rn | head -20
-        for tid in $(for t in /proc/$pid/task/*; do echo "$(awk '{print $14+$15}' "$t/stat") ${t##*/}"; done | sort -rn | head -3 | awk '{print $2}'); do
+        echo "### VMM $pid: per-thread CPU over 5 s"
+        top -H -b -n 2 -d 5 -p "$pid" 2>/dev/null | awk '/^top -/{n++} n==2' | head -30 || true
+        for tid in $(top -H -b -n 2 -d 2 -p "$pid" 2>/dev/null | awk '/^top -/{n++} n==2 && $1 ~ /^[0-9]+$/ {print $1}' | head -3); do
           echo "# kernel stack of $tid ($(cat /proc/$pid/task/$tid/comm))"; sudo cat /proc/$pid/task/$tid/stack 2>&1 | head -12
         done
-        unset t0
       done
       echo ""
       echo "--- VM guest consoles (tail) and guest kernel lines ---"
