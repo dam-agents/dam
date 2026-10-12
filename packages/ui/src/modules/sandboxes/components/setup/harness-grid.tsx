@@ -32,9 +32,9 @@ export function HarnessGrid({
   }
   if (error) {
     return (
-      <Callout tone="danger" inset>
+      <Callout tone="danger">
         <p className="text-sm text-foreground">
-          Couldn't load the harness catalogue.
+          Couldn't load the harness catalog.
         </p>
         <Button variant="outline" size="sm" className="mt-2" onClick={onRetry}>
           Retry
@@ -44,7 +44,7 @@ export function HarnessGrid({
   }
   if (harnesses.length === 0) {
     return (
-      <Callout tone="info" inset>
+      <Callout tone="info">
         <p className="text-sm text-foreground">
           No harness is available on this installation.
         </p>

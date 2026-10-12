@@ -40,15 +40,16 @@ export function ActivityFilterBar({
       />
       <StatusDropdown selected={filters.state} onChange={onChangeState} />
       {filtered && (
-        <button
-          type="button"
+        <Button
+          variant="link"
+          size="inline"
           onClick={onReset}
           data-testid="activity-filter-reset"
-          className="ml-auto flex items-center gap-1 text-sm text-accent transition-colors hover:text-accent/80"
+          className="ml-auto gap-1 text-sm"
         >
           <Reset size={16} />
           Reset to default
-        </button>
+        </Button>
       )}
     </div>
   );

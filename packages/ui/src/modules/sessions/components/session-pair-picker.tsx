@@ -1,8 +1,10 @@
-import { Add, Unlink } from "@carbon/icons-react";
+import { Add, Unlink, WarningAltFilled } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
 
 import { HarnessIcons } from "@/components/harness-icons";
+import { Button } from "@/components/ui/button";
+import { labelVariants } from "@/components/ui/label";
 import {
   Popover,
   PopoverClose,
@@ -86,6 +88,24 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
   const withSettings = (next: SessionPair): SessionPair =>
     Object.keys(settings).length > 0 ? { ...next, settings } : next;
 
+  if (providers.loaded && providers.owned.length === 0)
+    return (
+      <p
+        role="status"
+        className="flex items-center gap-1.5 pl-3 text-sm text-muted-foreground"
+      >
+        <WarningAltFilled size={14} className="shrink-0 text-warning" />
+        No LLM providers connected.
+        <Button
+          variant="link"
+          size="inline"
+          onClick={() => navigateToSettings("providers")}
+        >
+          Connect one in Settings
+        </Button>
+      </p>
+    );
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -158,7 +178,7 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
                       move to another provider.
                     </p>,
                     `Disconnect ${p.name} from this agent?`,
-                    { confirmLabel: "Disconnect" },
+                    { kind: "destructive", confirmLabel: "Disconnect" },
                   ).then((ok) => ok && revoke(p.id))
                 }
                 onChoose={(model) =>
@@ -281,9 +301,7 @@ function ProviderHeading({
 }) {
   return (
     <div className="group/provider flex h-6 items-center justify-between gap-2">
-      <h3 className="truncate text-xs font-medium uppercase text-muted-foreground">
-        {name}
-      </h3>
+      <h3 className={cn("truncate", labelVariants())}>{name}</h3>
       {onDisconnect && (
         <Tooltip content="Disconnect">
           <PopoverClose asChild>
@@ -366,16 +384,17 @@ function ProviderModels({
               : isLoading
                 ? "Loading models…"
                 : unavailable
-                  ? "Could not list this provider's models."
+                  ? "Couldn't load this provider's models."
                   : "No models available."}
             {operable && !isLoading && unavailable && (
-              <button
-                type="button"
-                className="ml-1 text-accent hover:underline"
+              <Button
+                variant="link"
+                size="inline"
+                className="ml-1"
                 onClick={() => void refetch()}
               >
                 Retry
-              </button>
+              </Button>
             )}
           </li>
         )}

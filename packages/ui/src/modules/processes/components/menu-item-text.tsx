@@ -10,7 +10,7 @@ export function MenuItemText({ label, caption, captionTestId }: Props) {
       <span>{label}</span>
       <span
         data-testid={captionTestId}
-        className="text-[11px] text-muted-foreground"
+        className="text-2xs text-muted-foreground"
       >
         {caption}
       </span>

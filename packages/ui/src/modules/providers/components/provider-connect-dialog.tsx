@@ -3,7 +3,9 @@ import type {
   ConnectionUpdateInput,
 } from "api-server-api";
 
-import { Modal } from "../../../components/modal.js";
+import { Button } from "@/components/ui/button";
+
+import { DialogFooter, Modal } from "../../../components/modal.js";
 import {
   BEDROCK_TEMPLATE_ID,
   type BedrockPins,
@@ -33,6 +35,7 @@ interface Props {
   item?: ProviderItem;
   onConnected: (ref: ProviderRef) => void;
   onClose: () => void;
+  onDisconnect?: () => void;
 }
 
 export function ProviderConnectDialog({
@@ -40,6 +43,7 @@ export function ProviderConnectDialog({
   item,
   onConnected,
   onClose,
+  onDisconnect,
 }: Props) {
   const createConnection = useCreateConnection();
   const updateConnection = useUpdateConnection();
@@ -73,101 +77,112 @@ export function ProviderConnectDialog({
     : undefined;
 
   return (
-    <Modal onClose={onClose} widthClass="w-[505px]">
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {provider === "anthropic" && (
-          <AnthropicForm
-            variant={variant}
-            initialMode={anthropicMode}
-            lockMode={!!item}
-            onCancel={onClose}
-            onSave={({ mode, value }) =>
-              persist({
+    <Modal onClose={onClose} size="sm">
+      {provider === "anthropic" && (
+        <AnthropicForm
+          variant={variant}
+          initialMode={anthropicMode}
+          lockMode={!!item}
+          onCancel={onClose}
+          onSave={({ mode, value }) =>
+            persist({
+              value,
+              createInput: {
+                templateId: MODES[mode].templateId,
+                name: MODES[mode].templateId,
+                authKind: "header",
                 value,
-                createInput: {
-                  templateId: MODES[mode].templateId,
-                  name: MODES[mode].templateId,
-                  authKind: "header",
-                  value,
-                },
-              })
-            }
-          />
-        )}
-        {provider === "bob" && (
-          <BobForm
-            variant={variant}
-            initialPins={bobPins}
-            onCancel={onClose}
-            onSave={({ value, pins }) =>
-              persist({
+              },
+            })
+          }
+        />
+      )}
+      {provider === "bob" && (
+        <BobForm
+          variant={variant}
+          initialPins={bobPins}
+          onCancel={onClose}
+          onSave={({ value, pins }) =>
+            persist({
+              value,
+              updateInput: item && bobUpdateInput(item.id, value, pins),
+              createInput: {
+                templateId: "bob",
+                name: "bob",
+                authKind: "header",
                 value,
-                updateInput: item && bobUpdateInput(item.id, value, pins),
-                createInput: {
-                  templateId: "bob",
-                  name: "bob",
-                  authKind: "header",
-                  value,
-                  configInputs: bobConfigInputs(pins),
-                },
-              })
-            }
-          />
-        )}
-        {provider === "openai" && (
-          <OpenAIForm
-            variant={variant}
-            onCancel={onClose}
-            onSave={({ value }) =>
-              persist({
+                configInputs: bobConfigInputs(pins),
+              },
+            })
+          }
+        />
+      )}
+      {provider === "openai" && (
+        <OpenAIForm
+          variant={variant}
+          onCancel={onClose}
+          onSave={({ value }) =>
+            persist({
+              value,
+              createInput: {
+                templateId: "openai",
+                name: "openai",
+                authKind: "header",
                 value,
-                createInput: {
-                  templateId: "openai",
-                  name: "openai",
-                  authKind: "header",
-                  value,
-                },
-              })
-            }
-          />
-        )}
-        {provider === "bedrock" && (
-          <BedrockForm
-            variant={variant}
-            onCancel={onClose}
-            onSave={({ value, pins }) =>
-              persist({
+              },
+            })
+          }
+        />
+      )}
+      {provider === "bedrock" && (
+        <BedrockForm
+          variant={variant}
+          onCancel={onClose}
+          onSave={({ value, pins }) =>
+            persist({
+              value,
+              createInput: {
+                templateId: BEDROCK_TEMPLATE_ID,
+                name: BEDROCK_TEMPLATE_ID,
+                authKind: "header",
                 value,
-                createInput: {
-                  templateId: BEDROCK_TEMPLATE_ID,
-                  name: BEDROCK_TEMPLATE_ID,
-                  authKind: "header",
-                  value,
-                  configInputs: bedrockConfigInputs(pins),
-                },
-              })
-            }
-          />
-        )}
-        {(provider === "ibm-litellm" || provider === "curve-bender") && (
-          <LiteLlmProxyForm
-            provider={provider}
-            variant={variant}
-            onCancel={onClose}
-            onSave={({ value }) =>
-              persist({
+                configInputs: bedrockConfigInputs(pins),
+              },
+            })
+          }
+        />
+      )}
+      {(provider === "ibm-litellm" || provider === "curve-bender") && (
+        <LiteLlmProxyForm
+          provider={provider}
+          variant={variant}
+          onCancel={onClose}
+          onSave={({ value }) =>
+            persist({
+              value,
+              createInput: {
+                templateId: provider,
+                name: provider,
+                authKind: "header",
                 value,
-                createInput: {
-                  templateId: provider,
-                  name: provider,
-                  authKind: "header",
-                  value,
-                },
-              })
-            }
-          />
-        )}
-      </div>
+              },
+            })
+          }
+        />
+      )}
+      {onDisconnect && (
+        <DialogFooter className="justify-start">
+          <Button
+            type="button"
+            variant="ghost"
+            tone="danger"
+            size="sm"
+            onClick={onDisconnect}
+          >
+            Disconnect this provider
+          </Button>
+        </DialogFooter>
+      )}
     </Modal>
   );
 }

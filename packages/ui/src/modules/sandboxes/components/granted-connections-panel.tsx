@@ -1,13 +1,9 @@
-import { Add } from "@carbon/icons-react";
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
-import { Button } from "@/components/ui/button";
-import { EmptyStateCard } from "@/components/ui/empty-state-card";
-import { Inset } from "@/components/ui/inset";
-import { SectionLabel } from "@/components/ui/section-label";
+import { ListSection } from "@/components/ui/list-section";
 
 import { AwsProfilesCallout } from "../../connections/components/aws-profiles-callout.js";
-import { ConnectionGroupCard } from "../../connections/components/connection-group-card.js";
+import { ConnectionGroup } from "../../connections/components/connection-group.js";
 import { ConnectionMaintenanceDialog } from "../../connections/components/connection-update-credential-dialog.js";
 import {
   GitHubAccountsCallout,
@@ -28,6 +24,7 @@ interface Props {
   preferPending?: boolean;
   title?: string;
   leading?: React.ReactNode;
+  extraGroups?: React.ReactNode;
 }
 
 export function GrantedConnectionsPanel({
@@ -39,26 +36,13 @@ export function GrantedConnectionsPanel({
   grants,
   onPreferConnection,
   preferPending,
-  title = "My connections",
+  title,
   leading,
+  extraGroups,
 }: Props) {
   const maintenance = useConnectionMaintenance();
 
-  const header = (
-    <div className="mb-3 flex items-center justify-between">
-      <SectionLabel>{title}</SectionLabel>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onOpenCatalog}
-        data-testid="open-connection-catalog"
-      >
-        <Add size={16} />
-        New
-      </Button>
-    </div>
-  );
-  const rivalryCallout = (
+  return (
     <>
       <GrantRivalryCallout granted={granted} className="mb-3" />
       {grants && onPreferConnection && (
@@ -79,33 +63,17 @@ export function GrantedConnectionsPanel({
           />
         </>
       )}
-    </>
-  );
-
-  if (groups.length === 0)
-    return (
-      <>
-        {header}
-        {rivalryCallout}
-        {leading && <Inset className="flex flex-col gap-4">{leading}</Inset>}
-        {!leading && (
-          <EmptyStateCard
-            message="You have not added any Connections to this Agent yet"
-            actionLabel="Add Connection"
-            onAction={onOpenCatalog}
-          />
-        )}
-      </>
-    );
-
-  return (
-    <>
-      {header}
-      {rivalryCallout}
-      <Inset className="flex flex-col gap-4">
-        {leading}
+      {leading && <div className="mb-4">{leading}</div>}
+      <ListSection
+        label={title}
+        onNew={onOpenCatalog}
+        newTestId="open-connection-catalog"
+        isEmpty={groups.length === 0 && !extraGroups}
+        empty="No connections added to this agent yet."
+      >
+        {extraGroups}
         {groups.map((group) => (
-          <ConnectionGroupCard
+          <ConnectionGroup
             key={group.provider.id}
             group={group}
             templateById={templateById}
@@ -119,7 +87,7 @@ export function GrantedConnectionsPanel({
             maintenance={maintenance.rowActions}
           />
         ))}
-      </Inset>
+      </ListSection>
       <ConnectionMaintenanceDialog maintenance={maintenance} />
     </>
   );

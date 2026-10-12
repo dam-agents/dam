@@ -46,6 +46,7 @@ const state = vi.hoisted(() => ({
   refetch: vi.fn(),
   providersAsked: [] as string[],
   owned: [] as { id: string; name: string; type: string }[],
+  noProviders: false,
   chosen: null as {
     harness: string;
     provider: string | null;
@@ -109,17 +110,21 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useRememberedPair: () => ({
     data: { harness: "pi", provider: "ibm", model: null },
   }),
-  useProviderConnections: () => ({
-    granted: [
-      { id: "ibm", name: "IBM", type: "ibm-litellm" },
-      { id: "curve", name: "Curve", type: "curve-bender" },
-    ],
-    owned: [
-      { id: "ibm", name: "IBM", type: "ibm-litellm" },
-      { id: "curve", name: "Curve", type: "curve-bender" },
-      ...state.owned,
-    ],
-  }),
+  useProviderConnections: () =>
+    state.noProviders
+      ? { granted: [], owned: [], loaded: true }
+      : {
+          loaded: true,
+          granted: [
+            { id: "ibm", name: "IBM", type: "ibm-litellm" },
+            { id: "curve", name: "Curve", type: "curve-bender" },
+          ],
+          owned: [
+            { id: "ibm", name: "IBM", type: "ibm-litellm" },
+            { id: "curve", name: "Curve", type: "curve-bender" },
+            ...state.owned,
+          ],
+        },
   useGrantProvider: () => ({
     grant: vi.fn(),
     revoke: state.revoke,
@@ -158,6 +163,7 @@ describe("session pair model choices", () => {
     state.operable = true;
     state.providersAsked = [];
     state.owned = [];
+    state.noProviders = false;
     state.configured = undefined;
     state.chosen = null;
   });
@@ -215,12 +221,21 @@ describe("session pair model choices", () => {
     expect(state.showConfirm).toHaveBeenCalledWith(
       expect.anything(),
       "Disconnect IBM from this agent?",
-      { confirmLabel: "Disconnect" },
+      { kind: "destructive", confirmLabel: "Disconnect" },
     );
     expect(state.revoke).not.toHaveBeenCalled();
     state.showConfirm.mockResolvedValueOnce(true);
     state.buttons["Disconnect IBM"]!();
     await vi.waitFor(() => expect(state.revoke).toHaveBeenCalledWith("ibm"));
+  });
+
+  // TEST_SCENARIO: With no provider connection at all there is nothing to pick, so the picker says so and links to the Providers settings instead of offering an empty menu.
+  it("points to the Providers settings when no provider is connected", () => {
+    state.noProviders = true;
+    const html = renderPicker();
+    expect(html).toContain("No LLM providers connected.");
+    expect(html).toContain("Connect one in Settings");
+    expect(html).not.toContain('data-testid="session-pair-picker"');
   });
 
   it("lists unattached providers in place with an attach action", () => {
@@ -234,7 +249,7 @@ describe("session pair model choices", () => {
   it("reports unavailable discovery instead of substituting defaults or catalog models", () => {
     state.models = { ibm: {}, curve: { availableModels: [] } };
     const html = renderPicker();
-    expect(html).toContain("Could not list this provider&#x27;s models.");
+    expect(html).toContain("Couldn&#x27;t load this provider&#x27;s models.");
     expect(html).toContain("Retry");
     expect(html).toContain("No models available.");
     expect(html).not.toContain("Static model");
@@ -265,7 +280,7 @@ describe("session pair model choices", () => {
     { availableModels: [], expected: "No models available." },
     {
       availableModels: undefined,
-      expected: "Could not list this provider&#x27;s models.",
+      expected: "Couldn&#x27;t load this provider&#x27;s models.",
     },
   ])(
     "renders the active provider with $expected during background polls",

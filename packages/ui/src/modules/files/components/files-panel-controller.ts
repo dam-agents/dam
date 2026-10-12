@@ -27,6 +27,7 @@ import {
 import { useFileWatch } from "../hooks/use-file-watch.js";
 import { useWorkspaceWatch } from "../hooks/use-workspace-watch.js";
 import { downloadFileAt } from "../lib/download.js";
+import { DEFAULT_EXPANDED_DIRS } from "../store.js";
 import type { FileRowMenuAction } from "./file-row-menu-items.js";
 
 interface PendingNew {
@@ -68,8 +69,6 @@ export function useFilesPanel(): FilesPanelContextValue {
   return ctx;
 }
 
-const EMPTY_EXPANDED: ReadonlySet<string> = new Set();
-
 function hasDirectoryItem(items: DataTransferItemList): boolean {
   for (let i = 0; i < items.length; i++) {
     const ent = items[i].webkitGetAsEntry?.();
@@ -88,10 +87,11 @@ export function useFilesPanelController({
   const openFilePath = useStore((s) => s.openFilePath);
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
   const toggleExpandedDir = useStore((s) => s.toggleExpandedDir);
+  const setShowHiddenFiles = useStore((s) => s.setShowHiddenFiles);
   const expandedDirs = useStore((s) =>
     selectedAgent
-      ? (s.expandedDirs[selectedAgent] ?? EMPTY_EXPANDED)
-      : EMPTY_EXPANDED,
+      ? (s.expandedDirs[selectedAgent] ?? DEFAULT_EXPANDED_DIRS)
+      : DEFAULT_EXPANDED_DIRS,
   );
 
   const rootSnapshot = useDirSnapshot(selectedAgent, "");
@@ -247,9 +247,10 @@ export function useFilesPanelController({
       if (!pendingNew) return;
       const { kind, dir } = pendingNew;
       setPendingNew(null);
+      if (rawName.trim().startsWith(".")) setShowHiddenFiles(true);
       void createEntry({ kind, dir, name: rawName });
     },
-    [pendingNew, createEntry],
+    [pendingNew, createEntry, setShowHiddenFiles],
   );
 
   const handleCancelRename = useCallback(() => setRenamingPath(null), []);

@@ -12,16 +12,19 @@ const settingsTabSchema = z.enum([
   "slack-workspaces",
   "analytics",
   "features",
+  "about",
 ]);
 export type SettingsTab = z.infer<typeof settingsTabSchema>;
 
 const sandboxSectionSchema = z.enum([
   "setup",
   "connections",
+  "knowledge",
+  "network",
+  "environment",
   "channels",
   "skills",
   "schedules",
-  "artifacts",
   "usage",
 ]);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;

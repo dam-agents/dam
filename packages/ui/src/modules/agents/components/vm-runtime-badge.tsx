@@ -24,7 +24,7 @@ export function VmRuntimeBadge({
   const { Icon, variant } = match(badge.kind)
     .with("new", () => ({ Icon: Chemistry, variant: "template" as const }))
     .with("old", () => ({ Icon: ContainerRuntime, variant: "muted" as const }))
-    .with("migrating", () => ({ Icon: Migrate, variant: "accent" as const }))
+    .with("migrating", () => ({ Icon: Migrate, variant: "info" as const }))
     .with("failed", () => ({ Icon: WarningAlt, variant: "danger" as const }))
     .exhaustive(() => ({ Icon: ContainerRuntime, variant: "muted" as const }));
   return (

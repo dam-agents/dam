@@ -22,7 +22,11 @@ export function ConfirmRevokeDialog({
 }: Props) {
   return (
     <Modal onClose={pending ? undefined : onCancel}>
-      <DialogHeader title="Revoke API key?" />
+      <DialogHeader
+        title="Revoke API key?"
+        onClose={onCancel}
+        closeDisabled={pending}
+      />
       <DialogBody>
         <p className="text-sm text-muted-foreground mb-2">
           The key{" "}
@@ -36,7 +40,8 @@ export function ConfirmRevokeDialog({
       </DialogBody>
       <DialogActions
         onCancel={onCancel}
-        label="Revoke"
+        cancelDisabled={pending}
+        label="Revoke key"
         pendingLabel="Revoking…"
         pending={pending}
         destructive

@@ -2,7 +2,7 @@ import { Satellite } from "@carbon/icons-react";
 import type { SatelliteView } from "api-server-api";
 
 import { ExplainerPopover } from "@/components/explainer-popover";
-import { PanelCard } from "@/components/ui/panel-card";
+import { ListGroup } from "@/components/ui/list-group";
 
 import { getBrand } from "../../../brand.js";
 import type { RowGrantControls } from "../../connections/components/catalog-connection-row.js";
@@ -33,7 +33,7 @@ function SatellitesExplainer() {
   );
 }
 
-export function SatellitesGroupCard({
+export function SatellitesGroup({
   satellites,
   showCount = false,
   grant,
@@ -41,11 +41,11 @@ export function SatellitesGroupCard({
   removingName = null,
 }: Props) {
   return (
-    <PanelCard
+    <ListGroup
       testId="connection-group-satellites"
       title="Satellites"
       icon={<Satellite size={16} className="shrink-0 text-foreground/80" />}
-      titleAccessory={
+      accessory={
         <>
           <SatellitesExplainer />
           {showCount && (
@@ -56,17 +56,15 @@ export function SatellitesGroupCard({
         </>
       }
     >
-      <div className="flex flex-col gap-3 p-4">
-        {satellites.map((s) => (
-          <SatelliteRow
-            key={s.name}
-            satellite={s}
-            grant={grant?.(s)}
-            onRemove={onRemove && (() => onRemove(s))}
-            removing={removingName === s.name}
-          />
-        ))}
-      </div>
-    </PanelCard>
+      {satellites.map((s) => (
+        <SatelliteRow
+          key={s.name}
+          satellite={s}
+          grant={grant?.(s)}
+          onRemove={onRemove && (() => onRemove(s))}
+          removing={removingName === s.name}
+        />
+      ))}
+    </ListGroup>
   );
 }

@@ -77,7 +77,7 @@ function ProcessesSectionBody({
   if (data && agentId)
     return <ProcessList agentId={agentId} list={data} alwaysOn={alwaysOn} />;
   if (isError)
-    return <PanelNotice text="Couldn't read the agent's processes." />;
+    return <PanelNotice text="Couldn't load the agent's processes." />;
   if (isPending) return <PanelNotice text="Loading…" />;
   return null;
 }

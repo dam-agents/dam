@@ -2,9 +2,7 @@ import { Launch } from "@carbon/icons-react";
 import type { StarterKitView } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
-import { FIELD_INSET } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
-import { cn } from "@/lib/utils";
 
 import { ClampedText } from "./clamped-text.js";
 
@@ -68,7 +66,7 @@ export function KitSkillsSection({ kit }: Props) {
     <section className="mb-8">
       <SectionLabel spaced>Skills</SectionLabel>
 
-      <div className={cn(FIELD_INSET, "flex flex-col gap-3")}>
+      <div className="flex flex-col gap-3">
         {bundled.length > 0 && kit.bundledSkills && (
           <SourceCard
             title={kit.id}
@@ -114,7 +112,7 @@ export function KitSkillsSection({ kit }: Props) {
         )}
       </div>
 
-      <p className={cn(FIELD_INSET, "mt-3 text-sm text-muted-foreground")}>
+      <p className="mt-3 text-sm text-muted-foreground">
         Skills in the definition arrive with the repository the agent clones and
         are discovered as files — the platform installs nothing for them, so
         they cannot be switched off here.

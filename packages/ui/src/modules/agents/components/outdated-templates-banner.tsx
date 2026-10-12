@@ -35,7 +35,8 @@ export function OutdatedTemplatesBanner({ agents }: Props) {
         variant="ghost"
         size="sm"
         disabled={update.updatingAll || update.updatingId !== null}
-        className="shrink-0 font-medium text-accent hover:bg-accent-light hover:text-accent-hover"
+        tone="accent"
+        className="shrink-0"
         onClick={() => void update.updateAll(outdated)}
       >
         <Renew size={16} />

@@ -1,6 +1,7 @@
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
 import * as React from "react";
 
+import { MODAL_BACKDROP, MODAL_PANEL } from "@/components/modal";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -15,7 +16,8 @@ function AlertDialogOverlay({
   return (
     <AlertDialogPrimitive.Overlay
       className={cn(
-        "fixed inset-0 z-overlay bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+        MODAL_BACKDROP,
+        "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
         className,
       )}
       {...props}
@@ -25,18 +27,27 @@ function AlertDialogOverlay({
 
 function AlertDialogContent({
   className,
+  onBackdropClick,
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Content>) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Content> & {
+  onBackdropClick?: () => void;
+}) {
   return (
     <AlertDialogPortal>
-      <AlertDialogOverlay />
-      <AlertDialogPrimitive.Content
-        className={cn(
-          "fixed left-[50%] top-[50%] z-overlay grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=closed]:duration-100 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
-          className,
-        )}
-        {...props}
-      />
+      <AlertDialogOverlay
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onBackdropClick?.();
+        }}
+      >
+        <AlertDialogPrimitive.Content
+          className={cn(
+            MODAL_PANEL,
+            "grid w-full max-w-lg gap-4 p-6 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+            className,
+          )}
+          {...props}
+        />
+      </AlertDialogOverlay>
     </AlertDialogPortal>
   );
 }
@@ -75,7 +86,7 @@ function AlertDialogTitle({
 }: React.ComponentProps<typeof AlertDialogPrimitive.Title>) {
   return (
     <AlertDialogPrimitive.Title
-      className={cn("text-lg font-semibold", className)}
+      className={cn("text-base font-semibold", className)}
       {...props}
     />
   );

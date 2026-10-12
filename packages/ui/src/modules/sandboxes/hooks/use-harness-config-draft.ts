@@ -74,6 +74,7 @@ export function useHarnessConfigDraft(agentId: string | null) {
     valueOf,
     buildInput,
     dirty: changed.length > 0,
+    discard: () => setEdits({}),
     commit: () => {
       setSubmitted((prev) => ({ ...prev, ...Object.fromEntries(changed) }));
       setEdits({});

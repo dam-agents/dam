@@ -112,7 +112,13 @@ export function SessionsSidebar({
     title: string | null | undefined,
   ) => {
     const label = title || sid.slice(0, 12);
-    if (await showConfirm(`Delete session "${label}"?`, "Delete Session")) {
+    if (
+      await showConfirm(
+        "Its transcript is deleted and cannot be recovered.",
+        `Delete session “${label}”?`,
+        { kind: "destructive", confirmLabel: "Delete session" },
+      )
+    ) {
       deleteSession(sid);
     }
   };
@@ -173,7 +179,7 @@ export function SessionsSidebar({
           <Button
             variant="ghost"
             size="xs"
-            className="min-w-0 text-sm font-normal text-muted-foreground"
+            className="shrink-0 text-sm font-normal text-muted-foreground"
           >
             <Filter size={14} />
             <span className="truncate">
@@ -202,7 +208,7 @@ export function SessionsSidebar({
         className="text-sm max-md:mr-10"
         onClick={onNewSession}
       >
-        <Add size={12} /> New
+        <Add size={14} /> New
       </Button>
     </>
   );
@@ -233,7 +239,7 @@ export function SessionsSidebar({
         {loading && <SessionListSkeleton />}
         {!loading && visibleSessions.length === 0 && (
           <p className="px-4 py-5 text-xs text-muted-foreground">
-            {filtered ? "No sessions match the filter" : "No sessions yet"}
+            {filtered ? "No sessions match the filter." : "No sessions yet."}
           </p>
         )}
         {visibleSessions.map(renderRow)}

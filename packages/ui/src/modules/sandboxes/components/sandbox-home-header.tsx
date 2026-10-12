@@ -1,30 +1,24 @@
-import { Chat, OverflowMenuVertical } from "@carbon/icons-react";
+import {
+  Chat,
+  Pause,
+  Play,
+  Restart,
+  Stop,
+  TrashCan,
+} from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { PageHeader } from "@/components/ui/page-header";
-import { Tooltip } from "@/components/ui/tooltip";
 
-import {
-  AlwaysOnTag,
-  StatusBadge,
-} from "../../../components/status-indicator.js";
+import { AlwaysOnTag } from "../../../components/status-indicator.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useDeleteAgent } from "../../agents/api/mutations.js";
-import {
-  AgentAvatar,
-  avatarMood,
-} from "../../agents/components/avatar/agent-avatar.js";
+import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
+import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
-import { FreeUpComputeItems } from "../../agents/components/power-menu-items.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
+import { useConfirmDeleteAgent } from "../../agents/hooks/use-confirm-delete-agent.js";
 import { useConfirmStopAgent } from "../../agents/hooks/use-confirm-stop-agent.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
 import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
@@ -32,20 +26,46 @@ import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { useFeed } from "../../home/api/queries.js";
-import { useKeptWorkCount } from "../../sessions/api/background-work.js";
 
 interface Props {
   agent: AgentView;
   display: AgentDisplay;
-  avatar?: string | null;
 }
 
-export function SandboxHomeHeader({ agent, display, avatar }: Props) {
+export function SandboxIdentity({ agent, display }: Props) {
   const working = useFeed().workingByAgent.get(agent.id);
-  const keptWork = useKeptWorkCount(agent.id);
+  return (
+    <div className="mb-4 flex flex-col gap-2 px-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <EditableAgentIdentity
+          agent={agent}
+          avatarSize={36}
+          mood={avatarMood(
+            display.state,
+            agent.stopRequested,
+            working ?? false,
+          )}
+          nameClassName="text-lg font-semibold text-foreground"
+          nameTag="h2"
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-2 empty:hidden">
+        <GatewayFailureBadge agent={agent} />
+        {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
+      </div>
+    </div>
+  );
+}
+
+export function SandboxHomeHeader({
+  agent,
+  display,
+  title,
+  description,
+}: Props & { title: string; description?: string }) {
   const setView = useStore((s) => s.setView);
   const selectAgent = useStore((s) => s.selectAgent);
-  const showConfirm = useStore((s) => s.showConfirm);
+  const confirmDelete = useConfirmDeleteAgent();
   const wakeAgent = useWakeAgent();
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
@@ -61,45 +81,18 @@ export function SandboxHomeHeader({ agent, display, avatar }: Props) {
   };
 
   const onDelete = async () => {
-    const msg = (
-      <>
-        Delete agent <strong className="text-foreground">"{agent.name}"</strong>
-        ? This will also delete <strong>all persistent data</strong> and cannot
-        be undone.
-      </>
-    );
-    if (!(await showConfirm(msg, "Delete agent", { kind: "destructive" })))
-      return;
+    if (!(await confirmDelete(agent))) return;
     deleteAgent.mutate({ id: agent.id });
     setView("home");
   };
 
+  const neverHibernates = agent.hibernationTimeoutMin === 0;
+  const separator = <span aria-hidden className="mx-1 h-6 w-px bg-border" />;
+
   return (
     <PageHeader
-      leading={
-        <AgentAvatar
-          name={agent.name}
-          avatar={avatar ?? agent.avatar}
-          size={44}
-          mood={avatarMood(
-            display.state,
-            agent.stopRequested,
-            working ?? false,
-          )}
-        />
-      }
-      title={agent.name}
-      adornment={
-        <>
-          <StatusBadge
-            state={display.state}
-            working={working}
-            keptWork={keptWork}
-          />
-          <GatewayFailureBadge agent={agent} />
-          {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
-        </>
-      }
+      title={title}
+      description={description}
       actions={
         <>
           <UpdateAvailableAction
@@ -108,52 +101,74 @@ export function SandboxHomeHeader({ agent, display, avatar }: Props) {
             busy={updatingId !== null || updatingAll}
             onUpdate={() => void updateOne(agent)}
           />
-          <Tooltip content="Open chat">
-            <Button
-              size="icon"
-              aria-label="Open chat"
-              variant="outline"
-              onClick={openChat}
-            >
-              <Chat />
-            </Button>
-          </Tooltip>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" aria-label="Agent actions">
-                <OverflowMenuVertical />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {display.state === "running" && (
-                <FreeUpComputeItems
-                  agent={agent}
-                  onPause={() => suspend.pause(agent.id)}
-                  onStop={() => void onStop()}
-                />
-              )}
-              {display.powerAction === "start" ? (
-                <DropdownMenuItem onSelect={() => wakeAgent.wake(agent.id)}>
-                  Wake
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem
-                  disabled={display.powerAction === null}
-                  onSelect={() => restart(agent.id)}
-                >
-                  Restart
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                tone="danger"
-                disabled={deleteAgent.isPending}
-                onSelect={() => void onDelete()}
+          <Button variant="outline" onClick={openChat}>
+            <Chat />
+            Chat
+          </Button>
+          {separator}
+          {display.state === "running" && (
+            <>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Pause"
+                disabled={neverHibernates}
+                tooltip={
+                  neverHibernates
+                    ? "This agent never sleeps, so pausing it would wake itself. Change its idle timeout in Sandbox."
+                    : "Pause: wakes on any action (a schedule firing, a message arriving, or you opening a chat)"
+                }
+                onClick={() => suspend.pause(agent.id)}
+                data-testid="agent-pause"
               >
-                Delete agent
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <Pause />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Stop"
+                tooltip="Stop: wakes only when a schedule fires or you start it"
+                onClick={() => void onStop()}
+                data-testid="agent-stop"
+              >
+                <Stop />
+              </Button>
+            </>
+          )}
+          {display.powerAction === "start" ? (
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Wake"
+              tooltip="Wake"
+              onClick={() => wakeAgent.wake(agent.id)}
+            >
+              <Play />
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Restart"
+              tooltip="Restart"
+              disabled={display.powerAction === null}
+              onClick={() => restart(agent.id)}
+            >
+              <Restart />
+            </Button>
+          )}
+          {separator}
+          <Button
+            variant="outline"
+            size="icon"
+            tone="danger"
+            aria-label="Delete agent"
+            tooltip="Delete agent"
+            disabled={deleteAgent.isPending}
+            onClick={() => void onDelete()}
+          >
+            <TrashCan />
+          </Button>
         </>
       }
     />

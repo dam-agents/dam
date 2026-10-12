@@ -110,7 +110,7 @@ export function useGrantProvider(agentId: string | null) {
         trpc.harnessConfig.sessionPair.queryKey(),
         egressRulesKeys.all,
       ],
-      errorToast: "Failed to update model providers",
+      errorToast: "Couldn't update model providers",
     },
   });
   const settle = (change: { grant?: string[]; revoke?: string[] }) =>

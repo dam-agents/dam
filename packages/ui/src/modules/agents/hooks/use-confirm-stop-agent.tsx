@@ -24,6 +24,6 @@ export function useConfirmStopAgent() {
         It stays stopped until you start it.{scheduleNote}
       </>
     );
-    return showConfirm(msg, "Stop Agent");
+    return showConfirm(msg, "Stop agent?", { confirmLabel: "Stop agent" });
   };
 }

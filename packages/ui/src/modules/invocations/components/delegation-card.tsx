@@ -135,6 +135,7 @@ function StopDelegation({
         const ok = await showConfirm(
           "The agent is removed and the driver gets a failed result.",
           "Stop this temporary agent?",
+          { kind: "destructive", confirmLabel: "Stop agent" },
         );
         if (ok) stop.mutate({ driverAgentId, id: node.id });
       }}
@@ -184,7 +185,7 @@ function OpenConversation({
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <div className="text-[11px] text-placeholder">{label}</div>
+      <div className="text-2xs text-placeholder">{label}</div>
       {children}
     </div>
   );

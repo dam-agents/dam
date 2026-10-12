@@ -107,7 +107,7 @@ export function FeaturesTab() {
   const setFeature = useSetFeature();
 
   return (
-    <div className="anim-in">
+    <div>
       <PageHeader
         title="Experimental features"
         description="Experimental features, toggled per user."

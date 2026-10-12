@@ -1,12 +1,6 @@
-import {
-  Document,
-  Folder,
-  Image,
-  OverflowMenuHorizontal,
-} from "@carbon/icons-react";
+import { Document, Folder, Image } from "@carbon/icons-react";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -14,13 +8,9 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { DisclosureChevron } from "@/components/ui/disclosure";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { clickableProps } from "@/lib/clickable";
 
 import { useStore } from "../../../store.js";
@@ -99,28 +89,20 @@ export function FileRow({
           >
             <RowIcons isDir={isDir} isCollapsed={isCollapsed} name={name} />
             <span className="truncate flex-1">{name}</span>
-            <DropdownMenu onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className={HOVER_ACTION}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => e.stopPropagation()}
-                  aria-label="More actions"
-                >
-                  <OverflowMenuHorizontal size={13} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <FileRowMenuItems
-                  path={path}
-                  isDir={isDir}
-                  onAction={dispatch}
-                  Item={DropdownMenuItem}
-                />
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <RowActionsMenu
+              label="More actions"
+              dense
+              className={HOVER_ACTION}
+              stopPropagation
+              onOpenChange={setMenuOpen}
+            >
+              <FileRowMenuItems
+                path={path}
+                isDir={isDir}
+                onAction={dispatch}
+                Item={DropdownMenuItem}
+              />
+            </RowActionsMenu>
           </div>
         </div>
       </ContextMenuTrigger>

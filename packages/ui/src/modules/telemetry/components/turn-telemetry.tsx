@@ -68,7 +68,7 @@ export function TurnTelemetry({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         className={cn(
-          "group inline-flex items-center gap-1.5 rounded-sm py-0.5 text-[11px] text-muted-foreground/70",
+          "group inline-flex items-center gap-1.5 rounded-sm py-0.5 text-2xs text-muted-foreground/70",
           "hover:text-foreground focus-visible:text-foreground",
           triggerClassName,
         )}
@@ -78,26 +78,22 @@ export function TurnTelemetry({
           {summaryBits(turn).join(" · ")}
         </span>
         {turn.errorCount > 0 && (
-          <span className="font-mono text-destructive">
-            {turn.errorCount} err
-          </span>
+          <span className="font-mono text-danger">{turn.errorCount} err</span>
         )}
       </button>
 
       {open && (
         <div className="mt-1 overflow-hidden rounded-md border border-border bg-muted/20">
           {detail.isPending && (
-            <p className="px-3 py-3 text-[11px] text-muted-foreground">
-              Loading…
-            </p>
+            <p className="px-3 py-3 text-2xs text-muted-foreground">Loading…</p>
           )}
           {detail.isError && (
-            <p className="px-3 py-3 text-[11px] text-muted-foreground">
+            <p className="px-3 py-3 text-2xs text-muted-foreground">
               Couldn’t load this turn’s telemetry.
             </p>
           )}
           {detail.data?.available === false && (
-            <p className="px-3 py-3 text-[11px] text-muted-foreground">
+            <p className="px-3 py-3 text-2xs text-muted-foreground">
               {detail.data.reason}
             </p>
           )}
@@ -111,7 +107,7 @@ export function TurnTelemetry({
                 }
               />
               {(loaded.spansTruncated || loaded.logsTruncated) && (
-                <p className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
+                <p className="border-t border-border px-4 py-2 text-2xs text-muted-foreground">
                   This turn is larger than the display cap; some records are not
                   shown.
                 </p>

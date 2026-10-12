@@ -50,12 +50,11 @@ export function SlackChannelModal({
           ) : (
             <FormField
               label="Channel ID"
-              disableInset
+
               error={errors.channelId?.message}
               hint="From the channel's details in Slack — starts with C. The bot must be a member of the channel."
             >
               <Input
-                className="h-10"
                 variant={errors.channelId ? "invalid" : undefined}
                 aria-invalid={!!errors.channelId}
                 placeholder="C0…"

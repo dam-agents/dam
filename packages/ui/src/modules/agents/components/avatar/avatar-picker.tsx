@@ -45,33 +45,44 @@ export function AvatarPicker({
         </span>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto p-3">
-        <div
-          role="group"
-          aria-label="Avatar"
-          className="grid grid-cols-4 gap-2"
-        >
-          {AVATAR_CHARACTERS.map((character) => (
-            <button
-              key={character}
-              type="button"
-              aria-pressed={character === value}
-              aria-label={character}
-              onClick={() => {
-                onChange(character);
-                setOpen(false);
-              }}
-              className={cn(
-                "group flex size-14 items-center justify-center rounded-lg border transition-colors",
-                character === value
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:bg-muted/40",
-              )}
-            >
-              <AgentAvatar name="" avatar={character} size={36} />
-            </button>
-          ))}
-        </div>
+        <AvatarGrid
+          value={value}
+          onPick={(character) => {
+            onChange(character);
+            setOpen(false);
+          }}
+        />
       </PopoverContent>
     </Popover>
+  );
+}
+
+export function AvatarGrid({
+  value,
+  onPick,
+}: {
+  value: AvatarCharacter;
+  onPick: (character: AvatarCharacter) => void;
+}) {
+  return (
+    <div role="group" aria-label="Avatar" className="grid grid-cols-4 gap-2">
+      {AVATAR_CHARACTERS.map((character) => (
+        <button
+          key={character}
+          type="button"
+          aria-pressed={character === value}
+          aria-label={character}
+          onClick={() => onPick(character)}
+          className={cn(
+            "group flex size-14 items-center justify-center rounded-lg border transition-colors",
+            character === value
+              ? "border-primary bg-primary/5"
+              : "border-border hover:bg-muted/40",
+          )}
+        >
+          <AgentAvatar name="" avatar={character} size={36} />
+        </button>
+      ))}
+    </div>
   );
 }

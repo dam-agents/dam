@@ -1,19 +1,14 @@
-import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { CARD_SURFACE } from "@/components/ui/card";
-import { Inset } from "@/components/ui/inset";
+import { ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
-import { SectionLabel } from "@/components/ui/section-label";
 
-import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
-import { SatellitesGroupCard } from "../../satellites/components/satellites-group-card.js";
+import { SatellitesGroup } from "../../satellites/components/satellites-group.js";
 import { useRemoveSatelliteWithConfirm } from "../../satellites/hooks/use-remove-satellite.js";
 import { useAppConnections } from "../api/queries.js";
 import { ConnectionCatalogModal } from "../components/connection-catalog-modal.js";
-import { ConnectionGroupCard } from "../components/connection-group-card.js";
+import { ConnectionGroup } from "../components/connection-group.js";
 import { ConnectionMaintenanceDialog } from "../components/connection-update-credential-dialog.js";
 import { useCatalogGroups } from "../hooks/use-catalog-groups.js";
 import { useConnectionMaintenance } from "../hooks/use-connection-maintenance.js";
@@ -31,66 +26,39 @@ export function ConnectionsView() {
     connectionsQ.data ?? [],
   );
 
-  const newButton = (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={() => setCatalogOpen(true)}
-      data-testid="open-connection-catalog"
-    >
-      <Add size={16} />
-      New
-    </Button>
-  );
-
   return (
-    <div className="w-full max-w-2xl">
+    <div>
       <PageHeader
         title="Connections"
         description="Connections are the services and credentials your agents can reach."
       />
 
-      {connectionsQ.isPending ? (
-        <ListSkeleton />
-      ) : groups.length > 0 || satellites.length > 0 ? (
-        <>
-          <div className="mb-3 flex items-center justify-between">
-            <SectionLabel>My connections</SectionLabel>
-            {newButton}
-          </div>
-          <Inset className="flex flex-col gap-4">
-            {groups.map((group) => (
-              <ConnectionGroupCard
-                key={group.provider.id}
-                group={group}
-                templateById={templateById}
-                onDelete={(id, name) => void confirmAndDelete(id, name)}
-                deletingId={deletingId}
-                maintenance={maintenance.rowActions}
-              />
-            ))}
-            {satellites.length > 0 && (
-              <SatellitesGroupCard
-                satellites={satellites}
-                onRemove={(s) => void confirmAndRemove(s)}
-                removingName={removingName}
-              />
-            )}
-          </Inset>
-        </>
-      ) : (
-        <>
-          <SectionLabel spaced>My connections</SectionLabel>
-          <Inset className={CARD_SURFACE}>
-            <div className="flex flex-col items-center gap-4 py-10">
-              <p className="text-sm text-foreground/80">
-                No connections set up yet.
-              </p>
-              {newButton}
-            </div>
-          </Inset>
-        </>
-      )}
+      <ListSection
+        loading={connectionsQ.isPending}
+        error={connectionsQ.isError && "Couldn't load connections."}
+        onNew={() => setCatalogOpen(true)}
+        newTestId="open-connection-catalog"
+        isEmpty={groups.length === 0 && satellites.length === 0}
+        empty="No connections set up yet."
+      >
+        {groups.map((group) => (
+          <ConnectionGroup
+            key={group.provider.id}
+            group={group}
+            templateById={templateById}
+            onDelete={(id, name) => void confirmAndDelete(id, name)}
+            deletingId={deletingId}
+            maintenance={maintenance.rowActions}
+          />
+        ))}
+        {satellites.length > 0 && (
+          <SatellitesGroup
+            satellites={satellites}
+            onRemove={(s) => void confirmAndRemove(s)}
+            removingName={removingName}
+          />
+        )}
+      </ListSection>
 
       {catalogOpen && (
         <ConnectionCatalogModal onClose={() => setCatalogOpen(false)} />

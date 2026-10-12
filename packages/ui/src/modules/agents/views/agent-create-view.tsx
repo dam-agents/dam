@@ -6,9 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import { FIELD_INSET, Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
-import { cn } from "@/lib/utils";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { emitToast } from "../../../lib/toast.js";
@@ -283,9 +281,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     requireConnectionAddress:
       addressingOffered && form.requireConnectionAddress,
   };
-  const selectedTemplate = catalogue.harnesses.find(
-    (t) => t.id === form.templateId,
-  );
   const registryPartial = hasPartialRegistryCredential(plainDraft);
   const blockingSchedule = invalidSchedules.some(
     (name) => !form.skippedSchedules.includes(name),
@@ -353,7 +348,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       footer={
         <>
           {registryPartial && (
-            <p className="text-sm text-destructive">
+            <p className="text-sm text-danger">
               Finish or clear the private-registry credentials.
             </p>
           )}
@@ -371,7 +366,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
 
       {!kit && (
         <section className="mb-8">
-          <Callout tone="default" inset>
+          <Callout tone="default">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kit-tint text-kit">
@@ -410,12 +405,12 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
 
       {kit && (
         <section className="mb-8">
-          <Inset className="flex items-center gap-4 rounded-xl border border-kit-line bg-kit-surface px-4 py-3">
+          <div className="flex items-center gap-4 rounded-xl border border-kit-line bg-kit-surface px-4 py-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kit-tint text-kit">
               <Box size={16} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-semibold leading-6 text-kit">
+              <p className="text-md font-semibold leading-6 text-kit">
                 {kit.name}
               </p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -444,7 +439,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                 )}
               </div>
               {kitSlots !== null && kitSlots > 1 && (
-                <p className="mt-1.5 text-xs text-muted-foreground">
+                <p className="mt-1.5 text-sm text-muted-foreground">
                   Uses {kitSlots} of your compute slots while it runs. CPU and
                   memory stay editable on the agent; disk is fixed at create.
                 </p>
@@ -460,13 +455,14 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
             </Button>
             <Button
               variant="ghost"
-              size="sm"
+              size="icon-sm"
+              tooltip="Create a plain agent instead"
               aria-label="Create a plain agent instead"
               onClick={() => setView("agent-new")}
             >
               <Close size={16} />
             </Button>
-          </Inset>
+          </div>
         </section>
       )}
 
@@ -505,7 +501,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       {kit && bringsImage && (
         <section className="mb-8">
           <SectionLabel spaced>Harness</SectionLabel>
-          <Callout tone="default" inset>
+          <Callout tone="default">
             <div>{ownAgentLine(kit)}. The harness is fixed by the kit.</div>
             <div className="mt-1 font-mono text-xs text-muted-foreground">
               {kit.image?.ref}
@@ -517,7 +513,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       {noHarnessInstalled && (
         <section className="mb-8">
           <SectionLabel spaced>Harness</SectionLabel>
-          <Callout tone="warning" inset>
+          <Callout tone="warning">
             This kit runs on {harnessesLine(kit).replace(/^An agent on /, "")},
             and none of those is installed here.
           </Callout>
@@ -527,7 +523,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       {kit?.seed && (
         <section className="mb-8">
           <SectionLabel spaced>Repository</SectionLabel>
-          <ul className={cn(FIELD_INSET, "flex flex-col gap-3")}>
+          <ul className="flex flex-col gap-3">
             <KitRepositoryCard kit={kit} />
           </ul>
         </section>
@@ -538,7 +534,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
           <SectionLabel spaced>Network access</SectionLabel>
           <Callout
             tone={kitEgressPreset(kit) === "all" ? "warning" : "default"}
-            inset
           >
             <div>
               {EGRESS_PRESET_LABEL[kitEgressPreset(kit)]}
@@ -571,7 +566,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       {kit && kit.schedules.length > 0 && (
         <section className="mb-8">
           <SectionLabel spaced>Schedules</SectionLabel>
-          <ul className={cn(FIELD_INSET, "flex flex-col gap-3")}>
+          <ul className="flex flex-col gap-3">
             {kit.schedules.map((s) => (
               <KitScheduleCard
                 key={s.name}
@@ -607,7 +602,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
               />
             ))}
           </ul>
-          <p className={cn(FIELD_INSET, "mt-3 text-sm text-muted-foreground")}>
+          <p className="mt-3 text-sm text-muted-foreground">
             {kit.onboarding === false
               ? "Created with the kit author's defaults."
               : "Created with the kit author's defaults and held until onboarding finishes."}{" "}
@@ -649,9 +644,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
           value={form.hibernationTimeoutMin}
           onChange={(hibernationTimeoutMin) =>
             update({ hibernationTimeoutMin })
-          }
-          sizeMi={
-            selectedTemplate?.size ? sizeInMi(selectedTemplate.size) : undefined
           }
         />
       )}

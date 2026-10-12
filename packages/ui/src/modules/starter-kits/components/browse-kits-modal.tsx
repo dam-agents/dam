@@ -43,7 +43,7 @@ export function BrowseKitsModal({
   );
 
   return (
-    <Modal widthClass="w-[800px]" onClose={onClose}>
+    <Modal size="lg" onClose={onClose}>
       <DialogHeader
         title="Browse starter kits"
         subtitle="Pick a starter kit to pre-fill your agent setup"
@@ -103,7 +103,7 @@ export function BrowseKitsModal({
           </p>
         )}
       </DialogBody>
-      <DialogFooter divided>
+      <DialogFooter>
         <Button variant="outline" onClick={onStartFromScratch}>
           Start from scratch instead
         </Button>

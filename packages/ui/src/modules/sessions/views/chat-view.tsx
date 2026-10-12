@@ -1,8 +1,9 @@
 import {
   ArrowDown,
   ArrowLeft,
-  OverflowMenuVertical,
+  Globe,
   Renew,
+  Tools,
   TrashCan,
   Warning,
 } from "@carbon/icons-react";
@@ -22,12 +23,6 @@ import { stateDotClass } from "@/components/status-indicator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
@@ -45,7 +40,6 @@ import {
   useHarnessConfigCurrent,
   useHarnessConfigStatus,
 } from "../../agents/api/harness-config.js";
-import { useDeleteAgent } from "../../agents/api/mutations.js";
 import {
   useAgents,
   useIsAgentInaccessible,
@@ -53,15 +47,13 @@ import {
 } from "../../agents/api/queries.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
-import {
-  AgentAvatar,
-  avatarMood,
-} from "../../agents/components/avatar/agent-avatar.js";
+import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
 } from "../../agents/components/contribution-failures-badge.js";
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
+import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
@@ -70,12 +62,8 @@ import { WorkspaceFailureNotice } from "../../agents/components/workspace-failur
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
-import {
-  useRestartAgent,
-  useSyncRestartingAgents,
-} from "../../agents/hooks/use-restart-agent.js";
+import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js";
 import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
-import { sharesKnowledgeBase } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
@@ -109,6 +97,7 @@ import {
   setSessionRunning,
   useAgentSession,
 } from "../api/queries.js";
+import { useProviderConnections } from "../api/session-pair.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
@@ -232,7 +221,6 @@ export function ChatView() {
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const setView = useStore((s) => s.setView);
   const sessionsSectionOpen = useStore((s) => s.sessionsSectionOpen);
   const setSessionsSectionOpen = useStore((s) => s.setSessionsSectionOpen);
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
@@ -297,8 +285,6 @@ export function ChatView() {
   });
 
   const { openFileHandler } = useFileTree(selectedAgent);
-  const { restart } = useRestartAgent();
-  const deleteAgent = useDeleteAgent();
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
   const { data: harnessStatus } = useHarnessConfigStatus(selectedAgent);
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
@@ -311,6 +297,13 @@ export function ChatView() {
             harnessStatus.defaultHarness ?? harnessStatus.harnesses[0]!.name,
         }
       : null;
+  const providerConnections = useProviderConnections(
+    pickable ? selectedAgent : null,
+  );
+  const noProviders =
+    !!pickable &&
+    providerConnections.loaded &&
+    providerConnections.owned.length === 0;
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
@@ -541,8 +534,6 @@ export function ChatView() {
     pushSessionUrl,
   ]);
 
-  const showConfirm = useStore((s) => s.showConfirm);
-
   const handleNewTerminal = useCallback(() => {
     resetSession();
     const id = crypto.randomUUID();
@@ -552,8 +543,6 @@ export function ChatView() {
     setMobileScreen("chat");
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
-  const canShareKnowledge =
-    agentView !== null && sharesKnowledgeBase(agentView);
   const canOpenBrowser =
     features?.["strict-connection-addressing"] === true &&
     agentView?.requireConnectionAddress === true;
@@ -574,37 +563,10 @@ export function ChatView() {
     rightW !== null && sidePanelMaxW !== null
       ? Math.min(rightW, Math.max(SIDE_PANEL_MIN_W, sidePanelMaxW))
       : rightW;
-  const surfaceCopy = {
-    actionsAria: "Agent actions",
-    configure: "Configure agent",
-    delete: "Delete agent",
-  };
-
   const handleConfigureSandbox = useCallback(() => {
     if (!selectedAgent) return;
     navigateToSandboxHome(selectedAgent);
   }, [selectedAgent, navigateToSandboxHome]);
-
-  const handleShareKnowledgeBase = () => {
-    if (!selectedAgent) return;
-    navigateToSandboxHome(selectedAgent, "setup", "knowledge");
-  };
-
-  const handleRestartSandbox = () => {
-    if (selectedAgent) restart(selectedAgent);
-  };
-
-  const handleDeleteSandbox = async () => {
-    if (!selectedAgent) return;
-    const ok = await showConfirm(
-      "Delete this agent? This also deletes all persistent data and cannot be undone.",
-      "Delete agent",
-      { kind: "destructive" },
-    );
-    if (!ok) return;
-    deleteAgent.mutate({ id: selectedAgent });
-    setView("home");
-  };
 
   const handleBack = useCallback(() => {
     if (isMobile() && mobileScreen === "chat") {
@@ -644,83 +606,62 @@ export function ChatView() {
           >
             <ArrowLeft size={14} />
           </Button>
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <span
+              aria-hidden
+              className={cn(
+                "h-2 w-2 shrink-0 rounded-full",
+                agentView && "hidden @max-[149px]:block",
+                dotColor,
+              )}
+            />
             {agentView ? (
-              <>
-                <AgentAvatar
-                  name={agentView.name}
-                  avatar={agentView.avatar}
-                  size={32}
-                  mood={avatarMood(
-                    agentDisplay?.state,
-                    agentView.stopRequested,
-                    busy,
-                  )}
-                  className="@max-[149px]:hidden"
-                />
-                <span
-                  aria-hidden
-                  className={cn(
-                    "hidden h-2 w-2 shrink-0 rounded-full @max-[149px]:block",
-                    dotColor,
-                  )}
-                />
-              </>
-            ) : (
-              <span
-                aria-hidden
-                className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+              <EditableAgentIdentity
+                agent={agentView}
+                avatarSize={32}
+                mood={avatarMood(
+                  agentDisplay?.state,
+                  agentView.stopRequested,
+                  busy,
+                )}
+                avatarClassName="@max-[149px]:hidden"
+                nameClassName="text-sm font-bold text-foreground"
               />
+            ) : (
+              <h1 className="text-sm font-bold text-foreground truncate">
+                {selectedAgentName}
+              </h1>
             )}
-            <h1 className="text-sm font-bold text-foreground truncate">
-              {selectedAgentName}
-            </h1>
             {agentView && (
-              <span className="flex shrink-0 @max-[119px]:hidden">
+              <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
                 <VmRuntimeBadge
                   agent={agentView}
                   labelClassName="@max-[279px]:sr-only"
                 />
               </span>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <div className="ml-auto flex shrink-0">
+              {canOpenBrowser && selectedAgent && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  aria-label={surfaceCopy.actionsAria}
-                  className="shrink-0"
+                  aria-label="Open browser"
+                  tooltip="Open browser"
+                  onClick={() => void openBrowser(selectedAgent)}
                 >
-                  <OverflowMenuVertical size={16} />
+                  <Globe size={16} />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem onSelect={handleConfigureSandbox}>
-                  {surfaceCopy.configure}
-                </DropdownMenuItem>
-                {canShareKnowledge && (
-                  <DropdownMenuItem onSelect={handleShareKnowledgeBase}>
-                    Share knowledge base
-                  </DropdownMenuItem>
-                )}
-                {canOpenBrowser && selectedAgent && (
-                  <DropdownMenuItem
-                    onSelect={() => void openBrowser(selectedAgent)}
-                  >
-                    Open browser
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onSelect={handleRestartSandbox}>
-                  Restart
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onSelect={handleDeleteSandbox}
-                >
-                  {surfaceCopy.delete}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              )}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Configure agent"
+                tooltip="Configure agent"
+                onClick={handleConfigureSandbox}
+              >
+                <Tools size={16} />
+              </Button>
+            </div>
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2 pl-6 pr-14 md:pr-16">
@@ -835,7 +776,7 @@ export function ChatView() {
                     {loadingSession && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
-                        Loading session...
+                        Loading session…
                       </div>
                     )}
                     {!loadingSession && sessionError && (
@@ -878,7 +819,7 @@ export function ChatView() {
                               className="flex items-center gap-3 py-2"
                             >
                               <span className="h-px flex-1 bg-border/60" />
-                              <span className="text-[11px] text-muted-foreground">
+                              <span className="text-2xs text-muted-foreground">
                                 {dividerLabel(item, now)}
                               </span>
                               <span className="h-px flex-1 bg-border/60" />
@@ -919,17 +860,17 @@ export function ChatView() {
                       />
                     )}
                     {telemetryEnabled && sessionTurns.isError && (
-                      <p className="py-1 text-[11px] text-muted-foreground/70">
+                      <p className="py-1 text-2xs text-muted-foreground/70">
                         Telemetry for this session could not be read.
                       </p>
                     )}
                     {turnsUnavailable && (
-                      <p className="py-1 text-[11px] text-muted-foreground/70">
+                      <p className="py-1 text-2xs text-muted-foreground/70">
                         {turnsUnavailable}
                       </p>
                     )}
                     {turnsTruncated && (
-                      <p className="py-1 text-[11px] text-muted-foreground/70">
+                      <p className="py-1 text-2xs text-muted-foreground/70">
                         Older turns in this session are past the telemetry
                         display cap and are not shown.
                       </p>
@@ -961,6 +902,9 @@ export function ChatView() {
                   loadingSession={loadingSession}
                   onSend={sendAndFollow}
                   onStop={stopAgent}
+                  blockedReason={
+                    noProviders ? "No LLM providers connected." : null
+                  }
                 />
                 {!hasPendingPermission && pickable && (
                   <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
@@ -987,9 +931,11 @@ export function ChatView() {
                           onNewSession={handleNewSession}
                         />
                       ) : selectedAgent ? (
-                        <button
-                          type="button"
-                          className="pl-3 text-sm text-muted-foreground hover:text-foreground hover:underline"
+                        <Button
+                          variant="link"
+                          size="inline"
+                          tone="muted"
+                          className="pl-3 text-sm"
                           onClick={() =>
                             navigateToSandboxHome(selectedAgent, "setup")
                           }
@@ -997,7 +943,7 @@ export function ChatView() {
                           {harnessCurrent?.model
                             ? `${harnessCurrent.model} · Configure defaults`
                             : "Configure defaults"}
-                        </button>
+                        </Button>
                       ) : null}
                     </ChatColumn>
                   </div>
@@ -1168,9 +1114,7 @@ function SessionErrorCard({
       <div className="flex items-start gap-3">
         <Warning size={20} className="text-danger shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <h3 className="text-[15px] font-bold text-foreground mb-1">
-            {title}
-          </h3>
+          <h3 className="text-md font-bold text-foreground mb-1">{title}</h3>
           <p className="text-sm text-muted-foreground break-words">{body}</p>
         </div>
       </div>
@@ -1179,7 +1123,7 @@ function SessionErrorCard({
         <div className="flex items-center gap-2 flex-wrap">
           {error.kind === "connection" ? (
             <Button variant="outline" size="sm" onClick={onRetry}>
-              <Renew size={12} /> Try again
+              <Renew size={14} /> Retry
             </Button>
           ) : (
             <Button variant="destructive" size="sm" onClick={onDelete}>

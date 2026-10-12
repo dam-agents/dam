@@ -1,6 +1,6 @@
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
-import { PanelCard } from "@/components/ui/panel-card";
+import { ListGroup } from "@/components/ui/list-group";
 
 import type { CatalogProviderGroup } from "../lib/catalog-providers.js";
 import type {
@@ -23,7 +23,7 @@ interface Props {
   ) => RowMaintenanceActions | undefined;
 }
 
-export function ConnectionGroupCard({
+export function ConnectionGroup({
   group,
   templateById,
   showCount = false,
@@ -35,7 +35,7 @@ export function ConnectionGroupCard({
 }: Props) {
   const { provider, connections } = group;
   return (
-    <PanelCard
+    <ListGroup
       testId={`connection-group-${provider.id}`}
       title={provider.title}
       icon={
@@ -46,7 +46,7 @@ export function ConnectionGroupCard({
           className="shrink-0 text-foreground/80"
         />
       }
-      titleAccessory={
+      accessory={
         showCount && (
           <span className="shrink-0 text-sm text-muted-foreground">
             {connections.length} connection{connections.length === 1 ? "" : "s"}
@@ -54,20 +54,19 @@ export function ConnectionGroupCard({
         )
       }
     >
-      <div className="flex flex-col gap-3 p-4">
-        {connections.map((c) => (
-          <ConnectionRowCard
-            key={c.id}
-            connection={c}
-            template={templateById.get(c.templateId)}
-            grant={grant?.(c)}
-            onManage={onManage}
-            onDelete={onDelete && (() => onDelete(c.id, c.name))}
-            deleting={deletingId === c.id}
-            maintenance={maintenance?.(c)}
-          />
-        ))}
-      </div>
-    </PanelCard>
+      {connections.map((c) => (
+        <ConnectionRowCard
+          key={c.id}
+          bare
+          connection={c}
+          template={templateById.get(c.templateId)}
+          grant={grant?.(c)}
+          onManage={onManage}
+          onDelete={onDelete && (() => onDelete(c.id, c.name))}
+          deleting={deletingId === c.id}
+          maintenance={maintenance?.(c)}
+        />
+      ))}
+    </ListGroup>
   );
 }

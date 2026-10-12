@@ -9,10 +9,11 @@ import {
   DialogHeader,
   Modal,
 } from "@/components/modal";
+import { CopyField } from "@/components/ui/copy-field";
 
 import { useShareForm } from "../hooks/use-share-form.js";
 import { PUBLIC_SHARE_TITLE, publicShareMessage } from "../lib/public-share.js";
-import { ShareLinkRow } from "./share-link-row.js";
+import { toastCopyOutcome } from "../lib/share-link.js";
 import { ShareVisibilityChoice } from "./share-visibility-choice.js";
 import { ViewerListEditor } from "./viewer-list-editor.js";
 
@@ -125,7 +126,13 @@ function SharingControls({ artifact, onClose }: Props) {
                   Add the email address to the list or clear it before saving.
                 </p>
               )}
-              {hasLink && <ShareLinkRow shareUrl={shareUrl} />}
+              {hasLink && (
+                <CopyField
+                  value={shareUrl}
+                  label="Share link"
+                  onResult={toastCopyOutcome}
+                />
+              )}
             </div>
           </DialogBody>
           <DialogActions

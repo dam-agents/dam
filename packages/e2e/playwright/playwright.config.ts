@@ -181,7 +181,7 @@ const backendSpecs: NamedProject[] = [
     name: "agent-backend",
     testMatch: /19-.*\.spec\.ts$/,
     dependencies:
-      laneBackend === "vm" ? suite.map(({ name }) => name) : ["auth"],
+      laneBackend === "vm" ? suite.map(({ name }) => name) : ["agent"],
     use: { ...devices["Desktop Chrome"], storageState },
   },
   ...(laneBackend === "vm"

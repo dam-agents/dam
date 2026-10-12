@@ -9,7 +9,7 @@ export function SkillRowsSkeleton({ rows = 3 }: { rows?: number }) {
           className="flex items-center gap-3 border-t border-border px-4 py-3"
         >
           <div className="min-w-0 flex-1">
-            <p className="text-[15px] font-medium">
+            <p className="text-md font-medium">
               <span className="inline-block h-[0.7em] w-32 rounded bg-muted align-middle" />
             </p>
             <p className="text-sm">
@@ -29,7 +29,7 @@ export function SkillSourcesSkeleton({ cards = 2 }: { cards?: number }) {
       {Array.from({ length: cards }).map((_, i) => (
         <Card key={i}>
           <div className="animate-pulse px-4 py-3">
-            <p className="text-[15px] font-semibold">
+            <p className="text-md font-semibold">
               <span className="inline-block h-[0.7em] w-40 rounded bg-muted align-middle" />
             </p>
             <p className="text-sm">

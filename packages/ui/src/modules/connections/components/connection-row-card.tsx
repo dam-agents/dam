@@ -18,6 +18,7 @@ interface Props {
   deleting?: boolean;
   maintenance?: RowMaintenanceActions;
   onRemove?: () => void;
+  bare?: boolean;
 }
 
 export function ConnectionRowCard({
@@ -29,10 +30,11 @@ export function ConnectionRowCard({
   deleting,
   maintenance,
   onRemove,
+  bare = false,
 }: Props) {
   const needsInstall = activeInstallUrl(connection) !== null;
   return (
-    <div className="rounded-lg border border-border">
+    <div className={bare ? undefined : "rounded-lg border border-border"}>
       {needsInstall && (
         <GithubStepsCallout
           templateId={connection.templateId}

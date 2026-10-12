@@ -1,6 +1,8 @@
 import type { Brand, PublicAgentView as PublicAgent } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
+import { PAGE_TITLE } from "@/components/ui/page-header";
+import { cn } from "@/lib/utils";
 
 import { ownerInitials } from "../lib/owner-initials.js";
 
@@ -27,7 +29,7 @@ function OwnerByline({ name }: { name: string }) {
     <div className="mt-2.5 flex items-center gap-2.5 text-sm text-muted-foreground">
       <span
         aria-hidden="true"
-        className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-muted-foreground"
+        className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-2xs font-semibold text-muted-foreground"
       >
         {ownerInitials(name)}
       </span>
@@ -155,7 +157,7 @@ function NamedAgent({
     <>
       <div className="flex-1 px-6 pt-24">
         <div className="mx-auto w-full max-w-[640px]">
-          <h1 className="text-2xl leading-tight font-semibold text-balance break-words">
+          <h1 className={cn(PAGE_TITLE, "text-balance break-words")}>
             {agent.name}
           </h1>
           {agent.ownerName === null ? null : (
@@ -183,7 +185,7 @@ function GenericPitch({ brand, openPath }: { brand: Brand; openPath: string }) {
   return (
     <div className="flex-1 px-6 pt-24">
       <div className="mx-auto w-full max-w-[640px]">
-        <h1 className="text-2xl leading-tight font-semibold text-balance">
+        <h1 className={cn(PAGE_TITLE, "text-balance")}>
           Create your own agents with {brand.name}.
         </h1>
         <p className="mt-5 text-sm text-muted-foreground">

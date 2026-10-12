@@ -1,20 +1,12 @@
-import {
-  Book,
-  Box,
-  Chemistry,
-  OverflowMenuVertical,
-} from "@carbon/icons-react";
+import { Book, Box, Chemistry } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { clickableProps } from "@/lib/clickable";
 
 import {
@@ -219,71 +211,62 @@ export function AgentRow({
         </span>
         {}
         <span onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Agent actions">
-                <OverflowMenuVertical />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onSelect={onConfigure}>
-                {configureLabel}
+          <RowActionsMenu label="Agent actions">
+            <DropdownMenuItem onSelect={onConfigure}>
+              {configureLabel}
+            </DropdownMenuItem>
+            {onShareKnowledge && (
+              <DropdownMenuItem onSelect={onShareKnowledge}>
+                Share knowledge base
               </DropdownMenuItem>
-              {onShareKnowledge && (
-                <DropdownMenuItem onSelect={onShareKnowledge}>
-                  Share knowledge base
-                </DropdownMenuItem>
-              )}
-              {onAddToChannel && (messengers.slack || messengers.telegram) && (
-                <>
-                  <DropdownMenuSeparator />
-                  {messengers.slack && (
-                    <DropdownMenuItem onSelect={() => onAddToChannel("slack")}>
-                      <ConnectionIcon iconSlug="slack" alt="" size={16} />
-                      Add to Slack channel
-                    </DropdownMenuItem>
-                  )}
-                  {messengers.telegram && (
-                    <DropdownMenuItem
-                      onSelect={() => onAddToChannel("telegram")}
-                    >
-                      <ConnectionIcon iconSlug="telegram" alt="" size={16} />
-                      Add to Telegram chat
-                    </DropdownMenuItem>
-                  )}
-                </>
-              )}
-              <DropdownMenuSeparator />
-              {display.state === "running" && (
-                <FreeUpComputeItems
-                  agent={agent}
-                  onPause={onPause}
-                  onStop={onStop}
-                />
-              )}
-              {display.powerAction === "start" ? (
-                <DropdownMenuItem onSelect={onWake}>
-                  {}
-                  {display.state === "over_budget" ? "Start" : "Wake"}
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem
-                  disabled={display.powerAction === null}
-                  onSelect={onRestart}
-                >
-                  Restart
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
+            )}
+            {onAddToChannel && (messengers.slack || messengers.telegram) && (
+              <>
+                <DropdownMenuSeparator />
+                {messengers.slack && (
+                  <DropdownMenuItem onSelect={() => onAddToChannel("slack")}>
+                    <ConnectionIcon iconSlug="slack" alt="" size={16} />
+                    Add to Slack channel
+                  </DropdownMenuItem>
+                )}
+                {messengers.telegram && (
+                  <DropdownMenuItem onSelect={() => onAddToChannel("telegram")}>
+                    <ConnectionIcon iconSlug="telegram" alt="" size={16} />
+                    Add to Telegram chat
+                  </DropdownMenuItem>
+                )}
+              </>
+            )}
+            <DropdownMenuSeparator />
+            {display.state === "running" && (
+              <FreeUpComputeItems
+                agent={agent}
+                onPause={onPause}
+                onStop={onStop}
+              />
+            )}
+            {display.powerAction === "start" ? (
+              <DropdownMenuItem onSelect={onWake}>
+                {}
+                {display.state === "over_budget" ? "Start" : "Wake"}
+              </DropdownMenuItem>
+            ) : (
               <DropdownMenuItem
-                tone="danger"
-                disabled={deletePending}
-                onSelect={onDelete}
+                disabled={display.powerAction === null}
+                onSelect={onRestart}
               >
-                Delete agent
+                Restart
               </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              tone="danger"
+              disabled={deletePending}
+              onSelect={onDelete}
+            >
+              Delete agent
+            </DropdownMenuItem>
+          </RowActionsMenu>
         </span>
       </div>
     </Card>

@@ -23,7 +23,7 @@ export function FinishedRow({ row, now, outputOpen, onOpenOutput }: Props) {
       data-testid="finished-process-row"
       aria-pressed={hasOutput ? outputOpen : undefined}
       className={cn(
-        "flex items-center gap-2 border-b border-border px-4 py-1.5 text-[11px] text-muted-foreground transition-colors",
+        "flex items-center gap-2 border-b border-border px-4 py-1.5 text-2xs text-muted-foreground transition-colors",
         hasOutput && "cursor-pointer",
         outputOpen ? "bg-muted" : hasOutput && "hover:bg-muted/60",
       )}

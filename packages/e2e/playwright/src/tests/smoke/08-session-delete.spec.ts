@@ -95,7 +95,7 @@ test("deleting inactive and active sessions preserves the right navigation (#423
     await page.getByTestId("session-delete-button").click();
     await page
       .getByRole("alertdialog")
-      .getByRole("button", { name: "Confirm" })
+      .getByRole("button", { name: "Delete session" })
       .click();
     await expect(page.getByText("Session deleted")).toBeVisible();
     await expect(inactiveRow).toHaveCount(0);
@@ -115,7 +115,7 @@ test("deleting inactive and active sessions preserves the right navigation (#423
     await page.getByTestId("session-delete-button").click();
     await page
       .getByRole("alertdialog")
-      .getByRole("button", { name: "Confirm" })
+      .getByRole("button", { name: "Delete session" })
       .click();
     await expect(page.getByText("Session deleted")).toBeVisible();
     await expect(activeSessionRow).toHaveCount(0);

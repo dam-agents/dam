@@ -24,7 +24,7 @@ const ROWS: MessengerRow[] = [
   {
     key: "slack",
     iconSlug: "slack",
-    label: "Slack Channel",
+    label: "Slack channel",
     description:
       "You can interact with the agent in your DMs, or bind it to a channel for your team to use.",
   },

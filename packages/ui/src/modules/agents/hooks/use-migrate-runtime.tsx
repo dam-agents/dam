@@ -44,7 +44,7 @@ export function useMigrateRuntime() {
       }
       const msg = <MigrationPlanSummary name={agent.name} plan={plan} />;
       if (
-        !(await showConfirm(msg, "Move to the new runtime", {
+        !(await showConfirm(msg, "Move to the new runtime?", {
           confirmLabel: "Migrate",
         }))
       )

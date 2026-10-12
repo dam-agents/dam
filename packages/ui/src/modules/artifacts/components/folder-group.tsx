@@ -1,25 +1,16 @@
-import {
-  Edit,
-  Folder,
-  Link,
-  OverflowMenuVertical,
-  TrashCan,
-} from "@carbon/icons-react";
+import { Edit, Folder, Link, TrashCan } from "@carbon/icons-react";
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { SectionLabel } from "@/components/ui/section-label";
 import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
@@ -122,42 +113,31 @@ export function FolderGroup({
         </DisclosureToggle>
         {folder && (onEditFolder || onDeleteFolder || onCopyFolderLink) && (
           <div className={cn("ml-auto", HOVER_ACTION)}>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Folder actions"
-                >
-                  <OverflowMenuVertical size={16} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  disabled={sharedCount === 0 || !onCopyFolderLink}
-                  onSelect={() =>
-                    void copy(
-                      () => onCopyFolderLink?.(folder) ?? Promise.resolve(null),
-                    ).then(toastCopyOutcome)
-                  }
-                >
-                  <Link size={14} />
-                  Copy folder link
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => onEditFolder?.(folder)}>
-                  <Edit size={14} />
-                  Edit folder
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  tone="danger"
-                  onSelect={() => onDeleteFolder?.(folder)}
-                >
-                  <TrashCan size={14} />
-                  Delete folder
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <RowActionsMenu label="Folder actions">
+              <DropdownMenuItem
+                disabled={sharedCount === 0 || !onCopyFolderLink}
+                onSelect={() =>
+                  void copy(
+                    () => onCopyFolderLink?.(folder) ?? Promise.resolve(null),
+                  ).then(toastCopyOutcome)
+                }
+              >
+                <Link size={14} />
+                Copy folder link
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onEditFolder?.(folder)}>
+                <Edit size={14} />
+                Edit folder
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                tone="danger"
+                onSelect={() => onDeleteFolder?.(folder)}
+              >
+                <TrashCan size={14} />
+                Delete folder
+              </DropdownMenuItem>
+            </RowActionsMenu>
           </div>
         )}
       </div>

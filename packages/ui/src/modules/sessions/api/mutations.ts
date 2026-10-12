@@ -14,7 +14,7 @@ export function useRenameSession(agentId: string) {
       setAgentSessionTitle(agentId, sessionId, title),
     meta: {
       invalidates: [acpSessionsKeys.agent(agentId)],
-      errorToast: "Failed to rename session",
+      errorToast: "Couldn't rename session",
     },
   });
 }

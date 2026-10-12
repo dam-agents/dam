@@ -19,24 +19,24 @@ const stateVariant: Record<
   NonNullable<BadgeProps["variant"]>
 > = {
   running: "success",
-  starting: "warning",
-  preparing_workspace: "warning",
+  starting: "info",
+  preparing_workspace: "info",
   hibernating: "muted",
   hibernated: "muted",
   error: "danger",
   over_budget: "warning",
-  migrating: "warning",
+  migrating: "info",
 };
 
 export const stateDotClass: Record<AgentDisplayState, string> = {
   running: "bg-success",
-  starting: "bg-warning",
-  preparing_workspace: "bg-warning",
+  starting: "bg-info",
+  preparing_workspace: "bg-info",
   hibernating: "bg-muted-foreground",
   hibernated: "bg-muted-foreground",
   error: "bg-danger",
   over_budget: "bg-warning",
-  migrating: "bg-warning",
+  migrating: "bg-info",
 };
 
 export function StatusBadge({

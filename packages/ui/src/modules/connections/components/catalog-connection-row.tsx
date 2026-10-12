@@ -69,7 +69,7 @@ export function CatalogConnectionRow({
               className="shrink-0 text-foreground/80"
             />
           )}
-          <p className="max-w-[50%] shrink-0 truncate text-[15px] text-foreground">
+          <p className="max-w-[50%] shrink-0 truncate text-md font-medium text-foreground">
             {connection.name}
           </p>
           <Badge variant="muted" className="min-w-0 font-normal" title={tag}>
@@ -94,7 +94,7 @@ export function CatalogConnectionRow({
             variant="ghost"
             size="icon-sm"
             aria-label={`Remove ${connection.name} from this agent`}
-            title="Remove from this agent"
+            tooltip="Remove from this agent"
             onClick={onRemove}
             data-testid={`catalog-remove-${connection.id}`}
           >

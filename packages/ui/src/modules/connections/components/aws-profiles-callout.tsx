@@ -45,7 +45,7 @@ export function AwsProfilesCallout({
     <Callout
       tone="info"
       size="sm"
-      inset
+
       className={cn("flex flex-col gap-3 text-sm text-foreground", className)}
       data-testid="aws-profiles-callout"
     >

@@ -120,9 +120,9 @@ export function useSkillsConfirms(
 
   const removeSourceWithConfirm = async (src: SkillSource) => {
     const ok = await showConfirm(
-      "This skill source will be removed, you will need to add the github source url again to re-access these skills.",
-      `Delete ${src.name}?`,
-      { kind: "destructive", confirmLabel: "Delete connection" },
+      "Its skills are removed from this agent. To use them again, add the GitHub source again.",
+      `Remove ${src.name}?`,
+      { kind: "destructive", confirmLabel: "Remove source" },
     );
     if (ok) await surface.removeSource(src.id);
   };

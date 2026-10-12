@@ -10,7 +10,7 @@ export function GatewayFailureBadge({
   if (!agent.gatewayFailure) return null;
   return (
     <Badge
-      variant="warning"
+      variant="danger"
       title={`Network gateway: ${agent.gatewayFailure}`}
       data-testid="gateway-failure-badge"
     >

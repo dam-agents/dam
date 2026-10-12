@@ -159,16 +159,19 @@ describe("harness icons on provider and preset cards", () => {
           balance: connected
             ? createElement(ProviderBalance, { connectionId: "proxy" })
             : undefined,
-          onConnect() {},
-          onEditKey() {},
-          onRemoveKey() {},
+          onOpen() {},
         }),
       );
       expect(html).toContain("supports:");
       expect(html).toContain("size-5");
       expect(html).not.toContain("Chat and Responses APIs");
-      if (connected) expect(html).toContain("$12.00 of $100.00 used");
-      else expect(html).toContain('aria-label="Connect IBM ETE LiteLLM Proxy"');
+      if (connected) {
+        expect(html).toContain("$12.00 of $100.00 used");
+        expect(html).toContain(">Connected<");
+      } else {
+        expect(html).toContain('aria-label="Connect IBM ETE LiteLLM Proxy"');
+        expect(html).toContain(">Not connected<");
+      }
       for (const name of ["Bob", "Claude", "Codex", "Pi"])
         expect(html).toContain(`role="img" aria-label="${name}" tabindex="0"`);
     },
@@ -182,9 +185,7 @@ describe("harness icons on provider and preset cards", () => {
           type: "anthropic",
           connected: false,
           harnesses,
-          onConnect() {},
-          onEditKey() {},
-          onRemoveKey() {},
+          onOpen() {},
         }),
       );
       expect(html).toContain(harnesses ? "None" : "Compatibility unavailable");
@@ -199,9 +200,7 @@ describe("harness icons on provider and preset cards", () => {
         type: "anthropic",
         connected: true,
         harnesses: ["claude-code"],
-        onConnect() {},
-        onEditKey() {},
-        onRemoveKey() {},
+        onOpen() {},
       }),
     );
     expect(html).toContain('aria-label="Claude"');

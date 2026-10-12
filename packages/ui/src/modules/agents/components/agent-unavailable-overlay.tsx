@@ -212,7 +212,7 @@ function SkipTheWait({ agent }: { agent: AgentView }) {
   const keepAlwaysOn = async () => {
     const ok = await showConfirm(
       "This agent will never hibernate — it stays running and consumes resources until you set a timeout again in the agent settings.",
-      "Keep always on",
+      "Keep always on?",
       { icon: Power, confirmLabel: "Keep always on" },
     );
     if (ok) updateAgent.mutate({ id: agent.id, hibernationTimeoutMin: 0 });

@@ -24,7 +24,7 @@ function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
     <Card className="p-4">
       <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className="mt-1.5 whitespace-nowrap font-mono text-xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
+      <dd className="mt-1.5 whitespace-nowrap font-mono text-2xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
         {children}
       </dd>
     </Card>

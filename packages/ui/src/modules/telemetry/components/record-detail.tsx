@@ -1,7 +1,9 @@
 import type { TelemetryLog, TelemetrySpan, TurnDetail } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
+import { labelVariants } from "@/components/ui/label";
 import { formatDurationMs } from "@/lib/format-time";
+import { cn } from "@/lib/utils";
 
 import { placementOf } from "../lib/waterfall.js";
 
@@ -11,19 +13,17 @@ function AttributeRows({ attributes }: { attributes: Record<string, string> }) {
   );
   if (entries.length === 0) {
     return (
-      <p className="text-[11px] text-muted-foreground">
-        No attributes recorded.
-      </p>
+      <p className="text-2xs text-muted-foreground">No attributes recorded.</p>
     );
   }
   return (
     <dl className="grid grid-cols-[minmax(0,180px)_1fr] gap-x-4 gap-y-1">
       {entries.map(([key, value]) => (
         <div key={key} className="contents">
-          <dt className="truncate font-mono text-[11px] text-muted-foreground">
+          <dt className="truncate font-mono text-2xs text-muted-foreground">
             {key}
           </dt>
-          <dd className="break-all font-mono text-[11px]">{value}</dd>
+          <dd className="break-all font-mono text-2xs">{value}</dd>
         </div>
       ))}
     </dl>
@@ -47,19 +47,17 @@ export function RecordDetail({ log }: { log: TelemetryLog }) {
         </span>
       </div>
 
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-2xs text-muted-foreground">
         Position on the timeline: {placement.label}.
       </p>
 
       <div>
-        <p className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-          Attributes
-        </p>
+        <p className={cn("mb-1", labelVariants())}>Attributes</p>
         <AttributeRows attributes={log.attributes} />
       </div>
 
       {log.traceId !== "" && (
-        <p className="break-all font-mono text-[11px] text-muted-foreground">
+        <p className="break-all font-mono text-2xs text-muted-foreground">
           trace {log.traceId}
         </p>
       )}
@@ -80,7 +78,7 @@ export function SpanDetail({
     <div className="flex flex-col gap-4 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-sm font-medium">{span.name}</span>
-        <Badge variant={failed ? "destructive" : "secondary"}>
+        <Badge variant={failed ? "danger" : "secondary"}>
           {span.statusCode === "" ? "span" : span.statusCode}
         </Badge>
         <span className="font-mono text-xs text-muted-foreground">
@@ -92,15 +90,11 @@ export function SpanDetail({
       </div>
 
       {span.statusMessage !== "" && (
-        <p className="font-mono text-xs text-destructive">
-          {span.statusMessage}
-        </p>
+        <p className="font-mono text-xs text-danger">{span.statusMessage}</p>
       )}
 
       <div>
-        <p className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-          Span
-        </p>
+        <p className={cn("mb-1", labelVariants())}>Span</p>
         <AttributeRows
           attributes={{
             "span.id": span.spanId,
@@ -118,15 +112,13 @@ export function SpanDetail({
       </div>
 
       <div>
-        <p className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-          Attributes
-        </p>
+        <p className={cn("mb-1", labelVariants())}>Attributes</p>
         <AttributeRows attributes={span.attributes} />
       </div>
 
       {attached.length > 0 && (
         <div>
-          <p className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+          <p className={cn("mb-1", labelVariants())}>
             Records on this span ({attached.length})
           </p>
           <div className="flex flex-col gap-3">
@@ -135,7 +127,7 @@ export function SpanDetail({
                 key={`${log.at}-${log.event}`}
                 className="rounded-md border border-border p-2"
               >
-                <p className="mb-1 font-mono text-[11px]">
+                <p className="mb-1 font-mono text-2xs">
                   {log.event}
                   <span className="ml-2 text-muted-foreground">{log.at}</span>
                 </p>

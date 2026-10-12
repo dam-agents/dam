@@ -124,41 +124,39 @@ function MainApp() {
               <ActivityButton onOpen={() => setActivityView("feed")} />
             </div>
           </div>
-          {view === "sandbox-home" ? (
-            <div className="min-h-0 flex-1">
-              <SandboxHomeView />
-            </div>
-          ) : (
-            <div
-              className={cn(
-                "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-                view === "home" ||
-                  view === "starter-kits" ||
-                  view === "starter-kit"
-                  ? "max-w-[1200px]"
+          <div
+            className={cn(
+              "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
+              view === "home" ||
+                view === "starter-kits" ||
+                view === "starter-kit"
+                ? "max-w-[1200px]"
+                : view === "settings" || view === "sandbox-home"
+                  ? "max-w-[1040px]"
                   : "max-w-[960px]",
-              )}
-            >
-              {view === "home" ? (
-                <HomeView />
-              ) : view === "agent-new" ? (
-                <AgentCreateView kit={null} />
-              ) : view === "settings" ? (
-                <SettingsView />
-              ) : view === "starter-kits" || view === "starter-kit" ? (
-                <>
-                  <StarterKitsView />
-                  {view === "starter-kit" && <StarterKitDetailView />}
-                </>
-              ) : view === "starter-kit-new" ? (
-                <StarterKitSetupView />
-              ) : view === "artifacts" ? (
-                <ArtifactsView />
-              ) : (
-                <NotFoundView />
-              )}
-            </div>
-          )}
+            )}
+          >
+            {view === "sandbox-home" ? (
+              <SandboxHomeView />
+            ) : view === "home" ? (
+              <HomeView />
+            ) : view === "agent-new" ? (
+              <AgentCreateView kit={null} />
+            ) : view === "settings" ? (
+              <SettingsView />
+            ) : view === "starter-kits" || view === "starter-kit" ? (
+              <>
+                <StarterKitsView />
+                {view === "starter-kit" && <StarterKitDetailView />}
+              </>
+            ) : view === "starter-kit-new" ? (
+              <StarterKitSetupView />
+            ) : view === "artifacts" ? (
+              <ArtifactsView />
+            ) : (
+              <NotFoundView />
+            )}
+          </div>
         </main>
       </div>
       {activityOpen && (

@@ -3,12 +3,10 @@ import { type ReactNode, useCallback, useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import { Input } from "@/components/ui/input";
-import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
 
 import { AvatarPicker } from "../../../agents/components/avatar/avatar-picker.js";
-import type { SizeMi } from "../../../budgets/lib/slots.js";
 import { useAppConnections } from "../../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../../connections/hooks/use-catalog-groups.js";
@@ -18,11 +16,14 @@ import {
   NO_SATELLITES,
   useSatellites,
 } from "../../../satellites/api/queries.js";
-import { SatellitesGroupCard } from "../../../satellites/components/satellites-group-card.js";
+import { SatellitesGroup } from "../../../satellites/components/satellites-group.js";
 import { excludeProviderConnections } from "../../lib/provider-connections.js";
 import type { setupProviderPolicy } from "../../lib/setup-policy.js";
 import { GrantedConnectionsPanel } from "../granted-connections-panel.js";
-import { DEFAULT_HIBERNATE_MIN, LifecycleField } from "../lifecycle-field.js";
+import {
+  DEFAULT_HIBERNATE_MIN,
+  SleepAfterIdleField,
+} from "../lifecycle-field.js";
 
 export function NameSection({
   value,
@@ -64,7 +65,7 @@ export function ProviderSection({
   return (
     <section className="mb-8">
       <SectionLabel spaced>Provider</SectionLabel>
-      <Inset>
+      <div>
         <ProviderSelect
           selected={selected}
           onSelect={onSelect}
@@ -73,7 +74,7 @@ export function ProviderSection({
           allow={policy.allow}
           recommended={policy.recommended}
         />
-      </Inset>
+      </div>
     </section>
   );
 }
@@ -144,8 +145,8 @@ export function ConnectionsSetupSection({
     [granted, excludeIds],
   );
   const { populated: groups, templateById } = useCatalogGroups(staged);
-  const satellitesCard = pickedSatellites.length > 0 && (
-    <SatellitesGroupCard
+  const satellitesGroup = pickedSatellites.length > 0 && (
+    <SatellitesGroup
       satellites={pickedSatellites}
       showCount
       grant={(s) => ({
@@ -157,48 +158,32 @@ export function ConnectionsSetupSection({
   );
 
   return (
-    <section className="mb-8">
-      <GrantedConnectionsPanel
-        groups={groups}
-        granted={granted}
-        templateById={templateById}
-        onToggleGrant={onToggle}
-        onOpenCatalog={onOpenCatalog}
-        title="Connections"
-        {...(leading || satellitesCard
-          ? {
-              leading: (
-                <>
-                  {leading}
-                  {satellitesCard}
-                </>
-              ),
-            }
-          : {})}
-      />
-    </section>
+    <GrantedConnectionsPanel
+      groups={groups}
+      granted={granted}
+      templateById={templateById}
+      onToggleGrant={onToggle}
+      onOpenCatalog={onOpenCatalog}
+      title="Connections"
+      leading={leading}
+      extraGroups={satellitesGroup}
+    />
   );
 }
 
 export function LifecycleSetupSection({
   value,
   onChange,
-  sizeMi,
 }: {
   value: number | null;
   onChange: (next: number) => void;
-  sizeMi?: SizeMi;
 }) {
   return (
     <section className="mb-8">
-      <SectionLabel spaced>Availability</SectionLabel>
-      <Inset>
-        <LifecycleField
-          value={value ?? DEFAULT_HIBERNATE_MIN}
-          onChange={onChange}
-          sizeMi={sizeMi}
-        />
-      </Inset>
+      <SleepAfterIdleField
+        value={value ?? DEFAULT_HIBERNATE_MIN}
+        onChange={onChange}
+      />
     </section>
   );
 }

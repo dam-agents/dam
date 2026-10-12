@@ -1,12 +1,12 @@
-import { Checkmark, Copy } from "@carbon/icons-react";
+import { Checkmark } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
-import { useCopy } from "@/hooks/use-copy";
 
 import { useTestAnthropic } from "../../../connections/api/mutations.js";
 import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
@@ -89,7 +89,7 @@ export function AnthropicForm({
       );
     } catch {
       if (token !== testTokenRef.current) return;
-      setTestResult({ ok: false, message: "Could not verify credential." });
+      setTestResult({ ok: false, message: "Couldn't verify the credential." });
     }
   };
 
@@ -143,10 +143,10 @@ export function AnthropicForm({
           tooltip="Verify the credential with Anthropic"
           className="shrink-0"
         >
-          {testing ? "..." : "Test"}
+          {testing ? "Testing…" : "Test"}
         </Button>
         <Button type="submit" disabled={submitDisabled} className="shrink-0">
-          {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
+          {isSubmitting ? "Saving…" : isEdit ? "Replace" : "Save"}
         </Button>
       </div>
 
@@ -154,7 +154,7 @@ export function AnthropicForm({
       {errors.value &&
         value.length > 0 &&
         errors.value.message !== "Required" && (
-          <div className="text-xs font-medium text-destructive">
+          <div className="text-xs font-medium text-danger">
             {errors.value.message}
           </div>
         )}
@@ -164,7 +164,7 @@ export function AnthropicForm({
         </div>
       )}
       {!errors.value && testResult && !testResult.ok && (
-        <div className="text-xs font-medium text-destructive">
+        <div className="text-xs font-medium text-danger">
           {testResult.message}
         </div>
       )}
@@ -173,8 +173,6 @@ export function AnthropicForm({
 }
 
 function QuickSetupHint() {
-  const { copy: copyText, copied } = useCopy();
-  const copy = () => void copyText("claude setup-token");
   return (
     <div className="text-sm text-foreground/80">
       Run{" "}
@@ -182,20 +180,7 @@ function QuickSetupHint() {
         <code className="font-mono font-semibold text-primary">
           claude setup-token
         </code>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          onClick={copy}
-          aria-label="Copy command"
-          tooltip="Copy command"
-        >
-          {copied ? (
-            <Checkmark size={12} className="text-success" />
-          ) : (
-            <Copy size={12} />
-          )}
-        </Button>
+        <CopyButton value="claude setup-token" label="Copy command" />
       </span>{" "}
       on your own machine (with Claude Code installed) to generate a token.
     </div>

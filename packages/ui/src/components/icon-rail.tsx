@@ -10,7 +10,6 @@ import {
 } from "@carbon/icons-react";
 
 import { BrandLogo } from "@/components/brand-logo";
-import { Badge } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +22,6 @@ interface Destination {
   shortLabel?: string;
   icon: CarbonIconType;
   active: boolean;
-  badge: number;
   navigate: () => void;
 }
 
@@ -42,7 +40,6 @@ export function IconRail({
     label: "Home",
     icon: Home,
     active: view === "home",
-    badge: 0,
     navigate: () => setView("home"),
   };
   const starterKits: Destination = {
@@ -53,28 +50,24 @@ export function IconRail({
       view === "starter-kits" ||
       view === "starter-kit" ||
       view === "starter-kit-new",
-    badge: 0,
     navigate: () => setView("starter-kits"),
   };
   const artifacts: Destination = {
     label: "Artifacts",
     icon: Folders,
     active: view === "artifacts",
-    badge: 0,
     navigate: () => setView("artifacts"),
   };
   const docs: Destination = {
     label: "Documentation",
     icon: Book,
     active: false,
-    badge: 0,
     navigate: () => window.open(DOCS_URL, "_blank", "noopener,noreferrer"),
   };
   const settings: Destination = {
     label: "Settings",
     icon: Settings,
     active: view === "settings",
-    badge: 0,
     navigate: () => navigateToSettings(),
   };
 
@@ -174,7 +167,6 @@ function RailItem({
   label,
   icon: Icon,
   active,
-  badge,
   navigate,
   expanded,
 }: Destination & { expanded: boolean }) {
@@ -182,9 +174,7 @@ function RailItem({
     <button
       type="button"
       onClick={navigate}
-      aria-label={
-        badge > 0 ? `${label}, ${badge} pending` : expanded ? undefined : label
-      }
+      aria-label={expanded ? undefined : label}
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex h-[34px] w-full items-center gap-3 rounded-lg px-2.5 transition-colors",
@@ -193,7 +183,7 @@ function RailItem({
           : "text-foreground/80 hover:text-foreground hover:bg-muted",
       )}
     >
-      <IconWithBadge icon={Icon} badge={badge} size={16} />
+      <Icon size={16} />
       {expanded && (
         <span className="truncate text-sm font-medium">{label}</span>
       )}
@@ -212,47 +202,22 @@ function BottomBarItem({
   shortLabel,
   icon: Icon,
   active,
-  badge,
   navigate,
 }: Destination) {
   return (
     <button
       type="button"
       onClick={navigate}
-      aria-label={badge > 0 ? `${label}, ${badge} pending` : label}
+      aria-label={label}
       className={cn(
         "flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors",
         active ? "text-primary" : "text-muted-foreground",
       )}
     >
-      <IconWithBadge icon={Icon} badge={badge} />
+      <Icon size={20} />
       <span className="max-w-full truncate text-[10px] font-semibold">
         {shortLabel ?? label}
       </span>
     </button>
-  );
-}
-
-function IconWithBadge({
-  icon: Icon,
-  badge,
-  size = 20,
-}: {
-  icon: CarbonIconType;
-  badge: number;
-  size?: number;
-}) {
-  return (
-    <span className="relative flex items-center justify-center">
-      <Icon size={size} />
-      {badge > 0 && (
-        <Badge
-          variant="default"
-          className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center border-0 bg-accent text-white hover:bg-accent"
-        >
-          {badge > 9 ? "9+" : badge}
-        </Badge>
-      )}
-    </span>
   );
 }

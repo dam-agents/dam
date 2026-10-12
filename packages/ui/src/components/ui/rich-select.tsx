@@ -56,7 +56,7 @@ export function RichSelect<T extends string>({
             CARD_SURFACE,
             "group flex min-h-[76px] w-full items-center gap-3.5 p-4 text-left transition-colors hover:border-muted-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:border-foreground",
             invalid &&
-              "border-destructive hover:border-destructive data-[state=open]:border-destructive",
+              "border-danger hover:border-danger data-[state=open]:border-danger",
           )}
         >
           {ariaLabel && <span className="sr-only">{ariaLabel}</span>}
@@ -78,12 +78,12 @@ export function RichSelect<T extends string>({
               </div>
             </>
           ) : (
-            <p className="flex-1 text-[15px] text-muted-foreground">
+            <p className="flex-1 text-md text-muted-foreground">
               {placeholder}
             </p>
           )}
           {invalid && (
-            <WarningFilled size={18} className="shrink-0 text-destructive" />
+            <WarningFilled size={18} className="shrink-0 text-danger" />
           )}
           <ChevronDown
             size={18}

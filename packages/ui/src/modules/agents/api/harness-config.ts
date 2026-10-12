@@ -152,7 +152,7 @@ export function useApplyHarnessConfig() {
   return useMutation({
     ...trpc.harnessConfig.set.mutationOptions(),
     meta: {
-      errorToast: "Failed to apply model settings",
+      errorToast: "Couldn't apply model settings",
       invalidates: [trpc.harnessConfig.snapshot.queryKey()],
     },
     onMutate: async (change) => {
