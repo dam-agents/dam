@@ -1,4 +1,5 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
+import { routesSessionPairs } from "agent-runtime-api";
 import type {
   ConnectionView,
   HarnessConfigStatus,
@@ -54,13 +55,21 @@ export function useProviderModels(
     queryKey: ["provider-models", agentId, harness, provider],
     queryFn:
       agentId && harness && operable
-        ? () =>
-            agentTrpc(agentId).harnessConfig.models.query({ harness, provider })
+        ? async () => {
+            const result = await agentTrpc(agentId).harnessConfig.models.query({
+              harness,
+              provider,
+            });
+            if (result.availableModels === undefined)
+              throw new Error("Model discovery failed");
+            return result;
+          }
         : skipToken,
     staleTime: 60_000,
     refetchInterval: (q) =>
       q.state.data?.availableModels?.length ? false : 5_000,
-    retry: false,
+    retry: 5,
+    retryDelay: 2_000,
   });
   return { ...query, operable };
 }
@@ -131,7 +140,9 @@ export function readNextSessionPair(
   const status = queryClient.getQueryData<HarnessConfigStatus>(
     trpc.harnessConfig.status.queryKey({ agentId }),
   );
-  const carried = status?.harnesses?.map((h) => h.name) ?? [];
+  const carried = routesSessionPairs(status?.harnesses ?? [])
+    ? (status?.harnesses?.map((h) => h.name) ?? [])
+    : [];
   const chosen = useStore.getState().nextSessionPair[agentId] ?? null;
   const remembered =
     queryClient.getQueryData<SessionPair | null>(

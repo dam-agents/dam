@@ -31,6 +31,12 @@ function fakeSlackWorker(): SlackWorker {
       threadTs: "1.1",
       hasMore: false,
     })),
+    fetchAttachment: vi.fn(async () => ({
+      path: "/home/agent/.uploads/C1/a-table.png",
+      name: "table.png",
+      size: 1,
+      conversationId: "C1",
+    })),
   };
 }
 

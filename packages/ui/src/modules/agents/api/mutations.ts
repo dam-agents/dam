@@ -47,6 +47,7 @@ export interface CreateAgentInput {
   importEntries?: BundleEntry[];
   importRawBundle?: File;
   size?: { cpu?: string; memory?: string };
+  vm?: boolean;
 }
 
 export function useCreateAgent() {

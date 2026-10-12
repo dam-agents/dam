@@ -8,7 +8,6 @@ import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
-import { KnowledgeSection } from "../../knowledge-bases/components/knowledge-section.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
@@ -20,6 +19,7 @@ import {
   SandboxHomeHeader,
   SandboxIdentity,
 } from "../components/sandbox-home-header.js";
+import { SandboxProvidersSection } from "../components/sandbox-providers-section.js";
 import {
   SandboxSectionNav,
   SECTIONS,
@@ -78,8 +78,8 @@ export function SandboxHomeView() {
           />
           {section === "setup" ? (
             <SandboxSetupSection agent={agent} />
-          ) : section === "knowledge" ? (
-            <KnowledgeSection agent={agent} />
+          ) : section === "providers" ? (
+            <SandboxProvidersSection agentId={agent.id} />
           ) : section === "network" ? (
             <AgentEgressEditor agentId={agent.id} />
           ) : section === "environment" ? (

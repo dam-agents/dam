@@ -37,7 +37,6 @@ export interface CatalogRefreshDeps {
     subPath: string,
   ) => Promise<ResolvedSkill[]>;
   sourceForEntry: (gitUrl: string, ref: string) => CatalogSource;
-  pinnedKit?: string;
 }
 
 export interface CatalogRefresh {
@@ -255,15 +254,6 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
     await deps.repo.replaceCatalog(named.name, rows);
   }
 
-  async function warnUnservedPin(pinnedKit: string): Promise<void> {
-    const [catalog = "", kitId = "", ...extra] = pinnedKit.split("/");
-    if (extra.length === 0 && (await deps.repo.get(catalog, kitId))) return;
-    getLogger().warn(
-      { pinnedKit },
-      "starter kits: the pinned kit is not in any catalog; every card shows at the same size",
-    );
-  }
-
   return {
     async run() {
       for (const named of deps.catalogs) {
@@ -274,7 +264,6 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
           );
         });
       }
-      if (deps.pinnedKit) await warnUnservedPin(deps.pinnedKit);
     },
   };
 }

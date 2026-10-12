@@ -206,7 +206,7 @@ export function SessionsSidebar({
         variant="outline"
         size="xs"
         className="text-sm max-md:mr-10"
-        onClick={onNewSession}
+        onClick={() => onNewSession()}
       >
         <Add size={14} /> New
       </Button>

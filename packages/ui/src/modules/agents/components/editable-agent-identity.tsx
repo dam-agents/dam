@@ -1,5 +1,5 @@
 import { Checkmark, Edit } from "@carbon/icons-react";
-import type { AvatarMood } from "api-server-api/avatar/svg";
+import type { AvatarCharacter, AvatarMood } from "api-server-api/avatar/svg";
 import { useRef, useState } from "react";
 
 import {
@@ -26,30 +26,68 @@ const REVEAL_ON_HOVER =
  */
 export function EditableAgentIdentity({
   agent,
-  avatarSize,
-  mood,
-  avatarClassName,
-  nameClassName,
-  nameTag: NameTag = "h1",
+  ...display
 }: {
   agent: AgentView;
-  avatarSize: number;
-  mood: AvatarMood;
-  avatarClassName?: string;
-  nameClassName?: string;
-  nameTag?: "h1" | "h2";
-}) {
+} & IdentityDisplay) {
   const rename = useUpdateAgent();
   const changeAvatar = useUpdateAgent();
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [draft, setDraft] = useState<string | null>(null);
-  const editEnded = useRef(false);
   const name =
     (rename.isPending ? rename.variables.name : undefined) ?? agent.name;
   const avatar =
     (changeAvatar.isPending ? changeAvatar.variables.avatar : undefined) ??
     (rename.isPending ? rename.variables.avatar : undefined) ??
     agent.avatar;
+  return (
+    <EditableIdentity
+      {...display}
+      name={name}
+      avatar={avatar}
+      onRename={(next) => {
+        if (next === agent.name) return;
+        const keepNameDerivedAvatar = agent.avatar
+          ? {}
+          : { avatar: resolveCharacter(name, avatar) };
+        rename.mutate({ id: agent.id, name: next, ...keepNameDerivedAvatar });
+      }}
+      onAvatarChange={(next) =>
+        changeAvatar.mutate({ id: agent.id, avatar: next })
+      }
+    />
+  );
+}
+
+interface IdentityDisplay {
+  avatarSize: number;
+  mood: AvatarMood;
+  avatarClassName?: string;
+  nameClassName?: string;
+  nameTag?: "h1" | "h2";
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: An avatar and a name, each editable in place and
+ * reported on confirm, for an agent that exists or one about to be created.
+ */
+export function EditableIdentity({
+  name,
+  avatar,
+  onRename,
+  onAvatarChange,
+  avatarSize,
+  mood,
+  avatarClassName,
+  nameClassName,
+  nameTag: NameTag = "h1",
+}: {
+  name: string;
+  avatar: string | null | undefined;
+  onRename: (name: string) => void;
+  onAvatarChange: (avatar: AvatarCharacter) => void;
+} & IdentityDisplay) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+  const editEnded = useRef(false);
   const character = resolveCharacter(name, avatar);
 
   const startEdit = () => {
@@ -65,9 +103,7 @@ export function EditableAgentIdentity({
     editEnded.current = true;
     const next = draft?.trim();
     setDraft(null);
-    if (!next || next === agent.name) return;
-    const keepNameDerivedAvatar = agent.avatar ? {} : { avatar: character };
-    rename.mutate({ id: agent.id, name: next, ...keepNameDerivedAvatar });
+    if (next) onRename(next);
   };
 
   return (
@@ -99,8 +135,7 @@ export function EditableAgentIdentity({
             value={character}
             onPick={(next) => {
               setPickerOpen(false);
-              if (next !== character)
-                changeAvatar.mutate({ id: agent.id, avatar: next });
+              if (next !== character) onAvatarChange(next);
             }}
           />
         </PopoverContent>

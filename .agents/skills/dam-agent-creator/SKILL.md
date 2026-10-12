@@ -212,7 +212,7 @@ Commit (initial commit, version `1.0.0`) and give the operator this checklist:
 4. **List the kit in a catalog**: one entry in the catalog repo's `catalog.yaml` pointing
    at the repo. The refresh job picks it up without a redeploy; it appears in **Starter
    kits** within minutes.
-5. Create the agent from the kit: pick it, grant the connections its setup page asks for,
+5. Create the agent from the kit: pick it, grant the connections its kit modal asks for,
    name it. Apply seeds the definition at the kit's commit, creates the schedules and
    opens the first session on `ONBOARDING.md`. Schedules stay **held** until the agent
    calls `mark_onboarding_complete`, so a half-configured instance never fires.

@@ -20,16 +20,16 @@ export const SECTIONS: SectionEntry[] = [
       "How long this agent stays awake and how much compute it gets.",
   },
   {
+    section: "providers",
+    title: "Providers",
+    description:
+      "Choose which of your connected LLM providers this agent can use.",
+  },
+  {
     section: "connections",
     title: "Connections",
     description:
       "Connections let your agent talk to MCP servers and external services like GitHub.",
-  },
-  {
-    section: "knowledge",
-    title: "Knowledge",
-    description:
-      "Give this agent read-only access to other knowledge bases: it can list, search and read their content.",
   },
   {
     section: "network",

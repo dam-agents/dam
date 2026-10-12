@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: With the chat:write.customize scope, an agent's Slack posts carry the agent's name as username and its avatar as icon_url, so a channel with several agents shows who said what. Without the scope, or when the granted set is unknown, posts go out under the app's own identity. The icon is the agent's chosen character, or the one picked from its owner and name when none is chosen. Each character is uploaded to ImgBB once, as a PNG named by a hash, and a failed upload is retried after a pause.
+// TEST_OVERVIEW: With the chat:write.customize scope, an agent's Slack posts carry the agent's name as username and its avatar as icon_url, so a channel with several agents shows who said what. Without the scope, or when the granted set is unknown, posts go out under the app's own identity and open with an emoji and the agent's name in bold instead. The emoji is the custom emoji the connection names for the agent's character, and the robot face when the connection names none. The icon is the agent's chosen character, or the one picked from its owner and name when none is chosen. Each character is uploaded to ImgBB once, as a PNG named by a hash, and a failed upload is retried after a pause.
 import { describe, it, expect, vi } from "vitest";
 import { avatarCharacter } from "api-server-api/avatar/svg";
 import type { AgentsService } from "api-server-api";
@@ -23,6 +23,7 @@ function harness(
   scopes: string[] | null,
   agentIcon: AgentIconUrl | null,
   avatar?: string,
+  customEmoji?: string[],
 ) {
   const gw = createFakeSlackGateway();
   gw.setChannels([{ id: BOUND, name: "agent-home", botIsMember: true }]);
@@ -40,7 +41,9 @@ function harness(
     getInstanceOwner: async () => OWNER,
     channelRegistry: {
       resolveSlackBindings: async () => [],
-      resolveSlackChannelsByInstance: async () => [{ id: BOUND, teamId: "" }],
+      resolveSlackChannelsByInstance: async () => [
+        { id: BOUND, teamId: "", customEmoji },
+      ],
     },
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
@@ -62,6 +65,7 @@ function harness(
     agentIcon,
   });
   return {
+    gw,
     async post() {
       await worker.connect();
       expect(await worker.postMessage("agent-1", "hello")).toEqual({
@@ -99,7 +103,11 @@ describe("slack agent persona", () => {
       icon,
     ).reply();
 
-    expect(post).toMatchObject({ username: "Scout", iconUrl: ICON });
+    expect(post).toMatchObject({
+      username: "Scout",
+      iconUrl: ICON,
+      text: "hello",
+    });
     expect(reply).toMatchObject({ username: "Scout", iconUrl: ICON });
     const hashed = avatarCharacter(undefined, OWNER, "Scout");
     expect(seen).toEqual([hashed, hashed]);
@@ -126,6 +134,31 @@ describe("slack agent persona", () => {
       const message = await harness(scopes, async () => ICON).post();
       expect(message).not.toHaveProperty("username");
       expect(message).not.toHaveProperty("iconUrl");
+    }
+  });
+
+  // TEST_SCENARIO: The connection names custom emoji, so the post opens with the one for the agent's character and the bold name, on both the notification text and the rendered block. The names are listed in the order the emoji set was drawn, not the order of the characters.
+  it("signs the post with the custom emoji the connection names for the character", async () => {
+    const names = Array.from({ length: 8 }, (_, i) => `team-agent-${i + 1}`);
+    const h = harness(["chat:write"], null, "spark", names);
+    const posted = vi.spyOn(h.gw, "postMessage");
+    const post = await h.post();
+    expect(post).toMatchObject({ text: ":team-agent-5: *Scout*\n\nhello" });
+    expect(post).not.toHaveProperty("username");
+    expect(posted.mock.calls[0]![0].blocks![0]).toEqual({
+      type: "markdown",
+      text: ":team-agent-5: **Scout**\n\nhello",
+    });
+
+    const reply = await harness(["chat:write"], null, "compass", names).reply();
+    expect(reply).toMatchObject({ text: ":team-agent-1: *Scout*\n\nhi" });
+  });
+
+  // TEST_SCENARIO: The connection names no custom emoji, or the granted set is unknown and the connection names none, so the post opens with the robot face.
+  it("signs the post with the robot face when the connection names no emoji", async () => {
+    for (const scopes of [["chat:write"], null]) {
+      const message = await harness(scopes, null, "spark").post();
+      expect(message).toMatchObject({ text: ":robot_face: *Scout*\n\nhello" });
     }
   });
 

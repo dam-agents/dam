@@ -150,6 +150,7 @@ export {
   harnessConfigCurrent,
   harnessConfigCurrentByHarness,
   harnessCapability,
+  routesSessionPairs,
   fileFormat,
   mergeMode,
   eventReportInput,

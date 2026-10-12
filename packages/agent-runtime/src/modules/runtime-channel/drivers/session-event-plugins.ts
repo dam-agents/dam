@@ -37,14 +37,18 @@ function sessionEventPlugin(
 
 export const createInitializationPlugin = sessionEventPlugin(
   "initialization",
-  (payload) => ({
-    task: initializationEventPayload.parse(payload).task,
-    platformMeta: {
-      type: SessionType.Regular,
-      mode: SessionMode.Chat,
-      initialization: true,
-    },
-  }),
+  (payload) => {
+    const { task, ...pair } = initializationEventPayload.parse(payload);
+    return {
+      task,
+      platformMeta: {
+        type: SessionType.Regular,
+        mode: SessionMode.Chat,
+        initialization: true,
+        ...pair,
+      },
+    };
+  },
 );
 
 /**

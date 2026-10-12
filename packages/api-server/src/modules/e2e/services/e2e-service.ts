@@ -39,6 +39,8 @@ export interface SlackE2eControl {
   resetOutbound(): void;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: an env change recycles the harness, and a control frame in flight at that moment is dropped without a reply while the socket stays open. Without a bound the call waits forever, and a test that polls it hangs on that one call. The bound is above the mock's longest call, a 30 s harness spawn.
+const CONTROL_CALL_TIMEOUT_MS = 45_000;
 export function createE2eService(deps: {
   namespace: string;
   slack?: SlackE2eControl;
@@ -79,8 +81,21 @@ export function createE2eService(deps: {
     const client = createTRPCClient<MockAppRouter>({
       links: [wsLink({ client: wsClient })],
     });
+    const timeout = AbortSignal.timeout(CONTROL_CALL_TIMEOUT_MS);
     try {
-      return await fn(client);
+      return await Promise.race([
+        fn(client),
+        new Promise<never>((_, reject) =>
+          timeout.addEventListener("abort", () =>
+            reject(
+              new TRPCError({
+                code: "TIMEOUT",
+                message: `agent ${agentId} did not answer the control call`,
+              }),
+            ),
+          ),
+        ),
+      ]);
     } finally {
       wsClient.close();
     }

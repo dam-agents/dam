@@ -32,6 +32,8 @@ export function IconRail({
 } = {}) {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
+  const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
+  const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   const expandedNav = useStore((s) => s.sidebarExpanded);
   const setExpandedNav = useStore((s) => s.setSidebarExpanded);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
@@ -46,11 +48,8 @@ export function IconRail({
     label: "Starter kits",
     shortLabel: "Kits",
     icon: Box,
-    active:
-      view === "starter-kits" ||
-      view === "starter-kit" ||
-      view === "starter-kit-new",
-    navigate: () => setView("starter-kits"),
+    active: view === "starter-kit" || kitBrowserOpen,
+    navigate: () => setKitBrowserOpen(true),
   };
   const artifacts: Destination = {
     label: "Artifacts",

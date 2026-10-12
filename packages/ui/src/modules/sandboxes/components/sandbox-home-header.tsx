@@ -86,6 +86,7 @@ export function SandboxHomeHeader({
     setView("home");
   };
 
+  const running = display.state === "running";
   const neverHibernates = agent.hibernationTimeoutMin === 0;
   const separator = <span aria-hidden className="mx-1 h-6 w-px bg-border" />;
 
@@ -106,35 +107,32 @@ export function SandboxHomeHeader({
             Chat
           </Button>
           {separator}
-          {display.state === "running" && (
-            <>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label="Pause"
-                disabled={neverHibernates}
-                tooltip={
-                  neverHibernates
-                    ? "This agent never sleeps, so pausing it would wake itself. Change its idle timeout in Sandbox."
-                    : "Pause: wakes on any action (a schedule firing, a message arriving, or you opening a chat)"
-                }
-                onClick={() => suspend.pause(agent.id)}
-                data-testid="agent-pause"
-              >
-                <Pause />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label="Stop"
-                tooltip="Stop: wakes only when a schedule fires or you start it"
-                onClick={() => void onStop()}
-                data-testid="agent-stop"
-              >
-                <Stop />
-              </Button>
-            </>
-          )}
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="Pause"
+            disabled={!running || neverHibernates}
+            tooltip={
+              neverHibernates
+                ? "This agent never sleeps, so pausing it would wake itself. Change its idle timeout in Sandbox."
+                : "Pause: wakes on any action (a schedule firing, a message arriving, or you opening a chat)"
+            }
+            onClick={() => suspend.pause(agent.id)}
+            data-testid="agent-pause"
+          >
+            <Pause />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="Stop"
+            tooltip="Stop: wakes only when a schedule fires or you start it"
+            disabled={!running}
+            onClick={() => void onStop()}
+            data-testid="agent-stop"
+          >
+            <Stop />
+          </Button>
           {display.powerAction === "start" ? (
             <Button
               variant="outline"

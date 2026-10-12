@@ -7,6 +7,7 @@ import {
   TrashCan,
   Warning,
 } from "@carbon/icons-react";
+import { routesSessionPairs } from "agent-runtime-api";
 import {
   SessionMode,
   SessionType,
@@ -90,6 +91,7 @@ import { ProcessesIndicator } from "../../processes/components/processes-indicat
 import { ProcessesPanel } from "../../processes/components/processes-panel.js";
 import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
+import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
@@ -115,6 +117,7 @@ import {
   RewritableMessage,
   RewriteMarker,
 } from "../components/rewritable-message.js";
+import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-notice.js";
 import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
@@ -299,22 +302,24 @@ export function ChatView() {
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
   const { data: harnessStatus } = useHarnessConfigStatus(selectedAgent);
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
+  const carried = (selectedAgent && harnessStatus?.harnesses) || [];
+  const pairOutdated = carried.length > 0 && !routesSessionPairs(carried);
+  const newSessionAgent =
+    !sessionId && carried.length > 0 ? selectedAgent : null;
   const pickable =
-    !sessionId && selectedAgent && harnessStatus?.harnesses?.length
+    newSessionAgent && !pairOutdated
       ? {
-          agentId: selectedAgent,
-          carried: harnessStatus.harnesses,
-          defaultHarness:
-            harnessStatus.defaultHarness ?? harnessStatus.harnesses[0]!.name,
+          agentId: newSessionAgent,
+          carried,
+          defaultHarness: harnessStatus?.defaultHarness ?? carried[0]!.name,
         }
       : null;
-  const providerConnections = useProviderConnections(
-    pickable ? selectedAgent : null,
-  );
+  const providerConnections = useProviderConnections(newSessionAgent);
   const noProviders =
-    !!pickable &&
+    !!newSessionAgent &&
     providerConnections.loaded &&
     providerConnections.owned.length === 0;
+  const [providersModal, setProvidersModal] = useState<boolean | null>(null);
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
@@ -539,29 +544,38 @@ export function ChatView() {
     ],
   );
 
-  const handleNewSession = useCallback(() => {
-    const focusComposer = () =>
-      requestAnimationFrame(() => textareaRef.current?.focus());
-    if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
-    if (!sessionId && messages.length === 0) {
+  const [pairPickerOpen, setPairPickerOpen] = useState(false);
+  useEffect(() => {
+    if (sessionId) setPairPickerOpen(false);
+  }, [sessionId]);
+  const handleNewSession = useCallback(
+    (pickPair = false) => {
+      const afterReset = () =>
+        pickPair
+          ? setPairPickerOpen(true)
+          : requestAnimationFrame(() => textareaRef.current?.focus());
+      if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
+      if (!sessionId && messages.length === 0) {
+        setMobileScreen("chat");
+        afterReset();
+        return;
+      }
+      pushSessionUrl(null, null);
+      setSessionMode(SessionMode.Chat);
+      resetSession();
       setMobileScreen("chat");
-      focusComposer();
-      return;
-    }
-    pushSessionUrl(null, null);
-    setSessionMode(SessionMode.Chat);
-    resetSession();
-    setMobileScreen("chat");
-    focusComposer();
-  }, [
-    selectedAgent,
-    sessionId,
-    messages.length,
-    resetSession,
-    setMobileScreen,
-    setSessionMode,
-    pushSessionUrl,
-  ]);
+      afterReset();
+    },
+    [
+      selectedAgent,
+      sessionId,
+      messages.length,
+      resetSession,
+      setMobileScreen,
+      setSessionMode,
+      pushSessionUrl,
+    ],
+  );
 
   const handleNewTerminal = useCallback(() => {
     resetSession();
@@ -619,6 +633,9 @@ export function ChatView() {
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {}
+      {(providersModal ?? noProviders) && (
+        <ProviderSettingsModal onClose={() => setProvidersModal(false)} />
+      )}
       <header
         className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
       >
@@ -980,14 +997,21 @@ export function ChatView() {
                 {!hasPendingPermission && pickable && (
                   <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
                     <ChatColumn>
-                      <SessionPairPicker {...pickable} />
+                      <SessionPairPicker
+                        {...pickable}
+                        open={pairPickerOpen}
+                        onOpenChange={setPairPickerOpen}
+                        onConnectProviders={() => setProvidersModal(true)}
+                      />
                     </ChatColumn>
                   </div>
                 )}
                 {!hasPendingPermission && !pickable && (
                   <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
                     <ChatColumn>
-                      {selectedAgent && currentSession?.harness ? (
+                      {selectedAgent && pairOutdated ? (
+                        <SessionPairOutdatedNotice agentId={selectedAgent} />
+                      ) : selectedAgent && currentSession?.harness ? (
                         <ModelIndicator
                           agentId={selectedAgent}
                           harness={currentSession.harness}
@@ -999,7 +1023,7 @@ export function ChatView() {
                           onConfigure={(change) =>
                             void configureSession(change)
                           }
-                          onNewSession={handleNewSession}
+                          onNewSession={() => handleNewSession(true)}
                         />
                       ) : selectedAgent ? (
                         <Button

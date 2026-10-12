@@ -37,7 +37,7 @@ function agent(extra: Partial<Agent> = {}): Agent {
 
 function harness(current: Agent) {
   const marks: { begun?: KitUpdatePending; ended?: SeedStamp | null } = {};
-  const bumped: string[] = [];
+  const bumped: { id: string; payload: unknown }[] = [];
   const updates = createKitUpdates({
     owner: "user-1",
     repo: { get: async () => null },
@@ -62,12 +62,17 @@ function harness(current: Agent) {
     familyTitles: async () => new Map(),
     wakeAgent: async () => {},
     runtimeMutator: {
-      bump: async (_id: string, events: { id: string }[]) => {
-        bumped.push(...events.map((e) => e.id));
+      bump: async (_id: string, events: { id: string; payload: unknown }[]) => {
+        bumped.push(...events);
         return 1;
       },
       enqueueAfterCommit: async () => {},
     } as never,
+    sessionPair: async () => ({
+      harness: "codex",
+      provider: "openai-1",
+      model: "gpt-5",
+    }),
     now: () => new Date("2026-10-02T10:00:00Z"),
   });
   return { updates, marks, bumped };
@@ -94,12 +99,17 @@ describe("kit update", () => {
     expect(skipped?.state).toBe("skipped");
   });
 
-  // TEST_SCENARIO: starting marks the head it targets and queues the update session; the report moves the stamp only for that commit.
+  // TEST_SCENARIO: starting marks the head it targets and queues the update session on the agent's default harness, provider and model; the report moves the stamp only for that commit.
   it("targets the head at start and accepts the report only for it", async () => {
     const h = harness(agent());
     await h.updates.startUpdate("agent-1");
     expect(h.marks.begun?.targetCommit).toBe(NEW);
-    expect(h.bumped[0]).toMatch(/^kit-update:agent-1:/);
+    expect(h.bumped[0]?.id).toMatch(/^kit-update:agent-1:/);
+    expect(h.bumped[0]?.payload).toMatchObject({
+      harness: "codex",
+      provider: "openai-1",
+      model: "gpt-5",
+    });
 
     const pendingAgent = agent({ kitUpdatePending: h.marks.begun! });
     let ended: SeedStamp | null | undefined;

@@ -9,6 +9,7 @@ import type {
   ReposService,
   TermsService,
 } from "api-server-api";
+import type { FirePair } from "../../modules/harness-config/index.js";
 import type { RedisBus } from "../../core/redis-bus.js";
 import type { TtlStore } from "../../core/ttl-store.js";
 import type {
@@ -115,6 +116,7 @@ export interface ApiServerDeps {
   connectionsBoot: ConnectionsBootCompose;
   templatesRepo: TemplatesRepository;
   harnessCatalog: HarnessCatalog;
+  firePair: FirePair;
   starterKitsRepo: StarterKitsRepository;
   kitUpstream: KitUpstream;
   reposService: ReposService;
