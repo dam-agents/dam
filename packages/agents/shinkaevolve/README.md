@@ -23,7 +23,7 @@ a PR with it).
 
 ## Image
 
-Built as a mise environment over the `claude-code` image's ([`image.toml`](image.toml))
+Built as a mise environment over the `default` image's ([`image.toml`](image.toml))
 so it inherits the Claude harness, the model gateway, and CA trust — the pod
 holds no credentials. On top it adds the `shinka-evolve` package
 in a venv at `$SHINKA_VENV` (a mise `pipx:` tool from PyPI, pinned in
@@ -37,7 +37,7 @@ the embeddings default) is defined once in the `shinkaevolve` skill's Step 1.
 ## Build
 
 ```sh
-mise run //packages/agents:oci -- shinkaevolve   # claude-code plus this workload's mise environment
+mise run //packages/agents:oci -- shinkaevolve   # the default image plus this workload's mise environment
 mise run cluster:build -- agents                 # rebuild + restart agent pods in the dev cluster
 ```
 
@@ -51,7 +51,7 @@ The pinned release is the `version` in [`image.toml`](image.toml).
 
 The shinkaevolve image is published by CI (`.github/workflows/cd.yml`): the
 per-arch `build-workloads` job runs after `merge-agents` — it builds `FROM`
-claude-code, so it pulls its base by the same per-commit tag — and
+the default image, so it pulls its base by the same per-commit tag — and
 `merge-workloads` publishes the multi-arch manifest to the public
 `quay.io/dam-agents/shinkaevolve` (no `imagePullSecret`). Registering the
 component in `.mise/tasks/image/resolve`'s `WORKLOADS` list is what enrolls it

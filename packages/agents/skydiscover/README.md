@@ -39,7 +39,7 @@ it authors the run inputs, runs the search, and reports the winning program
 
 ## Image
 
-Built as a mise environment over the `claude-code` image's ([`image.toml`](image.toml))
+Built as a mise environment over the `default` image's ([`image.toml`](image.toml))
 so it inherits the Claude harness, the model gateway, and CA trust — the pod
 holds no credentials. On top it adds the `skydiscover` package
 in a venv at `$SKYDISCOVER_VENV` (a mise `pipx:` tool from the upstream git
@@ -71,7 +71,7 @@ skill's Step 1.
 ## Build
 
 ```sh
-mise run //packages/agents:oci -- skydiscover   # claude-code plus this workload's mise environment
+mise run //packages/agents:oci -- skydiscover   # the default image plus this workload's mise environment
 mise run cluster:build -- agents                 # rebuild + restart agent pods in the dev cluster
 ```
 
@@ -87,7 +87,7 @@ resolve the build from the image repository basename, so both presets build
 
 The skydiscover image is published by CI (`.github/workflows/cd.yml`): the
 per-arch `build-workloads` job runs after `merge-agents` — it builds `FROM`
-claude-code, so it pulls its base by the same per-commit tag — and
+the default image, so it pulls its base by the same per-commit tag — and
 `merge-workloads` publishes the multi-arch manifest to the public
 `quay.io/dam-agents/skydiscover` (no `imagePullSecret`). Registering the
 component in `.mise/tasks/image/resolve`'s `WORKLOADS` list is what enrolls it

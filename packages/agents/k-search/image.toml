@@ -1,4 +1,4 @@
-# The k-search config environment over claude-code's: mise -E claude-code,k-search.
+# The k-search config environment, packed onto the default image.
 
 # K-Search runs from its source tree, with KernelBench's copied in; oci_link
 # is where the image task links a tool's install.

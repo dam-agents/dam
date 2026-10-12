@@ -1,4 +1,4 @@
-# The skydiscover config environment over claude-code's: mise -E claude-code,skydiscover.
+# The skydiscover config environment, packed onto the default image.
 
 # A pinned commit: the released wheels predate EvoX's config data files and the
 # `skydiscover optimize` CLI. scipy rides along for the tasks. The postinstall

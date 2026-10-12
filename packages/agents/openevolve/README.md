@@ -21,7 +21,7 @@ evolution, runs it, and reports the winning variant (and can open a PR with it).
 
 ## Image
 
-Built as a mise environment over the `claude-code` image's ([`image.toml`](image.toml)) so it
+Built as a mise environment over the `default` image's ([`image.toml`](image.toml)) so it
 inherits the Claude harness, the model gateway, and CA trust — the pod holds no
 credentials. On top it adds the `openevolve` package in a venv at
 `$OPENEVOLVE_VENV` (a mise `pipx:` tool from PyPI, pinned in `image.toml`). Both harnesses (chat and terminal) are inherited
@@ -31,7 +31,7 @@ unchanged from the base; OpenEvolve customizes behavior via `AGENTS.md` + the
 ## Build
 
 ```sh
-mise run //packages/agents:oci -- openevolve   # claude-code plus this workload's mise environment
+mise run //packages/agents:oci -- openevolve   # the default image plus this workload's mise environment
 mise run cluster:build -- agents                 # rebuild + restart agent pods in the dev cluster
 ```
 
@@ -45,7 +45,7 @@ The pinned release is the `version` in [`image.toml`](image.toml).
 
 The openevolve image is published by CI (`.github/workflows/cd.yml`): the
 per-arch `build-workloads` job runs after `merge-agents` — it builds `FROM`
-claude-code, so it pulls its base by the same per-commit tag — and
+the default image, so it pulls its base by the same per-commit tag — and
 `merge-workloads` publishes the multi-arch manifest to the public
 `quay.io/dam-agents/openevolve` (no `imagePullSecret`). The template is enabled
 in `values.yaml` under "Pre-configured Images" (`category: preconfigured`,

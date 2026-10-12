@@ -31,7 +31,7 @@ CLI and are the one dispatch path that does not export.
 
 ## Image
 
-Built as a mise environment over the `claude-code` image's ([`image.toml`](image.toml))
+Built as a mise environment over the `default` image's ([`image.toml`](image.toml))
 so it inherits the `claude` CLI, the model gateway, and CA trust. On top it adds:
 
 - The `nous` package in a venv at `$NOUS_VENV`, a mise `pipx:` tool installed
@@ -55,7 +55,7 @@ so it inherits the `claude` CLI, the model gateway, and CA trust. On top it adds
 
 ## How the agent operates (chat mode)
 
-Both harnesses are inherited unchanged from the claude-code base; nous
+Both harnesses are inherited unchanged from the default image; nous
 customizes behavior through [`AGENTS.md`](./rootfs/etc/AGENTS.md) + the skill, not the
 harness scripts. The chat harness drives `nous` per `AGENTS.md`:
 
@@ -119,7 +119,7 @@ OpenAI endpoint is left alone).
 ## Build
 
 ```sh
-mise run //packages/agents:oci -- nous   # claude-code plus this workload's mise environment
+mise run //packages/agents:oci -- nous   # the default image plus this workload's mise environment
 mise run cluster:build -- agents        # rebuild + restart agent pods in the dev cluster
 ```
 
@@ -134,7 +134,7 @@ show it in the local catalog.
 
 The nous image is published by CI (`.github/workflows/cd.yml`): the per-arch
 `build-workloads` job runs after `merge-agents` — nous builds `FROM`
-claude-code, so it pulls its base by the same per-commit tag — and
+the default image, so it pulls its base by the same per-commit tag — and
 `merge-workloads` publishes the multi-arch manifest to
 `quay.io/dam-agents/nous`. The `publish` (Helm) job waits on `merge-workloads`.
 The template is enabled by default in `values.yaml` under "Pre-configured

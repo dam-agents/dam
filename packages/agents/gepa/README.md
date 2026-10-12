@@ -31,7 +31,7 @@ and reports the winning candidate (and can open a PR with it).
 
 ## Image
 
-Built as a mise environment over the `claude-code` image's ([`image.toml`](image.toml))
+Built as a mise environment over the `default` image's ([`image.toml`](image.toml))
 so it inherits the Claude harness, the model gateway, and CA trust — the pod
 holds no credentials. On top it adds the `gepa` package in a
 venv at `$GEPA_VENV` (a mise `pipx:` tool from PyPI, pinned in `image.toml`;
@@ -49,7 +49,7 @@ holding keys (the provider-agnostic discover → wire → probe procedure).
 ## Build
 
 ```sh
-mise run //packages/agents:oci -- gepa   # claude-code plus this workload's mise environment
+mise run //packages/agents:oci -- gepa   # the default image plus this workload's mise environment
 mise run cluster:build -- agents                 # rebuild + restart agent pods in the dev cluster
 ```
 
@@ -63,7 +63,7 @@ show it in the local catalog.
 
 The gepa image is published by CI (`.github/workflows/cd.yml`): the per-arch
 `build-workloads` job runs after `merge-agents` — it builds `FROM`
-claude-code, so it pulls its base by the same per-commit tag — and
+the default image, so it pulls its base by the same per-commit tag — and
 `merge-workloads` publishes the multi-arch manifest to the public
 `quay.io/dam-agents/gepa` (no `imagePullSecret`). Registering the component in
 `.mise/tasks/image/resolve`'s `WORKLOADS` list is what enrolls it in that
