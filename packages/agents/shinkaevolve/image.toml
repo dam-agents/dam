@@ -1,4 +1,4 @@
-# The shinkaevolve config environment over claude-code's: mise -E claude-code,shinkaevolve.
+# The shinkaevolve config environment, packed onto the default image.
 
 # The pillow floor and overrides.txt are CVE fixes the package's own pins do
 # not reach.

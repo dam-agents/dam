@@ -17,6 +17,7 @@
 #   mise run image:resolve -- source-sha <component>     -> the commit that last touched its effective source
 #   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
 #   mise run image:resolve -- list-workloads            -> the workload components, each packed onto the default image
+#   mise run image:resolve -- list-harnesses            -> the harness directories the default image carries, no image of their own
 #   mise run image:resolve -- list-pinned-tags           -> every component whose chart/kit tag pin-tags rewrites
 #   mise run image:resolve -- list-components            -> every published image (security.yml scans them all)
 #   mise run image:resolve -- list-third-party           -> every third-party image ref the chart runs (security.yml scans them too)
@@ -48,7 +49,7 @@ UNSHIPPED=':(exclude)*__tests__* :(exclude)*.test.ts :(exclude)*_test.go :(exclu
 MISE_IMAGE_PATHS="packages/agents/.mise/tasks/oci .mise/tasks/image/pack .mise/tasks/image/name-layout packages/agents/base .mise/config.toml packages/agent-runtime packages/agent-runtime-api packages/api-server-api packages/driver-sdk packages/driver-sdk-py packages/dev-config package.json pnpm-workspace.yaml pnpm-lock.yaml"
 
 # agent images; CI's `agents` build/merge matrix. The default image carries
-# every harness, whose directories stay its sources.
+# every harness, whose directories are its sources and no image of their own.
 AGENTS="default"
 HARNESSES="claude-code codex pi-agent bob"
 # workloads, each packed onto the default image; single registration point,
@@ -118,7 +119,6 @@ own_paths() {
     # doesn't roll the Keycloak pod.
     keycloak) echo "packages/keycloak-theme packages/dev-config pnpm-lock.yaml .mise/tasks/image/pack .mise/config.toml" ;;
     default) echo "$MISE_IMAGE_PATHS packages/agents/default $(for h in $HARNESSES; do printf ' packages/agents/%s' "$h"; done)" ;;
-    claude-code|codex|pi-agent|bob) echo "$MISE_IMAGE_PATHS packages/agents/$1" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
@@ -127,7 +127,7 @@ base_of() {
   if is_workload "$1"; then echo "default"; return; fi
   case "$1" in
     mock) echo "default" ;;
-    controller|ui|api-server|keycloak|vm-runner|default|claude-code|codex|pi-agent|bob) echo "" ;;
+    controller|ui|api-server|keycloak|vm-runner|default) echo "" ;;
     *) echo "unknown component: $1" >&2; return 1 ;;
   esac
 }
@@ -195,18 +195,16 @@ self_check() {
   chk "$(base_of shinkaevolve)" default
   chk "$(base_of gepa)" default
   chk "$(base_of skydiscover)" default
-  chk "$(base_of claude-code)" ""
   chk "$(base_of k-search)" default
   chk "$(base_of mock)" default
-  has "$(effective_paths claude-code)" packages/agents/claude-code
-  has "$(effective_paths claude-code)" packages/agents/base
-  has "$(effective_paths claude-code)" packages/agent-runtime
-  has "$(effective_paths claude-code)" .mise/config.toml
-  has "$(effective_paths bob)" packages/agents/bob
+  base_of claude-code >/dev/null 2>&1 && { echo "FAIL: a harness resolves as an image" >&2; f=1; }
   chk "$(base_of default)" ""
   has "$(effective_paths default)" packages/agents/default
   has "$(effective_paths default)" packages/agents/pi-agent
+  has "$(effective_paths default)" packages/agents/bob
   has "$(effective_paths default)" packages/agents/base
+  has "$(effective_paths default)" packages/agent-runtime
+  has "$(effective_paths default)" .mise/config.toml
   chk "$(base_of keycloak)" ""
   chk "$(base_of controller)" ""
   chk "$(base_of ui)" ""
@@ -268,11 +266,12 @@ case "${1:-}" in
   source-sha)     source_sha "$2" ;;
   gha-outputs)    gha_outputs ;;
   list-workloads) echo $WORKLOADS ;;
+  list-harnesses) echo $HARNESSES ;;
   list-pinned-tags) echo $PINNED_TAGS ;;
   list-components) echo $IMAGES $AGENTS $WORKLOADS ;;
   list-third-party) third_party ;;
   paths)          effective_paths "$2" ;;
   tar-path)       tar_path "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: image:resolve {resolve|source-sha|gha-outputs|list-workloads|list-pinned-tags|list-components|list-third-party|paths|tar-path|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: image:resolve {resolve|source-sha|gha-outputs|list-workloads|list-harnesses|list-pinned-tags|list-components|list-third-party|paths|tar-path|--self-check}" >&2; exit 2 ;;
 esac

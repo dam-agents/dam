@@ -1,15 +1,15 @@
 # Agent images
 
-Last verified: 2026-10-09
+Last verified: 2026-10-12
 
-The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files. Each carries the agent-runtime and every harness. None bakes a tool: they boot on the node's **harness tools**. A workload bakes only its own Python, whole, and the mock the node it runs on. Nothing installs lazily, and no tool runs through a shim. Sources live in [`packages/agents/`](../../packages/agents/): one directory per image, and one per harness (Claude Code, Codex, pi, Bob).
+The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files. Each carries the agent-runtime and every harness. None bakes a tool: they boot on the node's **harness tools**. A workload bakes only its own Python, whole, and the mock the node it runs on. Nothing installs lazily, and no tool runs through a shim. Sources live in [`packages/agents/`](../../packages/agents/): one directory per image, and one per harness (Claude Code, Codex, pi, Bob), which is a source of the default image and no image of its own.
 
 ## One base, one image over it
 
 Every image is a Debian system-package base and directory trees packed onto it as layers, with no Dockerfile. The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment as mise config, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, dam-run, and `platform-keep`, which [keeps](agent-processes.md#keeping-work) a long job running and the agent awake.
 
 - **A harness** is mise config over the base — its tools and env — and a `rootfs/` of its files at their image paths. The default image carries all four.
-- **A workload** is the default image under its own files and env. Its Python package is installed into a venv and shipped as a whole Python at a fixed path, the interpreter and its standard library copied in, named in an environment variable; the entrypoint and login shells put it first on `PATH`, so `python` is the workload's, whatever Python the node's tools hold. **k-search** also ships its upstream source trees, pinned by commit and checksum and patched at install, at fixed paths.
+- **A workload** is the default image under its own files and env, so a kit image carries every harness and runs the one its kit names. Its Python package is installed into a venv and shipped as a whole Python at a fixed path, the interpreter and its standard library copied in, named in an environment variable; the entrypoint and login shells put it first on `PATH`, so `python` is the workload's, whatever Python the node's tools hold. **k-search** also ships its upstream source trees, pinned by commit and checksum and patched at install, at fixed paths.
 - **The e2e mock**, beside its source in [`packages/e2e/agents/mock/`](../../packages/e2e/agents/mock/), is the default image under its scripted harness and the node binary its agent-runtime runs, so it boots without the node's tools.
 
 ## The default image and the harness tools
