@@ -73,8 +73,8 @@ importers:
         specifier: ^8.22.0
         version: 8.22.0
       zod:
-        specifier: ^4.6.5
-        version: 4.6.5
+        specifier: ^4.6.6
+        version: 4.6.6
     devDependencies:
       '@types/busboy':
         specifier: ^1.5.4
@@ -113,8 +113,8 @@ importers:
         specifier: ^11.19.0
         version: 11.19.0(typescript@6.0.3)
       zod:
-        specifier: ^4.6.5
-        version: 4.6.5
+        specifier: ^4.6.6
+        version: 4.6.6
     devDependencies:
       '@types/node':
         specifier: ^26.6.4
@@ -130,10 +130,10 @@ importers:
     devDependencies:
       '@earendil-works/pi-ai':
         specifier: 1.0.4
-        version: 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.5))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5)
+        version: 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.6)
       '@earendil-works/pi-coding-agent':
         specifier: 1.0.4
-        version: 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.5))(@smithy/signature-v4@5.7.3)(ws@8.22.0)(zod@4.6.5)
+        version: 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))(@smithy/signature-v4@5.7.3)(ws@8.22.0)(zod@4.6.6)
       '@types/node':
         specifier: ^26.6.4
         version: 26.6.4
@@ -142,7 +142,7 @@ importers:
     dependencies:
       '@agentclientprotocol/sdk':
         specifier: ^1.7.0
-        version: 1.7.0(zod@4.6.5)
+        version: 1.7.0(zod@4.6.6)
       '@aws-sdk/client-s3':
         specifier: ^3.1146.0
         version: 3.1146.0
@@ -154,10 +154,10 @@ importers:
         version: 2.16.0
       '@chat-adapter/state-pg':
         specifier: ^4.41.1
-        version: 4.41.1(zod@4.6.5)
+        version: 4.41.1(zod@4.6.6)
       '@chat-adapter/telegram':
         specifier: ^4.41.1
-        version: 4.41.1(zod@4.6.5)
+        version: 4.41.1(zod@4.6.6)
       '@clickhouse/client':
         specifier: ^1.23.1
         version: 1.23.1
@@ -172,7 +172,7 @@ importers:
         version: 2.0.0
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.0
-        version: 1.32.0(zod@4.6.5)
+        version: 1.32.0(zod@4.6.6)
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
@@ -235,7 +235,7 @@ importers:
         version: 6.3.11(ioredis@6.0.0)(pg@8.20.0)
       chat:
         specifier: ^4.41.1
-        version: 4.41.1(zod@4.6.5)
+        version: 4.41.1(zod@4.6.6)
       cron-parser:
         specifier: ^5.10.1
         version: 5.10.1
@@ -282,8 +282,8 @@ importers:
         specifier: ^8.22.0
         version: 8.22.0
       zod:
-        specifier: ^4.6.5
-        version: 4.6.5
+        specifier: ^4.6.6
+        version: 4.6.6
     devDependencies:
       '@opentelemetry/sdk-metrics':
         specifier: ^2.11.0
@@ -331,8 +331,8 @@ importers:
         specifier: 2.2.8
         version: 2.2.8
       zod:
-        specifier: ^4.6.5
-        version: 4.6.5
+        specifier: ^4.6.6
+        version: 4.6.6
     devDependencies:
       dev-config:
         specifier: workspace:*
@@ -348,13 +348,13 @@ importers:
     devDependencies:
       '@agentclientprotocol/sdk':
         specifier: ^1.7.0
-        version: 1.7.0(zod@4.6.5)
+        version: 1.7.0(zod@4.6.6)
       '@clack/prompts':
         specifier: 1.8.1
         version: 1.8.1
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.0
-        version: 1.32.0(zod@4.6.5)
+        version: 1.32.0(zod@4.6.6)
       '@trpc/client':
         specifier: ^11.19.0
         version: 11.19.0(@trpc/server@11.19.0(typescript@6.0.3))(typescript@6.0.3)
@@ -407,8 +407,8 @@ importers:
         specifier: ^8.22.0
         version: 8.22.0
       zod:
-        specifier: ^4.6.5
-        version: 4.6.5
+        specifier: ^4.6.6
+        version: 4.6.6
 
   packages/db:
     dependencies:
@@ -468,8 +468,8 @@ importers:
         specifier: ^11.19.0
         version: 11.19.0(typescript@6.0.3)
       zod:
-        specifier: ^4.6.5
-        version: 4.6.5
+        specifier: ^4.6.6
+        version: 4.6.6
     devDependencies:
       '@types/node':
         specifier: ^26.6.4
@@ -493,8 +493,8 @@ importers:
         specifier: ^11.19.0
         version: 11.19.0(typescript@6.0.3)
       zod:
-        specifier: ^4.6.5
-        version: 4.6.5
+        specifier: ^4.6.6
+        version: 4.6.6
     devDependencies:
       dev-config:
         specifier: workspace:*
@@ -581,7 +581,7 @@ importers:
     dependencies:
       '@agentclientprotocol/sdk':
         specifier: ^1.7.0
-        version: 1.7.0(zod@4.6.5)
+        version: 1.7.0(zod@4.6.6)
       '@carbon/icons-react':
         specifier: ^11.89.0
         version: 11.89.0(react@19.3.0)
@@ -611,7 +611,7 @@ importers:
         version: 6.43.13
       '@hookform/resolvers':
         specifier: ^5.9.1
-        version: 5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(zod@4.6.5)
+        version: 5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(zod@4.6.6)
       '@radix-ui/react-alert-dialog':
         specifier: ^1.1.23
         version: 1.1.23(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -718,8 +718,8 @@ importers:
         specifier: ^1.2.0
         version: 1.2.0(vite@8.3.3(@types/node@26.6.3)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))(workbox-build@7.4.0(@types/babel__core@7.20.5))(workbox-window@7.4.0)
       zod:
-        specifier: ^4.6.5
-        version: 4.6.5
+        specifier: ^4.6.6
+        version: 4.6.6
       zustand:
         specifier: ^5.0.15
         version: 5.0.15(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.6.0(react@19.3.0))
@@ -7264,11 +7264,8 @@ packages:
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
-
-  zod@4.6.5:
-    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+  zod@4.6.6:
+    resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
 
   zustand@5.0.15:
     resolution: {integrity: sha512-MpSEjRiBkA9crSYeOUH32rJC7SVqAbm0Fqcqge/bUi2PPoLcBWKOsG+C8mevmpr8TwXHBVkChbbJiyvkE+i/3A==}
@@ -7293,16 +7290,16 @@ packages:
 
 snapshots:
 
-  '@agentclientprotocol/sdk@1.7.0(zod@4.6.5)':
+  '@agentclientprotocol/sdk@1.7.0(zod@4.6.6)':
     dependencies:
-      zod: 4.6.5
+      zod: 4.6.6
 
-  '@anthropic-ai/sdk@0.129.0(zod@4.6.5)':
+  '@anthropic-ai/sdk@0.129.0(zod@4.6.6)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
     optionalDependencies:
-      zod: 4.6.5
+      zod: 4.6.6
 
   '@apideck/better-ajv-errors@0.3.7(ajv@8.20.0)':
     dependencies:
@@ -8222,18 +8219,18 @@ snapshots:
       prop-types: 15.8.1
       react: 19.3.0
 
-  '@chat-adapter/shared@4.41.1(zod@4.6.5)':
+  '@chat-adapter/shared@4.41.1(zod@4.6.6)':
     dependencies:
-      chat: 4.41.1(zod@4.6.5)
+      chat: 4.41.1(zod@4.6.6)
     transitivePeerDependencies:
       - ai
       - supports-color
       - workflow
       - zod
 
-  '@chat-adapter/state-pg@4.41.1(zod@4.6.5)':
+  '@chat-adapter/state-pg@4.41.1(zod@4.6.6)':
     dependencies:
-      chat: 4.41.1(zod@4.6.5)
+      chat: 4.41.1(zod@4.6.6)
       pg: 8.20.0
     transitivePeerDependencies:
       - ai
@@ -8242,10 +8239,10 @@ snapshots:
       - workflow
       - zod
 
-  '@chat-adapter/telegram@4.41.1(zod@4.6.5)':
+  '@chat-adapter/telegram@4.41.1(zod@4.6.6)':
     dependencies:
-      '@chat-adapter/shared': 4.41.1(zod@4.6.5)
-      chat: 4.41.1(zod@4.6.5)
+      '@chat-adapter/shared': 4.41.1(zod@4.6.6)
+      chat: 4.41.1(zod@4.6.6)
     transitivePeerDependencies:
       - ai
       - supports-color
@@ -8367,9 +8364,9 @@ snapshots:
     dependencies:
       esbuild: 0.28.2
 
-  '@earendil-works/pi-agent-core@1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.5))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5)':
+  '@earendil-works/pi-agent-core@1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.6)':
     dependencies:
-      '@earendil-works/pi-ai': 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.5))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5)
+      '@earendil-works/pi-ai': 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.6)
       typebox: 1.3.27
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -8384,16 +8381,16 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-ai@1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.5))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5)':
+  '@earendil-works/pi-ai@1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.6)':
     dependencies:
-      '@anthropic-ai/sdk': 0.129.0(zod@4.6.5)
+      '@anthropic-ai/sdk': 0.129.0(zod@4.6.6)
       '@aws-sdk/client-bedrock-runtime': 3.1127.0
       '@earendil-works/pi-telemetry': 1.0.4
-      '@google/genai': 2.21.0(@modelcontextprotocol/sdk@1.32.0(zod@4.6.5))
+      '@google/genai': 2.21.0(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))
       '@smithy/node-http-handler': 4.12.1
       http-proxy-agent: 9.1.0
       https-proxy-agent: 9.1.0
-      openai: 7.19.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5)
+      openai: 7.19.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.6)
       partial-json: 0.1.7
       typebox: 1.3.27
     transitivePeerDependencies:
@@ -8413,11 +8410,11 @@ snapshots:
     dependencies:
       quickjs-wasi: 3.6.2
 
-  '@earendil-works/pi-coding-agent@1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.5))(@smithy/signature-v4@5.7.3)(ws@8.22.0)(zod@4.6.5)':
+  '@earendil-works/pi-coding-agent@1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))(@smithy/signature-v4@5.7.3)(ws@8.22.0)(zod@4.6.6)':
     dependencies:
       '@earendil-works/chord': 1.0.4
-      '@earendil-works/pi-agent-core': 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.5))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5)
-      '@earendil-works/pi-ai': 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.5))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5)
+      '@earendil-works/pi-agent-core': 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.6)
+      '@earendil-works/pi-ai': 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.6)
       '@earendil-works/pi-codemode': 1.0.4
       '@earendil-works/pi-mcp': 1.0.4
       '@earendil-works/pi-tui': 1.0.4
@@ -8762,14 +8759,14 @@ snapshots:
 
   '@floating-ui/utils@0.2.11': {}
 
-  '@google/genai@2.21.0(@modelcontextprotocol/sdk@1.32.0(zod@4.6.5))':
+  '@google/genai@2.21.0(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))':
     dependencies:
       google-auth-library: 10.6.2
       p-retry: 4.6.2
       protobufjs: 7.6.5
       ws: 8.22.0
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.32.0(zod@4.6.5)
+      '@modelcontextprotocol/sdk': 1.32.0(zod@4.6.6)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -8791,14 +8788,14 @@ snapshots:
     dependencies:
       hono: 4.13.13
 
-  '@hookform/resolvers@5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(zod@4.6.5)':
+  '@hookform/resolvers@5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(zod@4.6.6)':
     dependencies:
       '@standard-schema/utils': 0.3.0
       react-hook-form: 7.89.0(@types/react@19.3.0)(react@19.3.0)
     optionalDependencies:
       '@standard-schema/spec': 1.1.0
       ajv: 8.20.0
-      zod: 4.6.5
+      zod: 4.6.6
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -9091,7 +9088,7 @@ snapshots:
 
   '@marijn/find-cluster-break@1.0.2': {}
 
-  '@modelcontextprotocol/sdk@1.32.0(zod@4.6.5)':
+  '@modelcontextprotocol/sdk@1.32.0(zod@4.6.6)':
     dependencies:
       '@hono/node-server': 2.1.3(hono@4.13.13)
       ajv: 8.20.0
@@ -9108,8 +9105,8 @@ snapshots:
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
-      zod: 4.6.5
-      zod-to-json-schema: 3.25.2(zod@4.6.5)
+      zod: 4.6.6
+      zod-to-json-schema: 3.25.2(zod@4.6.6)
     transitivePeerDependencies:
       - supports-color
 
@@ -10832,7 +10829,7 @@ snapshots:
 
   character-reference-invalid@2.0.1: {}
 
-  chat@4.41.1(zod@4.6.5):
+  chat@4.41.1(zod@4.6.6):
     dependencies:
       '@workflow/serde': 4.1.0-beta.2
       mdast-util-to-string: 4.0.0
@@ -10842,7 +10839,7 @@ snapshots:
       remend: 1.3.0
       unified: 11.0.5
     optionalDependencies:
-      zod: 4.6.5
+      zod: 4.6.6
     transitivePeerDependencies:
       - supports-color
 
@@ -11245,8 +11242,8 @@ snapshots:
       '@babel/parser': 7.29.7
       eslint: 10.12.0(jiti@2.7.0)
       hermes-parser: 0.25.1
-      zod: 4.4.3
-      zod-validation-error: 4.0.2(zod@4.4.3)
+      zod: 4.6.6
+      zod-validation-error: 4.0.2(zod@4.6.6)
     transitivePeerDependencies:
       - supports-color
 
@@ -12735,13 +12732,13 @@ snapshots:
       powershell-utils: 0.2.1
       wsl-utils: 1.0.0
 
-  openai@7.19.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.5):
+  openai@7.19.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.6):
     optionalDependencies:
       '@aws-sdk/credential-provider-node': 3.972.84
       '@smithy/signature-v4': 5.7.3
       undici: 8.10.2
       ws: 8.22.0
-      zod: 4.6.5
+      zod: 4.6.6
 
   openid-client@6.8.2:
     dependencies:
@@ -14279,17 +14276,15 @@ snapshots:
 
   yocto-queue@0.1.0: {}
 
-  zod-to-json-schema@3.25.2(zod@4.6.5):
+  zod-to-json-schema@3.25.2(zod@4.6.6):
     dependencies:
-      zod: 4.6.5
+      zod: 4.6.6
 
-  zod-validation-error@4.0.2(zod@4.4.3):
+  zod-validation-error@4.0.2(zod@4.6.6):
     dependencies:
-      zod: 4.4.3
+      zod: 4.6.6
 
-  zod@4.4.3: {}
-
-  zod@4.6.5: {}
+  zod@4.6.6: {}
 
   zustand@5.0.15(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.6.0(react@19.3.0)):
     optionalDependencies:

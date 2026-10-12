@@ -54,7 +54,7 @@
     "temporal-polyfill": "^1.0.5",
     "ts-pattern": "^5.9.0",
     "ws": "^8.22.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@opentelemetry/sdk-metrics": "^2.11.0",

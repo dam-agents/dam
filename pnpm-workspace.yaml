@@ -22,6 +22,10 @@ minimumReleaseAgeExclude:
   # and GHSA-9jrq-w75r-8gcw, dev-server reads outside `server.fs.allow`.
   # Drop this once it ages past the floor (2026-10-13).
   - "vite@8.3.3"
+  # zod 4.6.6 (2026-10-11) mitigates CVE-2023-54404 (GHSA-mrhx-c7xc-m3w5):
+  # its #6652 rejects an array, set or map over its `.max()` before parsing
+  # any element. Drop this once it ages past the floor (2026-10-18).
+  - "zod@4.6.6"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while
