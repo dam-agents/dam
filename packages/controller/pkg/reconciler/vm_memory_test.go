@@ -126,3 +126,28 @@ func TestAHostRunnerMachineTakesItsMemoryFromTheSpec(t *testing.T) {
 
 	assert.Equal(t, 3072, r.machineMemoryMiB(&agent.Spec), "the host runner's machine was sized from the chart's pod limit")
 }
+
+// TEST_SCENARIO: a new size reaches a running machine only at its next start, so until then the machine may hold more than its new size says. Memory and vCPUs count it at the larger of the size it runs at and the one it will start with, so a shrink never lowers the request or the CPU limit under a guest still running large.
+func TestAMachineStillRunningAtItsOldSizeCountsAtTheLarger(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	peerVMAgent(t, r, "peer-up", "2Gi", "20Gi", true)
+	ctx := context.Background()
+	cpus := max(r.config.VM.Runner.MachineCPUs, 1)
+
+	before, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
+	require.NoError(t, err)
+	assert.Equal(t, 3072+2048, before.memoryMiB)
+	assert.Equal(t, 2*cpus, before.vCPUs)
+
+	r.noteMachineUse("peer-up", vmrunner.MachineStatus{State: vmrunner.StateRunning, CPUs: cpus + 4, MemoryMiB: 6144})
+	larger, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
+	require.NoError(t, err)
+	assert.Equal(t, 3072+6144, larger.memoryMiB, "the machine runs at its old, larger size")
+	assert.Equal(t, 2*cpus+4, larger.vCPUs)
+
+	r.noteMachineUse("peer-up", vmrunner.MachineStatus{State: vmrunner.StateRunning, CPUs: 1, MemoryMiB: 1024})
+	smaller, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
+	require.NoError(t, err)
+	assert.Equal(t, before, smaller, "the size its next start takes is the larger")
+}

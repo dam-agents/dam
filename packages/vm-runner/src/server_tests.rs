@@ -627,7 +627,7 @@ async fn a_stopped_machine_whose_tree_is_gone_resolves_its_image_again() {
     );
 }
 
-// TEST_SCENARIO: a new revision or a new size restarts the running machine in place — stop, update, start — keeping its disk. A spec that has not changed does nothing at all.
+// TEST_SCENARIO: a new revision restarts the running machine in place — stop, update, start — keeping its disk. A spec that has not changed does nothing at all.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_changed_shape_restarts_the_machine_in_place() {
     let h = Harness::new("reshape");
@@ -643,6 +643,55 @@ async fn a_changed_shape_restarts_the_machine_in_place() {
         h.fake.calls(),
         vec!["create m1", "start m1", "stop m1", "update m1", "start m1"]
     );
+}
+
+// TEST_SCENARIO: a new size reaches a running machine only when it next starts. Until then the status reports the size the guest runs at and admission counts that one, so a second machine that fits beside it is let in; the start that applies the new size is admitted against it, and refused when it no longer fits. A restart asked for anything else applies it too.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_size_is_applied_at_the_next_start_and_not_before() {
+    let h = Harness::with("resize-on-start", |c| c.memory_mib = 5000);
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let resized = MachineSpec {
+        cpus: 4,
+        memory_mib: 4096,
+        ..spec(true)
+    };
+    let live = h.server.put("m1", resized.clone()).unwrap();
+    assert_eq!(live.state, STATE_RUNNING);
+    assert_eq!((live.cpus, live.memory_mib), (2, 2048));
+    assert_eq!(h.fake.calls(), vec!["create m1", "start m1"]);
+
+    h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
+
+    h.server
+        .put(
+            "m1",
+            MachineSpec {
+                running: false,
+                ..resized.clone()
+            },
+        )
+        .unwrap();
+    h.settle("m1").await;
+    let refused = h.server.put("m1", resized.clone()).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+
+    h.server.delete("m2").unwrap();
+    h.server.put("m1", resized.clone()).unwrap();
+    let woken = h.settle("m1").await;
+    assert_eq!(woken.state, STATE_RUNNING);
+    assert_eq!((woken.cpus, woken.memory_mib), (4, 4096));
+
+    let rolled = MachineSpec {
+        cpus: 1,
+        memory_mib: 1024,
+        revision: "r2".into(),
+        ..resized
+    };
+    assert_eq!(h.server.put("m1", rolled).unwrap().state, STATE_RESTARTING);
+    let restarted = h.settle("m1").await;
+    assert_eq!((restarted.cpus, restarted.memory_mib), (1, 1024));
 }
 
 // TEST_SCENARIO: the status says a machine nests only when its spec asks for it and its runner grants it, so the controller can tell the owner who asked whether they got it. A machine on the same runner that does not ask never reads as nested.
