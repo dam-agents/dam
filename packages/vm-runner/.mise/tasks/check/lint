@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="cargo clippy passes with warnings denied"
-#MISE sources=["src/**/*.rs", "platform-init/src/**/*.rs", "Cargo.toml", "platform-init/Cargo.toml", "Cargo.lock", "smolvm.pin", "smolvm.patch"]
+#MISE sources=["src/**/*.rs", "platform-init/src/**/*.rs", "Cargo.toml", "platform-init/Cargo.toml", "Cargo.lock", "smolvm.pin"]
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail
