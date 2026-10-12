@@ -36,6 +36,8 @@ struct Fake {
     start_delay: Mutex<Duration>,
     stop_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
+    fail_grow_once: Mutex<Option<String>>,
+    booted_mib: Mutex<Vec<i32>>,
     console: Mutex<String>,
     panic_on_state: AtomicBool,
     nests: AtomicBool,
@@ -99,14 +101,28 @@ impl Runtime for Fake {
         Ok(())
     }
 
-    fn start(&self, id: &str) -> anyhow::Result<()> {
+    fn start(&self, id: &str, boot_mib: i32) -> anyhow::Result<()> {
         self.record(format!("start {id}"));
+        locked(&self.booted_mib).push(boot_mib);
         std::thread::sleep(*locked(&self.start_delay));
         if let Some(message) = locked(&self.fail_start_once).take() {
             anyhow::bail!(message);
         }
         locked(&self.state_fails_until_start).remove(id);
         locked(&self.states).insert(id.to_string(), State::Running);
+        Ok(())
+    }
+
+    fn grow(&self, id: &str, memory_mib: i32) -> anyhow::Result<()> {
+        self.record(format!("grow {id} {memory_mib}"));
+        assert_eq!(
+            locked(&self.states).get(id),
+            Some(&State::Running),
+            "grown before it booted"
+        );
+        if let Some(message) = locked(&self.fail_grow_once).take() {
+            anyhow::bail!(message);
+        }
         Ok(())
     }
 
@@ -428,6 +444,87 @@ async fn a_stopped_machine_starts_again_on_the_same_port() {
         h.fake.calls(),
         vec!["create m1", "start m1", "stop m1", "update m1", "start m1"]
     );
+}
+
+// TEST_SCENARIO: a guest's boot costs time for every GiB of RAM it boots with, so a machine boots with the runner's boot estimate and is grown to its spec's size as soon as its start returns, on every boot: the first, and one after a stop, whose record the update set back to the spec. The grow is part of the start, so the action ends only once the machine has its size.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_boots_small_and_is_grown_to_its_size_on_every_boot() {
+    let h = Harness::with("boot-small", |c| c.boot_mib = 1024);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+    h.server.put("m1", spec(true)).unwrap();
+    let again = h.settle("m1").await;
+    assert_eq!(again.state, STATE_RUNNING);
+    assert!(again.reason.is_empty(), "{again:?}");
+    assert_eq!(
+        h.fake.calls(),
+        vec![
+            "create m1",
+            "start m1",
+            "grow m1 2048",
+            "stop m1",
+            "update m1",
+            "start m1",
+            "grow m1 2048"
+        ]
+    );
+    assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 1024]);
+}
+
+// TEST_SCENARIO: a machine no larger than the boot estimate boots whole and is never grown, and so is every machine of a runner given no estimate.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_within_the_boot_estimate_boots_whole() {
+    for (name, boot_mib) in [("boot-whole-larger", 4096), ("boot-whole-none", 0)] {
+        let h = Harness::with(name, |c| c.boot_mib = boot_mib);
+        h.server.put("m1", spec(true)).unwrap();
+        assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+        assert_eq!(h.fake.calls(), vec!["create m1", "start m1"], "{name}");
+        assert_eq!(*locked(&h.fake.booted_mib), vec![2048], "{name}");
+    }
+}
+
+// TEST_SCENARIO: a guest that cannot grow would run with a fraction of the memory its spec and its agent count on. So the machine is stopped and booted again whole, in the same start, and reads running with no failure: the grow is an optimisation, never a reason for the agent not to run.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_that_cannot_grow_is_booted_again_whole() {
+    let h = Harness::with("grow-failed", |c| c.boot_mib = 1024);
+    *locked(&h.fake.fail_grow_once) = Some("the VMM did not add the RAM".into());
+    h.server.put("m1", spec(true)).unwrap();
+    let status = h.settle("m1").await;
+    assert_eq!(status.state, STATE_RUNNING);
+    assert!(status.reason.is_empty(), "{status:?}");
+    assert_eq!(
+        h.fake.calls(),
+        vec![
+            "create m1",
+            "start m1",
+            "grow m1 2048",
+            "stop m1",
+            "start m1"
+        ]
+    );
+    assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 2048]);
+}
+
+// TEST_SCENARIO: booting small changes nothing admission counts. A machine on its way up is counted at the boot estimate, as it was when it booted whole, and its spec's size stays its cap: two machines whose estimates fit are admitted while the first still boots, and a third is refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_booting_small_is_admitted_as_before() {
+    let h = Harness::with("boot-small-capacity", |c| {
+        c.memory_mib = 2500;
+        c.boot_mib = 1024;
+    });
+    *locked(&h.fake.start_delay) = Duration::from_millis(300);
+    h.server.put("m1", spec(true)).unwrap();
+    h.wait_for_call("start m1").await;
+    assert_eq!(
+        h.server.put("m2", spec(true)).unwrap().state,
+        STATE_CREATING
+    );
+    let refused = h.server.put("m3", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+    h.settle("m1").await;
+    h.settle("m2").await;
 }
 
 // TEST_SCENARIO: an agent moving to this backend brings its home as a seed, which platform-init reads only on the first boot. So the controller creates its machine stopped: a stopped spec with a whole shape creates the machine, its share, spec and port, and never starts it. Only the ensure that asks for it running boots it, onto the same machine.

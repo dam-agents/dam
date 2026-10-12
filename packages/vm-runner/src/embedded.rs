@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Context;
+use smolvm::agent::fork::{control_socket_cmd, control_socket_path};
 use smolvm::agent::{
     state_probe, vm_data_dir, AgentClient, AgentManager, HostMount, PortMapping, VmResources,
 };
@@ -219,7 +220,8 @@ impl Runtime for Smolvm {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and the image this boot runs is named in the share, so platform-init keeps the machine's root only for the image that wrote it. A record with no allowlist is never booted: smolvm reads none as no filter, and only a record edited or migrated outside the runner holds none, since every running spec the runner admits names one. A start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is the one thing a start may only take away: the record holds what the machine's spec asked for, as its create or last update wrote it, and a start keeps it only while this runner still nests, so a machine never boots with more than the runner grants. The mounts are decided at every start too, from what this runner holds and what the image asks for now: runner pods roll across owners one at a time, so a machine moved to an image that asks for the node's tools before its runner had them still gets them on its next boot, and one whose runner or image stopped offering them boots without.
-    fn start(&self, id: &str) -> anyhow::Result<()> {
+    fn start(&self, id: &str, boot_mib: i32) -> anyhow::Result<()> {
+        let boot = u32::try_from(boot_mib).context("boot memory")?;
         let dir = vm_data_dir(id);
         if dir.is_dir() {
             let vmms = orphan_pids(&self.proc_root, &dir);
@@ -238,6 +240,7 @@ impl Runtime for Smolvm {
             write_boot_image(record)?;
         }
         self.db.update_vm(id, |r| {
+            r.mem = boot;
             guest_dns(r, r.dns.unwrap_or(GUEST_DNS_SINK));
             r.nested_virt = Some(r.nested_virt == Some(true) && self.nested);
             r.mounts = boot_mounts(id, &r.mounts, self.tools.as_deref(), image_env.as_deref());
@@ -247,6 +250,46 @@ impl Runtime for Smolvm {
             kill_orphans(&self.proc_root, &dir);
         }
         result
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: grows the guest's RAM through the virtio-mem area smolvm gives every machine, as smolvm's own resize does, but without its two host checks: it refuses a VMM that is not in a cgroup of its own, and every VMM of a runner shares the runner pod's, and it admits the growth against the host's free memory, while a runner admits its machines by what they use (see capacity). The VMM maps the added RAM, the guest agent onlines its memory blocks, and the VMM then reports it plugged. Each step is idempotent, so a retry of a grow that stopped part-way finishes it. The record is set to the size the guest now has.
+    fn grow(&self, id: &str, memory_mib: i32) -> anyhow::Result<()> {
+        let target = u32::try_from(memory_mib).context("memoryMiB")?;
+        timed("grow", id, &[], || {
+            let socket = control_socket_path(id);
+            let info = || -> anyhow::Result<RamGeometry> {
+                ram_geometry(&control_socket_cmd(&socket, "PROTOTYPE_MEMORY_INFO")?)
+            };
+            let geometry = info()?;
+            let added = ram_to_add(&geometry, target);
+            if added > geometry.mapped {
+                let reply =
+                    control_socket_cmd(&socket, &format!("PROTOTYPE_GROW_MEMORY {}", added >> 20))?;
+                anyhow::ensure!(
+                    reply.trim() == "OK RAM registered; guest onlining pending",
+                    "the VMM did not add the RAM: {}",
+                    reply.trim()
+                );
+            }
+            let added = added.max(geometry.mapped);
+            if added == 0 {
+                return Ok(());
+            }
+            let manager = AgentManager::for_vm(id)?;
+            manager.detach();
+            AgentClient::connect(manager.vsock_socket())?.online_memory(geometry.base, added)?;
+            let deadline = std::time::Instant::now() + RAM_PLUG_WAIT;
+            while info()?.plugged != added {
+                anyhow::ensure!(
+                    std::time::Instant::now() < deadline,
+                    "the guest did not plug its added RAM within {RAM_PLUG_WAIT:?}"
+                );
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            let total = geometry.boot_mib + u32::try_from(added >> 20).context("added RAM")?;
+            self.db.update_vm(id, |r| r.mem = total)?;
+            Ok(())
+        })
     }
 
     fn stop(&self, id: &str) -> anyhow::Result<()> {
@@ -292,6 +335,45 @@ impl Runtime for Smolvm {
         resident_mib(&self.proc_root, record.pid?)
     }
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a grow waits for the guest to plug the RAM it onlined, as smolvm's own resize waits.
+const RAM_PLUG_WAIT: Duration = Duration::from_secs(30);
+
+// UNIT_BOUNDARY_DESCRIPTION: the VMM's virtio-mem area as its control socket reports it, in bytes but for the boot RAM: where the area starts in guest memory, how much of it the VMM has mapped, how much the guest has plugged, and how much it may ever hold.
+#[derive(Debug, PartialEq, Eq)]
+struct RamGeometry {
+    boot_mib: u32,
+    base: u64,
+    mapped: u64,
+    plugged: u64,
+    capacity: u64,
+}
+
+fn ram_geometry(reply: &str) -> anyhow::Result<RamGeometry> {
+    let words: Vec<&str> = reply.split_whitespace().collect();
+    let ["OK", "boot_mib", boot, "base", base, "mapped", mapped, "plugged", plugged, "capacity", capacity] =
+        words.as_slice()
+    else {
+        anyhow::bail!("the VMM reported no RAM area it can grow: {}", reply.trim());
+    };
+    let bytes = |field: &str| field.parse::<u64>().context("RAM area");
+    Ok(RamGeometry {
+        boot_mib: boot.parse().context("RAM area")?,
+        base: bytes(base)?,
+        mapped: bytes(mapped)?,
+        plugged: bytes(plugged)?,
+        capacity: bytes(capacity)?,
+    })
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the bytes the area must hold for the guest to have `target_mib` in all. The VMM adds RAM in whole units of RAM_GROW_UNIT, so a size that is not one boot plus whole units is rounded down, never up past what admission was told; the area's capacity caps it too.
+fn ram_to_add(geometry: &RamGeometry, target_mib: u32) -> u64 {
+    let wanted = u64::from(target_mib.saturating_sub(geometry.boot_mib)) << 20;
+    (wanted - wanted % RAM_GROW_UNIT).min(geometry.capacity)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the unit libkrun's virtio-mem area grows in.
+const RAM_GROW_UNIT: u64 = 128 << 20;
 
 fn resident_mib(proc_root: &Path, pid: i32) -> Option<i32> {
     let status = std::fs::read_to_string(proc_root.join(pid.to_string()).join("status")).ok()?;
@@ -707,7 +789,12 @@ mod tests {
         .unwrap();
         let mut smolvm = smolvm;
         smolvm.tools = Some(tools.canonicalize().unwrap());
-        let _ = smolvm.start("m1");
+        let _ = smolvm.start("m1", 1024);
+        assert_eq!(
+            smolvm.record("m1").unwrap().unwrap().mem,
+            1024,
+            "a start boots the RAM it is given, not the size the record held"
+        );
         assert_eq!(
             smolvm.record("m1").unwrap().unwrap().mounts[1],
             (
@@ -970,10 +1057,10 @@ mod tests {
             assert_eq!(nested(&smolvm, "m1"), Some(want));
         }
 
-        let _ = smolvm.start("m1");
+        let _ = smolvm.start("m1", 2048);
         assert_eq!(nested(&smolvm, "m1"), Some(true));
         smolvm.nested = false;
-        let _ = smolvm.start("m1");
+        let _ = smolvm.start("m1", 2048);
         assert_eq!(nested(&smolvm, "m1"), Some(false));
         assert!(!smolvm.nests());
     }
@@ -1003,7 +1090,7 @@ mod tests {
             .update_vm("m1", |r| r.allowed_cidrs = None)
             .unwrap();
 
-        let err = smolvm.start("m1").unwrap_err();
+        let err = smolvm.start("m1", 2048).unwrap_err();
 
         assert!(
             format!("{err:#}").contains("no egress allowlist"),
@@ -1043,7 +1130,7 @@ mod tests {
             })
             .unwrap();
 
-        let _ = smolvm.start("m1");
+        let _ = smolvm.start("m1", 2048);
 
         let record = smolvm.record("m1").unwrap().unwrap();
         assert_eq!(record.dns, Some(GUEST_DNS_SINK));
@@ -1086,7 +1173,7 @@ mod tests {
         };
         assert_eq!(dns(&smolvm), relayed);
 
-        let _ = smolvm.start("m1");
+        let _ = smolvm.start("m1", 2048);
         assert_eq!(dns(&smolvm), relayed);
 
         let unnamed = spec();
@@ -1599,5 +1686,30 @@ mod tests {
             None,
             "an update must write the allowlist a create of the same spec would"
         );
+    }
+
+    // TEST_SCENARIO: a grow reads the VMM's RAM area from the control socket's one-line answer, and asks it for whole 128 MiB units: a size that is not one boot plus whole units is rounded down, never past what admission was told, and the area's capacity caps it. A reply in any other shape fails the grow, so the machine is booted again whole rather than left small.
+    #[test]
+    fn a_grow_asks_for_whole_units_within_the_area() {
+        let geometry = ram_geometry(
+            "OK boot_mib 2048 base 4294967296 mapped 0 plugged 0 capacity 68719476736\n",
+        )
+        .unwrap();
+        assert_eq!(
+            geometry,
+            RamGeometry {
+                boot_mib: 2048,
+                base: 4 << 30,
+                mapped: 0,
+                plugged: 0,
+                capacity: 64 << 30,
+            }
+        );
+        assert_eq!(ram_to_add(&geometry, 12032), 9984 << 20);
+        assert_eq!(ram_to_add(&geometry, 4096), 2048 << 20);
+        assert_eq!(ram_to_add(&geometry, 2048 + 200), 128 << 20);
+        assert_eq!(ram_to_add(&geometry, 1024), 0);
+        assert_eq!(ram_to_add(&geometry, 200 << 10), 64 << 30);
+        assert!(ram_geometry("ERR EIO RAM hot-add topology is unavailable\n").is_err());
     }
 }
