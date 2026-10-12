@@ -378,6 +378,8 @@ export function useFilesPanelController({
     rootSnapshot.data.entries.length === 0 &&
     !pendingNew;
 
+  const rootLoading = rootSnapshot.isPending;
+
   const showPanelOverlay = panelDragActive && dragTargetPath === null;
 
   return {
@@ -385,6 +387,7 @@ export function useFilesPanelController({
     openFile,
     pendingNew,
     rootIsLoadedEmpty,
+    rootLoading,
     showPanelOverlay,
     isUploading,
     fileInputRef,
