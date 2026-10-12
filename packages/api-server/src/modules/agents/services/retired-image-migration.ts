@@ -8,7 +8,10 @@ import type {
   RuntimeMigrationWriteResult,
 } from "../infrastructure/agents-repository.js";
 import type { InfraAgent } from "../infrastructure/agent-mappers.js";
-import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
+import {
+  resolveEffectiveHibernationTimeoutMin,
+  type IdleTimeoutMinutes,
+} from "../domain/spec-assembly.js";
 import { executeTemplateUpgrade } from "./agents-service.js";
 
 // UNIT_BOUNDARY_DESCRIPTION: how long an always-on Agent must go without activity before it is restarted onto the default image. It stands in for the idle timeout such an Agent does not have, so a user who just stepped away is not restarted under them.
@@ -34,7 +37,7 @@ function onRetiredHarnessImage(image: string, defaultImage: string): boolean {
 export function retiredImageMove(
   agent: InfraAgent,
   defaultImage: string,
-  globalIdleTimeoutMin: number,
+  idleTimeoutMinutes: IdleTimeoutMinutes,
   now: Date,
 ): RetiredImageMove | null {
   if (
@@ -48,7 +51,8 @@ export function retiredImageMove(
   const alwaysOn =
     resolveEffectiveHibernationTimeoutMin(
       agent.spec.hibernationTimeout,
-      globalIdleTimeoutMin,
+      agent.spec.backend?.type === "vm",
+      idleTimeoutMinutes,
     ) === 0;
   const quiet =
     !!agent.quietSince &&
@@ -72,16 +76,11 @@ export function createRetiredImageMigration(deps: {
     write: RuntimeMigrationWrite,
   ) => Promise<RuntimeMigrationWriteResult>;
   podIsIdle: (id: string) => Promise<boolean>;
-  globalIdleTimeoutMin: number;
+  idleTimeoutMinutes: IdleTimeoutMinutes;
   log: (message: string) => void;
 }): RetiredImageMigration {
   const moveOf = (agent: InfraAgent, defaultImage: string) =>
-    retiredImageMove(
-      agent,
-      defaultImage,
-      deps.globalIdleTimeoutMin,
-      new Date(),
-    );
+    retiredImageMove(agent, defaultImage, deps.idleTimeoutMinutes, new Date());
 
   async function idlePod(id: string): Promise<boolean> {
     try {

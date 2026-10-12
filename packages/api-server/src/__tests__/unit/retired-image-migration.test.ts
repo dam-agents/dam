@@ -23,7 +23,7 @@ configureLogger({ level: "error", write: () => {} });
 const DEFAULT_IMAGE = "quay.io/dam-agents/default:abc";
 const NOW = new Date("2026-10-12T12:00:00Z");
 const TWO_HOURS_AGO = new Date("2026-10-12T10:00:00Z");
-const GLOBAL_IDLE_MIN = 60;
+const IDLE_MIN = { container: 60, vm: 60 };
 
 function agent(overrides?: Partial<InfraAgent>): InfraAgent {
   return {
@@ -69,7 +69,7 @@ function defaultTemplate(): { spec: TemplateSpec } {
 }
 
 function move(a: InfraAgent, defaultImage = DEFAULT_IMAGE) {
-  return retiredImageMove(a, defaultImage, GLOBAL_IDLE_MIN, NOW);
+  return retiredImageMove(a, defaultImage, IDLE_MIN, NOW);
 }
 
 function migration(
@@ -97,7 +97,7 @@ function migration(
     readTemplateSpec: opts?.readTemplateSpec ?? (async () => defaultTemplate()),
     writeSpec,
     podIsIdle,
-    globalIdleTimeoutMin: GLOBAL_IDLE_MIN,
+    idleTimeoutMinutes: IDLE_MIN,
     log,
   }).tick;
   return { tick, writeSpec, podIsIdle, log };
@@ -174,10 +174,27 @@ describe("retiredImageMove", () => {
       retiredImageMove(
         agent({ hibernated: false, ready: true, quietSince: TWO_HOURS_AGO }),
         DEFAULT_IMAGE,
-        0,
+        { container: 0, vm: 0 },
         NOW,
       ),
     ).toBe("if-pod-idle");
+  });
+
+  // TEST_SCENARIO: a vm agent's idle timeout is the install's, so its own
+  // TEST_SCENARIO: override does not make it always-on.
+  it("waits for a vm agent with a never-hibernate override to hibernate", () => {
+    expect(
+      move(
+        alwaysOn({
+          spec: {
+            name: "a",
+            image: "quay.io/dam-agents/bob:1",
+            hibernationTimeout: "0s",
+            backend: { type: "vm" },
+          },
+        }),
+      ),
+    ).toBeNull();
   });
 
   // TEST_SCENARIO: an open connection or an Invocation pin clears quietSince,

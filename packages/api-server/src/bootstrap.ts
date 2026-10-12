@@ -1529,7 +1529,7 @@ export async function bootstrap() {
     writeSpec: (id, write) =>
       liveAgentsRepo.writeRuntimeMigration(id, undefined, write),
     podIsIdle: (id) => podIsIdle(id, config.namespace),
-    globalIdleTimeoutMin: config.agentIdleTimeoutMinutes,
+    idleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     log: (message) => process.stderr.write(`${message}\n`),
   });
   await periodicJobs.register("retired-image-migration", 60_000, () =>

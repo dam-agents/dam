@@ -51,7 +51,7 @@ The seed is copied into a home once, when the home is new, because from then on 
 - docker and k3s are baked in but not started. The image's instructions tell the agent how to start them, and both keep their data under the home, the one path on a machine's disk that either can use.
 - aube stands in for pnpm; npm stays for tools that call it. An agent's own `aube add -g` and `pip install --user` land in the home and last; `mise use -g`, `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its root generation, which the base declares, is bumped ([persistence](persistence.md)). mise reads no config from the home, so a tool pin an older image persisted there is inert.
 
-## Retired harness images
+## Retired images
 
 Each harness once had an image of its own. They are no longer built, and an Agent still on one pays a full image unpack whenever it wakes on a node that lacks it, so the platform moves such Agents to the default image without their owner. A periodic api-server job applies the [template upgrade](agent-lifecycle.md#template-upgrade) a user would, so the Agent's harness carries over. It selects only by image: the four retired images, found beside the default image in the same registry, so workload and custom images are never touched. It covers both Backends. A vm machine keeps its root when the default image declares the same root generation as the old one, and otherwise boots on a fresh root, losing what was installed outside HOME ([vm-runner](vm-runner.md)); that loss is accepted.
 
