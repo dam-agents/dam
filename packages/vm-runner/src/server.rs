@@ -37,10 +37,11 @@ use crate::state::{
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine API behind the HTTP layer: one persistent microVM per vm Agent, converged on the latest spec the controller sent. A PUT stores that spec and makes sure one worker is converging the machine; the worker takes one whole action at a time, and GET reports the action in flight as the machine's state. What a machine is survives the runner on disk — its spec, its port, its share. What the runner is doing to it lives in one entry per machine here and is lost with the process.
 
-// UNIT_BOUNDARY_DESCRIPTION: how often the health prober asks the runtime and the guest about a machine. A machine on its way up is asked often, because the time between its guest answering and the controller hearing of it is the last part of a wake the user waits for. A steady one is asked rarely: a missed answer there only counts towards an unhealthy restart minutes away. A stopped or absent machine is not asked at all, since only an action changes it.
+// UNIT_BOUNDARY_DESCRIPTION: how often the health prober asks the runtime and the guest about a machine. A machine on its way up is asked often, because the time between its guest answering and the controller hearing of it is the last part of a wake the user waits for. A boot younger than SLOW_BOOT_AFTER is asked every FRESH_BOOT_PROBE: the probe is a connect to a loopback port, and each probe the guest sees is one console line, so the tight cadence is kept to the minute in which a guest normally answers. An older boot, or an action that has not started a boot yet, is asked every BOOT_PROBE. A steady one is asked rarely: a missed answer there only counts towards an unhealthy restart minutes away. A stopped or absent machine is not asked at all, since only an action changes it.
+pub const FRESH_BOOT_PROBE: Duration = Duration::from_millis(100);
 pub const BOOT_PROBE: Duration = Duration::from_millis(500);
 pub const STEADY_PROBE: Duration = Duration::from_secs(10);
-const PROBE_TICK: Duration = Duration::from_millis(100);
+const PROBE_TICK: Duration = Duration::from_millis(50);
 const PROBES_IN_FLIGHT: usize = 16;
 
 // UNIT_BOUNDARY_DESCRIPTION: the longest a status read waits for the machine's status to change.
@@ -131,14 +132,20 @@ fn probe_every(entry: &MachineEntry) -> Option<Duration> {
     if entry.deleting {
         return None;
     }
+    let booting = entry.boot.as_ref().map(|boot| {
+        if boot.at.elapsed() < SLOW_BOOT_AFTER {
+            FRESH_BOOT_PROBE
+        } else {
+            BOOT_PROBE
+        }
+    });
     if let Some(action) = entry.action {
-        return reads_ready(action.state()).then_some(BOOT_PROBE);
+        return reads_ready(action.state()).then_some(booting.unwrap_or(BOOT_PROBE));
     }
     match &entry.seen {
         None => Some(Duration::ZERO),
         Some(seen) if matches!(seen.state, State::Absent | State::Stopped) => None,
-        Some(_) if entry.boot.is_some() => Some(BOOT_PROBE),
-        Some(_) => Some(STEADY_PROBE),
+        Some(_) => Some(booting.unwrap_or(STEADY_PROBE)),
     }
 }
 
