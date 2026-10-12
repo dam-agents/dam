@@ -75,7 +75,7 @@ export function TelegramBindView() {
 
   return (
     <AgentBindPicker
-      copy={pickerCopy(flow.data?.chatTitle ?? null)}
+      copy={pickerCopy(flow.data)}
       error={error}
       pending={bind.isPending}
       onPick={pick}
@@ -84,7 +84,10 @@ export function TelegramBindView() {
   );
 }
 
-function pickerCopy(chatTitle: string | null): BindPickerCopy {
+function pickerCopy(
+  flow: { chatTitle: string | null; direct: boolean } | null | undefined,
+): BindPickerCopy {
+  const chatTitle = flow?.chatTitle ?? null;
   return {
     messenger: "telegram",
     title: chatTitle ? `Pick an agent for ${chatTitle}` : "Pick an agent",
@@ -95,6 +98,8 @@ function pickerCopy(chatTitle: string | null): BindPickerCopy {
     consent:
       "Everyone in the chat will be able to use the agent. Turns run under the agent's own connected accounts and API tokens, and your acceptance of the Terms of Use covers every turn.",
     action: "Add to chat",
+    audience:
+      !flow || flow.direct ? null : { kind: "telegram-chat", name: chatTitle },
   };
 }
 

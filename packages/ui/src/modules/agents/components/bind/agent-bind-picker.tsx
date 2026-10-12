@@ -5,14 +5,25 @@ import { Button } from "@/components/ui/button";
 
 import { ListSkeleton } from "../../../../components/list-skeleton.js";
 import type { AgentView } from "../../../../types.js";
+import { SharedChannelsNotice } from "../../../connections/components/shared-channels-notice.js";
+import { useDismissibleConfirm } from "../../../connections/hooks/use-dismissible-confirm.js";
+import {
+  type SharedChannel,
+  sharedChannelsTitle,
+} from "../../../sandboxes/lib/shared-channels.js";
 import { useActiveScheduleCounts } from "../../hooks/use-active-schedule-counts.js";
+import { useAgentConnectionNames } from "../../hooks/use-agent-connection-names.js";
 import { useInlineAgentCreate } from "../../hooks/use-inline-agent-create.js";
 import { CreateAgentInline } from "../create-agent-inline.js";
 import { type BindMessenger, BindPage } from "./bind-page.js";
+import { BindSharingText } from "./bind-sharing-text.js";
 import { PickerFooter } from "./picker-footer.js";
 import { PickerSearch } from "./picker-search.js";
 import { PickerSectionList } from "./picker-section-list.js";
 import { pickerSections } from "./picker-sections.js";
+
+const BIND_CONFIRM_STORAGE_KEY =
+  "platform-bind-shared-connections-confirm-dismissed";
 
 export interface BindPickerCopy {
   messenger: BindMessenger;
@@ -21,6 +32,7 @@ export interface BindPickerCopy {
   emptySubtitle: string;
   consent: string;
   action: string;
+  audience: SharedChannel | null;
 }
 
 interface Props {
@@ -56,6 +68,31 @@ export function AgentBindPicker({
   );
   const selectedId = pickedId ?? justCreatedId;
   const selected = displayedAgents.find((a) => a.id === selectedId) ?? null;
+  const connectionNames = useAgentConnectionNames(selected);
+  const bindConfirm = useDismissibleConfirm(BIND_CONFIRM_STORAGE_KEY);
+  const sharing =
+    selected && copy.audience && connectionNames.length > 0 ? (
+      <BindSharingText
+        agentName={selected.name}
+        connectionNames={connectionNames}
+        audience={copy.audience}
+      />
+    ) : null;
+
+  const confirmPick = async () => {
+    if (!selected) return;
+    if (
+      sharing &&
+      copy.audience &&
+      !(await bindConfirm.confirm({
+        title: `Share ${selected.name}'s connections with ${sharedChannelsTitle([copy.audience])}?`,
+        body: sharing,
+        confirmLabel: copy.action,
+      }))
+    )
+      return;
+    onPick(selected);
+  };
 
   const handleCreated = (agent: AgentView) => {
     markCreated(agent);
@@ -100,10 +137,18 @@ export function AgentBindPicker({
       footer={
         <PickerFooter
           consent={copy.consent}
+          notice={
+            bindConfirm.dismissed &&
+            sharing && (
+              <SharedChannelsNotice className="mb-4">
+                {sharing}
+              </SharedChannelsNotice>
+            )
+          }
           action={copy.action}
           enabled={selected !== null}
           pending={pending}
-          onConfirm={() => selected && onPick(selected)}
+          onConfirm={() => void confirmPick()}
         />
       }
     >

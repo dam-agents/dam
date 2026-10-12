@@ -67,6 +67,7 @@ import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
 } from "../domain/telemetry-env.js";
+import { isTelegramDirectConversation } from "../domain/telegram-conversation.js";
 import { templateImageUpdate } from "../domain/template-update.js";
 import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
@@ -1552,7 +1553,11 @@ export function createAgentsService(deps: {
       if (!infra) return err({ type: "AgentNotFound" as const });
       const chats = await binding.listConversations(infra.id);
       return ok({
-        chats: chats.map((c) => ({ conversationId: c.id, title: c.title })),
+        chats: chats.map((c) => ({
+          conversationId: c.id,
+          title: c.title,
+          direct: isTelegramDirectConversation(c.id),
+        })),
       });
     },
 
@@ -1612,7 +1617,10 @@ export function createAgentsService(deps: {
       const flow = await binding.peekFlow(flowId);
       if (!flow) return null;
       if (!deps.owner || flow.keycloakSub !== deps.owner) return null;
-      return { chatTitle: flow.chatTitle ?? null };
+      return {
+        chatTitle: flow.chatTitle ?? null,
+        direct: isTelegramDirectConversation(flow.conversationId),
+      };
     },
 
     async bindSlackChannel(agentId, flowId) {
