@@ -122,9 +122,9 @@ describe("createSessionsService", () => {
 
     const first = service.list();
     await vi.advanceTimersByTimeAsync(300);
-    expect((await first).sessions.map((s) => s.sessionId)).toEqual([
-      "platform",
-    ]);
+    const early = await first;
+    expect(early.sessions.map((s) => s.sessionId)).toEqual(["platform"]);
+    expect(early.incomplete).toBe(true);
     expect(notices).toHaveLength(0);
 
     answer({
@@ -140,6 +140,7 @@ describe("createSessionsService", () => {
       "platform",
       "terminal",
     ]);
+    expect(second.incomplete).toBeUndefined();
     expect(listCalls).toBe(1);
   });
   // TEST_SCENARIO: the agent renames its own session through the platform tool, which knows the session only by its reference; clearing the title hands the row back to the harness's title.
