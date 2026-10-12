@@ -1,4 +1,4 @@
-import { Add, Unlink } from "@carbon/icons-react";
+import { Add, Unlink, WarningAltFilled } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
 
@@ -87,6 +87,24 @@ export function SessionPairPicker({ agentId, carried, defaultHarness }: Props) {
   const choose = (next: SessionPair) => setPair(agentId, next);
   const withSettings = (next: SessionPair): SessionPair =>
     Object.keys(settings).length > 0 ? { ...next, settings } : next;
+
+  if (providers.loaded && providers.owned.length === 0)
+    return (
+      <p
+        role="status"
+        className="flex items-center gap-1.5 pl-3 text-sm text-muted-foreground"
+      >
+        <WarningAltFilled size={14} className="shrink-0 text-warning" />
+        No LLM providers connected.
+        <Button
+          variant="link"
+          size="inline"
+          onClick={() => navigateToSettings("providers")}
+        >
+          Connect one in Settings
+        </Button>
+      </p>
+    );
 
   return (
     <Popover>

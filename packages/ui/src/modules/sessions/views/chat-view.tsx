@@ -95,6 +95,7 @@ import {
   setSessionRunning,
   useAgentSession,
 } from "../api/queries.js";
+import { useProviderConnections } from "../api/session-pair.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
@@ -293,6 +294,13 @@ export function ChatView() {
             harnessStatus.defaultHarness ?? harnessStatus.harnesses[0]!.name,
         }
       : null;
+  const providerConnections = useProviderConnections(
+    pickable ? selectedAgent : null,
+  );
+  const noProviders =
+    !!pickable &&
+    providerConnections.loaded &&
+    providerConnections.owned.length === 0;
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
@@ -879,6 +887,9 @@ export function ChatView() {
                   loadingSession={loadingSession}
                   onSend={sendAndFollow}
                   onStop={stopAgent}
+                  blockedReason={
+                    noProviders ? "No LLM providers connected." : null
+                  }
                 />
                 {!hasPendingPermission && pickable && (
                   <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">

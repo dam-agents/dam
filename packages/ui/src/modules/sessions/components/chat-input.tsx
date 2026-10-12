@@ -32,6 +32,7 @@ export interface ChatInputProps {
   loadingSession: boolean;
   onSend: (text: string, attachments?: Attachment[]) => void;
   onStop: () => void;
+  blockedReason?: string | null;
 }
 
 export function ChatInput({
@@ -40,6 +41,7 @@ export function ChatInput({
   loadingSession,
   onSend,
   onStop,
+  blockedReason,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -197,7 +199,8 @@ export function ChatInput({
     else send();
   };
 
-  const placeholder = isComputing ? "Queue a message…" : "Message…";
+  const placeholder =
+    blockedReason ?? (isComputing ? "Queue a message…" : "Message…");
 
   return (
     <div
@@ -238,7 +241,7 @@ export function ChatInput({
               size="icon"
               className="shrink-0 mb-[9px] text-muted-foreground hover:text-primary disabled:opacity-40"
               onClick={() => fileInputRef.current?.click()}
-              disabled={loadingSession || !key}
+              disabled={loadingSession || !key || !!blockedReason}
               aria-label="Attach file"
               tooltip="Attach file"
             >
@@ -256,7 +259,7 @@ export function ChatInput({
               onPaste={onPaste}
               placeholder={placeholder}
               rows={1}
-              disabled={loadingSession || !key}
+              disabled={loadingSession || !key || !!blockedReason}
             />
             {showStop && (
               <Button
@@ -277,7 +280,9 @@ export function ChatInput({
                 size="icon"
                 className={`shrink-0 mb-[9px] ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
-                disabled={sendDisabled || loadingSession || !key}
+                disabled={
+                  sendDisabled || loadingSession || !key || !!blockedReason
+                }
                 aria-label={isComputing ? "Queue" : "Send"}
                 tooltip={isComputing ? "Queue" : "Send"}
               >
