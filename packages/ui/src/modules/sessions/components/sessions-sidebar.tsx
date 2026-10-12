@@ -179,7 +179,7 @@ export function SessionsSidebar({
           <Button
             variant="ghost"
             size="xs"
-            className="min-w-0 text-sm font-normal text-muted-foreground"
+            className="shrink-0 text-sm font-normal text-muted-foreground"
           >
             <Filter size={14} />
             <span className="truncate">
