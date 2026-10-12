@@ -86,6 +86,7 @@ import { ProcessesIndicator } from "../../processes/components/processes-indicat
 import { ProcessesPanel } from "../../processes/components/processes-panel.js";
 import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
+import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
@@ -307,6 +308,7 @@ export function ChatView() {
     !!newSessionAgent &&
     providerConnections.loaded &&
     providerConnections.owned.length === 0;
+  const [providersModal, setProvidersModal] = useState<boolean | null>(null);
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
@@ -602,6 +604,9 @@ export function ChatView() {
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {}
+      {(providersModal ?? noProviders) && (
+        <ProviderSettingsModal onClose={() => setProvidersModal(false)} />
+      )}
       <header
         className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
       >
@@ -925,6 +930,7 @@ export function ChatView() {
                         {...pickable}
                         open={pairPickerOpen}
                         onOpenChange={setPairPickerOpen}
+                        onConnectProviders={() => setProvidersModal(true)}
                       />
                     </ChatColumn>
                   </div>
