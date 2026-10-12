@@ -19,10 +19,10 @@ const DEFAULT_KIT = {
 };
 
 const HARNESS_PILLS = [
-  ["bob", "text-purple-600 dark:text-purple-400"],
-  ["claude-code", "text-orange-600 dark:text-orange-400"],
-  ["codex", "text-green-600 dark:text-green-400"],
-  ["pi", "text-blue-900 dark:text-blue-400"],
+  ["bob", "text-icon-violet"],
+  ["claude-code", "text-icon-clay"],
+  ["codex", "text-icon-green"],
+  ["pi", "text-icon-blue"],
 ] as const;
 
 export function BrowseKitsModal() {
