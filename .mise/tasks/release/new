@@ -2,6 +2,8 @@
 #MISE description="Open a new release by creating a release branch from current main"
 set -euo pipefail
 
+. "$MISE_CONFIG_ROOT/.mise/lib/release.sh"
+
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "ERROR: Working directory not clean"
   exit 1
@@ -20,6 +22,12 @@ fi
 next_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((${BASH_REMATCH[3]} + 1))"
 release_branch="release-v$current_version"
 
+if git ls-remote --exit-code --heads origin "$release_branch" >/dev/null 2>&1; then
+  echo "ERROR: $release_branch already exists (a hotfix may have taken $current_version)."
+  echo -e "Merge the open bump PR, or run \x1b[36mmise run release:set-version <version>\x1b[0m on \x1b[36mmain\x1b[0m, then re-run this task."
+  exit 1
+fi
+
 echo ""
 echo "What will happen:"
 echo -e "  - Nothing will be published yet."
@@ -36,22 +44,7 @@ git push --set-upstream origin $release_branch
 set +x
 echo -e "\x1b[36m$release_branch\x1b[0m branch with pending version ${current_version}-rc1 created."
 
-bump_branch="bump/v$next_version"
-bump_namespace="${bump_branch%%/*}"
-set -x
-if git show-ref --verify --quiet "refs/heads/$bump_namespace"; then
-  git branch -D "$bump_namespace"
-fi
-if git ls-remote --exit-code --heads origin "$bump_namespace" >/dev/null 2>&1; then
-  git push origin --delete "$bump_namespace"
-fi
-git checkout -B "$bump_branch" main
-mise run release:set-version "$next_version"
-git push --force --set-upstream origin "$bump_branch"
-set +x
-pr_url=$(gh pr create --base main --head "$bump_branch" --title "bump: v$next_version" --body "Bump pending version on \`main\` to $next_version after opening \`$release_branch\`." \
-  || gh pr view "$bump_branch" --json url --jq .url)
-echo -e "Opened $pr_url bumping \x1b[36mmain\x1b[0m pending version to $next_version. Merge it once approved."
+open_main_bump_pr "$next_version" "after opening \`$release_branch\`"
 
 git checkout $release_branch
 
