@@ -1,6 +1,6 @@
 # Knowledge Bases
 
-Last verified: 2026-09-25
+Last verified: 2026-10-12
 
 ## Overview
 
@@ -23,7 +23,7 @@ There is no knowledge-bases module left to create one: the kit apply is the only
 
 ## UI
 
-There is no Knowledge Bases destination, no create form and no route of its own: a knowledge base is made by applying its kit, on the same setup page every other kit uses ([starter kits](starter-kits.md)), and it lists, opens and is configured on Home beside every other agent. What survives of the old surface is the capability, not the destination: an agent that publishes a knowledge base offers sharing from its chat, and it offers it whether the roots came from a kit or from the marker an older agent carries ([sharing](#sharing)).
+There is no Knowledge Bases destination, no create form and no route of its own: a knowledge base is made by applying its kit, from the same kit modal every other kit uses ([starter kits](starter-kits.md)), and it lists, opens and is configured on Home beside every other agent. What survives of the old surface is the capability, not the destination: an agent that publishes a knowledge base offers sharing from its chat, and it offers it whether the roots came from a kit or from the marker an older agent carries ([sharing](#sharing)).
 
 A fresh KB **greets the user** with no browser involved: the apply queues an `initialization` event behind the Install Command on the same rail ([runtime-delivery](runtime-delivery.md#event)), carrying the briefing composed from the kit and the agent's state at that moment, and the agent-runtime opens a regular chat session with it once the install has run. The chat opens that session first while it is the agent's most recent one, so a fresh KB opens with the agent introducing itself rather than an empty chat. The greeting is a briefing rather than a bare command because setting a knowledge base up means asking its owner what it is for — and an agent that has to ask is one the platform holds as [not yet onboarded](starter-kits.md#concepts), reporting what it still needs as a checklist. The mechanism is shared with starter kits.
 

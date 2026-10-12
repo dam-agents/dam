@@ -46,6 +46,28 @@ describe("initialization plugin", () => {
     ]);
   });
 
+  it("opens the session on the harness, provider and model the event names", async () => {
+    const { driver, calls } = fakeDriver();
+    const handler = createInitializationPlugin({ driver }).bindEvent!(
+      "initialization",
+      { impl: "initialization" },
+    );
+    await handler(
+      {
+        task: "Update the kit.",
+        harness: "codex",
+        provider: "p-1",
+        model: "m",
+      },
+      ctx,
+    );
+    expect(calls[0]?.platformMeta).toMatchObject({
+      initialization: true,
+      harness: "codex",
+      provider: "p-1",
+      model: "m",
+    });
+  });
   it("refuses to bind any other kind", () => {
     const { driver } = fakeDriver();
     expect(() =>

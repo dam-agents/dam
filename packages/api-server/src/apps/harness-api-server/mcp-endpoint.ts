@@ -520,6 +520,48 @@ export function createMcpSession(
   );
 
   server.tool(
+    "fetch_message_attachment",
+    "Fetch a file or image attached to an earlier message. Attachments on the message you are answering are handed to you with it, but those on earlier messages are not: in your conversation history, and in what read_thread returns, such a message carries an [attachment: ...] tag naming the file, its type and size, and its fileId. Pass that fileId and the file is written into your workspace. Returns { path, name, size, contentType, conversationId }; open the file at path with your own tools — an image too, so read it to see it. A file is fetched only while it is shared in a conversation connected to this agent; any other id is refused. Fetch an attachment when the request depends on it, rather than guessing at what it shows. Slack only.",
+    {
+      channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+      fileId: z
+        .string()
+        .min(1)
+        .describe(
+          "File to fetch: the fileId from an [attachment: ...] tag in your conversation history.",
+        ),
+    },
+    async ({ channel, fileId }) => {
+      const result = await deps.channelManager.fetchAttachment(
+        agentId,
+        channel,
+        { fileId },
+      );
+      const audit = channelAudit(channel);
+      if ("error" in result) {
+        securityLog("warn", "channel.attachment_fetch", {
+          ...audit,
+          result: "failure",
+          reason: result.error,
+          detail: { fileId },
+        });
+        return errorResult(result.error);
+      }
+      securityLog("info", "channel.attachment_fetch", {
+        ...audit,
+        result: "success",
+        target: result.path,
+        detail: {
+          conversationId: result.conversationId,
+          fileId,
+          bytes: result.size,
+        },
+      });
+      return textResult(JSON.stringify(result));
+    },
+  );
+
+  server.tool(
     "reply",
     `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
     {

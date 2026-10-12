@@ -20,6 +20,7 @@ import {
   SandboxHomeHeader,
   SandboxIdentity,
 } from "../components/sandbox-home-header.js";
+import { SandboxProvidersSection } from "../components/sandbox-providers-section.js";
 import {
   SandboxSectionNav,
   SECTIONS,
@@ -78,6 +79,8 @@ export function SandboxHomeView() {
           />
           {section === "setup" ? (
             <SandboxSetupSection agent={agent} />
+          ) : section === "providers" ? (
+            <SandboxProvidersSection agentId={agent.id} />
           ) : section === "knowledge" ? (
             <KnowledgeSection agent={agent} />
           ) : section === "network" ? (

@@ -151,15 +151,16 @@ export async function composeRuntimeChannel(
   };
   const registry = createPluginRegistry();
   for (const plugin of opts.plugins) registry.register(plugin);
+  const harnessDefault = async (): Promise<string | null> =>
+    harnessConfigPlugin?.supported
+      ? ((await harnessConfigPlugin.readCurrent({ discover: false }))
+          .defaultModel ?? null)
+      : null;
   registry.register(
     createTriggerPlugin({
       driver: opts.triggerDriver,
       stateStore: triggerStateStore,
-      harnessDefault: async () =>
-        harnessConfigPlugin?.supported
-          ? ((await harnessConfigPlugin.readCurrent({ discover: false }))
-              .defaultModel ?? null)
-          : null,
+      harnessDefault,
       runPrecheck: createPrecheckRunner({
         workDir: opts.workDir,
         envReader: opts.envReader,

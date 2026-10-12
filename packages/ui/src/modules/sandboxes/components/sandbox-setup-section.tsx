@@ -1,18 +1,8 @@
-import { providerTypeForTemplateId } from "api-server-api";
-
-import { SectionLabel } from "@/components/ui/section-label";
-
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
-import {
-  useSetAgentConnections,
-  useUpdateAgent,
-} from "../../agents/api/mutations.js";
-import { useAgentConnections } from "../../agents/api/queries.js";
-import { useAppConnections } from "../../connections/api/queries.js";
+import { useUpdateAgent } from "../../agents/api/mutations.js";
 import { useFeatures } from "../../features/api/queries.js";
-import { ProviderSelect } from "../../providers/components/provider-select.js";
 import { confirmHibernationChange } from "../lib/hibernation.js";
 import { parseCpuMilli, parseMemoryMi } from "../lib/quantity.js";
 import { HarnessSettingsSections } from "./harness-settings-sections.js";
@@ -49,8 +39,6 @@ export function SandboxSetupSection({ agent }: { agent: AgentView }) {
 
   return (
     <>
-      {!carriedHarnesses && <AgentProviderSection agent={agent} />}
-
       <section className="mb-8">
         <SleepAfterIdleField
           value={hibernationTimeoutMin}
@@ -122,58 +110,5 @@ export function SandboxSetupSection({ agent }: { agent: AgentView }) {
         )
       )}
     </>
-  );
-}
-
-function AgentProviderSection({ agent }: { agent: AgentView }) {
-  const showConfirm = useStore((s) => s.showConfirm);
-  const { data: apps = [] } = useAppConnections();
-  const { data: agentConnections } = useAgentConnections(agent.id);
-  const setConnections = useSetAgentConnections();
-  const providerAppIds = new Set(
-    apps
-      .filter((a) => providerTypeForTemplateId(a.templateId) !== null)
-      .map((a) => a.id),
-  );
-  const connectionIds =
-    agentConnections?.connections.map((c) => c.connectionId) ?? [];
-  const selectedId = connectionIds.find((id) => providerAppIds.has(id));
-
-  return (
-    <section className="mb-8">
-      <SectionLabel spaced>Provider</SectionLabel>
-      <ProviderSelect
-        selected={selectedId ? { id: selectedId } : null}
-        onSelect={(ref) => {
-          if (!ref || !agentConnections) return;
-          setConnections.mutate({
-            agentId: agent.id,
-            connectionIds: [
-              ...connectionIds.filter((id) => !providerAppIds.has(id)),
-              ref.id,
-            ],
-          });
-        }}
-        confirmSwitch={() =>
-          showConfirm(
-            <p>
-              This changes the model provider used by{" "}
-              <strong>{agent.name}</strong> right away. Switching between
-              different model families (for example, Claude → OpenAI) may cause
-              the agent to stop working and can interrupt tasks in progress.
-            </p>,
-            "Switch this agent's provider?",
-            { confirmLabel: "Switch provider" },
-          )
-        }
-        disabled={setConnections.isPending}
-        required={agentConnections !== undefined}
-      />
-      <p className="mt-3 text-sm text-muted-foreground">
-        Changing the provider swaps this agent's model credential. A
-        cross-family switch (e.g. Anthropic → OpenAI on a Claude image) can
-        break the agent and may need a restart.
-      </p>
-    </section>
   );
 }

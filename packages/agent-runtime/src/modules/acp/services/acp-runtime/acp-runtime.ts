@@ -572,6 +572,24 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function teardownRuntime(reason: HarnessTeardownReason): void {
     shuttingDown = reason === "shutdown";
     const close = teardownCloseByReason[reason];
+    const unanswered = [
+      ...[...outboundIdToClient.values()]
+        .filter((m) => m.promptSessionId === null && m.originalId !== null)
+        .map((m) => ({ channel: m.channel, id: m.originalId })),
+      ...(initializeWaiters ?? []),
+    ];
+    for (const { channel, id } of unanswered) {
+      if (!channel) continue;
+      sendToChannel(
+        channel,
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32000, message: close.message },
+        }),
+      );
+    }
+    outboundIdToClient.clear();
     for (const channel of engagedSessions.keys()) {
       channel.close(close.code, close.message);
     }

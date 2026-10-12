@@ -15,7 +15,9 @@ git fetch origin --tags --prune --quiet
 set +x
 
 base_tag="${usage_base:-}"
+base_note=""
 if [[ -z "$base_tag" ]]; then
+  base_note=" (the release in production)"
   base_tag=$(gh api 'repos/{owner}/{repo}/releases?per_page=100' \
     --jq '[.[] | select((.draft | not) and (.prerelease | not))] | max_by(.published_at) | .tag_name // empty')
 fi
@@ -51,10 +53,10 @@ fi
 echo ""
 echo "What will happen:"
 echo -e "  - Nothing will be published yet."
-echo -e "  - Release \x1b[36m$base_tag\x1b[0m will be prepared for hotfix $hotfix_version in \x1b[36m$release_branch\x1b[0m branch."
+echo -e "  - Hotfix $hotfix_version will be prepared in \x1b[36m$release_branch\x1b[0m branch, starting from \x1b[36m$base_tag\x1b[0m$base_note."
 if [[ "$highest_version" != "$base_version" ]]; then
   echo -e "  - \x1b[33m$highest_version is the highest version already tagged or branched, so the hotfix is $hotfix_version.\x1b[0m"
-  echo -e "    \x1b[33mThe hotfix does not contain what was released after $base_version.\x1b[0m"
+  echo -e "    \x1b[33mThe hotfix does not contain the versions tagged after $base_version.\x1b[0m"
 fi
 echo -e "  - Pending version in \x1b[36m$release_branch\x1b[0m will be set to ${hotfix_version}-rc1."
 if $bump_main; then

@@ -11,6 +11,7 @@ import type {
   AgentsService,
   ConnectionsService,
   SchedulesService,
+  SessionPair,
   SkillsService,
   StarterKitApplyInput,
   StarterKitApplyResult,
@@ -71,6 +72,7 @@ export interface StarterKitsServiceDeps {
   wakeAgent: (agentId: string) => Promise<void>;
   markAgentOnboarded: (agentId: string, at: string) => Promise<void>;
   runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
+  sessionPair: (agentId: string) => Promise<SessionPair | null | undefined>;
   egressRules: {
     seed(
       agentId: string,
@@ -79,7 +81,6 @@ export interface StarterKitsServiceDeps {
     ): Promise<void>;
   };
   virtualizationEnabled?: boolean;
-  pinnedKit?: string;
   kitUpstream: KitUpstream;
   kitUpdateMarks: KitUpdateMarks;
 }
@@ -91,14 +92,13 @@ function withSeedStamp(
   return stamp ? { starterKitSeed: stamp } : {};
 }
 
-function toView(loaded: LoadedKit, pinnedKit: string): StarterKitView {
+function toView(loaded: LoadedKit): StarterKitView {
   return {
     ...loaded.kit,
     catalog: loaded.catalog,
     version: loaded.version,
     source: loaded.source,
     skillsInKit: loaded.skillsInKit,
-    pinned: `${loaded.catalog}/${loaded.kit.id}` === pinnedKit,
   };
 }
 
@@ -234,7 +234,7 @@ export function createStarterKitsService(
     if (task === null) return;
     const at = new Date();
     await deps.runtimeMutator.bump(agentId, [
-      initializationEvent(agentId, task, at),
+      initializationEvent(agentId, task, at, await deps.sessionPair(agentId)),
     ]);
     await deps.runtimeMutator.enqueueAfterCommit(agentId);
   }
@@ -259,33 +259,24 @@ export function createStarterKitsService(
     familyTitles,
     wakeAgent: deps.wakeAgent,
     runtimeMutator: deps.runtimeMutator,
+    sessionPair: deps.sessionPair,
   });
 
   return {
     ...kitUpdates,
 
     async list() {
-      return (await deps.repo.list())
-        .filter(runnableHere)
-        .map((loaded) => toView(loaded, deps.pinnedKit ?? ""));
+      return (await deps.repo.list()).filter(runnableHere).map(toView);
     },
 
     async get(catalog, id) {
       const loaded = await deps.repo.get(catalog, id);
-      return loaded && runnableHere(loaded)
-        ? toView(loaded, deps.pinnedKit ?? "")
-        : null;
+      return loaded && runnableHere(loaded) ? toView(loaded) : null;
     },
 
     async apply(input: StarterKitApplyInput): Promise<StarterKitApplyResult> {
       const loaded = await requireKit(input.catalog, input.kitId);
       const { kit, version } = loaded;
-
-      if (!kit.image && !input.templateId)
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "this kit brings no agent image; pick a harness",
-        });
 
       const unmet = unmetRequiredConnections(
         kit,

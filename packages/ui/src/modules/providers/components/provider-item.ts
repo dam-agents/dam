@@ -12,10 +12,6 @@ export interface ProviderItem {
   conn: ConnectionView;
 }
 
-export function providerRef(item: ProviderItem): ProviderRef {
-  return { id: item.id };
-}
-
 export function bobPinsFromConnection(
   conn: Pick<ConnectionView, "contributions">,
 ): BobModelPins {

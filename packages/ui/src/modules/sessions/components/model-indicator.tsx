@@ -1,4 +1,3 @@
-import { Information } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 
 import { HarnessIcons } from "@/components/harness-icons";
@@ -10,8 +9,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Tooltip } from "@/components/ui/tooltip";
 
+import { useStore } from "../../../store.js";
 import {
   useHarnessCatalog,
   useHarnessConfigured,
@@ -24,10 +23,6 @@ import {
   SessionSettingsControls,
   settingDefaults,
 } from "./session-settings-controls.js";
-
-const CONTEXT_HINT =
-  "If you need to move over context from this conversation, ask the agent to save it to a file.";
-const NEW_SESSION_HINT = `start a new session. ${CONTEXT_HINT}`;
 
 interface Props {
   agentId: string;
@@ -52,6 +47,7 @@ export function ModelIndicator({
   onConfigure,
   onNewSession,
 }: Props) {
+  const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
   const { data: remembered } = useRememberedPair(agentId);
   const capability = carried.find((h) => h.name === harness);
@@ -104,25 +100,44 @@ export function ModelIndicator({
         collisionPadding={8}
         className="flex max-h-[var(--radix-popover-content-available-height)] w-[340px] flex-col gap-3 overflow-y-auto text-sm"
       >
-        <div className="flex items-center gap-2 px-1 font-medium text-foreground">
-          <span className="text-muted-foreground">
-            <HarnessIcons harnesses={[harness]} size="xs" />
-          </span>
-          <span className="flex-1 truncate">{harnessName}</span>
-          <Tooltip content={`To use a different harness, ${NEW_SESSION_HINT}`}>
-            <button
-              type="button"
-              aria-label="About changing the harness"
-              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+        <div className="flex items-center gap-2 px-1">
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className="flex items-center gap-2 font-medium text-foreground">
+              <span className="text-muted-foreground">
+                <HarnessIcons harnesses={[harness]} size="xs" />
+              </span>
+              <span className="truncate">{harnessName}</span>
+            </div>
+            {activeProvider && (
+              <h3 className={labelVariants()}>{activeProvider.name}</h3>
+            )}
+          </div>
+          <PopoverClose asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                void showConfirm(
+                  <>
+                    <p>
+                      To use a different harness or model provider, start a new
+                      session.
+                    </p>
+                    <p className="mt-2">
+                      If you need to move over context from the current session,
+                      ask the agent to save it to a file.
+                    </p>
+                  </>,
+                  "Change harness or provider",
+                  { confirmLabel: "New session" },
+                ).then((ok) => ok && onNewSession())
+              }
             >
-              <Information size={16} />
-            </button>
-          </Tooltip>
+              Change
+            </Button>
+          </PopoverClose>
         </div>
         <section aria-label={activeProvider?.name ?? "Active provider"}>
-          {activeProvider && (
-            <h3 className={labelVariants()}>{activeProvider.name}</h3>
-          )}
           <ul
             aria-label="Models for this session"
             className="-mx-1 max-h-56 overflow-y-auto"
@@ -154,21 +169,6 @@ export function ModelIndicator({
                         : "No models available."}
               </li>
             )}
-            <li className="px-1 pb-1 pt-2 text-xs text-muted-foreground">
-              To use a model from a different provider,{" "}
-              <PopoverClose asChild>
-                <Button
-                  variant="link"
-                  size="inline"
-                  tone="muted"
-
-                  onClick={onNewSession}
-                >
-                  start a new session
-                </Button>
-              </PopoverClose>
-              . {CONTEXT_HINT}
-            </li>
           </ul>
         </section>
         {capability?.sessionSettings && (

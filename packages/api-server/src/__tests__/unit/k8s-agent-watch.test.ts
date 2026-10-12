@@ -124,6 +124,15 @@ describe("k8s agent watch", () => {
     watch.stop();
   });
 
+  // TEST_SCENARIO: client-node ends every watch after 30 s with a TimeoutError. That is the normal end of a watch, so the watch opens again at once: a 5 s retry wait every 30 s would hold back the hints of one change in seven.
+  it("reconnects at once when the watch ends on its timeout", async () => {
+    const { conns, watch } = harness();
+
+    conns[0]!.onEnd(new DOMException("timed out", "TimeoutError"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(conns).toHaveLength(2);
+    watch.stop();
+  });
   // TEST_SCENARIO: after a reconnect, stop() must reach the connection that is live now, not the one that ended.
   it("stop() closes the reconnected connection", async () => {
     const { conns, watch } = harness();

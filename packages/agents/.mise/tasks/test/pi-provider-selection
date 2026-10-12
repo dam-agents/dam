@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-//MISE description="Test that Pi starts on the session's provider and model, with its thinking level, even with stale saved defaults"
+//MISE description="Test that Pi starts on the session's provider and model, with its thinking level, even with stale saved defaults, and never on a LiteLLM placeholder as an Anthropic key"
 //MISE sources=["pi-agent/rootfs/usr/local/bin/pi-platform", "pi-agent/rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/**", ".mise/tasks/test/pi-provider-selection", "../../pnpm-lock.yaml"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
@@ -45,22 +45,16 @@ writeFileSync(join(home, "bin/pi"), `#!/bin/sh\nexec '${process.execPath}' '${cl
 writeFileSync(join(home, "bin/mise"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
 const wrapper = readFileSync(join(root, "rootfs/usr/local/bin/pi-platform"), "utf8").replace("/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts", extension);
 writeFileSync(join(home, "pi-platform"), wrapper);
-let child;
-try {
-  child = spawn("/bin/sh", [join(home, "pi-platform"), "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates"], {
+function startPi(env) {
+  const child = spawn("/bin/sh", [join(home, "pi-platform"), "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates"], {
     cwd: home,
-    env: {
-      PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1",
-      PLATFORM_PROVIDER: "litellm-test", PLATFORM_MODEL: "azure/gpt-6-astra",
-      OPENAI_PROXY_URL: `http://127.0.0.1:${address.port}`, OPENAI_PROXY_MODEL: "pin-model",
-      ANTHROPIC_API_KEY: "dummy-placeholder",
-    },
+    env: { PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1", ...env },
     stdio: ["pipe", "pipe", "pipe"],
   });
   let output = "";
   let errors = "";
   child.stderr.on("data", (data) => { errors += data; });
-  const state = await new Promise((resolve, reject) => {
+  const state = new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Pi startup timed out: ${errors}`)), 30_000);
     child.once("exit", (code) => { clearTimeout(timer); reject(new Error(`Pi exited ${code}: ${errors}`)); });
     child.stdout.on("data", (data) => {
@@ -76,6 +70,22 @@ try {
     });
     child.stdin.write(`${JSON.stringify({ id: "state", type: "get_state" })}\n`);
   });
+  return { child, state, errors: () => errors };
+}
+async function stop(child) {
+  if (child && child.exitCode === null) { child.kill(); await once(child, "exit"); }
+}
+let child;
+let fallback;
+try {
+  const pi = startPi({
+    PLATFORM_PROVIDER: "litellm-test", PLATFORM_MODEL: "azure/gpt-6-astra",
+    OPENAI_PROXY_URL: `http://127.0.0.1:${address.port}`, OPENAI_PROXY_MODEL: "pin-model",
+    ANTHROPIC_API_KEY: "dummy-placeholder",
+  });
+  child = pi.child;
+  const state = await pi.state;
+  const errors = pi.errors();
   assert.equal(state.success, true, JSON.stringify(state));
   assert.equal(state.data.model?.provider, "openai-proxy");
   assert.equal(state.data.model?.id, "azure/gpt-6-astra");
@@ -95,9 +105,15 @@ try {
     assert.equal(request.max_output_tokens, 16384);
     assert.equal(request.reasoning?.effort, "low", JSON.stringify(request));
   } finally { clearTimeout(timeout); }
-  console.log("pi-provider-selection: first prompt reaches the selected provider and model with its thinking level; no unsupported imports");
+  await stop(child);
+  fallback = startPi({ ANTHROPIC_AUTH_TOKEN: "sk-dummy-placeholder" });
+  const unselected = await fallback.state;
+  assert.equal(unselected.success, true, JSON.stringify(unselected));
+  assert.notEqual(unselected.data.model?.provider, "anthropic", JSON.stringify(unselected.data.model));
+  console.log("pi-provider-selection: first prompt reaches the selected provider and model with its thinking level; no unsupported imports; a LiteLLM placeholder is no Anthropic key");
 } finally {
-  if (child && child.exitCode === null) { child.kill(); await once(child, "exit"); }
+  await stop(child);
+  await stop(fallback?.child);
   server.close();
   rmSync(home, { recursive: true, force: true });
 }
