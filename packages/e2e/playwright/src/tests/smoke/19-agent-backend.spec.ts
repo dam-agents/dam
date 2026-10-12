@@ -19,6 +19,7 @@ import {
   laneBackend,
   refreshingToken,
   requireBackend,
+  runnerGrows,
   waitAgentState,
   writeHomeFile,
 } from "../../lib/backend.js";
@@ -65,6 +66,24 @@ test("boots and holds a chat turn", async ({ page }) => {
   test.setTimeout(900_000);
   await waitAgentState(api, agentId, "running");
   await chatTurn(page, "hello-backend", "backend-reply-first-boot");
+});
+
+// TEST_SCENARIO: on the vm Backend a machine boots with the install's boot estimate and the runner grows it to its size once the guest is up. A grow that fails boots the machine again whole, so the agent still answers and nothing else in the suite would notice; the runner's log of a successful grow is the evidence that the guest put the added RAM online.
+test("grows its machine past the boot RAM", async () => {
+  test.skip(laneBackend !== "vm", "only a vm machine boots small and grows");
+  await expect
+    .poll(
+      () =>
+        runnerGrows(agentId).some(
+          (grow) => grow.message !== "machine operation failed",
+        ),
+      {
+        timeout: 60_000,
+        intervals: [3_000],
+        message: "the runner logged no successful grow",
+      },
+    )
+    .toBe(true);
 });
 
 // TEST_SCENARIO: the files API writes into the agent's HOME and reads the same bytes back. Every later scenario reads this file again, so it is the evidence that HOME survived.

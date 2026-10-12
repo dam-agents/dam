@@ -269,9 +269,13 @@ impl Runtime for Smolvm {
             manager.detach();
             let mut client = AgentClient::connect(manager.vsock_socket())?;
             let (code, _, stderr) = client.vm_exec(
-                ["/bin/sh", "-c", "echo online_kernel > /sys/devices/system/memory/auto_online_blocks"]
-                    .map(String::from)
-                    .to_vec(),
+                [
+                    "/bin/sh",
+                    "-c",
+                    "echo online_kernel > /sys/devices/system/memory/auto_online_blocks",
+                ]
+                .map(String::from)
+                .to_vec(),
                 Vec::new(),
                 None,
                 Some(Duration::from_secs(10)),
