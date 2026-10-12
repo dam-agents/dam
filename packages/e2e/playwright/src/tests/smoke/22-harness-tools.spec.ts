@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a harness Template's agent runs on the node's harness tools. The Template boots the default image, which bakes none of the tools its harness runs: a per-node installer puts them in a host directory, the VM runner shares it read-only into the machine, and the agent's harness is picked from the Template. Only the vm lane runs it, with the Claude Code Template and the tools enabled; the mock agents of the rest of the suite bake their own tools.
+// TEST_OVERVIEW: a harness Template's agent runs on the node's harness tools. The Template boots the default image, which bakes none of the tools its harness runs: a per-node installer puts them in a host directory, the VM runner shares it read-only into the machine, and the agent's harness is picked from the Template. Only the vm lane runs it, with the Claude Code Template and the tools enabled; the mock agents of the rest of the suite bake their own tools. Nothing before the suite waits for the installer, which downloads the tools and can outlast the gate, so the spec waits for it before it boots the agent: a harness spawned before its tools are there exits at once.
 import { expect, test } from "@playwright/test";
 
 import {
@@ -12,6 +12,7 @@ import {
   requireBackend,
   waitAgentState,
 } from "../../lib/backend.js";
+import { AGENT_NS, kubectl } from "../../lib/cluster.js";
 import { baseUrl } from "../../config.js";
 
 test.describe.configure({ mode: "serial" });
@@ -63,10 +64,20 @@ async function openSession(): Promise<Frame[]> {
 }
 
 test.beforeAll(async () => {
-  test.setTimeout(300_000);
+  test.setTimeout(900_000);
   api = createRefreshingApiClient(token);
   await requireBackend(api, "vm");
   await acceptTerms(api);
+  kubectl(
+    "-n",
+    AGENT_NS,
+    "wait",
+    "pod",
+    "-l",
+    "app.kubernetes.io/component=harness-tools",
+    "--for=condition=Ready",
+    "--timeout=600s",
+  );
   agentId = await createAgentOn(api, "vm", "e2e-harness-tools", "claude-code");
 });
 
