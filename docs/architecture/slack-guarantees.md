@@ -63,7 +63,7 @@ flowchart TD
 |---|---|---|
 | `@DAM …` at top level | New thread, new session; the answer is a reply under your message | To amend or steer, reply in that thread, tagged |
 | `@DAM …` inside a thread | Joins that thread's session; if the agent is mid-turn there it is fed into the running turn (harness permitting), else it's the next turn | none |
-| Reply in the thread without `@DAM` | **Dropped silently**, even under the agent's own answer, even mid-turn | The natural follow-up doesn't work |
+| Reply in the thread without `@DAM` | **Dropped**, even under the agent's own answer, even mid-turn. In a thread the agent has answered in, the writer gets a note only they can see, once per thread, saying how to tag it | The natural follow-up doesn't work; the once-per-thread memory is lost when the API server restarts |
 | `@DAM Reviewer …` | Reaches the Agent named Reviewer (name must open the message; case-insensitive, whole word) | `@DAM hey Reviewer` goes to the default |
 | Edit a message to add the tag | Ignored | none |
 | Another bot, workflow or Agent posts a plain message | Reaches readers only, like a person's; never the Agent that posted it | Each reader spends a turn; `/dam ignore` silences one app |
@@ -161,7 +161,7 @@ Outside its bound conversations, the bot never reaches a channel the owner could
 
 | Behavior | Decided by | Caveat |
 |---|---|---|
-| Which messages start a turn: tagged ones on a normal binding, every message on ambient (not an Agent's own, its ambient-round replies, or an ignored app's), a person's in a 1:1 DM | Platform | On a normal binding, untagged thread replies never arrive |
+| Which messages start a turn: tagged ones on a normal binding, every message on ambient (not an Agent's own, its ambient-round replies, or an ignored app's), a person's in a 1:1 DM | Platform | On a normal binding, untagged thread replies never arrive; in the agent's own thread the writer is told once |
 | Which Agent a mention reaches | Platform | Two Agents sharing a name: default, sender not told |
 | One turn per top-level mention; DM bursts merged; a tagged reply joins a running turn | Platform; joining needs a harness that supports it (**Setup**), else next turn | Read-along messages never join a running turn |
 | Whether the turn runs at all | Platform, from the Agent's state: stopped by its owner, over budget, migrating, terms not re-accepted | Addressed: a notice. Ambient: nothing |
@@ -219,7 +219,7 @@ flowchart TD
 
 | Situation | Why |
 |---|---|
-| Untagged reply in the agent's thread (normal binding) | Dropped |
+| Untagged reply in the agent's thread (normal binding) | Dropped; the writer sees a note once per thread |
 | Untagged message in a group DM | Dropped |
 | Edited a message to add the tag | Edits are ignored |
 | A bot or workflow wrote to the agent without tagging it | Plain posts reach readers only; a mention-only Agent needs a tag |
