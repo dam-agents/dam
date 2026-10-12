@@ -32,15 +32,17 @@ INSTALL_ARGS=(
 # sandbox mode), so it is opt-in: CI sets it only in its vm lane, cd.yml's
 # e2e-vm job on a KVM runner.
 #
-# That lane also gives the mock agents a 1Gi Size instead of the 2Gi default.
-# A vm Agent's machine gets its Size's memory, and the controller raises its
-# owner's runner pod's memory request to the sum over the running machines
-# plus the runner's 512Mi reserve, so the scheduler sees what the guests hold.
-# On the single 16 GB CI node the control plane already requests about 5Gi,
-# and every 2Gi machine the suite runs at once took 2Gi more from what the
-# agents' gateways and the other pods can be scheduled into. The mock replays
-# scripts, and its guest needs a fraction of 1Gi. The container lane keeps the
-# default, so its agents are sized as before.
+# That lane also gives every machine one vCPU and counts a booting one at
+# 1Gi. The CI node is a small VM nesting KVM beside k3s and the browser, and a
+# guest with several vCPUs there stalls when the host descheduled the vCPU
+# its others wait on, long enough that its agent stops answering. The
+# controller raises the owner's runner pod's memory request by each booting
+# machine's count, and on the single 16 GB CI node the control plane already
+# requests about 5Gi, so a 2Gi boot estimate took more from what the agents'
+# gateways and the other pods can be scheduled into. The mock replays
+# scripts, and its guest needs a fraction of 1Gi. The mock and default
+# Templates keep a 1Gi Size for the container agents the lane still starts,
+# such as a runtime migration's source. The container lane keeps the defaults.
 #
 # On a Mac the lane keeps the runner pods on nested virtualization rather than
 # the host runner cluster:install would pick: the suite restarts the runner by
@@ -49,6 +51,8 @@ if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
   export PLATFORM_NESTED_VIRT=1
   INSTALL_ARGS+=(
     --set=virtualization.enabled=true
+    --set=virtualization.runner.machineCPUs=1
+    --set=virtualization.runner.bootMiB=1024
     --set=harnessTemplates.mock.resources.limits.cpu=1000m
     --set=harnessTemplates.mock.resources.limits.memory=1Gi
   )
