@@ -16,18 +16,10 @@ import type {
 
 type SessionStart = Parameters<TriggerSessionDriver["start"]>[0];
 
-interface SessionEventDeps {
-  driver: TriggerSessionDriver;
-  harnessDefault?: () => Promise<string | null>;
-}
-
 function sessionEventPlugin(
   name: string,
-  toStart: (
-    payload: unknown,
-    deps: SessionEventDeps,
-  ) => SessionStart | Promise<SessionStart>,
-): (deps: SessionEventDeps) => Plugin {
+  toStart: (payload: unknown) => SessionStart,
+): (deps: { driver: TriggerSessionDriver }) => Plugin {
   return (deps) => ({
     name,
     bindEvent(kind: string): EventHandler {
@@ -37,7 +29,7 @@ function sessionEventPlugin(
         );
       }
       return async (payload) => {
-        await deps.driver.start(await toStart(payload, deps));
+        await deps.driver.start(toStart(payload));
       };
     },
   });
@@ -45,14 +37,8 @@ function sessionEventPlugin(
 
 export const createInitializationPlugin = sessionEventPlugin(
   "initialization",
-  async (payload, deps) => {
+  (payload) => {
     const { task, ...pair } = initializationEventPayload.parse(payload);
-    const model =
-      pair.model ??
-      (pair.harness === undefined
-        ? await deps.harnessDefault?.()
-        : undefined) ??
-      undefined;
     return {
       task,
       platformMeta: {
@@ -60,7 +46,6 @@ export const createInitializationPlugin = sessionEventPlugin(
         mode: SessionMode.Chat,
         initialization: true,
         ...pair,
-        ...(model !== undefined && { model }),
       },
     };
   },

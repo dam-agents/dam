@@ -176,9 +176,7 @@ export async function composeRuntimeChannel(
   registry.register(
     createWorkspaceCommandPlugin({ workDir: opts.workDir, log }),
   );
-  registry.register(
-    createInitializationPlugin({ driver: opts.triggerDriver, harnessDefault }),
-  );
+  registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
   registry.register(
     createSatelliteOutcomePlugin({ driver: opts.triggerDriver }),
   );
