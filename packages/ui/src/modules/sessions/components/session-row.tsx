@@ -1,4 +1,4 @@
-import { Code, Download, Edit, Time, TrashCan } from "@carbon/icons-react";
+import { Download, Edit, Terminal, Time, TrashCan } from "@carbon/icons-react";
 import {
   type BackgroundWorkItemView,
   ChannelType,
@@ -326,7 +326,7 @@ function SessionIndicators({
       )}
     >
       {terminal && (
-        <Code size={16} className="text-foreground" aria-label="Terminal" />
+        <Terminal size={16} className="text-foreground" aria-label="Terminal" />
       )}
       {scheduled && (
         <Time size={16} className="text-foreground" aria-label="Scheduled" />
