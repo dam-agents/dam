@@ -952,6 +952,7 @@ export const attentionRecords = pgTable(
     type: text("type").notNull(),
     title: text("title"),
     scheduleId: text("schedule_id"),
+    threadTs: text("thread_ts"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     activityAt: timestamp("activity_at", { withTimezone: true }),
     seenAt: timestamp("seen_at", { withTimezone: true }),

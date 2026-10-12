@@ -21,6 +21,7 @@ import {
   useFeedArtifacts,
 } from "../api/queries.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
+import { useFeedConversations } from "../hooks/use-feed-conversations.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
 import { useWaitingApprovals } from "../hooks/use-waiting-approvals.js";
 import {
@@ -46,6 +47,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
   const { isDismissed, dismiss, dismissedAt } = useDismissals();
   const sticky = useStickyResolved();
   const artifacts = useFeedArtifacts(items);
+  const conversationFor = useFeedConversations(items, agents);
   const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(
     null,
   );
@@ -202,6 +204,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                 onResolved={(item, label) => sticky.keep(item, label)}
                 resolvedLabelFor={sticky.labelFor}
                 artifactsFor={artifactsFor}
+                conversationFor={conversationFor}
                 onOpenArtifact={setPreviewArtifactId}
               />
             </>

@@ -1,15 +1,10 @@
-import {
-  ChannelType,
-  isAmbientThreadKey,
-  SessionType,
-  type SessionView,
-  slackChannelIdFromThreadKey,
-} from "api-server-api";
+import { ChannelType, type SessionView } from "api-server-api";
 import { useCallback, useMemo } from "react";
 
 import { useAgents } from "../../agents/api/queries.js";
 import { slackChannelLabel } from "../../sandboxes/lib/slack-channels.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
+import { conversationLabel } from "./conversation-label.js";
 
 type SessionConversationLabel = (session: SessionView) => string | undefined;
 
@@ -40,20 +35,11 @@ export function useSessionConversations(
   }, [telegramChats]);
 
   return useCallback(
-    (session: SessionView) => {
-      if (session.type === SessionType.ChannelSlack) {
-        const ambient = isAmbientThreadKey(session.threadTs);
-        const channelId = slackChannelIdFromThreadKey(session.threadTs);
-        const name = channelId ? slackByChannelId.get(channelId) : undefined;
-        if (!name) return ambient ? "ambient" : undefined;
-        return ambient ? `${name} · ambient` : name;
-      }
-      if (session.type === SessionType.ChannelTelegram)
-        return session.threadTs
-          ? telegramByConversationId.get(session.threadTs)
-          : undefined;
-      return undefined;
-    },
+    (session: SessionView) =>
+      conversationLabel(session, {
+        slackByChannelId,
+        telegramByConversationId,
+      }),
     [slackByChannelId, telegramByConversationId],
   );
 }
