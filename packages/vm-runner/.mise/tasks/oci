@@ -105,6 +105,21 @@ tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${
   "${release}/smolvm" "${release}/smolvm-bin" "${release}/lib" "${release}/agent-rootfs" \
   "${release}/storage-template.ext4.zst" "${release}/overlay-template.ext4.zst"
 
+# The guest kernel is libkrunfw from the older smolvm release smolvm.pin names,
+# Linux 6.12, in place of this release's 6.18: from 6.15 on, FUSE DAX corrupts
+# the mappings of a large file that another process opens, and guests of 6 GiB
+# or more die of SIGBUS (smol-machines/smolvm#1741). Both libraries have the
+# same ABI. One whose kernel is not Linux 6.12 is refused. Drop this once a
+# smolvm release ships a kernel with the fix.
+fw_version="$(sed -n 's/^libkrunfw-tag=v//p' smolvm.pin)"
+fw_sha="$(sed -n "s/^libkrunfw-sha256-linux-${arch}=//p" smolvm.pin)"
+[ -n "$fw_version" ] && [ -n "$fw_sha" ] || { echo "smolvm.pin names no libkrunfw release for linux-${arch}" >&2; exit 1; }
+fw_release="smolvm-${fw_version}-linux-${arch}"
+tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${fw_version}/${fw_release}.tar.gz" "$fw_sha")" \
+  -C "$b/opt/smolvm/lib" --strip-components=2 --no-same-owner "${fw_release}/lib/libkrunfw.so.5.5.0"
+LC_ALL=C grep -aq 'Linux version 6\.12\.' "$b/opt/smolvm/lib/libkrunfw.so.5.5.0" ||
+  { echo "libkrunfw from smolvm ${fw_version} is not Linux 6.12" >&2; exit 1; }
+
 # libkrun is the release's own, rebuilt from the commit smolvm.pin names with
 # libkrun.patch applied: fixes for guest-reachable bugs in its virtio devices
 # that the release does not have yet. Built as smolvm's release workflow builds
@@ -161,8 +176,9 @@ install -m 755 "$b/opt/smolvm/agent-rootfs/usr/local/bin/crane" "$b/usr/local/bi
 # mise is isolated from the repo.
 from="$(mise config get -f "$repo/.mise/config.toml" vars.base_image_debian)"
 # What a runner release is built against and a running pod cannot change: the
-# smolvm release with its guest agent, the patched libkrun and crane, and the
-# base image's libc the runner links. A loader hands its machines only to a
+# smolvm release with its guest agent, the guest kernel, the patched libkrun
+# and crane, and the base image's libc the runner links. All but the base and
+# crane are named in smolvm.pin. A loader hands its machines only to a
 # release whose id matches. It hashes those inputs, not the built bytes: a
 # libkrun rebuilt from the same sources need not be byte-identical, and an id
 # that moved on every build would roll every pod.

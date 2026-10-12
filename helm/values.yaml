@@ -290,7 +290,9 @@ virtualization:
     # Counting a boot at its full size, half the pool, would let only two
     # machines boot at once, so a runner roll or a few wakes together would
     # refuse the rest. A guest that touches more than this before its first
-    # measurement is under-counted until then.
+    # measurement is under-counted until then. Each machine also boots with
+    # this much RAM, or its size when that is less, and is grown to its size
+    # once the guest is up: a boot costs time for every GiB it starts with.
     bootMiB: 2048
     # vCPUs every machine gets. They are threads of the runner, so an idle
     # machine costs nothing; the runner's CPU limit covers these vCPUs for
