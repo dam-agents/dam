@@ -39,7 +39,29 @@ describe("classifySlackSender", () => {
         { user: "UBOT", bot_id: "BSELF", blocks: footer },
         self,
       ),
-    ).toEqual({ kind: "agent", agentId: "agent-abc123" });
+    ).toEqual({ kind: "agent", agentId: "agent-abc123", ambientRound: false });
+  });
+
+  /** TEST_SCENARIO: A reply made in an ambient round says so in its footer
+   *  link, so the readers of that round are not handed it twice. */
+  it("reads the ambient-round mark from the footer", () => {
+    const marked = [
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: "<http://ui/a/agent-abc123?s=sess-1&via=ambient|Alpha>",
+          },
+        ],
+      },
+    ];
+    expect(
+      classifySlackSender(
+        { user: "UBOT", bot_id: "BSELF", blocks: marked },
+        self,
+      ),
+    ).toEqual({ kind: "agent", agentId: "agent-abc123", ambientRound: true });
   });
 
   /** TEST_SCENARIO: A post with a custom username can arrive as bot_message
@@ -50,7 +72,7 @@ describe("classifySlackSender", () => {
         { subtype: "bot_message", bot_id: "BSELF", blocks: footer },
         self,
       ),
-    ).toEqual({ kind: "agent", agentId: "agent-abc123" });
+    ).toEqual({ kind: "agent", agentId: "agent-abc123", ambientRound: false });
   });
 
   /** TEST_SCENARIO: Platform notices and whisper roots come from this app

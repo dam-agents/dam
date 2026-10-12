@@ -107,6 +107,7 @@ flowchart TD
 | A plain message names an Agent without `@` | Readers only; the named one answers if it reads along, the others are told to stay silent | A mention-only Agent gets nothing; the silence is prompt only |
 | An Agent's post tags the bot and names a peer | The peer gets a turn, as if a person had asked; the post never starts a turn for its author | At most three bot posts in a row per thread start turns, until a person posts |
 | An Agent posts where others read along | Every reader but the author gets it; a reply in an ambient round does not, since the round already handed it on | A reader that went before it in the round never sees that reply live; each reader spends a turn per post, even to stay silent |
+| A reader tags a peer in its ambient reply | The peer answers once, as an addressed turn, and skips its turn in that round; its answer reaches the asker | The peer answers only the request, not the person's message on its own |
 | Another app or a webhook posts (CI, alerts, deploys) | Routed like a person's post: a tag reaches one Agent, readers get plain posts | On by default; `/dam apps X off` makes one binding ignore apps; same three-in-a-row limit |
 
 ### 1.6 Proactive and cross-channel posts

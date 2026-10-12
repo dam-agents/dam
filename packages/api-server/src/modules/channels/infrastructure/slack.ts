@@ -164,13 +164,13 @@ import {
   matchRosterName,
   orderAmbientReaders,
   parseWhisperRequest,
+  peerTaggedBy,
   routeMention,
   senderReaches,
   type RosterEntry,
 } from "./slack-routing.js";
 import type { SlackSender } from "./slack-sender.js";
 import { createBotPostLoopBound } from "../domain/bot-post-loop-bound.js";
-import { createAmbientTurnWindow } from "../domain/ambient-turn-window.js";
 import {
   parseWhisperSession,
   whisperSessionMetadata,
@@ -1408,6 +1408,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     handedOff?: boolean;
     text?: string;
     replyText?: string;
+    replyTexts?: string[];
+    ambient?: boolean;
     slackUserId?: string;
     hasThread?: boolean;
     hadAttachments?: boolean;
@@ -1424,7 +1426,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   };
 
   const botPosts = createBotPostLoopBound();
-  const ambientTurns = createAmbientTurnWindow();
 
   const BOT_MENTION_SEEN_TTL_MS = 10 * 60 * 1000;
   const botMentionsSeen = new Map<string, number>();
@@ -1624,6 +1625,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     engaged.posted = true;
     if (opts.messaged) engaged.messaged = true;
     if (opts.replyText) {
+      engaged.replyTexts = [...(engaged.replyTexts ?? []), opts.replyText];
       engaged.replyText = engaged.replyText
         ? `${engaged.replyText}\n${opts.replyText}`
         : opts.replyText;
@@ -1996,6 +1998,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   async function agentFooter(
     instanceName: string,
     sessionId?: string,
+    ambientRound?: boolean,
   ): Promise<AgentFooter> {
     const resolved = await resolveAgentName(instanceName);
     return {
@@ -2006,6 +2009,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         resolved === instanceName ? undefined : resolved,
       ),
       ...(sessionId ? { sessionId } : {}),
+      ...(ambientRound ? { ambientRound } : {}),
     };
   }
 
@@ -4678,8 +4682,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     roster?: RosterEntry[];
     readers?: RosterEntry[];
     answeredAlready?: AmbientPeerReply[];
-  }): Promise<{ posted: boolean; replyText: string | null }> {
-    if (!gateway) return { posted: false, replyText: null };
+  }): Promise<{
+    posted: boolean;
+    replyText: string | null;
+    replies: string[];
+  }> {
+    if (!gateway) return { posted: false, replyText: null, replies: [] };
     const gw = gateway;
 
     const deliveredUpTo = args.messages.reduce(
@@ -4698,6 +4706,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       slackUserId: m.slackUserId ?? args.externalActorId,
       hasThread: args.hasThread,
       hadAttachments: args.images.length > 0 || args.files.length > 0,
+      ambient: true,
     }));
     const droppedNote = renderWithheldNote(
       args.droppedFiles.map((name) => ({
@@ -4868,6 +4877,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return {
       posted: turnRefs.some((ref) => ref.messaged === true),
       replyText: spoken === "" ? null : spoken,
+      replies: turnRefs.flatMap((ref) => ref.replyTexts ?? []),
     };
   }
 
@@ -4942,7 +4952,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
         const inThread = threadTs !== null;
         const answeredAlready: AmbientPeerReply[] = [];
+        const tagged = new Set<string>();
+        let botUserId: string | null | undefined;
         for (const reader of orderAmbientReaders(readers)) {
+          if (tagged.has(reader.instanceName)) {
+            getLogger().debug(
+              { agentId: reader.instanceName, channelId },
+              "slack.ambient_turn.skipped_tagged",
+            );
+            continue;
+          }
           const shown = batch.filter((m) => senderReaches(m.sender, reader));
           const last = shown.at(-1);
           if (!last) continue;
@@ -4962,8 +4981,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               channelId,
             },
           });
-          ambientTurns.enter(reader.instanceName, channelId);
-          const { posted, replyText } = await relayAmbientTurn({
+          const { posted, replyText, replies } = await relayAmbientTurn({
             teamId: reader.teamId,
             roster,
             readers,
@@ -4986,9 +5004,21 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             files: kept,
             droppedFiles: dropped.map((f) => f.name),
             externalActorId: last.slackUserId,
-          }).finally(() => ambientTurns.leave(reader.instanceName, channelId));
+          });
           if (posted)
             answeredAlready.push({ name: reader.name, text: replyText });
+          botUserId ??= await gateway
+            ?.getBotUserId(reader.teamId)
+            .catch(() => null);
+          for (const said of replies) {
+            const peer = peerTaggedBy(
+              said,
+              reader.instanceName,
+              roster,
+              botUserId ?? null,
+            );
+            if (peer) tagged.add(peer.instanceName);
+          }
         }
       },
       steer: async () => "refused",
@@ -5028,10 +5058,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const conversation = botPostConversation(event.channel, event.threadTs);
     if (sender.kind === "person") botPosts.notePersonPost(conversation);
 
-    if (
-      sender.kind === "agent" &&
-      ambientTurns.covers(sender.agentId, event.channel)
-    ) {
+    if (sender.kind === "agent" && sender.ambientRound) {
       getLogger().debug(
         { agentId: sender.agentId, channelId: event.channel },
         "slack.ambient.round_reply_skipped",
@@ -5250,8 +5277,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return target;
       }
 
+      const engaged = findTurnRef(
+        instanceName,
+        (ref) => ref.channel === target.id,
+      );
       const [footer, persona] = await Promise.all([
-        agentFooter(instanceName),
+        agentFooter(instanceName, undefined, engaged?.ambient),
         agentPersona(gw, instanceName, target.teamId),
       ]);
       const contextBlock = agentContextBlock(footer);
@@ -5552,7 +5583,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if ("error" in target) return target;
 
       const [footer, persona] = await Promise.all([
-        agentFooter(instanceName, turn?.sessionId),
+        agentFooter(instanceName, turn?.sessionId, turn?.ambient),
         agentPersona(gw, instanceName, target.teamId),
       ]);
       if (attachmentOnly) {

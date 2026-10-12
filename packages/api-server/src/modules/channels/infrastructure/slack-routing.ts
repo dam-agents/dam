@@ -64,6 +64,17 @@ export function senderReaches(
     .exhaustive();
 }
 
+export function peerTaggedBy(
+  text: string,
+  author: string,
+  roster: RosterEntry[],
+  botUserId: string | null,
+): RosterEntry | null {
+  if (!botUserId || !text.includes(`<@${botUserId}>`)) return null;
+  const target = routeMention(text, roster)?.target ?? null;
+  return target && target.instanceName !== author ? target : null;
+}
+
 export function matchRosterName(
   roster: RosterEntry[],
   candidate: string,

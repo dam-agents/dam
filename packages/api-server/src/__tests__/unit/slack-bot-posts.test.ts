@@ -12,7 +12,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { AgentsService } from "api-server-api";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
-import type { SlackSender } from "../../modules/channels/infrastructure/slack-sender.js";
+import {
+  classifySlackSender,
+  type SlackSender,
+} from "../../modules/channels/infrastructure/slack-sender.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 import type { AcpClient } from "../../core/acp-client.js";
@@ -29,7 +32,11 @@ beforeEach(() => {
 
 type BindingOpts = { ambient?: boolean; ignoreApps?: boolean };
 
-const fromAlpha: SlackSender = { kind: "agent", agentId: "agent-a" };
+const fromAlpha: SlackSender = {
+  kind: "agent",
+  agentId: "agent-a",
+  ambientRound: false,
+};
 const fromFlux: SlackSender = { kind: "app", botId: "B-FLUX", name: "FluxCD" };
 
 function harness(
@@ -38,21 +45,38 @@ function harness(
     b?: BindingOpts;
     noDefault?: boolean;
     linkedSub?: string | null;
-    replyInThread?: string;
-    replyAfterTurn?: boolean;
+    replies?: Partial<Record<string, (nth: number) => string | null>>;
+    replyThread?: string;
   } = {},
 ) {
-  const gw = createFakeSlackGateway();
-  let replies = 0;
-  const postReply = (agentId: string) =>
-    gw.fireMessage({
-      sender: { kind: "agent", agentId },
-      channel: "C1",
+  const fake = createFakeSlackGateway();
+  let echoed = 0;
+  const echo = (args: Parameters<typeof fake.postMessage>[0]) => {
+    const sender = classifySlackSender(
+      { user: "U-BOT", blocks: args.blocks },
+      { userId: "U-BOT", botId: null },
+    );
+    if (!sender) return;
+    const event = {
+      sender,
+      channel: args.channel,
       channelType: "channel",
-      ts: `50.${++replies}`,
-      threadTs: opts.replyInThread,
-      text: `${NAMES[agentId]} here, the job is fixed`,
-    });
+      ts: `50.${++echoed}`,
+      threadTs: args.threadTs,
+      text: args.text,
+    };
+    void (args.text.includes("<@U-BOT>")
+      ? fake.fireMention(event)
+      : fake.fireMessage(event));
+  };
+  const gw: typeof fake = {
+    ...fake,
+    async postMessage(args) {
+      const posted = await fake.postMessage(args);
+      setTimeout(() => echo(args), 0);
+      return posted;
+    },
+  };
   const prompts: Record<string, string[]> = { "agent-a": [], "agent-b": [] };
   const ignoreAppsCalls: Array<[string, string, boolean]> = [];
   const acpFor = (agentId: string): AcpClient => ({
@@ -63,10 +87,9 @@ function harness(
       if (String(JSON.stringify(prompt)).includes("<turn-undelivered>"))
         return "nudged";
       prompts[agentId]!.push(JSON.stringify(prompt));
-      if (opts.replyInThread !== undefined) {
-        if (opts.replyAfterTurn) setTimeout(() => void postReply(agentId), 0);
-        else await postReply(agentId);
-      }
+      const said = opts.replies?.[agentId]?.(prompts[agentId]!.length);
+      if (said)
+        await worker.reply(agentId, { text: said, threadTs: opts.replyThread });
       return "";
     },
     triggerSession: () => Promise.reject(new Error("unused")),
@@ -118,7 +141,7 @@ function harness(
   });
 
   async function settle() {
-    for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 0));
+    for (let i = 0; i < 200; i++) await new Promise((r) => setTimeout(r, 0));
   }
 
   return {
@@ -211,69 +234,68 @@ describe("an agent's post addressing another agent", () => {
 });
 
 describe("an agent's reply in an ambient round", () => {
-  /** TEST_SCENARIO: A person asks in a thread where both Agents read along.
-   *  Each Agent's reply comes back from Slack as a new post while the round
-   *  runs. The round already handed the earlier reply to the later reader, so
-   *  neither reply starts another turn. */
+  const person: SlackSender = { kind: "person", user: "U1" };
+  const once = (text: string) => (nth: number) => (nth === 1 ? text : null);
+
+  /** TEST_SCENARIO: A person asks in a thread where both Agents read along,
+   *  and both reply. The round already handed the earlier reply to the later
+   *  reader, so a reply that Slack sends back starts no further turn. */
   it("starts no second turn in a thread", async () => {
     const h = harness({
       a: { ambient: true },
       b: { ambient: true },
-      replyInThread: "9.0",
+      replyThread: "9.0",
+      replies: { "agent-a": once("fixed it"), "agent-b": once("confirmed") },
     });
-    await h.message({ kind: "person", user: "U1" }, "the job is red", {
-      ts: "9.1",
-      threadTs: "9.0",
-    });
+    await h.message(person, "the job is red", { ts: "9.1", threadTs: "9.0" });
     expect(h.prompts["agent-a"]).toHaveLength(1);
     expect(h.prompts["agent-b"]).toHaveLength(1);
   });
 
-  /** TEST_SCENARIO: A person posts at the top level. The replies go into the
-   *  thread under that post, which is a different queue from the round's
-   *  top-level one. They must not start turns there while the round runs. */
+  /** TEST_SCENARIO: A person posts at the top level and the replies go into
+   *  the thread under that post, a different queue from the round's. They
+   *  must not start turns there either. */
   it("starts no turn in the thread under a top-level post", async () => {
     const h = harness({
       a: { ambient: true },
       b: { ambient: true },
-      replyInThread: "7.1",
+      replyThread: "7.1",
+      replies: { "agent-a": once("fixed it"), "agent-b": once("confirmed") },
     });
-    await h.message({ kind: "person", user: "U1" }, "the job is red", {
-      ts: "7.1",
-    });
+    await h.message(person, "the job is red", { ts: "7.1" });
     expect(h.prompts["agent-a"]).toHaveLength(1);
     expect(h.prompts["agent-b"]).toHaveLength(1);
   });
 
-  /** TEST_SCENARIO: Slack sends a reply back after the reply tool returned,
-   *  so it can arrive once the turn is over. The grace period still covers
-   *  it. */
-  it("starts no turn when the reply arrives after the turn ended", async () => {
-    const h = harness({
-      a: { ambient: true },
-      b: { ambient: true },
-      replyInThread: "9.0",
-      replyAfterTurn: true,
-    });
-    await h.message({ kind: "person", user: "U1" }, "the job is red", {
-      ts: "9.1",
-      threadTs: "9.0",
-    });
-    expect(h.prompts["agent-a"]).toHaveLength(1);
-    expect(h.prompts["agent-b"]).toHaveLength(1);
-  });
-
-  /** TEST_SCENARIO: Inside an ambient reply, an Agent tags the bot and names
-   *  its peer. A tag is an addressed request, so it still reaches the peer. */
-  it("still routes a tag to the agent it names", async () => {
-    const h = harness({ a: { ambient: true } });
-    await h.message({ kind: "person", user: "U1" }, "the job is red", {
-      ts: "9.1",
-      threadTs: "9.0",
-    });
-    await h.mention(fromAlpha, "<@UBOT> Beta, can you rerun it?", "9.2");
-    expect(h.prompts["agent-b"]).toHaveLength(1);
-  });
+  it.each([
+    ["at the top level", "7.1", undefined],
+    ["in a thread", "9.0", "9.0"],
+  ])(
+    "hands a peer's tagged request to that peer once, %s",
+    async (_where, replyThread, threadTs) => {
+      /** TEST_SCENARIO: Alpha goes first in the round and tags Beta. Beta
+       *  takes the request as an addressed turn and skips its ambient turn in
+       *  the round, so it answers once. Beta's answer is not a reply in the
+       *  round, so it reaches Alpha, which asked for it. */
+      const h = harness({
+        a: { ambient: true },
+        b: { ambient: true },
+        replyThread,
+        replies: {
+          "agent-a": once("<@U-BOT> Beta, can you rerun the job?"),
+          "agent-b": once("rerun done, it is green"),
+        },
+      });
+      await h.message(person, "the job is red", {
+        ts: threadTs ? "9.1" : "7.1",
+        threadTs,
+      });
+      expect(h.prompts["agent-b"]).toHaveLength(1);
+      expect(h.prompts["agent-b"]![0]).toContain("Alpha (another agent):");
+      expect(h.prompts["agent-a"]).toHaveLength(2);
+      expect(h.prompts["agent-a"]![1]).toContain("rerun done");
+    },
+  );
 });
 
 describe("a post by another app or webhook", () => {

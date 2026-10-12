@@ -1,9 +1,9 @@
-import { parseAgentFooter } from "./agent-footer.js";
+import { footerMarksAmbientRound, parseAgentFooter } from "./agent-footer.js";
 import type { SlackMessage } from "./slack-gateway.js";
 
 export type SlackSender =
   | { kind: "person"; user: string }
-  | { kind: "agent"; agentId: string }
+  | { kind: "agent"; agentId: string; ambientRound: boolean }
   | { kind: "app"; botId: string; name: string };
 
 export interface SlackInboundPost {
@@ -31,7 +31,8 @@ const ADMITTED_SUBTYPES = new Set<string | undefined>([
  * post must never start a turn. A person is a Slack user with no bot id. An
  * agent is a post by this app's own bot that carries an Agent Footer, because
  * every Agent posts through the one bot and the footer is the only place that
- * names which Agent it was. Any other bot or incoming webhook is an app. This
+ * names which Agent it was; it also marks a reply made in an ambient round.
+ * Any other bot or incoming webhook is an app. This
  * app's posts without a footer (platform notices, whisper roots), edits,
  * joins and other subtypes are dropped. While this app's own bot ids are not
  * known yet, every bot post is dropped, so an Agent's reply can never pass for
@@ -47,10 +48,14 @@ export function classifySlackSender(
     (!!self.userId && post.user === self.userId) ||
     (!!self.botId && post.bot_id === self.botId);
   if (isOwnPost) {
-    const footer = parseAgentFooter({
-      blocks: post.blocks as SlackMessage["blocks"],
-    });
-    return footer ? { kind: "agent", agentId: footer.agentId } : null;
+    const message = { blocks: post.blocks as SlackMessage["blocks"] };
+    const footer = parseAgentFooter(message);
+    if (!footer) return null;
+    return {
+      kind: "agent",
+      agentId: footer.agentId,
+      ambientRound: footerMarksAmbientRound(message),
+    };
   }
   if (isBotPost) {
     if (!post.bot_id || (!self.userId && !self.botId)) return null;

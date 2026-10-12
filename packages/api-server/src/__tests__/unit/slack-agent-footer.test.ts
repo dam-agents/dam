@@ -3,6 +3,8 @@ import {
   agentContextBlock,
   agentFooterLabel,
   agentFooterMrkdwn,
+  footerMarksAmbientRound,
+  footerSessionId,
   formatSlackTs,
   labelHistoryMessage,
   parseAgentFooter,
@@ -95,6 +97,31 @@ describe("agent footer", () => {
     expect(parseAgentFooter({ blocks: [agentContextBlock(footer)] })).toEqual({
       agentId: "agent-8acde0e1a059835a",
     });
+  });
+
+  /** TEST_SCENARIO: A reply made in an ambient round carries a mark in the
+   *  footer link next to its session. Reading the post back finds the mark,
+   *  the author and the session, and a footer without the mark reads as not
+   *  from a round. */
+  it("round-trips the ambient-round mark next to the session", () => {
+    const marked = {
+      blocks: [
+        agentContextBlock({ ...footer, sessionId: "s-1", ambientRound: true }),
+      ],
+    };
+    expect(footerMarksAmbientRound(marked)).toBe(true);
+    expect(footerSessionId(marked)).toBe("s-1");
+    expect(parseAgentFooter(marked)).toEqual({
+      agentId: "agent-8acde0e1a059835a",
+    });
+    expect(
+      footerMarksAmbientRound({ blocks: [agentContextBlock(footer)] }),
+    ).toBe(false);
+    expect(
+      footerMarksAmbientRound({
+        blocks: [agentContextBlock({ ...footer, ambientRound: true })],
+      }),
+    ).toBe(true);
   });
 
   it("recovers the author from a footer carrying a session", () => {
