@@ -1,0 +1,4 @@
+max-width = 0
+end-markers = "?!."
+suppressions = "incl."
+features = "keep-spaces-in-links,never-break-code-spans,never-break-html"

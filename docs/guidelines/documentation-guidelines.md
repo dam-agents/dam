@@ -12,6 +12,14 @@ Docs are split into a few kinds. Pick the right one before writing — putting t
 
 - **ADRs** ([`docs/adrs/`](../adrs/)) — Architecture Decision Records. Filed *before* work begins on anything that requires an important decision, so the reasoning is captured up front. One ADR per decision. Immutable after acceptance; superseded, not rewritten. Use the `/adr` skill. ADRs are **human-first**: agents create them, and read them only when authoring an ADR or recompiling docs; ordinary work uses the architecture pages. No code or documentation links or references an ADR. Architecture pages are the agent-facing source of truth.
 
+## Formatting
+
+In every Markdown file, prose has one sentence per line: a single newline after each sentence, and a blank line between paragraphs as usual.
+Markdown renders both the same, and a diff or merge conflict then covers the sentence that changed, not the whole paragraph.
+`mise run fix:markdown` formats the files (`mise run fix` includes it), and `mise run check:markdown` fails on a file it would change; [`.mdslw.toml`](../../.mdslw.toml) configures it.
+Accepted ADRs and vendored upstream skills are exempt, because they are never edited here.
+A generator that writes Markdown emits one sentence per line too.
+
 ## Vocabulary
 
 Use the ubiquitous language defined in [`docs/ubiquitous-language.md`](../ubiquitous-language.md). Terms there (Template, Agent, Session, Channel, Secret, …) are scoped to bounded contexts — match that scoping in docs. Docs do not introduce new domain terms; code does, and docs follow.

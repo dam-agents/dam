@@ -33,6 +33,10 @@ auto = true
 "conda:bash" = "latest"
 "conda:pigz" = "latest"
 "github:Boshen/cargo-shear" = "latest"
+# mdslw 0.18.0 (2026-10-08) is under the 7-day floor: its never-break-code-spans
+# keeps sentence breaks out of inline code. Floor passes 2026-10-15. It ships
+# no linux-arm64 asset, so check:markdown cannot run there.
+"github:razziel89/mdslw" = { version = "0.18.0", os = ["macos", "linux/x64"] }
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 # Staticcheck 0.8.1 cannot read go1.27.2's export data (dominikh/go-tools#1832).
 # The pin is its unreleased fix, commit f1838cc3 (2026-10-09), under the
@@ -125,7 +129,7 @@ depends = ["check:*", "//...:check"]
 
 [tasks.fix]
 description = "Apply every fix: formatters, linters, generators"
-depends = ["fix:comment-types"]
+depends = ["fix:comment-types", "fix:markdown"]
 run = [{ tasks = ["fix:skill-manifest", "//docs:fix", "//packages/...:fix"] }]
 
 [tasks.test]
@@ -145,6 +149,10 @@ deny_write = true
 [tasks."check:comment-types"]
 description = "Every code comment carries a registered type prefix (see Code comments in AGENTS.md)"
 run = { task = "fix:comment-types", args = ["--check"] }
+
+[tasks."check:markdown"]
+description = "Markdown prose has one sentence per line"
+run = { task = "fix:markdown", args = ["--check"] }
 
 [tasks."check:skill-manifest"]
 description = "Every shipped image skill's content hash is in the append-only shipped-skill manifest"

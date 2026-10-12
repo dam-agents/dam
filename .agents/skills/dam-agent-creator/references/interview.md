@@ -21,8 +21,8 @@ The most load-bearing answer: what the agent processes (a PR, ticket, document, 
 channel question, dataset row).
 
 - How is one item identified (number, ID, URL)? Is the ID stable?
-- How do new items appear, and how does the agent notice (poll a list API? a channel
-  message? both)?
+- How do new items appear, and how does the agent notice (polling a list API, a channel
+  message, or both)?
 - What does "already handled" mean, and where can that fact live **in the external
   system** (posted marker, label, status field)? If nowhere, only local state holds it:
   state loss means reprocessing, so a backup repo becomes near-mandatory. Say so.

@@ -31,7 +31,7 @@ mise generate git-pre-commit --write --task=check
 
 - **Code rules.** Language-level rules are indexed in [`docs/guidelines/code/index.md`](docs/guidelines/code/index.md). Scan the index and open a rule when its trigger matches your code.
 - **Comments.** Follow [`docs/guidelines/comment-guidelines.md`](docs/guidelines/comment-guidelines.md).
-- **Docs.** If your change alters how a subsystem behaves, update its architecture page in the same pull request. See [`docs/guidelines/documentation-guidelines.md`](docs/guidelines/documentation-guidelines.md).
+- **Docs.** If your change alters how a subsystem behaves, update its architecture page in the same pull request. See [`docs/guidelines/documentation-guidelines.md`](docs/guidelines/documentation-guidelines.md). Markdown prose has one sentence per line; `mise run fix:markdown` formats it.
 - **Branding.** Don't hardcode the product name in code. User-visible branding flows from the Helm `brand.*` values.
 - **Keep pull requests focused.** One logical change per pull request is easier to review and merge.
 

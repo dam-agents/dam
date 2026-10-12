@@ -39,6 +39,7 @@ Language-level coding rules are indexed in [`docs/guidelines/code/index.md`](doc
 ## Documentation
 
 Always follow [`docs/guidelines/documentation-guidelines.md`](docs/guidelines/documentation-guidelines.md).
+In every Markdown file, put each sentence of prose on its own line; `mise run fix:markdown` applies it.
 
 ## Work process
 
