@@ -29,7 +29,10 @@ export function AboutTab() {
   const { name } = getBrand();
   return (
     <div>
-      <PageHeader title={`About ${name}`} />
+      <PageHeader
+        title={`About ${name}`}
+        description="Documentation, source code and terms for this installation."
+      />
       <Card className="divide-y divide-border overflow-hidden">
         <a href={DOCS_URL} {...externalLinkProps} className={ROW}>
           <AboutRowBody

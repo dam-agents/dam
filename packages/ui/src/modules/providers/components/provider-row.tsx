@@ -55,7 +55,7 @@ export function ProviderRow({
               <HarnessIcons
                 harnesses={harnesses}
                 size="sm"
-                className="text-muted-foreground"
+                className="text-muted-foreground opacity-70"
               />
             ) : (
               <span className="text-xs text-muted-foreground">
