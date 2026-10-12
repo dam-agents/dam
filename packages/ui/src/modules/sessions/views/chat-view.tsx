@@ -105,6 +105,7 @@ import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
+import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-notice.js";
 import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
@@ -288,20 +289,22 @@ export function ChatView() {
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
   const { data: harnessStatus } = useHarnessConfigStatus(selectedAgent);
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
+  const carried = (selectedAgent && harnessStatus?.harnesses) || [];
+  const pairOutdated =
+    carried.length > 0 && !carried.some((h) => h.sessionSettings);
+  const newSessionAgent =
+    !sessionId && carried.length > 0 ? selectedAgent : null;
   const pickable =
-    !sessionId && selectedAgent && harnessStatus?.harnesses?.length
+    newSessionAgent && !pairOutdated
       ? {
-          agentId: selectedAgent,
-          carried: harnessStatus.harnesses,
-          defaultHarness:
-            harnessStatus.defaultHarness ?? harnessStatus.harnesses[0]!.name,
+          agentId: newSessionAgent,
+          carried,
+          defaultHarness: harnessStatus?.defaultHarness ?? carried[0]!.name,
         }
       : null;
-  const providerConnections = useProviderConnections(
-    pickable ? selectedAgent : null,
-  );
+  const providerConnections = useProviderConnections(newSessionAgent);
   const noProviders =
-    !!pickable &&
+    !!newSessionAgent &&
     providerConnections.loaded &&
     providerConnections.owned.length === 0;
 
@@ -916,7 +919,9 @@ export function ChatView() {
                 {!hasPendingPermission && !pickable && (
                   <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
                     <ChatColumn>
-                      {selectedAgent && currentSession?.harness ? (
+                      {selectedAgent && pairOutdated ? (
+                        <SessionPairOutdatedNotice agentId={selectedAgent} />
+                      ) : selectedAgent && currentSession?.harness ? (
                         <ModelIndicator
                           agentId={selectedAgent}
                           harness={currentSession.harness}

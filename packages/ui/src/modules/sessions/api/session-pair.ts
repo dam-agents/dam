@@ -131,7 +131,9 @@ export function readNextSessionPair(
   const status = queryClient.getQueryData<HarnessConfigStatus>(
     trpc.harnessConfig.status.queryKey({ agentId }),
   );
-  const carried = status?.harnesses?.map((h) => h.name) ?? [];
+  const carried = status?.harnesses?.some((h) => h.sessionSettings)
+    ? status.harnesses.map((h) => h.name)
+    : [];
   const chosen = useStore.getState().nextSessionPair[agentId] ?? null;
   const remembered =
     queryClient.getQueryData<SessionPair | null>(
