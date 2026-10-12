@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CardButton } from "@/components/ui/card-button";
 import { PageHeader } from "@/components/ui/page-header";
-import { SectionLabel } from "@/components/ui/section-label";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
@@ -119,7 +118,6 @@ export function SettingsView() {
             />
 
             <div className="mb-8">
-              <SectionLabel spaced>Theme</SectionLabel>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {themeOptions.map(
                   ({ value, icon: Icon, label, description }) => (

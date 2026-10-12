@@ -154,9 +154,10 @@ export function useSectionSummaries(agent: AgentView | null): {
     const on = state.installed.length;
     const created = state.standalone.length;
     if (on === 0 && created === 0 && sourceCount === 0) return "None yet";
-    return sourceCount === null
-      ? `${on} on`
-      : `${on} on across ${plural(sourceCount, "source")}`;
+    const enabled = on === 0 ? "None enabled" : `${on} enabled`;
+    return sourceCount
+      ? `${enabled} from ${plural(sourceCount, "source")}`
+      : enabled;
   }, [hasRun, configPending, skillsState.data, sourceCount]);
 
   const availableChannels = useAgents().data?.availableChannels;

@@ -13,7 +13,12 @@ interface SectionEntry {
 }
 
 export const SECTIONS: SectionEntry[] = [
-  { section: "setup", title: "Sandbox" },
+  {
+    section: "setup",
+    title: "Sandbox",
+    description:
+      "How long this agent stays awake and how much compute it gets.",
+  },
   {
     section: "connections",
     title: "Connections",
@@ -38,8 +43,18 @@ export const SECTIONS: SectionEntry[] = [
     description:
       "Variables are sent to the agent as plain text, so never add secrets here. Use them for non-sensitive configuration only. Store secrets in Connections.",
   },
-  { section: "channels", title: "Channels" },
-  { section: "skills", title: "Skills" },
+  {
+    section: "channels",
+    title: "Channels",
+    description:
+      "Channels let people message this agent from Slack or Telegram.",
+  },
+  {
+    section: "skills",
+    title: "Skills",
+    description:
+      "Skills are reusable instructions your agent loads when a task needs them.",
+  },
   {
     section: "schedules",
     title: "Schedules",
