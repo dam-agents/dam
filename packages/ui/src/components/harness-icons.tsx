@@ -18,7 +18,7 @@ export const HARNESS_ICONS: Record<
   bob: {
     label: "Bob",
     Icon: BobFilledIcon,
-    bg: "bg-icon-blue",
+    bg: "bg-icon-violet",
   },
   "claude-code": {
     label: "Claude",
@@ -35,7 +35,7 @@ export const HARNESS_ICONS: Record<
   pi: {
     label: "Pi",
     Icon: PiIcon,
-    bg: "bg-icon-violet",
+    bg: "bg-icon-blue",
   },
 };
 
