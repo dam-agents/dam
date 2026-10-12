@@ -437,7 +437,7 @@ mod tests {
         fn update(&self, _: &str, _: &Update<'_>) -> anyhow::Result<()> {
             Ok(())
         }
-        fn start(&self, _: &str, _: i32) -> anyhow::Result<()> {
+        fn start(&self, _: &str) -> anyhow::Result<()> {
             Ok(())
         }
         fn stop(&self, _: &str) -> anyhow::Result<()> {
@@ -464,7 +464,7 @@ mod tests {
         fn update(&self, _: &str, _: &Update<'_>) -> anyhow::Result<()> {
             Ok(())
         }
-        fn start(&self, _: &str, _: i32) -> anyhow::Result<()> {
+        fn start(&self, _: &str) -> anyhow::Result<()> {
             Ok(())
         }
         fn stop(&self, _: &str) -> anyhow::Result<()> {
