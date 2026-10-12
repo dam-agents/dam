@@ -31,6 +31,7 @@ interface PlatformMeta {
   harness?: string;
   provider?: string;
   model?: string;
+  settings?: Record<string, string>;
 }
 
 interface ListedSession {
@@ -71,6 +72,7 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     harness: p?.harness ?? null,
     provider: p?.provider ?? null,
     model: p?.model ?? null,
+    ...(p?.settings && { settings: p.settings }),
   };
 }
 
@@ -151,6 +153,7 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     harness: s.harness ?? null,
     provider: s.provider ?? null,
     model: s.model ?? null,
+    ...(s.settings && { settings: s.settings }),
     ...(s.spend ? { spend: s.spend } : {}),
   };
 }

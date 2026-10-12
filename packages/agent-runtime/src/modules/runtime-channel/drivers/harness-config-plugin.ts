@@ -42,6 +42,7 @@ export interface HarnessConfigPlugin extends Plugin {
   readonly supported: boolean;
   readonly catalog: HarnessConfigBinding["catalog"];
   readonly sessionModel: boolean;
+  readonly sessionSettings: string[] | undefined;
   readCurrent(opts?: { discover?: boolean }): Promise<HarnessConfigCurrent>;
   models(
     provider: string | null,
@@ -269,6 +270,9 @@ export function createHarnessConfigPlugin(deps: {
     supported: binding !== undefined,
     catalog: binding?.catalog,
     sessionModel: binding?.sessionModel === true,
+    sessionSettings: binding?.sessionSettings
+      ? Object.keys(binding.sessionSettings)
+      : undefined,
     readCurrent,
     models: (provider) => listModels(envOf(provider)),
     apply,

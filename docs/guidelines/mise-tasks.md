@@ -62,6 +62,6 @@ Inspect with `mise run --task-cache-explain <task>`; bypass with `mise run --tas
 
 ## Sandboxing
 
-Checks run sandboxed (Landlock on Linux, Seatbelt on macOS; Windows runs unsandboxed with a warning): `deny_net = true` for anything that is pure files, `deny_write = true` where the tool writes nothing. `deny_write` blocks the whole tree except `/tmp`; tools that write caches into the tree or `$HOME` (Go, uv, vitest, drizzle-kit) keep write access and deny only the network. Test suites are not sandboxed: the network sandbox blocks every inet socket, loopback included.
+Checks run sandboxed (Landlock on Linux, Seatbelt on macOS): `deny_net = true` for anything that is pure files, `deny_write = true` where the tool writes nothing. `deny_write` blocks the whole tree except `/tmp`; tools that write caches into the tree or `$HOME` (Go, uv, vitest, drizzle-kit) keep write access and deny only the network. Test suites are not sandboxed: the network sandbox blocks every inet socket, loopback included.
 
 When a sandboxed task fails with `Operation not permitted` or `Permission denied`, the task found a real undeclared side effect. Either fix the tool invocation or drop exactly the one `deny_*` it needs, with a comment saying why.

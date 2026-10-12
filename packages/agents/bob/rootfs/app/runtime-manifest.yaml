@@ -45,6 +45,11 @@ drivers:
   # provider pin and translates the result — see the agent README.
   harness-config:
     file: "$HOME/.bob/settings/settings.json"
+    # Bob switches a live session's mode; approvals are a flag of the process,
+    # so a session that picks them runs in a Bob process of its own.
+    sessionSettings:
+      mode: { mode: true }
+      approvals: { env: [BOB_SESSION_APPROVALS] }
     keys:
       model: "platform.model"
       mode: "platform.mode"
@@ -61,6 +66,7 @@ drivers:
           name: Mode
           description: Which persona Bob starts a session in
           category: mode
+          default: "agent"
           choices:
             - value: agent
               name: "Agent"
@@ -75,6 +81,7 @@ drivers:
           name: Approvals
           description: Whether Bob asks before a tool call
           category: approvals
+          default: "auto"
           choices:
             - value: auto
               name: "Auto-approve"

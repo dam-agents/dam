@@ -26,10 +26,7 @@ import {
 import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
-import {
-  readNextSessionPair,
-  rememberSessionPair,
-} from "../api/session-pair.js";
+import { readNextSessionPair } from "../api/session-pair.js";
 import { draftKey } from "../lib/draft-key.js";
 import {
   type PromptDelivery,
@@ -227,11 +224,11 @@ export function useAcpConnection(
               mode: SessionMode.Chat,
               type: SessionType.Regular,
               ...(next && pairMeta(next.pair)),
+              ...(next?.pair.settings && { settings: next.pair.settings }),
             },
           },
         });
         startedSessionId = session.sessionId;
-        if (next?.chosen) rememberSessionPair(agentId, next.pair);
       } catch (err) {
         try {
           ws.close();

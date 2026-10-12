@@ -59,9 +59,19 @@ const publicName = (id) => {
   return name.startsWith(PREFIX) ? name : PREFIX + name;
 };
 
-const resolveModel = (upstream, name) =>
-  upstream.knownModels.get(name) ??
-  (name.toLowerCase().startsWith(PREFIX) ? name.slice(PREFIX.length) : name);
+const TIERS = ["fable", "opus", "sonnet", "haiku"];
+
+const resolveModel = (upstream, name) => {
+  const known = upstream.knownModels.get(name);
+  if (known) return known;
+  const bare = name.toLowerCase().startsWith(PREFIX)
+    ? name.slice(PREFIX.length)
+    : name;
+  const models = [...upstream.knownModels.values()];
+  if (!models.length || models.includes(bare)) return bare;
+  const tier = TIERS.find((t) => bare.toLowerCase().includes(t));
+  return tier ? tierModels(models)[tier] : bare;
+};
 
 const isEmbedding = (m) =>
   ["id", "mode", "type"].some((f) =>
@@ -133,19 +143,22 @@ const latest = (models, tier) => {
 
 const shQuote = (v) => `'${v.replaceAll("'", "'\\''")}'`;
 
+function tierModels(models) {
+  const [fable, opus, sonnet, haiku] = TIERS.map((t) => latest(models, t));
+  const fallback = opus ?? sonnet ?? haiku ?? models.toSorted(byVersion).at(-1);
+  return {
+    fable: fable ?? fallback,
+    opus: fallback,
+    sonnet: sonnet ?? fallback,
+    haiku: haiku ?? sonnet ?? fallback,
+  };
+}
+
 function envLines(upstream) {
   const models = [...upstream.knownModels.values()];
   if (!models.length) return "";
-  const [fable, opus, sonnet, haiku] = ["fable", "opus", "sonnet", "haiku"].map(
-    (t) => latest(models, t),
-  );
-  const fallback = opus ?? sonnet ?? haiku ?? models.toSorted(byVersion).at(-1);
-  return Object.entries({
-    ANTHROPIC_DEFAULT_FABLE_MODEL: publicName(fable ?? fallback),
-    ANTHROPIC_DEFAULT_OPUS_MODEL: publicName(fallback),
-    ANTHROPIC_DEFAULT_SONNET_MODEL: publicName(sonnet ?? fallback),
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: publicName(haiku ?? sonnet ?? fallback),
-  })
+  return Object.entries(tierModels(models))
+    .map(([tier, model]) => [`ANTHROPIC_DEFAULT_${tier.toUpperCase()}_MODEL`, publicName(model)])
     .map(([k, v]) => `[ -n "\${${k}:-}" ] || export ${k}=${shQuote(v)}\n`)
     .join("");
 }
@@ -190,6 +203,7 @@ const keepHeaders = (entries, drop) =>
   );
 
 async function proxy(upstream, path, req, res) {
+  if (!upstream.knownModels.size) await refreshCatalog(upstream);
   const body = rewriteModel(
     upstream,
     Buffer.concat(await Array.fromAsync(req)),

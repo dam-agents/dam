@@ -12,7 +12,12 @@ import type {
   AcpRuntime,
   AcpRuntimeStatus,
 } from "./acp-runtime/acp-runtime.js";
-import { PIN_MODEL_METHOD } from "agent-runtime-api";
+import {
+  CONFIGURE_SESSION_METHOD,
+  PIN_MODEL_METHOD,
+  sessionSettingsSchema,
+  type SessionSettings,
+} from "agent-runtime-api";
 import type { EnvChange } from "../../runtime-channel/drivers/env-plugin.js";
 import type { KeepPolicy } from "../../processes/index.js";
 
@@ -20,6 +25,7 @@ export interface LeasePair {
   harness: string;
   provider: string | null;
   model: string | null;
+  settings?: SessionSettings;
 }
 
 export const PROVIDER_REMOVED_REASON = "provider-removed";
@@ -32,6 +38,12 @@ export interface LeaseRouterDeps {
   defaultHarness: string;
   harnessKnown: (harness: string) => boolean;
   providers: () => string[];
+  settingScope?: (harness: string, id: string) => "process" | "session" | null;
+  settingsError?: (
+    harness: string,
+    settings: SessionSettings,
+    model: string | null,
+  ) => string | undefined;
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
   keepPolicy: Pick<KeepPolicy, "keptProcessCount">;
@@ -80,7 +92,14 @@ const DEFAULT_IDLE_CHECK_MS = 30_000;
 const SWALLOWED_ID_PREFIX = "platform-lease-";
 
 const keyOf = (pair: LeasePair): string =>
-  JSON.stringify([pair.harness, pair.provider, pair.model]);
+  JSON.stringify([
+    pair.harness,
+    pair.provider,
+    pair.model,
+    ...(pair.settings && Object.keys(pair.settings).length > 0
+      ? [Object.entries(pair.settings).sort()]
+      : []),
+  ]);
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Holds one harness process per (harness, provider,
@@ -99,7 +118,12 @@ const keyOf = (pair: LeasePair): string =>
  * default lease opened before any provider was granted takes the first one
  * granted and restarts on its env, so a client attached early and the next
  * session meet on the same lease. A lease's going away closes a client
- * connection only when that client used the lease.
+ * connection only when that client used the lease. A session's settings
+ * apply to its next turn: one the harness can take inside a live session goes
+ * to the session's own process as an ACP call, and one the harness reads only
+ * at start, such as a CLI flag or an env value, is part of the lease key, so
+ * the session moves to a process started with it rather than restarting a
+ * process other sessions share.
  */
 export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   const leases = new Map<string, Lease>();
@@ -196,17 +220,23 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     const meta = entry?.meta;
     const firstProvider = deps.providers()[0] ?? null;
     if (meta?.harness !== undefined && meta.provider !== undefined) {
-      return {
-        harness: meta.harness,
-        provider: meta.provider,
-        model: meta.model ?? null,
-      };
+      return withProcessSettings(
+        {
+          harness: meta.harness,
+          provider: meta.provider,
+          model: meta.model ?? null,
+        },
+        meta.settings,
+      );
     }
-    const pair: LeasePair = {
-      harness: meta?.harness ?? deps.defaultHarness,
-      provider: firstProvider,
-      model: meta?.model ?? null,
-    };
+    const pair: LeasePair = withProcessSettings(
+      {
+        harness: meta?.harness ?? deps.defaultHarness,
+        provider: firstProvider,
+        model: meta?.model ?? null,
+      },
+      meta?.settings,
+    );
     if (freeze && entry && firstProvider !== null) {
       deps.sessionMetadata.set(sessionId, {
         ...meta,
@@ -215,6 +245,18 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       });
     }
     return pair;
+  }
+
+  function withProcessSettings(
+    pair: LeasePair,
+    settings: SessionSettings | undefined,
+  ): LeasePair {
+    const own = Object.entries(settings ?? {}).filter(
+      ([id]) => deps.settingScope?.(pair.harness, id) === "process",
+    );
+    return own.length > 0
+      ? { ...pair, settings: Object.fromEntries(own) }
+      : pair;
   }
 
   function virtualChannel(
@@ -335,9 +377,22 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       return;
     }
 
+    if (method === CONFIGURE_SESSION_METHOD && isRequest(frame)) {
+      configure(real, frame.id, params);
+      return;
+    }
+
     if (method === "session/new") {
-      const requested = platformPair(params);
-      const pair = { ...defaultPair(), ...requested };
+      const { settings, ...requested } = platformPair(params);
+      const unchecked = { ...defaultPair(), ...requested };
+      const invalid =
+        settings &&
+        deps.settingsError?.(unchecked.harness, settings, unchecked.model);
+      if (invalid) {
+        refuse(real, frame.id, { code: -32602, message: invalid });
+        return;
+      }
+      const pair = withProcessSettings(unchecked, settings);
       if (!deps.harnessKnown(pair.harness)) {
         refuse(real, frame.id, {
           code: -32602,
@@ -351,7 +406,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       }
       const v = channelOn(real, leaseFor(pair));
       v.used = true;
-      v.deliver(JSON.stringify(withPlatformPair(frame, pair)));
+      v.deliver(JSON.stringify(withPlatformPair(frame, pair, settings)));
       return;
     }
 
@@ -380,6 +435,11 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       (method === "session/prompt" || method.startsWith("session/set_"))
     ) {
       refuse(real, frame.id, providerRemoved(pair.provider!));
+      return;
+    }
+    if (revoked && method === "session/resume" && isRequest(frame)) {
+      if (real.isOpen())
+        real.send(JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: {} }));
       return;
     }
     const lease = leaseFor(pair);
@@ -414,24 +474,97 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       return;
     }
     const from = leases.get(keyOf(pair));
-    const { model: _previous, ...meta } = entry.meta;
+    if (model !== pair.model && from?.runtime.isSessionRunning(sessionId)) {
+      refuse(real, id, {
+        code: -32000,
+        message: "The model can change once the current turn ends",
+      });
+      return;
+    }
+    const { model: _previous, settings: previous, ...meta } = entry.meta;
+    const settings = Object.fromEntries(
+      Object.entries(previous ?? {}).filter(
+        ([key, value]) =>
+          !deps.settingsError?.(pair.harness, { [key]: value }, model),
+      ),
+    );
     deps.sessionMetadata.set(sessionId, {
       ...meta,
       ...(model !== null && { model }),
+      ...(Object.keys(settings).length > 0 && { settings }),
     });
-    movedSessions.add(sessionId);
-    if (from && from.key !== keyOf(pairOfSession(sessionId, false))) {
-      from.runtime.releaseSession(sessionId);
-      if (from.key !== keyOf(defaultPair()) && !from.runtime.holdsSessions()) {
-        deps.log(
-          `lease ${from.key} holds no session after a pin; shutting it down`,
-        );
-        drop(from);
-        from.runtime.shutdown();
-      }
-    }
+    moveSession(sessionId, from);
     if (real.isOpen())
       real.send(JSON.stringify({ jsonrpc: "2.0", id, result: { model } }));
+  }
+
+  function moveSession(sessionId: string, from: Lease | undefined): void {
+    movedSessions.add(sessionId);
+    if (!from || from.key === keyOf(pairOfSession(sessionId, false))) return;
+    from.runtime.releaseSession(sessionId);
+    if (from.key !== keyOf(defaultPair()) && !from.runtime.holdsSessions()) {
+      deps.log(
+        `lease ${from.key} holds no session after a move; shutting it down`,
+      );
+      drop(from);
+      from.runtime.shutdown();
+    }
+  }
+
+  function configure(
+    real: ClientChannel,
+    id: unknown,
+    params: Record<string, unknown> | undefined,
+  ): void {
+    const sessionId =
+      typeof params?.sessionId === "string" ? params.sessionId : "";
+    const entry = deps.sessionMetadata.get(sessionId);
+    if (!entry) {
+      refuse(real, id, { code: -32602, message: "Unknown session" });
+      return;
+    }
+    const changes = isNonNullObject(params?.settings) ? params.settings : {};
+    const merged: Record<string, unknown> = { ...entry.meta.settings };
+    for (const [key, value] of Object.entries(changes)) merged[key] = value;
+    const parsed = sessionSettingsSchema.safeParse(merged);
+    const pair = pairOfSession(sessionId, true);
+    const invalid = parsed.success
+      ? deps.settingsError?.(pair.harness, parsed.data, pair.model)
+      : "Session settings must map setting ids to values";
+    if (invalid || !parsed.success) {
+      refuse(real, id, { code: -32602, message: invalid });
+      return;
+    }
+    if (pair.provider !== null && !deps.providers().includes(pair.provider)) {
+      refuse(real, id, providerRemoved(pair.provider));
+      return;
+    }
+    const from = leases.get(keyOf(pair));
+    const moving =
+      keyOf(pair) !==
+      keyOf(withProcessSettings({ ...pair, settings: undefined }, parsed.data));
+    if (moving && from?.runtime.isSessionRunning(sessionId)) {
+      refuse(real, id, {
+        code: -32000,
+        message: "This setting can change once the current turn ends",
+      });
+      return;
+    }
+    const { settings: _previous, ...meta } = entry.meta;
+    deps.sessionMetadata.set(sessionId, {
+      ...meta,
+      ...(Object.keys(parsed.data).length > 0 && { settings: parsed.data }),
+    });
+    if (moving) moveSession(sessionId, from);
+    else from?.runtime.syncSessionSettings(sessionId);
+    if (real.isOpen())
+      real.send(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          result: { settings: parsed.data },
+        }),
+      );
   }
 
   function idleOut(): void {
@@ -528,6 +661,10 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     releaseSession(sessionId) {
       leaseOfSession(sessionId)?.runtime.releaseSession(sessionId);
+    },
+
+    syncSessionSettings(sessionId) {
+      leaseOfSession(sessionId)?.runtime.syncSessionSettings(sessionId);
     },
 
     holdsSessions() {
@@ -639,16 +776,19 @@ function platformPair(
   const harness = text("harness");
   const provider = text("provider");
   const model = text("model");
+  const settings = sessionSettingsSchema.safeParse(platform?.settings);
   return {
     ...(harness !== undefined && { harness }),
     ...(provider !== undefined && { provider }),
     ...(model !== undefined && { model }),
+    ...(settings.success && { settings: settings.data }),
   };
 }
 
 function withPlatformPair(
   frame: Record<string, unknown>,
   pair: LeasePair,
+  settings: SessionSettings | undefined,
 ): object {
   const params = isNonNullObject(frame.params) ? frame.params : {};
   const meta = isNonNullObject(params._meta) ? params._meta : {};
@@ -664,6 +804,7 @@ function withPlatformPair(
           harness: pair.harness,
           ...(pair.provider !== null && { provider: pair.provider }),
           ...(pair.model !== null && { model: pair.model }),
+          ...(settings && { settings }),
         },
       },
     },
@@ -674,6 +815,12 @@ function withoutPair(frame: Record<string, unknown>): object {
   const params = isNonNullObject(frame.params) ? frame.params : undefined;
   const meta = isNonNullObject(params?._meta) ? params._meta : undefined;
   if (!params || !meta || !isNonNullObject(meta.platform)) return frame;
-  const { harness: _h, provider: _p, model: _m, ...platform } = meta.platform;
+  const {
+    harness: _h,
+    provider: _p,
+    model: _m,
+    settings: _s,
+    ...platform
+  } = meta.platform;
   return { ...frame, params: { ...params, _meta: { ...meta, platform } } };
 }

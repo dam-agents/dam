@@ -65,6 +65,18 @@ export function useProviderModels(
   return { ...query, operable };
 }
 
+export function useHarnessConfigured(agentId: string, harness: string) {
+  const operable = useIsAgentOperable(agentId);
+  return useQuery({
+    queryKey: ["harness-config-current", agentId, harness],
+    queryFn: operable
+      ? () => agentTrpc(agentId).harnessConfig.current.query({ harness })
+      : skipToken,
+    staleTime: 60_000,
+    retry: false,
+  }).data;
+}
+
 export function useProviderConnections(agentId: string | null): {
   granted: ProviderConnectionRef[];
   owned: ProviderConnectionRef[];
@@ -115,7 +127,7 @@ export function useGrantProvider(agentId: string | null) {
 
 export function readNextSessionPair(
   agentId: string,
-): { pair: SessionPair; chosen: boolean } | null {
+): { pair: SessionPair } | null {
   const status = queryClient.getQueryData<HarnessConfigStatus>(
     trpc.harnessConfig.status.queryKey({ agentId }),
   );
@@ -146,7 +158,7 @@ export function readNextSessionPair(
     carried,
     fittingProviders(catalog, granted),
   );
-  return pair ? { pair, chosen: chosen !== null } : null;
+  return pair ? { pair } : null;
 }
 
 export function rememberSessionPair(agentId: string, pair: SessionPair): void {
@@ -160,7 +172,7 @@ export function rememberSessionPair(agentId: string, pair: SessionPair): void {
     .catch((err: unknown) =>
       emitToast({
         kind: "error",
-        message: `Couldn't remember this session's harness and model: ${err instanceof Error ? err.message : String(err)}`,
+        message: `Couldn't save the default harness and model: ${err instanceof Error ? err.message : String(err)}`,
       }),
     );
 }

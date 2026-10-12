@@ -315,6 +315,9 @@ export async function composeRuntimeChannel(
             harnessConfig: plugin !== undefined,
             ...(plugin?.catalog && { harnessConfigCatalog: plugin.catalog }),
             sessionModel: plugin?.sessionModel ?? false,
+            ...(plugin?.sessionSettings && {
+              sessionSettings: plugin.sessionSettings,
+            }),
           };
         }),
         kbPublish: 2,

@@ -16,6 +16,7 @@ import {
 } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -176,10 +177,9 @@ export function SessionRow({
         <div
           className={cn(
             "relative flex items-center gap-1.5",
-            onboarding && !hasIndicators && HOVER_ROOM,
+            onboarding && !hasIndicators && !s.harness && HOVER_ROOM,
           )}
         >
-          {}
           <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
@@ -196,6 +196,7 @@ export function SessionRow({
             working={working}
             draft={draft}
             backgroundWork={backgroundWork}
+            harness={s.harness ?? null}
           />
           {}
           <DropdownMenu>
@@ -312,6 +313,7 @@ function SessionIndicators({
   working,
   draft,
   backgroundWork,
+  harness,
 }: {
   scheduled: boolean;
   terminal: boolean;
@@ -320,6 +322,7 @@ function SessionIndicators({
   working: boolean;
   draft: boolean;
   backgroundWork: readonly BackgroundWorkItemView[];
+  harness: string | null;
 }) {
   const hasBackgroundWork = backgroundWork.length > 0;
   if (
@@ -329,7 +332,8 @@ function SessionIndicators({
     !needsApproval &&
     !working &&
     !hasBackgroundWork &&
-    !draft
+    !draft &&
+    !harness
   )
     return null;
   return (
@@ -374,6 +378,13 @@ function SessionIndicators({
           className="inline-flex text-muted-foreground shrink-0"
         >
           <Edit size={16} />
+        </span>
+      ) : harness ? (
+        <span
+          data-testid="session-harness"
+          className="inline-flex shrink-0 text-muted-foreground"
+        >
+          <HarnessIcons harnesses={[harness]} size="xs" />
         </span>
       ) : null}
       {messenger && !working && (

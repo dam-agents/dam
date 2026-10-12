@@ -45,9 +45,19 @@ export const modelDiscoverySources = z.union([
 ]);
 export type ModelDiscoverySources = z.infer<typeof modelDiscoverySources>;
 
+export const sessionSettingBinding = z.union([
+  z.object({ mode: z.literal(true) }),
+  z.object({ configOption: z.string().min(1) }),
+  z.object({ env: z.array(z.string().min(1)).nonempty() }),
+]);
+export type SessionSettingBinding = z.infer<typeof sessionSettingBinding>;
+
 export const harnessConfigBinding = z.object({
   file: z.string().min(1),
   sessionModel: z.boolean().optional(),
+  sessionSettings: z
+    .record(z.string().min(1), sessionSettingBinding)
+    .optional(),
   format: z.enum(["json", "toml"]).default("json"),
   keys: z
     .object({
@@ -222,4 +232,11 @@ function pickKinds(
 export function sessionModelOf(manifest: RuntimeManifest): boolean {
   const raw = resolveDrivers(manifest)["harness-config"];
   return raw ? harnessConfigBinding.parse(raw).sessionModel === true : false;
+}
+
+export function harnessConfigBindingOf(
+  manifest: RuntimeManifest,
+): HarnessConfigBinding | undefined {
+  const raw = resolveDrivers(manifest)["harness-config"];
+  return raw ? harnessConfigBinding.parse(raw) : undefined;
 }

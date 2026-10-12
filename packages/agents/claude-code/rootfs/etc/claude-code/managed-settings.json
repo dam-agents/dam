@@ -6,6 +6,7 @@
       "mcp__knowledge-bases"
     ]
   },
+  "crossSessionInbound": "refuse",
   "hooks": {
     "SessionStart": [
       {

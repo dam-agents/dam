@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sessionSettingsSchema } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../../core/document-store.js";
 
 export const platformSessionMetaSchema = z.object({
@@ -13,6 +14,7 @@ export const platformSessionMetaSchema = z.object({
   harness: z.string().optional(),
   provider: z.string().optional(),
   model: z.string().optional(),
+  settings: sessionSettingsSchema.optional(),
   title: z.string().optional(),
   customTitle: z.string().optional(),
 });

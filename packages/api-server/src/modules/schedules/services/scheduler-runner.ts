@@ -153,6 +153,7 @@ export function createSchedulerRunner(
       if (pair.provider !== null) payload.provider = pair.provider;
       if (pair.model !== null) payload.model = pair.model;
       else delete payload.model;
+      if (pair.settings) payload.settings = pair.settings;
     }
     if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
     if (sched.spec.type === "once") {

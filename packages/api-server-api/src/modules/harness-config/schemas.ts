@@ -2,6 +2,7 @@ import {
   harnessCapability,
   harnessConfigCatalog,
   harnessConfigChoice,
+  sessionSettingsSchema,
 } from "agent-runtime-api";
 import { z } from "zod";
 
@@ -37,6 +38,7 @@ export const sessionPairSchema = z.object({
   harness: z.string().min(1),
   provider: z.string().min(1).nullable(),
   model: z.string().min(1).nullable(),
+  settings: sessionSettingsSchema.optional(),
 });
 
 export const rememberSessionPairInputSchema = sessionPairSchema.extend({

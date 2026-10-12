@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sessionSettingsSchema } from "../harness-config/session-settings.js";
 
 export const contributionKind = z.enum([
   "env",
@@ -162,6 +163,7 @@ export const triggerEventPayload = z.object({
   provider: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   sessionTitle: z.string().min(1).optional(),
+  settings: sessionSettingsSchema.optional(),
   mcpServers: z.array(z.unknown()).optional(),
   precheck: z.string().min(1).optional(),
   fireAt: z.string().datetime({ offset: true }).optional(),
@@ -324,6 +326,7 @@ export const harnessConfigOptionGroup = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   category: z.string().min(1),
+  default: z.string().min(1).optional(),
   choices: z.array(harnessConfigChoice),
 });
 
@@ -354,6 +357,7 @@ export const harnessCapability = z.object({
   harnessConfig: z.boolean(),
   harnessConfigCatalog: harnessConfigCatalog.optional(),
   sessionModel: z.boolean(),
+  sessionSettings: z.array(z.string().min(1)).optional(),
 });
 export type HarnessCapability = z.infer<typeof harnessCapability>;
 

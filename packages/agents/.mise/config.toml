@@ -1,3 +1,7 @@
 [tasks.check]
 description = "Run this package's checks"
 depends = [":check:*"]
+
+[tasks.test]
+description = "Run this package's tests"
+depends = [":test:*"]

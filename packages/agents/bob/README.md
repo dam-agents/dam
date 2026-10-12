@@ -70,7 +70,7 @@ Guardrails that stay active: `approval.outsideWorkspaceAllowed` is a hard gate a
 
 `bob acp` parses only `--trust`, `--auto-approve`, `--accept-license`, `--log-level` and `--disable-{mcp,subagents}` — model, mode and cost have no flag on that surface, so they ride `~/.bob/settings/settings.json`, which `bob-settings.mjs` merge-writes from the env before either surface starts. Settings come from three places, in this order of precedence: the agent's **Config panel**, then the **Bob Shell provider** pins, then free-form **Configure Agent → Env**.
 
-Bob cannot switch a live session's model, so the platform runs one Bob process per model a session picks, and gives it that model as `PLATFORM_MODEL`, which wins over all three. These processes share the one settings file, and Bob reads it only at start: two processes that start in the same moment can each start on the other's model. The write is atomic, so a process never reads a half-written file.
+Bob cannot switch a live session's model, so the platform runs one Bob process per model a session picks, and gives it that model as `PLATFORM_MODEL`, which wins over all three. Bob reads its settings file again on every lookup and watches it, so processes sharing one file would read each other's model. A Bob process the platform starts for a provider, model or session approvals therefore gets a settings file of its own, `~/.bob/platform-processes/<hash>/settings.json`: [`bob-settings-file.mjs`](rootfs/usr/local/lib/bob-settings-file.mjs), preloaded through `NODE_OPTIONS` into `bob acp` only, redirects Bob's reads, writes, renames and watches of `~/.bob/settings/settings.json` to the file `BOB_SETTINGS_FILE` names. `bob-settings.mjs` runs without it, so it reads the agent-wide choices from the shared file and writes the process's copy. The rest of `~/.bob` (task store, rules, MCP configuration) stays shared. `mise run //packages/agents:test:bob-settings-isolation` checks the redirect.
 
 ### The Config panel (per agent)
 
@@ -78,7 +78,7 @@ The manifest declares a `harness-config` driver, which is what puts the panel on
 
 The panel writes into a `platform` section of the settings file that **Bob itself ignores**, not into `session.*`. That indirection is load-bearing: `bob-settings.mjs` rewrites Bob's own keys on every harness start, so a panel writing them directly would be overwritten by the provider pin (or deleted when the pin is cleared). Instead the bootstrap reads the `platform` section, resolves panel value over provider pin, and writes the result — so a panel choice survives every restart, and an agent with no panel choice still follows the pin.
 
-Approvals cannot ride the settings file at all, because Bob's ACP reads them from a CLI flag at spawn. The bootstrap therefore prints the mode it resolved and the harness scripts translate it into `--auto-approve`.
+Approvals cannot ride the settings file at all, because Bob's ACP reads them from a CLI flag at spawn. The bootstrap therefore prints the mode it resolved and the harness scripts translate it into `--auto-approve`. A session's own approvals choice arrives as `BOB_SESSION_APPROVALS`, which wins over the panel; it is part of the process's lease, so a session asking every time runs on a Bob process of its own.
 
 Two consequences worth knowing:
 

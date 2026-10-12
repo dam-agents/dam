@@ -109,16 +109,13 @@ import {
   setSessionRunning,
   useAgentSession,
 } from "../api/queries.js";
-import { useProviderModels } from "../api/session-pair.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
-import { OtherProviderModels } from "../components/other-provider-models.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
-import { SessionLeaseNote } from "../components/session-lease-note.js";
 import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
@@ -284,6 +281,7 @@ export function ChatView() {
     sendPrompt,
     stopAgent,
     chooseSessionModel,
+    configureSession,
     busy,
     loadingSession,
     connectionState,
@@ -313,28 +311,6 @@ export function ChatView() {
             harnessStatus.defaultHarness ?? harnessStatus.harnesses[0]!.name,
         }
       : null;
-  const { data: sessionProviderModels } = useProviderModels(
-    sessionId ? selectedAgent : null,
-    currentSession?.harness ?? null,
-    currentSession?.provider ?? null,
-  );
-  const sessionModelChoices = [
-    ...new Map(
-      (sessionProviderModels?.availableModels ?? []).map((m) => [m.value, m]),
-    ).values(),
-  ];
-  const sessionModel = currentSession?.harness
-    ? {
-        current: currentSession.model ?? "",
-        choices: sessionModelChoices,
-      }
-    : null;
-  const indicatorModel = currentSession?.harness
-    ? currentSession.model
-      ? (sessionModelChoices.find((c) => c.value === currentSession.model)
-          ?.name ?? currentSession.model)
-      : "Default model"
-    : harnessCurrent?.model;
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
@@ -602,8 +578,6 @@ export function ChatView() {
     actionsAria: "Agent actions",
     configure: "Configure agent",
     delete: "Delete agent",
-    modelSubject: "agent",
-    modelSettings: "Agent Setup",
   };
 
   const handleConfigureSandbox = useCallback(() => {
@@ -995,57 +969,39 @@ export function ChatView() {
                     </ChatColumn>
                   </div>
                 )}
-                {!hasPendingPermission &&
-                  !pickable &&
-                  (indicatorModel || currentSession?.harness) && (
-                    <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
-                      <ChatColumn>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {indicatorModel && (
-                            <ModelIndicator
-                              model={indicatorModel}
-                              sessionChoices={
-                                sessionModel
-                                  ? {
-                                      current: sessionModel.current,
-                                      choices: sessionModel.choices,
-                                      onChoose: (value) =>
-                                        void chooseSessionModel(value),
-                                    }
-                                  : undefined
-                              }
-                              subject={surfaceCopy.modelSubject}
-                              extra={
-                                selectedAgent && currentSession?.harness ? (
-                                  <OtherProviderModels
-                                    carried={harnessStatus?.harnesses ?? []}
-                                    agentId={selectedAgent}
-                                    harness={currentSession.harness}
-                                    provider={currentSession.provider ?? null}
-                                  />
-                                ) : undefined
-                              }
-                              settings={
-                                surfaceCopy.modelSettings
-                                  ? {
-                                      label: surfaceCopy.modelSettings,
-                                      onConfigure: handleConfigureSandbox,
-                                    }
-                                  : undefined
-                              }
-                            />
-                          )}
-                          {selectedAgent && currentSession?.harness && (
-                            <SessionLeaseNote
-                              agentId={selectedAgent}
-                              harness={currentSession.harness}
-                              provider={currentSession.provider ?? null}
-                            />
-                          )}
-                        </div>
-                      </ChatColumn>
-                    </div>
-                  )}
+                {!hasPendingPermission && !pickable && (
+                  <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+                    <ChatColumn>
+                      {selectedAgent && currentSession?.harness ? (
+                        <ModelIndicator
+                          agentId={selectedAgent}
+                          harness={currentSession.harness}
+                          provider={currentSession.provider ?? null}
+                          model={currentSession.model ?? null}
+                          settings={currentSession.settings}
+                          carried={harnessStatus?.harnesses ?? []}
+                          onChoose={(value) => void chooseSessionModel(value)}
+                          onConfigure={(change) =>
+                            void configureSession(change)
+                          }
+                          onNewSession={handleNewSession}
+                        />
+                      ) : selectedAgent ? (
+                        <button
+                          type="button"
+                          className="pl-3 text-sm text-muted-foreground hover:text-foreground hover:underline"
+                          onClick={() =>
+                            navigateToSandboxHome(selectedAgent, "setup")
+                          }
+                        >
+                          {harnessCurrent?.model
+                            ? `${harnessCurrent.model} · Configure defaults`
+                            : "Configure defaults"}
+                        </button>
+                      ) : null}
+                    </ChatColumn>
+                  </div>
+                )}
               </div>
             </>
           )}

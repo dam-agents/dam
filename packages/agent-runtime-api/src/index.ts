@@ -23,7 +23,15 @@ export type {
   StoreDelegationFramesInput,
   DelegationFrames,
 } from "./modules/sessions/types.js";
-export { PIN_MODEL_METHOD } from "./modules/sessions/types.js";
+export {
+  PIN_MODEL_METHOD,
+  CONFIGURE_SESSION_METHOD,
+} from "./modules/sessions/types.js";
+export {
+  sessionSettingsSchema,
+  sessionSettingsError,
+  type SessionSettings,
+} from "./modules/harness-config/session-settings.js";
 export {
   podSessionModeSchema,
   podSessionNoticeSchema,

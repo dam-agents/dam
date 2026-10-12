@@ -29,6 +29,7 @@ export interface SessionMetaLike {
     harness?: string;
     provider?: string;
     model?: string;
+    settings?: Record<string, string>;
     title?: string;
     customTitle?: string;
   };
@@ -82,6 +83,7 @@ function fromEntry(
       provider: entry.meta.provider,
     }),
     ...(entry.meta.model !== undefined && { model: entry.meta.model }),
+    ...(entry.meta.settings !== undefined && { settings: entry.meta.settings }),
   };
 }
 

@@ -1,93 +1,139 @@
-import { ArrowRight, Close } from "@carbon/icons-react";
-import { type ReactNode, useId } from "react";
+import { Information } from "@carbon/icons-react";
+import type { HarnessCapability } from "agent-runtime-api";
 
-import { Button } from "@/components/ui/button";
+import { HarnessIcons } from "@/components/harness-icons";
 import {
   Popover,
   PopoverClose,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Tooltip } from "@/components/ui/tooltip";
+
+import {
+  useHarnessCatalog,
+  useHarnessConfigured,
+  useProviderConnections,
+  useProviderModels,
+  useRememberedPair,
+} from "../api/session-pair.js";
+import { SetAsDefault } from "./session-pair-picker.js";
+import {
+  SessionSettingsControls,
+  settingDefaults,
+} from "./session-settings-controls.js";
+
+const CONTEXT_HINT =
+  "If you need to move over context from this conversation, ask the agent to save it to a file.";
+const NEW_SESSION_HINT = `start a new session. ${CONTEXT_HINT}`;
 
 interface Props {
-  model: string;
-  subject: string;
-  extra?: ReactNode;
-  settings?: {
-    label: string;
-    onConfigure: () => void;
-  };
-  sessionChoices?: {
-    current: string;
-    choices: readonly { value: string; name: string }[];
-    onChoose: (value: string) => void;
-  };
+  agentId: string;
+  harness: string;
+  provider: string | null;
+  model: string | null;
+  settings?: Readonly<Record<string, string>>;
+  carried: readonly HarnessCapability[];
+  onChoose: (model: string) => void;
+  onConfigure: (settings: Record<string, string>) => void;
+  onNewSession: () => void;
 }
 
 export function ModelIndicator({
+  agentId,
+  harness,
+  provider,
   model,
-  subject,
-  extra,
-  settings,
-  sessionChoices,
+  settings = {},
+  carried,
+  onChoose,
+  onConfigure,
+  onNewSession,
 }: Props) {
-  const titleId = useId();
-  const switchable =
-    sessionChoices && sessionChoices.choices.length > 0
-      ? sessionChoices
-      : undefined;
+  const { data: catalog } = useHarnessCatalog();
+  const { data: remembered } = useRememberedPair(agentId);
+  const capability = carried.find((h) => h.name === harness);
+  const defaults = settingDefaults(
+    capability,
+    useHarnessConfigured(agentId, harness),
+  );
+  const { granted, loaded } = useProviderConnections(agentId);
+  const activeProvider = granted.find((p) => p.id === provider);
+  const removed = loaded && provider !== null && !activeProvider;
+  const { data, isLoading, isError, operable } = useProviderModels(
+    removed ? null : agentId,
+    harness,
+    provider,
+  );
+  const harnessName =
+    catalog?.harnesses.find((h) => h.name === harness)?.displayName ?? harness;
+  const models = removed
+    ? []
+    : data?.availableModels === null
+      ? (carried
+          .find((h) => h.name === harness)
+          ?.harnessConfigCatalog?.options.find((o) => o.category === "model")
+          ?.choices ?? [])
+      : (data?.availableModels ?? []);
+  const modelName = models.find((m) => m.value === model)?.name ?? model;
 
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button
           type="button"
+          data-testid="session-model-picker"
           className="flex items-center gap-1 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
-          {model}
+          {[
+            modelName,
+            harnessName,
+            activeProvider?.name,
+            removed ? "Provider removed" : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </button>
       </PopoverTrigger>
       <PopoverContent
         side="top"
         align="start"
-        aria-labelledby={titleId}
+        aria-label="Session harness and model"
         collisionPadding={8}
-        className="flex max-h-[var(--radix-popover-content-available-height)] w-[300px] flex-col gap-2 overflow-y-auto text-sm"
+        className="flex max-h-[var(--radix-popover-content-available-height)] w-[340px] flex-col gap-3 overflow-y-auto text-sm"
       >
-        <div className="flex items-start justify-between gap-3">
-          <h2 id={titleId} className="font-bold text-foreground">
-            Current model
-          </h2>
-          <PopoverClose asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Close"
-              className="-mr-1 -mt-1 shrink-0 text-muted-foreground"
+        <div className="flex items-center gap-2 px-1 font-medium text-foreground">
+          <span className="text-muted-foreground">
+            <HarnessIcons harnesses={[harness]} size="xs" />
+          </span>
+          <span className="flex-1 truncate">{harnessName}</span>
+          <Tooltip content={`To use a different harness, ${NEW_SESSION_HINT}`}>
+            <button
+              type="button"
+              aria-label="About changing the harness"
+              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
             >
-              <Close size={16} />
-            </Button>
-          </PopoverClose>
+              <Information size={16} />
+            </button>
+          </Tooltip>
         </div>
-        <p className="text-muted-foreground">
-          This {subject} is using{" "}
-          <span className="text-foreground">{model}</span>
-          {guidance(switchable !== undefined, settings?.label)}
-        </p>
-        {switchable && (
+        <section aria-label={activeProvider?.name ?? "Active provider"}>
+          {activeProvider && (
+            <h3 className="text-xs font-medium uppercase text-muted-foreground">
+              {activeProvider.name}
+            </h3>
+          )}
           <ul
             aria-label="Models for this session"
             className="-mx-1 max-h-56 overflow-y-auto"
           >
-            {switchable.choices.map((choice) => (
+            {models.map((choice) => (
               <li key={choice.value}>
                 <PopoverClose asChild>
                   <button
                     type="button"
-                    aria-current={
-                      choice.value === switchable.current ? "true" : undefined
-                    }
-                    onClick={() => switchable.onChoose(choice.value)}
+                    aria-current={choice.value === model ? "true" : undefined}
+                    onClick={() => onChoose(choice.value)}
                     className="w-full truncate rounded px-1 py-1 text-left text-muted-foreground hover:bg-muted hover:text-foreground aria-[current]:font-medium aria-[current]:text-foreground"
                   >
                     {choice.name}
@@ -95,30 +141,59 @@ export function ModelIndicator({
                 </PopoverClose>
               </li>
             ))}
+            {models.length === 0 && (
+              <li className="px-1 py-1 text-muted-foreground">
+                {removed
+                  ? "Provider removed."
+                  : !operable
+                    ? "Start the agent to list models."
+                    : isLoading
+                      ? "Loading models…"
+                      : isError || data?.availableModels === undefined
+                        ? "Could not list this provider's models."
+                        : "No models available."}
+              </li>
+            )}
+            <li className="px-1 pb-1 pt-2 text-xs text-muted-foreground">
+              To use a model from a different provider,{" "}
+              <PopoverClose asChild>
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  onClick={onNewSession}
+                >
+                  start a new session
+                </button>
+              </PopoverClose>
+              . {CONTEXT_HINT}
+            </li>
           </ul>
+        </section>
+        {capability?.sessionSettings && (
+          <div className="border-t border-border pt-2 empty:hidden">
+            <SessionSettingsControls
+              capability={capability}
+              model={model}
+              settings={settings}
+              defaults={defaults}
+              onChange={(id, value) => onConfigure({ [id]: value })}
+            />
+          </div>
         )}
-        {extra}
-        {settings && (
-          <PopoverClose asChild>
-            <button
-              type="button"
-              onClick={settings.onConfigure}
-              className="inline-flex items-center gap-1.5 self-start font-medium text-accent hover:underline"
-            >
-              Configure model <ArrowRight size={16} />
-            </button>
-          </PopoverClose>
-        )}
+        <div className="flex justify-end border-t border-border pt-2 text-xs text-muted-foreground">
+          <SetAsDefault
+            agentId={agentId}
+            pair={{
+              harness,
+              provider,
+              model,
+              settings: { ...defaults, ...settings },
+            }}
+            defaults={defaults}
+            remembered={remembered}
+          />
+        </div>
       </PopoverContent>
     </Popover>
   );
-}
-
-function guidance(canSwitch: boolean, settingsLabel: string | undefined) {
-  if (canSwitch && settingsLabel) {
-    return `. Switch it below, or change the default for new sessions in ${settingsLabel}.`;
-  }
-  if (canSwitch) return ". Switch it below.";
-  if (settingsLabel) return `. Change the model in ${settingsLabel}.`;
-  return ".";
 }

@@ -19,10 +19,19 @@ const STYLES: Record<
     bg: string;
   }
 > = {
-  anthropic: { Icon: AnthropicIcon, bg: "bg-icon-clay" },
+  anthropic: {
+    Icon: AnthropicIcon,
+    bg: "bg-icon-clay",
+  },
   openai: { Icon: OpenAIIcon, bg: "bg-icon-green" },
-  "ibm-litellm": { Icon: LiteLLMIcon, bg: "bg-icon-blue" },
-  "curve-bender": { Icon: LiteLLMIcon, bg: "bg-icon-violet" },
+  "ibm-litellm": {
+    Icon: LiteLLMIcon,
+    bg: "bg-icon-blue",
+  },
+  "curve-bender": {
+    Icon: LiteLLMIcon,
+    bg: "bg-icon-violet",
+  },
   bob: { Icon: BobIcon, bg: "bg-icon-blue" },
   bedrock: { Icon: Cloud, bg: "bg-icon-ochre" },
 };
