@@ -25,7 +25,7 @@ A **binding** puts one Agent into one conversation; whoever Slack lets into that
 
 The owner's **Slack Account Connection** is a separate thing: it gives the Agent the owner's personal Slack access as an MCP server. On a bound Agent, channel members get that access too unless the harness refuses the calls (§3 safety gates).
 
-`/dam login` links a Slack user to a platform user. It authorizes `/dam bind|unbind|ambient|default|delete`, never who may talk to the Agent.
+`/dam login` links a Slack user to a platform user. It authorizes `/dam bind|unbind|ambient|ignore|unignore|default|delete`, never who may talk to the Agent.
 
 ### How the agent reaches Slack
 
@@ -66,8 +66,8 @@ flowchart TD
 | Reply in the thread without `@DAM` | **Dropped silently**, even under the agent's own answer, even mid-turn | The natural follow-up doesn't work |
 | `@DAM Reviewer …` | Reaches the Agent named Reviewer (name must open the message; case-insensitive, whole word) | `@DAM hey Reviewer` goes to the default |
 | Edit a message to add the tag | Ignored | none |
-| Another bot or workflow posts a plain message | Ignored (also what keeps an agent from answering its own posts) | none |
-| Another bot or workflow posts a message that tags `@DAM` | Not filtered by the platform; up to Slack | Another bot can start a turn |
+| Another bot, workflow or Agent posts a plain message | Reaches readers only, like a person's; never the Agent that posted it | Each reader spends a turn; `/dam ignore` silences one app |
+| Another bot, workflow or Agent posts a message that tags `@DAM` | Routed like a person's mention | Three bot posts in a row per thread start turns, until a person posts |
 
 ### 1.2 Channel, ambient (reads along)
 
@@ -161,7 +161,7 @@ Outside its bound conversations, the bot never reaches a channel the owner could
 
 | Behavior | Decided by | Caveat |
 |---|---|---|
-| Which messages start a turn: tagged ones on a normal binding, every message on ambient or in a 1:1 DM | Platform | On a normal binding, untagged thread replies never arrive |
+| Which messages start a turn: tagged ones on a normal binding, every message on ambient (not an Agent's own, its ambient-round replies, or an ignored app's), a person's in a 1:1 DM | Platform | On a normal binding, untagged thread replies never arrive |
 | Which Agent a mention reaches | Platform | Two Agents sharing a name: default, sender not told |
 | One turn per top-level mention; DM bursts merged; a tagged reply joins a running turn | Platform; joining needs a harness that supports it (**Setup**), else next turn | Read-along messages never join a running turn |
 | Whether the turn runs at all | Platform, from the Agent's state: stopped by its owner, over budget, migrating, terms not re-accepted | Addressed: a notice. Ambient: nothing |

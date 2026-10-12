@@ -5441,12 +5441,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return target;
       }
 
-      const engaged = findTurnRef(
-        instanceName,
-        (ref) => ref.channel === target.id,
-      );
       const [footer, persona] = await Promise.all([
-        agentFooter(instanceName, undefined, engaged?.ambient),
+        agentFooter(instanceName),
         agentPersona(gw, instanceName, target.teamId),
       ]);
       const contextBlock = agentContextBlock(footer);

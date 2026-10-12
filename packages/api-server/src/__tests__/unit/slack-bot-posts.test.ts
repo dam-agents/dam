@@ -52,6 +52,7 @@ function harness(
     linkedSub?: string | null;
     ignored?: SlackIgnoredApp[];
     replies?: Partial<Record<string, (nth: number) => string | null>>;
+    sends?: Partial<Record<string, (nth: number) => string | null>>;
     replyThread?: string;
   } = {},
 ) {
@@ -110,6 +111,9 @@ function harness(
       const said = opts.replies?.[agentId]?.(prompts[agentId]!.length);
       if (said)
         await worker.reply(agentId, { text: said, threadTs: opts.replyThread });
+      const sent = opts.sends?.[agentId]?.(prompts[agentId]!.length);
+      if (sent)
+        await worker.postMessage(agentId, sent, { conversationId: "C1" });
       return "";
     },
     triggerSession: () => Promise.reject(new Error("unused")),
@@ -282,6 +286,22 @@ describe("an agent's reply in an ambient round", () => {
     await h.message(person, "the job is red", { ts: "7.1" });
     expect(h.prompts["agent-a"]).toHaveLength(1);
     expect(h.prompts["agent-b"]).toHaveLength(1);
+  });
+
+  /** TEST_SCENARIO: During its ambient turn an Agent also posts with
+   *  send_channel_message. That tool does not say which session calls it, so
+   *  the post is not marked as a round reply, and it reaches the other
+   *  reader as a new post. */
+  it("lets a send_channel_message post reach the other readers", async () => {
+    const h = harness({
+      a: { ambient: true },
+      b: { ambient: true },
+      sends: { "agent-a": once("deploy started") },
+    });
+    await h.message(person, "ship it", { ts: "7.1" });
+    expect(h.prompts["agent-a"]).toHaveLength(1);
+    expect(h.prompts["agent-b"]).toHaveLength(2);
+    expect(h.prompts["agent-b"]![1]).toContain("deploy started");
   });
 
   it.each([
