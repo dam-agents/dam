@@ -178,6 +178,8 @@ export function createAgentsRepository(
       const updated = await k8s.patchCustomObject(AGENTS_PLURAL, id, {
         spec: patch,
       });
+      const written = updated.metadata?.resourceVersion;
+      if (written) await cache.awaitObserved(id, written);
       return parseInfraAgent(updated);
     },
 

@@ -51,7 +51,7 @@ type AgentReconciler struct {
 	podResize       atomic.Int32
 	agentCache      cache.GenericLister
 	vmRunning       sync.Map
-	vmUsedMiB       sync.Map
+	vmLive          sync.Map
 	ownerDemandMiB  sync.Map
 	resizeNotices   sync.Map
 	notReadyPolls   sync.Map

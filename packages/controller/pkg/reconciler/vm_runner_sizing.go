@@ -30,6 +30,7 @@ type runnerDemand struct {
 	memoryMiB int
 	diskGiB   int
 	machines  int
+	vCPUs     int
 	seedBytes int64
 }
 
@@ -75,6 +76,7 @@ func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, s
 		}
 		if running {
 			d.memoryMiB += r.accountedMemoryMiB(a.Name, &a.Spec)
+			d.vCPUs += max(r.config.VM.Runner.MachineCPUs, r.liveMachine(a.Name).CPUs, 1)
 		}
 	}
 	return d, nil
@@ -176,8 +178,20 @@ func runnerMemoryRequest(demandMiB, reserveMiB int, floor, limit resource.Quanti
 	return want
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the request is changed on the running pod through its resize subresource and never on the Deployment, whose Recreate strategy would stop every machine to apply it. A replacement pod therefore starts at the install's request, and the next reconcile raises it again. A cluster without in-place resize, or one that refuses the controller the subresource, keeps the old behaviour — machines admitted against a limit the scheduler does not see — and says so once.
-func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, demandMiB int) {
+// UNIT_BOUNDARY_DESCRIPTION: every machine of an owner is a VMM process inside the runner pod, so with no CPU limit one runaway VMM can take every core of the node and slow every pod there. The limit is the vCPUs of the machines that should be running, each counted at the larger of its live and its next size, plus one machine's worth for the runner itself and the VMMs' own I/O threads. Unless the install caps it lower, a guest is never throttled below the vCPUs it was given. With no machine running the runner keeps that one machine's worth, so the first start is not throttled before the next resize lands. It is never below the CPU request, which the API refuses, and never above a CPU limit the install set.
+func runnerCPULimit(vCPUs, machineCPUs int, request resource.Quantity, ceiling *resource.Quantity) resource.Quantity {
+	want := *resource.NewQuantity(int64(vCPUs+max(machineCPUs, 1)), resource.DecimalSI)
+	if ceiling != nil && want.Cmp(*ceiling) > 0 {
+		want = *ceiling
+	}
+	if want.Cmp(request) < 0 {
+		want = request
+	}
+	return want
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the memory request and the CPU limit are changed on the running pod through its resize subresource and never on the Deployment, whose Recreate strategy would stop every machine to apply them. CPU and memory resize without a container restart by default. The kubelet applies a resize whole, so a memory request the node defers holds the new CPU limit back with it until there is room. A replacement pod therefore starts at the install's request with no CPU limit, and the next reconcile sets both again. A pod with no CPU request gets an explicit zero one, because the API defaults a missing request to the limit, which would reserve every vCPU and could change the pod's QoS class, which a resize may not do. A cluster without in-place resize, or one that refuses the controller the subresource, keeps the old behaviour — machines admitted against a limit the scheduler does not see, with no CPU limit — and says so once.
+func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, demand runnerDemand) {
 	if !r.podResizeAvailable(ctx) {
 		return
 	}
@@ -203,14 +217,21 @@ func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, dem
 			continue
 		}
 		floor := limit
+		var cpuCeiling *resource.Quantity
 		if cfg := r.config.VM.Runner.Resources; cfg != nil {
 			if q, ok := cfg.Requests[corev1.ResourceMemory]; ok {
 				floor = q
 			}
+			if q, ok := cfg.Limits[corev1.ResourceCPU]; ok {
+				cpuCeiling = &q
+			}
 		}
-		want := runnerMemoryRequest(demandMiB, r.config.VM.Runner.ReserveMiB, floor, limit)
+		want := runnerMemoryRequest(demand.memoryMiB, r.config.VM.Runner.ReserveMiB, floor, limit)
 		current := res.Requests[corev1.ResourceMemory]
-		if current.Cmp(want) == 0 {
+		cpuRequest, hasCPURequest := res.Requests[corev1.ResourceCPU]
+		wantCPU := runnerCPULimit(demand.vCPUs, r.config.VM.Runner.MachineCPUs, cpuRequest, cpuCeiling)
+		currentCPU, hasCPULimit := res.Limits[corev1.ResourceCPU]
+		if current.Cmp(want) == 0 && hasCPULimit && currentCPU.Cmp(wantCPU) == 0 {
 			r.reportResizePending(owner, pod, want)
 			continue
 		}
@@ -218,16 +239,20 @@ func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, dem
 			res.Requests = corev1.ResourceList{}
 		}
 		res.Requests[corev1.ResourceMemory] = want
+		if !hasCPURequest {
+			res.Requests[corev1.ResourceCPU] = resource.Quantity{Format: resource.DecimalSI}
+		}
+		res.Limits[corev1.ResourceCPU] = wantCPU
 		if _, err := r.client.CoreV1().Pods(pod.Namespace).UpdateResize(ctx, pod.Name, pod, metav1.UpdateOptions{}); err != nil {
 			if k8serrors.IsForbidden(err) || k8serrors.IsMethodNotSupported(err) {
 				r.podResize.Store(resizeUnsupported)
-				slog.Warn("vm runner: the runner pod cannot be resized in place, its memory request stays where the install set it", "error", err)
+				slog.Warn("vm runner: the runner pod cannot be resized in place, its memory request stays where the install set it and it has no CPU limit", "error", err)
 				return
 			}
-			slog.Warn("vm runner: resizing the runner pod", "owner", owner, "pod", pod.Name, "from", current.String(), "to", want.String(), "error", err)
+			slog.Warn("vm runner: resizing the runner pod", "owner", owner, "pod", pod.Name, "from", current.String(), "to", want.String(), "cpuLimit", wantCPU.String(), "error", err)
 			return
 		}
-		slog.Info("vm runner: asked the node for a new memory request on the runner pod", "owner", owner, "pod", pod.Name, "from", current.String(), "to", want.String())
+		slog.Info("vm runner: asked the node for a new memory request and CPU limit on the runner pod", "owner", owner, "pod", pod.Name, "from", current.String(), "to", want.String(), "cpuLimitFrom", currentCPU.String(), "cpuLimitTo", wantCPU.String())
 	}
 }
 
