@@ -37,6 +37,8 @@ import {
   KIND_AGENT,
   LABEL_OWNER,
   LABEL_TEMPLATE_REF,
+  ACTIVE_SESSION_KEY,
+  INVOCATIONS_ACTIVE_KEY,
   LAST_ACTIVITY_KEY,
   READY_REASON_HIBERNATED,
   READY_REASON_OVER_BUDGET,
@@ -119,6 +121,7 @@ export interface InfraAgent {
   kitUpdatePending?: KitUpdatePending;
   kitUpdateSkipped?: string;
   hibernatedSince?: Date;
+  quietSince?: Date;
   ready: boolean;
   hibernated: boolean;
   stopRequested: boolean;
@@ -197,6 +200,11 @@ function createdAtOf(obj: KubeObject): string | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
 
+function validDate(raw: string | undefined): Date | undefined {
+  const d = raw ? new Date(raw) : undefined;
+  return d && !Number.isNaN(d.getTime()) ? d : undefined;
+}
+
 export function parseInfraAgent(obj: KubeObject): InfraAgent {
   const id = obj.metadata?.name ?? "";
   const crSpec = (obj.spec ?? {}) as AgentSpecCR;
@@ -238,6 +246,11 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     vm: crSpec.backend?.type === "vm",
   });
   const resourceVersion = obj.metadata?.resourceVersion;
+  const quietSince =
+    annotations[ACTIVE_SESSION_KEY] === "true" ||
+    annotations[INVOCATIONS_ACTIVE_KEY] === "true"
+      ? undefined
+      : validDate(annotations[LAST_ACTIVITY_KEY]);
   return {
     id,
     name: spec.name,
@@ -273,6 +286,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       ? { kitUpdateSkipped: annotations[ANN_KIT_UPDATE_SKIPPED] }
       : {}),
     ...(hibernatedSince ? { hibernatedSince } : {}),
+    ...(quietSince ? { quietSince } : {}),
     ready: ready?.status === "True",
     hibernated,
     stopRequested: !!annotations[STOP_REQUESTED_KEY],

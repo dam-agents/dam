@@ -22,6 +22,8 @@ export { createKeycloakUserDirectory } from "./infrastructure/keycloak-user-dire
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
 export { createAgentSweep } from "./services/agent-sweep.js";
 export { createRuntimeMigrationSwitch } from "./services/runtime-migration.js";
+export { createRetiredImageMigration } from "./services/retired-image-migration.js";
+export { podIsIdle } from "./infrastructure/pod-status-client.js";
 export {
   AgentWakeTimeoutError,
   isAgentWakeTimeoutError,
