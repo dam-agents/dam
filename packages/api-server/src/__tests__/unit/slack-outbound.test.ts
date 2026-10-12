@@ -14,6 +14,8 @@ import { configureLogger } from "../../core/logger.js";
 const OWNER = "kc|owner-1";
 const BOUND = "C-BOUND";
 const OWNER_SLACK = "U-OWNER";
+const signed = (t: string, bold = "*") =>
+  `:robot_face: ${bold}agent-1${bold}\n\n${t}`;
 configureLogger({ level: "error", write: () => {} });
 
 function harness(opts: {
@@ -111,11 +113,11 @@ describe("slack outbound — cross-workspace reach", () => {
 
     expect(await h.post(text)).toEqual({ ok: true });
     expect(posts.mock.calls[0]![0]).toMatchObject({
-      text,
+      text: signed(text),
       blocks: [
         {
           type: "markdown",
-          text: "Before\n```\nps -ef\nkill -9 <pid>\n```\nAfter.",
+          text: signed("Before\n```\nps -ef\nkill -9 <pid>\n```\nAfter.", "**"),
         },
         { type: "context" },
       ],
@@ -174,7 +176,9 @@ describe("slack outbound — cross-workspace reach", () => {
   it("omitted chatId still posts to the bound channel", async () => {
     const h = harness({ boundChannelId: BOUND, channels: workspace });
     expect(await h.post("hello")).toEqual({ ok: true });
-    expect(h.messages()).toMatchObject([{ channel: BOUND, text: "hello" }]);
+    expect(h.messages()).toMatchObject([
+      { channel: BOUND, text: signed("hello") },
+    ]);
   });
 
   it("passes explicit unfurl controls through to Slack while omitting defaults", async () => {
@@ -185,11 +189,11 @@ describe("slack outbound — cross-workspace reach", () => {
     expect(h.messages()).toMatchObject([
       {
         channel: BOUND,
-        text: "no cards",
+        text: signed("no cards"),
         unfurlLinks: false,
         unfurlMedia: false,
       },
-      { channel: BOUND, text: "Slack defaults" },
+      { channel: BOUND, text: signed("Slack defaults") },
     ]);
     expect(h.messages()[1]).not.toHaveProperty("unfurlLinks");
     expect(h.messages()[1]).not.toHaveProperty("unfurlMedia");
@@ -373,8 +377,8 @@ describe("slack outbound — an agent bound to several conversations (#3086)", (
       ok: true,
     });
     expect(h.messages()).toMatchObject([
-      { channel: BOUND, text: "one" },
-      { channel: SECOND, text: "two" },
+      { channel: BOUND, text: signed("one") },
+      { channel: SECOND, text: signed("two") },
     ]);
   });
 

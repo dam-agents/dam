@@ -791,6 +791,7 @@ export function createAgentsService(deps: {
     slackChannelId: string,
     ambient?: boolean,
     knownWorkspace?: string,
+    customEmoji?: string[] | null,
   ): Promise<ConnectSlackResult> => {
     const infra = await deps.repo.get(id, deps.owner);
     if (!infra) return err({ type: "AgentNotFound" });
@@ -823,6 +824,7 @@ export function createAgentsService(deps: {
           slackChannelId,
           ...(workspace.teamId ? { teamId: workspace.teamId } : {}),
           ...(requestedAmbient ? { ambient: true } : {}),
+          ...(customEmoji !== undefined ? { customEmoji } : {}),
         });
       } catch (e) {
         if (isSlackChannelUniqueViolation(e)) {
@@ -1501,8 +1503,14 @@ export function createAgentsService(deps: {
       await deps.repo.ensureReady(id, opts);
     },
 
-    async connectSlack(id, slackChannelId, ambient) {
-      return connectSlackImpl(id, slackChannelId, ambient);
+    async connectSlack(id, slackChannelId, ambient, customEmoji) {
+      return connectSlackImpl(
+        id,
+        slackChannelId,
+        ambient,
+        undefined,
+        customEmoji,
+      );
     },
 
     async disconnectSlack(id, slackChannelId) {

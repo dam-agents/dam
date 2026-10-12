@@ -126,6 +126,18 @@ export const agentConnectSlackInputSchema = z.object({
   id: z.string().min(1),
   slackChannelId: z.string().min(1),
   ambient: z.boolean().optional(),
+  customEmoji: z
+    .array(
+      z
+        .string()
+        .regex(
+          /^[a-z0-9_'+-]{1,100}$/,
+          "Use lowercase letters, digits, - _ + or ' (no colons).",
+        ),
+    )
+    .length(8)
+    .nullable()
+    .optional(),
 });
 
 export const agentListTelegramChatsInputSchema = z.object({

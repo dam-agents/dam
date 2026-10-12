@@ -38,6 +38,7 @@ export interface SlackChannel extends Channel {
   label?: SlackConversationLabel;
   ambient?: boolean;
   default?: boolean;
+  customEmoji?: string[] | null;
 }
 
 export type ChannelConfig = SlackChannel;
@@ -294,6 +295,7 @@ export interface AgentsService {
     id: string,
     slackChannelId: string,
     ambient?: boolean,
+    customEmoji?: string[] | null,
   ) => Promise<ConnectSlackResult>;
   disconnectSlack: (
     id: string,

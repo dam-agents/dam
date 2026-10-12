@@ -11,6 +11,17 @@ export const AVATAR_CHARACTERS = [
 
 export type AvatarCharacter = (typeof AVATAR_CHARACTERS)[number];
 
+export const SLACK_EMOJI_INDEX: Record<AvatarCharacter, number> = {
+  compass: 0,
+  lens: 1,
+  roller: 2,
+  shield: 3,
+  spark: 4,
+  stack: 5,
+  tower: 6,
+  wave: 7,
+};
+
 export type AvatarMood = "working" | "idle" | "asleep";
 
 export const ASLEEP_FILL = "#a2a9b0";

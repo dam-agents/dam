@@ -282,7 +282,11 @@ describe("/dam whisper with a message", () => {
     expect(posts).toEqual([]);
     const answer = h
       .outbound()
-      .find((r) => r.kind === "ephemeral" && r.text === "looks fine");
+      .find(
+        (r) =>
+          r.kind === "ephemeral" &&
+          r.text === ":robot_face: *Reviewer*\n\nlooks fine",
+      );
     expect(answer).toMatchObject({ channel: CHANNEL, user: USER });
   });
 
@@ -410,7 +414,13 @@ describe("/dam whisper with no message", () => {
     expect(text).toContain("never from your owner");
     expect(text).not.toContain("between the two of you");
     expect(
-      h.outbound().find((r) => r.kind === "message" && r.text === "go on"),
+      h
+        .outbound()
+        .find(
+          (r) =>
+            r.kind === "message" &&
+            r.text === ":robot_face: *Reviewer*\n\ngo on",
+        ),
     ).toMatchObject({ channel: DM, threadTs: rootTs });
   });
 
