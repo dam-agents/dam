@@ -249,7 +249,7 @@ The storage template every new disk is copied from carries a journal; a disk smo
 The loss is refused, not prevented.
 
 
-**The claim those disks sit on is sized from demand.** One claim per owner holds every machine disk they have, so it is sized from those disks, some headroom beside each, the image cache budget when the cache lives there, and, while a [runtime migration](vm-runner.md#runtime-migration) is in flight, the size of the home volume its seed was copied from, since the seed waits there beside the disk it is restored into; the install's value is the ceiling, not the size.
+**The claim those disks sit on is sized from demand.** One claim per owner holds every machine disk they have, so it is sized from those disks, some headroom beside each, the image cache budget when the cache lives there, and, while a [runtime migration](vm-runner.md#runtime-migration) is in flight, the capacity of the home volume its seed was copied from, since the seed waits there beside the disk it is restored into; the install's value is the ceiling, not the size.
 The runtime's disk templates live there too, sparse enough to need no share of it.
 It grows in place as agents are added, up to that ceiling, and is never shrunk.
 On a storage class that cannot expand, or one the controller cannot read, it is created at the ceiling, since it could not grow later.
