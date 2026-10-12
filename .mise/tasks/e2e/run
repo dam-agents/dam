@@ -123,12 +123,9 @@ if [ -n "${GITHUB_ACTIONS:-}" ] && [ -n "${E2E_VIRTUALIZATION:-}" ]; then
     while :; do
       ts=$(date -u +%H:%M:%S)
       echo "$ts load $(cut -d' ' -f1-3 /proc/loadavg)"
-      for p in $(pgrep -f _boot-vm || true); do
-        name=$(tr '\0' ' ' < /proc/$p/cmdline 2>/dev/null | grep -oE 'agent-[0-9a-f]{16}' | head -1)
-        sudo sh -c "for t in /proc/$p/task/*; do printf '%s %s\n' \"\$(cat \$t/comm)\" \"\$(cut -d')' -f2 \$t/stat | cut -d' ' -f2)\"; done" 2>/dev/null \
-          | awk -v ts="$ts" -v p="$p" -v n="$name" '$1 ~ /^smolvm-tcp/ {t++; if ($2=="R") r++} {all++; if ($2=="R") ar++} END {printf "%s vmm %s %s threads=%d running=%d tcp=%d tcpRunning=%d\n", ts, p, n, all, ar, t, r}'
-        sudo ps -o pid,pcpu,etime -p "$p" --no-headers 2>/dev/null | sed "s/^/$ts ps /"
-      done
+      sudo sh -c 'for c in /proc/[0-9]*/task/*/comm; do read -r n < "$c" 2>/dev/null || continue; t=${c%/comm}; p=${c#/proc/}; p=${p%%/*}; st=$(cut -d")" -f2 "$t/stat" 2>/dev/null | cut -d" " -f2); echo "$p $n $st"; done' \
+        | awk -v ts="$ts" '$2 ~ /^smolvm-tcp/ {t[$1]++; if ($3=="R") r[$1]++} $2 ~ /^(_boot-vm|vm-runner|krun|vcpu)/ {v[$1]=1} END {for (p in t) printf "%s vmm %s tcp=%d tcpRunning=%d\n", ts, p, t[p], r[p]+0; for (p in v) if (!(p in t)) printf "%s vmm %s tcp=0 tcpRunning=0\n", ts, p}'
+      sudo ps -eo pid,pcpu,nlwp,comm --sort=-pcpu --no-headers | head -4 | sed "s/^/$ts ps /"
       sleep 10
     done
   ) > /tmp/vm-spin-probe.log 2>&1 &
