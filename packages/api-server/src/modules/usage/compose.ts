@@ -13,12 +13,25 @@ import {
   upsertAgent,
   listLiveAgentIds,
   markAgentDeleted,
+  recordAgentStarterKit,
+  recordAgentOnboarded,
+  recordAgentSpawnedBy,
+  fillAgentStarterKitFacts,
 } from "./infrastructure/agents-postgres-repository.js";
 import { startPersistActivitySaga } from "./sagas/persist-activity.js";
 import { startPersistActorRolesSaga } from "./sagas/persist-actor-roles.js";
 import { startPersistAgentsSaga } from "./sagas/persist-agents.js";
+import { startPersistExternalActorLinksSaga } from "./sagas/persist-external-actor-links.js";
+import {
+  listIdentityLinks,
+  upsertExternalActorLinks,
+} from "./infrastructure/external-actor-links-repository.js";
 import { ACTIVITY_RETENTION_DAYS } from "./domain/types.js";
 import { createReportService } from "./services/report-service.js";
+import { createAnalyticsService } from "./services/analytics-service.js";
+import { createAnalyticsRepository } from "./infrastructure/analytics-repository.js";
+import { toLiveAgentFact } from "./infrastructure/live-agent-facts.js";
+import type { AgentSizing } from "./domain/analytics-report.js";
 import { createUsageRoutes } from "./routes.js";
 import type { ApiVariables } from "../../core/http-context.js";
 
@@ -27,7 +40,18 @@ export interface UsageModuleDeps {
   subPseudonymizer: SubPseudonymizer;
   activityTrackingEnabled: boolean;
   inspectorRole: string;
-  listK8sAgents: () => Promise<{ id: string; owner: string }[]>;
+  listK8sAgents: () => Promise<
+    Array<{
+      id: string;
+      owner: string;
+      starterKit: string | null;
+      onboardedAt: string | null;
+    }>
+  >;
+  listLiveAgents: () => Promise<
+    Array<{ metadata?: { name?: string }; spec?: unknown }>
+  >;
+  agentSizing: AgentSizing;
 }
 
 type AppEnv = {
@@ -53,6 +77,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   const insert = insertActivityEvent(deps.db, deps.subPseudonymizer);
   const upsertRole = upsertActorRole(deps.db, deps.subPseudonymizer);
   const upsertAgentRow = upsertAgent(deps.db, deps.subPseudonymizer);
+  const fillKitFacts = fillAgentStarterKitFacts(deps.db);
   const registerCreatedAgent = upsertAgent(deps.db, deps.subPseudonymizer, {
     resetRuntimeState: true,
   });
@@ -60,6 +85,14 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   const routes: Hono<AppEnv> = deps.inspectorRole
     ? createUsageRoutes({
         service: createReportService(deps.db),
+        analytics: createAnalyticsService({
+          repo: createAnalyticsRepository(deps.db),
+          listLiveAgents: async () =>
+            (await deps.listLiveAgents()).flatMap(
+              (obj) => toLiveAgentFact(obj) ?? [],
+            ),
+          sizing: deps.agentSizing,
+        }),
         inspectorRole: deps.inspectorRole,
       })
     : new Hono();
@@ -67,10 +100,15 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
   let persistAgentsSub: Subscription | null = null;
   let persistActorRolesSub: Subscription | null = null;
   let persistActivitySub: Subscription | null = null;
+  let persistExternalActorLinksSub: Subscription | null = null;
+  const upsertLinks = upsertExternalActorLinks(deps.db, deps.subPseudonymizer);
 
   function start(): void {
     persistAgentsSub = startPersistAgentsSaga({
       upsertAgent: registerCreatedAgent,
+      recordStarterKit: recordAgentStarterKit(deps.db, deps.subPseudonymizer),
+      recordOnboarded: recordAgentOnboarded(deps.db),
+      recordSpawnedBy: recordAgentSpawnedBy(deps.db, deps.subPseudonymizer),
     });
     persistActorRolesSub = startPersistActorRolesSaga({
       upsertActorRole: upsertRole,
@@ -78,6 +116,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
     (async () => {
       for (const a of await deps.listK8sAgents()) {
         await upsertAgentRow({ id: a.id, ownerSub: a.owner });
+        await fillKitFacts(a);
       }
     })().catch((err) => {
       process.stderr.write(
@@ -88,6 +127,16 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
       persistActivitySub = startPersistActivitySaga({
         insert,
       });
+      persistExternalActorLinksSub = startPersistExternalActorLinksSaga({
+        upsert: upsertLinks,
+      });
+      listIdentityLinks(deps.db)()
+        .then(upsertLinks)
+        .catch((err) => {
+          process.stderr.write(
+            `[usage/bootstrap-external-actor-links] backfill failed: ${err}\n`,
+          );
+        });
     } else {
       process.stderr.write(
         "[usage] activityTrackingEnabled=false — activity_events not being written\n",
@@ -104,6 +153,7 @@ export function composeUsageModule(deps: UsageModuleDeps): UsageModule {
     persistAgentsSub?.unsubscribe();
     persistActorRolesSub?.unsubscribe();
     persistActivitySub?.unsubscribe();
+    persistExternalActorLinksSub?.unsubscribe();
   }
 
   function mount(app: Hono<AppEnv>): void {

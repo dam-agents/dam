@@ -1,15 +1,10 @@
-import { OverflowMenuHorizontal, Satellite } from "@carbon/icons-react";
+import { Satellite } from "@carbon/icons-react";
 import type { SatelliteTool, SatelliteView } from "api-server-api";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { timeAgo } from "@/lib/format-time";
 
 import type { RowGrantControls } from "../../connections/components/catalog-connection-row.js";
@@ -72,12 +67,12 @@ export function SatelliteRow({
     .join(" · ");
 
   return (
-    <div className="rounded-lg border border-border" data-testid={rowId}>
+    <div data-testid={rowId}>
       <div className="flex items-center gap-2 px-4 py-3">
         <div className="flex min-w-[160px] flex-1 flex-wrap items-center gap-2">
           <Satellite size={16} className="shrink-0 text-foreground/80" />
           <p
-            className="max-w-full shrink-0 truncate text-[15px] text-foreground"
+            className="max-w-full shrink-0 truncate text-md font-medium text-foreground"
             title={satellite.description ?? undefined}
           >
             {satellite.name}
@@ -94,37 +89,28 @@ export function SatelliteRow({
             <RowGrantAction rowId={rowId} grant={grant} />
           )}
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Actions for ${satellite.name}`}
-              data-testid={`${rowId}-menu`}
-            >
-              <OverflowMenuHorizontal size={16} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onSelect={() => setToolsShown((v) => !v)}>
-              {toolsShown ? "Hide tools" : "Show tools"}
+        <RowActionsMenu
+          label={`Actions for ${satellite.name}`}
+          testId={`${rowId}-menu`}
+        >
+          <DropdownMenuItem onSelect={() => setToolsShown((v) => !v)}>
+            {toolsShown ? "Hide tools" : "Show tools"}
+          </DropdownMenuItem>
+          {grant?.granted && (
+            <DropdownMenuItem onSelect={() => grant.onToggle(false)}>
+              Remove from this agent
             </DropdownMenuItem>
-            {grant?.granted && (
-              <DropdownMenuItem onSelect={() => grant.onToggle(false)}>
-                Remove from this agent
-              </DropdownMenuItem>
-            )}
-            {onRemove && (
-              <DropdownMenuItem
-                tone="danger"
-                disabled={removing}
-                onSelect={onRemove}
-              >
-                Remove this satellite
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          )}
+          {onRemove && (
+            <DropdownMenuItem
+              tone="danger"
+              disabled={removing}
+              onSelect={onRemove}
+            >
+              Remove this satellite
+            </DropdownMenuItem>
+          )}
+        </RowActionsMenu>
       </div>
       {toolsShown && <SatelliteTools tools={satellite.tools} />}
     </div>

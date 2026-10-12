@@ -18,7 +18,7 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `AgentDeleted` | _elsewhere_ | agents, agent-artifacts-sweeper |
 | `AgentRestarted` | _elsewhere_ | agents |
 | `AgentWoken` | _elsewhere_ | agents |
-| `SlackConnected` | _elsewhere_ | agents |
+| `SlackConnected` | `slack_channel_bound` | agents |
 | `SlackDisconnected` | _elsewhere_ | agents, channels |
 | `ChannelTurnRelayed` | `channel_turn` | channels |
 | `ChannelMessageSent` | `channel_message_sent` | mcp-endpoint |
@@ -61,6 +61,9 @@ Events marked *elsewhere* are consumed, but not by the activity log — they dri
 | `EntryPointChosen` | `entry_point_chosen` | usage |
 | `KbSharePublished` | _elsewhere_ | kb-shares |
 | `KbSharePublishFailed` | _elsewhere_ | kb-shares |
+| `StarterKitOnboarded` | `starter_kit_onboarded` | starter-kits |
+| `IdentityLinked` | _elsewhere_ | channels |
+| `AgentOutOfMemory` | `agent_oom` | agents |
 
 ## Deliberately not recorded
 

@@ -3,6 +3,7 @@ import {
   SESSION_CATEGORIES,
   type SessionCategory,
   type SessionMode,
+  type SessionPair,
 } from "api-server-api";
 import type { StateCreator } from "zustand";
 
@@ -21,7 +22,6 @@ import { acpSessionsKeys } from "../api/keys.js";
 import { removeSessionFromCache } from "../api/queries.js";
 import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
 import { draftWriter, loadDraftSnapshot } from "../lib/draft-snapshot.js";
-import type { SessionModel } from "../lib/session-model.js";
 
 const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
 
@@ -45,7 +45,7 @@ export interface SessionsSlice {
   queuedPrompts: QueuedPrompt[];
   harnessForks: boolean;
   rewriting: Rewriting | null;
-  sessionModel: SessionModel | null;
+  nextSessionPair: Record<string, SessionPair>;
   sessionError: SessionError | null;
   sessionFilter: SessionCategory[];
   drafts: Record<string, SessionDraft>;
@@ -69,7 +69,7 @@ export interface SessionsSlice {
   setHarnessForks: (forks: boolean) => void;
   setRewriting: (rewriting: Rewriting | null) => void;
   addRunStart: (at: string) => void;
-  setSessionModel: (model: SessionModel | null) => void;
+  setNextSessionPair: (agentId: string, pair: SessionPair) => void;
   setSessionError: (e: SessionError | null) => void;
   toggleSessionFilter: (category: SessionCategory) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
@@ -133,7 +133,7 @@ export const createSessionsSlice: StateCreator<
     queuedPrompts: [],
     harnessForks: false,
     rewriting: null,
-    sessionModel: null,
+    nextSessionPair: {},
     sessionMode: null,
     messages: [],
     sessionError: null,
@@ -165,7 +165,10 @@ export const createSessionsSlice: StateCreator<
     setQueuedPrompts: (items) => set({ queuedPrompts: items }),
     setHarnessForks: (forks) => set({ harnessForks: forks }),
     setRewriting: (rewriting) => set({ rewriting }),
-    setSessionModel: (model) => set({ sessionModel: model }),
+    setNextSessionPair: (agentId, pair) =>
+      set((state) => ({
+        nextSessionPair: { ...state.nextSessionPair, [agentId]: pair },
+      })),
     addRunStart: (at) =>
       set((s) =>
         s.runStarts.includes(at) ? s : { runStarts: [...s.runStarts, at] },
@@ -252,13 +255,13 @@ export const createSessionsSlice: StateCreator<
         runStarts: [],
         queuedPrompts: [],
         rewriting: null,
-        sessionModel: null,
         sessionError: null,
         terminalPaused: false,
         openFilePath: null,
         openArtifactId: null,
         openDelegation: null,
         openBrowserAgentId: null,
+        openProcessOutputKey: null,
         openFileDirty: false,
         openArtifactDirty: false,
         openFileEdit: false,

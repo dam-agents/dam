@@ -25,13 +25,13 @@ describe("isFeatureOffered", () => {
   test("hides a feature the install pins", () => {
     const install = (mode?: "off" | "experimental" | "on") => ({
       virtualization: false,
-      features: mode ? { "agent-avatars": mode } : {},
+      features: mode ? { "agent-telemetry": mode } : {},
     });
-    expect(isFeatureOffered("agent-avatars", install())).toBe(true);
-    expect(isFeatureOffered("agent-avatars", install("experimental"))).toBe(
+    expect(isFeatureOffered("agent-telemetry", install())).toBe(true);
+    expect(isFeatureOffered("agent-telemetry", install("experimental"))).toBe(
       true,
     );
-    expect(isFeatureOffered("agent-avatars", install("on"))).toBe(false);
-    expect(isFeatureOffered("agent-avatars", install("off"))).toBe(false);
+    expect(isFeatureOffered("agent-telemetry", install("on"))).toBe(false);
+    expect(isFeatureOffered("agent-telemetry", install("off"))).toBe(false);
   });
 });

@@ -1,15 +1,12 @@
+import type { AvatarCharacter } from "api-server-api/avatar/svg";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
 import { Input } from "@/components/ui/input";
-import { Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
-import { HintTooltip } from "@/components/ui/tooltip";
 
-import { AgentAvatar } from "../../../agents/components/avatar/agent-avatar.js";
-import { useAgentAvatars } from "../../../agents/hooks/use-agent-avatars.js";
-import type { SizeMi } from "../../../budgets/lib/slots.js";
+import { AvatarPicker } from "../../../agents/components/avatar/avatar-picker.js";
 import { useAppConnections } from "../../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../../connections/hooks/use-catalog-groups.js";
@@ -19,20 +16,26 @@ import {
   NO_SATELLITES,
   useSatellites,
 } from "../../../satellites/api/queries.js";
-import { SatellitesGroupCard } from "../../../satellites/components/satellites-group-card.js";
+import { SatellitesGroup } from "../../../satellites/components/satellites-group.js";
 import { excludeProviderConnections } from "../../lib/provider-connections.js";
 import type { setupProviderPolicy } from "../../lib/setup-policy.js";
 import { GrantedConnectionsPanel } from "../granted-connections-panel.js";
-import { DEFAULT_HIBERNATE_MIN, LifecycleField } from "../lifecycle-field.js";
+import {
+  DEFAULT_HIBERNATE_MIN,
+  SleepAfterIdleField,
+} from "../lifecycle-field.js";
 
 export function NameSection({
   value,
   onChange,
+  avatar,
+  onAvatarChange,
 }: {
   value: string;
   onChange: (name: string) => void;
+  avatar: AvatarCharacter;
+  onAvatarChange: (avatar: AvatarCharacter) => void;
 }) {
-  const avatars = useAgentAvatars();
   return (
     <section className="mb-8">
       <FormField label="Name">
@@ -43,14 +46,7 @@ export function NameSection({
             onChange={(event) => onChange(event.target.value)}
             placeholder="my-agent"
           />
-          {avatars && (
-            <HintTooltip
-              label="Agent avatar"
-              content="Agent avatar is generated from its name and can't currently be changed manually."
-            >
-              <AgentAvatar name={value} size={40} />
-            </HintTooltip>
-          )}
+          <AvatarPicker value={avatar} onChange={onAvatarChange} />
         </div>
       </FormField>
     </section>
@@ -69,7 +65,7 @@ export function ProviderSection({
   return (
     <section className="mb-8">
       <SectionLabel spaced>Provider</SectionLabel>
-      <Inset>
+      <div>
         <ProviderSelect
           selected={selected}
           onSelect={onSelect}
@@ -78,7 +74,7 @@ export function ProviderSection({
           allow={policy.allow}
           recommended={policy.recommended}
         />
-      </Inset>
+      </div>
     </section>
   );
 }
@@ -89,12 +85,14 @@ export function useSetupConnectionCatalog({
   satelliteNames,
   onToggleSatellite,
   oauthReturnView,
+  onGoToChannels,
 }: {
   connectionIds: string[];
   onToggle: (id: string, granted: boolean) => void;
   satelliteNames: string[];
   onToggleSatellite: (name: string, granted: boolean) => void;
   oauthReturnView: string;
+  onGoToChannels?: () => void;
 }): { openCatalog: () => void; catalogNode: ReactNode } {
   const [open, setOpen] = useState(false);
   const grantedIds = useMemo(() => new Set(connectionIds), [connectionIds]);
@@ -110,6 +108,13 @@ export function useSetupConnectionCatalog({
           onToggle: (on) => onToggleSatellite(s.name, on),
         })}
         oauthReturnView={oauthReturnView}
+        onGoToChannels={
+          onGoToChannels &&
+          (() => {
+            setOpen(false);
+            requestAnimationFrame(() => onGoToChannels());
+          })
+        }
       />
     ) : null,
   };
@@ -149,8 +154,8 @@ export function ConnectionsSetupSection({
     [granted, excludeIds],
   );
   const { populated: groups, templateById } = useCatalogGroups(staged);
-  const satellitesCard = pickedSatellites.length > 0 && (
-    <SatellitesGroupCard
+  const satellitesGroup = pickedSatellites.length > 0 && (
+    <SatellitesGroup
       satellites={pickedSatellites}
       showCount
       grant={(s) => ({
@@ -162,48 +167,32 @@ export function ConnectionsSetupSection({
   );
 
   return (
-    <section className="mb-8">
-      <GrantedConnectionsPanel
-        groups={groups}
-        granted={granted}
-        templateById={templateById}
-        onToggleGrant={onToggle}
-        onOpenCatalog={onOpenCatalog}
-        title="Connections"
-        {...(leading || satellitesCard
-          ? {
-              leading: (
-                <>
-                  {leading}
-                  {satellitesCard}
-                </>
-              ),
-            }
-          : {})}
-      />
-    </section>
+    <GrantedConnectionsPanel
+      groups={groups}
+      granted={granted}
+      templateById={templateById}
+      onToggleGrant={onToggle}
+      onOpenCatalog={onOpenCatalog}
+      title="Connections"
+      leading={leading}
+      extraGroups={satellitesGroup}
+    />
   );
 }
 
 export function LifecycleSetupSection({
   value,
   onChange,
-  sizeMi,
 }: {
   value: number | null;
   onChange: (next: number) => void;
-  sizeMi?: SizeMi;
 }) {
   return (
     <section className="mb-8">
-      <SectionLabel spaced>Availability</SectionLabel>
-      <Inset>
-        <LifecycleField
-          value={value ?? DEFAULT_HIBERNATE_MIN}
-          onChange={onChange}
-          sizeMi={sizeMi}
-        />
-      </Inset>
+      <SleepAfterIdleField
+        value={value ?? DEFAULT_HIBERNATE_MIN}
+        onChange={onChange}
+      />
     </section>
   );
 }

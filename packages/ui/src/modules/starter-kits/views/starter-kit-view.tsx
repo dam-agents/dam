@@ -51,7 +51,6 @@ import {
   shortKitVersion,
 } from "../lib/setup.js";
 
-const KIT_MODAL_WIDTH = "w-[600px] max-w-full md:w-[980px]";
 const KIT_MODAL_HEIGHT = "h-[85dvh] md:h-[85vh]";
 
 type TemplateIndex = ReadonlyMap<string, ConnectionTemplateView>;
@@ -178,11 +177,7 @@ export function StarterKitDetailView() {
   }
 
   return (
-    <Modal
-      widthClass={KIT_MODAL_WIDTH}
-      heightClass={KIT_MODAL_HEIGHT}
-      onClose={close}
-    >
+    <Modal size="xl" heightClass={KIT_MODAL_HEIGHT} onClose={close}>
       {kit.data === undefined ? (
         <KitDetailSkeleton onClose={close} />
       ) : (
@@ -200,7 +195,8 @@ function KitLoadErrorModal({
   onClose: () => void;
 }) {
   return (
-    <Modal widthClass="w-[600px] max-w-full" onClose={onClose}>
+    <Modal size="md" onClose={onClose}>
+      <DialogHeader title="Starter kit unavailable" onClose={onClose} />
       <DialogBody>
         <Callout tone="danger">
           <p className="text-sm text-foreground">
@@ -239,7 +235,7 @@ function KitDetailSkeleton({ onClose }: { onClose: () => void }) {
         <DialogBody>
           <ListSkeleton rows={4} rowHeight={72} />
         </DialogBody>
-        <DialogFooter divided className="justify-between">
+        <DialogFooter className="justify-between">
           <Button variant="ghost" onClick={onClose}>
             <ArrowLeft size={16} /> Back
           </Button>
@@ -551,7 +547,7 @@ function KitDetail({
           )}
         </DialogBody>
 
-        <DialogFooter divided className="justify-between">
+        <DialogFooter className="justify-between">
           <Button variant="ghost" onClick={onClose}>
             <ArrowLeft size={16} /> Back
           </Button>
@@ -562,7 +558,7 @@ function KitDetail({
             <Button
               onClick={() => navigateToStarterKitSetup(kit.catalog, kit.id)}
             >
-              Use this Starter Kit
+              Use this starter kit
             </Button>
           </div>
         </DialogFooter>

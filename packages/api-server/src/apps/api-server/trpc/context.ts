@@ -80,6 +80,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     k8sClient,
     agentsRepo,
     templatesRepo,
+    harnessCatalog: harnesses,
     starterKitsRepo,
     kitUpstream,
     reposService,
@@ -105,6 +106,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
       s3CredentialProbe: connectionsBoot.s3CredentialProbe,
+      providerKeyProbe: connectionsBoot.providerKeyProbe,
       secretStore,
       runtimeMutator,
       agentsRepo,
@@ -164,7 +166,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       runtimeMutator,
       contributionsProgress,
       onboardingChecklists,
-      grantProvisioner: connectionGrantProvisioner(connections),
+      grantProvisioner: connectionGrantProvisioner(connections, harnesses),
     });
     const agentExists = async (agentId: string) =>
       (await agents.get(agentId)) !== null;
@@ -283,6 +285,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     });
     const satellites = satellitesBoot.serviceFor(user.sub, user.agentIds);
     const { service: harnessConfig } = composeHarnessConfigModule({
+      catalog: harnesses,
       db,
       ownerSub: user.sub,
       surface,
@@ -336,6 +339,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
 
     return {
       templates: templatesRepo,
+      harnesses,
       repos: reposService,
       agents,
       schedules,

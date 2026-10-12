@@ -1,29 +1,8 @@
-import { Document } from "@carbon/icons-react";
 import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 
-import { Callout } from "@/components/ui/callout";
-import { Card } from "@/components/ui/card";
-import { SectionLabel } from "@/components/ui/section-label";
-import { cn } from "@/lib/utils";
+import { ListSection } from "@/components/ui/list-section";
 
 import { StandaloneSkillRow } from "./standalone-skill-row.js";
-
-export function StandaloneSkillsEmptyState() {
-  return (
-    <section>
-      <SectionLabel spaced>Created in this agent</SectionLabel>
-      <Callout variant="dashed">
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <Document size={20} className="text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            No skills created in this agent yet. Drop a .md file here, or ask
-            the agent to author one.
-          </p>
-        </div>
-      </Callout>
-    </section>
-  );
-}
 
 function latestPublishByName(
   publishes: SkillPublishRecord[],
@@ -47,6 +26,7 @@ export function StandaloneSkillsGroup({
   onTrack,
   onOpenSkill,
   trackUnavailableNames,
+  onUpload,
 }: {
   skills: LocalSkill[];
   readOnly: boolean;
@@ -58,35 +38,38 @@ export function StandaloneSkillsGroup({
   onTrack: (skill: LocalSkill, publish: SkillPublishRecord) => void;
   onOpenSkill?: (skill: LocalSkill) => void;
   trackUnavailableNames: ReadonlySet<string>;
+  onUpload?: () => void;
 }) {
   const published = latestPublishByName(publishes);
 
   return (
-    <section>
-      <div className="mb-3">
-        <SectionLabel>Created in this agent</SectionLabel>
-      </div>
-      <Card className={cn(readOnly && "bg-muted")}>
-        {skills.map((skill, i) => {
-          const pub = published.get(skill.name);
-          return (
-            <StandaloneSkillRow
-              key={`${skill.skillPath}::${skill.name}`}
-              skill={skill}
-              publish={pub}
-              divided={i > 0}
-              readOnly={readOnly}
-              canPublish={canPublish}
-              onPublish={() => onPublish(skill)}
-              onDownload={() => onDownload(skill)}
-              onDelete={() => onDelete(skill, pub)}
-              onTrack={pub ? () => onTrack(skill, pub) : undefined}
-              onOpen={onOpenSkill ? () => onOpenSkill(skill) : undefined}
-              trackUnavailable={trackUnavailableNames.has(skill.name)}
-            />
-          );
-        })}
-      </Card>
-    </section>
+    <ListSection
+      label="Created in this agent"
+      className="mb-0"
+      onNew={onUpload}
+      newLabel="Upload"
+      newTestId="skills-upload"
+      isEmpty={skills.length === 0}
+      empty="No skills created in this agent yet. Upload or drop a .md file here, or ask the agent to author one."
+    >
+      {skills.map((skill) => {
+        const pub = published.get(skill.name);
+        return (
+          <StandaloneSkillRow
+            key={`${skill.skillPath}::${skill.name}`}
+            skill={skill}
+            publish={pub}
+            readOnly={readOnly}
+            canPublish={canPublish}
+            onPublish={() => onPublish(skill)}
+            onDownload={() => onDownload(skill)}
+            onDelete={() => onDelete(skill, pub)}
+            onTrack={pub ? () => onTrack(skill, pub) : undefined}
+            onOpen={onOpenSkill ? () => onOpenSkill(skill) : undefined}
+            trackUnavailable={trackUnavailableNames.has(skill.name)}
+          />
+        );
+      })}
+    </ListSection>
   );
 }

@@ -1,11 +1,10 @@
-import { Checkmark, Copy } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { CopyField } from "@/components/ui/copy-field";
 import { Input } from "@/components/ui/input";
-import { useCopy } from "@/hooks/use-copy";
 import { emitToast } from "@/lib/toast";
 
 import { timeAgo } from "../../../lib/format-time.js";
@@ -33,7 +32,6 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
   const reveal = useRevealKbShare();
   const setName = useSetKbShareName();
   const showConfirm = useStore((s) => s.showConfirm);
-  const { copy, copied } = useCopy();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [revealedLink, setRevealedLink] = useState<string | null>(null);
@@ -81,8 +79,8 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
         <strong>Everyone with the current link loses access</strong> until you
         hand them the new one.
       </>,
-      "Rotate share link",
-      { kind: "destructive" },
+      "Rotate share link?",
+      { kind: "destructive", confirmLabel: "Rotate link" },
     );
     if (!confirmed) return;
     rotate.mutate(
@@ -106,8 +104,8 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
         share link stops working immediately.{" "}
         <strong>Your knowledge base itself is untouched.</strong>
       </>,
-      "Stop sharing",
-      { kind: "destructive" },
+      "Stop sharing?",
+      { kind: "destructive", confirmLabel: "Stop sharing" },
     );
     if (!confirmed) return;
     setRevealedLink(null);
@@ -143,7 +141,7 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
         {view.publishState === "publishing" ? (
           <Badge variant="info">Publishing…</Badge>
         ) : view.publishState === "failed" ? (
-          <Badge variant="warning">Update failed</Badge>
+          <Badge variant="danger">Update failed</Badge>
         ) : view.snapshotCreatedAt !== null ? (
           <Badge variant="success">Shared</Badge>
         ) : (
@@ -191,7 +189,7 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
             {setName.isPending ? "Saving…" : "Save"}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           What consumers see when they connect this knowledge base.
         </p>
       </div>
@@ -215,27 +213,7 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
       <div className="flex items-center gap-2">
         {revealedLink ? (
           <>
-            <Input
-              readOnly
-              aria-label="Share link"
-              value={revealedLink}
-              size="sm"
-              variant="monospace"
-              onFocus={(e) => e.currentTarget.select()}
-            />
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label="Copy share link"
-              tooltip="Copy share link"
-              onClick={() => void copy(revealedLink)}
-            >
-              {copied ? (
-                <Checkmark size={14} className="text-success" />
-              ) : (
-                <Copy size={14} />
-              )}
-            </Button>
+            <CopyField value={revealedLink} label="Share link" />
           </>
         ) : (
           <Button
@@ -262,7 +240,7 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
         </span>
       </div>
 
-      <p className="text-xs text-muted-foreground">{AWARENESS_COPY}</p>
+      <p className="text-sm text-muted-foreground">{AWARENESS_COPY}</p>
 
       <div className="flex flex-wrap gap-2">
         <Button
@@ -284,7 +262,7 @@ export function KbSharingSection({ agentId }: { agentId: string }) {
         <Button
           variant="outline"
           size="sm"
-          className="text-destructive hover:text-destructive"
+          tone="danger"
           disabled={revoke.isPending}
           onClick={() => void onUnshare()}
         >

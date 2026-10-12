@@ -5,6 +5,10 @@ import {
 } from "../../modules/satellites/services/outcome-delivery.js";
 import { createSatelliteWorkerOps } from "../../modules/satellites/services/worker-ops.js";
 import type { JobRow } from "../../modules/satellites/domain/types.js";
+import { createAgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
+import { createLiveAgentStateCache } from "../../modules/agents/infrastructure/agent-state-cache.js";
+import type { KubeObject } from "../../modules/agents/infrastructure/k8s.js";
+import { fakeK8s } from "../helpers/fake-k8s.js";
 
 /**
  * TEST_OVERVIEW: Wake on finish. A Job outlives the turn that started it, so a
@@ -16,6 +20,8 @@ import type { JobRow } from "../../modules/satellites/domain/types.js";
  * through a single atomic claim rather than a timer. A large Job Log is handed
  * over as a path into the Agent's own sandbox instead of being inlined, and an
  * Agent that cannot be woken — parked over budget — still keeps its turn queued.
+ * An Agent the user stopped is not woken behind their back: its turn waits in
+ * the outbox, and its Jobs are marked woken so the hourly retry leaves it alone.
  */
 
 function job(patch: Partial<JobRow> = {}): JobRow {
@@ -65,8 +71,9 @@ function harness(claimed: JobRow[][]) {
       return 1;
     },
     enqueue: async () => {},
-    wakeAgent: async (agentId) => {
+    wakeUnlessStopped: async (agentId) => {
       woken.push(agentId);
+      return true;
     },
     spillLog: async (_agent, ref) =>
       `/home/agent/.dam/satellite-jobs/${ref}.log`,
@@ -232,7 +239,7 @@ describe("waking an agent with a finished job", () => {
         return 1;
       },
       enqueue: async () => {},
-      wakeAgent: async () => {
+      wakeUnlessStopped: async () => {
         throw new Error("over budget");
       },
       spillLog: async () => null,
@@ -267,7 +274,7 @@ describe("reporting an outcome reaches the wake", () => {
         return 1;
       },
       enqueue: async () => {},
-      wakeAgent: async () => {},
+      wakeUnlessStopped: async () => true,
       spillLog: async () => null,
       log: () => {},
     });
@@ -313,9 +320,10 @@ describe("an agent that could not be woken", () => {
       } as never,
       bump: async () => 1,
       enqueue: async () => {},
-      wakeAgent: async (agentId) => {
+      wakeUnlessStopped: async (agentId) => {
         if (!wakeWorks) throw new Error("over budget");
         woken.push(agentId);
+        return true;
       },
       spillLog: async () => null,
       log: () => {},
@@ -340,8 +348,9 @@ describe("an agent that could not be woken", () => {
         } as never,
         bump: async () => 1,
         enqueue: async () => {},
-        wakeAgent: async (agentId) => {
+        wakeUnlessStopped: async (agentId) => {
           woken.push(agentId);
+          return true;
         },
         spillLog: async () => null,
         log: () => {},
@@ -377,7 +386,7 @@ describe("one job owes one turn", () => {
       enqueue: async () => {
         throw new Error("redis is down");
       },
-      wakeAgent: async () => {},
+      wakeUnlessStopped: async () => true,
       spillLog: async () => null,
       log: () => {},
     });
@@ -407,7 +416,7 @@ describe("one job owes one turn", () => {
         throw new Error("postgres is down");
       },
       enqueue: async () => {},
-      wakeAgent: async () => {},
+      wakeUnlessStopped: async () => true,
       spillLog: async () => null,
       log: () => {},
     });
@@ -433,8 +442,9 @@ describe("the hourly sweep", () => {
         } as never,
         bump: async () => 1,
         enqueue: async () => {},
-        wakeAgent: async (agentId) => {
+        wakeUnlessStopped: async (agentId) => {
           woken.push(agentId);
+          return true;
         },
         spillLog: async () => null,
         log: () => {},
@@ -466,8 +476,9 @@ describe("the sweep never wakes blindly", () => {
         } as never,
         bump: async () => 1,
         enqueue: async () => {},
-        wakeAgent: async (agentId) => {
+        wakeUnlessStopped: async (agentId) => {
           woken.push(agentId);
+          return true;
         },
         spillLog: async () => null,
         log: () => {},
@@ -477,5 +488,65 @@ describe("the sweep never wakes blindly", () => {
 
     await retry();
     expect(woken, "no turn exists, so a wake would find nothing").toEqual([]);
+  });
+});
+
+describe("an agent the user stopped", () => {
+  it("keeps its stop: the turn waits, and the sweep does not wake it later", async () => {
+    const stamp = "2026-10-09T10:00:00.000Z";
+    const { client, store } = fakeK8s([
+      {
+        metadata: {
+          name: "agent-1",
+          annotations: { "agent-platform.ai/stop-requested": stamp },
+        },
+        spec: { name: "agent-1" },
+      } as KubeObject,
+    ]);
+    const agents = createAgentsRepository(
+      client,
+      createLiveAgentStateCache(client),
+    );
+    const unwoken = new Set(["gpu-box#7"]);
+    const events: unknown[] = [];
+    const deps = {
+      repo: {
+        claimUndeliveredOutcomes: async () => [job()],
+        agentsWithPendingOutcomes: async () => ["agent-1"],
+        undeliveredFor: async () =>
+          [...unwoken].map(() => ({ satellite: "gpu-box", sequence: 7 })),
+        markWoken: async (
+          _agentId: string,
+          refs: { satellite: string; sequence: number }[],
+        ) => {
+          for (const r of refs) unwoken.delete(`${r.satellite}#${r.sequence}`);
+        },
+      } as never,
+      bump: async (_agentId: string, list: unknown[]) => {
+        events.push(...list);
+        return 1;
+      },
+      enqueue: async () => {},
+      wakeUnlessStopped: (agentId: string) => agents.wakeUnlessStopped(agentId),
+      spillLog: async () => null,
+      log: () => {},
+    };
+
+    expect(await createOutcomeDelivery(deps)("agent-1")).toBe(true);
+    await createOutcomeWakeRetry(deps, async () => false)();
+
+    const annotations = store.get("agent-1")?.metadata?.annotations;
+    expect(events, "the turn is still written for the next wake").toHaveLength(
+      1,
+    );
+    expect(
+      annotations?.["agent-platform.ai/stop-requested"],
+      "a stop wins over the outcome's wake",
+    ).toBe(stamp);
+    expect(annotations?.["agent-platform.ai/last-activity"]).toBeUndefined();
+    expect(
+      [...unwoken],
+      "the jobs are stamped woken, so the hourly sweep leaves the agent stopped",
+    ).toEqual([]);
   });
 });

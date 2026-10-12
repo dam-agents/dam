@@ -97,7 +97,9 @@ export function useFileMutations(agentId: string | null) {
       } catch (err) {
         emitToast({
           kind: "error",
-          message: getErrorMessage(err, "Create failed"),
+          message: isConflictError(err)
+            ? `"${path}" already exists`
+            : getErrorMessage(err, "Create failed"),
         });
       }
     },
@@ -140,7 +142,8 @@ export function useFileMutations(agentId: string | null) {
         }
         const ok = await showConfirm(
           `"${nameOf(to)}" already exists. Overwrite?`,
-          "Overwrite",
+          "Overwrite file?",
+          { confirmLabel: "Overwrite" },
         );
         if (!ok) return;
         try {
@@ -184,7 +187,10 @@ export function useFileMutations(agentId: string | null) {
       const msg = isDir
         ? `Delete ${path}/? This will remove its contents.`
         : `Delete ${path}?`;
-      const ok = await showConfirm(msg, "Delete");
+      const ok = await showConfirm(msg, "Delete?", {
+        kind: "destructive",
+        confirmLabel: "Delete",
+      });
       if (!ok) return;
       try {
         await deleteMutation.mutateAsync({ path });

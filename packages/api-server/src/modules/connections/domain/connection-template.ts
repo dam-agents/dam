@@ -1,8 +1,10 @@
-import type {
-  Contribution,
-  ConnectionCategory,
-  ConnectionTemplateInput,
-  ConnectionTemplateView,
+import {
+  CONNECTION_ENV_NAME_HINT,
+  CONNECTION_ENV_NAME_RE,
+  type Contribution,
+  type ConnectionCategory,
+  type ConnectionTemplateInput,
+  type ConnectionTemplateView,
 } from "api-server-api";
 import { applyCallbackAlias } from "./oauth-callback-url.js";
 
@@ -189,6 +191,11 @@ function inputsFor(
     state: "optional",
     ...(presetValue !== undefined ? { presetValue } : {}),
   });
+  const envName: ConnectionTemplateInput = {
+    ...optional("envName"),
+    pattern: CONNECTION_ENV_NAME_RE.source,
+    patternHint: CONNECTION_ENV_NAME_HINT,
+  };
 
   switch (t.authKind) {
     case "oauth": {
@@ -242,7 +249,7 @@ function inputsFor(
         optional("audience"),
         required("headerName", { presetValue: t.headerName }),
         required("valueFormat", { presetValue: t.valueFormat }),
-        optional("envName"),
+        envName,
       ];
     case "github-app": {
       const out: ConnectionTemplateInput[] = [];
@@ -328,7 +335,7 @@ function inputsFor(
           hint: "Leave blank for a publicly-trusted API endpoint (most managed clusters). For a private or self-signed CA, paste certificate-authority-data from your kubeconfig (base64 or PEM).",
         });
       }
-      if (t.isCustom) out.push(optional("envName"));
+      if (t.isCustom) out.push(envName);
       for (const spec of t.configInputs ?? []) {
         out.push({
           name: spec.inputName,

@@ -29,6 +29,8 @@ drivers:
   harness-config:
     file: "$HOME/.codex/config.toml"
     format: toml
+    sessionSettings:
+      effort: { configOption: reasoning_effort }
     keys:
       model: model
       configOptions:
@@ -44,6 +46,7 @@ drivers:
           name: Effort
           description: Reasoning effort level
           category: thought_level
+          default: "medium"
           choices:
             - value: minimal
               name: "Minimal"
@@ -58,5 +61,7 @@ drivers:
     modelDiscovery:
       urlEnv:
         - OPENAI_BASE_URL
+      tokenEnv:
+        - OPENAI_API_KEY
       pinEnv:
         - OPENAI_MODEL

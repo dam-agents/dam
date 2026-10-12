@@ -1,3 +1,4 @@
+import { CONFIGURE_SESSION_METHOD, PIN_MODEL_METHOD } from "agent-runtime-api";
 import { type PromptBlock, SessionMode } from "api-server-api";
 import {
   useCallback,
@@ -32,7 +33,6 @@ import { acpSessionsKeys } from "../api/keys.js";
 import { setSessionRunning } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
-import { sessionModelFrom } from "../lib/session-model.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
 import type { RewriteMode } from "../store/sessions.js";
 import { useAcpConnection } from "./use-acp-connection.js";
@@ -140,7 +140,6 @@ export function useAcpSession(
         : appendUndelivered([], readUndelivered(draftKey(selectedAgent, null))),
     );
     useStore.getState().setRunStarts([]);
-    useStore.getState().setSessionModel(null);
     useStore.getState().setSessionError(null);
   }, [resetConnection, setSessionId, setMessages, selectedAgent]);
 
@@ -153,7 +152,6 @@ export function useAcpSession(
       setMessages([]);
       useStore.getState().setRewriting(null);
       useStore.getState().setRunStarts([]);
-      useStore.getState().setSessionModel(null);
       useStore.getState().setSessionError(null);
       setSessionId(sid);
 
@@ -225,19 +223,18 @@ export function useAcpSession(
 
   const chooseSessionModel = useCallback(
     async (value: string) => {
-      const { sessionId: sid, sessionModel } = useStore.getState();
-      if (!sid || sessionModel?.sessionId !== sid) return;
+      const sid = useStore.getState().sessionId;
+      if (!sid || !selectedAgent) return;
       try {
         const live = connectionRef.current ?? (await ensureLive());
         if (!live) throw new Error("the agent is not connected");
-        const result = await live.connection.agent.request(
-          "session/set_config_option",
-          { sessionId: sid, configId: sessionModel.configId, value },
-        );
-        if (useStore.getState().sessionId !== sid) return;
-        useStore
-          .getState()
-          .setSessionModel(sessionModelFrom(sid, result.configOptions));
+        await live.connection.agent.request(PIN_MODEL_METHOD, {
+          sessionId: sid,
+          model: value,
+        });
+        await queryClient.invalidateQueries({
+          queryKey: acpSessionsKeys.agent(selectedAgent),
+        });
       } catch (err) {
         emitToast({
           kind: "error",
@@ -245,7 +242,31 @@ export function useAcpSession(
         });
       }
     },
-    [connectionRef, ensureLive],
+    [connectionRef, ensureLive, selectedAgent],
+  );
+
+  const configureSession = useCallback(
+    async (settings: Record<string, string>) => {
+      const sid = useStore.getState().sessionId;
+      if (!sid || !selectedAgent) return;
+      try {
+        const live = connectionRef.current ?? (await ensureLive());
+        if (!live) throw new Error("the agent is not connected");
+        await live.connection.agent.request(CONFIGURE_SESSION_METHOD, {
+          sessionId: sid,
+          settings,
+        });
+        await queryClient.invalidateQueries({
+          queryKey: acpSessionsKeys.agent(selectedAgent),
+        });
+      } catch (err) {
+        emitToast({
+          kind: "error",
+          message: `Couldn't change this session's settings: ${extractErrorMessage(err)}`,
+        });
+      }
+    },
+    [connectionRef, ensureLive, selectedAgent],
   );
 
   const rewriteFrom = useCallback(
@@ -332,6 +353,7 @@ export function useAcpSession(
     rewriteFrom,
     stopAgent,
     chooseSessionModel,
+    configureSession,
     busy,
     loadingSession,
     connectionState,

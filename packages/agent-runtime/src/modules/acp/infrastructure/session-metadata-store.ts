@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sessionSettingsSchema } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../../core/document-store.js";
 
 export const platformSessionMetaSchema = z.object({
@@ -7,10 +8,15 @@ export const platformSessionMetaSchema = z.object({
   scheduleId: z.string().optional(),
   initialization: z.boolean().optional(),
   threadTs: z.string().optional(),
-  title: z.string().optional(),
   ref: z.string().optional(),
   reportTo: z.string().optional(),
   reportName: z.string().optional(),
+  harness: z.string().optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  settings: sessionSettingsSchema.optional(),
+  title: z.string().optional(),
+  customTitle: z.string().optional(),
 });
 
 const sessionMetaEntrySchema = z.object({
@@ -104,13 +110,21 @@ export function createSessionMetadataStore(
     set(sessionId, meta) {
       const { sessions, tombstones } = store.read();
       const existing = sessions[sessionId];
+      const lease = existing?.meta;
       store.write({
         tombstones,
         sessions: {
           ...sessions,
           [sessionId]: {
             ...existing,
-            meta,
+            meta: {
+              ...(lease?.harness !== undefined && { harness: lease.harness }),
+              ...(lease?.provider !== undefined && {
+                provider: lease.provider,
+              }),
+              ...(lease?.model !== undefined && { model: lease.model }),
+              ...meta,
+            },
             createdAt: existing?.createdAt ?? now(),
             seenAt: existing?.seenAt ?? now(),
           },

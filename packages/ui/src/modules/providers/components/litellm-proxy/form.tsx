@@ -1,6 +1,6 @@
 import { Launch } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { PROVIDERS } from "api-server-api";
+import { CURVE_BENDER_HOST, IBM_LITELLM_HOST, PROVIDERS } from "api-server-api";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -29,12 +29,20 @@ const liteLlmProxyCredentialSchema = z
 
 type FormValues = z.infer<typeof liteLlmProxyCredentialSchema>;
 
+const MARK =
+  "rounded-sm bg-yellow-200 px-0.5 text-foreground dark:bg-yellow-400/30";
+
 const LITELLM_PROVIDERS = {
   "ibm-litellm": {
     description: IBM_LITELLM_DESCRIPTION,
     keyGuideUrl: KEY_GUIDE_URL,
+    keyGuideHint: "Follow the guide and generate your LiteLLM token",
   },
-  "curve-bender": { description: CURVE_BENDER_DESCRIPTION, keyGuideUrl: null },
+  "curve-bender": {
+    description: CURVE_BENDER_DESCRIPTION,
+    keyGuideUrl: `https://${CURVE_BENDER_HOST}/ui/`,
+    keyGuideHint: "Generate a key in the CurveBender LiteLLM dashboard",
+  },
 } as const;
 
 export function LiteLlmProxyForm({
@@ -55,7 +63,8 @@ export function LiteLlmProxyForm({
   });
   const { isSubmitting, isValid } = formState;
 
-  const { description, keyGuideUrl } = LITELLM_PROVIDERS[provider];
+  const { description, keyGuideUrl, keyGuideHint } =
+    LITELLM_PROVIDERS[provider];
   const isEdit = variant === "edit";
   const submitDisabled = isSubmitting || !isValid;
 
@@ -68,31 +77,44 @@ export function LiteLlmProxyForm({
       provider={provider}
       title={PROVIDERS[provider].displayName}
       description={
-        isEdit ? "Paste a new token to replace the existing one." : description
+        <>
+          {isEdit
+            ? "Paste a new token to replace the existing one."
+            : description}
+          {provider === "curve-bender" && (
+            <>
+              {" "}
+              <a
+                href="https://ibm.biz/cb-docs"
+                {...externalLinkProps}
+                className="underline hover:text-primary"
+              >
+                CurveBender documentation
+              </a>
+              .
+            </>
+          )}
+        </>
       }
       onSubmit={onSubmit}
       onCancel={onCancel}
     >
-      {keyGuideUrl && (
-        <a
-          href={keyGuideUrl}
-          {...externalLinkProps}
-          className="group flex items-start justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/40"
-        >
-          <div className="flex flex-col gap-0.5">
-            <span className="text-sm font-bold text-foreground">
-              Need an API key?
-            </span>
-            <span className="text-sm text-muted-foreground">
-              Follow the guide and generate your LiteLLM token
-            </span>
-          </div>
-          <Launch
-            size={16}
-            className="mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary"
-          />
-        </a>
-      )}
+      <a
+        href={keyGuideUrl}
+        {...externalLinkProps}
+        className="group flex items-start justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/40"
+      >
+        <div className="flex flex-col gap-0.5">
+          <span className="text-sm font-bold text-foreground">
+            Need an API key?
+          </span>
+          <span className="text-sm text-muted-foreground">{keyGuideHint}</span>
+        </div>
+        <Launch
+          size={16}
+          className="mt-0.5 shrink-0 text-muted-foreground group-hover:text-primary"
+        />
+      </a>
 
       <div className="flex gap-3">
         <Input
@@ -105,9 +127,24 @@ export function LiteLlmProxyForm({
           {...register("value")}
         />
         <Button type="submit" disabled={submitDisabled} className="shrink-0">
-          {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
+          {isSubmitting ? "Saving…" : isEdit ? "Replace" : "Save"}
         </Button>
       </div>
+
+      {provider === "ibm-litellm" && (
+        <p className="text-sm text-muted-foreground">
+          There are two ETE LiteLLM instances. Only keys created at{" "}
+          <a
+            href={`https://${IBM_LITELLM_HOST}/ui?page=api-keys`}
+            {...externalLinkProps}
+            className="underline hover:text-primary"
+          >
+            ete-litellm.ai-models.<mark className={MARK}>vpc</mark>.res.ibm.com
+          </a>{" "}
+          work here; keys from ete-litellm.ai-models.
+          <mark className={MARK}>vpc-int</mark>.res.ibm.com do not.
+        </p>
+      )}
     </ProviderFormShell>
   );
 }

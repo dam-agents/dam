@@ -33,15 +33,15 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
   const agentId = await waitForAgentRunning(api, agentName);
 
   await test.step("add a narrow allow rule in the network panel", async () => {
-    await page.goto(`/sandboxes/${encodeURIComponent(agentId)}`);
-    const net = page.locator("section").filter({ hasText: "Network access" });
-    await net.getByLabel("Host").fill(host);
-    await net.getByLabel("Method").selectOption("GET");
-    await net.getByLabel("Path").fill("/status/*");
-    await net.getByLabel("Verdict").selectOption("allow");
-    await net.getByRole("button", { name: "Add rule" }).click();
-    await page.getByRole("button", { name: "Submit changes" }).click();
-    await page.getByRole("button", { name: "Save & restart" }).click();
+    await page.goto(`/sandboxes/${encodeURIComponent(agentId)}/network`);
+    await page.getByTestId("egress-rule-new").click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Host").fill(host);
+    await dialog.getByLabel("Method").selectOption("GET");
+    await dialog.getByLabel("Path").fill("/status/*");
+    await dialog.getByLabel("Verdict").selectOption("allow");
+    await dialog.getByRole("button", { name: "Add rule" }).click();
+    await page.getByRole("button", { name: "Add & restart" }).click();
     await expect
       .poll(
         async () =>

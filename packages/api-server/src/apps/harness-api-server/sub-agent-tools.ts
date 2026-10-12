@@ -66,7 +66,7 @@ const spawnInput = {
     "Harness to run on, as named by list_harnesses (e.g. claude-code). Pass this or image.",
   ),
   image: spawnShape.image.describe(
-    "A custom image to run instead of the harness's template; harness then says what runs inside it.",
+    "A custom image to run instead of the default one. Pass harness too only when the image carries that harness.",
   ),
   label: spawnShape.label.describe(
     "Short name for the sub-agent, shown wherever agents are listed.",

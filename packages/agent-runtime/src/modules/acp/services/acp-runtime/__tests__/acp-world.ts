@@ -12,6 +12,7 @@ import {
 } from "../../../infrastructure/session-metadata-store.js";
 import type { UndeliveredPromptStore } from "../../../infrastructure/undelivered-prompt-store.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
+import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
 import type { PlatformUndeliveredPrompt } from "api-server-api";
 
 /**
@@ -46,7 +47,7 @@ export interface Harness {
   killed(): boolean;
 }
 
-function createHarness(): { harness: Harness; process: AgentProcess } {
+export function createHarness(): { harness: Harness; process: AgentProcess } {
   const lineHandlers: ((line: string) => void)[] = [];
   const sent: Frame[] = [];
   let killed = false;
@@ -56,6 +57,7 @@ function createHarness(): { harness: Harness; process: AgentProcess } {
   });
 
   const process: AgentProcess = {
+    pid: undefined,
     send(frame) {
       sent.push(frame as Frame);
     },
@@ -121,7 +123,7 @@ export interface Client {
   disconnect(): void;
 }
 
-function createClient(): { client: Client; channel: ClientChannel } {
+export function createClient(): { client: Client; channel: ClientChannel } {
   const messageHandlers: ((data: string) => void)[] = [];
   const closeHandlers: (() => void)[] = [];
   const sent: string[] = [];
@@ -202,6 +204,11 @@ export function createInMemoryUndeliveredStore(): UndeliveredPromptStore {
   };
 }
 
+export const keepsEveryTask = {
+  isKeptTask: () => true,
+  onChange: () => {},
+};
+
 export function createWorld(
   overrides: Partial<Omit<AcpRuntimeDeps, "spawnAgent">> = {},
 ): World {
@@ -214,6 +221,9 @@ export function createWorld(
     queueParkMs: QUEUE_PARK_MS,
     undeliveredPrompts: createInMemoryUndeliveredStore(),
     activeTurns: createActiveTurnStore(memoryDocumentBackend()),
+    backgroundWork: createBackgroundWorkRegistry({
+      keepPolicy: keepsEveryTask,
+    }),
     ...overrides,
     spawnAgent: () => {
       const { harness, process } = createHarness();

@@ -91,8 +91,8 @@ export function useArtifactEditor({
         return;
       }
       const overwrite = await showConfirm(
-        "This artifact has a newer version. Overwrite it with your changes?",
-        "Artifact changed",
+        "This artifact has a newer version. Saving replaces it with yours.",
+        "Overwrite the newer version?",
       );
       if (!overwrite) return;
       try {
@@ -108,7 +108,11 @@ export function useArtifactEditor({
 
   const confirmDiscard = useCallback(async () => {
     if (!dirty) return true;
-    return showConfirm("Discard unsaved changes?", "Unsaved changes");
+    return showConfirm("Your edits are lost.", "Discard unsaved changes?", {
+      kind: "destructive",
+      confirmLabel: "Discard",
+      cancelLabel: "Keep editing",
+    });
   }, [dirty, showConfirm]);
 
   const cancelEdit = useCallback(async () => {

@@ -11,6 +11,7 @@ import type {
   RuntimeDeliveryService,
   WorkspaceFailure,
   WorkspaceMutationKind,
+  EnvVar,
 } from "api-server-api";
 import { getLogger } from "../../core/logger.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
@@ -115,6 +116,7 @@ export interface ComposeRuntimeDeliveryOpts {
   agentRunningPort: IsAgentRunning;
   snapshotWriter: HarnessConfigSnapshotWriter;
   harnessServerUrl: string;
+  telemetryEnv: (harness: string) => readonly EnvVar[];
   resolveOwner: (agentId: string) => Promise<string | null>;
   deliveryConcurrency: number;
 }
@@ -128,6 +130,7 @@ export function composeRuntimeDelivery(
   const agentsRuntimeRepo = createAgentsRuntimeRepo(opts.db);
   const builtin = createBuiltinContributions({
     harnessServerUrl: opts.harnessServerUrl,
+    telemetryEnv: opts.telemetryEnv,
   });
   const stateBuilder = createStateBuilder({
     db: opts.db,

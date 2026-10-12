@@ -1,5 +1,4 @@
 import "./App.css";
-import "./modules/usage/devtools.js";
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";

@@ -1,3 +1,4 @@
+import { Add } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -129,9 +130,10 @@ export function AgentBindPicker({
           variant="link"
           size="inline"
           onClick={openCreateForm}
-          className="mt-6 text-sm text-muted-foreground hover:text-foreground"
+          tone="muted"
+          className="mt-6 text-sm"
         >
-          + Create a new agent
+          <Add size={16} /> Create a new agent
         </Button>
       )}
     </BindPage>

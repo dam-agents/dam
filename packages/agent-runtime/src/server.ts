@@ -1,9 +1,9 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { monitorEventLoopDelay } from "node:perf_hooks";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import headlessPkg from "@xterm/headless";
 const { Terminal: HeadlessTerminal } = headlessPkg;
 import serializePkg from "@xterm/addon-serialize";
@@ -18,6 +18,7 @@ import {
   AGENT_WORK_DIR,
   STAGED_SKILLS_DIR,
   backgroundWorkReportSchema,
+  keepMarkRequestSchema,
   type AgentRuntimeContext,
   type ApplyStateInput,
 } from "agent-runtime-api";
@@ -53,6 +54,7 @@ import {
 import { startDisplaySupervisor } from "./modules/browser-display.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
+import { prepareProcesses } from "./modules/processes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
 import { sessionDirectoryEntries } from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
@@ -69,8 +71,15 @@ import {
   pluginStateRoot,
   readSkillInstallBootState,
   resolveDrivers,
+  harnessConfigBindingOf,
+  sessionModelOf,
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
+import { leaseSpawnEnv } from "./core/runtime-env.js";
+import {
+  PROVIDER_REMOVED_REASON,
+  type LeasePair,
+} from "./modules/acp/services/lease-router.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const homeDir = config.PLATFORM_DEV
@@ -97,17 +106,27 @@ function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
     .map((p) => expandHome(p, home));
 }
 
-const harnessManifest = join(
-  __dir,
-  `../runtime-manifests/${process.env.PLATFORM_HARNESS}.yaml`,
-);
-const runtimeManifest = loadManifest(
-  config.PLATFORM_DEV
-    ? join(__dir, "../../agents/base/rootfs/app/runtime-manifest.yaml")
-    : existsSync(harnessManifest)
-      ? harnessManifest
-      : join(__dir, "../runtime-manifest.yaml"),
-);
+const defaultHarness = process.env.PLATFORM_HARNESS ?? "";
+const manifestsDir = join(__dir, "../runtime-manifests");
+const harnessManifests: Record<string, RuntimeManifest> = config.PLATFORM_DEV
+  ? {
+      [defaultHarness]: loadManifest(
+        join(__dir, "../../agents/base/rootfs/app/runtime-manifest.yaml"),
+      ),
+    }
+  : existsSync(join(manifestsDir, `${defaultHarness}.yaml`))
+    ? Object.fromEntries(
+        readdirSync(manifestsDir)
+          .filter((f) => f.endsWith(".yaml"))
+          .map((f) => [
+            basename(f, ".yaml"),
+            loadManifest(join(manifestsDir, f)),
+          ]),
+      )
+    : {
+        [defaultHarness]: loadManifest(join(__dir, "../runtime-manifest.yaml")),
+      };
+const runtimeManifest = harnessManifests[defaultHarness]!;
 
 const platformAgentId =
   process.env.PLATFORM_AGENT_ID ?? process.env.HOSTNAME ?? "unknown";
@@ -133,7 +152,7 @@ const seedRoots = skillRefPaths(
 ).filter((p) => !readSideSet.has(p));
 const pristineSkillPaths = [...seedRoots, STAGED_SKILLS_DIR];
 const stateBackend = createFileDocumentStoreBackend(homeDir);
-const envStore = createEnvStateStore(homeDir);
+const envStore = createEnvStateStore(homeDir, defaultHarness);
 const setupGitCredentialHelper = createGitCredentialHelperSetup(
   envStore,
   (msg) => process.stderr.write(`[git] ${msg}\n`),
@@ -182,12 +201,21 @@ if (envStore.ready()) podService?.refreshEnv();
 process.env.PLATFORM_RUNTIME_URL = `http://127.0.0.1:${config.PORT}`;
 
 let seedHarnessModel: (() => Promise<void>) | null = null;
+let leaseModel:
+  | ((lease: {
+      harness: string;
+      provider: string | null;
+    }) => Promise<string | null>)
+  | null = null;
+
+const processes = prepareProcesses(stateBackend);
 
 const {
   runtime: acpRuntime,
   triggerDriver,
   sessionMetadata,
   backgroundWork,
+  harnessWork,
   sessions: sessionsService,
   sessionChanges,
   activeTurns,
@@ -201,24 +229,45 @@ const {
   agentHome: homeDir,
   stateBackend,
   envReader: envStore,
-  sessionHistory: runtimeManifest.sessionHistory,
-  ...(runtimeManifest.terminalSessionPins && {
-    terminalSessionPins: expandHome(
-      runtimeManifest.terminalSessionPins,
-      homeDir,
-    ),
-  }),
+  defaultHarness,
+  harnesses: Object.fromEntries(
+    Object.entries(harnessManifests).map(([name, manifest]) => [
+      name,
+      {
+        sessionHistory: manifest.sessionHistory,
+        sessionSpend: manifest.sessionSpend,
+        ...(manifest.terminalSessionPins && {
+          terminalSessionPins: expandHome(
+            manifest.terminalSessionPins,
+            homeDir,
+          ),
+        }),
+        sessionModel: sessionModelOf(manifest),
+        sessionSettings: harnessConfigBindingOf(manifest)?.sessionSettings,
+        catalog: harnessConfigBindingOf(manifest)?.catalog,
+      },
+    ]),
+  ),
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
+  keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
-  beforeFirstSpawn: () => {
+  beforeSpawn: () => {
     if (seedHarnessModel) return seedHarnessModel();
     process.stderr.write(
       "[acp] first spawn reached before the runtime channel was composed — no model seeded\n",
     );
     return Promise.resolve();
   },
+  leaseModel: (lease) => leaseModel?.(lease) ?? Promise.resolve(null),
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
+});
+
+const { service: processesService, keepMarks } = processes.start({
+  backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
+  runtimePid: process.pid,
+  harnessWork,
+  log: (msg) => process.stderr.write(`[processes] ${msg}\n`),
 });
 
 let recoveryScheduled = false;
@@ -247,8 +296,9 @@ const reconcileOnState = imageSkillReconciler
 
 const runtimeChannel = await composeRuntimeChannel({
   subAgentSessions,
-  onHarnessConfigApplied: () => acpRuntime.recycleForConfig(),
-  manifest: runtimeManifest,
+  onHarnessConfigApplied: (harness) => acpRuntime.recycleHarness(harness),
+  manifests: harnessManifests,
+  defaultHarness,
   agentHome: homeDir,
   workDir,
   stateBackend,
@@ -263,8 +313,8 @@ const runtimeChannel = await composeRuntimeChannel({
   plugins: [
     createEnvPlugin({
       store: envStore,
-      onChange: ({ namesChanged }) => {
-        acpRuntime.refreshEnv({ force: namesChanged });
+      onChange: (change) => {
+        acpRuntime.applyEnvChange(change);
         podService?.refreshEnv();
         scheduleRecovery();
       },
@@ -284,6 +334,7 @@ const runtimeChannel = await composeRuntimeChannel({
 seedHarnessModel = async () => {
   await runtimeChannel.seedHarnessModel();
 };
+leaseModel = (lease) => runtimeChannel.leaseModel(lease);
 
 if (imageSkillReconciler) {
   const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));
@@ -320,6 +371,7 @@ const createTrpcContext = (): AgentRuntimeContext => ({
   ssh: sshService,
   runtime: runtimeChannel.service,
   harnessConfig: runtimeChannel.harnessConfig,
+  processes: processesService,
 });
 
 const trpcHandler = createHTTPHandler({
@@ -405,6 +457,34 @@ function markTerminalSeen(sessionId: string): void {
   else sessionMetadata.set(sessionId, { mode: "terminal" });
 }
 
+function terminalLease(
+  sessionId: string,
+  requested: Partial<LeasePair>,
+): LeasePair | string {
+  const meta = sessionMetadata.get(sessionId)?.meta;
+  const harness = meta?.harness ?? requested.harness ?? defaultHarness;
+  if (!Object.hasOwn(harnessManifests, harness))
+    return `this agent does not carry the ${harness} harness`;
+  const provider =
+    meta?.harness !== undefined
+      ? (meta.provider ?? null)
+      : (requested.provider ?? envStore.providers()[0] ?? null);
+  const model =
+    meta?.harness !== undefined
+      ? (meta.model ?? null)
+      : (requested.model ?? null);
+  if (provider !== null && !envStore.providers().includes(provider))
+    return PROVIDER_REMOVED_REASON;
+  sessionMetadata.set(sessionId, {
+    ...meta,
+    mode: "terminal",
+    harness,
+    ...(provider !== null && { provider }),
+    ...(model !== null && { model }),
+  });
+  return { harness, provider, model };
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Stamps activity for output produced while nobody is
  * attached, which is what makes a terminal session unread. A terminal admits one
@@ -450,7 +530,7 @@ function reapPtySlotIfIdle(sessionId: string): void {
 function attachPty(
   sessionId: string,
   ws: WsWebSocket,
-  opts: { reset: boolean },
+  opts: { reset: boolean; lease: Partial<LeasePair> },
 ): void {
   if (opts.reset) killPtySlot(sessionId);
   let initialized = false;
@@ -512,6 +592,11 @@ function attachPty(
         return;
       }
 
+      const lease = terminalLease(sessionId, opts.lease);
+      if (typeof lease === "string") {
+        ws.close(1008, lease);
+        return;
+      }
       const headless = new HeadlessTerminal({
         cols,
         rows,
@@ -527,9 +612,8 @@ function attachPty(
         rows,
         cwd: workDir,
         env: {
-          ...envStore.current(),
           ...(Object.fromEntries(
-            Object.entries(process.env).filter(
+            Object.entries(leaseSpawnEnv(envStore, lease)).filter(
               ([k, v]) =>
                 v !== undefined &&
                 !k.startsWith("npm_config_") &&
@@ -625,6 +709,14 @@ function attachPty(
   });
 }
 
+function isLoopback(address: string | undefined): boolean {
+  return (
+    address === "::1" ||
+    address?.startsWith("127.") === true ||
+    address?.startsWith("::ffff:127.") === true
+  );
+}
+
 async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let bytes = 0;
@@ -653,6 +745,7 @@ const server = http.createServer((req, res) => {
     const status = {
       idle: acp.idle && ptySlots.size === 0 && !kbPublish.isBusy(),
       backgroundWork: acp.backgroundWork,
+      keptProcesses: acp.keptProcesses,
     };
     res
       .writeHead(200, { "Content-Type": "application/json", ...CORS })
@@ -729,6 +822,35 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/api/keep-marks") {
+    const reply = (status: number, body: unknown) =>
+      res
+        .writeHead(status, { "Content-Type": "application/json", ...CORS })
+        .end(JSON.stringify(body));
+    if (!isLoopback(req.socket.remoteAddress)) {
+      reply(403, { error: "keep marks are taken from inside the agent only" });
+      return;
+    }
+    void readJsonBody(req)
+      .then(async (body) => {
+        const parsed = keepMarkRequestSchema.safeParse(body);
+        if (!parsed.success) {
+          reply(400, { error: parsed.error.message });
+          return;
+        }
+        const result = await keepMarks.mark(parsed.data);
+        if (result.ok) reply(200, result.value);
+        else
+          reply(result.error.kind === "NotFound" ? 404 : 409, {
+            error: result.error.message,
+          });
+      })
+      .catch((err: unknown) => {
+        reply(400, { error: String(err) });
+      });
+    return;
+  }
+
   if (req.url?.startsWith("/api/trpc")) {
     req.url = req.url.replace("/api/trpc", "");
     Object.entries(CORS).forEach(([k, v]) => res.setHeader(k, v));
@@ -790,8 +912,19 @@ server.on("upgrade", (req, socket, head) => {
   } else if (url.pathname === "/api/terminal") {
     const sessionId = url.searchParams.get("sessionId") ?? "default";
     const reset = url.searchParams.get("reset") === "1";
+    const leaseParam = (name: string): string | undefined =>
+      url.searchParams.get(name) || undefined;
+    const lease = {
+      ...(leaseParam("harness") !== undefined && {
+        harness: leaseParam("harness"),
+      }),
+      ...(leaseParam("provider") !== undefined && {
+        provider: leaseParam("provider"),
+      }),
+      ...(leaseParam("model") !== undefined && { model: leaseParam("model") }),
+    };
     termWss.handleUpgrade(req, socket, head, (ws) =>
-      attachPty(sessionId, ws, { reset }),
+      attachPty(sessionId, ws, { reset, lease }),
     );
   } else if (url.pathname === "/api/browser/display") {
     browserWss.handleUpgrade(req, socket, head, (ws) =>
@@ -837,7 +970,11 @@ server.listen(config.PORT, () => {
 if (config.MEM_REAPER && !config.PLATFORM_DEV) {
   startMemReaper({
     thresholdFraction: config.MEM_REAPER_THRESHOLD,
-    agentProcesses: runtimeManifest.agentProcesses,
+    agentProcesses: [
+      ...new Set(
+        Object.values(harnessManifests).flatMap((m) => m.agentProcesses),
+      ),
+    ],
     log: (msg) => process.stderr.write(`[mem-reaper] ${msg}\n`),
   });
 }

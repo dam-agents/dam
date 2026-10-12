@@ -4,6 +4,7 @@ import { createSchedulerRunner } from "../../modules/schedules/services/schedule
 import type { SchedulesRepository } from "../../modules/schedules/infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../../modules/schedules/infrastructure/schedule-queue.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import type { FirePair } from "../../modules/harness-config/index.js";
 import type { AgentActivityStamp } from "../../modules/agents/index.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import type { ScheduleStatusPatch } from "../../modules/schedules/domain/status-transitions.js";
@@ -74,6 +75,7 @@ function makeDeps(opts?: {
   onceResult?: string;
   runtimeMigrating?: boolean;
   enabled?: boolean;
+  firePair?: FirePair;
 }) {
   const calls: string[] = [];
   const fires: { result: string; nextRun: Date | null }[] = [];
@@ -174,6 +176,7 @@ function makeDeps(opts?: {
   };
 
   const runner = createSchedulerRunner({
+    ...(opts?.firePair ? { firePair: opts.firePair } : {}),
     repo,
     queue,
     runtimeMutator,
@@ -212,6 +215,66 @@ function makeDeps(opts?: {
     replaced,
   };
 }
+
+describe("scheduler-runner fire: the harness and provider a fire runs on", () => {
+  /** TEST_SCENARIO: The agent's runtime runs each session on its own harness
+   * and provider, so the fire names the pair it resolved. */
+  it("names the resolved harness, provider and model on the trigger", async () => {
+    const { runner, payloads } = makeDeps({
+      firePair: async () => ({
+        harness: "codex",
+        provider: "conn-oai",
+        model: "gpt-5",
+      }),
+    });
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+    expect(payloads[0]).toMatchObject({
+      harness: "codex",
+      provider: "conn-oai",
+      model: "gpt-5",
+    });
+  });
+
+  /** TEST_SCENARIO: Usage counts a fire under the harness it ran on, which a
+   * remembered pair can make other than the agent's own. */
+  it("reports the harness the fire ran on", async () => {
+    const seen: (string | undefined)[] = [];
+    const sub = events$()
+      .pipe(ofType<ScheduleFired>(EventType.ScheduleFired))
+      .subscribe((event) => seen.push(event.harness));
+    try {
+      const { runner } = makeDeps({
+        firePair: async () => ({
+          harness: "codex",
+          provider: null,
+          model: null,
+        }),
+      });
+      await runner.buildFireHandler()(
+        SCHEDULE_ID,
+        new Date("2026-06-12T10:30:00Z"),
+      );
+      expect(seen).toEqual(["codex"]);
+    } finally {
+      sub.unsubscribe();
+    }
+  });
+
+  /** TEST_SCENARIO: No granted provider can run the agent's harness, so the
+   * fire fails with a reason the schedules page shows rather than running on
+   * a provider that would refuse it or being skipped silently. */
+  it("fails the fire when no granted provider fits", async () => {
+    const { runner, fires, events } = makeDeps({ firePair: async () => null });
+    await expect(
+      runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:30:00Z")),
+    ).rejects.toThrow(/no model provider/);
+    expect(events).toEqual([]);
+    expect(fires[0]?.result).toMatch(/no model provider granted/);
+  });
+});
 
 describe("scheduler-runner fire", () => {
   // TEST_SCENARIO: while an agent moves to the new runtime the controller holds it down, so a fire would only wait out the wake and read as a failed run. The occurrence is held with a reason the schedules page shows, and the next one is armed as usual.

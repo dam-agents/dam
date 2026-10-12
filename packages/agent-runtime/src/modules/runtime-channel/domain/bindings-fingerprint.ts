@@ -1,9 +1,5 @@
 import { createHash } from "node:crypto";
-import type { DriverBinding } from "agent-runtime-api";
-
-export function bindingsFingerprint(
-  bindings: Record<string, DriverBinding>,
-): string {
+export function bindingsFingerprint(bindings: Record<string, unknown>): string {
   return createHash("sha256")
     .update(JSON.stringify(sortKeys(bindings)))
     .digest("hex");

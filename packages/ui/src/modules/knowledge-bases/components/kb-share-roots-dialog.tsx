@@ -47,7 +47,7 @@ export function KbShareRootsDialog({
     .map((c) => c.name);
 
   return (
-    <Modal>
+    <Modal onClose={pending ? undefined : onCancel}>
       <DialogHeader
         title="Share this knowledge base"
         onClose={onCancel}
@@ -64,7 +64,7 @@ export function KbShareRootsDialog({
 
           <div className="flex flex-col gap-2">
             {defaults.isPending && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 Listing workspace folders…
               </p>
             )}
@@ -81,7 +81,7 @@ export function KbShareRootsDialog({
               </p>
             )}
             {workspace?.state === "listed" && workspace.roots.length === 0 && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 This knowledge base has no folders in its workspace yet — add
                 content before sharing.
               </p>

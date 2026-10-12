@@ -47,7 +47,9 @@ const (
 	// Agent gen 17: harness added to AgentSpec — which harness the one vm
 	// image runs, read in the guest as PLATFORM_HARNESS; an older CRD would
 	// prune it.
-	AgentSchemaGeneration = 17
+	// Agent gen 18: avatar added to AgentSpec — the avatar character the owner
+	// picked; an older CRD would prune it.
+	AgentSchemaGeneration = 18
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

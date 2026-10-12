@@ -59,6 +59,7 @@ function setup() {
   const agents = createAgentsService({
     owner: "owner-1",
     repo: unused<AgentsDeps["repo"]>({
+      list: async () => [],
       create: persist,
       get: async (id: string) => (id === "agent-1" ? existing : null),
       updateSpec,

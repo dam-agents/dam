@@ -1,6 +1,11 @@
 import { and, eq, isNull, agents, sql, type Db } from "db";
 import type { SubPseudonymizer } from "../../../core/sub-pseudonymizer.js";
-import type { AgentRegistryRow } from "../domain/types.js";
+import type {
+  AgentRegistryRow,
+  AgentStarterKitFacts,
+} from "../domain/types.js";
+
+const CREATION_STAMP_GRACE_MIN = 2;
 
 const CLEARED_RUNTIME_STATE = {
   runtimeProtocolVersion: null,
@@ -49,6 +54,71 @@ export function listLiveAgentIds(db: Db) {
       .from(agents)
       .where(isNull(agents.deletedAt));
     return rows.map((r) => r.id);
+  };
+}
+
+export function recordAgentStarterKit(db: Db, pseudo: SubPseudonymizer) {
+  return async (row: AgentRegistryRow & { starterKit: string }) => {
+    await db
+      .insert(agents)
+      .values({
+        id: row.id,
+        ownerSub: pseudo.hashSub(row.ownerSub),
+        starterKit: row.starterKit,
+      })
+      .onConflictDoUpdate({
+        target: agents.id,
+        set: { starterKit: row.starterKit },
+      });
+  };
+}
+
+export function recordAgentSpawnedBy(db: Db, pseudo: SubPseudonymizer) {
+  return async (row: AgentRegistryRow & { spawnedByAgentId: string }) => {
+    await db
+      .insert(agents)
+      .values({
+        id: row.id,
+        ownerSub: pseudo.hashSub(row.ownerSub),
+        spawnedByAgentId: row.spawnedByAgentId,
+      })
+      .onConflictDoUpdate({
+        target: agents.id,
+        set: { spawnedByAgentId: row.spawnedByAgentId },
+      });
+  };
+}
+
+export function recordAgentOnboarded(db: Db) {
+  return async (id: string, at: Date): Promise<void> => {
+    await db
+      .update(agents)
+      .set({ onboardedAt: at })
+      .where(and(eq(agents.id, id), isNull(agents.onboardedAt)));
+  };
+}
+
+export function fillAgentStarterKitFacts(db: Db) {
+  return async (facts: AgentStarterKitFacts): Promise<void> => {
+    if (facts.starterKit) {
+      await db
+        .update(agents)
+        .set({ starterKit: facts.starterKit })
+        .where(and(eq(agents.id, facts.id), isNull(agents.starterKit)));
+    }
+    const onboardedAt = facts.onboardedAt ? new Date(facts.onboardedAt) : null;
+    if (onboardedAt && !Number.isNaN(onboardedAt.getTime())) {
+      await db
+        .update(agents)
+        .set({ onboardedAt })
+        .where(
+          and(
+            eq(agents.id, facts.id),
+            isNull(agents.onboardedAt),
+            sql`${agents.createdAt} + make_interval(mins => ${CREATION_STAMP_GRACE_MIN}) < ${onboardedAt.toISOString()}::timestamptz`,
+          ),
+        );
+    }
   };
 }
 

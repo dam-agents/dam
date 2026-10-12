@@ -18,6 +18,7 @@ import {
   connectionGetAgentConnectionsInputSchema,
   connectionIdInputSchema,
   connectionSetAgentConnectionsInputSchema,
+  connectionUpdateAgentConnectionsInputSchema,
   connectionSetPreferredConnectionInputSchema,
   connectionStartOAuthInputSchema,
   connectionTestAnthropicInputSchema,
@@ -44,6 +45,10 @@ export const connectionsRouter = t.router({
   get: readCredentialsProcedure
     .input(connectionIdInputSchema)
     .query(({ ctx, input }) => ctx.connections.getConnection(input.id)),
+
+  getProviderBalance: readCredentialsProcedure
+    .input(connectionIdInputSchema)
+    .query(({ ctx, input }) => ctx.connections.getProviderBalance(input.id)),
 
   create: manageCredentialsProcedure
     .input(connectionCreateInputSchema)
@@ -143,6 +148,15 @@ export const connectionsRouter = t.router({
     .input(connectionSetAgentConnectionsInputSchema)
     .mutation(({ ctx, input }) =>
       ctx.connections.setAgentConnections(input.agentId, input.connectionIds),
+    ),
+
+  updateAgentConnections: manageAgentsProcedure
+    .input(connectionUpdateAgentConnectionsInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.connections.updateAgentConnections(input.agentId, {
+        grant: input.grant,
+        revoke: input.revoke,
+      }),
     ),
 
   setPreferredConnection: manageAgentsProcedure

@@ -155,10 +155,10 @@ prompts:
 ```
 
 ```bash
-# 2. Run it auto-approved, in the background (see AGENTS.md), and follow progress.
+# 2. Run it auto-approved, kept in the background (see AGENTS.md), and follow progress.
 cd "$dir"
-nohup nous run campaign.yaml --auto-approve --max-iterations 2 > campaign.log 2>&1 &
-echo $! > run.pid
+platform-keep --log campaign.log -- sh -c 'echo $$ > run.pid
+  exec nous run campaign.yaml --auto-approve --max-iterations 2'
 nous status "$run_id" --watch
 
 # 3. When it finishes, harvest the findings into the wiki (see "Post-campaign knowledge").

@@ -1,2 +1,2 @@
 export { composeUsageMetricsModule } from "./compose.js";
-export { type AgentTemplate } from "./domain/template.js";
+export { type AgentHarness } from "./domain/harness.js";

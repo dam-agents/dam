@@ -182,6 +182,9 @@ const STALL: Duration = Duration::from_secs(360);
 const ANSWER_WAIT: Duration = Duration::from_secs(600);
 const WATCH_EVERY: Duration = Duration::from_secs(5);
 
+// UNIT_BOUNDARY_DESCRIPTION: how long the upload waits for the walk to end once the request is over. A walk whose upload has ended stops at its next write, but a walk blocked in a read of the home — a volume whose I/O hangs — never writes again, and awaiting it would hold the Job until its deadline after the runner already said why the upload failed.
+const WALK_JOIN: Duration = Duration::from_secs(30);
+
 // UNIT_BOUNDARY_DESCRIPTION: where the body stands, as the connection sees it. `waiting` is when a chunk was last handed to the connection without it asking for the next one — the connection not draining — and is clear while the connection waits on the archive, since a slow walk is progress the runner's idle limit already covers. `ended` is when the last chunk was taken.
 struct Progress {
     waiting: Option<Instant>,
@@ -246,6 +249,28 @@ async fn watched<F: std::future::Future>(
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the walk's tally once it ended, or, when it has not ended `wait` after the request did, a timed-out error saying the walk is blocked on the volume. The thread is left behind rather than awaited.
+async fn walk_ended(
+    archiving: tokio::task::JoinHandle<io::Result<SeedResult>>,
+    source: &Path,
+    wait: Duration,
+) -> anyhow::Result<io::Result<SeedResult>> {
+    match tokio::time::timeout(wait, archiving).await {
+        Ok(joined) => Ok(joined?),
+        Err(_) => {
+            tracing::warn!(source = %source.display(), "the walk of the home did not end after the upload did; it is blocked reading the volume");
+            Ok(Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!(
+                    "the walk of {} is blocked: it did not end {}s after the upload did, so reading the volume hangs",
+                    source.display(),
+                    wait.as_secs()
+                ),
+            )))
+        }
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: a failure that a fresh attempt at the same home meets again: the home is past a walk limit, or the runner refused it as larger than the machine's disk.
 #[derive(Debug)]
 struct Permanent(String);
@@ -284,81 +309,95 @@ fn upload() -> anyhow::Result<()> {
     let result_file = args.result_file.clone();
     let started = Instant::now();
     tracing::info!(source = %args.source.display(), url = %args.url, "seed upload starting");
-    tokio::runtime::Builder::new_multi_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .build()?
-        .block_on(async move {
-            await_reachable(&args.url, REACH_DEADLINE).await?;
-            let (chunks, mut received) = tokio::sync::mpsc::channel(CHUNKS);
-            let url = args.url.clone();
-            let archiving = tokio::task::spawn_blocking(move || archive(&args, chunks));
-            let progress = Arc::new(Mutex::new(Progress::new(Instant::now())));
-            let polled = progress.clone();
-            let body = reqwest::Body::wrap_stream(futures_util::stream::poll_fn(move |cx| {
-                let poll = received.poll_recv(cx);
-                polled.lock().unwrap().polled(&poll, Instant::now());
-                poll
-            }));
-            let send = client
-                .put(&url)
-                .bearer_auth(token)
-                .header("content-type", "application/x-tar")
-                .body(body)
-                .send();
-            let response = watched(send, &progress).await;
-            let archived = archiving.await?;
-            let response = match response {
-                Ok(response) => response,
-                Err(stalled) => anyhow::bail!("uploading the seed to {url}: {stalled}"),
-            };
-            let response = match (response, &archived) {
-                (Ok(response), _) => response,
-                (Err(_), Err(e)) if e.kind() == io::ErrorKind::QuotaExceeded => {
-                    return Err(Permanent(format!("archiving the seed: {e}")).into())
-                }
-                (Err(_), Err(e)) if e.kind() != io::ErrorKind::BrokenPipe => {
-                    anyhow::bail!("archiving the seed: {e}")
-                }
-                (Err(e), _) => {
-                    return Err(anyhow::Error::new(e).context(format!("uploading the seed to {url}")))
-                }
-            };
-            let status = response.status();
-            let waited = ANSWER_WAIT.as_secs();
-            let answer = tokio::time::timeout(ANSWER_WAIT, response.text())
-                .await
-                .with_context(|| format!("the runner's answer did not arrive in {waited}s"))?
-                .unwrap_or_default();
-            if status == reqwest::StatusCode::PAYLOAD_TOO_LARGE {
-                return Err(Permanent(format!("the runner refused the seed: {status}: {}", answer.trim())).into());
+        .build()?;
+    let source = args.source.clone();
+    let uploaded = runtime.block_on(async move {
+        await_reachable(&args.url, REACH_DEADLINE).await?;
+        let (chunks, mut received) = tokio::sync::mpsc::channel(CHUNKS);
+        let url = args.url.clone();
+        let archiving = tokio::task::spawn_blocking(move || archive(&args, chunks));
+        let progress = Arc::new(Mutex::new(Progress::new(Instant::now())));
+        let polled = progress.clone();
+        let body = reqwest::Body::wrap_stream(futures_util::stream::poll_fn(move |cx| {
+            let poll = received.poll_recv(cx);
+            polled.lock().unwrap().polled(&poll, Instant::now());
+            poll
+        }));
+        let send = client
+            .put(&url)
+            .bearer_auth(token)
+            .header("content-type", "application/x-tar")
+            .body(body)
+            .send();
+        let response = watched(send, &progress).await;
+        let archived = walk_ended(archiving, &source, WALK_JOIN).await?;
+        let response = match response {
+            Ok(response) => response,
+            Err(stalled) => anyhow::bail!("uploading the seed to {url}: {stalled}"),
+        };
+        let response = match (response, &archived) {
+            (Ok(response), _) => response,
+            (Err(_), Err(e)) if e.kind() == io::ErrorKind::QuotaExceeded => {
+                return Err(Permanent(format!("archiving the seed: {e}")).into())
             }
-            anyhow::ensure!(
-                status.is_success(),
+            (Err(_), Err(e)) if e.kind() != io::ErrorKind::BrokenPipe => {
+                anyhow::bail!("archiving the seed: {e}")
+            }
+            (Err(e), _) => {
+                return Err(anyhow::Error::new(e).context(format!("uploading the seed to {url}")))
+            }
+        };
+        let status = response.status();
+        let waited = ANSWER_WAIT.as_secs();
+        let answer = tokio::time::timeout(ANSWER_WAIT, response.text())
+            .await
+            .with_context(|| format!("the runner's answer did not arrive in {waited}s"))?
+            .unwrap_or_default();
+        if status == reqwest::StatusCode::PAYLOAD_TOO_LARGE {
+            return Err(Permanent(format!(
                 "the runner refused the seed: {status}: {}",
                 answer.trim()
-            );
-            let sent = archived.context("archiving the seed")?;
-            let stored: SeedResult = serde_json::from_str(&answer)
-                .with_context(|| format!("reading the runner's answer {answer:?}"))?;
-            anyhow::ensure!(
-                stored == sent,
-                "the runner stored {} bytes with SHA-256 {}, but {} bytes with SHA-256 {} were sent",
-                stored.bytes,
-                stored.sha256,
-                sent.bytes,
-                sent.sha256
-            );
-            if let Some(path) = &result_file {
-                write_result(path, &sent)?;
+            ))
+            .into());
+        }
+        if !status.is_success() {
+            match &archived {
+                Err(e) if e.kind() == io::ErrorKind::TimedOut => {
+                    anyhow::bail!(
+                        "the runner refused the seed: {status}: {} ({e})",
+                        answer.trim()
+                    )
+                }
+                _ => anyhow::bail!("the runner refused the seed: {status}: {}", answer.trim()),
             }
-            tracing::info!(
-                bytes = sent.bytes,
-                sha256 = %sent.sha256,
-                elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-                "seed upload finished"
-            );
-            anyhow::Ok(())
-        })
+        }
+        let sent = archived.context("archiving the seed")?;
+        let stored: SeedResult = serde_json::from_str(&answer)
+            .with_context(|| format!("reading the runner's answer {answer:?}"))?;
+        anyhow::ensure!(
+            stored == sent,
+            "the runner stored {} bytes with SHA-256 {}, but {} bytes with SHA-256 {} were sent",
+            stored.bytes,
+            stored.sha256,
+            sent.bytes,
+            sent.sha256
+        );
+        if let Some(path) = &result_file {
+            write_result(path, &sent)?;
+        }
+        tracing::info!(
+            bytes = sent.bytes,
+            sha256 = %sent.sha256,
+            elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            "seed upload finished"
+        );
+        anyhow::Ok(())
+    });
+    // UNIT_BOUNDARY_DESCRIPTION: dropping the runtime waits for every blocking thread, the walk's among them, so a walk blocked in a read would keep the process from exiting with its error. The runtime is let go of instead.
+    runtime.shutdown_background();
+    uploaded
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: writes the seed both sides agreed on, as the machine API's seed answer, once the runner's answer matched what was sent. It is written only on success, so a Job that failed carries its error as its message instead.
@@ -432,6 +471,27 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.contains("took nothing"), "{err}");
+    }
+
+    // TEST_SCENARIO: a walk blocked in a read of the home — one that never writes again, so never sees that the upload ended — does not hold the upload: once the wait passes, the walk reads as blocked and the upload goes on to report its failure.
+    #[tokio::test]
+    async fn a_walk_blocked_on_the_volume_is_not_awaited() {
+        let archiving = tokio::task::spawn_blocking(|| -> io::Result<SeedResult> {
+            std::thread::sleep(Duration::from_secs(2));
+            Err(io::Error::other("unreachable"))
+        });
+        let started = Instant::now();
+        let err = walk_ended(
+            archiving,
+            Path::new("/mnt/home"),
+            Duration::from_millis(100),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        assert!(err.to_string().contains("/mnt/home is blocked"), "{err}");
     }
 
     // TEST_SCENARIO: a runner that never answers fails the wait once the deadline passes, and the error names the address, so the Job's message says where it could not reach.

@@ -35,7 +35,7 @@ function PinnedKitCard({
       type="button"
       onClick={onOpen}
       data-testid={`starter-kit-card-${kit.id}`}
-      className="flex w-full flex-col justify-center gap-3 overflow-hidden rounded-xl border border-border bg-card p-8 text-left transition-colors hover:border-foreground/20 md:min-h-[280px]"
+      className="flex w-full flex-col justify-center gap-3 overflow-hidden rounded-lg border border-border bg-card p-8 text-left transition-colors hover:border-foreground/20 md:min-h-[280px]"
     >
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-2xl font-semibold text-foreground">{kit.name}</h2>
@@ -72,7 +72,7 @@ export function StarterKitsView() {
   return (
     <div>
       <PageHeader
-        title="Starter Kits"
+        title="Starter kits"
         description="Each starter kit bundles a harness, skills, schedules, and connections into a ready-made agent configuration."
         actions={
           <Button variant="outline" onClick={() => setView("agent-new")}>

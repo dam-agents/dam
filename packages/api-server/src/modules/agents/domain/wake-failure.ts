@@ -34,7 +34,7 @@ export const POD_FAILURE_REASONS = new Set([
   "MachineRunnerUnschedulable",
 ]);
 
-const GATEWAY_FAILURE_REASONS = new Set([
+export const GATEWAY_FAILURE_REASONS = new Set([
   ...POD_FAILURE_REASONS,
   "StuckOnSupersededRevision",
 ]);

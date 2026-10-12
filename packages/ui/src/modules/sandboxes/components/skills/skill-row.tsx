@@ -1,6 +1,7 @@
 import { Compare } from "@carbon/icons-react";
 import type { Skill } from "api-server-api";
 
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -43,12 +44,12 @@ export function SkillRow({
           <button
             type="button"
             onClick={onOpen}
-            className="max-w-full truncate text-left text-[15px] font-medium text-foreground hover:underline"
+            className="max-w-full truncate text-left text-md font-medium text-foreground hover:underline"
           >
             {skill.name}
           </button>
         ) : (
-          <p className="truncate text-[15px] font-medium text-foreground">
+          <p className="truncate text-md font-medium text-foreground">
             {skill.name}
           </p>
         )}
@@ -56,15 +57,16 @@ export function SkillRow({
       {hasDrift && (
         <Tooltip content={DRIFT_HINT}>
           {}
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="inline"
             onClick={onUpdate}
             disabled={disabled}
             title={disabled ? DRIFT_HINT : undefined}
-            className="shrink-0 text-xs font-medium text-accent transition-colors hover:underline disabled:opacity-50"
+            className="shrink-0 text-xs font-medium"
           >
             Update
-          </button>
+          </Button>
         </Tooltip>
       )}
       {hasDrift && compareUrl && (

@@ -1,15 +1,13 @@
-import { OverflowMenuVertical, Settings } from "@carbon/icons-react";
+import { Settings } from "@carbon/icons-react";
 import type { ApprovalView } from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { cn } from "@/lib/utils";
 
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
@@ -20,6 +18,7 @@ interface Props {
   approval: ApprovalView;
   agentName: string;
   avatarName: string | undefined;
+  avatar: string | null | undefined;
   meta: string;
   onDismiss: () => void;
   resolvedLabel?: string | null;
@@ -30,6 +29,7 @@ export function FeedApprovalCard({
   approval,
   agentName,
   avatarName,
+  avatar,
   meta,
   onDismiss,
   resolvedLabel = null,
@@ -52,7 +52,7 @@ export function FeedApprovalCard({
   return (
     <div
       data-testid="feed-approval-card"
-      className="group w-full rounded-2xl border border-border bg-card/80 p-5 text-left"
+      className="group w-full rounded-lg border border-border bg-card/80 p-5 text-left"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -61,11 +61,11 @@ export function FeedApprovalCard({
               <span className="size-2 shrink-0 rounded-full bg-warning" />
             )}
             {avatarName !== undefined && (
-              <AgentAvatar name={avatarName} size={20} />
+              <AgentAvatar name={avatarName} avatar={avatar} size={20} />
             )}
             <span className="truncate">{agentName}</span>
           </div>
-          <p className="text-[15px] leading-snug font-semibold text-foreground">
+          <p className="text-md leading-snug font-semibold text-foreground">
             {approvalHeadline(approval)}
           </p>
         </div>
@@ -95,9 +95,7 @@ export function FeedApprovalCard({
           <span
             className={cn(
               "text-sm",
-              resolved.startsWith("Denied")
-                ? "text-destructive"
-                : "text-success",
+              resolved.startsWith("Denied") ? "text-danger" : "text-success",
             )}
           >
             {resolved}
@@ -114,41 +112,33 @@ export function FeedApprovalCard({
                 Allow
               </Button>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="px-2"
-                  disabled={inflight}
-                  aria-label="More approval actions"
+            <RowActionsMenu
+              label="More approval actions"
+              variant="outline"
+              className="h-8 w-8"
+              disabled={inflight}
+            >
+              {rest.map((action) => (
+                <DropdownMenuItem
+                  key={action.id}
+                  disabled={action.disabled}
+                  tone={action.danger ? "danger" : "default"}
+                  onSelect={() => void act(action.run, action.resolvedLabel)}
+                  title={action.tooltip}
                 >
-                  <OverflowMenuVertical size={16} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {rest.map((action) => (
-                  <DropdownMenuItem
-                    key={action.id}
-                    disabled={action.disabled}
-                    className={action.danger ? "text-destructive" : undefined}
-                    onSelect={() => void act(action.run, action.resolvedLabel)}
-                    title={action.tooltip}
-                  >
-                    {action.label}
+                  {action.label}
+                </DropdownMenuItem>
+              ))}
+              {hostLabel !== null && (
+                <>
+                  <DropdownMenuSeparator className="-mx-1" />
+                  <DropdownMenuItem onSelect={openSettings}>
+                    <Settings size={16} />
+                    Network settings
                   </DropdownMenuItem>
-                ))}
-                {hostLabel !== null && (
-                  <>
-                    <DropdownMenuSeparator className="-mx-1" />
-                    <DropdownMenuItem onSelect={openSettings}>
-                      <Settings size={16} />
-                      Network settings
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                </>
+              )}
+            </RowActionsMenu>
           </div>
         )}
       </div>

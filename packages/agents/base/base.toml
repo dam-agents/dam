@@ -8,17 +8,20 @@ aube = "latest"
 jq = "latest"
 fd = "latest"
 rg = "latest"
-gh = "2.101.0"
+gh = "2.102.0"
 uv = "latest"
 python = "3.12"
 kubectl = "latest"
 k3s = "latest"
 "npm:playwright" = "1.63.0"
-"npm:agent-browser" = "0.38.1"
+"npm:agent-browser" = "0.38.2"
 
 # The static bundle: trixie's docker.io is a release line behind.
+# 29.9.0 (2026-10-08) is younger than the release-age floor; it fixes the Go
+# stdlib, grpc, x/net and x/crypto CVEs of 29.8's bundle. Drop this note once
+# it ages past the floor (2026-10-15).
 [tools."http:docker"]
-version = "29.8.1"
+version = "29.9.0"
 
 [tools."http:docker".platforms]
 linux-x64 = { url = "https://download.docker.com/linux/static/stable/x86_64/docker-{{version}}.tgz" }
@@ -61,13 +64,16 @@ PLAYWRIGHT_BROWSERS_PATH = "/opt/ms-playwright"
 # sound, on a profile that keeps the user's sign-ins. A flag still overrides
 # its variable. Containers have no user namespaces for Chromium's sandbox, and
 # a container's 64 MB /dev/shm crashes a heavy page's renderer, so Chromium
-# keeps its shared memory in /tmp.
+# keeps its shared memory in /tmp. Chromium's own Google account check and
+# push-messaging check-in point at a closed loopback port: the gateway would
+# hold each one for approval, though no page asked for it. The rest of its
+# background traffic is off by policy (/etc/opt/chrome_for_testing/policies).
 AGENT_BROWSER_EXECUTABLE_PATH = "/opt/ms-playwright/chromium"
 AGENT_BROWSER_HEADED = "1"
 AGENT_BROWSER_NO_XVFB = "1"
 AGENT_BROWSER_PROFILE = "/home/agent/.local/share/platform/browser"
 AGENT_BROWSER_SOCKET_DIR = "/tmp/agent-browser"
-AGENT_BROWSER_ARGS = "--no-sandbox,--disable-dev-shm-usage,--kiosk,--hide-scrollbars,--no-first-run,--test-type,--disable-infobars,--autoplay-policy=no-user-gesture-required,--ozone-platform=x11"
+AGENT_BROWSER_ARGS = "--no-sandbox,--disable-dev-shm-usage,--kiosk,--hide-scrollbars,--no-first-run,--test-type,--disable-infobars,--autoplay-policy=no-user-gesture-required,--ozone-platform=x11,--gaia-url=http://127.0.0.1:9/,--gcm-checkin-url=http://127.0.0.1:9/checkin,--gcm-mcs-endpoint=http://127.0.0.1:9,--gcm-registration-url=http://127.0.0.1:9/register"
 DISPLAY = ":99"
 XDG_RUNTIME_DIR = "/tmp/platform-display"
 PULSE_SERVER = "unix:/tmp/platform-display/pulse/native"

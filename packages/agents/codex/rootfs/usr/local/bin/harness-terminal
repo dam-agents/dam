@@ -3,8 +3,10 @@ set -- --dangerously-bypass-approvals-and-sandbox -c 'model_provider="openai-pla
 if [ -n "$OPENAI_BASE_URL" ]; then
   set -- "$@" -c "model_providers.openai-platform.base_url=\"$OPENAI_BASE_URL\""
 fi
-# the provider's pin yields to a model chosen in config.toml (Config panel, /model, hand-edit)
-if [ -n "$OPENAI_MODEL" ] && ! codex-config-sets-model; then
+# the provider's pin yields to a model chosen in config.toml (/model, hand-edit); the session's own choice outranks both
+if [ -n "$PLATFORM_MODEL" ]; then
+  set -- "$@" -c "model=\"$PLATFORM_MODEL\""
+elif [ -n "$OPENAI_MODEL" ] && ! codex-config-sets-model; then
   set -- "$@" -c "model=\"$OPENAI_MODEL\""
 fi
 

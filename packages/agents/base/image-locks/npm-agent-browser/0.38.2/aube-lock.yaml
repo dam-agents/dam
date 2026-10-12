@@ -1,0 +1,24 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      agent-browser:
+        specifier: 0.38.2
+        version: 0.38.2
+
+packages:
+
+  agent-browser@0.38.2:
+    resolution: {integrity: sha512-b/7hvo2RrqocvybjB9kwpX12kGkxkFvtdJ4XPDoott5TLK2n3aPX+lYg7ALd+2YvPi2LrTKGzQYu/rxZC2Y7ZA==}
+    engines: {node: '>=24.0.0', pnpm: '>=11.0.0'}
+    hasBin: true
+
+snapshots:
+
+  agent-browser@0.38.2: {}

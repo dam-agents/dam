@@ -141,6 +141,11 @@ rules:
   - apiGroups: ["storage.k8s.io"]
     resources: ["storageclasses"]
     verbs: ["get", "list"]
+  # A runtime migration clones a home volume only when a CSI driver serves it,
+  # which only its PersistentVolume says.
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get"]
   - apiGroups: [""]
     # Run executor pods are bare Pods, not StatefulSets, so the controller
     # needs full CRUD on pods in the agent namespace to bring them up and
@@ -196,6 +201,9 @@ subjects:
 # grow it later; elsewhere it is created at runner.storage. StorageClasses are
 # cluster-scoped, so a namespace-scoped install needs this read-only grant to
 # tell the two apart. Without it every runner claim is created at the ceiling.
+# A runtime migration clones a home volume only when a CSI driver serves it,
+# which only its cluster-scoped PersistentVolume says; without that grant the
+# copy reads the volume in place.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -207,6 +215,9 @@ rules:
   - apiGroups: ["storage.k8s.io"]
     resources: ["storageclasses"]
     verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

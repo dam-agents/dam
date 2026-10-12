@@ -68,7 +68,7 @@ export function KitRequirementRow({
               {title}
             </span>
             <Badge variant="kit" size="sm">
-              Starter Kit
+              Starter kit
             </Badge>
             <Badge
               variant={requirement.required ? "warning" : "muted"}

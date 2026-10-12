@@ -11,19 +11,22 @@ describe("feature modes", () => {
     const service = createFeaturesService({
       repo: {
         listEnabled: () =>
-          Promise.resolve({ "agent-avatars": true, "agent-telemetry": true }),
+          Promise.resolve({
+            "strict-connection-addressing": true,
+            "agent-telemetry": true,
+          }),
         upsert: () => Promise.resolve(),
       },
       owner: "u",
       surface: "test",
       modes: {
-        "agent-avatars": "off",
+        "strict-connection-addressing": "off",
         "interactive-artifacts": "on",
         "agent-telemetry": "experimental",
       },
     });
     expect(await service.flags()).toMatchObject({
-      "agent-avatars": false,
+      "strict-connection-addressing": false,
       "interactive-artifacts": true,
       "agent-telemetry": true,
       "advanced-connections": false,

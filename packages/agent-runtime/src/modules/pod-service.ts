@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { z } from "zod";
 import type { DocumentStoreBackend } from "../core/document-store.js";
-import { mergedSpawnEnv, type RuntimeEnvReader } from "../core/runtime-env.js";
+import { mergedSpawnEnv, type LeaseEnvReader } from "../core/runtime-env.js";
 
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
@@ -14,12 +14,17 @@ export interface PodServiceSupervisor {
 export function createPodServiceSupervisor(opts: {
   command: string;
   stateBackend: DocumentStoreBackend;
-  envReader: RuntimeEnvReader;
+  envReader: LeaseEnvReader;
   log: (msg: string) => void;
 }): PodServiceSupervisor {
   const { command, envReader, log } = opts;
   const snapshot = opts.stateBackend.open("pod-service-env", {
-    schema: z.object({ env: z.record(z.string(), z.string().optional()) }),
+    schema: z.object({
+      env: z.record(z.string(), z.string().optional()),
+      providers: z
+        .record(z.string(), z.record(z.string(), z.string()))
+        .optional(),
+    }),
     initial: () => ({ env: {} }),
   });
 
@@ -80,7 +85,17 @@ export function createPodServiceSupervisor(opts: {
       if (restartTimer) clearTimeout(restartTimer);
       restartTimer = null;
       backoffMs = BACKOFF_INITIAL_MS;
-      snapshot.write({ env: mergedSpawnEnv(envReader) });
+      snapshot.write({
+        env: mergedSpawnEnv(envReader),
+        providers: Object.fromEntries(
+          envReader
+            .providers()
+            .map((provider) => [
+              provider,
+              envReader.forLease({ harness: "", provider }),
+            ]),
+        ),
+      });
       if (child) child.kill("SIGHUP");
       else start();
     },

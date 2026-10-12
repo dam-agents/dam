@@ -23,6 +23,7 @@ import {
   type SchedulerRunner,
 } from "./services/scheduler-runner.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
+import type { FirePair } from "../harness-config/index.js";
 
 const ACTIVITY_STAMP_TTL_MS = 60 * 60 * 1000;
 
@@ -45,6 +46,7 @@ export interface SchedulesBoot {
 
 export interface ComposeSchedulesAtBootOpts {
   db: Db;
+  firePair?: FirePair;
   agentOnceLimits?: AgentOnceLimits;
   sessionModelChoices?: (agentId: string) => Promise<string[] | null>;
   bullConnection: ConnectionOptions;
@@ -66,6 +68,7 @@ export function composeSchedulesAtBoot(
   const repo = createSchedulesRepository(opts.db);
   const queue = createScheduleQueue(opts.bullConnection);
   const runner = createSchedulerRunner({
+    ...(opts.firePair ? { firePair: opts.firePair } : {}),
     repo,
     queue,
     runtimeMutator: opts.runtimeMutator,

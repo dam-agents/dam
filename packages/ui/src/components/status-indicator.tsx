@@ -19,34 +19,39 @@ const stateVariant: Record<
   NonNullable<BadgeProps["variant"]>
 > = {
   running: "success",
-  starting: "warning",
-  preparing_workspace: "warning",
+  starting: "info",
+  preparing_workspace: "info",
   hibernating: "muted",
   hibernated: "muted",
   error: "danger",
   over_budget: "warning",
-  migrating: "warning",
+  migrating: "info",
 };
 
 export const stateDotClass: Record<AgentDisplayState, string> = {
   running: "bg-success",
-  starting: "bg-warning",
-  preparing_workspace: "bg-warning",
+  starting: "bg-info",
+  preparing_workspace: "bg-info",
   hibernating: "bg-muted-foreground",
   hibernated: "bg-muted-foreground",
   error: "bg-danger",
   over_budget: "bg-warning",
-  migrating: "bg-warning",
+  migrating: "bg-info",
 };
 
 export function StatusBadge({
   state,
   working,
+  keptWork = 0,
 }: {
   state: AgentDisplayState;
   working?: boolean;
+  keptWork?: number;
 }) {
   const splitRunning = state === "running" && working !== undefined;
+  if (splitRunning && !working && keptWork > 0) {
+    return <BackgroundWorkBadge count={keptWork} />;
+  }
   const label = splitRunning
     ? working
       ? "Working"
@@ -54,6 +59,22 @@ export function StatusBadge({
     : stateLabel[state];
   const variant = splitRunning && !working ? "accent" : stateVariant[state];
   return <Badge variant={variant}>{label}</Badge>;
+}
+
+function BackgroundWorkBadge({ count }: { count: number }) {
+  const hint =
+    count === 1
+      ? "1 background process keeps this agent awake."
+      : `${count} background processes keep this agent awake.`;
+  return (
+    <Tooltip side="top" content={hint}>
+      <span className="inline-flex" tabIndex={0} aria-label={hint}>
+        <Badge variant="success" data-testid="background-work-badge">
+          Background work
+        </Badge>
+      </span>
+    </Tooltip>
+  );
 }
 
 export function AlwaysOnTag() {

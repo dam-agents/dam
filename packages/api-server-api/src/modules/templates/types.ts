@@ -35,6 +35,7 @@ export interface TemplateSpec {
   description?: string;
   category?: TemplateCategory;
   harness?: TemplateHarness;
+  aliases?: string[];
   providers?: ProviderPresetType[];
   tags?: string[];
   docsUrl?: string;
@@ -64,4 +65,20 @@ export interface Template {
 export interface TemplatesService {
   list: () => Promise<Template[]>;
   get: (id: string) => Promise<Template | null>;
+}
+
+export interface HarnessView {
+  name: HarnessFamily;
+  displayName: string;
+  description?: string;
+  releaseNotesUrl?: string;
+  providers?: ProviderPresetType[];
+  tags: string[];
+  experimental: boolean;
+}
+
+export interface HarnessCatalog {
+  default: HarnessFamily;
+  harnesses: HarnessView[];
+  telemetryEnv(harness: string): EnvVar[];
 }

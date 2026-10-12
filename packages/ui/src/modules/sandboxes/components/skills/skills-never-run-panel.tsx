@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { SectionHeader } from "@/components/ui/list-section";
+import { Notice } from "@/components/ui/notice";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -40,27 +42,21 @@ export function SkillsNeverRunPanel({
 }) {
   const startButton = (
     <Button size="sm" disabled={comingUp} onClick={onStart}>
-      {comingUp ? <Spinner size={13} /> : <Play size={14} />}
+      {comingUp ? <Spinner size={14} /> : <Play size={14} />}
       {comingUp ? "Starting…" : "Start agent"}
     </Button>
   );
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted px-4 py-3 text-sm">
-        <Information
-          size={16}
-          className="mt-px shrink-0 text-muted-foreground"
-        />
-        <p className="min-w-0 flex-1">
-          <span className="font-semibold">This agent hasn&rsquo;t run yet</span>{" "}
-          <span className="text-muted-foreground">
-            — its skills are resolved when it starts, so there&rsquo;s nothing
-            recorded to show. Start it once and this page fills in.
-          </span>
-        </p>
-        <span className="shrink-0">{startButton}</span>
-      </div>
+      <Notice
+        icon={Information}
+        title="This agent hasn’t run yet"
+        action={startButton}
+      >
+        — its skills are resolved when it starts, so there&rsquo;s nothing
+        recorded to show. Start it once and this page fills in.
+      </Notice>
 
       <section>
         <SectionLabel spaced>Skills</SectionLabel>
@@ -78,10 +74,9 @@ export function SkillsNeverRunPanel({
       </section>
 
       <section>
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <SectionLabel>Connected sources</SectionLabel>
+        <SectionHeader label="Connected sources">
           {addSourceButton}
-        </div>
+        </SectionHeader>
         <SkillSourceList
           sources={sources}
           loaded={sourcesLoaded}

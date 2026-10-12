@@ -74,7 +74,9 @@ test("deleting inactive and active sessions preserves the right navigation (#423
       "data-session-id",
       activeSessionId ?? "",
     );
-    await expect(page.getByText(secondPrompt, { exact: true })).toBeVisible();
+    await expect(
+      page.getByTestId("chat-message").getByText(secondPrompt, { exact: true }),
+    ).toBeVisible();
 
     await dialog.getByRole("button", { name: "Cancel" }).click();
     await expect(inactiveRow).toHaveCount(1);
@@ -82,7 +84,9 @@ test("deleting inactive and active sessions preserves the right navigation (#423
       "data-session-id",
       activeSessionId ?? "",
     );
-    await expect(page.getByText(secondPrompt, { exact: true })).toBeVisible();
+    await expect(
+      page.getByTestId("chat-message").getByText(secondPrompt, { exact: true }),
+    ).toBeVisible();
   });
 
   await test.step("(B) deleting an inactive session keeps the active session open", async () => {
@@ -91,7 +95,7 @@ test("deleting inactive and active sessions preserves the right navigation (#423
     await page.getByTestId("session-delete-button").click();
     await page
       .getByRole("alertdialog")
-      .getByRole("button", { name: "Confirm" })
+      .getByRole("button", { name: "Delete session" })
       .click();
     await expect(page.getByText("Session deleted")).toBeVisible();
     await expect(inactiveRow).toHaveCount(0);
@@ -99,7 +103,9 @@ test("deleting inactive and active sessions preserves the right navigation (#423
       "data-session-id",
       activeSessionId ?? "",
     );
-    await expect(page.getByText(secondPrompt, { exact: true })).toBeVisible();
+    await expect(
+      page.getByTestId("chat-message").getByText(secondPrompt, { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("Session deleted")).toBeHidden();
   });
 
@@ -109,7 +115,7 @@ test("deleting inactive and active sessions preserves the right navigation (#423
     await page.getByTestId("session-delete-button").click();
     await page
       .getByRole("alertdialog")
-      .getByRole("button", { name: "Confirm" })
+      .getByRole("button", { name: "Delete session" })
       .click();
     await expect(page.getByText("Session deleted")).toBeVisible();
     await expect(activeSessionRow).toHaveCount(0);

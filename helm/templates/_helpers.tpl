@@ -484,7 +484,30 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
 {{- printf "http://%s-clickhouse-clickhouse-headless.%s.svc.cluster.local:8123" $fullname .Release.Namespace }}
 {{- end }}
 
-{{/* Call with (dict "root" $ "templateName" <name> "rail" $tmpl.telemetry).
+{{/* The harness catalog the api-server serves, as JSON: the default harness
+     and each enabled harness with its display fields, the provider types it
+     runs on and, with clickstack enabled, its export rail's env. The rail
+     names the OTel service after the harness, so a session's telemetry reads
+     as the harness it ran on. */}}
+{{- define "platform.harnesses" -}}
+{{- $catalog := dict }}
+{{- range $name, $h := .Values.harnesses.catalog }}
+{{- if and $h $h.enabled }}
+{{- $entry := omit $h "enabled" "telemetry" }}
+{{- if and $.Values.clickstack.enabled $h.telemetry }}
+{{- $_ := set $entry "telemetryEnv" (include "platform.agentTelemetry.env" (dict "root" $ "templateName" $name "rail" $h.telemetry) | fromYamlArray) }}
+{{- end }}
+{{- $_ := set $catalog $name $entry }}
+{{- end }}
+{{- end }}
+{{- if not (hasKey $catalog .Values.harnesses.default) }}
+{{- fail (printf "harnesses.default: %q is not an enabled entry of harnesses.catalog" .Values.harnesses.default) }}
+{{- end }}
+{{- dict "default" .Values.harnesses.default "catalog" $catalog | toJson }}
+{{- end }}
+
+{{/* Call with (dict "root" $ "templateName" <name> "rail" <telemetry>), where
+     <name> is a harnessTemplates entry or a harnesses.catalog entry.
      Each harness reads its own export env, so `telemetry` names the rail:
      `true` (or "claude-code") for the Claude Code env, "bob" for Bob Shell's.
      Both land on the same collector over the agent's ordinary gateway egress —
@@ -496,14 +519,14 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
 {{- else if eq $rail "bob" }}
 {{- include "platform.agentTelemetry.env.bob" . }}
 {{- else }}
-{{- fail (printf "harnessTemplates.%s.telemetry: %q is not a known export rail — use true/claude-code or bob. An unknown name would silently render the wrong rail and the agent's spend would never reach Usage." .templateName $rail) }}
+{{- fail (printf "%s.telemetry: %q is not a known export rail — use true/claude-code or bob. An unknown name would silently render the wrong rail and the agent's spend would never reach Usage." .templateName $rail) }}
 {{- end }}
 {{- end }}
 
 {{/* The harness's default OTel service name is the CLI's own ("claude-code" for
      every claude-code-based image), which makes derived templates like nous
      indistinguishable in the exploration UI — so name the service after the
-     template. */}}
+     template or catalog harness. */}}
 {{- define "platform.agentTelemetry.env.claudeCode" -}}
 {{- $host := include "platform.clickstack.collector.host" .root }}
 - name: OTEL_SERVICE_NAME

@@ -57,7 +57,6 @@ export interface SchedulesRepository {
   deleteByAgent(agentId: string): Promise<void>;
   listAgentIds(): Promise<string[]>;
   findOwnerByAgent(agentId: string): Promise<string | null>;
-  toggle(id: string, owner: string): Promise<Schedule | null>;
   recordFire(
     id: string,
     result: string,
@@ -268,14 +267,6 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .where(eq(schedulesTable.agentId, agentId))
         .limit(1);
       return rows[0]?.owner ?? null;
-    },
-
-    async toggle(id, owner): Promise<Schedule | null> {
-      const current = await this.get(id, owner);
-      if (!current) return null;
-      const enabled = !current.spec.enabled;
-      const spec: ScheduleSpec = { ...current.spec, enabled };
-      return this.updateSpec(id, owner, spec);
     },
 
     async recordFire(id, result, nextRun, tx): Promise<void> {

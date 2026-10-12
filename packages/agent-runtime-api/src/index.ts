@@ -15,16 +15,31 @@ export type {
   SessionListCursor,
   SessionListQuery,
   SessionPage,
+  SessionSpend,
+  SessionSpendInput,
+  SessionSpendTotal,
   SessionsService,
+  SetSessionTitleInput,
   StoreDelegationFramesInput,
   DelegationFrames,
 } from "./modules/sessions/types.js";
+export {
+  PIN_MODEL_METHOD,
+  CONFIGURE_SESSION_METHOD,
+} from "./modules/sessions/types.js";
+export {
+  sessionSettingsSchema,
+  sessionSettingsError,
+  type SessionSettings,
+} from "./modules/harness-config/session-settings.js";
 export {
   podSessionModeSchema,
   podSessionNoticeSchema,
   podSessionTypeSchema,
   SESSION_CATEGORIES,
   SESSION_LIST_MAX_LIMIT,
+  SESSION_TITLE_MAX_LENGTH,
+  sessionTitleSchema,
   sessionDirectoryReportSchema,
   sessionHistorySchema,
   delegationFramesSchema,
@@ -89,6 +104,30 @@ export type {
 } from "./modules/skills/git-url.js";
 export type { SshService } from "./modules/ssh/types.js";
 export type { HarnessConfigService } from "./modules/harness-config/types.js";
+export type {
+  FinishedRow,
+  KeepMarkRequest,
+  KeepSource,
+  NothingPending,
+  PendingRestart,
+  ProcessesDomainError,
+  ProcessesService,
+  ProcessKind,
+  ProcessList,
+  ProcessNotice,
+  ProcessOutput,
+  ProcessRow,
+} from "./modules/processes/types.js";
+export {
+  finishedRowSchema,
+  keepMarkRequestSchema,
+  PROCESS_OUTPUT_MAX_BYTES,
+  processListSchema,
+  processNoticeSchema,
+  processOutputSchema,
+  processRowSchema,
+  setKeepInputSchema,
+} from "./modules/processes/schemas.js";
 
 export {
   backgroundWorkReportSchema,
@@ -109,6 +148,8 @@ export {
   harnessConfigChoice,
   harnessConfigCatalog,
   harnessConfigCurrent,
+  harnessConfigCurrentByHarness,
+  harnessCapability,
   fileFormat,
   mergeMode,
   eventReportInput,
@@ -124,6 +165,7 @@ export {
 } from "./modules/runtime/types.js";
 export type {
   HarnessConfigCurrent,
+  HarnessCapability,
   Contribution,
   ContributionKind,
   Event,

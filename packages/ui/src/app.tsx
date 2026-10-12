@@ -21,6 +21,7 @@ import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
 import { isDarkTheme } from "./modules/platform/store/theme.js";
+import { NotFoundView } from "./modules/platform/views/not-found-view.js";
 import { PendingBindModal } from "./modules/sandboxes/components/channels/pending-bind-modal.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
@@ -30,6 +31,7 @@ import { StarterKitDetailView } from "./modules/starter-kits/views/starter-kit-v
 import { StarterKitsView } from "./modules/starter-kits/views/starter-kits-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
+import { UsageReportView } from "./modules/usage/views/usage-report-view.js";
 import { useStore } from "./store.js";
 
 export default function App() {
@@ -54,6 +56,7 @@ export default function App() {
   if (view === "terms") return <TermsView />;
   if (view === "telegram-bind") return <TelegramBindView />;
   if (view === "slack-bind") return <SlackBindView />;
+  if (view === "analytics") return <UsageReportView />;
   return <MainApp />;
 }
 
@@ -123,41 +126,39 @@ function MainApp() {
               <ActivityButton onOpen={() => setActivityView("feed")} />
             </div>
           </div>
-          {view === "sandbox-home" ? (
-            <div className="min-h-0 flex-1">
-              <SandboxHomeView />
-            </div>
-          ) : (
-            <div
-              className={cn(
-                "mx-auto w-full px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-                view === "home" ||
-                  view === "starter-kits" ||
-                  view === "starter-kit"
-                  ? "max-w-[1200px]"
+          <div
+            className={cn(
+              "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
+              view === "home" ||
+                view === "starter-kits" ||
+                view === "starter-kit"
+                ? "max-w-[1200px]"
+                : view === "settings" || view === "sandbox-home"
+                  ? "max-w-[1040px]"
                   : "max-w-[960px]",
-              )}
-            >
-              {view === "home" ? (
-                <HomeView />
-              ) : view === "agent-new" ? (
-                <AgentCreateView kit={null} />
-              ) : view === "settings" ? (
-                <SettingsView />
-              ) : view === "starter-kits" || view === "starter-kit" ? (
-                <>
-                  <StarterKitsView />
-                  {view === "starter-kit" && <StarterKitDetailView />}
-                </>
-              ) : view === "starter-kit-new" ? (
-                <StarterKitSetupView />
-              ) : view === "artifacts" ? (
-                <ArtifactsView />
-              ) : (
-                <HomeView />
-              )}
-            </div>
-          )}
+            )}
+          >
+            {view === "sandbox-home" ? (
+              <SandboxHomeView />
+            ) : view === "home" ? (
+              <HomeView />
+            ) : view === "agent-new" ? (
+              <AgentCreateView kit={null} />
+            ) : view === "settings" ? (
+              <SettingsView />
+            ) : view === "starter-kits" || view === "starter-kit" ? (
+              <>
+                <StarterKitsView />
+                {view === "starter-kit" && <StarterKitDetailView />}
+              </>
+            ) : view === "starter-kit-new" ? (
+              <StarterKitSetupView />
+            ) : view === "artifacts" ? (
+              <ArtifactsView />
+            ) : (
+              <NotFoundView />
+            )}
+          </div>
         </main>
       </div>
       {activityOpen && (

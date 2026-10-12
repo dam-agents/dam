@@ -60,7 +60,7 @@ export function KitCard({
       type="button"
       onClick={onOpen}
       data-testid={`starter-kit-card-${kit.id}`}
-      className="flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left transition-colors hover:border-foreground/20"
+      className="flex flex-col overflow-hidden rounded-lg border border-border bg-card text-left transition-colors hover:border-foreground/20"
     >
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex flex-wrap items-center gap-2">

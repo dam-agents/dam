@@ -83,7 +83,7 @@ function DropdownMenuLabel({
   return (
     <DropdownMenuPrimitive.Label
       className={cn(
-        "px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground",
+        "px-2 pb-1 pt-2 text-2xs font-medium uppercase tracking-wide text-muted-foreground",
         className,
       )}
       {...props}

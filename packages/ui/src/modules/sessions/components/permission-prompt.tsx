@@ -1,9 +1,9 @@
-import { Checkmark, Close, Copy, Warning } from "@carbon/icons-react";
+import { Checkmark, Close } from "@carbon/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
-import { useCopy } from "@/hooks/use-copy";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -57,7 +57,7 @@ export function PermissionStatusLine() {
   if (!current) return null;
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 min-h-11 text-sm anim-in">
-      <span className="h-2 w-2 rounded-full bg-accent shrink-0" />
+      <span className="h-2 w-2 rounded-full bg-warning shrink-0" />
       <span className="text-muted-foreground shrink-0">
         Awaiting approval —
       </span>
@@ -70,7 +70,6 @@ export function PermissionStatusLine() {
 
 export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
   const [expanded, setExpanded] = useState(false);
-  const { copy, copied, state: copyState } = useCopy();
 
   return (
     <div
@@ -81,7 +80,7 @@ export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
         {verdict.allowed ? (
           <Checkmark size={16} className="text-success shrink-0 mt-0.5" />
         ) : (
-          <Close size={16} className="text-destructive shrink-0 mt-0.5" />
+          <Close size={16} className="text-danger shrink-0 mt-0.5" />
         )}
         <span className="text-muted-foreground shrink-0">
           {verdict.label} —
@@ -96,31 +95,12 @@ export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
           {verdict.subject}
         </span>
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        aria-label={copied ? "Copied" : "Copy"}
-        tooltip={copied ? "Copied" : "Copy"}
-        onClick={(e) => {
-          e.stopPropagation();
-          void copy(`${verdict.label} — ${verdict.subject}`);
-        }}
-        className={cn(
-          "text-muted-foreground hover:text-foreground shrink-0",
-          HOVER_ACTION,
-          copied && "text-success hover:text-success opacity-100",
-          copyState === "failed" && "text-danger hover:text-danger opacity-100",
-        )}
-      >
-        {copied ? (
-          <Checkmark size={12} />
-        ) : copyState === "failed" ? (
-          <Warning size={12} />
-        ) : (
-          <Copy size={12} />
-        )}
-      </Button>
+      <CopyButton
+        value={`${verdict.label} — ${verdict.subject}`}
+        label="Copy"
+        stopPropagation
+        className={HOVER_ACTION}
+      />
     </div>
   );
 }
@@ -199,7 +179,7 @@ export function PermissionPrompt({
       <ChatColumn className="flex flex-col gap-2">
         <div className="rounded-xl border border-border bg-muted/30 px-4 py-3.5 flex flex-col gap-3">
           <div className="flex items-start gap-2 text-sm font-semibold text-foreground">
-            <span className="h-2 w-2 rounded-full bg-accent shrink-0 mt-1.5" />
+            <span className="h-2 w-2 rounded-full bg-warning shrink-0 mt-1.5" />
             <span
               ref={titleRef}
               className={cn("break-all min-w-0", !expanded && "line-clamp-3")}
@@ -228,7 +208,7 @@ export function PermissionPrompt({
                 variant="outline"
                 size="sm"
                 onClick={() => pick(opt)}
-                className="bg-background h-[26px] text-sm font-medium max-w-full"
+                className="bg-background max-w-full"
                 tooltip={`${opt.name} — press ${i + 1}`}
               >
                 <span className="truncate">{opt.name}</span>
@@ -236,7 +216,7 @@ export function PermissionPrompt({
             ))}
           </div>
           {pending.length > 1 && (
-            <div className="text-[11px] text-muted-foreground">
+            <div className="text-2xs text-muted-foreground">
               {pending.length - 1} more request
               {pending.length - 1 === 1 ? "" : "s"} queued
             </div>

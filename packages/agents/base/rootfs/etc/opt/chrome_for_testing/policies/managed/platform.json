@@ -1,0 +1,14 @@
+{
+  "BrowserNetworkTimeQueriesEnabled": false,
+  "BrowserSignin": 0,
+  "SyncDisabled": true,
+  "SigninInterceptionEnabled": false,
+  "SearchSuggestEnabled": false,
+  "AIModeSettings": 1,
+  "GeminiSettings": 1,
+  "GoogleSearchSidePanelEnabled": false,
+  "DefaultSearchProviderEnabled": true,
+  "DefaultSearchProviderName": "DuckDuckGo",
+  "DefaultSearchProviderKeyword": "duckduckgo.com",
+  "DefaultSearchProviderSearchURL": "https://duckduckgo.com/?q={searchTerms}"
+}

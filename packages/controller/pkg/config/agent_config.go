@@ -76,11 +76,12 @@ type VMConfig struct {
 	RuntimeMigration VMRuntimeMigration `json:"runtimeMigration,omitempty"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long the volumes a runtime migration copied from are kept once the machine has booted from the copy, and how many copy Jobs may run at once in the install and for one owner. Zero means the controller's default for each.
+// UNIT_BOUNDARY_DESCRIPTION: how long the volumes a runtime migration copied from are kept once the machine has booted from the copy, and how many copy Jobs may run at once in the install and for one owner. Zero means the controller's default for each. `CloneSource` says whether the copy reads a CSI clone of a single-node home volume rather than the volume itself; unset means it does.
 type VMRuntimeMigration struct {
 	Retention        Duration `json:"retention,omitempty"`
 	Concurrency      int      `json:"concurrency,omitempty"`
 	OwnerConcurrency int      `json:"ownerConcurrency,omitempty"`
+	CloneSource      *bool    `json:"cloneSource,omitempty"`
 }
 
 type VMRunnerSpec struct {

@@ -2,6 +2,8 @@ import { Upload } from "@carbon/icons-react";
 import type { ArtifactFolder } from "api-server-api";
 import { useRef, useState } from "react";
 
+import { FormError } from "@/components/form-error";
+import { FormField } from "@/components/form-field";
 import {
   DialogActions,
   DialogBody,
@@ -54,8 +56,12 @@ export function UploadArtifactDialog({ folders, onClose }: Props) {
   };
 
   return (
-    <Modal>
-      <DialogHeader title="Upload artifact" onClose={onClose} />
+    <Modal onClose={uploading || create.isPending ? undefined : onClose}>
+      <DialogHeader
+        closeDisabled={uploading || create.isPending}
+        title="Upload artifact"
+        onClose={onClose}
+      />
       <DialogBody>
         <div className="flex flex-col gap-4">
           <input
@@ -76,18 +82,15 @@ export function UploadArtifactDialog({ folders, onClose }: Props) {
             {file ? file.name : "Choose a file…"}
           </Button>
 
-          <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-foreground">Title</span>
+          <FormField label="Title">
             <Input
-              size="sm"
               placeholder="Shown in the library and on the share page"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
-          </div>
+          </FormField>
 
-          <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-foreground">Folder</span>
+          <FormField label="Folder">
             <Select
               value={folderId}
               onChange={(e) => setFolderId(e.target.value)}
@@ -99,10 +102,10 @@ export function UploadArtifactDialog({ folders, onClose }: Props) {
                 </option>
               ))}
             </Select>
-          </div>
+          </FormField>
 
-          {error && <p className="text-sm text-danger">{error}</p>}
-          <p className="text-xs text-muted-foreground">
+          <FormError message={error ?? undefined} />
+          <p className="text-sm text-muted-foreground">
             The artifact stays private until you share it. HTML, JSX, markdown,
             and code render on the share page; anything else is downloadable.
           </p>

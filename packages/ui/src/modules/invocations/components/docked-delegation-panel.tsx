@@ -66,6 +66,7 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
           variant="ghost"
           size="icon-sm"
           aria-label="Close"
+          tooltip="Close"
           onClick={() => close(null)}
         >
           <Close size={16} />
@@ -83,7 +84,7 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
         <Notice text="This delegation is no longer recorded." />
       ) : (
         <div className="flex flex-1 items-center justify-center">
-          <Spinner size={16} />
+          <Spinner size={18} />
         </div>
       )}
     </div>
@@ -140,7 +141,7 @@ function PanelBody({
           <Notice text="This conversation was not captured." />
         ) : transcript.isPending ? (
           <div className="flex justify-center py-6">
-            <Spinner size={16} />
+            <Spinner size={18} />
           </div>
         ) : transcript.isError ? (
           <Notice text="This conversation is no longer kept." />

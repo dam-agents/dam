@@ -18,7 +18,7 @@ export function FreeUpComputeItems({
 }) {
   const neverHibernates = agent.hibernationTimeoutMin === 0;
   const pauseUnavailableReason =
-    "This agent is set to never hibernate, so pausing it would wake itself. Change its idle timeout in Agent Setup.";
+    "This agent is set to never hibernate, so pausing it would wake itself. Change its idle timeout in Sandbox settings.";
   return (
     <>
       <DropdownMenuLabel>Free up compute</DropdownMenuLabel>

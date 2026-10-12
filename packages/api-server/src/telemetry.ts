@@ -1,4 +1,12 @@
+import type { RequestHookFunction } from "@opentelemetry/instrumentation-undici";
 import { isOtelEnabled } from "./telemetry-gate.js";
+
+const redactTelegramBotToken: RequestHookFunction = (span, request) => {
+  if (request.origin !== "https://api.telegram.org") return;
+  const path = request.path.replace(/^(\/file)?\/bot[^/]+/, "$1/bot<redacted>");
+  span.setAttribute("url.path", path.split("?", 1)[0]);
+  span.setAttribute("url.full", `${request.origin}${path}`);
+};
 
 if (isOtelEnabled(process.env)) {
   const { register } = await import("node:module");
@@ -54,7 +62,7 @@ if (isOtelEnabled(process.env)) {
           return path === "/api/health" || path === "/api/ready";
         },
       }),
-      new UndiciInstrumentation(),
+      new UndiciInstrumentation({ requestHook: redactTelegramBotToken }),
       new GrpcInstrumentation(),
       new IORedisInstrumentation(),
       new PinoInstrumentation(),

@@ -142,3 +142,51 @@ describe("buildCreatePayload (github-app)", () => {
     expect(payload).not.toHaveProperty("error");
   });
 });
+
+const CUSTOM_HEADER_TEMPLATE: ConnectionTemplateView = {
+  id: "custom-header",
+  name: "Custom header",
+  category: "other",
+  isCustom: true,
+  authKind: "header",
+  inputs: [
+    { name: "host", state: "required" },
+    { name: "headerName", state: "required" },
+    { name: "valueFormat", state: "optional" },
+    { name: "value", state: "required", secret: true },
+  ],
+};
+
+describe("buildCreatePayload (header)", () => {
+  // TEST_SCENARIO: the gateway crash-loops on a bare * host or a header name that is not an HTTP token, and a value format without {value} never sends the secret, so the form must refuse each one before it reaches the API.
+  it.each([
+    [{ host: "*" }, /host must be a DNS hostname/],
+    [{ host: "exa mple.com" }, /host must be a DNS hostname/],
+    [{ headerName: "Bad Header:" }, /header name must be/],
+    [{ valueFormat: "Bearer" }, /must contain \{value\}/],
+  ])("refuses %o", (override, message) => {
+    const payload = buildCreatePayload(
+      CUSTOM_HEADER_TEMPLATE,
+      values({
+        host: "api.example.com",
+        headerName: "X-Api-Key",
+        value: "secret",
+        ...override,
+      }),
+    );
+    expect(payload).toEqual({ error: expect.stringMatching(message) });
+  });
+
+  it("accepts a *.wildcard host with a Bearer {value} format", () => {
+    const payload = buildCreatePayload(
+      CUSTOM_HEADER_TEMPLATE,
+      values({
+        host: "*.example.com",
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
+        value: "secret",
+      }),
+    );
+    expect(payload).not.toHaveProperty("error");
+  });
+});

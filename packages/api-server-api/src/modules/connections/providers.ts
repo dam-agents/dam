@@ -1,9 +1,23 @@
+import type { HarnessView } from "../templates/types.js";
+
 export type ProviderPresetType =
   "anthropic" | "ibm-litellm" | "curve-bender" | "openai" | "bob" | "bedrock";
 
 export interface EnvMapping {
   envName: string;
   placeholder: string;
+}
+
+export function harnessFits(
+  catalog: { harnesses: readonly HarnessView[] },
+  harness: string,
+  type: ProviderPresetType,
+  templateId?: string,
+): boolean {
+  const entry = catalog.harnesses.find((h) => h.name === harness);
+  if (templateId === "anthropic-oauth" && harness !== "claude-code")
+    return false;
+  return !!entry && (!entry.providers || entry.providers.includes(type));
 }
 
 export const DEFAULT_ENV_PLACEHOLDER = "dummy-placeholder";
@@ -19,6 +33,7 @@ export const BOB_INFERENCE_PREFIX_REWRITE = {
 function liteLlmEnvMappings(
   host: string,
   openaiModel: string,
+  bobModel: string,
   proxy: Record<string, string>,
 ): EnvMapping[] {
   const baseUrl = `https://${host}`;
@@ -36,26 +51,52 @@ function liteLlmEnvMappings(
     { envName: "OPENAI_MODEL", placeholder: openaiModel },
     { envName: "BOB_GATEWAY_URL", placeholder: baseUrl },
     { envName: "BOBSHELL_API_KEY", placeholder: DEFAULT_ENV_PLACEHOLDER },
+    { envName: "BOB_SHELL_MODEL", placeholder: bobModel },
   ];
 }
 
 export function ibmLitellmEnvMappings(): EnvMapping[] {
-  return liteLlmEnvMappings(IBM_LITELLM_HOST, "gpt-5.5", {
-    MODEL: "aws/claude-opus-4-8",
-    CONTEXT_WINDOW: "200000",
-    MAX_TOKENS: "8192",
-  });
+  return liteLlmEnvMappings(
+    IBM_LITELLM_HOST,
+    "gpt-5.5",
+    "aws/claude-sonnet-4-6",
+    {
+      MODEL: "aws/claude-opus-4-8",
+      CONTEXT_WINDOW: "200000",
+      MAX_TOKENS: "32768",
+    },
+  );
 }
+
+const CURVE_BENDER_WORK_MODEL = "rits/zai-org/glm-5-3";
 
 export function curveBenderEnvMappings(): EnvMapping[] {
   return [
-    ...liteLlmEnvMappings(CURVE_BENDER_HOST, "rits/zai-org/glm-5-3", {
-      MODEL: "rits/zai-org/glm-5-3",
-      CONTEXT_WINDOW: "262144",
-      MAX_TOKENS: "32768",
-      REASONING: "1",
-    }),
-    { envName: "CLAUDE_CODE_MAX_CONTEXT_TOKENS", placeholder: "262144" },
+    ...liteLlmEnvMappings(
+      CURVE_BENDER_HOST,
+      CURVE_BENDER_WORK_MODEL,
+      CURVE_BENDER_WORK_MODEL,
+      {
+        MODEL: CURVE_BENDER_WORK_MODEL,
+        CONTEXT_WINDOW: "256000",
+        MAX_TOKENS: "32768",
+        REASONING: "1",
+      },
+    ),
+    ...[
+      "ANTHROPIC_MODEL",
+      "ANTHROPIC_DEFAULT_MODEL",
+      "ANTHROPIC_DEFAULT_FABLE_MODEL",
+      "ANTHROPIC_DEFAULT_OPUS_MODEL",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    ].map((envName) => ({ envName, placeholder: CURVE_BENDER_WORK_MODEL })),
+    {
+      envName: "ANTHROPIC_DEFAULT_SONNET_MODEL",
+      placeholder: "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4",
+    },
+    { envName: "CLAUDE_CODE_AUTO_MODE_SERVER", placeholder: "0" },
+    { envName: "ENABLE_TOOL_SEARCH", placeholder: "false" },
+    { envName: "CLAUDE_CODE_MAX_CONTEXT_TOKENS", placeholder: "256000" },
   ];
 }
 
@@ -161,12 +202,12 @@ export const PROVIDERS = {
   },
   "ibm-litellm": {
     id: "ibm-litellm",
-    displayName: "IBM LiteLLM ETE Proxy",
+    displayName: "IBM ETE LiteLLM Proxy",
     modes: [{ key: "api-key", label: "API Token", templateId: "ibm-litellm" }],
   },
   "curve-bender": {
     id: "curve-bender",
-    displayName: "Curve Bender",
+    displayName: "IBM ETE LiteLLM CurveBender",
     modes: [{ key: "api-key", label: "API Token", templateId: "curve-bender" }],
   },
   openai: {
@@ -187,6 +228,12 @@ export const PROVIDERS = {
     ],
   },
 } satisfies Record<ProviderPresetType, ProviderPreset>;
+
+export const BALANCE_PROVIDER_TYPES: ReadonlySet<ProviderPresetType> = new Set([
+  "bob",
+  "ibm-litellm",
+  "curve-bender",
+]);
 
 export const PROVIDER_PRESET_TYPES = Object.keys(
   PROVIDERS,

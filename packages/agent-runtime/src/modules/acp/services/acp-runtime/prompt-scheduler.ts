@@ -43,6 +43,7 @@ export interface PromptSubmission {
 export interface PromptScheduler {
   submit(submission: PromptSubmission): PromptFate;
   submitSetting(submission: PromptSubmission): PromptFate;
+  onSettingResponse(sessionId: string, outboundId: number): void;
   onPromptResponse(
     sessionId: string,
     outboundId: number,
@@ -59,6 +60,7 @@ export interface PromptScheduler {
   hasWork(sessionId: string): boolean;
   anyWork(): boolean;
   activeTurnCount(): number;
+  activeTurnSince(): number | null;
   onEngaged(sessionId: string): void;
   onSessionReady(sessionId: string): void;
   onDetached(sessionId: string): void;
@@ -145,11 +147,13 @@ export interface PromptSchedulerDeps {
  * exception and answers each sender with an error instead, so the loss is
  * reported to the client that is still there to hear it rather than recorded.
  * A setting change for a session (its model or mode) waits in the same place
- * but is not a turn: it waits only for the session to be loaded back into
- * the harness, never for a turn in flight or an engaged reader, goes out
- * ahead of the queued prompts once it can, is dropped unsent once its sender
- * has gone, and on every route a queue leaves by is answered with an error
- * rather than written down, since nothing replays a setting.
+ * but is not a turn: it applies to the session's next turn, so it waits for
+ * the turn in flight to end and for the session to be loaded back into the
+ * harness, never for an engaged reader. It goes out ahead of the queued
+ * prompts, and the next prompt waits for the harness to answer it. It is
+ * dropped unsent once its sender has gone, and on every route a queue leaves
+ * by is answered with an error rather than written down, since nothing
+ * replays a setting.
  */
 export function createPromptScheduler(
   deps: PromptSchedulerDeps,
@@ -162,12 +166,14 @@ export function createPromptScheduler(
       turnId: string;
       runPrompt: boolean;
       steered: PromptSubmission[];
+      startedAt: number;
     }
   >();
   const steering = new Map<string, PromptSubmission>();
   const steerTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const queues = new Map<string, PromptSubmission[]>();
   const pendingSettings = new Map<string, PromptSubmission[]>();
+  const settingsInFlight = new Map<string, Set<number>>();
   const parkTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const queueParkMs = deps.queueParkMs ?? DEFAULT_QUEUE_PARK_MS;
   const steerWaitMs = deps.steerWaitMs ?? DEFAULT_STEER_WAIT_MS;
@@ -215,12 +221,20 @@ export function createPromptScheduler(
     const settings = pendingSettings.get(sessionId);
     const head = settings?.[0];
     if (settings === undefined || head === undefined) return;
-    if (!sessionLoaded(head)) return;
+    if (activeTurns.has(sessionId) || !sessionLoaded(head)) return;
     for (const entry of [...settings]) {
-      if (!deps.sendToAgent(entry.frame)) break;
+      if (!sendSetting(entry)) break;
       settings.shift();
     }
     if (settings.length === 0) pendingSettings.delete(sessionId);
+  }
+
+  function sendSetting(entry: PromptSubmission): boolean {
+    if (!deps.sendToAgent(entry.frame)) return false;
+    const inFlight = settingsInFlight.get(entry.sessionId) ?? new Set();
+    inFlight.add(entry.outboundId);
+    settingsInFlight.set(entry.sessionId, inFlight);
+    return true;
   }
 
   function dropQueue(sessionId: string, cause: QueueDropCause): void {
@@ -283,6 +297,8 @@ export function createPromptScheduler(
       deps.steer !== undefined &&
       activeTurns.has(sessionId) &&
       !steering.has(sessionId) &&
+      !pendingSettings.has(sessionId) &&
+      !settingsInFlight.has(sessionId) &&
       (deps.canSteer?.(sessionId) ?? false) &&
       deps.canStart(entry)
     );
@@ -354,6 +370,7 @@ export function createPromptScheduler(
       turnId: entry.promptId ?? randomUUID(),
       runPrompt: entry.runPrompt ?? false,
       steered: [],
+      startedAt: Date.now(),
     });
     deps.onTurnStarted?.(entry);
     if (entry.promptId !== null) {
@@ -373,6 +390,7 @@ export function createPromptScheduler(
   function maybeStartNext(sessionId: string): void {
     flushSettings(sessionId);
     if (pendingSettings.has(sessionId)) return;
+    if (settingsInFlight.has(sessionId)) return;
     if (activeTurns.has(sessionId) || steering.has(sessionId)) return;
     const queue = queues.get(sessionId);
     const next = queue?.[0];
@@ -417,6 +435,8 @@ export function createPromptScheduler(
       if (
         activeTurns.has(sessionId) ||
         steering.has(sessionId) ||
+        pendingSettings.has(sessionId) ||
+        settingsInFlight.has(sessionId) ||
         !deps.canStart(submission)
       ) {
         if ((queues.get(sessionId)?.length ?? 0) >= PROMPT_QUEUE_CAP) {
@@ -441,8 +461,9 @@ export function createPromptScheduler(
       const sessionId = submission.sessionId;
       if (
         !pendingSettings.has(sessionId) &&
+        !activeTurns.has(sessionId) &&
         sessionLoaded(submission) &&
-        deps.sendToAgent(submission.frame)
+        sendSetting(submission)
       )
         return "started";
       pendingSettings.set(sessionId, [
@@ -450,6 +471,13 @@ export function createPromptScheduler(
         submission,
       ]);
       return "queued";
+    },
+
+    onSettingResponse(sessionId, outboundId) {
+      const inFlight = settingsInFlight.get(sessionId);
+      if (!inFlight?.delete(outboundId)) return;
+      if (inFlight.size === 0) settingsInFlight.delete(sessionId);
+      maybeStartNext(sessionId);
     },
 
     onPromptResponse(sessionId, outboundId) {
@@ -466,7 +494,8 @@ export function createPromptScheduler(
       activeTurns.delete(sessionId);
       clearSteerTimer(sessionId);
       deps.onTurnEnded?.(sessionId);
-      if (queues.get(sessionId)?.length) maybeStartNext(sessionId);
+      if (queues.get(sessionId)?.length || pendingSettings.has(sessionId))
+        maybeStartNext(sessionId);
       else queues.delete(sessionId);
       return {
         turnEnded: true,
@@ -494,7 +523,8 @@ export function createPromptScheduler(
         activeTurns.has(sessionId) ||
         steering.has(sessionId) ||
         queues.has(sessionId) ||
-        pendingSettings.has(sessionId)
+        pendingSettings.has(sessionId) ||
+        settingsInFlight.has(sessionId)
       );
     },
 
@@ -503,12 +533,22 @@ export function createPromptScheduler(
         activeTurns.size > 0 ||
         steering.size > 0 ||
         queues.size > 0 ||
-        pendingSettings.size > 0
+        pendingSettings.size > 0 ||
+        settingsInFlight.size > 0
       );
     },
 
     activeTurnCount() {
       return activeTurns.size;
+    },
+
+    activeTurnSince() {
+      let earliest: number | null = null;
+      for (const turn of activeTurns.values()) {
+        if (earliest === null || turn.startedAt < earliest)
+          earliest = turn.startedAt;
+      }
+      return earliest;
     },
 
     onEngaged(sessionId) {
@@ -588,6 +628,7 @@ export function createPromptScheduler(
     forget(sessionId) {
       const active = activeTurns.get(sessionId);
       activeTurns.delete(sessionId);
+      settingsInFlight.delete(sessionId);
       dropQueue(sessionId, "session-forgotten");
       if (active !== undefined) {
         deps.onTurnInterrupted?.(sessionId, active);
@@ -600,6 +641,7 @@ export function createPromptScheduler(
       parkTimers.clear();
       for (const timer of steerTimers.values()) clearTimeout(timer);
       steerTimers.clear();
+      settingsInFlight.clear();
       for (const sessionId of [...pendingSettings.keys()])
         refuseSettings(
           sessionId,

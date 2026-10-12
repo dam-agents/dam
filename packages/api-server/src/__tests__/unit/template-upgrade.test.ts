@@ -1,9 +1,13 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect, vi } from "vitest";
 import type { TemplateSpec } from "api-server-api";
 import { configureLogger } from "../../core/logger.js";
 import { templateImageUpdate } from "../../modules/agents/domain/template-update.js";
 import { executeTemplateUpgrade } from "../../modules/agents/services/agents-service.js";
 import type { InfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
+import { createTemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -88,14 +92,14 @@ describe("template upgrade flow", () => {
     const res = await h.run("agent-1");
     expect(h.patchSpec).toHaveBeenCalledWith("agent-1", {
       image: "quay.io/dam-agents/claude-code:0.2.8",
+      harness: "claude-code",
     });
     expect(res.ok && res.value.spec.image).toBe(
       "quay.io/dam-agents/claude-code:0.2.8",
     );
   });
 
-  // TEST_SCENARIO: every harness template shares one image, so the image alone no longer says which harness runs. The upgrade must write the template's harness too, or an upgraded codex agent would boot as claude-code.
-  it("writes the template's harness beside the new image", async () => {
+  it("preserves a legacy harness when the default template names none", async () => {
     const h = harness({
       agent: infraAgent({
         templateId: "codex",
@@ -105,7 +109,7 @@ describe("template upgrade flow", () => {
         },
       }),
       templateImage: "quay.io/dam-agents/default:1",
-      template: { harness: "codex" },
+      template: {},
     });
     await h.run("agent-1");
     expect(h.patchSpec).toHaveBeenCalledWith("agent-1", {
@@ -113,6 +117,84 @@ describe("template upgrade flow", () => {
       harness: "codex",
     });
   });
+
+  it("preserves an explicit harness over the old template id and new default", async () => {
+    const h = harness({
+      agent: infraAgent({
+        templateId: "codex",
+        spec: { name: "my-agent", image: "repo:old", harness: "pi" },
+      }),
+      templateImage: "repo:new",
+      template: { harness: "claude-code" },
+    });
+    await h.run("agent-1");
+    expect(h.patchSpec).toHaveBeenCalledWith("agent-1", {
+      image: "repo:new",
+      harness: "pi",
+    });
+  });
+
+  it.each([
+    ["claude-code", "claude-code"],
+    ["codex", "codex"],
+    ["pi-agent", "pi"],
+    ["bob", "bob"],
+  ])(
+    "upgrades retained %s templates to the coding image and keeps %s",
+    async (templateId, chosenHarness) => {
+      const dir = mkdtempSync(join(tmpdir(), "template-upgrade-"));
+      try {
+        writeFileSync(
+          join(dir, "default.yaml"),
+          JSON.stringify(
+            templateSpec("repo:coding", {
+              aliases: ["claude-code", "codex", "pi-agent", "bob"],
+            }),
+          ),
+        );
+        writeFileSync(
+          join(dir, `${templateId}.yaml`),
+          JSON.stringify(templateSpec("repo:legacy")),
+        );
+        writeFileSync(
+          join(dir, "workload.yaml"),
+          JSON.stringify(templateSpec("repo:workload")),
+        );
+        const templates = createTemplatesRepository(dir);
+        const agent = infraAgent({
+          templateId,
+          spec: { name: "my-agent", image: "repo:old" },
+        });
+        const patchSpec = vi.fn(
+          async (_id: string, patch: { image: string; harness?: string }) => ({
+            ...agent,
+            spec: { ...agent.spec, ...patch },
+          }),
+        );
+        const run = executeTemplateUpgrade({
+          owner: OWNER,
+          getAgent: async () => agent,
+          readTemplateSpec: templates.readSpec,
+          patchSpec,
+        });
+        expect((await templates.get(templateId))?.id).toBe("default");
+        expect((await templates.list()).map((t) => t.id).sort()).toEqual([
+          "default",
+          "workload",
+        ]);
+        expect((await templates.readSpec("workload"))?.spec.image).toBe(
+          "repo:workload",
+        );
+        expect((await run("agent-1", "repo:coding")).ok).toBe(true);
+        expect(patchSpec).toHaveBeenCalledWith("agent-1", {
+          image: "repo:coding",
+          harness: chosenHarness,
+        });
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("succeeds without patching when already current (idempotent)", async () => {
     const h = harness({

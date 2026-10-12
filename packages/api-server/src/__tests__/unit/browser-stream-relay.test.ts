@@ -185,6 +185,7 @@ describe("browser stream relay", () => {
       ok: true,
       user: { sub: "u" } as never,
       surface: "web",
+      watchKey: () => () => {},
     });
     let relayed = false;
     const route = relayRoute(

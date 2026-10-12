@@ -8,18 +8,23 @@ const settingsTabSchema = z.enum([
   "connections",
   "api-keys",
   "usage",
+  "schedules",
   "slack-workspaces",
+  "analytics",
   "features",
+  "about",
 ]);
 export type SettingsTab = z.infer<typeof settingsTabSchema>;
 
 const sandboxSectionSchema = z.enum([
   "setup",
   "connections",
+  "knowledge",
+  "network",
+  "environment",
   "channels",
   "skills",
   "schedules",
-  "artifacts",
   "usage",
 ]);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
@@ -38,7 +43,9 @@ export type Route =
   | { view: "starter-kits"; category?: StarterKitCategory }
   | { view: "starter-kit"; catalog: string; kit: string }
   | { view: "starter-kit-new"; catalog: string; kit: string }
-  | { view: "artifacts" };
+  | { view: "artifacts" }
+  | { view: "analytics" }
+  | { view: "not-found"; path: string };
 
 export type View = Route["view"];
 
@@ -77,6 +84,7 @@ const sandboxHomeRe = new RegExp(
 );
 
 export function parseRoute(path: string): Route {
+  if (path === "/") return { view: "home" };
   const chatMatch = path.match(/^\/chat\/([^/]+)(?:\/([^/]+))?\/?$/);
   if (chatMatch) {
     return {
@@ -89,16 +97,14 @@ export function parseRoute(path: string): Route {
   const settingsMatch = path.match(/^\/settings\/([^/]+)$/);
   if (settingsMatch) {
     const tab = settingsTabSchema.safeParse(settingsMatch[1]);
-    return {
-      view: "settings",
-      settingsTab: tab.success ? tab.data : "account",
-    };
+    if (tab.success) return { view: "settings", settingsTab: tab.data };
   }
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
   if (path === "/artifacts") return { view: "artifacts" };
+  if (path === "/analytics") return { view: "analytics" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
@@ -135,7 +141,7 @@ export function parseRoute(path: string): Route {
       catalog: decodeSegment(starterKitMatch[1]!),
       kit: decodeSegment(starterKitMatch[2]!),
     };
-  return { view: "home" };
+  return { view: "not-found", path };
 }
 
 export function routeToPath(route: Route): string {
@@ -176,6 +182,10 @@ export function routeToPath(route: Route): string {
       return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}/new`;
     case "artifacts":
       return "/artifacts";
+    case "analytics":
+      return "/analytics";
+    case "not-found":
+      return route.path;
     default: {
       const unhandled: never = route;
       return unhandled;

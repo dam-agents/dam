@@ -51,6 +51,19 @@ Run from the release branch when the latest RC is validated. The task:
 2. Tags `v0.3.0` and pushes.
 3. CD publishes everything as a stable release (images tagged `latest`, npm `--tag latest`).
 
+## Hotfix — `mise run release:hotfix [base]`
+
+A hotfix ships a fix on top of the release in production, without the rest of `main`. Run from a clean working directory. The task:
+
+1. Takes the tag of the latest published GitHub Release (e.g. `v0.3.0-rc2`), or the tag given as `base`. A published Release is what production runs; a stable tag alone is not.
+2. Takes the next patch above every existing version tag and `release-v*` branch (e.g. `0.3.1`, or `0.3.2` when `0.3.1` is tagged but never published). It warns when it skips versions, because the hotfix does not contain them.
+3. Creates `release-v0.3.1` from the base tag, not from `main`, bumps it to `0.3.1-rc1`, pushes.
+4. If `main` is at `0.3.1` or lower, opens a PR bumping `main` to `0.3.2` and closes any older bump PR, so the next regular release does not reuse the hotfix version.
+
+Then merge the fix to `main` first, cherry-pick it onto the hotfix branch with `git cherry-pick -x <sha>`, push, and publish with `release:publish-rc` or `release:publish-stable` as for any release.
+
+`release:new` stops when its `release-v*` branch already exists, which happens when a hotfix took the version and the bump PR is not merged yet.
+
 ## Utilities
 
 | Task | Purpose |

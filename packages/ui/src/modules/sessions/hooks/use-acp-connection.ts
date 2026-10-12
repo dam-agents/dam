@@ -1,7 +1,4 @@
-import type {
-  ClientConnection,
-  LoadSessionResponse,
-} from "@agentclientprotocol/sdk";
+import type { ClientConnection } from "@agentclientprotocol/sdk";
 import {
   platformClippedReplayMetaSchema,
   platformQueueMetaSchema,
@@ -23,19 +20,25 @@ import {
   applyUpdate,
   dropSuperseded,
   failQueuedOnDisconnect,
+  heldStillUndelivered,
   mergeLocalFailures,
   settleReplay,
 } from "../../acp/session-projection.js";
-import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
+import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
+import { readNextSessionPair } from "../api/session-pair.js";
 import { draftKey } from "../lib/draft-key.js";
 import {
   type PromptDelivery,
   withDeliveryTracking,
 } from "../lib/prompt-delivery.js";
-import { sessionModelFrom } from "../lib/session-model.js";
-import { clearUndelivered, readUndelivered } from "../lib/undelivered-store.js";
+import { pairMeta } from "../lib/session-pair-options.js";
+import {
+  clearUndelivered,
+  forgetUndelivered,
+  readUndelivered,
+} from "../lib/undelivered-store.js";
 
 const REPLAY_IDLE_WINDOW_MS = 3000;
 
@@ -46,10 +49,7 @@ export interface LiveConnection {
 
 interface CollectedUpdate {
   update: AcpUpdate;
-  at?: string;
-  telemetryPromptId?: string;
-  model?: string;
-  turnId?: string;
+  frame: FrameMeta;
 }
 
 export type ConnectionState = "idle" | "live" | "reloading" | "reconnecting";
@@ -213,23 +213,21 @@ export function useAcpConnection(
 
       let startedSessionId: string;
       try {
+        const next = readNextSessionPair(agentId);
         const session = await connection.agent.request("session/new", {
           cwd: ".",
           mcpServers: [],
           _meta: {
-            platform: { mode: SessionMode.Chat, type: SessionType.Regular },
+            platform: {
+              mode: SessionMode.Chat,
+              type: SessionType.Regular,
+              ...(next && pairMeta(next.pair)),
+              ...(next?.pair.settings && { settings: next.pair.settings }),
+            },
           },
         });
         startedSessionId = session.sessionId;
         useStore.getState().setHarnessForks(forksSessions);
-        const viewing = useStore.getState().sessionId;
-        if (viewing === null || viewing === startedSessionId) {
-          useStore
-            .getState()
-            .setSessionModel(
-              sessionModelFrom(startedSessionId, session.configOptions),
-            );
-        }
       } catch (err) {
         try {
           ws.close();
@@ -300,15 +298,7 @@ export function useAcpConnection(
           updateSessionId === collector.sid &&
           frame?.replayFor === collector.token
         ) {
-          collector.updates.push({
-            update,
-            ...(frame.at !== undefined && { at: frame.at }),
-            ...(frame.telemetryPromptId !== undefined && {
-              telemetryPromptId: frame.telemetryPromptId,
-            }),
-            ...(frame.model !== undefined && { model: frame.model }),
-            ...(frame.turnId !== undefined && { turnId: frame.turnId }),
-          });
+          collector.updates.push({ update, frame });
           return;
         }
         handler(update, updateSessionId, frame);
@@ -395,6 +385,7 @@ export function useAcpConnection(
                     ? { older: clipped.data.older }
                     : {}),
                 },
+                frame: {},
               },
               ...collector.updates,
             ]
@@ -402,15 +393,7 @@ export function useAcpConnection(
       const settled = dropSuperseded(
         settleReplay(
           updates.reduce<Message[]>(
-            (acc, collected) =>
-              applyUpdate(
-                acc,
-                collected.update,
-                collected.at,
-                collected.telemetryPromptId,
-                collected.model,
-                collected.turnId,
-              ),
+            (acc, { update, frame }) => applyUpdate(acc, update, frame),
             [],
           ),
           { turnInFlight: turn.success && turn.data.inFlight },
@@ -418,7 +401,15 @@ export function useAcpConnection(
         superseded.success ? superseded.data : [],
       );
       const localKey = selectedAgent ? draftKey(selectedAgent, sid) : null;
-      const held = localKey === null ? [] : readUndelivered(localKey);
+      const recorded = localKey === null ? [] : readUndelivered(localKey);
+      const held = heldStillUndelivered(
+        recorded,
+        settled,
+        superseded.success ? superseded.data : [],
+      );
+      if (localKey !== null)
+        for (const r of recorded)
+          if (!held.includes(r)) forgetUndelivered(localKey, r.id);
       if (selectedAgent && localKey !== null && held.length > 0) {
         handOverUndelivered(selectedAgent, sid, held)
           .then(() => {
@@ -436,14 +427,6 @@ export function useAcpConnection(
           : undefined,
       );
       if (replayBefore === undefined && generation === generationRef.current) {
-        useStore
-          .getState()
-          .setSessionModel(
-            sessionModelFrom(
-              sid,
-              (result as LoadSessionResponse | null)?.configOptions,
-            ),
-          );
         useStore
           .getState()
           .setRunStarts([

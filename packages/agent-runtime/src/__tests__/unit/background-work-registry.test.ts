@@ -4,10 +4,11 @@ import { createBackgroundWorkRegistry } from "../../modules/acp/services/backgro
 const job = (id: string, description?: string) => ({ id, description });
 
 function setup(
-  overrides: Parameters<typeof createBackgroundWorkRegistry>[0] = {},
+  overrides: Partial<Parameters<typeof createBackgroundWorkRegistry>[0]> = {},
 ) {
   const logs: string[] = [];
   const registry = createBackgroundWorkRegistry({
+    keepPolicy: { isKeptTask: () => true, onChange: () => {} },
     log: (m) => logs.push(m),
     ...overrides,
   });

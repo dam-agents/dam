@@ -113,7 +113,7 @@ const ANTHROPIC_OAUTH: HeaderConnectionTemplate = {
   category: "app",
   isCustom: false,
   description:
-    "Anthropic API access (Claude) via an OAuth token. Sent as `Authorization: Bearer`.",
+    "Claude Code access via a subscription OAuth token. Sent as `Authorization: Bearer`.",
   iconSlug: "anthropic",
   authKind: "header",
   host: "api.anthropic.com",
@@ -159,11 +159,11 @@ const OPENAI: HeaderConnectionTemplate = {
 
 const IBM_LITELLM: HeaderConnectionTemplate = {
   id: "ibm-litellm",
-  name: "IBM LiteLLM ETE Proxy",
+  name: "IBM ETE LiteLLM Proxy",
   category: "app",
   isCustom: false,
   description:
-    "Proxy that fronts model endpoints for IBM-internal Claude Code and Bob.",
+    "LiteLLM proxy for Claude, GPT and other models, supporting Claude Code, Codex, Pi and Bob.",
   iconSlug: "ibm",
   authKind: "header",
   host: IBM_LITELLM_HOST,
@@ -183,7 +183,7 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
 
 const CURVE_BENDER: HeaderConnectionTemplate = {
   id: "curve-bender",
-  name: "Curve Bender",
+  name: "IBM ETE LiteLLM CurveBender",
   category: "app",
   isCustom: false,
   description: "LiteLLM proxy fronting open models hosted on RITS.",

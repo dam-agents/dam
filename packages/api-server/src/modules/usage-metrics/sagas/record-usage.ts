@@ -19,7 +19,7 @@ import {
 import { getLogger } from "../../../core/logger.js";
 import { formatError } from "../../../core/format-error.js";
 import type { ActorDayLedger } from "../domain/actor-days.js";
-import type { TemplateOf } from "../domain/template.js";
+import type { HarnessOf } from "../domain/harness.js";
 import {
   createBoundedValues,
   toRelayKind,
@@ -29,7 +29,7 @@ import type { UsageRecorder } from "../infrastructure/usage-recorder.js";
 
 export interface UsageMetricsSagaDeps {
   recorder: UsageRecorder;
-  templateOf: TemplateOf;
+  harnessOf: HarnessOf;
   actorDays: ActorDayLedger;
 }
 
@@ -64,14 +64,14 @@ export function startUsageMetricsSaga(
   on<SessionTurnRelayed>(EventType.SessionTurnRelayed, (e) =>
     deps.recorder.turn({
       surface: toUsageSurface(e.surface),
-      template: deps.templateOf(e.agentId),
+      harness: deps.harnessOf(e.agentId, e.harness),
     }),
   );
 
   on<ChannelTurnRelayed>(EventType.ChannelTurnRelayed, (e) =>
     deps.recorder.turn({
       surface: toUsageSurface(e.channel),
-      template: deps.templateOf(e.agentId),
+      harness: deps.harnessOf(e.agentId),
     }),
   );
 
@@ -85,7 +85,7 @@ export function startUsageMetricsSaga(
     deps.recorder.scheduleFire({
       mode: e.mode,
       outcome: e.outcome,
-      template: deps.templateOf(e.agentId),
+      harness: deps.harnessOf(e.agentId, e.harness),
     }),
   );
 

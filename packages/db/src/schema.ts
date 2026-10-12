@@ -86,6 +86,20 @@ export const slackInstalls = pgTable("slack_installs", {
     .notNull(),
 });
 
+export const slackIgnoredApps = pgTable(
+  "slack_ignored_apps",
+  {
+    channelId: text("channel_id").notNull(),
+    botId: text("bot_id").notNull(),
+    name: text("name").notNull(),
+    ignoredBy: text("ignored_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.channelId, table.botId] })],
+);
+
 export const telegramConversations = pgTable(
   "telegram_conversations",
   {
@@ -277,6 +291,13 @@ export const activityEvents = pgTable(
     uniqueIndex("activity_events_entry_point_dedup_idx")
       .on(table.actorSub, table.type)
       .where(sql`${table.type} = 'entry_point_chosen'`),
+    uniqueIndex("activity_events_agent_oom_dedup_idx")
+      .on(
+        table.agentId,
+        sql`(${table.payload} ->> 'restarts')`,
+        sql`date_trunc('day', ${table.occurredAt} AT TIME ZONE 'UTC')`,
+      )
+      .where(sql`${table.type} = 'agent_oom'`),
   ],
 );
 
@@ -286,7 +307,25 @@ export const actorRoles = pgTable("actor_roles", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
+
+export const externalActorLinks = pgTable(
+  "external_actor_links",
+  {
+    provider: text("provider").notNull(),
+    externalActorHash: text("external_actor_hash").notNull(),
+    actorSub: text("actor_sub").notNull(),
+    linkedAt: timestamp("linked_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.provider, table.externalActorHash] }),
+  ],
+);
 
 export const agents = pgTable(
   "agents",
@@ -304,8 +343,12 @@ export const agents = pgTable(
     }),
     runtimeAgentVersion: text("runtime_agent_version"),
     harnessConfigSnapshot: jsonb("harness_config_snapshot"),
+    sessionPair: jsonb("session_pair"),
     skillsSnapshot: jsonb("skills_snapshot"),
     onboardingChecklist: jsonb("onboarding_checklist"),
+    starterKit: text("starter_kit"),
+    onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
+    spawnedByAgentId: text("spawned_by_agent_id"),
   },
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );

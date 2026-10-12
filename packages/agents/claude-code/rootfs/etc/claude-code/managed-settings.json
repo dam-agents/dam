@@ -6,6 +6,7 @@
       "mcp__knowledge-bases"
     ]
   },
+  "crossSessionInbound": "refuse",
   "hooks": {
     "SessionStart": [
       {
@@ -14,26 +15,6 @@
           {
             "type": "command",
             "command": "[ -z \"$PLATFORM_TERMINAL_ID\" ] || sed -n 's/.*\"session_id\":\"\\([^\"]*\\)\".*/{\"sessionId\":\"\\1\"}/p' | curl -sf -m 2 -H 'Content-Type: application/json' --data-binary @- \"$PLATFORM_RUNTIME_URL/api/terminals/$PLATFORM_TERMINAL_ID/session\" || true"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /usr/local/lib/report-background-work.mjs"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node /usr/local/lib/report-background-work.mjs"
           }
         ]
       }

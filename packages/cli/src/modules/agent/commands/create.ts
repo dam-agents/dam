@@ -51,12 +51,12 @@ export function buildCreateCommand(deps: {
     )
     .option(
       "--template <id>",
-      "template id (required; see `dam template list`)",
+      "template id (default: the install's default template; see `dam template list`)",
     )
     .option("--description <text>", "free-form description")
     .option(
       "--provider <id-or-name>",
-      "model-provider connection id or unique name (required; see `dam connection list`)",
+      "model-provider connection id or unique name (default: your preferred provider; see `dam connection list`)",
     )
     .option(
       "--env <KEY=VAL>",
@@ -75,9 +75,9 @@ export function buildCreateCommand(deps: {
       [
         "",
         "Examples:",
-        "  dam agent create my-agent --template claude-code --provider conn-123",
-        '  dam agent create my-agent --template claude-code --provider "My provider" --wait',
-        '  dam agent create my-agent --template pi-agent --provider conn-123 --description "Coding helper"',
+        "  dam agent create my-agent",
+        '  dam agent create my-agent --provider "My provider" --wait',
+        '  dam agent create my-agent --template default --provider conn-123 --description "Coding helper"',
         "",
       ].join("\n"),
     )
@@ -128,20 +128,7 @@ async function runCreate(
     process.exit(EXIT_INVALID_INPUT);
   }
 
-  if (!opts.template) {
-    process.stderr.write(
-      "error: `--template` is required; run `dam template list` to see options\n",
-    );
-    process.exit(EXIT_INVALID_INPUT);
-  }
   const template = opts.template;
-
-  if (!opts.provider) {
-    process.stderr.write(
-      "error: `--provider <id-or-name>` is required; run `dam connection list` to choose a model provider, or `dam agent create-interactive` to add one\n",
-    );
-    process.exit(EXIT_INVALID_INPUT);
-  }
 
   const envResult = parseEnvFlag(opts.env ?? []);
   if (!envResult.ok) {
@@ -175,8 +162,10 @@ async function runCreate(
 
   const tmplResult = await deps.createTemplateService(host).list();
   exitOnServiceError(tmplResult, host);
-  const selectedTemplate = tmplResult.value.find((t) => t.id === template);
-  if (!selectedTemplate) {
+  if (
+    template !== undefined &&
+    !tmplResult.value.some((t) => t.id === template)
+  ) {
     process.stderr.write(
       `error: unknown template \`${template}\`; available: ${tmplResult.value.map((t) => t.id).join(", ") || "(none)"}\n`,
     );
@@ -185,7 +174,10 @@ async function runCreate(
 
   const trpc = deps.createTrpcClient(host);
   let providerConnectionId = opts.provider;
-  if (!providerConnectionId.startsWith(CONNECTION_ID_PREFIX)) {
+  if (
+    providerConnectionId !== undefined &&
+    !providerConnectionId.startsWith(CONNECTION_ID_PREFIX)
+  ) {
     const connections = await trpcCall(() => trpc.connections.list.query());
     if (!connections.ok) {
       printServiceError(connections.error, host);
@@ -211,9 +203,11 @@ async function runCreate(
   }
   const createInput = await parseOrExit(agentCreateInputSchema, {
     name,
-    templateId: template,
-    connectionIds: [providerConnectionId],
-    providerConnectionId,
+    ...(template !== undefined && { templateId: template }),
+    ...(providerConnectionId !== undefined && {
+      connectionIds: [providerConnectionId],
+      providerConnectionId,
+    }),
     description: opts.description,
     env: env.length > 0 ? env : undefined,
   });
@@ -229,7 +223,7 @@ async function runCreate(
     }
     if (trpcErrorCode(e) === "NOT_FOUND") {
       process.stderr.write(
-        `error: template \`${template}\` was deleted while creating; retry\n`,
+        `error: template \`${template ?? "default"}\` was deleted while creating; retry\n`,
       );
       process.exit(EXIT_RUNTIME_FAILURE);
     }

@@ -12,10 +12,9 @@ KUBECONFORM=(kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer
 COMMON=(--include-crds --set terms.version=test --set terms.text='Test Terms')
 helm template platform . "${COMMON[@]}" --set clickstack.enabled=true | "${KUBECONFORM[@]}" "$@"
 # The vm backend renders a whole second set of objects (runner, its policy and
-# credentials, the device plugin) that the default values never reach — and,
+# credentials) that the default values never reach — and,
 # with the telemetry backend on, the collector's runner scrape and its RBAC.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
-  --set virtualization.devicePlugin.enabled=true --set virtualization.devicePlugin.scc=privileged \
   --set virtualization.runner.resources.limits.memory=8Gi \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
   --set 'virtualization.runner.dnsCidrs[0]=10.0.2.3/32' \

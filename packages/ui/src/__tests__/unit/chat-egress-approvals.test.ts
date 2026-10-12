@@ -2,6 +2,7 @@ import type { ApprovalView } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import { egressApprovalsWaiting } from "../../modules/approvals/lib/waiting-egress.js";
+import { approvalDetail } from "../../modules/home/lib/approval-copy.js";
 import { approvalToastChanges } from "../../modules/home/lib/approval-toasts.js";
 
 // TEST_OVERVIEW: the web chat shows an agent's waiting network approvals in whichever conversation of that agent is open. A held request has no session of its own, and a retry joins the approval an earlier request opened, so the chat reads the approvals the api-server holds rather than the in-session frame. Answering one removes it from that list, and its toast goes with it.
@@ -79,5 +80,24 @@ describe("approvalToastChanges", () => {
     expect(
       approvalToastChanges(new Set(["ap-1", "ap-2"]), new Set(["ap-2"])),
     ).toEqual({ raise: [], clear: ["ap-1"] });
+  });
+});
+
+describe("approvalDetail", () => {
+  // TEST_SCENARIO: an HTTPS request reaches the gate with no method or path, both "*". The card reads "pi.dev (any path)" instead of "* pi.dev*"; a plain HTTP request keeps its method and path.
+  it("reads an HTTPS host as any path and keeps a known method and path", () => {
+    expect(
+      approvalDetail(
+        egress({
+          payload: {
+            kind: "ext_authz",
+            host: "pi.dev",
+            method: "*",
+            path: "*",
+          },
+        }),
+      ),
+    ).toBe("pi.dev (any path)");
+    expect(approvalDetail(egress())).toBe("GET s3.example.com/bucket");
   });
 });

@@ -58,11 +58,12 @@ export const queryClient = new QueryClient({
       staleTime: 30_000,
     },
     mutations: {
-      onSuccess: (_data, _vars, _ctx, mutation) => {
-        mutation.meta?.invalidates?.forEach((key) =>
-          queryClient.invalidateQueries({ queryKey: key }),
-        );
-      },
+      onSuccess: (_data, _vars, _ctx, mutation): Promise<unknown> =>
+        Promise.all(
+          (mutation.meta?.invalidates ?? []).map((key) =>
+            queryClient.invalidateQueries({ queryKey: key }),
+          ),
+        ),
       onError: (error, _vars, _ctx, mutation) => {
         if (isTermsStaleError(error)) {
           onTermsStale();

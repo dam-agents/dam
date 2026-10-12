@@ -13,35 +13,47 @@ export function ResizeHandle({
   onResize: (delta: number) => void;
   onDragEnd?: () => void;
 }) {
-  const dragging = useRef(false);
   const last = useRef(0);
   const vertical = orientation === "vertical";
 
-  const onMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
       e.preventDefault();
-      dragging.current = true;
+      const handle = e.currentTarget;
+      if (e.nativeEvent.isTrusted) handle.setPointerCapture(e.pointerId);
       last.current = vertical ? e.clientY : e.clientX;
+      let dragging = true;
 
-      const onMouseMove = (ev: MouseEvent) => {
-        if (!dragging.current) return;
+      const endDrag = () => {
+        if (!dragging) return;
+        dragging = false;
+        document.removeEventListener("pointermove", onPointerMove);
+        document.removeEventListener("pointerup", endDrag);
+        document.removeEventListener("pointercancel", endDrag);
+        handle.removeEventListener("lostpointercapture", endDrag);
+        window.removeEventListener("blur", endDrag);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        onDragEnd?.();
+      };
+
+      const onPointerMove = (ev: PointerEvent) => {
+        if ((ev.buttons & 1) === 0) {
+          endDrag();
+          return;
+        }
         const pos = vertical ? ev.clientY : ev.clientX;
         const delta = pos - last.current;
         last.current = pos;
         onResize(vertical ? delta : side === "left" ? delta : -delta);
       };
 
-      const onMouseUp = () => {
-        dragging.current = false;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-        onDragEnd?.();
-      };
-
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
+      document.addEventListener("pointermove", onPointerMove);
+      document.addEventListener("pointerup", endDrag);
+      document.addEventListener("pointercancel", endDrag);
+      handle.addEventListener("lostpointercapture", endDrag);
+      window.addEventListener("blur", endDrag);
       document.body.style.cursor = vertical ? "row-resize" : "col-resize";
       document.body.style.userSelect = "none";
     },
@@ -51,7 +63,7 @@ export function ResizeHandle({
   if (vertical) {
     return (
       <div
-        onMouseDown={onMouseDown}
+        onPointerDown={onPointerDown}
         className="group relative z-raised -mt-[3px] -mb-[2px] h-[5px] shrink-0 cursor-row-resize flex items-center"
       >
         <div className="h-[2px] w-full bg-transparent group-hover:bg-foreground group-active:bg-foreground transition-colors" />
@@ -61,7 +73,7 @@ export function ResizeHandle({
 
   return (
     <div
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       className={cn(
         "group relative z-raised w-[5px] shrink-0 cursor-col-resize flex justify-center",
         side === "left" ? "-ml-[3px]" : "-mr-[3px]",

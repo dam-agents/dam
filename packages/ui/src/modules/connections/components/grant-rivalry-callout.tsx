@@ -19,7 +19,7 @@ export function GrantRivalryCallout({
     <Callout
       tone="warning"
       size="sm"
-      inset
+
       className={cn("flex flex-col gap-1 text-sm text-foreground", className)}
       data-testid="grant-rivalry-callout"
     >

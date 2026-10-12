@@ -24,6 +24,7 @@ const base: Schedule = {
   at: null,
   inSession: null,
   model: null,
+  sessionTitle: null,
 };
 
 const prechecked: Schedule = { ...base, precheck: "test -f /tmp/ready" };

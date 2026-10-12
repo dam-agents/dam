@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { avatarCharacter } from "api-server-api/avatar/svg";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
 import {
@@ -85,7 +86,9 @@ import { securityLog } from "../../../core/security-log.js";
 import {
   isAgentStoppedError,
   isAgentWakeTimeoutError,
+  isNewOutOfMemoryRestart,
   wakeFailureReasonToken,
+  type PodRestartState,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
@@ -161,9 +164,17 @@ import {
   matchRosterName,
   orderAmbientReaders,
   parseWhisperRequest,
+  peerTaggedBy,
   routeMention,
+  senderReaches,
   type RosterEntry,
 } from "./slack-routing.js";
+import type { SlackSender } from "./slack-sender.js";
+import type {
+  SlackIgnoredApp,
+  SlackIgnoredApps,
+} from "./slack-ignored-apps-repository.js";
+import { createBotPostLoopBound } from "../domain/bot-post-loop-bound.js";
 import {
   parseWhisperSession,
   whisperSessionMetadata,
@@ -1138,15 +1149,22 @@ function mayLeaveHarnessRunning(
 
 export function undeliveredNudge(
   threadTs: string,
-  opts: { sawFailure: boolean },
+  opts: { sawFailure: boolean; outOfMemory?: boolean },
 ): string {
   return [
     "<turn-undelivered>",
     opts.sawFailure
       ? "Your previous turn in this Slack thread ended without a reply being posted, and the person was already told the turn had gone wrong — so they are waiting on an answer, knowing only that something failed."
       : "Your previous turn in this Slack thread ended without a reply being posted — the person waiting in the thread never saw an answer.",
+    ...(opts.outOfMemory
+      ? [
+          "The turn was cut short because the agent ran out of memory and restarted. " +
+            "Tell the person so, and that the agent's owner can give it more memory: " +
+            "ⵗ → Configure agent → set the Compute Resources dropdown to a higher tier.",
+        ]
+      : []),
     `Post your result now with the reply tool (threadTs="${threadTs}").`,
-    ...(opts.sawFailure
+    ...(opts.sawFailure || opts.outOfMemory
       ? []
       : [
           "Write it as the answer they are waiting for, not as a correction: " +
@@ -1277,6 +1295,7 @@ export type SlackWorkerDeps = {
     slackChannelId: string,
     ambient: boolean,
   ) => Promise<void>;
+  ignoredApps: SlackIgnoredApps;
   setSlackDefault: (
     agentId: string,
     slackChannelId: string,
@@ -1291,6 +1310,7 @@ export type SlackWorkerDeps = {
   settleMs?: number;
   wakeWait?: WakeWaitOptions;
   agentIcon?: AgentIconUrl | null;
+  readPodRestarts?: (agentId: string) => Promise<PodRestartState | null>;
 };
 
 export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
@@ -1305,6 +1325,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     channelRegistry,
     unbindSlackChannel,
     setSlackChannelAmbient,
+    ignoredApps,
     setSlackDefault,
     brand,
     isTermsAccepted,
@@ -1316,6 +1337,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     settleMs = 0,
     wakeWait = {},
     agentIcon = null,
+    readPodRestarts = async () => null,
   } = deps;
   const brandShort = brand.short;
   let gateway: SlackGateway | null = null;
@@ -1385,6 +1407,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     handedOff?: boolean;
     text?: string;
     replyText?: string;
+    replyTexts?: string[];
+    ambient?: boolean;
     slackUserId?: string;
     hasThread?: boolean;
     hadAttachments?: boolean;
@@ -1395,8 +1419,94 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     text: string;
     eventTs: string;
     slackUserId: string;
+    speaker?: string;
+    sender?: SlackSender;
     inThread: boolean;
   };
+
+  const botPosts = createBotPostLoopBound();
+
+  const BOT_MENTION_SEEN_TTL_MS = 10 * 60 * 1000;
+  const botMentionsSeen = new Map<string, number>();
+
+  function firstBotMentionSighting(channel: string, ts: string): boolean {
+    const now = Date.now();
+    for (const [key, expiresAt] of botMentionsSeen) {
+      if (expiresAt > now) break;
+      botMentionsSeen.delete(key);
+    }
+    const key = `${channel} ${ts}`;
+    if (botMentionsSeen.has(key)) return false;
+    botMentionsSeen.set(key, now + BOT_MENTION_SEEN_TTL_MS);
+    return true;
+  }
+
+  function botPostConversation(channel: string, threadTs?: string): string {
+    return `${channel} ${threadTs ?? "top"}`;
+  }
+
+  async function speakerOf(sender: SlackSender): Promise<string> {
+    return match(sender)
+      .with({ kind: "person" }, ({ user }) => `<@${user}>`)
+      .with(
+        { kind: "agent" },
+        async ({ agentId }) =>
+          `${(await resolveAgentName(agentId)) || agentId} (another agent)`,
+      )
+      .with({ kind: "app" }, ({ name, botId }) => `${name || botId} (an app)`)
+      .exhaustive();
+  }
+
+  function senderDetail(sender: SlackSender | undefined) {
+    return match(sender)
+      .with(undefined, { kind: "person" }, () => ({}))
+      .with({ kind: "agent" }, ({ agentId }) => ({
+        sender: "agent",
+        senderAgentId: agentId,
+      }))
+      .with({ kind: "app" }, ({ botId }) => ({
+        sender: "app",
+        senderBotId: botId,
+      }))
+      .exhaustive();
+  }
+
+  async function isIgnoredApp(
+    sender: SlackSender,
+    channelId: string,
+  ): Promise<boolean> {
+    if (sender.kind !== "app") return false;
+    let ignored: SlackIgnoredApp[];
+    try {
+      ignored = await ignoredApps.list(channelId);
+    } catch (err) {
+      getLogger().warn(
+        { channelId, error: formatError(err) },
+        "slack.ignored_apps.unread",
+      );
+      return false;
+    }
+    if (!ignored.some((app) => app.botId === sender.botId)) return false;
+    getLogger().debug(
+      { channelId, botId: sender.botId },
+      "slack.app_post.ignored",
+    );
+    return true;
+  }
+
+  function admitBotPost(
+    sender: SlackSender,
+    conversation: string,
+    channelId: string,
+  ): boolean {
+    if (sender.kind === "person") return true;
+    if (botPosts.admitBotPost(conversation)) return true;
+    getLogger().info(
+      { channelId, sender: sender.kind },
+      "slack.bot_post.loop_bound",
+    );
+    return false;
+  }
 
   const inFlightTurns = new Map<string, Set<TurnRef>>();
 
@@ -1537,6 +1647,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     engaged.posted = true;
     if (opts.messaged) engaged.messaged = true;
     if (opts.replyText) {
+      engaged.replyTexts = [...(engaged.replyTexts ?? []), opts.replyText];
       engaged.replyText = engaged.replyText
         ? `${engaged.replyText}\n${opts.replyText}`
         : opts.replyText;
@@ -1698,16 +1809,27 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   }
 
   const AGENT_NAME_TTL_MS = 30_000;
-  const agentNameCache = new Map<string, { name: string; expiresAt: number }>();
+  const agentNameCache = new Map<
+    string,
+    { name: string; avatar: string | undefined; expiresAt: number }
+  >();
 
   async function resolveAgentName(instanceName: string): Promise<string> {
+    return (await resolveAgentIdentity(instanceName)).name;
+  }
+
+  async function resolveAgentIdentity(
+    instanceName: string,
+  ): Promise<{ name: string; avatar: string | undefined }> {
     const now = Date.now();
     const cached = agentNameCache.get(instanceName);
-    if (cached && cached.expiresAt > now) return cached.name;
+    if (cached && cached.expiresAt > now) return cached;
     let name: string;
+    let avatar: string | undefined;
     try {
       const agent = await agents().get(instanceName);
       name = agent?.name?.trim() || instanceName;
+      avatar = agent?.spec?.avatar;
     } catch {
       name = instanceName;
     }
@@ -1718,9 +1840,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     agentNameCache.set(instanceName, {
       name,
+      avatar,
       expiresAt: now + AGENT_NAME_TTL_MS,
     });
-    return name;
+    return { name, avatar };
   }
 
   const THREAD_SEEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -1882,18 +2005,21 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ): Promise<Pick<SlackPostMessage, "username" | "iconUrl">> {
     const scopes = await grantedScopes(gw, teamId);
     if (!scopes?.has("chat:write.customize")) return {};
-    const [username, owner] = await Promise.all([
-      resolveAgentName(instanceName),
+    const [{ name: username, avatar }, owner] = await Promise.all([
+      resolveAgentIdentity(instanceName),
       getInstanceOwner(instanceName).catch(() => null),
     ]);
     const iconUrl =
-      agentIcon && owner ? await agentIcon(owner, username) : null;
+      agentIcon && owner
+        ? await agentIcon(avatarCharacter(avatar, owner, username))
+        : null;
     return { username, ...(iconUrl ? { iconUrl } : {}) };
   }
 
   async function agentFooter(
     instanceName: string,
     sessionId?: string,
+    ambientRound?: boolean,
   ): Promise<AgentFooter> {
     const resolved = await resolveAgentName(instanceName);
     return {
@@ -1904,6 +2030,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         resolved === instanceName ? undefined : resolved,
       ),
       ...(sessionId ? { sessionId } : {}),
+      ...(ambientRound ? { ambientRound } : {}),
     };
   }
 
@@ -2340,6 +2467,18 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return run;
   }
 
+  const readRestarts = (agentId: string) =>
+    readPodRestarts(agentId).catch(() => null);
+
+  async function restartedOutOfMemorySince(
+    instanceName: string,
+    baseline: PodRestartState | undefined,
+  ): Promise<boolean> {
+    if (baseline === undefined) return false;
+    const current = await readRestarts(instanceName);
+    return current !== null && isNewOutOfMemoryRestart(baseline, current);
+  }
+
   async function runUndeliveredNudge(args: {
     instanceName: string;
     sessionId: string;
@@ -2350,6 +2489,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     isDelivered: () => boolean;
     isCancelled: () => boolean;
     sawFailure: boolean;
+    restartsAtStart?: PodRestartState;
     externalActorId?: string;
   }): Promise<void> {
     const { instanceName, sessionId, threadKey, threadTs } = args;
@@ -2368,13 +2508,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     try {
       await withSessionTurnLock(instanceName, threadKey, async () => {
         if (args.isDelivered() || args.isCancelled()) return;
+        const outOfMemory = await restartedOutOfMemorySince(
+          instanceName,
+          args.restartsAtStart,
+        );
         await agents().ensureReady(instanceName);
         if (args.isDelivered() || args.isCancelled()) return;
         const before = disposition();
         beginTurn(instanceName, args.anchorRef);
         try {
           await makeAcpClient(instanceName).sendPrompt(
-            undeliveredNudge(threadTs, { sawFailure: args.sawFailure }),
+            undeliveredNudge(threadTs, {
+              sawFailure: args.sawFailure,
+              outOfMemory,
+            }),
             { resumeSessionId: sessionId },
           );
         } finally {
@@ -2419,6 +2566,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     refs: TurnRef[];
     anchorRef: TurnRef;
     sawFailure: boolean;
+    restartsAtStart?: PodRestartState;
     externalActorId?: string;
     endedAs?: WatchedTurnEnd;
   }): void {
@@ -2457,6 +2605,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     buildResumePrompt: () => Promise<BuiltPrompt>;
     buildFreshPrompt: () => Promise<BuiltPrompt>;
     onWaking?: () => void;
+    onReady?: () => void;
     onImagesDropped?: () => void;
     onUpdate?: (update: PromptUpdate) => void;
     onSession?: (sessionId: string) => void;
@@ -2471,6 +2620,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await agents().ensureReady(args.instanceName, {
         onWaking: args.onWaking,
       });
+      args.onReady?.();
       const acp = makeAcpClient(args.instanceName);
       const existing = await findThreadSession(
         acp,
@@ -2585,7 +2735,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       sessionId: string,
       refs: TurnRef[],
       sawFailure: boolean,
-      endedAs?: WatchedTurnEnd,
+      ending:
+        { endedAs: WatchedTurnEnd } | { restartsAtStart?: PodRestartState },
     ) =>
       watchUndeliveredTurn({
         instanceName,
@@ -2598,7 +2749,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ...(ctx.externalActorId
           ? { externalActorId: ctx.externalActorId }
           : {}),
-        ...(endedAs !== undefined ? { endedAs } : {}),
+        ...ending,
       });
 
     const presenter = privateReply
@@ -2692,11 +2843,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }));
 
     let ghostTurn = false;
+    let restartsAtStart: Promise<PodRestartState | null> | undefined;
     const runTurn = async () => {
       await runSessionTurn({
         instanceName,
         threadKey,
         legacyThreadKey: ctx.threadTs,
+        onReady: () => {
+          restartsAtStart = readRestarts(instanceName);
+        },
         buildResumePrompt: async () => {
           const delivered = await deliverFiles();
           const caught = await buildCatchUp(gw, {
@@ -2799,7 +2954,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await postFailure(err);
       const sessionId = turnSessionId();
       if (err instanceof AcpTurnAbandonedError && sessionId !== undefined) {
-        watchTurn(sessionId, verdictRefs(), failurePosted);
+        watchTurn(sessionId, verdictRefs(), failurePosted, {
+          restartsAtStart: (await restartsAtStart) ?? undefined,
+        });
       }
     } finally {
       for (const ref of turnRefs) {
@@ -2829,7 +2986,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             "posting a reply or a reaction",
         );
         if (nudgeSessionId !== undefined)
-          watchTurn(nudgeSessionId, settledRefs, false, "clean");
+          watchTurn(nudgeSessionId, settledRefs, false, { endedAs: "clean" });
       }
       await presenter.clearStatus();
       emit({
@@ -3344,6 +3501,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       .with("ambient", async () => {
         await handleAmbientCommand(rest, command, ack);
       })
+      .with("ignore", async () => {
+        await handleIgnoreCommand(rest, command, ack);
+      })
+      .with("unignore", async () => {
+        await handleUnignoreCommand(rest, command, ack);
+      })
       .with("delete", async () => {
         await handleDeleteCommand(command, ack);
       })
@@ -3355,7 +3518,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} whisper [agent] ["message"]\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
+          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
         });
       })
       .exhaustive();
@@ -3488,6 +3651,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         metadata: whisperSessionMetadata({
           agentId: target.instanceName,
           origin: command.channelId,
+          originWorkspace: command.teamId,
           user: command.userId,
           checksMembership,
         }),
@@ -3601,7 +3765,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       let member: boolean;
       try {
         member = (
-          await gw.listSharedChannels(slackUserId, event.teamId)
+          await gw.listSharedChannels(
+            slackUserId,
+            session.originWorkspace ?? event.teamId,
+          )
         ).includes(session.origin);
       } catch (err) {
         getLogger().warn(
@@ -3646,6 +3813,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         text: event.text + fetched.withheldNote,
         eventTs: event.ts,
         slackUserId,
+        sender: event.sender,
+        speaker: await speakerOf(event.sender),
         inThread: true,
         images: fetched.images,
         files: fetched.files,
@@ -3778,15 +3947,286 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     });
   }
 
+  async function authorizeBindingSwitch(
+    command: SlackSlashCommand,
+    ack: SlackAck,
+    binding: RosterEntry,
+    subcommand: string,
+    setting: string,
+  ): Promise<string | null> {
+    const invoker = await identityLinks.resolve("slack", command.userId);
+    if (!invoker) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: null,
+        actorKind: "external",
+        surface: "slack",
+        agentId: binding.instanceName,
+        decision: "deny",
+        reason: "unlinked",
+        detail: {
+          slackUserId: command.userId,
+          channelId: command.channelId,
+        },
+      });
+      await ack({
+        text: `Link your account first — run \`/${brandShort} login\`, then \`/${brandShort} ${subcommand}\` again.`,
+      });
+      return null;
+    }
+
+    const agentOwner = await getInstanceOwner(binding.instanceName);
+    const allowed = invoker === binding.owner || invoker === agentOwner;
+    if (!allowed) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: invoker,
+        actorKind: "user",
+        surface: "slack",
+        agentId: binding.instanceName,
+        decision: "deny",
+        reason: "not-binder-or-owner",
+        detail: {
+          slackUserId: command.userId,
+          channelId: command.channelId,
+        },
+      });
+      await ack({
+        text: `Only the person who connected this channel, or the agent's owner, can change ${setting}.`,
+      });
+      return null;
+    }
+    return invoker;
+  }
+
+  function parseSwitchArgs(rest: string): {
+    action: "on" | "off" | null;
+    nameArg: string;
+  } {
+    const words = rest.split(/\s+/).filter(Boolean);
+    const tail = words.at(-1)?.toLowerCase();
+    const action = tail === "on" || tail === "off" ? tail : null;
+    return { action, nameArg: (action ? words.slice(0, -1) : words).join(" ") };
+  }
+
+  async function authorizeChannelSetting(
+    command: SlackSlashCommand,
+    ack: SlackAck,
+    roster: RosterEntry[],
+    subcommand: string,
+  ): Promise<string | null> {
+    const invoker = await identityLinks.resolve("slack", command.userId);
+    const detail = {
+      slackUserId: command.userId,
+      channelId: command.channelId,
+    };
+    if (!invoker) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: null,
+        actorKind: "external",
+        surface: "slack",
+        agentId: roster[0]?.instanceName ?? null,
+        decision: "deny",
+        reason: "unlinked",
+        detail,
+      });
+      await ack({
+        text: `Link your account first — run \`/${brandShort} login\`, then \`/${brandShort} ${subcommand}\` again.`,
+      });
+      return null;
+    }
+    for (const entry of roster) {
+      if (entry.owner === invoker) return invoker;
+      if ((await getInstanceOwner(entry.instanceName)) === invoker)
+        return invoker;
+    }
+    securityLog("warn", "channel.authz_deny", {
+      category: "channel",
+      actor: invoker,
+      actorKind: "user",
+      surface: "slack",
+      agentId: roster[0]?.instanceName ?? null,
+      decision: "deny",
+      reason: "not-binder-or-owner-here",
+      detail,
+    });
+    await ack({
+      text: "Only someone who connected an agent here, or owns one connected here, can change which apps the agents here ignore.",
+    });
+    return null;
+  }
+
+  function appLabel(app: SlackIgnoredApp): string {
+    return `\`${app.name || app.botId}\``;
+  }
+
+  function ignoredListCopy(ignored: SlackIgnoredApp[]): string {
+    return ignored.length === 0
+      ? `The agents here hear every app and webhook. To ignore one, run \`/${brandShort} ignore <link to one of its posts>\`.`
+      : `The agents here ignore posts from ${ignored.map(appLabel).join(", ")}. Run \`/${brandShort} unignore <app>\` to hear one again.`;
+  }
+
+  async function resolveLinkedApp(
+    linkText: string,
+    teamId: SlackWorkspace,
+  ): Promise<{ ok: true; app: SlackIgnoredApp } | { ok: false; text: string }> {
+    const link = parseAgentPostLink(linkText);
+    if (!link)
+      return {
+        ok: false,
+        text: `That isn't a message link. Use the post's "Copy link" action.`,
+      };
+    const post = gateway
+      ? await gateway.getMessage({ ...link, teamId }).catch(() => null)
+      : null;
+    if (!post)
+      return {
+        ok: false,
+        text: "I can't find that message. Check the link points at a message in this workspace, and that I am in that conversation.",
+      };
+    if (parseAgentFooter(post))
+      return {
+        ok: false,
+        text: "That is an agent's post. Posts by agents always reach the other agents here; only apps and webhooks can be ignored.",
+      };
+    if (!post.botId)
+      return {
+        ok: false,
+        text: "That message is from a person. Only apps and webhooks can be ignored.",
+      };
+    return { ok: true, app: { botId: post.botId, name: post.botName ?? "" } };
+  }
+
+  async function handleIgnoreCommand(
+    rest: string,
+    command: SlackSlashCommand,
+    ack: SlackAck,
+  ) {
+    const roster = await resolveRoster(command.channelId);
+    if (roster.length === 0) {
+      await ack({
+        text: `No agent is connected here, so there is nothing to ignore apps for. Run \`/${brandShort} bind\` to connect one.`,
+      });
+      return;
+    }
+    const linkText = /^\S+/.exec(rest)?.[0] ?? "";
+    if (!linkText) {
+      await ack({
+        text: ignoredListCopy(await ignoredApps.list(command.channelId)),
+      });
+      return;
+    }
+    const resolved = await resolveLinkedApp(linkText, command.teamId);
+    if (!resolved.ok) {
+      await ack({ text: resolved.text });
+      return;
+    }
+    const invoker = await authorizeChannelSetting(
+      command,
+      ack,
+      roster,
+      "ignore <message link>",
+    );
+    if (!invoker) return;
+    const added = await ignoredApps.ignore(
+      command.channelId,
+      resolved.app,
+      invoker,
+    );
+    if (added)
+      securityLog("info", "channel.app_ignored", {
+        category: "authz-list",
+        actor: invoker,
+        actorKind: "user",
+        surface: "slack",
+        agentId: roster[0]!.instanceName,
+        result: "success",
+        detail: {
+          slackUserId: command.userId,
+          channelId: command.channelId,
+          botId: resolved.app.botId,
+        },
+      });
+    await ack({
+      text: added
+        ? `The agents here now ignore posts from ${appLabel(resolved.app)}. Run \`/${brandShort} unignore ${resolved.app.name || resolved.app.botId}\` to hear it again.`
+        : `The agents here already ignore ${appLabel(resolved.app)}.`,
+    });
+  }
+
+  async function handleUnignoreCommand(
+    rest: string,
+    command: SlackSlashCommand,
+    ack: SlackAck,
+  ) {
+    const roster = await resolveRoster(command.channelId);
+    const ignored = await ignoredApps.list(command.channelId);
+    const wanted = rest.trim();
+    if (!wanted || roster.length === 0) {
+      await ack({ text: ignoredListCopy(ignored) });
+      return;
+    }
+    let app: SlackIgnoredApp;
+    if (parseAgentPostLink(wanted)) {
+      const resolved = await resolveLinkedApp(wanted, command.teamId);
+      if (!resolved.ok) {
+        await ack({ text: resolved.text });
+        return;
+      }
+      app = resolved.app;
+    } else {
+      const name = wanted.toLowerCase();
+      const matches = ignored.filter(
+        (entry) => (entry.name || entry.botId).toLowerCase() === name,
+      );
+      if (matches.length !== 1) {
+        await ack({
+          text:
+            (matches.length === 0
+              ? `No ignored app here is called \`${wanted}\`. `
+              : `More than one ignored app here is called \`${wanted}\`; run \`/${brandShort} unignore <link to one of its posts>\` instead. `) +
+            ignoredListCopy(ignored),
+        });
+        return;
+      }
+      app = matches[0]!;
+    }
+    const invoker = await authorizeChannelSetting(
+      command,
+      ack,
+      roster,
+      `unignore ${wanted}`,
+    );
+    if (!invoker) return;
+    const removed = await ignoredApps.unignore(command.channelId, app.botId);
+    if (removed)
+      securityLog("info", "channel.app_unignored", {
+        category: "authz-list",
+        actor: invoker,
+        actorKind: "user",
+        surface: "slack",
+        agentId: roster[0]!.instanceName,
+        result: "success",
+        detail: {
+          slackUserId: command.userId,
+          channelId: command.channelId,
+          botId: app.botId,
+        },
+      });
+    await ack({
+      text: removed
+        ? `The agents here hear ${appLabel(app)} again.`
+        : `The agents here don't ignore ${appLabel(app)}.`,
+    });
+  }
+
   async function handleAmbientCommand(
     rest: string,
     command: SlackSlashCommand,
     ack: SlackAck,
   ) {
-    const words = rest.split(/\s+/).filter(Boolean);
-    const tail = words.at(-1)?.toLowerCase();
-    const action = tail === "on" || tail === "off" ? tail : null;
-    const nameArg = (action ? words.slice(0, -1) : words).join(" ");
+    const { action, nameArg } = parseSwitchArgs(rest);
     const subcommand = action ? `ambient ${action}` : "ambient";
 
     const picked = await pickRosterAgent(
@@ -3824,48 +4264,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
     const enable = action === "on";
 
-    const invoker = await identityLinks.resolve("slack", command.userId);
-    if (!invoker) {
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
-        actor: null,
-        actorKind: "external",
-        surface: "slack",
-        agentId: binding.instanceName,
-        decision: "deny",
-        reason: "unlinked",
-        detail: {
-          slackUserId: command.userId,
-          channelId: command.channelId,
-        },
-      });
-      await ack({
-        text: `Link your account first — run \`/${brandShort} login\`, then \`/${brandShort} ${subcommand}\` again.`,
-      });
-      return;
-    }
-
-    const agentOwner = await getInstanceOwner(binding.instanceName);
-    const allowed = invoker === binding.owner || invoker === agentOwner;
-    if (!allowed) {
-      securityLog("warn", "channel.authz_deny", {
-        category: "channel",
-        actor: invoker,
-        actorKind: "user",
-        surface: "slack",
-        agentId: binding.instanceName,
-        decision: "deny",
-        reason: "not-binder-or-owner",
-        detail: {
-          slackUserId: command.userId,
-          channelId: command.channelId,
-        },
-      });
-      await ack({
-        text: "Only the person who connected this channel, or the agent's owner, can change ambient mode.",
-      });
-      return;
-    }
+    const invoker = await authorizeBindingSwitch(
+      command,
+      ack,
+      binding,
+      subcommand,
+      "ambient mode",
+    );
+    if (!invoker) return;
 
     if (enable === isAmbient) {
       await ack({ text: `Ambient mode is already ${enable ? "on" : "off"}.` });
@@ -4037,8 +4443,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ) {
     if (!gateway) return;
 
-    const slackUserId = event.user;
-    if (!slackUserId) return;
+    const sender = event.sender;
+    if (opts.directMessage && sender.kind !== "person") return;
+    if (
+      sender.kind !== "person" &&
+      !firstBotMentionSighting(event.channel, event.ts)
+    )
+      return;
+    if (await isIgnoredApp(sender, event.channel)) return;
+    const slackUserId = sender.kind === "person" ? sender.user : "";
+    const conversation = botPostConversation(event.channel, event.threadTs);
+    if (sender.kind === "person") botPosts.notePersonPost(conversation);
 
     const threadTs = event.threadTs ?? event.ts;
     if (opts.directMessage && event.threadTs) {
@@ -4090,6 +4505,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return;
     }
     const binding = routed.target;
+    if (!senderReaches(sender, binding)) return;
+    if (!admitBotPost(sender, conversation, event.channel)) return;
 
     const fetched = await fetchTurnAttachments(event, slackUserId);
     if (fetched === null) return;
@@ -4110,6 +4527,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         text: event.text + fetched.withheldNote,
         eventTs: event.ts,
         slackUserId,
+        sender,
+        speaker: await speakerOf(sender),
         inThread,
         images: fetched.images,
         files: fetched.files,
@@ -4180,7 +4599,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         : [
             "Several messages now share this turn, so pass the [ts …] tag of the message you are answering as threadTs — a reply naming none is refused.",
           ]),
-      ...batch.map((m) => `[ts ${m.eventTs}] <@${m.slackUserId}>: ${m.text}`),
+      ...batch.map((m) => `[ts ${m.eventTs}] ${m.speaker}: ${m.text}`),
       "</new-messages>",
     ].join("\n");
   }
@@ -4200,12 +4619,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           channel: conversation.channelId,
           teamId: conversation.teamId,
           threadTs: conversation.threadTs,
-          messages: batch.map(({ text, eventTs, slackUserId, inThread }) => ({
-            text,
-            eventTs,
-            slackUserId,
-            inThread,
-          })),
+          messages: batch.map(
+            ({ text, eventTs, slackUserId, speaker, sender, inThread }) => ({
+              text,
+              eventTs,
+              slackUserId,
+              speaker,
+              sender,
+              inThread,
+            }),
+          ),
           slackUserId: latest.slackUserId,
           instanceName: conversation.instanceName,
           owner: latest.turn.owner,
@@ -4350,6 +4773,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         detail: {
           basis: "place",
           slackUserId: message.slackUserId,
+          ...senderDetail(message.sender),
           channelId: args.whisper?.origin ?? args.channel,
           ...(args.forwardedFrom
             ? { trigger: "forward", forwardedFrom: args.forwardedFrom }
@@ -4385,7 +4809,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         text:
           args.speakerLabel === false
             ? message.text
-            : `<@${message.slackUserId}>: ${message.text}`,
+            : `${message.speaker ?? `<@${message.slackUserId}>`}: ${message.text}`,
       })),
       actorSub: null,
       externalActorId: args.slackUserId,
@@ -4421,8 +4845,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     roster?: RosterEntry[];
     readers?: RosterEntry[];
     answeredAlready?: AmbientPeerReply[];
-  }): Promise<{ posted: boolean; replyText: string | null }> {
-    if (!gateway) return { posted: false, replyText: null };
+  }): Promise<{
+    posted: boolean;
+    replyText: string | null;
+    replies: string[];
+  }> {
+    if (!gateway) return { posted: false, replyText: null, replies: [] };
     const gw = gateway;
 
     const deliveredUpTo = args.messages.reduce(
@@ -4441,6 +4869,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       slackUserId: m.slackUserId ?? args.externalActorId,
       hasThread: args.hasThread,
       hadAttachments: args.images.length > 0 || args.files.length > 0,
+      ambient: true,
     }));
     const droppedNote = renderWithheldNote(
       args.droppedFiles.map((name) => ({
@@ -4601,6 +5030,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         externalActorId: args.externalActorId,
         outcome,
         ...(failureReason !== undefined ? { reason: failureReason } : {}),
+        ambient: true,
       });
     }
     const spoken = turnRefs
@@ -4610,6 +5040,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return {
       posted: turnRefs.some((ref) => ref.messaged === true),
       replyText: spoken === "" ? null : spoken,
+      replies: turnRefs.flatMap((ref) => ref.replyTexts ?? []),
     };
   }
 
@@ -4617,6 +5048,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     text: string;
     eventTs: string;
     slackUserId: string;
+    sender: SlackSender;
+    speaker: string;
     images: FetchedImage[];
     files: FetchedFile[];
     release: () => void;
@@ -4664,8 +5097,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return createConversationQueue<PendingMessage>({
       settleMs,
       runTurn: async (batch) => {
-        const last = batch.at(-1);
-        if (!last) return;
+        if (batch.length === 0) return;
         const roster = await resolveRoster(channelId);
         const readers: RosterEntry[] = [];
         for (const entry of roster) {
@@ -4682,9 +5114,21 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         if (readers.length === 0) return;
 
         const inThread = threadTs !== null;
-        const { kept, dropped } = batchFiles(batch);
         const answeredAlready: AmbientPeerReply[] = [];
+        const tagged = new Set<string>();
+        let botUserId: string | null | undefined;
         for (const reader of orderAmbientReaders(readers)) {
+          if (tagged.has(reader.instanceName)) {
+            getLogger().debug(
+              { agentId: reader.instanceName, channelId },
+              "slack.ambient_turn.skipped_tagged",
+            );
+            continue;
+          }
+          const shown = batch.filter((m) => senderReaches(m.sender, reader));
+          const last = shown.at(-1);
+          if (!last) continue;
+          const { kept, dropped } = batchFiles(shown);
           securityLog("info", "channel.authz", {
             category: "channel",
             actor: null,
@@ -4696,10 +5140,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               basis: "place",
               trigger: "ambient",
               slackUserId: last.slackUserId,
+              ...senderDetail(last.sender),
               channelId,
             },
           });
-          const { posted, replyText } = await relayAmbientTurn({
+          const { posted, replyText, replies } = await relayAmbientTurn({
             teamId: reader.teamId,
             roster,
             readers,
@@ -4713,18 +5158,30 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             replyThreadTs: inThread ? threadTs : last.eventTs,
             eventTs: last.eventTs,
             hasThread: inThread,
-            messages: batch.map(({ text, eventTs, slackUserId }) => ({
+            messages: shown.map(({ text, eventTs, slackUserId }) => ({
               text,
               eventTs,
               slackUserId,
             })),
-            images: batch.flatMap((m) => m.images),
+            images: shown.flatMap((m) => m.images),
             files: kept,
             droppedFiles: dropped.map((f) => f.name),
             externalActorId: last.slackUserId,
           });
           if (posted)
             answeredAlready.push({ name: reader.name, text: replyText });
+          botUserId ??= await gateway
+            ?.getBotUserId(reader.teamId)
+            .catch(() => null);
+          for (const said of replies) {
+            const peer = peerTaggedBy(
+              said,
+              reader.instanceName,
+              roster,
+              botUserId ?? null,
+            );
+            if (peer) tagged.add(peer.instanceName);
+          }
         }
       },
       steer: async () => "refused",
@@ -4759,11 +5216,26 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   async function handleChannelMessage(event: SlackChannelMessageEvent) {
     if (!gateway) return;
-    const slackUserId = event.user;
-    if (!slackUserId) return;
+    const sender = event.sender;
+    const slackUserId = sender.kind === "person" ? sender.user : "";
+    const conversation = botPostConversation(event.channel, event.threadTs);
+    if (sender.kind === "person") botPosts.notePersonPost(conversation);
+
+    if (sender.kind === "agent" && sender.ambientRound) {
+      getLogger().debug(
+        { agentId: sender.agentId, channelId: event.channel },
+        "slack.ambient.round_reply_skipped",
+      );
+      return;
+    }
+    if (await isIgnoredApp(sender, event.channel)) return;
 
     const bindings = await channelRegistry.resolveSlackBindings(event.channel);
-    if (!bindings.some((binding) => binding.ambient)) return;
+    const reached = bindings.some(
+      (binding) => binding.ambient && senderReaches(sender, binding),
+    );
+    if (!reached) return;
+    if (!admitBotPost(sender, conversation, event.channel)) return;
 
     const { images, files, failures, release } = await fetchSlackAttachments(
       gateway,
@@ -4774,11 +5246,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     );
     const withheldNote = renderWithheldNote(failures);
 
-    const text = `<@${slackUserId}>: ${event.text}${withheldNote}`;
+    const speaker = await speakerOf(sender);
+    const text = `${speaker}: ${event.text}${withheldNote}`;
     enqueueAmbient(event.channel, event.threadTs ?? null, {
       text,
       eventTs: event.ts,
       slackUserId,
+      sender,
+      speaker,
       images,
       files,
       release,
@@ -4987,7 +5462,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 teamId: target.teamId,
                 text,
                 ...persona,
-                blocks: [{ type: "markdown", text }, contextBlock],
+                blocks: renderAssistantBlocks(footer, text),
                 metadata: agentPostMetadata(fileIds),
                 ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
                 ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
@@ -5268,7 +5743,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if ("error" in target) return target;
 
       const [footer, persona] = await Promise.all([
-        agentFooter(instanceName, turn?.sessionId),
+        agentFooter(instanceName, turn?.sessionId, turn?.ambient),
         agentPersona(gw, instanceName, target.teamId),
       ]);
       if (attachmentOnly) {

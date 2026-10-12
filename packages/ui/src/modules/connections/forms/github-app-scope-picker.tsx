@@ -129,7 +129,7 @@ export function GithubAppScopePicker({
               : "Read installation"}
         </Button>
         {!ready && (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-sm text-muted-foreground">
             Fill in the {hostRequired ? "host, " : ""}app ID, installation ID,
             and private key first.
           </span>

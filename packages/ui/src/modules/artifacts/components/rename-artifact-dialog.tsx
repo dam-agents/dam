@@ -2,6 +2,7 @@ import type { LibraryArtifact } from "api-server-api";
 import { ARTIFACT_TITLE_MAX_LENGTH } from "api-server-api";
 import { useEffect, useState } from "react";
 
+import { FormField } from "@/components/form-field";
 import {
   DialogActions,
   DialogBody,
@@ -42,18 +43,15 @@ export function RenameArtifactDialog({ artifact, onClose }: Props) {
   };
 
   return (
-    <Modal>
+    <Modal onClose={pending ? undefined : onClose}>
       <DialogHeader
         onClose={onClose}
         closeDisabled={pending}
         title="Rename artifact"
       />
       <DialogBody>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">Title</span>
+        <FormField label="Title">
           <Input
-            size="sm"
-            aria-label="Title"
             value={title}
             autoFocus
             maxLength={ARTIFACT_TITLE_MAX_LENGTH}
@@ -62,7 +60,7 @@ export function RenameArtifactDialog({ artifact, onClose }: Props) {
               if (e.key === "Enter" && !e.nativeEvent.isComposing) save();
             }}
           />
-        </div>
+        </FormField>
       </DialogBody>
       <DialogActions
         onCancel={onClose}

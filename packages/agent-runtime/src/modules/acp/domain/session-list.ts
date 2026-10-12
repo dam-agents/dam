@@ -26,7 +26,12 @@ export interface SessionMetaLike {
     scheduleId?: string;
     initialization?: boolean;
     threadTs?: string;
+    harness?: string;
+    provider?: string;
+    model?: string;
+    settings?: Record<string, string>;
     title?: string;
+    customTitle?: string;
   };
   createdAt: string;
   lastActivityAt?: string;
@@ -64,7 +69,7 @@ function fromEntry(
     type: asType(entry.meta.type),
     createdAt: entry.createdAt,
     updatedAt: entry.lastActivityAt ?? listed?.updatedAt ?? null,
-    title: entry.meta.title ?? listed?.title ?? null,
+    title: entry.meta.customTitle ?? listed?.title ?? entry.meta.title ?? null,
     scheduleId: entry.meta.scheduleId ?? null,
     initialization: entry.meta.initialization === true,
     threadTs: entry.meta.threadTs ?? null,
@@ -73,6 +78,12 @@ function fromEntry(
     runTotalMs: entry.runTotalMs ?? null,
     runCount: entry.runCount ?? null,
     running,
+    ...(entry.meta.harness !== undefined && { harness: entry.meta.harness }),
+    ...(entry.meta.provider !== undefined && {
+      provider: entry.meta.provider,
+    }),
+    ...(entry.meta.model !== undefined && { model: entry.meta.model }),
+    ...(entry.meta.settings !== undefined && { settings: entry.meta.settings }),
   };
 }
 

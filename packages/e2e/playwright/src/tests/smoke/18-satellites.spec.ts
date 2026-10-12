@@ -242,20 +242,6 @@ test.describe("satellites", () => {
     await page.getByTestId(`template-card-${harnessName}`).click();
     await page.getByPlaceholder("my-agent").fill(CREATED_AGENT_NAME);
 
-    await page.getByTestId("provider-select").click();
-    await page.getByTestId("provider-option-openai").click();
-    const dialog = page.getByRole("dialog");
-    if (
-      await dialog.waitFor({ timeout: 2_000 }).then(
-        () => true,
-        () => false,
-      )
-    ) {
-      await dialog.locator('input[type="password"]').fill("sk-e2e-dummy-key");
-      await dialog.getByRole("button", { name: "Save" }).click();
-      await expect(dialog).toBeHidden();
-    }
-
     await page.getByTestId("open-connection-catalog").first().click();
     await page.getByTestId("catalog-tab-mcp").click();
     await page.getByTestId(`catalog-add-satellite-${SATELLITE}`).click();

@@ -18,6 +18,10 @@ export interface AgentSpecCR {
    */
   agentHome?: string;
   /**
+   * Avatar is the agent's chosen avatar character; unset means one picked from its owner and name.
+   */
+  avatar?: string;
+  /**
    * Backend selects the isolation substrate the agent workload runs on;
    * nil = container. Immutable after create (enforced by the api-server,
    * the sole spec writer), except that a runtime migration moves a

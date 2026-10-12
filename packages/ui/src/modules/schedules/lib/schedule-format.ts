@@ -82,14 +82,14 @@ export function lastRunStatus(lastResult?: string): LastRunStatus | null {
   if (lastResult === OnceResult.Missed)
     return {
       label: "Missed: the agent could not take it in time",
-      className: "text-destructive",
+      className: "text-danger",
     };
   if (lastResult.startsWith("held:"))
     return {
       label: `Held: ${lastResult.slice("held:".length).trim()}`,
       className: "text-muted-foreground",
     };
-  return { label: `Failed: ${lastResult}`, className: "text-destructive" };
+  return { label: `Failed: ${lastResult}`, className: "text-danger" };
 }
 
 export function declinedSummary(status?: {

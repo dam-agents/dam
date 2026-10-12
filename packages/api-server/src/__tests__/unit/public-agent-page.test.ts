@@ -289,6 +289,7 @@ describe("public agent profile saga", () => {
         type: EventType.SlackConnected,
         agentId: "agent-1",
         slackChannelId: "C1",
+        ownerSub: "sub-1",
       },
     ] as const) {
       const h = harness({
@@ -349,6 +350,7 @@ describe("public agent profile saga", () => {
       type: EventType.SlackConnected,
       agentId: "agent-1",
       slackChannelId: "C1",
+      ownerSub: "sub-1",
     });
     await flushMicrotasks();
     sub.unsubscribe();

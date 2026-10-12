@@ -1,6 +1,11 @@
 import { Information } from "@carbon/icons-react";
 import { useId } from "react";
-import type { Control, FieldErrors, UseFormRegister } from "react-hook-form";
+import type {
+  Control,
+  FieldErrors,
+  UseFormRegister,
+  UseFormRegisterReturn,
+} from "react-hook-form";
 import { Controller } from "react-hook-form";
 
 import { Input } from "@/components/ui/input";
@@ -30,6 +35,7 @@ import {
 } from "../lib/schedule-form-options.js";
 import {
   buildRRuleParts,
+  errorField,
   type ScheduleFormValues,
 } from "./schedule-form-schema.js";
 
@@ -169,9 +175,7 @@ export function ScheduleRecurrenceFields({
         <Field
           layout={layout}
           label="Every"
-          {...(errors.interval?.message
-            ? { error: errors.interval.message }
-            : {})}
+          {...(cadence.error ? { error: cadence.error } : {})}
         >
           <div
             className={cn(
@@ -183,7 +187,7 @@ export function ScheduleRecurrenceFields({
               type="number"
               min={1}
               className={cn("w-[80px]", rows ? "h-8" : "h-10")}
-              variant={errors.interval ? "invalid" : undefined}
+              variant={cadence.error ? "invalid" : undefined}
               {...register("interval")}
             />
             <span>{values.kind === "minutely" ? "minutes" : "hours"}</span>
@@ -246,7 +250,9 @@ export function ScheduleRecurrenceFields({
       )}
 
       {cadence.error
-        ? values.kind !== "custom" && <FormError message={cadence.error} />
+        ? errorField(values.kind) === "kind" && (
+            <FormError message={cadence.error} />
+          )
         : !rows &&
           cadence.summary && (
             <p className="-mt-1 text-sm text-muted-foreground">
@@ -369,7 +375,6 @@ export function SchedulePrecheckField({
         label="Precheck (optional)"
         error={errors.precheck?.message}
         hint={PRECHECK_HINT}
-        disableInset
       >
         {input}
       </FormField>
@@ -427,7 +432,7 @@ export function ScheduleModelField({
     });
 
   return (
-    <FormField label="Model" hint={MODEL_HINT} disableInset>
+    <FormField label="Model" hint={MODEL_HINT}>
       <OptionPicker
         title="Model"
         choices={options}
@@ -441,6 +446,31 @@ export function ScheduleModelField({
               clearedDescription: "Follows the model the agent is set to",
             })}
         onSelect={(id) => onChange(id ?? "")}
+      />
+    </FormField>
+  );
+}
+
+const SESSION_TITLE_HINT =
+  "Shown in the session list instead of the title the agent derives from the prompt. Every run of a fresh schedule gets the same title.";
+
+export function ScheduleSessionTitleField({
+  registration,
+  error,
+}: {
+  registration: UseFormRegisterReturn;
+  error?: string | undefined;
+}) {
+  return (
+    <FormField
+      label="Session title (optional)"
+      error={error}
+      hint={SESSION_TITLE_HINT}
+    >
+      <Input
+        variant={error ? "invalid" : undefined}
+        placeholder="Derived from the prompt"
+        {...registration}
       />
     </FormField>
   );

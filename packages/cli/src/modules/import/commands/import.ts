@@ -52,9 +52,9 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
   cmd.addHelpText(
     "after",
     () =>
-      "\nEach <path> becomes a top-level entry under 'work/' on the Agent. " +
-      "Existing entries with the same name are replaced wholesale; other " +
-      "entries under 'work/' are untouched.\n\n" +
+      "\nEach <path> is merged into 'work/' on the Agent. Folders are merged " +
+      "recursively: files are added or replaced, existing files not in the " +
+      "bundle are kept.\n\n" +
       "Symlinks anywhere in the imported tree are skipped (not followed).\n\n" +
       "Excluded directory and file names (matched at every level by basename):\n" +
       `  ${[...EXCLUDE_FROM_IMPORT].sort().join(", ")}\n`,
@@ -92,7 +92,7 @@ export function buildImportCommand(deps: ImportCommandDeps): Command {
           process.stderr.write(`  ${a.input}\n`);
         }
         process.stderr.write(
-          "This replaces each entry under 'work/' on the agent if present.\n",
+          "Files are merged into 'work/' on the agent; existing files with the same name will be overwritten.\n",
         );
         const okToProceed = await confirm("Continue?", { timeoutMs: 120_000 });
         if (!okToProceed) {
@@ -165,7 +165,9 @@ async function uploadAndReport(args: {
       `${args.host}/api/agents/${encodeURIComponent(args.agentId)}/import`,
       {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: form,
       },
     );
@@ -205,10 +207,6 @@ async function uploadAndReport(args: {
       process.stderr.write("error: agent no longer exists\n");
       return EXIT_AGENT_NOT_RESOLVED;
     case 409:
-      process.stderr.write(
-        "error: another import is already in progress for this agent\n",
-      );
-      return EXIT_RUNTIME_FAILURE;
     case 411:
     case 413:
       process.stderr.write(`error: ${serverMessage}\n`);

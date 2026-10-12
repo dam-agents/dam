@@ -8,6 +8,7 @@ function toView(tmpl: Template) {
   return {
     id: tmpl.id,
     name: tmpl.name,
+    aliases: tmpl.spec.aliases,
     image: tmpl.spec.image,
     description: tmpl.spec.description,
     category: tmpl.spec.category ?? "harness",
@@ -30,6 +31,11 @@ export const templatesRouter = t.router({
     const templates = await ctx.templates.list();
     return templates.map(toView);
   }),
+
+  harnesses: readAgentProcedure.query(({ ctx }) => ({
+    default: ctx.harnesses.default,
+    harnesses: ctx.harnesses.harnesses,
+  })),
 
   get: readAgentProcedure
     .input(templateGetInputSchema)

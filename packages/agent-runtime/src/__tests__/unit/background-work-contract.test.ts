@@ -3,7 +3,9 @@ import { backgroundWorkReportSchema } from "agent-runtime-api";
 import { createBackgroundWorkRegistry } from "../../modules/acp/services/background-work-registry.js";
 
 function reportThrough(sessionId: string, body: unknown) {
-  const registry = createBackgroundWorkRegistry();
+  const registry = createBackgroundWorkRegistry({
+    keepPolicy: { isKeptTask: () => true, onChange: () => {} },
+  });
   const parsed = backgroundWorkReportSchema.safeParse(body);
   if (parsed.success) registry.report(sessionId, parsed.data.items);
   return { accepted: parsed.success, registry };

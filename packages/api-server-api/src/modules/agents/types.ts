@@ -105,6 +105,7 @@ export interface Agent {
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
+  gatewayFailure?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
   workspaceFailures: WorkspaceFailure[];
@@ -128,6 +129,7 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   starterKitSeed?: SeedStamp;
   id?: string;
   telemetryAttributionId?: string;
+  noDefaultProvider?: boolean;
 };
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 
@@ -140,6 +142,11 @@ export interface BackgroundWorkItemView {
 export interface SessionBackgroundWork {
   sessionId: string;
   items: BackgroundWorkItemView[];
+}
+
+export interface AgentBackgroundWork {
+  sessions: SessionBackgroundWork[];
+  keptProcesses: number;
 }
 
 export type UpgradeAgentError =
@@ -262,7 +269,7 @@ export type UnbindTelegramChatResult =
 export interface AgentsService {
   list: () => Promise<Agent[]>;
   get: (id: string) => Promise<Agent | null>;
-  backgroundWork: (id: string) => Promise<SessionBackgroundWork[] | null>;
+  backgroundWork: (id: string) => Promise<AgentBackgroundWork | null>;
   create: (input: AgentCreateInput) => Promise<Agent>;
   update: (input: AgentUpdateInput) => Promise<Agent | null>;
   delete: (id: string) => Promise<void>;

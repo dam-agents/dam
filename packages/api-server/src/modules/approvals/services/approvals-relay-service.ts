@@ -7,7 +7,10 @@ import {
   injectChannelOf,
   SYNTHETIC_SESSION_PREFIX,
 } from "../infrastructure/acp-frames.js";
+import { verdictOfOutcome } from "../infrastructure/wrapper-response-frames.js";
 import { emit, EventType } from "../../../events.js";
+import { getLogger } from "../../../core/logger.js";
+import { formatError } from "../../../core/format-error.js";
 
 const ACP_NATIVE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -17,6 +20,7 @@ interface RecordAcpNativePendingInput {
   rpcId: number | string;
   ownerSub: string;
   toolName: string;
+  toolCallId?: string;
   args: unknown;
   options: readonly AcpPermissionOption[];
 }
@@ -25,7 +29,10 @@ export interface ApprovalsRelayService {
   recordAcpNativePending(
     input: RecordAcpNativePendingInput,
   ): Promise<string | null>;
-  resolveAcpNativeFromInSession(rowId: string): Promise<void>;
+  resolveAcpNativeFromInSession(
+    rowId: string,
+    outcome: { outcome?: unknown; optionId?: unknown },
+  ): Promise<void>;
   subscribeFrameInjects(
     agentId: string,
     listener: (frame: string) => void,
@@ -49,6 +56,39 @@ function describesSameRequest(
   );
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A re-attached client gets the open prompt again,
+ * possibly under a new rpc id, so the tool call id (stable across re-sends)
+ * says which earlier rows the new one replaces. They expire rather than
+ * resolve: nobody decided them, and their rpc id no longer reaches the harness.
+ * Scans at most the repository's list cap of pending rows per agent.
+ */
+async function expireSupersededRows(
+  repo: ApprovalsRepository,
+  rowId: string,
+  input: RecordAcpNativePendingInput,
+): Promise<void> {
+  const pending = await repo.listPendingForInstance(input.agentId, {
+    status: "pending",
+  });
+  for (const row of pending) {
+    if (
+      row.id === rowId ||
+      row.sessionId !== input.sessionId ||
+      row.payload.kind !== "acp_native" ||
+      row.payload.toolCallId !== input.toolCallId
+    )
+      continue;
+    await repo.expirePending(row.id);
+    emit({
+      type: EventType.ApprovalResolved,
+      approvalId: row.id,
+      agentId: row.agentId,
+      ownerSub: row.ownerSub,
+    });
+  }
+}
+
 export function createApprovalsRelayService(
   deps: CreateApprovalsRelayServiceDeps,
 ): ApprovalsRelayService {
@@ -59,6 +99,7 @@ export function createApprovalsRelayService(
       const payload = {
         kind: "acp_native" as const,
         toolName: input.toolName,
+        toolCallId: input.toolCallId,
         args: input.args,
         rpcId: input.rpcId,
         options: input.options.map((o) => ({
@@ -85,15 +126,23 @@ export function createApprovalsRelayService(
         agentId: input.agentId,
         ownerSub: input.ownerSub,
       });
+      if (input.toolCallId !== undefined)
+        await expireSupersededRows(deps.repo, rowId, input).catch((err) => {
+          getLogger().error(
+            { reason: formatError(err), approvalId: rowId },
+            "approvals.expire_superseded_error",
+          );
+        });
       return rowId;
     },
 
-    async resolveAcpNativeFromInSession(rowId) {
+    async resolveAcpNativeFromInSession(rowId, outcome) {
       const row = await deps.repo.getPending(rowId);
-      if (!row || row.status !== "pending") return;
+      if (!row || row.status !== "pending" || row.payload.kind !== "acp_native")
+        return;
       const casWon = await deps.repo.resolvePending(
         row.id,
-        "allow_once",
+        verdictOfOutcome(row.payload.options ?? [], outcome),
         "in-session",
         { markDelivered: true },
       );

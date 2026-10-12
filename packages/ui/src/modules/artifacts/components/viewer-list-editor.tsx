@@ -1,4 +1,4 @@
-import { Close } from "@carbon/icons-react";
+import { Add, Close } from "@carbon/icons-react";
 import { VIEWER_ALLOWLIST_MAX } from "api-server-api";
 import { useId, useState } from "react";
 
@@ -108,7 +108,7 @@ export function ViewerListEditor({
           disabled={disabled || full || draft.trim().length === 0}
           onClick={handleAdd}
         >
-          + Add
+          <Add size={16} /> Add
         </Button>
       </div>
       {error && (

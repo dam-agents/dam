@@ -1,7 +1,11 @@
+import { useEffect, useRef } from "react";
+
 import { Callout } from "@/components/ui/callout";
+import { SectionHeader } from "@/components/ui/list-section";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import {
+  useApplyHarnessConfig,
   useHarnessConfigStatus,
   useResolvedHarnessConfig,
 } from "../../agents/api/harness-config.js";
@@ -11,16 +15,24 @@ import {
   OptionField,
   ReadOnlyOptionFace,
 } from "../../sessions/components/option-field.js";
-import type { useHarnessConfigDraft } from "../hooks/use-harness-config-draft.js";
+import { useHarnessConfigDraft } from "../hooks/use-harness-config-draft.js";
 import { WakeToEditButton } from "./sandbox-wake-to-edit.js";
 
-export function SandboxModelSettings({
-  agentId,
-  draft,
-}: {
-  agentId: string;
-  draft: ReturnType<typeof useHarnessConfigDraft>;
-}) {
+export function SandboxModelSettings({ agentId }: { agentId: string }) {
+  const draft = useHarnessConfigDraft(agentId);
+  const apply = useApplyHarnessConfig();
+  const inFlight = useRef(false);
+  useEffect(() => {
+    if (!draft.dirty || inFlight.current) return;
+    inFlight.current = true;
+    apply.mutate(draft.buildInput(agentId), {
+      onSuccess: draft.commit,
+      onError: draft.discard,
+      onSettled: () => {
+        inFlight.current = false;
+      },
+    });
+  });
   const { operable, comingUp } = useOperableState(agentId);
   const { data: status, isPending: statusPending } =
     useHarnessConfigStatus(agentId);
@@ -71,7 +83,7 @@ export function SandboxModelSettings({
     <ModelSettingsPanel
       agentId={agentId}
       draft={draft}
-      disabled={!operable}
+      disabled={!operable || apply.isPending}
       headerAction={
         operable ? undefined : (
           <WakeToEditButton agentId={agentId} comingUp={comingUp} />
@@ -88,10 +100,8 @@ function ModelSettingsSkeleton() {
       aria-busy="true"
       aria-label="Model settings loading"
     >
-      <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-        <SectionLabel>Model settings</SectionLabel>
-      </div>
-      <Callout inset>
+      <SectionHeader label="Model settings" />
+      <Callout>
         <div className="animate-pulse">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="mb-4 last:mb-0">
@@ -118,11 +128,10 @@ function Section({
 }) {
   return (
     <section className="mb-8">
-      <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-        <SectionLabel>Model settings</SectionLabel>
+      <SectionHeader label="Model settings">
         <WakeToEditButton agentId={agentId} comingUp={comingUp} />
-      </div>
-      <Callout inset>{children}</Callout>
+      </SectionHeader>
+      <Callout>{children}</Callout>
     </section>
   );
 }

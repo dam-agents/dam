@@ -5,7 +5,7 @@ import { formatTimestamp, timeAgo } from "@/lib/format-time";
 
 export function SnapshotNote({ capturedAt }: { capturedAt: string }) {
   return (
-    <p className="pb-3 text-[11px] leading-snug text-muted-foreground">
+    <p className="pb-3 text-2xs leading-snug text-muted-foreground">
       Last known configuration, captured{" "}
       <span title={formatTimestamp(capturedAt)}>{timeAgo(capturedAt)}</span> —
       the agent is stopped, so this is a snapshot rather than live state. Start
@@ -21,8 +21,8 @@ export function StaleModelCallout({ model }: { model: string }) {
       <p className="text-sm leading-snug">
         The saved model isn&rsquo;t offered by the provider this agent last
         reached. It&rsquo;s set to{" "}
-        <span className="font-mono text-[13px]">{model}</span>. Chatting will
-        fail until it&rsquo;s changed.
+        <span className="font-mono text-xs">{model}</span>. Chatting will fail
+        until it&rsquo;s changed.
       </p>
     </Callout>
   );

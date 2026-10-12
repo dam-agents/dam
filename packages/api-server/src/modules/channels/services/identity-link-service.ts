@@ -1,3 +1,4 @@
+import { emit, EventType } from "../../../events.js";
 import type { IdentityLink } from "../infrastructure/identity-links-repository.js";
 
 export interface IdentityLinkService {
@@ -39,6 +40,12 @@ export function createIdentityLinkService(deps: {
 
     async link(provider, externalUserId, keycloakSub) {
       await deps.upsert(provider, externalUserId, keycloakSub);
+      emit({
+        type: EventType.IdentityLinked,
+        provider,
+        externalUserId,
+        keycloakSub,
+      });
     },
 
     async unlink(provider, externalUserId) {

@@ -343,6 +343,11 @@ describe("validateRRule", () => {
     "FREQ=MINUTELY;INTERVAL=7;BYDAY=MO,WE",
     "FREQ=HOURLY;BYMINUTE=0,30;BYSETPOS=1",
     "FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0",
+    "FREQ=DAILY;BYHOUR=0,23;BYMINUTE=0,59;BYSECOND=0,59",
+    "FREQ=MONTHLY;BYMONTHDAY=-1,31;BYSETPOS=-1",
+    "FREQ=YEARLY;BYMONTH=1,12;BYYEARDAY=-366,366",
+    "FREQ=YEARLY;BYWEEKNO=-53,53;BYDAY=MO",
+    "FREQ=DAILY;BYHOUR=7, 8;BYMINUTE=0",
   ])("accepts %s", (rrule) => {
     expect(() => validateRRule(rrule, "UTC", [])).not.toThrow();
   });
@@ -359,6 +364,17 @@ describe("validateRRule", () => {
       `FREQ=MONTHLY;BYMONTHDAY=1;BYSETPOS=${"1,".repeat(500)}1`,
       /longer than 1000 characters is not supported/,
     ],
+    ["FREQ=DAILY;BYHOUR=25", /BYHOUR must be within 0 to 23/],
+    ["RRULE:BYHOUR=25;FREQ=DAILY", /BYHOUR must be within 0 to 23/],
+    ["FREQ=DAILY;BYHOUR=-1", /BYHOUR must be within 0 to 23/],
+    ["FREQ=DAILY;BYMINUTE=60", /BYMINUTE must be within 0 to 59/],
+    ["FREQ=DAILY;BYSECOND=60", /BYSECOND must be within 0 to 59/],
+    ["FREQ=YEARLY;BYMONTH=13", /BYMONTH must be within 1 to 12/],
+    ["FREQ=MONTHLY;BYMONTHDAY=0", /BYMONTHDAY must be within/],
+    ["FREQ=MONTHLY;BYMONTHDAY=32", /BYMONTHDAY must be within/],
+    ["FREQ=YEARLY;BYYEARDAY=367", /BYYEARDAY must be within/],
+    ["FREQ=YEARLY;BYWEEKNO=54", /BYWEEKNO must be within/],
+    ["FREQ=MONTHLY;BYMONTHDAY=1;BYSETPOS=0", /BYSETPOS must be within/],
   ])("rejects %s", (rrule, message) => {
     expect(() => validateRRule(rrule, "UTC", [])).toThrow(message);
   });

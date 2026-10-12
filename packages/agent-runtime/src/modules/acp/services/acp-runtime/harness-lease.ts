@@ -7,8 +7,16 @@ export type HarnessTeardownReason =
   | "harness-unresponsive"
   | "shutdown";
 
+export type DeferrableRecycle = "config-recycle" | "env-recycle";
+
+export interface PendingRecycle {
+  reason: DeferrableRecycle;
+  since: number;
+}
+
 export interface HarnessLease {
   ensure(): boolean;
+  pid(): number | null;
   send(frame: unknown): boolean;
   whenReady(cb: () => void): () => void;
   refreshEnv(opts: { force: boolean }): void;
@@ -16,6 +24,8 @@ export interface HarnessLease {
   requestRecycle(): void;
   cancelRecycleRequest(): void;
   maybeRecycle(): void;
+  pending(): PendingRecycle | null;
+  recycleNow(): boolean;
   shutdown(): void;
 }
 
@@ -27,24 +37,32 @@ export interface HarnessLeaseDeps {
   describeBusy: () => string;
   envReadyAtBoot: boolean;
   warmStartTimeoutMs: number;
-  beforeFirstSpawn?: () => Promise<void>;
+  beforeSpawn?: () => Promise<void>;
   envForceRecycleMs: number;
+  keptTasks: () => number;
+  onPendingChange: () => void;
   log: (msg: string) => void;
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Holds the harness child process on loan. Spawns
  * it when the first client needs it, holds early callers back until the env
- * is ready at boot (bounded by a timeout, and covering the boot work that has
+ * is ready at boot (bounded by a timeout, and covering the spawn work that has
  * to precede the first spawn), and takes the process back when the env or the
  * harness's own config changes, or when a caller reports the process
  * unresponsive: right away when idle, after work drains when busy, or after a
- * grace period when forced. A caller that hears from the process again calls
+ * grace period when forced. An env change may have moved the agent to another
+ * provider, so the spawn work runs again, under the same ceiling, before the
+ * process that follows it. A caller that hears from the process again calls
  * its own request off, and a recycle owed for env or config still stands. Every way the process goes down runs the same
  * cleanup and reports one reason — agent-exited, config-recycle, env-recycle,
  * harness-unresponsive, or shutdown — so the cleanup steps cannot drift apart
- * between the paths. A crash is final for the pod; a recycle respawns on the
- * next attach.
+ * between the paths. A crash is final for this lease, which the pod's lease
+ * router then drops unless it is the default one; a recycle respawns on the
+ * next attach. A forced recycle for env or config is held back while a kept
+ * Harness Task runs, because the recycle would kill it: the recycle stays owed
+ * until the task ends or stops being kept, or a caller applies it now. An
+ * unresponsive harness is forced anyway.
  */
 const RECYCLE_LOG: Partial<Record<HarnessTeardownReason, string>> = {
   "config-recycle": "recycling harness to apply a config change",
@@ -58,14 +76,16 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   const readyWaiters = new Set<() => void>();
   let warmTimer: ReturnType<typeof setTimeout> | null = null;
   let bootWorkStarted = false;
-  let bootWorkDone = deps.beforeFirstSpawn === undefined;
+  let bootWorkDone = deps.beforeSpawn === undefined;
+  let bootCycle = 0;
   let gateOpen = envReady && bootWorkDone;
   let bootTimer: ReturnType<typeof setTimeout> | null = null;
-  let pendingRecycle:
-    "config-recycle" | "env-recycle" | "harness-unresponsive" | null = null;
+  let pendingRecycle: DeferrableRecycle | "harness-unresponsive" | null = null;
+  let owedSince: number | null = null;
   let forceTimer: ReturnType<typeof setTimeout> | null = null;
+  let forceHeld = false;
   let supersededRecycle: {
-    reason: "config-recycle" | "env-recycle" | null;
+    reason: DeferrableRecycle | null;
     forced: boolean;
   } | null = null;
 
@@ -99,13 +119,18 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   function startBootWork(): void {
     if (bootWorkStarted || bootWorkDone || !envReady) return;
     bootWorkStarted = true;
-    const hold = deps.beforeFirstSpawn?.();
+    const cycle = bootCycle;
+    const hold = deps.beforeSpawn?.();
     if (!hold) {
       finishBootWork();
       return;
     }
     bootTimer = setTimeout(openGate, deps.warmStartTimeoutMs);
-    void hold.catch(() => {}).then(finishBootWork);
+    void hold
+      .catch(() => {})
+      .then(() => {
+        if (cycle === bootCycle) finishBootWork();
+      });
   }
 
   function markEnvReady(): void {
@@ -127,23 +152,44 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   }
 
   function resetPendingRecycle(): void {
+    const hadPending = pendingRecycle !== null;
     pendingRecycle = null;
+    owedSince = null;
+    forceHeld = false;
     supersededRecycle = null;
     if (forceTimer) {
       clearTimeout(forceTimer);
       forceTimer = null;
     }
+    if (hadPending) deps.onPendingChange();
   }
 
-  function oweRecycle(
-    reason: "config-recycle" | "env-recycle",
-    forced: boolean,
-  ): void {
+  function oweRecycle(reason: DeferrableRecycle, forced: boolean): void {
     if (pendingRecycle === "harness-unresponsive" && supersededRecycle) {
       supersededRecycle.reason ??= reason;
       supersededRecycle.forced ||= forced;
     }
-    pendingRecycle ??= reason;
+    owedSince ??= Date.now();
+    if (pendingRecycle !== null) return;
+    pendingRecycle = reason;
+    deps.onPendingChange();
+  }
+
+  function forceRecycle(): void {
+    forceTimer = null;
+    const kept = deps.keptTasks();
+    if (pendingRecycle === "harness-unresponsive" || kept === 0) {
+      recycle();
+      return;
+    }
+    if (forceHeld) return;
+    forceHeld = true;
+    deps.log(`holding ${pendingRecycle} for ${kept} kept background task(s)`);
+  }
+
+  function armForce(): void {
+    if (!forceTimer)
+      forceTimer = setTimeout(forceRecycle, deps.envForceRecycleMs);
   }
 
   function clearWarmGate(): void {
@@ -164,6 +210,14 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
     deps.onTeardown(reason);
   }
 
+  function rearmSpawnWork(): void {
+    if (deps.beforeSpawn === undefined) return;
+    bootCycle += 1;
+    bootWorkStarted = false;
+    bootWorkDone = false;
+    gateOpen = false;
+  }
+
   function recycle(): void {
     const reason = pendingRecycle ?? "env-recycle";
     resetPendingRecycle();
@@ -172,6 +226,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
     deps.log(RECYCLE_LOG[reason] ?? "recycling unresponsive harness");
     agent = null;
     teardown(reason);
+    if (reason === "env-recycle") rearmSpawnWork();
     old.kill();
   }
 
@@ -189,6 +244,10 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
         teardown("agent-exited");
       });
       return true;
+    },
+
+    pid() {
+      return agent?.pid ?? null;
     },
 
     send(frame) {
@@ -222,8 +281,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
         `env recycle deferred: ${deps.describeBusy()}` +
           (opts.force ? ` — forcing in ${deps.envForceRecycleMs}ms` : ""),
       );
-      if (opts.force && !forceTimer)
-        forceTimer = setTimeout(recycle, deps.envForceRecycleMs);
+      if (opts.force) armForce();
     },
 
     recycleForConfig() {
@@ -237,7 +295,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
         `config recycle deferred: ${deps.describeBusy()} — forcing in ` +
           `${deps.envForceRecycleMs}ms`,
       );
-      if (!forceTimer) forceTimer = setTimeout(recycle, deps.envForceRecycleMs);
+      armForce();
     },
 
     requestRecycle() {
@@ -245,10 +303,11 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
       if (pendingRecycle !== "harness-unresponsive") {
         supersededRecycle = {
           reason: pendingRecycle,
-          forced: forceTimer !== null,
+          forced: forceTimer !== null || forceHeld,
         };
       }
       pendingRecycle = "harness-unresponsive";
+      deps.onPendingChange();
       if (!deps.busy()) {
         recycle();
         return;
@@ -257,7 +316,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
         `harness recycle deferred: ${deps.describeBusy()} — forcing in ` +
           `${deps.envForceRecycleMs}ms`,
       );
-      if (!forceTimer) forceTimer = setTimeout(recycle, deps.envForceRecycleMs);
+      armForce();
     },
 
     cancelRecycleRequest() {
@@ -266,6 +325,8 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
       const restored = supersededRecycle;
       supersededRecycle = null;
       pendingRecycle = restored.reason;
+      if (restored.reason === null) owedSince = null;
+      deps.onPendingChange();
       if (!restored.forced && forceTimer) {
         clearTimeout(forceTimer);
         forceTimer = null;
@@ -278,7 +339,32 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
     },
 
     maybeRecycle() {
-      if (pendingRecycle !== null && !deps.busy()) recycle();
+      if (pendingRecycle === null) return;
+      if (!deps.busy()) {
+        recycle();
+        return;
+      }
+      if (forceHeld && deps.keptTasks() === 0) {
+        forceHeld = false;
+        deps.log(
+          `kept background tasks are gone; ${pendingRecycle} waits for ` +
+            `${deps.describeBusy()} — forcing in ${deps.envForceRecycleMs}ms`,
+        );
+        armForce();
+      }
+    },
+
+    pending() {
+      if (pendingRecycle === null || pendingRecycle === "harness-unresponsive")
+        return null;
+      return { reason: pendingRecycle, since: owedSince ?? Date.now() };
+    },
+
+    recycleNow() {
+      if (!agent || pendingRecycle === null) return false;
+      deps.log(`applying ${pendingRecycle} now, whatever runs`);
+      recycle();
+      return true;
     },
 
     shutdown() {

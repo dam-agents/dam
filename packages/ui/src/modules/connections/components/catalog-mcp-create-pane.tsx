@@ -1,5 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { ConnectionTemplateView } from "api-server-api";
+import {
+  connectionHeaderNameSchema,
+  type ConnectionTemplateView,
+} from "api-server-api";
 import { type ReactNode, useMemo } from "react";
 import { type Control, Controller, useForm } from "react-hook-form";
 import { z } from "zod";
@@ -53,6 +56,16 @@ const mcpFormSchema = z
         code: z.ZodIssueCode.custom,
         path: ["clientId"],
         message: "An OAuth secret needs an OAuth ID.",
+      });
+    const headerNameError = filled(v.headerName)
+      ? connectionHeaderNameSchema.safeParse(v.headerName.trim()).error
+          ?.issues[0]?.message
+      : undefined;
+    if (headerNameError)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["headerName"],
+        message: headerNameError,
       });
     if (filled(v.headerName) !== filled(v.headerValue))
       ctx.addIssue({

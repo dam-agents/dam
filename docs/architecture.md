@@ -58,9 +58,9 @@ The cluster boundary is the trust boundary. Browsers and Slack users reach Platf
 
 Each page is the authoritative, self-contained description of its subsystem.
 
-- [platform-topology](architecture/platform-topology.md) — the long-lived components (controller, api-server, agent-runtime, ui, and the VM runner), the protocols between them, and the K8s resource model; the [images](architecture/agent-images.md) agents run in.
+- [platform-topology](architecture/platform-topology.md) — the long-lived components, the protocols between them, and the K8s resource model; the [images](architecture/agent-images.md) agents run in.
 - [vm-runner](architecture/vm-runner.md) — `vm` hosts; [Mac](architecture/vm-host-runner.md), [image cache](architecture/vm-image-cache.md), [upgrades](architecture/vm-runner-upgrades.md).
-- [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; [sessions](architecture/sessions.md).
+- [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; the [processes](architecture/agent-processes.md) inside; [sessions](architecture/sessions.md).
 - [schedules](architecture/schedules.md) — recurring and one-time work on an Agent: arming and firing occurrences, the Precheck that declines a fire before any model wakes, and the Session each fire opens.
 - [budgets](architecture/budgets.md) — per-user ceiling on concurrently reserved compute, enforced by the controller at the 0→1 scale transition; UserBudget CRs for privileged users.
 - [persistence](architecture/persistence.md) — the storage substrates (Postgres, custom resources, per-Agent PVC, the VM runner volume) and what survives each lifecycle event.
@@ -76,18 +76,18 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [starter-kits](architecture/starter-kits.md) — a proven way of working applied to a new agent — its connections, channels, schedules and onboarding step — read from git-hosted catalogs, never from cluster state.
 - [connections](architecture/connections.md) — unified Connection / Contribution model: templates, grants, credentials, and which rail each Contribution kind takes.
 - [runtime delivery](architecture/runtime-delivery.md) — runtime channel between api-server and agent-runtime, transactional outbox + worker delivery, one-shot events, agent-side driver model.
-- [harness configuration](architecture/harness-config.md) — the Config panel's model/mode/config defaults: how one choice reaches the harness's own file, where the model list is discovered, and what renders while the agent is stopped.
+- [harness configuration](architecture/harness-config.md) — harness defaults and the session model list: how one choice reaches the harness's own file, where the model list is discovered, and what renders while the agent is stopped.
 - [invocations](architecture/invocations.md) — one agent spawning another, set up like a kit, for one result.
 - [knowledge-bases](architecture/knowledge-bases.md) — agents marked as knowledge bases that bootstrap their own knowledge tooling from a one-shot install instruction and are worked with through chat.
 - [home-feed](architecture/home-feed.md) — what Home shows since you last looked: a per-owner attention record kept server-side, so hibernated agents still report.
 - [artifact-library](architecture/artifact-library.md) — agents and users publish work products into an owner-scoped library and share them by link — with anyone, or with a named list of viewers who sign in.
 - [case-studies](architecture/case-studies.md) — agents write sanitized weekly accounts of their own use case: the skill that produces them, and the edition store the owner releases them from.
 - [features](architecture/features.md) — per-user experimental-feature flags: server-stored, default off, gating pre-release surfaces (progressive disclosure, not authorization).
-- [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, inspector-role gating.
-- [agent-telemetry](architecture/agent-telemetry.md) — the user-facing read path over raw agent traces and log records — what an agent actually did in an exchange — scoped to the agents you own.
+- [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, the inspector-gated analytics dashboard.
+- [agent-telemetry](architecture/agent-telemetry.md) — the user-facing read path over raw agent traces and log records, scoped to the agents you own.
 - [metrics](architecture/metrics.md) — the user-facing spend read path behind the global and per-agent Usage surfaces: how much the agents you own have spent.
 - [logging](architecture/logging.md) — Pino structured logging to stdout, and the real-identity security audit trail built on it (the forensic counterpart to pseudonymized usage-tracking).
-- [observability](architecture/observability.md) — the optional, bundled agent-telemetry backend: an OTLP collector writing OpenTelemetry signals into a columnar store with an exploration UI, gated by the mesh.
+- [observability](architecture/observability.md) — the optional, bundled agent-telemetry backend: an OTLP collector writing OpenTelemetry signals into a columnar store, gated by the mesh.
 - [supply-chain](security/supply-chain.md) — how each external dependency type is scanned for CVEs and defended against supply-chain attacks.
 - [code](security/code.md) — CodeQL SAST and pre-commit hardening.
 - [secrets](security/secrets.md) — GitHub secret storage, scanning, and push protection.

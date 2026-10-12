@@ -65,10 +65,10 @@ const FEATURE_ROWS: FeatureRow[] = [
       "Shows what each turn of a conversation actually did — its spans, its records and what the call cost — under the reply itself, and adds a telemetry export to the session menu.",
   },
   {
-    id: "agent-avatars",
-    label: "Agent avatars",
+    id: "processes",
+    label: "Processes panel",
     description:
-      "Gives every agent a robot-head avatar drawn from its name and owner, shown in the agents list, the chat and the Home feed. Renaming an agent gives it a new face.",
+      "See what runs in your agent, what keeps it awake, and what finished while you were away.",
   },
 ];
 
@@ -107,7 +107,7 @@ export function FeaturesTab() {
   const setFeature = useSetFeature();
 
   return (
-    <div className="anim-in">
+    <div>
       <PageHeader
         title="Experimental features"
         description="Experimental features, toggled per user."

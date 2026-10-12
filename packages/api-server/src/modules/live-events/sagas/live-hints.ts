@@ -99,6 +99,9 @@ export function hintFor(
     case EventType.FeatureFlagChanged:
     case EventType.ApiKeyChanged:
     case EventType.EntryPointChosen:
+    case EventType.StarterKitOnboarded:
+    case EventType.IdentityLinked:
+    case EventType.AgentOutOfMemory:
       return null;
     default: {
       const unhandled: never = event;

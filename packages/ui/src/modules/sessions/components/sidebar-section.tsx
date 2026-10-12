@@ -4,6 +4,7 @@ import { DisclosureToggle } from "@/components/ui/disclosure";
 import { cn } from "@/lib/utils";
 
 export function SidebarSection({
+  id,
   title,
   open,
   onToggle,
@@ -15,6 +16,7 @@ export function SidebarSection({
   ref,
   children,
 }: {
+  id?: string;
   title: string;
   open: boolean;
   onToggle: () => void;
@@ -28,6 +30,7 @@ export function SidebarSection({
 }) {
   return (
     <div
+      id={id}
       className={cn("flex flex-col min-h-0 overflow-hidden", className)}
       style={style}
       ref={ref}

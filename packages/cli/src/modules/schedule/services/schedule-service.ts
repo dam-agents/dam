@@ -74,6 +74,7 @@ export interface ScheduleService {
   >;
   toggle(
     id: string,
+    enabled: boolean,
   ): Promise<
     Result<
       ScheduleView,
@@ -156,9 +157,9 @@ export function createScheduleService(deps: {
         return classifyTrpcError(e);
       }
     },
-    async toggle(id) {
+    async toggle(id, enabled) {
       try {
-        return ok(await deps.trpc.schedules.toggle.mutate({ id }));
+        return ok(await deps.trpc.schedules.toggle.mutate({ id, enabled }));
       } catch (e) {
         if (codeOf(e) === "NOT_FOUND") {
           return err({ kind: "schedule-not-found", id });

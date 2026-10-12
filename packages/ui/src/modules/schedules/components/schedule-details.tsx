@@ -63,7 +63,7 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
             {precheck}
           </p>
           {status?.lastPrecheckError && (
-            <p className="mt-1 text-xs break-all whitespace-pre-wrap text-destructive">
+            <p className="mt-1 text-xs break-all whitespace-pre-wrap text-danger">
               {(status.precheckFailedCount ?? 0) > 1
                 ? `Precheck failed ${status.precheckFailedCount} times in a row — ran anyway: `
                 : "Precheck failed — ran anyway: "}
@@ -82,7 +82,7 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
             <Time size={12} /> {nextRun}
           </span>
           {stopReason && (
-            <p className="mt-1 text-xs font-normal break-words text-destructive">
+            <p className="mt-1 text-xs font-normal break-words text-danger">
               {stopReason}
             </p>
           )}
@@ -115,6 +115,11 @@ export function ScheduleDetails({ schedule }: { schedule: Schedule }) {
         <DetailCard label="Model">
           <ScheduleModel agentId={schedule.agentId} model={model} />
         </DetailCard>
+        {schedule.sessionTitle && (
+          <DetailCard label="Session title">
+            <span className="break-words">{schedule.sessionTitle}</span>
+          </DetailCard>
+        )}
       </div>
     </div>
   );

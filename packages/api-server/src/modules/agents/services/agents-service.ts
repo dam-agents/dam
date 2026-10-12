@@ -1,4 +1,8 @@
 import {
+  DEFAULT_TEMPLATE_ID,
+  RETIRED_TEMPLATE_HARNESS,
+} from "../../templates/index.js";
+import {
   isProtectedAgentEnvName,
   type AgentsService,
   type AgentCreateInput,
@@ -17,7 +21,7 @@ import {
   type ConnectSlackResult,
   type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
-  type SessionBackgroundWork,
+  type AgentBackgroundWork,
   type TemplateUpdate,
   type UpgradeAgentError,
   ChannelType,
@@ -223,18 +227,23 @@ export function executeTelegramBind(deps: {
   };
 }
 
+const NO_BACKGROUND_WORK: AgentBackgroundWork = {
+  sessions: [],
+  keptProcesses: 0,
+};
+
 export function executeBackgroundWorkRead(deps: {
   getAgent: (id: string) => Promise<Pick<InfraAgent, "hibernated"> | null>;
   podStatus: PodStatusClient;
 }) {
-  return async (id: string): Promise<SessionBackgroundWork[] | null> => {
+  return async (id: string): Promise<AgentBackgroundWork | null> => {
     const infra = await deps.getAgent(id);
     if (!infra) return null;
-    if (infra.hibernated) return [];
+    if (infra.hibernated) return NO_BACKGROUND_WORK;
     try {
       return await deps.podStatus.backgroundWork(id);
     } catch {
-      return [];
+      return NO_BACKGROUND_WORK;
     }
   };
 }
@@ -475,9 +484,14 @@ export function executeTemplateUpgrade(deps: {
     const update = templateImageUpdate(infra.spec.image, tmpl.spec.image);
     if (!update) return ok(infra);
 
+    const harness =
+      infra.spec.harness ??
+      (Object.hasOwn(RETIRED_TEMPLATE_HARNESS, infra.templateId)
+        ? RETIRED_TEMPLATE_HARNESS[infra.templateId]
+        : tmpl.spec.harness);
     const patched = await deps.patchSpec(id, {
       image: update.toImage,
-      ...(tmpl.spec.harness ? { harness: tmpl.spec.harness } : {}),
+      ...(harness ? { harness } : {}),
     });
     if (!patched) return err({ type: "AgentNotFound" as const });
     securityLog("info", "agent.upgrade", {
@@ -531,6 +545,8 @@ export function createAgentsService(deps: {
   agentDefaultStorageSize?: string;
   agentDefaultMounts: readonly AgentMount[];
   virtualizationEnabled?: boolean;
+  defaultHarness?: string;
+  telemetry?: boolean;
   runtimeMigrationRetentionMs?: number | null;
   resizeGate?: ResizeGatePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
@@ -539,6 +555,10 @@ export function createAgentsService(deps: {
       connectionIds: string[];
       providerConnectionId?: string;
     }): Promise<{ grantedConnectionIds: string[] }>;
+    defaultProvider(
+      connectionIds: string[],
+      template: { harness?: string; providers?: readonly string[] },
+    ): Promise<string | null>;
     applyAfterCreate(
       agentId: string,
       sel: { connectionIds: string[] },
@@ -617,6 +637,21 @@ export function createAgentsService(deps: {
       code: "BAD_REQUEST",
       message: `secretRef "${secretRef}" does not name a Secret you own`,
     });
+  }
+
+  async function assertNameFree(
+    name: string,
+    owner: string | undefined,
+    agentId?: string,
+  ): Promise<void> {
+    const taken = (await deps.repo.list(owner)).some(
+      (a) => a.name === name && a.id !== agentId,
+    );
+    if (taken)
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `you already have an agent named "${name}"`,
+      });
   }
 
   async function safeStatus(id: string): Promise<ContributionsStatus> {
@@ -824,6 +859,7 @@ export function createAgentsService(deps: {
       type: EventType.SlackConnected,
       agentId: id,
       slackChannelId,
+      ownerSub: infra.owner ?? deps.owner ?? null,
     });
 
     const wasAmbient = existing?.ambient === true;
@@ -942,13 +978,25 @@ export function createAgentsService(deps: {
     async create(input: AgentCreateInput) {
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
-      if (input.templateId) {
-        const tmpl = await deps.readTemplateSpec(input.templateId);
+      let templateProviders: readonly string[] | undefined;
+      const requestedTemplate =
+        input.templateId ??
+        (input.image === undefined ? DEFAULT_TEMPLATE_ID : undefined);
+      if (requestedTemplate) {
+        const tmpl = await deps.readTemplateSpec(requestedTemplate);
         if (!tmpl) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: `template "${input.templateId}" not found`,
-          });
+          throw new TRPCError(
+            input.templateId === undefined
+              ? {
+                  code: "BAD_REQUEST",
+                  message:
+                    "this install has no default template; name a templateId or an image",
+                }
+              : {
+                  code: "NOT_FOUND",
+                  message: `template "${requestedTemplate}" not found`,
+                },
+          );
         }
         spec = assembleSpecFromTemplate(
           input.name,
@@ -961,7 +1009,13 @@ export function createAgentsService(deps: {
           },
           deps.agentDefaultLimits,
         );
-        templateId = input.templateId;
+        if (input.harness !== undefined) spec.harness = input.harness;
+        if (Object.hasOwn(RETIRED_TEMPLATE_HARNESS, requestedTemplate))
+          spec.harness ??= RETIRED_TEMPLATE_HARNESS[requestedTemplate];
+        if (requestedTemplate === DEFAULT_TEMPLATE_ID)
+          spec.harness ??= deps.defaultHarness;
+        templateId = requestedTemplate;
+        templateProviders = tmpl.spec.providers;
       } else {
         spec = assembleSpecFromImage(
           input.name,
@@ -986,9 +1040,11 @@ export function createAgentsService(deps: {
       const templateEnv = seedTelemetryIdentity(
         (spec.env as EnvVar[] | undefined) ?? [],
         input.name,
+        deps.telemetry === true,
       );
       delete spec.env;
       if (input.secretRef !== undefined) spec.secretRef = input.secretRef;
+      if (input.avatar !== undefined) spec.avatar = input.avatar;
       if (input.hibernationTimeoutMin !== undefined)
         spec.hibernationTimeout = minutesToDuration(
           input.hibernationTimeoutMin,
@@ -997,14 +1053,28 @@ export function createAgentsService(deps: {
         spec.telemetryAttributionId = input.telemetryAttributionId;
       if (input.requireConnectionAddress) spec.requireConnectionAddress = true;
 
+      const providerConnectionId =
+        input.providerConnectionId ??
+        (templateId !== undefined && !input.noDefaultProvider
+          ? await deps.grantProvisioner?.defaultProvider(
+              input.connectionIds ?? [],
+              {
+                ...(typeof spec.harness === "string" && {
+                  harness: spec.harness,
+                }),
+                ...(templateProviders && { providers: templateProviders }),
+              },
+            )
+          : undefined) ??
+        undefined;
       const grantSel = {
         connectionIds: Array.from(
           new Set([
             ...(input.connectionIds ?? []),
-            ...(input.providerConnectionId ? [input.providerConnectionId] : []),
+            ...(providerConnectionId ? [providerConnectionId] : []),
           ]),
         ),
-        providerConnectionId: input.providerConnectionId,
+        providerConnectionId,
       };
       if (input.providerConnectionId && !deps.grantProvisioner) {
         throw new TRPCError({
@@ -1027,6 +1097,7 @@ export function createAgentsService(deps: {
       }
       const owner = deps.owner;
       await assertOwnSecretRef(input.secretRef, owner);
+      await assertNameFree(input.name, owner);
       const agentId = input.id ?? generateK8sName("agent");
 
       if (input.registryCredential) {
@@ -1146,15 +1217,18 @@ export function createAgentsService(deps: {
     },
 
     async update(input: AgentUpdateInput) {
-      if (input.secretRef) {
+      if (input.secretRef || input.name !== undefined) {
         const current = await deps.repo.get(input.id, deps.owner);
         if (!current) return null;
         await assertOwnSecretRef(input.secretRef, current.owner, input.id);
+        if (input.name !== undefined && input.name !== current.name)
+          await assertNameFree(input.name, current.owner, input.id);
       }
       const patch: Record<string, unknown> = {};
       if (input.name !== undefined) patch.name = input.name;
       if (input.description !== undefined)
         patch.description = input.description;
+      if (input.avatar !== undefined) patch.avatar = input.avatar;
       if (input.secretRef !== undefined) patch.secretRef = input.secretRef;
       if (input.hibernationTimeoutMin !== undefined)
         patch.hibernationTimeout =

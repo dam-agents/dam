@@ -3,12 +3,11 @@ import type { ConnectionView } from "api-server-api";
 import { useEffect, useState } from "react";
 
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
-import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 
 import {
@@ -139,7 +138,7 @@ export function ConnectionEditGithubAppScopeDialog({
   const narrowed = narrowedRepos > 0 || Object.keys(permissions).length > 0;
 
   return (
-    <Modal widthClass="w-[560px]">
+    <Modal onClose={save.isPending ? undefined : onClose}>
       <DialogHeader
         title="Edit repositories & permissions"
         subtitle={connection.name}
@@ -214,18 +213,16 @@ export function ConnectionEditGithubAppScopeDialog({
           </Callout>
         )}
       </DialogBody>
-      <DialogFooter>
-        <Button variant="ghost" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          disabled={!installation || save.isPending}
-          onClick={() => void submit()}
-          data-testid="edit-scope-submit"
-        >
-          {save.isPending ? "Saving…" : "Save"}
-        </Button>
-      </DialogFooter>
+      <DialogActions
+        onCancel={onClose}
+        cancelDisabled={save.isPending}
+        label="Save"
+        pendingLabel="Saving…"
+        pending={save.isPending}
+        disabled={!installation}
+        onSubmit={() => void submit()}
+        testId="edit-scope-submit"
+      />
     </Modal>
   );
 }

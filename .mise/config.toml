@@ -1,4 +1,6 @@
-min_version = "2026.10.2"
+# 2026.10.4 (2026-10-07) is under the 7-day floor: it builds pipx venvs on
+# mise's own Python, not whichever one uv finds. Floor passes 2026-10-14.
+min_version = "2026.10.4"
 monorepo_root = true
 
 [monorepo]
@@ -15,10 +17,10 @@ CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "{{config_root}}/.mise/zig/cc"
 
 [vars]
 repo_root = "{{config_root}}"
-base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:33ba0eb07e5acb7da2469df46d09081a6e1079c7e4f3769198316f5efac5a218"
-base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:dbe63cc0af0d272c897f5e136173c9670f991deede43867f59876066dd6c4e5b"
-base_image_keycloak = "quay.io/keycloak/keycloak:26.8.0@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc"
-base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:f9fc48eac6322872a373fedc5d1819ba3945f7bc18a3260b7612030f1bedefcb"
+base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:dffe609fba03be24faf352015d3f2e3950e18a82922b39f8b3828b9696cc6fcf"
+base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:4730fe5f23bec7eb86b9736bc1458d58862372b1d1555ca9da77d21d4fffea17"
+base_image_keycloak = "quay.io/keycloak/keycloak:26.8.0@sha256:27b3230fbabb8c9ff3c66c864cf09dcd8a41aca82e5100679d109ef0eeb05741"
+base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:7c88ec5f1177a2ab937e3fb99c3e42c367c629a7632e5c90a9dc607a9e4d1dcc"
 base_image_debian = "mirror.gcr.io/library/debian:trixie-slim"
 
 [deps.pnpm]
@@ -32,14 +34,20 @@ auto = true
 "conda:pigz" = "latest"
 "github:Boshen/cargo-shear" = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
-"go:honnef.co/go/tools/cmd/staticcheck" = "latest"
+# Staticcheck 0.8.1 cannot read go1.27.2's export data (dominikh/go-tools#1832).
+# The pin is its unreleased fix, commit f1838cc3 (2026-10-09), under the
+# 7-day floor; return to latest once a release after 0.8.1 ships it.
+"go:honnef.co/go/tools/cmd/staticcheck" = "v0.7.0-0.dev.0.20261009221906-f1838cc308e5"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
 "go:sigs.k8s.io/crdify" = "latest"
 "npm:json-schema-to-typescript" = "latest"
 "npm:knip" = "latest"
 crane = "latest"
-fd = "latest"
 gh = "latest"
+# go1.27.2 (2026-10-08) is locked under the 7-day floor: it fixes the
+# stdlib CVEs in the controller image. Until it ages past the floor
+# (2026-10-15), a re-lock with --bump --minimum-release-age 7d drops it to
+# 1.27.1: re-lock go alone without the flag afterwards.
 go = "1.27"
 gum = "latest"
 helm = "latest"
@@ -127,7 +135,7 @@ depends = ["//...:test"]
 [tasks."check:task-files"]
 description = "Every file task under a .mise/tasks directory is executable"
 run = """
-bad=$(fd --hidden --type f --full-path '/[.]mise/tasks/' --exec-batch sh -c 'for f; do [ -x "$f" ] || echo "$f"; done' sh)
+bad=$(git ls-files -co --exclude-standard | grep -E '(^|/)[.]mise/tasks/' | while read -r f; do [ ! -f "$f" ] || [ -x "$f" ] || echo "$f"; done)
 [ -z "$bad" ] || { echo "not executable (chmod +x):"; echo "$bad"; exit 1; }
 """
 outputs = []

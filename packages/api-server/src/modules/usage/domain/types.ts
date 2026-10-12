@@ -15,3 +15,9 @@ export type AgentRegistryRow = {
   id: string;
   ownerSub: string;
 };
+
+export type AgentStarterKitFacts = {
+  id: string;
+  starterKit: string | null;
+  onboardedAt: string | null;
+};

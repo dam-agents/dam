@@ -60,7 +60,7 @@ test("recreating a disconnected connection regrants cleanly", async ({
   await test.step("open the sandbox connections page", async () => {
     await page.goto(`${baseUrl}/sandboxes/${agentId}/connections`);
     await expect(
-      page.getByRole("heading", { level: 1, name: agentName }),
+      page.getByRole("heading", { level: 2, name: agentName }),
     ).toBeVisible();
     await expect(
       page.getByTestId(`catalog-connection-${originalId}`),

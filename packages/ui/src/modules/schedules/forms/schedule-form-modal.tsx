@@ -34,7 +34,7 @@ export function ScheduleFormModal({ agentId, existing, onClose }: Props) {
       };
 
   return (
-    <Modal>
+    <Modal onClose={onClose}>
       {kind === "once" ? (
         <OnceScheduleForm {...formProps} />
       ) : (

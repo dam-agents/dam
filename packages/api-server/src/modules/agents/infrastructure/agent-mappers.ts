@@ -5,7 +5,10 @@ import {
   seedStampSchema,
 } from "api-server-api";
 
-import { POD_FAILURE_REASONS } from "../domain/wake-failure.js";
+import {
+  GATEWAY_FAILURE_REASONS,
+  POD_FAILURE_REASONS,
+} from "../domain/wake-failure.js";
 import { type RuntimeFeatures } from "agent-runtime-api";
 import type {
   WorkspaceFailure,
@@ -133,6 +136,7 @@ export interface InfraAgent {
   agentPodReady?: boolean;
   gatewayPodReady?: boolean;
   gatewayPodNotReadyReason?: string;
+  gatewayFailure?: string;
 }
 
 const TERMINAL_MACHINE_REASONS = new Set(
@@ -316,6 +320,13 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     gatewayPodReady: gatewayPod ? gatewayPod.status === "True" : undefined,
     gatewayPodNotReadyReason:
       gatewayPod?.status === "False" ? gatewayPod.reason : undefined,
+    gatewayFailure:
+      !hibernated &&
+      ready?.reason !== READY_REASON_OVER_BUDGET &&
+      gatewayPod?.status === "False" &&
+      GATEWAY_FAILURE_REASONS.has(gatewayPod.reason ?? "")
+        ? gatewayPod.message || gatewayPod.reason
+        : undefined,
   };
 }
 
@@ -357,6 +368,7 @@ export function assembleAgent(
     notReadyMessage: infra.notReadyMessage,
     podRestarts: infra.podRestarts,
     podRestartReason: infra.podRestartReason,
+    gatewayFailure: infra.gatewayFailure,
     contributionFailures,
     unsupportedContributionKinds,
     workspaceFailures,

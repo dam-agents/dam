@@ -29,6 +29,10 @@ interface PlatformMeta {
   runStartedAt?: string;
   runTotalMs?: number;
   runCount?: number;
+  harness?: string;
+  provider?: string;
+  model?: string;
+  settings?: Record<string, string>;
 }
 
 interface ListedSession {
@@ -66,6 +70,10 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     runStartedAt: p?.runStartedAt ?? null,
     runTotalMs: p?.runTotalMs ?? null,
     runCount: p?.runCount ?? null,
+    harness: p?.harness ?? null,
+    provider: p?.provider ?? null,
+    model: p?.model ?? null,
+    ...(p?.settings && { settings: p.settings }),
   };
 }
 
@@ -143,6 +151,11 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     runStartedAt: s.runStartedAt,
     runTotalMs: s.runTotalMs,
     runCount: s.runCount,
+    harness: s.harness ?? null,
+    provider: s.provider ?? null,
+    model: s.model ?? null,
+    ...(s.settings && { settings: s.settings }),
+    ...(s.spend ? { spend: s.spend } : {}),
   };
 }
 
@@ -219,6 +232,14 @@ export async function removeQueuedPrompt(
   await withConnection(agentId, (conn) =>
     conn.agent.request("platform/removeQueued", { sessionId, promptId }),
   );
+}
+
+export async function setAgentSessionTitle(
+  agentId: string,
+  sessionId: string,
+  title: string | null,
+): Promise<void> {
+  await agentTrpc(agentId).sessions.setTitle.mutate({ sessionId, title });
 }
 
 export async function forgetUndeliveredPrompt(

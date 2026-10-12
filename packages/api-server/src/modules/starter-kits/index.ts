@@ -1,4 +1,5 @@
 export { composeStarterKitsForOwner } from "./compose.js";
+export { parseKitRef } from "./domain/requirements.js";
 export type { StarterKitsRepository } from "./services/starter-kits-service.js";
 export {
   createCatalogRefresh,

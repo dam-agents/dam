@@ -192,16 +192,20 @@ set in this image, so the flag alone is enough). If a channel is bound, gate
 summaries still post to it as progress (see "Reporting progress to
 Slack/Telegram").
 
-**Always launch the campaign as a background process** so you stay responsive and
-can query state with `nous` while it runs. Keep the PID and the log in the
-campaign directory:
+**Always launch the campaign as kept background work** with `platform-keep`, so
+you stay responsive and can query state with `nous` while it runs. It returns at
+once, holds the agent awake until the campaign exits, and lists it in the user's
+Processes panel, where they can see it and stop it. Keep the PID and the log in
+the campaign directory:
 
 ```sh
 cd "$NOUS_CAMPAIGN_PARENT/<run_id>"
-nohup nous run campaign.yaml --auto-approve --max-iterations <N> \
-  > campaign.log 2>&1 &
-echo $! > run.pid
+platform-keep --log campaign.log -- sh -c 'echo $$ > run.pid
+  exec nous run campaign.yaml --auto-approve --max-iterations <N>'
 ```
+
+Never launch a campaign with a bare `nohup … &`: it runs on, but nothing holds
+the agent awake for it.
 
 Then report status without blocking: `nous status <run_id> --line` (see
 "Monitoring" for the right liveness signals). Use `nous stop <run_id>` to halt
@@ -226,8 +230,8 @@ channel, re-run the bridge check first — see "Reporting progress"):
 
 ```sh
 cd "$NOUS_CAMPAIGN_PARENT/<run_id>"
-nohup nous resume campaign.yaml --auto-approve >> campaign.log 2>&1 &
-echo $! > run.pid
+platform-keep --log campaign.log -- sh -c 'echo $$ > run.pid
+  exec nous resume campaign.yaml --auto-approve'
 ```
 
 ## Handling "approve" responses from the user

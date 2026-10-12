@@ -46,8 +46,8 @@ export function useRuntimeMigrationControls() {
         </>
       );
       if (
-        !(await showConfirm(msg, "Undo the move", {
-          confirmLabel: "Abort",
+        !(await showConfirm(msg, "Undo the move?", {
+          confirmLabel: "Undo move",
         }))
       )
         return;

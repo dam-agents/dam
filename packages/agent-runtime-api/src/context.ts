@@ -7,6 +7,7 @@ import type { SkillsService } from "./modules/skills/types.js";
 import type { SshService } from "./modules/ssh/types.js";
 import type { RuntimeChannelService } from "./modules/runtime/service.js";
 import type { HarnessConfigService } from "./modules/harness-config/types.js";
+import type { ProcessesService } from "./modules/processes/types.js";
 
 export interface AgentRuntimeContext {
   artifactApi: ArtifactApiService;
@@ -18,4 +19,5 @@ export interface AgentRuntimeContext {
   ssh: SshService;
   runtime: RuntimeChannelService;
   harnessConfig: HarnessConfigService;
+  processes: ProcessesService;
 }

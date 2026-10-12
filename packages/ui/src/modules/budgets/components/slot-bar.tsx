@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 import type { ComputeSegment } from "../lib/slots.js";
 
-const SEGMENT_FILL: Record<ComputeSegment["state"], string> = {
+export const SEGMENT_FILL: Record<ComputeSegment["state"], string> = {
   running: "bg-success",
   awake: "bg-accent",
   available: "border border-dashed border-muted-foreground/30",

@@ -3,7 +3,9 @@ export { createArtifactTouchReporter } from "./artifact-touch-reporter.js";
 export { createHarnessClient, type HarnessClient } from "./harness-client.js";
 export {
   loadManifest,
+  harnessConfigBindingOf,
   resolveDrivers,
+  sessionModelOf,
   type RuntimeManifest,
 } from "./manifest.js";
 

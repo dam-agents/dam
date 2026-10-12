@@ -1,7 +1,0 @@
-{
-  "name": "mise-npm-install",
-  "private": true,
-  "dependencies": {
-    "agent-browser": "0.38.1"
-  }
-}

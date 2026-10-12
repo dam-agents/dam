@@ -1,15 +1,7 @@
 import type { ArtifactKind } from "api-server-api";
 import { extensionOf } from "../domain/artifact-kind.js";
 import { ARTIFACT_BRIDGE_SHIM } from "./bridge-shim.js";
-
-function escapeHtml(s: string): string {
-  return s
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
+import { escapeHtml } from "../../../core/escape-html.js";
 
 function jsStringLiteral(s: string): string {
   return JSON.stringify(s).replaceAll("<", "\\u003c");

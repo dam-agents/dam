@@ -123,8 +123,14 @@ export function AgentUnavailableOverlay({
       onBack={onBack}
       footer={waiting ? <SkipTheWait agent={agent} /> : undefined}
     >
-      {state === "starting" && <AgentAvatar name={agent.name} size={128} />}
-      {Icon ? (
+      {waiting ? (
+        <AgentAvatar
+          name={agent.name}
+          avatar={agent.avatar}
+          size={128}
+          playing
+        />
+      ) : Icon ? (
         <Icon size={40} className="text-muted-foreground" />
       ) : (
         <Spinner size={40} />
@@ -206,7 +212,7 @@ function SkipTheWait({ agent }: { agent: AgentView }) {
   const keepAlwaysOn = async () => {
     const ok = await showConfirm(
       "This agent will never hibernate — it stays running and consumes resources until you set a timeout again in the agent settings.",
-      "Keep always on",
+      "Keep always on?",
       { icon: Power, confirmLabel: "Keep always on" },
     );
     if (ok) updateAgent.mutate({ id: agent.id, hibernationTimeoutMin: 0 });

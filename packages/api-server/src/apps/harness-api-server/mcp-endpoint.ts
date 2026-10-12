@@ -8,6 +8,7 @@ import {
   AGENT_HOME_DIR,
   AGENT_WORK_DIR,
   SESSION_REF_HEADER,
+  sessionTitleSchema,
   type AppRouter,
 } from "agent-runtime-api";
 import type { SatelliteView } from "api-server-api";
@@ -286,7 +287,11 @@ export function createMcpSession(
     `Post a NEW top-level message to a connected channel (slack or telegram) — for announcements, cross-posting to another channel, or starting a new thread. On Slack this is NOT how you answer a message you are currently handling: use reply for that, so the answer stays in the thread it arrived in. On Telegram, which has no threads, it is also how you answer: pass the chatId the message arrived on. Omit chatId for the default chat (Slack: the agent's bound channel; Telegram: the last-active chat). Messages are posted as the bot, attributed to this agent. On Slack, set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file by setting attachment.path. 50 MB cap.`,
     {
       channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
-      text: z.string(),
+      text: z
+        .string()
+        .describe(
+          "On Slack, use standard Markdown, not mrkdwn. Put code fences on separate lines, with an optional language after the opening fence.",
+        ),
       chatId: z
         .string()
         .optional()
@@ -518,7 +523,11 @@ export function createMcpSession(
     "reply",
     `Reply in Slack: post a message into the thread of the Slack conversation you are currently answering. This is how you respond — plain text you write is not delivered to Slack, only this tool is. Set unfurlLinks or unfurlMedia to false to suppress link or media preview cards. Optionally attach a single file to the reply by setting attachment.path (leave text empty to post the file alone) — accepts an absolute path on the agent pod (e.g. ${agentHome}/work/report.md) or a path relative to your workspace (e.g. report.md); it lands in the same thread. 50 MB cap. Use send_channel_message instead for a new top-level or cross-channel post.`,
     {
-      text: z.string(),
+      text: z
+        .string()
+        .describe(
+          "Use standard Markdown, not Slack mrkdwn. Put code fences on separate lines, with an optional language after the opening fence.",
+        ),
       attachment: attachmentInput,
       threadTs: z
         .string()
@@ -683,14 +692,14 @@ export function createMcpSession(
       });
       if ("error" in result) return errorResult(result.error);
       return textResult(
-        `Handed to ${result.agent}. It picks the turn up from here and answers in the thread, so post nothing further. Your turn ends now; you will not see its reply, and if it cannot pick the turn up the person who asked is told, not you.`,
+        `Handed to ${result.agent}. It picks the turn up from here and answers in the thread, so post nothing further. Your turn ends now, with no further tool calls or thinking; you will not see its reply, and if it cannot pick the turn up the person who asked is told, not you.`,
       );
     },
   );
 
   server.tool(
     "no_reply_needed",
-    "End your turn without sending anything to the channel. Call this when the message doesn't need a response from you — routine chatter that isn't aimed at you, or something another person already handled. It just records that you deliberately stayed silent.",
+    "End your turn without sending anything to the channel. Call this when the message doesn't need a response from you — routine chatter that isn't aimed at you, or something another person already handled. It records that you deliberately stayed silent. Call it last, once all your work is done.",
     {
       reason: z
         .string()
@@ -710,7 +719,9 @@ export function createMcpSession(
         threadTs,
       );
       if ("error" in result) return errorResult(result.error);
-      return textResult("No reply sent.");
+      return textResult(
+        "No reply sent. Your turn is over: stop now, with no further tool calls or thinking.",
+      );
     },
   );
 
@@ -930,6 +941,11 @@ export function createMcpSession(
         .describe(
           "Optional model this schedule's sessions run on, instead of the default, e.g. a cheap model for a frequent routine check. Use a name from this agent's model settings (for Claude Code: fable, opus, sonnet or haiku). Omit it to run on the harness's own default, what the agent's Default model setting gives, not on whatever model the agent is currently set to. On a harness with no such default (no provider pin and none declared by the harness), a schedule without a model follows the agent's current model instead. A model the harness cannot switch to fails the run with the reason rather than running on the default.",
         ),
+      sessionTitle: sessionTitleSchema
+        .optional()
+        .describe(
+          "Optional title for the sessions this schedule opens, shown in the session list instead of the one the harness derives from the task. A continuous schedule names its one session once; the user or agent may rename it later.",
+        ),
     },
     async ({
       name,
@@ -941,6 +957,7 @@ export function createMcpSession(
       sessionMode,
       precheck,
       model,
+      sessionTitle,
     }) => {
       if ((cron === undefined) === (rrule === undefined)) {
         return errorResult(
@@ -969,6 +986,7 @@ export function createMcpSession(
                   sessionMode,
                   precheck,
                   model,
+                  sessionTitle,
                 },
                 "agent",
               )
@@ -981,6 +999,7 @@ export function createMcpSession(
                   sessionMode,
                   precheck,
                   model,
+                  sessionTitle,
                 },
                 "agent",
               );
@@ -1043,8 +1062,13 @@ export function createMcpSession(
         .describe(
           "Model the new session runs on, e.g. 'haiku' for a routine check or 'opus' for a hard one; omit to run on the harness's own default (what the agent's Default model setting gives), not on whatever model the agent is currently set to. Not with inSession continue, which keeps this session's model. An unknown value is refused with the list of choices.",
         ),
+      sessionTitle: sessionTitleSchema
+        .optional()
+        .describe(
+          "Optional title for the new session, shown in the session list instead of the one the harness derives from the task. Not with inSession continue, which keeps this session's title.",
+        ),
     },
-    async ({ name, task, at, timezone, inSession, model }) => {
+    async ({ name, task, at, timezone, inSession, model, sessionTitle }) => {
       if (at !== undefined && !timezone)
         return errorResult("`at` requires `timezone`.");
       const zone = timezone ?? "UTC";
@@ -1062,6 +1086,7 @@ export function createMcpSession(
             timezone: zone,
             ...(at ? { at } : {}),
             ...(model ? { model } : {}),
+            ...(sessionTitle ? { sessionTitle } : {}),
           },
           "agent",
           mode !== "fresh" && deps.sessionRef
@@ -1084,15 +1109,45 @@ export function createMcpSession(
   );
 
   server.tool(
+    "rename_session",
+    "Rename THIS session: set the title the user sees for it in the session list, in place of the one the harness derived from the first message. Use it when the user asks you to name or rename the conversation, or to give a long-running session a title that says what it is about. Pass no title to drop a title set earlier and show the harness's own again.",
+    {
+      title: sessionTitleSchema
+        .optional()
+        .describe("The new title, at most 200 characters."),
+    },
+    async ({ title }) => {
+      const ref = deps.sessionRef;
+      if (!ref)
+        return errorResult(
+          "renaming needs to know which session is calling, and this harness does not identify it.",
+        );
+      try {
+        await runtimeClient.sessions.setTitle.mutate({
+          ref,
+          title: title ?? null,
+        });
+      } catch (err) {
+        if (err instanceof TRPCClientError && err.data?.code === "NOT_FOUND")
+          return errorResult(
+            "the platform does not track this session, or this agent's runtime is too old to rename sessions.",
+          );
+        throw err;
+      }
+      return json({ title: title ?? null });
+    },
+  );
+
+  server.tool(
     "toggle_schedule",
-    "Enable or disable a platform schedule by id. Only affects schedules belonging to this agent.",
-    { id: z.string().min(1) },
-    async ({ id }) => {
+    "Enable or disable a platform schedule by id. Pass `enabled` to set the state, so a retried call cannot undo itself; without it the state flips. Only affects schedules belonging to this agent.",
+    { id: z.string().min(1), enabled: z.boolean().optional() },
+    async ({ id, enabled }) => {
       const existing = await schedules.get(id);
       if (!existing || existing.agentId !== agentId) {
         return errorResult(`schedule ${id} not found on this agent`);
       }
-      const updated = await schedules.toggle(id);
+      const updated = await schedules.toggle(id, enabled);
       if (!updated) return errorResult(`schedule ${id} not found`);
       return json({ id: updated.id, enabled: updated.spec.enabled });
     },

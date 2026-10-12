@@ -79,7 +79,7 @@ export function ScheduleResultsModal({
         : `${sessions.length} session${sessions.length === 1 ? "" : "s"} recorded`;
 
   return (
-    <Modal>
+    <Modal onClose={onClose}>
       <DialogHeader
         title={schedule.name}
         truncateTitle
@@ -111,7 +111,7 @@ export function ScheduleResultsModal({
               onClick={() => void sessionsQuery.refetch()}
               disabled={sessionsQuery.isFetching}
             >
-              <Renew size={14} /> Try again
+              <Renew size={14} /> Retry
             </Button>
           </div>
         )}

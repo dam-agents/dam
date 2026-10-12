@@ -29,6 +29,7 @@ const modelListing = z.object({
 
 export const modelDiscoverySpec = modelListing.extend({
   urlEnv: z.array(z.string().min(1)).nonempty(),
+  tokenEnv: z.array(z.string().min(1)).optional(),
   redirectEnv: z.array(z.string().min(1)).optional(),
   pinEnv: z.array(z.string().min(1)).optional(),
   namePrefix: z.string().min(1).optional(),
@@ -44,9 +45,19 @@ export const modelDiscoverySources = z.union([
 ]);
 export type ModelDiscoverySources = z.infer<typeof modelDiscoverySources>;
 
+export const sessionSettingBinding = z.union([
+  z.object({ mode: z.literal(true) }),
+  z.object({ configOption: z.string().min(1) }),
+  z.object({ env: z.array(z.string().min(1)).nonempty() }),
+]);
+export type SessionSettingBinding = z.infer<typeof sessionSettingBinding>;
+
 export const harnessConfigBinding = z.object({
   file: z.string().min(1),
   sessionModel: z.boolean().optional(),
+  sessionSettings: z
+    .record(z.string().min(1), sessionSettingBinding)
+    .optional(),
   format: z.enum(["json", "toml"]).default("json"),
   keys: z
     .object({
@@ -92,6 +103,13 @@ export const runtimeManifestSchema = z.object({
     .optional(),
 
   terminalSessionPins: z.string().min(1).optional(),
+
+  sessionSpend: z
+    .object({
+      command: z.array(z.string().min(1)).nonempty(),
+      unit: z.string().min(1),
+    })
+    .optional(),
 
   agentProcesses: z.array(z.string().min(1).max(15)).default([]),
 
@@ -209,4 +227,16 @@ function pickKinds(
   return Object.fromEntries(
     Object.entries(resolved).filter(([k]) => allow.has(k)),
   );
+}
+
+export function sessionModelOf(manifest: RuntimeManifest): boolean {
+  const raw = resolveDrivers(manifest)["harness-config"];
+  return raw ? harnessConfigBinding.parse(raw).sessionModel === true : false;
+}
+
+export function harnessConfigBindingOf(
+  manifest: RuntimeManifest,
+): HarnessConfigBinding | undefined {
+  const raw = resolveDrivers(manifest)["harness-config"];
+  return raw ? harnessConfigBinding.parse(raw) : undefined;
 }

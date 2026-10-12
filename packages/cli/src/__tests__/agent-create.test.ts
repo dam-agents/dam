@@ -93,17 +93,16 @@ describe("dam agent create provider selection (#3786)", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it("rejects a missing provider before making any request, with setup guidance", async () => {
+  /** TEST_SCENARIO: Without --provider the create names none, and the
+   * platform grants the caller's default provider Connection itself. */
+  it("creates without a provider when none is named, leaving the default to the platform", async () => {
     const { run, create, listConnections } = setup();
-    await run([], EXIT_INVALID_INPUT);
-    expect(create).not.toHaveBeenCalled();
+    await run([], EXIT_SUCCESS);
     expect(listConnections).not.toHaveBeenCalled();
-    expect(process.stderr.write).toHaveBeenCalledWith(
-      expect.stringContaining("--provider <id-or-name>"),
-    );
-    expect(process.stderr.write).toHaveBeenCalledWith(
-      expect.stringContaining("dam agent create-interactive"),
-    );
+    expect(create).toHaveBeenCalledWith({
+      name: "via cli",
+      templateId: "claude-code",
+    });
   });
 
   it.each([provider.id, provider.name])(

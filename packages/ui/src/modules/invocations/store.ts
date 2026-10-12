@@ -29,6 +29,7 @@ export const createInvocationsSlice: StateCreator<
             openArtifactId: null,
             openArtifactDirty: false,
             openBrowserAgentId: null,
+            openProcessOutputKey: null,
           }
         : { openDelegation: null },
     ),

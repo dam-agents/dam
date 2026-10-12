@@ -1,14 +1,13 @@
 import { EdgeDevice, Time, Warning } from "@carbon/icons-react";
+import type { AvatarMood } from "api-server-api/avatar/svg";
 
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
 import {
-  isAsleep,
-  STOPPED_AVATAR_CLASS,
+  AgentAvatar,
+  avatarMood,
 } from "../../agents/components/avatar/agent-avatar.js";
-import { LazyRobotHead } from "../../agents/components/avatar/lazy-robot-head.js";
-import { useAgentAvatars } from "../../agents/hooks/use-agent-avatars.js";
 import type { ArtifactTouched } from "../api/queries.js";
 import { channelTypeFor } from "../lib/activity-filter.js";
 import type { FeedItem } from "../lib/feed-item.js";
@@ -67,13 +66,13 @@ function rowIcon(kind: RowKind, size = 16) {
 function RowIdentity({
   kind,
   avatarName,
-  sleeping,
-  stopped,
+  avatar,
+  mood,
 }: {
   kind: RowKind;
   avatarName: string | undefined;
-  sleeping: boolean;
-  stopped: boolean;
+  avatar: string | null | undefined;
+  mood: AvatarMood;
 }) {
   if (avatarName === undefined) {
     return (
@@ -89,12 +88,7 @@ function RowIdentity({
   }
   return (
     <div className="relative size-10">
-      <LazyRobotHead
-        name={avatarName}
-        size={46}
-        sleeping={sleeping || stopped}
-        className={cn("-m-[3px]", stopped && STOPPED_AVATAR_CLASS)}
-      />
+      <AgentAvatar name={avatarName} avatar={avatar} size={40} mood={mood} />
       {kind !== "agent" && (
         <span
           className={cn(
@@ -133,10 +127,8 @@ export function NotificationRow({
   const kind = rowKind(item);
   const running = item.kind === "in-progress";
   const unread = isUnreadItem(item);
-  const avatars = useAgentAvatars() && avatarName !== undefined;
+  const avatars = avatarName !== undefined;
   const agent = agents.find((a) => a.id === item.agentId);
-  const sleeping = isAsleep(agent?.state);
-  const stopped = agent?.stopRequested ?? false;
 
   return (
     <div
@@ -159,8 +151,8 @@ export function NotificationRow({
         <RowIdentity
           kind={kind}
           avatarName={avatars ? avatarName : undefined}
-          sleeping={sleeping}
-          stopped={stopped}
+          avatar={agent?.avatar}
+          mood={avatarMood(agent?.state, agent?.stopRequested, running)}
         />
         {running && (
           <span

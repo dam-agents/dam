@@ -16,12 +16,12 @@ import type {
 export type ScheduleMode = ScheduleFired["mode"];
 
 export interface UsageRecorder {
-  turn(input: { surface: UsageSurface; template: string }): void;
+  turn(input: { surface: UsageSurface; harness: string }): void;
   actorDay(input: { surface: UsageSurface }): void;
   scheduleFire(input: {
     mode: ScheduleMode;
     outcome: UsageOutcome;
-    template: string;
+    harness: string;
   }): void;
   connectionChange(input: {
     action: ConnectionChangeAction;
@@ -78,20 +78,20 @@ export function createOtelUsageRecorder(meter: Meter): UsageRecorder {
   );
 
   return {
-    turn({ surface, template }) {
+    turn({ surface, harness }) {
       turns.add(1, {
         "platform.turn.surface": surface,
-        "platform.turn.template": template,
+        "platform.turn.harness": harness,
       });
     },
     actorDay({ surface }) {
       actorDays.add(1, { "platform.actor.surface": surface });
     },
-    scheduleFire({ mode, outcome, template }) {
+    scheduleFire({ mode, outcome, harness }) {
       scheduleFires.add(1, {
         "platform.schedule.mode": mode,
         "platform.schedule.outcome": outcome,
-        "platform.schedule.template": template,
+        "platform.schedule.harness": harness,
       });
     },
     connectionChange({ action, kind, provider }) {

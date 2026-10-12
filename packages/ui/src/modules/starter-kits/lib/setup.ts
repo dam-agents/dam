@@ -86,7 +86,6 @@ export function isStarterKitSetupComplete(
 ): boolean {
   if (draft.name.trim().length === 0) return false;
   if (!kit.image && draft.templateId === null) return false;
-  if (draft.providerRef === null) return false;
   return requirementStatuses(kit, draft, owned, templates).every(
     (s) => s.satisfied || !s.requirement.required,
   );
@@ -245,7 +244,7 @@ export function toggleSkipped(
 }
 
 const HARNESS_LABEL: Record<HarnessFamily, string> = {
-  "claude-code": "Claude Code",
+  "claude-code": "Claude",
   codex: "Codex",
   pi: "Pi",
   bob: "Bob",
@@ -285,7 +284,7 @@ export function allowedHarnesses<T extends { harness?: TemplateHarness }>(
   if (!kit.harnesses) return [...harnesses];
   const accepted = new Set<string>(kit.harnesses);
   return harnesses.filter(
-    (t) => t.harness !== undefined && accepted.has(t.harness),
+    (t) => t.harness === undefined || accepted.has(t.harness),
   );
 }
 

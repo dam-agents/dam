@@ -1,11 +1,4 @@
-import {
-  Code,
-  Download,
-  Edit,
-  OverflowMenuVertical,
-  Time,
-  TrashCan,
-} from "@carbon/icons-react";
+import { Download, Edit, Terminal, Time, TrashCan } from "@carbon/icons-react";
 import {
   type BackgroundWorkItemView,
   ChannelType,
@@ -16,19 +9,16 @@ import {
 } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
   HOVER_ACTION,
   HOVER_ROOM,
   HOVER_YIELD,
 } from "@/components/ui/hover-action";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
@@ -36,7 +26,11 @@ import { cn } from "@/lib/utils";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { onboardingBadge } from "../../agents/utils/agent-kind.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
-import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
+import {
+  formatHarnessSpend,
+  formatTokens,
+  formatUsdCell,
+} from "../../metrics/lib/format.js";
 import { runTimeLabel } from "../lib/run-time.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
@@ -56,6 +50,7 @@ interface Props {
   cost?: SessionRuntime;
   conversation?: string;
   onResume: () => void;
+  onRename: () => void;
   onDelete: () => void;
   onExportTimeline?: () => void;
 }
@@ -71,6 +66,7 @@ export function SessionRow({
   cost,
   conversation,
   onResume,
+  onRename,
   onDelete,
   onExportTimeline,
 }: Props) {
@@ -170,11 +166,10 @@ export function SessionRow({
         <div
           className={cn(
             "relative flex items-center gap-1.5",
-            onboarding && !hasIndicators && HOVER_ROOM,
+            onboarding && !hasIndicators && !s.harness && HOVER_ROOM,
           )}
         >
-          {}
-          <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
+          <span className={`text-sm min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
           {onboarding && (
@@ -190,44 +185,44 @@ export function SessionRow({
             working={working}
             draft={draft}
             backgroundWork={backgroundWork}
+            harness={s.harness ?? null}
           />
           {}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                data-testid="session-menu-button"
-                variant="ghost"
-                size="icon-xs"
-                className={cn(
-                  "absolute top-1/2 -right-1 -translate-y-1/2",
-                  HOVER_ACTION,
-                )}
-                onClick={(e) => e.stopPropagation()}
-                aria-label="More actions"
-              >
-                <OverflowMenuVertical size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent onClick={(event) => event.stopPropagation()}>
-              {onExportTimeline && (
-                <DropdownMenuItem
-                  data-testid="session-export-timeline-button"
-                  onSelect={onExportTimeline}
-                >
-                  <Download size={13} /> Export telemetry
-                </DropdownMenuItem>
-              )}
+          <RowActionsMenu
+            label="More actions"
+            testId="session-menu-button"
+            dense
+            className={cn(
+              "absolute top-1/2 -right-1 -translate-y-1/2",
+              HOVER_ACTION,
+            )}
+            stopPropagation
+            contentProps={{ onClick: (event) => event.stopPropagation() }}
+          >
+            {onExportTimeline && (
               <DropdownMenuItem
-                data-testid="session-delete-button"
-                tone="danger"
-                onSelect={onDelete}
+                data-testid="session-export-timeline-button"
+                onSelect={onExportTimeline}
               >
-                <TrashCan size={13} /> Delete session
+                <Download size={14} /> Export telemetry
               </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            )}
+            <DropdownMenuItem
+              data-testid="session-rename-button"
+              onSelect={onRename}
+            >
+              <Edit size={14} /> Rename session
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-testid="session-delete-button"
+              tone="danger"
+              onSelect={onDelete}
+            >
+              <TrashCan size={14} /> Delete session
+            </DropdownMenuItem>
+          </RowActionsMenu>
         </div>
-        <span className="text-[11px] text-muted-foreground truncate">
+        <span className="text-2xs text-muted-foreground truncate">
           {conversation ? `${conversation} · ` : ""}
           <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
             {timeAgo(s.updatedAt ?? s.createdAt)}
@@ -247,6 +242,12 @@ export function SessionRow({
               {formatUsdCell(cost.costUsd)}
             </span>
           )}
+          {!cost && s.spend && (
+            <span className="tabular-nums" data-testid="session-spend">
+              {" · "}
+              {formatHarnessSpend(s.spend)}
+            </span>
+          )}
         </span>
       </div>
       {}
@@ -255,6 +256,18 @@ export function SessionRow({
           ref={menuRef}
           className="absolute right-3 top-2 z-popover rounded-lg border border-border bg-popover py-1 anim-scale-in shadow-md"
         >
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen(false);
+              onRename();
+            }}
+          >
+            <Edit size={14} /> Rename session
+          </Button>
           <Button
             variant="ghost"
             tone="danger"
@@ -266,7 +279,7 @@ export function SessionRow({
               onDelete();
             }}
           >
-            <TrashCan size={13} /> Delete session
+            <TrashCan size={14} /> Delete session
           </Button>
         </div>
       )}
@@ -282,6 +295,7 @@ function SessionIndicators({
   working,
   draft,
   backgroundWork,
+  harness,
 }: {
   scheduled: boolean;
   terminal: boolean;
@@ -290,6 +304,7 @@ function SessionIndicators({
   working: boolean;
   draft: boolean;
   backgroundWork: readonly BackgroundWorkItemView[];
+  harness: string | null;
 }) {
   const hasBackgroundWork = backgroundWork.length > 0;
   if (
@@ -299,7 +314,8 @@ function SessionIndicators({
     !needsApproval &&
     !working &&
     !hasBackgroundWork &&
-    !draft
+    !draft &&
+    !harness
   )
     return null;
   return (
@@ -310,7 +326,7 @@ function SessionIndicators({
       )}
     >
       {terminal && (
-        <Code size={16} className="text-foreground" aria-label="Terminal" />
+        <Terminal size={16} className="text-foreground" aria-label="Terminal" />
       )}
       {scheduled && (
         <Time size={16} className="text-foreground" aria-label="Scheduled" />
@@ -321,7 +337,7 @@ function SessionIndicators({
             data-testid="session-approval-dot"
             role="img"
             aria-label="Needs your approval"
-            className="w-2 h-2 rounded-full bg-accent"
+            className="w-2 h-2 rounded-full bg-warning"
           />
         </IndicatorBox>
       ) : working ? (
@@ -344,6 +360,13 @@ function SessionIndicators({
           className="inline-flex text-muted-foreground shrink-0"
         >
           <Edit size={16} />
+        </span>
+      ) : harness ? (
+        <span
+          data-testid="session-harness"
+          className="inline-flex shrink-0 text-muted-foreground"
+        >
+          <HarnessIcons harnesses={[harness]} size="xs" />
         </span>
       ) : null}
       {messenger && !working && (

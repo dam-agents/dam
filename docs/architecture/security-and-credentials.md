@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-07
+Last verified: 2026-10-09
 
 ## Overview
 
@@ -176,6 +176,13 @@ prefix and yields the same principal shape — sub, scopes, agent binding,
 optional key id. Keys cannot mint or revoke other keys: the management
 surface rejects any request authenticated via a key, so a leaked key
 cannot escalate.
+
+A key is checked when a request or connection opens, so every long-lived
+stream it opens — an HTTP subscription, the tRPC WebSocket, an agent
+relay — re-checks the key every few seconds and ends once the key is
+revoked or expired. The re-check is a poll rather than a reaction to the
+revoke, because revoke can land on another replica; the poll interval is
+the bound on how long a revoked key keeps a stream.
 
 ## Keycloak event logging
 
@@ -553,7 +560,7 @@ differ:
 
 - **`platform-migration` ServiceAccount** in the agent namespace — the
   identity of the controller's copy Jobs, run as **uid 0** like
-  the VM runner and KVM device plugin. The storage-migration Job
+  the VM runner. The storage-migration Job
   needs root only for the target side of the copy (owning a freshly
   provisioned volume root, restoring exact file ownership); every read of
   the agent's data drops to the agent's own uid, so a root-squashing

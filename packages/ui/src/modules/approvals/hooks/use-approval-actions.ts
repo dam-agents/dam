@@ -162,6 +162,6 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
       row.status === "expired" && row.type === "ext_authz"
         ? "The original request already failed. Allow permanently writes a rule that future retries match."
         : null,
-    openSettings: () => navigateToSandboxHome(row.agentId),
+    openSettings: () => navigateToSandboxHome(row.agentId, "network"),
   };
 }

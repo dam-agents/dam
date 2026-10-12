@@ -1,13 +1,12 @@
 import { Box, Close } from "@carbon/icons-react";
 import { formatEgressRuleInline, type StarterKitView } from "api-server-api";
+import { leastUsedCharacter } from "api-server-api/avatar/svg";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import { FIELD_INSET, Inset } from "@/components/ui/inset";
 import { SectionLabel } from "@/components/ui/section-label";
-import { cn } from "@/lib/utils";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { emitToast } from "../../../lib/toast.js";
@@ -25,7 +24,6 @@ import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { ConnectedKnowledgeBasesSetup } from "../../knowledge-bases/components/connected-knowledge-bases-setup.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { EMPTY_REGISTRY_CREDENTIAL } from "../../sandboxes/components/registry-credential-section.js";
-import { HarnessGrid } from "../../sandboxes/components/setup/harness-grid.js";
 import { ImageSection } from "../../sandboxes/components/setup/image-section.js";
 import { SetupChannelsSection } from "../../sandboxes/components/setup/setup-channels-section.js";
 import { SetupPageShell } from "../../sandboxes/components/setup/setup-page-shell.js";
@@ -34,7 +32,6 @@ import {
   ConnectionsSetupSection,
   LifecycleSetupSection,
   NameSection,
-  ProviderSection,
   useSetupConnectionCatalog,
 } from "../../sandboxes/components/setup/setup-sections.js";
 import { useHarnessCatalogue } from "../../sandboxes/hooks/use-harness-catalogue.js";
@@ -43,10 +40,6 @@ import {
   offeredBindMessengers,
   recordBindIntent,
 } from "../../sandboxes/lib/bind-intent.js";
-import {
-  narrowPolicyToTemplate,
-  setupProviderPolicy,
-} from "../../sandboxes/lib/setup-policy.js";
 import { useGrantSatellite } from "../../satellites/api/mutations.js";
 import { useApplyStarterKit } from "../../starter-kits/api/mutations.js";
 import { useStarterKit } from "../../starter-kits/api/queries.js";
@@ -74,14 +67,13 @@ import {
   kitResourcesLine,
   ownAgentLine,
   preselectedGrants,
-  providerPolicyForKit,
   type StarterKitSetupDraft,
   toggleSkipped,
   withOverride,
 } from "../../starter-kits/lib/setup.js";
-import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
+import { resolveCharacter } from "../components/avatar/agent-avatar.js";
 import { VmRuntimeNotice } from "../components/vm-runtime-notice.js";
 import {
   buildCodingAgentSetupInput,
@@ -148,12 +140,22 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     features.data?.["strict-connection-addressing"] === true;
   const agentsQ = useAgents();
   const availableChannels = agentsQ.data?.availableChannels;
+  const avatar =
+    form.avatar ??
+    leastUsedCharacter(
+      (agentsQ.data?.list ?? []).map((a) => resolveCharacter(a.name, a.avatar)),
+    );
+  const slackCheckboxRef = useRef<HTMLButtonElement>(null);
   const { openCatalog, catalogNode } = useSetupConnectionCatalog({
     connectionIds: form.connectionIds,
     onToggle: toggleConnection,
     satelliteNames: form.satelliteNames,
     onToggleSatellite: toggleSatellite,
     oauthReturnView: returnPath,
+    onGoToChannels:
+      !kit && availableChannels?.slack
+        ? () => slackCheckboxRef.current?.focus({ focusVisible: true })
+        : undefined,
   });
   const grantSatellite = useGrantSatellite();
   const grantSatellites = (agentId: string) =>
@@ -179,7 +181,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
   const setView = useStore((s) => s.setView);
   const navigateToStarterKit = useStore((s) => s.navigateToStarterKit);
   const connections = useAppConnections();
-  const templates = useTemplates();
   const connectionTemplates = useConnectionTemplates();
   const templateById = useMemo(
     () => new Map((connectionTemplates.data ?? []).map((t) => [t.id, t])),
@@ -273,22 +274,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     form.connectionIds,
     toggleConnection,
   ]);
-  const providerSource =
-    kit && bringsImage
-      ? kit.image
-      : (templates.data?.find((t) => t.id === form.templateId) ?? null);
-  const providerPolicy = useMemo(
-    () =>
-      narrowPolicyToTemplate(
-        kit
-          ? providerPolicyForKit(kit, setupProviderPolicy("starter-kit"))
-          : setupProviderPolicy("coding-agent"),
-        providerSource,
-      ),
-    [kit, providerSource],
-  );
-  const noCompatibleProvider = (providerPolicy.allow?.length ?? 1) === 0;
-
   const plainDraft: CodingAgentSetupDraft = {
     name: form.name,
     vm: vmRuntime.vm,
@@ -301,9 +286,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     requireConnectionAddress:
       addressingOffered && form.requireConnectionAddress,
   };
-  const selectedTemplate = catalogue.harnesses.find(
-    (t) => t.id === form.templateId,
-  );
   const registryPartial = hasPartialRegistryCredential(plainDraft);
   const blockingSchedule = invalidSchedules.some(
     (name) => !form.skippedSchedules.includes(name),
@@ -314,11 +296,9 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
   const canApply = kit
     ? isStarterKitSetupComplete(kit, draft, owned, templateById) &&
       harnessAllowed &&
-      !noCompatibleProvider &&
       !blockingSchedule &&
       !pending
     : isCodingAgentSetupComplete(plainDraft) &&
-      !noCompatibleProvider &&
       !pending &&
       vmRuntime.answered &&
       (channelsAnswered || !wantsChannel);
@@ -327,9 +307,10 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
     if (!canApply) return;
     if (!kit) {
       try {
-        const agent = await createAgent.mutateAsync(
-          buildCodingAgentSetupInput(plainDraft),
-        );
+        const agent = await createAgent.mutateAsync({
+          ...buildCodingAgentSetupInput(plainDraft),
+          avatar,
+        });
         await grantSatellites(agent.id);
         recordBindIntent(
           agent.id,
@@ -343,9 +324,10 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       return;
     }
     try {
-      const result = await apply.mutateAsync(
-        buildStarterKitApplyInput(kit, draft, owned, templateById),
-      );
+      const result = await apply.mutateAsync({
+        ...buildStarterKitApplyInput(kit, draft, owned, templateById),
+        avatar,
+      });
       await grantSatellites(result.agent.id);
       reset();
       const skipped = result.skills?.skipped.length ?? 0;
@@ -367,11 +349,11 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
   return (
     <SetupPageShell
       title="Create an agent"
-      subtitle="Configure your agent with a name, harness, and connections."
+      subtitle="Configure your agent with a name and connections. On the default image, each session picks its harness and model."
       footer={
         <>
           {registryPartial && (
-            <p className="text-sm text-destructive">
+            <p className="text-sm text-danger">
               Finish or clear the private-registry credentials.
             </p>
           )}
@@ -389,7 +371,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
 
       {!kit && (
         <section className="mb-8">
-          <Callout tone="default" inset>
+          <Callout tone="default">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 flex-1 items-center gap-3">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kit-tint text-kit">
@@ -428,12 +410,12 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
 
       {kit && (
         <section className="mb-8">
-          <Inset className="flex items-center gap-4 rounded-xl border border-kit-line bg-kit-surface px-4 py-3">
+          <div className="flex items-center gap-4 rounded-xl border border-kit-line bg-kit-surface px-4 py-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-kit-tint text-kit">
               <Box size={16} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-semibold leading-6 text-kit">
+              <p className="text-md font-semibold leading-6 text-kit">
                 {kit.name}
               </p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -462,7 +444,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
                 )}
               </div>
               {kitSlots !== null && kitSlots > 1 && (
-                <p className="mt-1.5 text-xs text-muted-foreground">
+                <p className="mt-1.5 text-sm text-muted-foreground">
                   Uses {kitSlots} of your compute slots while it runs. CPU and
                   memory stay editable on the agent; disk is fixed at create.
                 </p>
@@ -478,17 +460,23 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
             </Button>
             <Button
               variant="ghost"
-              size="sm"
+              size="icon-sm"
+              tooltip="Create a plain agent instead"
               aria-label="Create a plain agent instead"
               onClick={() => setView("agent-new")}
             >
               <Close size={16} />
             </Button>
-          </Inset>
+          </div>
         </section>
       )}
 
-      <NameSection value={form.name} onChange={(name) => update({ name })} />
+      <NameSection
+        value={form.name}
+        onChange={(name) => update({ name })}
+        avatar={avatar}
+        onAvatarChange={(picked) => update({ avatar: picked })}
+      />
 
       {!kit && (
         <ImageSection
@@ -515,55 +503,32 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
         />
       )}
 
-      {kit && (
+      {kit && bringsImage && (
         <section className="mb-8">
           <SectionLabel spaced>Harness</SectionLabel>
-          {bringsImage ? (
-            <Callout tone="default" inset>
-              <div>{ownAgentLine(kit)}. The harness is fixed by the kit.</div>
-              <div className="mt-1 font-mono text-xs text-muted-foreground">
-                {kit.image?.ref}
-              </div>
-            </Callout>
-          ) : noHarnessInstalled ? (
-            <Callout tone="warning" inset>
-              This kit runs on {harnessesLine(kit).replace(/^An agent on /, "")}
-              , and none of those is installed here.
-            </Callout>
-          ) : (
-            <HarnessGrid
-              harnesses={harnesses}
-              loading={catalogue.isLoading}
-              error={catalogue.isError}
-              onRetry={catalogue.refetch}
-              templateId={form.templateId}
-              onPick={(templateId) => update({ templateId })}
-            />
-          )}
+          <Callout tone="default">
+            <div>{ownAgentLine(kit)}. The harness is fixed by the kit.</div>
+            <div className="mt-1 font-mono text-xs text-muted-foreground">
+              {kit.image?.ref}
+            </div>
+          </Callout>
         </section>
       )}
 
-      {noCompatibleProvider ? (
+      {noHarnessInstalled && (
         <section className="mb-8">
-          <SectionLabel spaced>Provider</SectionLabel>
-          <Callout tone="warning" inset>
-            {kit
-              ? "This kit asks for a provider that the chosen harness cannot run on. Pick another harness, or a kit whose provider fits."
-              : "The chosen harness declares no provider it can run on. Pick another harness."}
+          <SectionLabel spaced>Harness</SectionLabel>
+          <Callout tone="warning">
+            This kit runs on {harnessesLine(kit).replace(/^An agent on /, "")},
+            and none of those is installed here.
           </Callout>
         </section>
-      ) : (
-        <ProviderSection
-          selected={form.providerRef}
-          onSelect={(providerRef) => update({ providerRef })}
-          policy={providerPolicy}
-        />
       )}
 
       {kit?.seed && (
         <section className="mb-8">
           <SectionLabel spaced>Repository</SectionLabel>
-          <ul className={cn(FIELD_INSET, "flex flex-col gap-3")}>
+          <ul className="flex flex-col gap-3">
             <KitRepositoryCard kit={kit} />
           </ul>
         </section>
@@ -574,7 +539,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
           <SectionLabel spaced>Network access</SectionLabel>
           <Callout
             tone={kitEgressPreset(kit) === "all" ? "warning" : "default"}
-            inset
           >
             <div>
               {EGRESS_PRESET_LABEL[kitEgressPreset(kit)]}
@@ -607,7 +571,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
       {kit && kit.schedules.length > 0 && (
         <section className="mb-8">
           <SectionLabel spaced>Schedules</SectionLabel>
-          <ul className={cn(FIELD_INSET, "flex flex-col gap-3")}>
+          <ul className="flex flex-col gap-3">
             {kit.schedules.map((s) => (
               <KitScheduleCard
                 key={s.name}
@@ -643,7 +607,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
               />
             ))}
           </ul>
-          <p className={cn(FIELD_INSET, "mt-3 text-sm text-muted-foreground")}>
+          <p className="mt-3 text-sm text-muted-foreground">
             {kit.onboarding === false
               ? "Created with the kit author's defaults."
               : "Created with the kit author's defaults and held until onboarding finishes."}{" "}
@@ -686,9 +650,6 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
           onChange={(hibernationTimeoutMin) =>
             update({ hibernationTimeoutMin })
           }
-          sizeMi={
-            selectedTemplate?.size ? sizeInMi(selectedTemplate.size) : undefined
-          }
         />
       )}
       {kit && <KitSkillsSection kit={kit} />}
@@ -725,6 +686,7 @@ export function AgentCreateView({ kit }: { kit: StarterKitView | null }) {
           value={form.channels}
           onChange={(channels) => update({ channels })}
           onGoToConnections={openCatalog}
+          slackCheckboxRef={slackCheckboxRef}
         />
       )}
       {catalogNode}

@@ -29,6 +29,7 @@ export interface ConnectionsRepository {
   }): Promise<void>;
 
   listByOwner(ownerId: string): Promise<Connection[]>;
+  listByOwnerOldestFirst(ownerId: string): Promise<Connection[]>;
 
   get(id: string, ownerId: string): Promise<Connection | null>;
 
@@ -107,6 +108,18 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
         .from(connectionsTable)
         .where(eq(connectionsTable.owner, ownerId))
         .orderBy(asc(connectionsTable.name))) as InternalConnectionRow[];
+      return rows.map(rowToConnection);
+    },
+
+    async listByOwnerOldestFirst(ownerId): Promise<Connection[]> {
+      const rows = (await db
+        .select()
+        .from(connectionsTable)
+        .where(eq(connectionsTable.owner, ownerId))
+        .orderBy(
+          asc(connectionsTable.createdAt),
+          asc(connectionsTable.id),
+        )) as InternalConnectionRow[];
       return rows.map(rowToConnection);
     },
 

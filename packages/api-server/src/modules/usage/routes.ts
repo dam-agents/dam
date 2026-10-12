@@ -1,12 +1,14 @@
 import { Hono, type Context, type Next } from "hono";
 import {
   isViewName,
-  REPORTABLE_VIEW_NAMES,
   VIEW_NAMES,
   type ReportService,
-  type ViewName,
 } from "./services/report-service.js";
-import { renderHtmlReport, type ViewResult } from "./html-report.js";
+import {
+  renderAnalyticsErrorPage,
+  renderAnalyticsPage,
+} from "./analytics-page.js";
+import type { AnalyticsService } from "./services/analytics-service.js";
 import { securityLog } from "../../core/security-log.js";
 import type { ApiVariables } from "../../core/http-context.js";
 
@@ -16,6 +18,7 @@ type AppEnv = {
 
 export type UsageRoutesDeps = {
   service: ReportService;
+  analytics: AnalyticsService;
   inspectorRole: string;
 };
 
@@ -46,6 +49,11 @@ export function createUsageRoutes(deps: UsageRoutesDeps) {
     });
     await next();
   };
+  routes.get("/api/usage/inspect/status", (c) =>
+    c.json({
+      canInspect: (c.get("roles") ?? []).includes(deps.inspectorRole),
+    }),
+  );
   routes.use("/api/usage", inspectorOnly);
   routes.use("/api/usage/*", inspectorOnly);
 
@@ -53,27 +61,21 @@ export function createUsageRoutes(deps: UsageRoutesDeps) {
     return c.json({ views: VIEW_NAMES });
   });
 
+  routes.get("/api/usage/analytics", async (c) => {
+    return c.json(await deps.analytics.report());
+  });
+
   routes.get("/api/usage/report", async (c) => {
-    const settled = await Promise.allSettled(
-      REPORTABLE_VIEW_NAMES.map((name) => deps.service.getReport(name)),
-    );
-    const results: ReadonlyArray<readonly [ViewName, ViewResult]> =
-      REPORTABLE_VIEW_NAMES.map((name, i) => {
-        const s = settled[i]!;
-        return [
-          name,
-          s.status === "fulfilled"
-            ? { kind: "ok" as const, rows: s.value }
-            : {
-                kind: "error" as const,
-                reason:
-                  s.reason instanceof Error
-                    ? s.reason.message
-                    : String(s.reason),
-              },
-        ] as const;
-      });
-    return c.html(renderHtmlReport(new Date(), results));
+    try {
+      return c.html(renderAnalyticsPage(await deps.analytics.report()));
+    } catch (err) {
+      return c.html(
+        renderAnalyticsErrorPage(
+          err instanceof Error ? err.message : String(err),
+        ),
+        500,
+      );
+    }
   });
 
   routes.get("/api/usage", async (c) => {

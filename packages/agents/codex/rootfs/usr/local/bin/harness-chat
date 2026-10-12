@@ -1,14 +1,14 @@
 #!/bin/sh
-model=
-# the provider's pin yields to a model chosen in config.toml (Config panel, /model, hand-edit)
-if [ -n "$OPENAI_MODEL" ] && ! codex-config-sets-model; then
+model="$PLATFORM_MODEL"
+# the provider's pin yields to a model chosen in config.toml (/model, hand-edit); the session's own choice outranks both
+if [ -z "$model" ] && [ -n "$OPENAI_MODEL" ] && ! codex-config-sets-model; then
   model="$OPENAI_MODEL"
 fi
 # codex-acp takes no -c flags: CODEX_CONFIG is merged into every session's config
-CODEX_CONFIG="$(jq -nc --arg url "$OPENAI_BASE_URL" --arg model "$model" '
-  (if $url == "" then {} else {model_providers: {"openai-platform": {base_url: $url}}} end)
-  + if $model == "" then {} else {model: $model} end')"
+CODEX_CONFIG="$(jq -nc --arg model "$model" 'if $model == "" then {} else {model: $model} end')"
+# the base URL rides codex-app-server instead: CODEX_CONFIG misses the threads codex-acp starts on its own
+CODEX_PATH=codex-app-server
 # codex-acp sends its mode's approval and sandbox policy with every turn, over config.toml
 INITIAL_AGENT_MODE=agent-full-access
-export CODEX_CONFIG INITIAL_AGENT_MODE
+export CODEX_CONFIG CODEX_PATH INITIAL_AGENT_MODE
 exec codex-acp

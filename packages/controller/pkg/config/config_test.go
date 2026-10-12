@@ -444,3 +444,24 @@ func TestLoadFromEnv_ReadsTheRuntimeMigrationCopyCaps(t *testing.T) {
 	assert.Equal(t, 4, cfg.VM.RuntimeMigration.Concurrency)
 	assert.Equal(t, 2, cfg.VM.RuntimeMigration.OwnerConcurrency)
 }
+
+// TEST_SCENARIO: the chart says whether a copy reads a clone of its source; left out, the controller clones.
+func TestLoadFromEnv_ReadsWhetherTheRuntimeMigrationCopyClones(t *testing.T) {
+	base := map[string]string{
+		"PLATFORM_RELEASE_NAME": "platform",
+		"POD_NAME":              "controller-0",
+	}
+	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}}`
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{}}`
+	setEnv(t, base)
+	cfg, err := LoadFromEnv()
+	require.NoError(t, err)
+	assert.Nil(t, cfg.VM.RuntimeMigration.CloneSource)
+
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `},"runtimeMigration":{"cloneSource":false}}`
+	setEnv(t, base)
+	cfg, err = LoadFromEnv()
+	require.NoError(t, err)
+	require.NotNil(t, cfg.VM.RuntimeMigration.CloneSource)
+	assert.False(t, *cfg.VM.RuntimeMigration.CloneSource)
+}

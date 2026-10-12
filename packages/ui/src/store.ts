@@ -35,6 +35,10 @@ import {
   type ThemeSlice,
 } from "./modules/platform/store/theme.js";
 import {
+  createProcessesSlice,
+  type ProcessesSlice,
+} from "./modules/processes/store.js";
+import {
   claimDraftsFor,
   flushDraftsOnHide,
   onForeignDraftChange,
@@ -60,7 +64,8 @@ export type PlatformStore = DialogSlice &
   InvocationsSlice &
   BrowserSlice &
   FeaturesSlice &
-  PermissionsSlice;
+  PermissionsSlice &
+  ProcessesSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
@@ -75,6 +80,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createBrowserSlice(...a),
   ...createFeaturesSlice(...a),
   ...createPermissionsSlice(...a),
+  ...createProcessesSlice(...a),
 }));
 
 let draftSyncStarted = false;

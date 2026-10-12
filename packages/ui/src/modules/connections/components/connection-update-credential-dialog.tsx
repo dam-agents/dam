@@ -6,12 +6,11 @@ import type {
 import { type ReactNode, useState } from "react";
 
 import {
+  DialogActions,
   DialogBody,
-  DialogFooter,
   DialogHeader,
   Modal,
 } from "@/components/modal";
-import { Button } from "@/components/ui/button";
 
 import { useUpdateConnection } from "../api/mutations.js";
 import {
@@ -208,7 +207,7 @@ function CredentialDialogFrame({
   children: ReactNode;
 }) {
   return (
-    <Modal widthClass="w-[505px]">
+    <Modal onClose={pending ? undefined : onClose} size="sm">
       <DialogHeader
         title={title}
         subtitle={subtitle}
@@ -216,18 +215,16 @@ function CredentialDialogFrame({
         closeTestId="update-credential-close"
       />
       <DialogBody className="flex flex-col gap-4">{children}</DialogBody>
-      <DialogFooter>
-        <Button variant="ghost" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          disabled={!canSubmit || pending}
-          onClick={() => void onSubmit()}
-          data-testid="update-credential-submit"
-        >
-          {pending ? "Saving…" : "Save"}
-        </Button>
-      </DialogFooter>
+      <DialogActions
+        onCancel={onClose}
+        cancelDisabled={pending}
+        label="Save"
+        pendingLabel="Saving…"
+        pending={pending}
+        disabled={!canSubmit}
+        onSubmit={() => void onSubmit()}
+        testId="update-credential-submit"
+      />
     </Modal>
   );
 }

@@ -10,6 +10,7 @@ type Event = RuntimeEvent;
 export interface AgentCapabilities {
   contributions: ContributionKind[];
   events: RuntimeEventKind[];
+  harnesses?: readonly string[];
 }
 
 export interface CapabilityFilterResult {

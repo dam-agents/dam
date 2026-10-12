@@ -1,5 +1,5 @@
 import { CronExpressionParser } from "cron-parser";
-import { nextVisibleOccurrence, rruleProblem } from "api-server-api";
+import { rruleNextFire } from "api-server-api";
 import type { QuietWindow, ScheduleSpec } from "api-server-api";
 
 export function validateCron(expr: string): void {
@@ -63,35 +63,15 @@ function nextRRuleFire(
   quietHours: QuietWindow[],
   from: Date,
 ): NextFire {
-  try {
-    const problem = rruleProblem(rrule);
-    if (problem) return { kind: "stopped", reason: problem };
-    const next = nextVisibleOccurrence(
-      rrule,
-      timezone,
-      Temporal.Instant.fromEpochMilliseconds(from.getTime()),
-      quietHours,
-    );
-    switch (next.kind) {
-      case "next":
-        return { kind: "next", at: new Date(next.at.epochMilliseconds) };
-      case "exhausted":
-        return { kind: "stopped", reason: "it has no more occurrences" };
-      case "suppressed":
-        return {
-          kind: "stopped",
-          reason: "quiet hours cover every remaining occurrence",
-        };
-    }
-  } catch (e) {
-    const message = errorMessage(e);
-    return {
-      kind: "stopped",
-      reason: /^Maximum (iterations|candidate evaluations)/.test(message)
-        ? "it never fires"
-        : message,
-    };
-  }
+  const next = rruleNextFire(
+    rrule,
+    timezone,
+    Temporal.Instant.fromEpochMilliseconds(from.getTime()),
+    quietHours,
+  );
+  return next.kind === "next"
+    ? { kind: "next", at: new Date(next.at.epochMilliseconds) }
+    : next;
 }
 
 function errorMessage(e: unknown): string {

@@ -8,6 +8,7 @@ import { skillsRouter } from "./modules/skills/router.js";
 import { sshRouter } from "./modules/ssh/router.js";
 import { runtimeRouter } from "./modules/runtime/router.js";
 import { harnessConfigRouter } from "./modules/harness-config/router.js";
+import { processesRouter } from "./modules/processes/router.js";
 
 export const appRouter = t.router({
   artifactApi: artifactApiRouter,
@@ -19,6 +20,7 @@ export const appRouter = t.router({
   ssh: sshRouter,
   runtime: runtimeRouter,
   harnessConfig: harnessConfigRouter,
+  processes: processesRouter,
 });
 
 export type AppRouter = typeof appRouter;

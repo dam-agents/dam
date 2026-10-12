@@ -685,9 +685,9 @@ jobs:
   e2e-vm:
     name: mise e2e (vm)
     # The vm lane: the same smoke suite on an install with virtualization
-    # enabled, where every agent the suite creates is a vm Agent. The chart's
-    # own KVM device plugin, the runner's egressCidrs and the staged mock
-    # image come from values-local.yaml once e2e:install sees
+    # enabled, where every agent the suite creates is a vm Agent. The KVM
+    # device plugin comes from cluster:install, the runner's egressCidrs and
+    # the staged mock image from values-local.yaml once e2e:install sees
     # E2E_VIRTUALIZATION, and the vm-runner image is built or fetched with the
     # rest by e2e:ci-images. The same variable makes the suite's global setup
     # opt the e2e user into the vm-sandboxes experiment, so the UI creates vm

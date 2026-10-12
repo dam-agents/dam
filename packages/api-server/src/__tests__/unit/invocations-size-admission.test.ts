@@ -106,6 +106,11 @@ describe("spawn size admission over the route", () => {
           getAgentConnections: async () => ({ connections: [] }),
         }) as never,
       templates: { list: async () => [], get: async () => null } as never,
+      harnesses: {
+        default: "claude-code",
+        harnesses: [],
+        telemetryEnv: () => [],
+      },
       budgetsFor: () =>
         ({
           reserved: async () => ({
@@ -163,6 +168,11 @@ describe("budget visibility over the route", () => {
         ],
         get: async () => null,
       } as never,
+      harnesses: {
+        default: "claude-code",
+        harnesses: [],
+        telemetryEnv: () => [],
+      },
       budgetsFor: () =>
         ({
           reserved: async () => ({

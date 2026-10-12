@@ -27,6 +27,21 @@ export function pickOptionId(
   return options[0]?.optionId ?? null;
 }
 
+export function verdictOfOutcome(
+  options: readonly AcpPermissionOption[],
+  outcome: { outcome?: unknown; optionId?: unknown },
+): ApprovalVerdict {
+  if (outcome.outcome === "cancelled") return "deny_once";
+  const kind = options.find((o) => o.optionId === outcome.optionId)?.kind;
+  return kind === "allow_always"
+    ? "allow"
+    : kind === "reject_once"
+      ? "deny_once"
+      : kind === "reject_always"
+        ? "deny"
+        : "allow_once";
+}
+
 interface WrapperResponseFrame {
   jsonrpc: "2.0";
   id: number | string;

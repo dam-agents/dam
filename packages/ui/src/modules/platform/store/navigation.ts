@@ -13,7 +13,7 @@ import {
 } from "../lib/routes.js";
 
 type ParameterlessView =
-  "home" | "terms" | "artifacts" | "agent-new" | "starter-kits";
+  "home" | "terms" | "artifacts" | "analytics" | "agent-new" | "starter-kits";
 
 export interface NavigationSlice {
   view: View;
@@ -23,22 +23,19 @@ export interface NavigationSlice {
   starterKitCatalog: string | null;
   starterKitId: string | null;
   starterKitCategory: StarterKitCategory | null;
-  sandboxFocus: string | null;
-  clearSandboxFocus: () => void;
   hydrateRoute: () => void;
   setView: (v: ParameterlessView) => void;
+  navigateBack: () => void;
   navigateToSettings: (tab?: SettingsTab) => void;
-  navigateToSandboxHome: (
-    agentId: string,
-    section?: SandboxSection,
-    focus?: string,
-  ) => void;
+  navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToStarterKit: (catalog: string, kitId: string) => void;
   navigateToStarterKitSetup: (catalog: string, kitId: string) => void;
   navigateToStarterKits: (category?: StarterKitCategory) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
 }
+
+const IN_APP_ENTRY = "in-app";
 
 function initialPath(): string {
   const { pathname } = window.location;
@@ -68,36 +65,30 @@ export const createNavigationSlice: StateCreator<
   [],
   [],
   NavigationSlice
-> = (set) => ({
+> = (set, get) => ({
   ...routeToNavigationState(parseRoute(initialPath())),
-  sandboxFocus: null,
-  clearSandboxFocus: () => set({ sandboxFocus: null }),
   hydrateRoute: () =>
-    set({
-      ...routeToNavigationState(parseRoute(window.location.pathname)),
-      sandboxFocus: null,
-    }),
+    set(routeToNavigationState(parseRoute(window.location.pathname))),
   setView: (v) => {
-    history.pushState(null, "", routeToPath({ view: v }));
-    set({ ...routeToNavigationState({ view: v }), sandboxFocus: null });
+    history.pushState(IN_APP_ENTRY, "", routeToPath({ view: v }));
+    set(routeToNavigationState({ view: v }));
+  },
+  navigateBack: () => {
+    if (history.state === IN_APP_ENTRY) history.back();
+    else get().setView("home");
   },
   navigateToSettings: (tab) => {
     const settingsTab = tab ?? "account";
     history.pushState(null, "", routeToPath({ view: "settings", settingsTab }));
-    set({ view: "settings", settingsTab, agentId: null, sandboxFocus: null });
+    set({ view: "settings", settingsTab, agentId: null });
   },
-  navigateToSandboxHome: (agentId, section = "setup", focus) => {
+  navigateToSandboxHome: (agentId, section = "setup") => {
     history.pushState(
       null,
       "",
       routeToPath({ view: "sandbox-home", agentId, sandboxSection: section }),
     );
-    set({
-      view: "sandbox-home",
-      agentId,
-      sandboxSection: section,
-      sandboxFocus: focus ?? null,
-    });
+    set({ view: "sandbox-home", agentId, sandboxSection: section });
   },
   navigateToStarterKit: (catalog, kitId) => {
     history.pushState(
@@ -110,7 +101,6 @@ export const createNavigationSlice: StateCreator<
       starterKitCatalog: catalog,
       starterKitId: kitId,
       agentId: null,
-      sandboxFocus: null,
     });
   },
   navigateToStarterKitSetup: (catalog, kitId) => {
@@ -124,7 +114,6 @@ export const createNavigationSlice: StateCreator<
       starterKitCatalog: catalog,
       starterKitId: kitId,
       agentId: null,
-      sandboxFocus: null,
     });
   },
   navigateToStarterKits: (category) => {
@@ -133,7 +122,7 @@ export const createNavigationSlice: StateCreator<
       ...(category ? { category } : {}),
     };
     history.pushState(null, "", routeToPath(route));
-    set({ ...routeToNavigationState(route), sandboxFocus: null });
+    set(routeToNavigationState(route));
   },
   mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),

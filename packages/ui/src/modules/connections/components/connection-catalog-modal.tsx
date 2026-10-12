@@ -175,9 +175,9 @@ export function ConnectionCatalogModal({
   }
 
   return (
-    <Modal widthClass="w-[860px] max-w-full" heightClass="h-[85vh]">
+    <Modal onClose={onClose} size="lg" heightClass="h-[85vh]">
       <DialogHeader
-        title={title ?? "Connection catalogue"}
+        title={title ?? "Connection catalog"}
         subtitle={
           subtitle ?? "Manage and create new connections your agents can use"
         }

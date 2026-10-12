@@ -672,4 +672,93 @@ describe("acp-runtime: history replay", () => {
       olderOf(viewer, 1);
     }
   });
+
+  /**
+   * TEST_SCENARIO: A user pastes one image larger than the whole log's byte
+   * cap between short text prompts. Storing it inline would evict every
+   * earlier entry and leave a reload with a dead-end clip. The log must keep
+   * the text history whole by dropping the image bytes to a placeholder,
+   * while a viewer engaged at the time still receives the image live.
+   */
+  it("should keep the text history when a pasted image exceeds the log cap", () => {
+    const world = createWorld();
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    const carol = world.connect();
+    carol.send(frames.loadSession(1, SESSION));
+    const image = "A".repeat(3 * 1024 * 1024);
+    const prompts: unknown[][] = [
+      [{ type: "text", text: "HIST-A" }],
+      [{ type: "text", text: "HIST-B" }],
+      [
+        { type: "image", data: image, mimeType: "image/png" },
+        { type: "text", text: "HIST-C" },
+      ],
+      [{ type: "text", text: "HIST-D" }],
+    ];
+    prompts.forEach((prompt, i) => {
+      alice.send({
+        jsonrpc: "2.0",
+        id: 10 + i,
+        method: "session/prompt",
+        params: { sessionId: SESSION, prompt },
+      });
+      world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+    });
+
+    const bob = world.connect();
+    bob.send(frames.loadSession(1, SESSION));
+
+    const texts = replayedUpdates(bob).flatMap((u) =>
+      u.kind === "user_message_chunk" && u.text !== undefined ? [u.text] : [],
+    );
+    expect(texts).toEqual([
+      "HIST-A",
+      "HIST-B",
+      "[image not kept in history]",
+      "HIST-C",
+      "HIST-D",
+    ]);
+    expect(clippedOf(bob, 1)).toBeUndefined();
+    expect(JSON.stringify(carol.saw("session/update"))).toContain(image);
+  });
+
+  /**
+   * TEST_SCENARIO: A cold fill where the harness replays an image larger
+   * than the log cap, as a Codex session echoes a pasted image back. The log
+   * must drop the bytes the same way, so the turns around it stay loadable.
+   */
+  it("should keep the text history when a cold fill replays an oversized image", () => {
+    const world = createWorld();
+    const bob = world.connect();
+    bob.send(frames.loadSession(1, SESSION));
+
+    world.harness().emit(frames.agentMessage(SESSION, "m1", "m1"));
+    world.harness().emit({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: SESSION,
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: {
+            type: "image",
+            data: "A".repeat(12 * 1024 * 1024),
+            mimeType: "image/png",
+          },
+        },
+      },
+    });
+    world.harness().emit(frames.agentMessage(SESSION, "m2", "m2"));
+    world
+      .harness()
+      .replyTo("session/load", { sessionId: SESSION, modes: null });
+
+    expect(replayedUpdates(bob).map((u) => u.text)).toEqual([
+      "m1",
+      "[image not kept in history]",
+      "m2",
+    ]);
+  });
 });

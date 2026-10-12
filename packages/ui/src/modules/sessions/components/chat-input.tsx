@@ -32,6 +32,7 @@ export interface ChatInputProps {
   loadingSession: boolean;
   onSend: (text: string, attachments?: Attachment[]) => void;
   onStop: () => void;
+  blockedReason?: string | null;
 }
 
 export function ChatInput({
@@ -40,6 +41,7 @@ export function ChatInput({
   loadingSession,
   onSend,
   onStop,
+  blockedReason,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -91,7 +93,12 @@ export function ChatInput({
           const base64 = dataUrl.split(",")[1];
           if (!base64) return;
           const attachment: Attachment = IMAGE_MIME.includes(file.type)
-            ? { kind: "image", data: base64, mimeType: file.type }
+            ? {
+                kind: "image",
+                data: base64,
+                mimeType: file.type,
+                name: file.name,
+              }
             : {
                 kind: "file",
                 name: file.name,
@@ -197,16 +204,17 @@ export function ChatInput({
     else send();
   };
 
-  const placeholder = isComputing ? "Queue a message..." : "Message...";
+  const placeholder =
+    blockedReason ?? (isComputing ? "Queue a message…" : "Message…");
 
   return (
     <div
-      className="px-4 md:px-8 pt-3 pb-1"
+      className="px-2 @xs/chat:px-4 @xl/chat:px-8 pt-3 pb-1"
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <ChatColumn className="flex flex-col gap-1.5">
+      <ChatColumn className="flex flex-col gap-1.5 px-0 @xs/chat:px-4">
         <input
           ref={fileInputRef}
           type="file"
@@ -235,10 +243,10 @@ export function ChatInput({
           <div className="flex items-end gap-1 px-2 min-h-[56px]">
             <Button
               variant="ghost"
-              size="icon-sm"
-              className="shrink-0 mb-[9px] h-10 w-10 text-muted-foreground hover:text-primary disabled:opacity-40"
+              size="icon"
+              className="shrink-0 mb-[9px] text-muted-foreground hover:text-primary disabled:opacity-40"
               onClick={() => fileInputRef.current?.click()}
-              disabled={loadingSession || !key}
+              disabled={loadingSession || !key || !!blockedReason}
               aria-label="Attach file"
               tooltip="Attach file"
             >
@@ -256,14 +264,14 @@ export function ChatInput({
               onPaste={onPaste}
               placeholder={placeholder}
               rows={1}
-              disabled={loadingSession || !key}
+              disabled={loadingSession || !key || !!blockedReason}
             />
             {showStop && (
               <Button
                 variant="ghost"
                 tone="danger"
-                size="icon-sm"
-                className="shrink-0 mb-[9px] h-10 w-10"
+                size="icon"
+                className="shrink-0 mb-[9px]"
                 onClick={onStop}
                 aria-label="Stop"
                 tooltip="Stop (Esc)"
@@ -274,10 +282,12 @@ export function ChatInput({
             {showSend && (
               <Button
                 variant="ghost"
-                size="icon-sm"
-                className={`shrink-0 mb-[9px] h-10 w-10 ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
+                size="icon"
+                className={`shrink-0 mb-[9px] ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
-                disabled={sendDisabled || loadingSession || !key}
+                disabled={
+                  sendDisabled || loadingSession || !key || !!blockedReason
+                }
                 aria-label={isComputing ? "Queue" : "Send"}
                 tooltip={isComputing ? "Queue" : "Send"}
               >
@@ -298,19 +308,20 @@ function AttachmentChip({
   attachment: Attachment;
   onRemove: () => void;
 }) {
+  const name = attachment.name ?? "pasted image";
   return (
     <div className="relative group">
       {attachment.kind === "image" ? (
         <img
           src={`data:${attachment.mimeType};base64,${attachment.data}`}
-          alt="attachment"
+          alt={name}
           className="h-14 w-14 rounded-md border border-border object-cover"
         />
       ) : (
         <div className="h-14 px-3 rounded-md border border-border bg-muted flex items-center gap-2">
           <Document size={14} className="text-muted-foreground shrink-0" />
-          <span className="text-[11px] text-foreground/80 truncate max-w-[120px]">
-            {attachment.name}
+          <span className="text-2xs text-foreground/80 truncate max-w-[120px]">
+            {name}
           </span>
         </div>
       )}
@@ -318,7 +329,7 @@ function AttachmentChip({
         variant="destructive"
         size="icon"
         onClick={onRemove}
-        aria-label="Remove attachment"
+        aria-label={`Remove ${name}`}
         className={cn(
           "absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full",
           HOVER_ACTION,

@@ -14,7 +14,7 @@ If the work fires *after the current turn ends* — recurring or future-dated �
 
 - `create_schedule` — register a persistent cron schedule on this instance. Takes an optional `precheck` shell command that decides each occurrence before any turn is paid for (see below).
 - `list_schedules` — list schedules on this instance.
-- `toggle_schedule` — enable or disable a schedule by id.
+- `toggle_schedule` — enable or disable a schedule by id; pass `enabled` with the state you want.
 - `delete_schedule` — remove a schedule by id.
 
 If a tool's schema is not loaded, fetch it via ToolSearch:

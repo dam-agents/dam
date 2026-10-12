@@ -1,5 +1,6 @@
 import { Help } from "@carbon/icons-react";
 
+import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
@@ -7,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { COMPUTE_REQUEST_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useLinks } from "../../links/api/queries.js";
 import { useBudgetReserved } from "../api/queries.js";
@@ -20,14 +22,9 @@ import {
   type SlotUnit,
   slotUnitOf,
 } from "../lib/slots.js";
-import { SlotBar } from "./slot-bar.js";
+import { SEGMENT_FILL, SlotBar } from "./slot-bar.js";
 
 type HeldState = Exclude<ComputeCellState, "available">;
-
-const STATE_DOT: Record<HeldState, string> = {
-  running: "bg-success",
-  awake: "bg-accent",
-};
 
 const STATE_LABEL: Record<HeldState, string> = {
   running: "Working",
@@ -45,12 +42,14 @@ function segmentLabel(segment: ComputeSegment, unit: SlotUnit): string {
 
 function HeldSegmentCard({ segment }: { segment: ComputeSegment }) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const agents = useAgentsList();
   return (
     <div className="flex flex-col gap-2">
       <p className="text-foreground">
         {segment.agentName && (
           <AgentAvatar
             name={segment.agentName}
+            avatar={agents.find((a) => a.id === segment.agentId)?.avatar}
             size={16}
             className="mr-1.5 inline-block align-text-bottom"
           />
@@ -64,15 +63,16 @@ function HeldSegmentCard({ segment }: { segment: ComputeSegment }) {
           <p className="text-muted-foreground">
             Always on — holds compute even while idle.
           </p>
-          <button
-            type="button"
-            className="self-end text-accent hover:underline"
+          <Button
+            variant="link"
+            size="inline"
+            className="self-end"
             onClick={() =>
               segment.agentId && navigateToSandboxHome(segment.agentId, "setup")
             }
           >
             Manage
-          </button>
+          </Button>
         </>
       )}
     </div>
@@ -147,7 +147,7 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
                 <span
                   className={cn(
                     "inline-block size-2 shrink-0 rounded-full",
-                    STATE_DOT[group.state],
+                    SEGMENT_FILL[group.state],
                   )}
                 />
                 {STATE_LABEL[group.state]}

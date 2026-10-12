@@ -1,6 +1,6 @@
 import type { TemplateView } from "../../../types.js";
 
-const KINDED_HARNESS_TEMPLATE_ID = "claude-code";
+const DEFAULT_TEMPLATE_ID = "default";
 
 interface Catalogue {
   harnesses: TemplateView[];
@@ -11,8 +11,8 @@ export function imageCatalogue(templates: TemplateView[]): Catalogue {
 }
 
 export function defaultHarnessId(harnesses: TemplateView[]): string | null {
-  if (harnesses.some((t) => t.id === KINDED_HARNESS_TEMPLATE_ID)) {
-    return KINDED_HARNESS_TEMPLATE_ID;
+  if (harnesses.some((t) => t.id === DEFAULT_TEMPLATE_ID)) {
+    return DEFAULT_TEMPLATE_ID;
   }
   return harnesses[0]?.id ?? null;
 }

@@ -532,6 +532,24 @@ function buildGitHubApp(
   };
 }
 
+export function configInputContributions(
+  specs: readonly ConfigInputSpec[],
+  configInputs: Record<string, string>,
+): Contribution[] {
+  return specs.flatMap((spec) => {
+    const value = configInputs[spec.inputName]?.trim();
+    return value
+      ? [
+          {
+            kind: "env" as const,
+            name: spec.envName,
+            placeholder: validConfigInput(spec, value),
+          },
+        ]
+      : [];
+  });
+}
+
 function validConfigInput(spec: ConfigInputSpec, value: string): string {
   if (spec.pattern && !new RegExp(`^(?:${spec.pattern})$`).test(value)) {
     throw new Error(`${spec.label}: "${value}" is not valid`);
@@ -653,15 +671,12 @@ function buildHeader(
     });
   }
 
-  for (const spec of template.configInputs ?? []) {
-    const value = input.configInputs?.[spec.inputName]?.trim();
-    if (!value) continue;
-    contributions.push({
-      kind: "env",
-      name: spec.envName,
-      placeholder: validConfigInput(spec, value),
-    });
-  }
+  contributions.push(
+    ...configInputContributions(
+      template.configInputs ?? [],
+      input.configInputs ?? {},
+    ),
+  );
 
   const sdsFields = buildConnectionSdsFields(contributions, input.value);
 

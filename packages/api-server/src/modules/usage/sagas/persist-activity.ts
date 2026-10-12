@@ -32,6 +32,9 @@ import {
   type HarnessConfigChanged,
   type ApiKeyChanged,
   type EntryPointChosen,
+  type SlackConnected,
+  type StarterKitOnboarded,
+  type AgentOutOfMemory,
 } from "../../../events.js";
 import type { ActivityEventRow } from "../domain/types.js";
 
@@ -93,6 +96,7 @@ export function startPersistActivitySaga(
         : {}),
       payload: {
         ...(event.reason ? { reason: event.reason } : {}),
+        ...(event.ambient ? { ambient: true } : {}),
       },
     }),
     "channel",
@@ -359,6 +363,40 @@ export function startPersistActivitySaga(
     surface: "ui",
     outcome: "success",
     payload: { choice: event.choice },
+  }));
+
+  persist<SlackConnected>(EventType.SlackConnected, (event) => {
+    if (!event.ownerSub) return null;
+    return {
+      type: "slack_channel_bound",
+      actorSub: event.ownerSub,
+      agentId: event.agentId,
+      surface: "slack",
+      outcome: "success",
+      payload: {},
+    };
+  });
+
+  persist<StarterKitOnboarded>(EventType.StarterKitOnboarded, (event) => ({
+    type: "starter_kit_onboarded",
+    actorSub: event.ownerSub,
+    agentId: event.agentId,
+    surface: "mcp",
+    outcome: "success",
+    payload: { starterKit: event.starterKit },
+  }));
+
+  persist<AgentOutOfMemory>(EventType.AgentOutOfMemory, (event) => ({
+    type: "agent_oom",
+    actorSub: event.ownerSub,
+    agentId: event.agentId,
+    surface: null,
+    outcome: "failure",
+    payload: {
+      restarts: event.restarts,
+      ...(event.cpu ? { cpu: event.cpu } : {}),
+      ...(event.memory ? { memory: event.memory } : {}),
+    },
   }));
 
   return sub;

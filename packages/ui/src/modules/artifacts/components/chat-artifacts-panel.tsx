@@ -103,7 +103,7 @@ export function ChatArtifactsPanel({
     >
       {loading || artifacts.length === 0 ? (
         <p className="px-4 py-5 text-xs text-muted-foreground">
-          {loading ? "Loading\u2026" : "No artifacts yet"}
+          {loading ? "Loading…" : "No artifacts yet."}
         </p>
       ) : (
         <div className="overflow-y-auto">

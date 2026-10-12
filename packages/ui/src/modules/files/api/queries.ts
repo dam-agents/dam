@@ -16,9 +16,9 @@ import {
   useAgentLacksLiveUpdates,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
+import { DEFAULT_EXPANDED_DIRS } from "../store.js";
 import { fileKeys } from "./keys.js";
 
-const EMPTY_EXPANDED: ReadonlySet<string> = new Set();
 const COMPAT_POLL_MS = 5_000;
 
 function clientFor(agentId: string) {
@@ -42,7 +42,9 @@ interface ListDirsResponse {
 
 export function useExpandedDirs(agentId: string | null): ReadonlySet<string> {
   return useStore((s) =>
-    agentId ? (s.expandedDirs[agentId] ?? EMPTY_EXPANDED) : EMPTY_EXPANDED,
+    agentId
+      ? (s.expandedDirs[agentId] ?? DEFAULT_EXPANDED_DIRS)
+      : DEFAULT_EXPANDED_DIRS,
   );
 }
 

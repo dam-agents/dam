@@ -201,6 +201,22 @@ describe("dam file list (integration)", () => {
     },
   );
 
+  it("-R lists a linked folder without descending into it", async () => {
+    directories[""] = {
+      path: "",
+      ok: true,
+      entries: [
+        { name: "self", type: "dir", symlink: true },
+        { name: "README.md", type: "file" },
+      ],
+    };
+
+    const result = await runList("-R");
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toBe("README.md\nself/\n");
+    expect(requested).toEqual([""]);
+  });
+
   it.each([
     { count: 500, prefix: "d" },
     { count: 501, prefix: "d" },

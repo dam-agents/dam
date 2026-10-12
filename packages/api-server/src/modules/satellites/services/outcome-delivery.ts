@@ -19,7 +19,7 @@ export interface OutcomeDeliveryDeps {
     }[],
   ) => Promise<number>;
   enqueue: (agentId: string) => Promise<void>;
-  wakeAgent: (agentId: string) => Promise<unknown>;
+  wakeUnlessStopped: (agentId: string) => Promise<boolean>;
   spillLog: (
     agentId: string,
     ref: string,
@@ -119,18 +119,11 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
       );
     }
 
-    try {
-      await deps.wakeAgent(agentId);
-      await deps.repo.markWoken(
-        agentId,
-        told.map((job) => ({
-          satellite: job.satellite,
-          sequence: job.sequence,
-        })),
-      );
-    } catch (err) {
-      deps.log(`[satellites] ${agentId} did not wake: ${String(err)}`);
-    }
+    await wake(
+      deps,
+      agentId,
+      told.map((job) => ({ satellite: job.satellite, sequence: job.sequence })),
+    );
     return true;
   };
 }
@@ -154,8 +147,7 @@ export function createOutcomeWakeRetry(
         if (await deliver(agentId)) continue;
         const claimed = await deps.repo.undeliveredFor(agentId);
         if (claimed.length === 0) continue;
-        await deps.wakeAgent(agentId);
-        await deps.repo.markWoken(agentId, claimed);
+        await wake(deps, agentId, claimed);
       } catch (err) {
         deps.log(
           `[satellites] the outcome sweep skipped ${agentId}: ${String(err)}`,
@@ -164,6 +156,30 @@ export function createOutcomeWakeRetry(
     }
     return agents.length;
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Wakes an Agent for a turn already in its outbox,
+ * unless the user stopped it: a stop wins, so the turn waits there for the
+ * Agent's next deliberate wake, and the Jobs are marked woken either way so
+ * the hourly retry does not wake it behind the user's back. The stop check
+ * and the wake are one conditional write on the Agent, so a stop landing in
+ * between is never erased.
+ */
+async function wake(
+  deps: OutcomeDeliveryDeps,
+  agentId: string,
+  jobs: { satellite: string; sequence: number }[],
+): Promise<void> {
+  try {
+    if (!(await deps.wakeUnlessStopped(agentId)))
+      deps.log(
+        `[satellites] ${agentId} is stopped; its outcome turn waits for the next wake`,
+      );
+    await deps.repo.markWoken(agentId, jobs);
+  } catch (err) {
+    deps.log(`[satellites] ${agentId} did not wake: ${String(err)}`);
+  }
 }
 
 async function releaseClaim(

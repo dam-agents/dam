@@ -12,7 +12,7 @@ const telemetryEnv: EnvVar[] = [
 
 describe("seedTelemetryIdentity", () => {
   it("appends the agent name attribute when the template enables telemetry", () => {
-    const env = seedTelemetryIdentity(telemetryEnv, "calm-harbor");
+    const env = seedTelemetryIdentity(telemetryEnv, "calm-harbor", false);
     expect(env).toContainEqual({
       name: "OTEL_RESOURCE_ATTRIBUTES",
       value: "platform.agent.name=calm-harbor",
@@ -21,7 +21,7 @@ describe("seedTelemetryIdentity", () => {
 
   it("leaves non-telemetry env untouched", () => {
     const env: EnvVar[] = [{ name: "FOO", value: "bar" }];
-    expect(seedTelemetryIdentity(env, "calm-harbor")).toBe(env);
+    expect(seedTelemetryIdentity(env, "calm-harbor", false)).toBe(env);
   });
 
   it("merges into an existing OTEL_RESOURCE_ATTRIBUTES, replacing a stale name", () => {
@@ -34,6 +34,7 @@ describe("seedTelemetryIdentity", () => {
         },
       ],
       "new-name",
+      false,
     );
     const attrs = env.find((e) => e.name === "OTEL_RESOURCE_ATTRIBUTES");
     expect(attrs?.value).toBe("team=blue,platform.agent.name=new-name");
@@ -43,7 +44,7 @@ describe("seedTelemetryIdentity", () => {
   });
 
   it("percent-encodes names that would break the key=value,: format", () => {
-    const env = seedTelemetryIdentity(telemetryEnv, "a,b=c");
+    const env = seedTelemetryIdentity(telemetryEnv, "a,b=c", false);
     const attrs = env.find((e) => e.name === "OTEL_RESOURCE_ATTRIBUTES");
     expect(attrs?.value).toBe("platform.agent.name=a%2Cb%3Dc");
   });

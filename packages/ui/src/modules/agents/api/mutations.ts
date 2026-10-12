@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import type { AgentConnections } from "api-server-api";
+import type { AvatarCharacter } from "api-server-api/avatar/svg";
 
 import { getErrorMessage } from "@/lib/errors";
 
@@ -16,6 +17,7 @@ import {
   importRawBundle,
 } from "../../files/api/import-bundle.js";
 import { trackImport } from "../../files/track-import.js";
+import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
 import { agentsKeys } from "./queries.js";
 
 const invalidatesAgentsList = {
@@ -34,6 +36,7 @@ export interface CreateAgentInput {
   templateId?: string;
   image?: string;
   description?: string;
+  avatar?: AvatarCharacter;
   env?: EnvVar[];
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
@@ -72,12 +75,18 @@ export function useCreateAgent() {
       if (rawBundle != null) {
         importLabel = rawBundle.name;
         runImport = () =>
-          importRawBundle({ agentId: agent.id, bundle: rawBundle });
+          importRawBundle({
+            agentId: agent.id,
+            bundle: rawBundle,
+          });
       } else if (importEntries && importEntries.length > 0) {
         const count = importEntries.length;
         importLabel = `${count} file${count === 1 ? "" : "s"}`;
         runImport = () =>
-          importBundle({ agentId: agent.id, entries: importEntries });
+          importBundle({
+            agentId: agent.id,
+            entries: importEntries,
+          });
       }
 
       if (runImport) {
@@ -99,7 +108,7 @@ export function useCreateAgent() {
     },
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to create agent",
+      errorToast: "Couldn't create agent",
     },
   });
 }
@@ -115,7 +124,7 @@ export function useDeleteAgent() {
     },
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to delete agent",
+      errorToast: "Couldn't delete agent",
     },
   });
 }
@@ -123,9 +132,13 @@ export function useDeleteAgent() {
 export function useUpdateAgent() {
   return useMutation({
     ...trpc.agents.update.mutationOptions(),
+    onSettled: (_agent, error, vars) => {
+      if (error || (vars.env === undefined && vars.name === undefined)) return;
+      askToRestartAfterSave(vars.id);
+    },
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to update agent",
+      errorToast: "Couldn't update agent",
     },
   });
 }
@@ -135,7 +148,7 @@ export function useWakeAgentMutation() {
     ...trpc.agents.wake.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to start agent",
+      errorToast: "Couldn't start agent",
     },
   });
 }
@@ -145,7 +158,7 @@ export function usePauseAgent() {
     ...trpc.agents.pause.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to pause agent",
+      errorToast: "Couldn't pause agent",
     },
   });
 }
@@ -155,7 +168,7 @@ export function useRetryWorkspace() {
     ...trpc.agents.retryWorkspace.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to retry the workspace step",
+      errorToast: "Couldn't retry the workspace step",
     },
   });
 }
@@ -165,7 +178,7 @@ export function useStopAgent() {
     ...trpc.agents.stop.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to stop agent",
+      errorToast: "Couldn't stop agent",
     },
   });
 }
@@ -175,7 +188,7 @@ export function useRestartAgentMutation() {
     ...trpc.agents.restart.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to restart agent",
+      errorToast: "Couldn't restart agent",
     },
   });
 }
@@ -187,7 +200,7 @@ export function useUpgradeAgentMutation(opts?: { silent?: boolean }) {
       ...invalidatesAgentsAndBudget,
       ...(opts?.silent
         ? { suppressErrorToast: true }
-        : { errorToast: "Failed to update agent" }),
+        : { errorToast: "Couldn't update agent" }),
     },
   });
 }
@@ -197,7 +210,7 @@ export function useMigrateRuntimeMutation() {
     ...trpc.agents.migrateRuntime.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to move the agent to the new runtime",
+      errorToast: "Couldn't move the agent to the new runtime",
     },
   });
 }
@@ -207,7 +220,7 @@ export function useAbortRuntimeMigrationMutation() {
     ...trpc.agents.abortRuntimeMigration.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to undo the move to the new runtime",
+      errorToast: "Couldn't undo the move to the new runtime",
     },
   });
 }
@@ -217,7 +230,7 @@ export function useRetryRuntimeMigrationMutation() {
     ...trpc.agents.retryRuntimeMigration.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to retry the move to the new runtime",
+      errorToast: "Couldn't retry the move to the new runtime",
     },
   });
 }
@@ -227,7 +240,7 @@ export function useConnectSlack() {
     ...trpc.agents.connectSlack.mutationOptions(),
     meta: {
       ...invalidatesAgentsList,
-      errorToast: "Failed to connect Slack",
+      errorToast: "Couldn't connect Slack",
     },
   });
 }
@@ -247,7 +260,7 @@ export function useDisconnectSlack() {
     ...trpc.agents.disconnectSlack.mutationOptions(),
     meta: {
       ...invalidatesAgentsList,
-      errorToast: "Failed to disconnect Slack",
+      errorToast: "Couldn't disconnect Slack",
     },
   });
 }
@@ -284,12 +297,15 @@ export function useSetAgentConnections() {
       if (context?.previous)
         queryClient.setQueryData(context.key, context.previous);
     },
+    onSettled: (_data, error, vars) => {
+      if (!error) askToRestartAfterSave(vars.agentId);
+    },
     meta: {
       invalidates: [
         trpc.connections.getAgentConnections.queryKey(),
         egressRulesKeys.all,
       ],
-      errorToast: "Failed to update app connections",
+      errorToast: "Couldn't update app connections",
     },
   });
 }

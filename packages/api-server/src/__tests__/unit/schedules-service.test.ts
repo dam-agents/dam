@@ -302,3 +302,60 @@ describe("runNow", () => {
     });
   });
 });
+
+describe("toggle", () => {
+  function makeToggleDeps() {
+    let stored = makeCurrent();
+    const armed: string[] = [];
+    const repo = {
+      async get() {
+        return stored;
+      },
+      async updateSpec(_id: string, _owner: string, spec: ScheduleSpec) {
+        stored = { ...stored, spec };
+        return stored;
+      },
+    } as unknown as SchedulesRepository;
+    const runner = {
+      async sync(id: string) {
+        armed.push(`sync ${id}`);
+      },
+      async cancel(id: string) {
+        armed.push(`cancel ${id}`);
+      },
+    } as unknown as SchedulerRunner;
+    return {
+      service: createSchedulesService({
+        repo,
+        runner,
+        owner: OWNER,
+        agentBinding: "*",
+      }),
+      armed,
+    };
+  }
+
+  // TEST_SCENARIO: a disable whose response was lost is re-sent by the user, or sent again from a second stale tab; the repeat must not re-enable the schedule.
+  it("keeps a schedule disabled when the disable is sent twice", async () => {
+    const { service, armed } = makeToggleDeps();
+
+    await service.toggle(SCHEDULE_ID, false);
+    const again = await service.toggle(SCHEDULE_ID, false);
+
+    expect(again?.spec.enabled).toBe(false);
+    expect(armed).toEqual([`cancel ${SCHEDULE_ID}`, `cancel ${SCHEDULE_ID}`]);
+  });
+
+  // TEST_SCENARIO: CLI releases that predate the target state send only the id, and must still pause and resume.
+  it("flips the state when no target is sent", async () => {
+    const { service } = makeToggleDeps();
+
+    const paused = await service.toggle(SCHEDULE_ID);
+    const resumed = await service.toggle(SCHEDULE_ID);
+
+    expect([paused?.spec.enabled, resumed?.spec.enabled]).toEqual([
+      false,
+      true,
+    ]);
+  });
+});

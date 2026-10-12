@@ -14,6 +14,7 @@ import {
 import { createKitUpdateMarks } from "./modules/agents/infrastructure/kit-update-marks.js";
 import {
   AGENTS_PLURAL,
+  ANN_STARTER_KIT,
   ANN_STARTER_KIT_ONBOARDED,
   INVOCATIONS_ACTIVE_KEY,
   LABEL_OWNER,
@@ -66,6 +67,7 @@ import { createImgbbAgentIcons } from "./modules/channels/infrastructure/agent-a
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
 import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
+import { createSlackIgnoredAppsRepository } from "./modules/channels/infrastructure/slack-ignored-apps-repository.js";
 import {
   createFakeSlackGateway,
   FAKE_WORKSPACE,
@@ -119,6 +121,7 @@ import {
 import {
   createHarnessConfigSnapshotWriter,
   harnessConfigSupportOf,
+  composeFirePair,
   composeSessionModelChoices,
 } from "./modules/harness-config/index.js";
 import {
@@ -190,6 +193,10 @@ import { createReposRepository } from "./modules/repos/infrastructure/repos-repo
 import { composeArtifactsModule } from "./modules/artifacts/compose.js";
 import { createTemplatesRepository } from "./modules/templates/infrastructure/templates-repository.js";
 import {
+  createHarnessCatalog,
+  DEFAULT_TEMPLATE_ID,
+} from "./modules/templates/domain/harness-catalog.js";
+import {
   catalogEntryHosts,
   createCatalogSourceFromLocator,
   createOnboardingChecklist,
@@ -203,6 +210,7 @@ import {
   createKitUpdateReporter,
   createResolvedCatalogRepository,
   parseCatalogSeeds,
+  parseKitRef,
 } from "./modules/starter-kits/index.js";
 import {
   composeInvocationLivenessSweep,
@@ -250,6 +258,7 @@ import {
   startAgentStateCache,
   createLiveAgentStateCache,
 } from "./modules/agents/infrastructure/agent-state-cache.js";
+import { createOutOfMemoryWatch } from "./modules/agents/infrastructure/out-of-memory-watch.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import {
@@ -343,6 +352,7 @@ export async function bootstrap() {
     live: k8sClient,
     namespace: config.namespace,
     log: (m) => getLogger().warn(`[agents] ${m}`),
+    observe: createOutOfMemoryWatch(),
   });
   const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
   const delegationFrames = createPodSessionClient({
@@ -356,6 +366,10 @@ export async function bootstrap() {
   const agentEnvRepo = createAgentEnvRepository(db);
 
   const templatesRepo = createTemplatesRepository(config.agentTemplatesPath);
+  const harnessCatalog = createHarnessCatalog(
+    config.harnesses,
+    (await templatesRepo.get(DEFAULT_TEMPLATE_ID)) !== null,
+  );
   const resolvedCatalog = createResolvedCatalogRepository(db);
   const kitGitHosts = createGitHosts({
     host: config.githubEnterpriseHost,
@@ -509,8 +523,16 @@ export async function bootstrap() {
       resolveOwner: resolveAgentOwner,
     }),
     harnessServerUrl: config.harnessServerUrl,
+    telemetryEnv: harnessCatalog.telemetryEnv,
     resolveOwner: resolveAgentOwner,
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
+  });
+  const firePair = composeFirePair({
+    db,
+    catalog: harnessCatalog,
+    getCapabilities: async (agentId) =>
+      (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+        ?.runtimeCapabilities ?? null,
   });
   await periodicJobs.register("starter-kits-refresh", 600_000, () =>
     starterKitsRefresh.run(),
@@ -562,7 +584,8 @@ export async function bootstrap() {
     ) => runtimeDelivery.runtimeMutator.bump(agentId, events),
     enqueue: (agentId: string) =>
       runtimeDelivery.runtimeMutator.enqueueAfterCommit(agentId),
-    wakeAgent: (agentId: string) => agentsRepo.wakeIfHibernated(agentId),
+    wakeUnlessStopped: (agentId: string) =>
+      agentsRepo.wakeUnlessStopped(agentId),
     spillLog: satellitesBoot.spillLog,
     log: (msg: string) => {
       process.stderr.write(`${msg}\n`);
@@ -646,6 +669,7 @@ export async function bootstrap() {
       oauthEngine: connectionsBoot.oauthEngine,
       githubAppEngine: connectionsBoot.githubAppEngine,
       s3CredentialProbe: connectionsBoot.s3CredentialProbe,
+      providerKeyProbe: connectionsBoot.providerKeyProbe,
       secretStore,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       agentsRepo,
@@ -734,13 +758,16 @@ export async function bootstrap() {
   });
   const usageMetrics = composeUsageMetricsModule({
     meter: metrics.getMeter("platform-apiserver"),
-    templateOf: (agentId) => {
+    harnessOf: (agentId) => {
       const agent = agentsRepo.peekCached(agentId);
       return agent
-        ? { agent: "resolved", templateId: agent.templateId }
+        ? { agent: "resolved", harness: agent.spec.harness }
         : { agent: "unresolved" };
     },
-    knownTemplates: new Set((await templatesRepo.list()).map((t) => t.id)),
+    knownHarnesses: new Set([
+      ...Object.keys(config.harnesses.catalog),
+      ...(await templatesRepo.list()).flatMap((t) => t.spec.harness ?? []),
+    ]),
     now: () => Date.now(),
   });
   usageMetrics.start();
@@ -755,10 +782,25 @@ export async function bootstrap() {
       const agents = await k8sClient.listCustomObjects(AGENTS_PLURAL);
       return agents
         .filter((a) => a.metadata?.name && a.metadata?.labels?.[LABEL_OWNER])
-        .map((a) => ({
-          id: a.metadata!.name!,
-          owner: a.metadata!.labels![LABEL_OWNER]!,
-        }));
+        .map((a) => {
+          const annotations = a.metadata?.annotations ?? {};
+          const kitRef = annotations[ANN_STARTER_KIT];
+          return {
+            id: a.metadata!.name!,
+            owner: a.metadata!.labels![LABEL_OWNER]!,
+            starterKit: kitRef ? (parseKitRef(kitRef)?.kitId ?? null) : null,
+            onboardedAt: annotations[ANN_STARTER_KIT_ONBOARDED] ?? null,
+          };
+        });
+    },
+    listLiveAgents: () => agentStateCache.list(),
+    agentSizing: {
+      slot: {
+        cpu: config.agentDefaultCpuLimit,
+        memory: config.agentDefaultMemoryLimit,
+      },
+      defaultStorage: config.agentDefaultStorageSize,
+      idleTimeoutMin: config.agentIdleTimeoutMinutes,
     },
   });
   usage.start();
@@ -941,6 +983,7 @@ export async function bootstrap() {
       namespace: config.namespace,
       instanceName,
       stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
+      firePair: (agentId) => firePair(agentId, {}),
     });
 
   const slackWorker = slackGatewayFactory
@@ -961,6 +1004,7 @@ export async function bootstrap() {
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
         setSlackChannelAmbient: setSlackChannelAmbient(db),
+        ignoredApps: createSlackIgnoredAppsRepository(db),
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
@@ -975,6 +1019,12 @@ export async function bootstrap() {
         agentIcon: config.imgbbApiKey
           ? createImgbbAgentIcons(config.imgbbApiKey)
           : null,
+        readPodRestarts: async (agentId) => {
+          const agent = await agentsRepo.get(agentId);
+          return agent
+            ? { restarts: agent.podRestarts, reason: agent.podRestartReason }
+            : null;
+        },
       })
     : undefined;
 
@@ -1111,6 +1161,7 @@ export async function bootstrap() {
 
   const schedulesBoot = composeSchedulesAtBoot({
     db,
+    firePair,
     agentOnceLimits: {
       maxOpen: config.onceScheduleAgentMaxOpen,
       maxPerHour: config.onceScheduleAgentMaxPerHour,
@@ -1367,6 +1418,7 @@ export async function bootstrap() {
       onboardingChecklists,
       grantProvisioner: connectionGrantProvisioner(
         connectionsServiceFor(owner),
+        harnessCatalog,
       ),
     }).agents;
 
@@ -1538,6 +1590,7 @@ export async function bootstrap() {
     agentsRepo,
     connectionsBoot,
     templatesRepo,
+    harnessCatalog,
     starterKitsRepo: resolvedCatalog,
     kitUpstream,
     reposService,
@@ -1578,6 +1631,7 @@ export async function bootstrap() {
     k8sClient,
     agentsRepo,
     templatesRepo,
+    harnessCatalog,
     artifactLibraryFor,
     agentsServiceFor: harnessAgentsServiceFor,
     connectionsServiceFor,

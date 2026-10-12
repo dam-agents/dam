@@ -21,8 +21,15 @@ agentProcesses: ["claude"]
 drivers:
   harness-config:
     file: "$HOME/.claude/settings.json"
-    # A session can be switched to another model over ACP without touching this file.
+    # Schedules may name a model for this harness; it reaches the harness as PLATFORM_MODEL.
     sessionModel: true
+    # What one session can pick for itself. Mode and effort change inside the
+    # live session; the cache TTL is read from the env at start, so a session
+    # that picks one runs in a Claude process of its own.
+    sessionSettings:
+      mode: { mode: true }
+      effort: { configOption: effort }
+      cacheTtl: { env: [CLAUDE_CODE_PROMPT_CACHE_TTL, CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL] }
     keys:
       model: "model"
       mode: "permissions.defaultMode"
@@ -56,6 +63,7 @@ drivers:
           name: Mode
           description: Session permission mode
           category: mode
+          default: "default"
           choices:
             - value: auto
               name: "Auto"
@@ -83,6 +91,7 @@ drivers:
           name: Effort
           description: Reasoning effort level
           category: thought_level
+          default: "medium"
           choices:
             - value: low
               name: "Low"
@@ -100,6 +109,7 @@ drivers:
           name: Prompt cache
           description: How long the prompt cache of the conversation and its subagents survives between turns
           category: cache
+          default: "5m"
           choices:
             - value: 5m
               name: "5 minutes"
@@ -120,6 +130,9 @@ drivers:
     modelDiscovery:
       urlEnv:
         - ANTHROPIC_BASE_URL
+      tokenEnv:
+        - ANTHROPIC_AUTH_TOKEN
+        - ANTHROPIC_API_KEY
       namePrefix: "claude/"
       lowercaseNames: true
       extendsCatalog: true

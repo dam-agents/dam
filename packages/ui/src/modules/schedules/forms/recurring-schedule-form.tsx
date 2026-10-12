@@ -21,6 +21,7 @@ import {
   ScheduleModelField,
   SchedulePrecheckField,
   ScheduleRecurrenceFields,
+  ScheduleSessionTitleField,
   ScheduleSessionTypeField,
 } from "./schedule-fields.js";
 import {
@@ -57,9 +58,9 @@ export function RecurringScheduleForm({
   const handleDelete = async () => {
     if (!existing) return;
     const confirmed = await showConfirm(
-      "Are you sure you want to delete this schedule?",
+      "It stops running and cannot be recovered.",
       `Delete ${existing.name}?`,
-      { kind: "destructive", confirmLabel: "Delete Schedule" },
+      { kind: "destructive", confirmLabel: "Delete schedule" },
     );
     if (!confirmed) return;
     deleteSchedule.mutate({ id: existing.id });
@@ -89,6 +90,7 @@ export function RecurringScheduleForm({
   const onSubmit = handleSubmit((v) => {
     const precheck = v.precheck.trim();
     const model = v.model.trim();
+    const sessionTitle = v.sessionTitle.trim();
     const common = {
       name: v.name,
       rrule: buildRRuleParts(v).body,
@@ -113,6 +115,7 @@ export function RecurringScheduleForm({
           ...common,
           precheck: precheck || null,
           model: model || null,
+          sessionTitle: sessionTitle || null,
         },
         { onSuccess },
       );
@@ -123,6 +126,7 @@ export function RecurringScheduleForm({
           ...common,
           ...(precheck ? { precheck } : {}),
           ...(model ? { model } : {}),
+          ...(sessionTitle ? { sessionTitle } : {}),
         },
         { onSuccess },
       );
@@ -132,17 +136,16 @@ export function RecurringScheduleForm({
   return (
     <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
       <DialogHeader
-        title={existing ? "Edit schedule" : "Create a new Schedule"}
+        title={existing ? "Edit schedule" : "New schedule"}
         onClose={onClose}
       />
 
       <DialogBody className="flex flex-col gap-4">
         {leadingFields}
-        <FormField label="Name" error={errors.name?.message} disableInset>
+        <FormField label="Name" error={errors.name?.message}>
           <Input
-            className="h-10"
             variant={errors.name ? "invalid" : undefined}
-            placeholder={`eg. "Daily brief"`}
+            placeholder="e.g. Daily brief"
             {...register("name")}
           />
         </FormField>
@@ -161,7 +164,7 @@ export function RecurringScheduleForm({
           error={quietHoursError}
         />
 
-        <FormField label="Prompt" error={errors.task?.message} disableInset>
+        <FormField label="Prompt" error={errors.task?.message}>
           <Textarea
             className="min-h-[80px] resize-y"
             variant={errors.task ? "invalid" : undefined}
@@ -190,6 +193,11 @@ export function RecurringScheduleForm({
         />
 
         <ScheduleSessionTypeField layout="stacked" control={control} />
+
+        <ScheduleSessionTitleField
+          registration={register("sessionTitle")}
+          error={errors.sessionTitle?.message}
+        />
       </DialogBody>
 
       <DialogActions
@@ -199,7 +207,6 @@ export function RecurringScheduleForm({
               type="button"
               variant="ghost"
               tone="danger"
-              className="text-danger"
               disabled={deleteSchedule.isPending}
               onClick={() => void handleDelete()}
             >

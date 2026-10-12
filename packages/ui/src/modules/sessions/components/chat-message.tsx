@@ -6,11 +6,12 @@ import { cn } from "@/lib/utils";
 
 import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
-import { LazyRobotHead } from "../../agents/components/avatar/lazy-robot-head.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { modelDisplayName } from "../lib/model-name.js";
 import type { MessageTime } from "../lib/thread-items.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
+import { QuietNotice } from "./quiet-notice.js";
 import { SendErrorCard } from "./send-error-card.js";
 import { type OnRetry, UndeliveredNotice } from "./undelivered-notice.js";
 import { WorkingDots } from "./working-dots.js";
@@ -21,7 +22,7 @@ type Props = BaseProps & MessageTime;
 
 interface BaseProps {
   message: Message;
-  avatarAgentName?: string;
+  avatarAgent?: { name: string; avatar: string | null };
   userLabel?: string;
   readOnly?: boolean;
   showModel?: boolean;
@@ -72,12 +73,12 @@ function LoadOlderMarker({
         <button
           type="button"
           onClick={fire}
-          className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60 hover:text-foreground"
+          className="text-2xs italic text-muted-foreground px-3 py-1 border-t border-b border-border/60 hover:text-foreground"
         >
           Couldn&apos;t load earlier messages — tap to retry
         </button>
       ) : (
-        <span className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
+        <span className="text-2xs italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
           Loading earlier messages…
         </span>
       )}
@@ -87,7 +88,7 @@ function LoadOlderMarker({
 
 export const ChatMessage = memo(function ChatMessage({
   message,
-  avatarAgentName,
+  avatarAgent,
   userLabel = "You",
   readOnly = false,
   showModel = false,
@@ -111,7 +112,7 @@ export const ChatMessage = memo(function ChatMessage({
     }
     return (
       <div className="flex justify-center anim-in">
-        <span className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
+        <span className="text-2xs italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
           {message.parts.find((p) => p.kind === "text")?.text ?? "…"}
         </span>
       </div>
@@ -135,18 +136,22 @@ export const ChatMessage = memo(function ChatMessage({
       <div
         className={cn(
           "flex gap-1.5 mb-0.5",
-          avatarAgentName === undefined ? "items-baseline" : "items-center",
+          avatarAgent === undefined ? "items-baseline" : "items-center",
         )}
       >
-        {isAssistant && avatarAgentName !== undefined && (
-          <LazyRobotHead name={avatarAgentName} size={20} />
+        {isAssistant && avatarAgent !== undefined && (
+          <AgentAvatar
+            name={avatarAgent.name}
+            avatar={avatarAgent.avatar}
+            size={24}
+          />
         )}
-        <span className="text-[11px] font-medium text-muted-foreground">
-          {isAssistant ? (avatarAgentName ?? "Agent") : userLabel}
+        <span className="text-2xs font-medium text-muted-foreground">
+          {isAssistant ? (avatarAgent?.name ?? "Agent") : userLabel}
         </span>
         {timeLabel !== undefined && (
           <Tooltip side="top" content={timeTitle}>
-            <span className="text-[11px] text-muted-foreground cursor-default">
+            <span className="text-2xs text-muted-foreground cursor-default">
               {timeLabel}
             </span>
           </Tooltip>
@@ -208,11 +213,16 @@ export const ChatMessage = memo(function ChatMessage({
         <Tooltip side="top" content={message.model}>
           <span
             data-testid="reply-model"
-            className="text-[11px] text-muted-foreground cursor-default"
+            className="text-2xs text-muted-foreground cursor-default"
           >
             {modelDisplayName(message.model)}
           </span>
         </Tooltip>
+      )}
+      {isAssistant && !streaming && message.stoppedAtOutputLimit && (
+        <QuietNotice testId="reply-output-limit-notice">
+          Reply stopped at the output limit.
+        </QuietNotice>
       )}
       {error && isAssistant && (
         <SendErrorCard

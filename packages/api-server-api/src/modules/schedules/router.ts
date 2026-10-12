@@ -34,6 +34,7 @@ function toView(sched: Schedule) {
     task: sched.spec.task ?? null,
     precheck: sched.spec.precheck ?? null,
     model: sched.spec.model ?? null,
+    sessionTitle: sched.spec.sessionTitle ?? null,
     enabled: sched.spec.enabled,
     sessionMode: sched.spec.sessionMode,
     createdBy: sched.spec.createdBy,
@@ -143,7 +144,7 @@ export const schedulesRouter = t.router({
   toggle: manageAgentsProcedure
     .input(scheduleToggleInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const sched = await ctx.schedules.toggle(input.id);
+      const sched = await ctx.schedules.toggle(input.id, input.enabled);
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(sched);
     }),
