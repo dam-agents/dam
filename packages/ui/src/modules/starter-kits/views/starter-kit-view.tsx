@@ -460,9 +460,6 @@ function KitDetail({
               />
             </div>
           )}
-          <h2 className="mb-3 text-base font-semibold text-foreground">
-            Included
-          </h2>
           {kbSeed && (
             <Section label="Knowledge base">
               <Row
