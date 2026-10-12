@@ -7,6 +7,7 @@ import {
   TrashCan,
   Warning,
 } from "@carbon/icons-react";
+import { routesSessionPairs } from "agent-runtime-api";
 import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
 import {
   type CSSProperties,
@@ -125,7 +126,6 @@ import {
   useSidebarPanels,
 } from "../hooks/use-sidebar-panels.js";
 import { draftKey } from "../lib/draft-key.js";
-import { routesSessionPairs } from "../lib/session-pair-options.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
 import { dividerLabel, threadItems, timeProps } from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";

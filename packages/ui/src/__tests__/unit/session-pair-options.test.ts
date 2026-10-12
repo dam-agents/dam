@@ -1,3 +1,4 @@
+import { routesSessionPairs } from "agent-runtime-api";
 import type { HarnessView } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
@@ -6,7 +7,6 @@ import {
   harnessOptions,
   nextPair,
   providerOptions,
-  routesSessionPairs,
 } from "../../modules/sessions/lib/session-pair-options.js";
 
 const CATALOG: HarnessView[] = [

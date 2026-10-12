@@ -1,4 +1,5 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
+import { routesSessionPairs } from "agent-runtime-api";
 import type {
   ConnectionView,
   HarnessConfigStatus,
@@ -25,7 +26,6 @@ import {
   grantedProviderRefs,
   nextPair,
   type ProviderConnectionRef,
-  routesSessionPairs,
 } from "../lib/session-pair-options.js";
 import { acpSessionsKeys } from "./keys.js";
 

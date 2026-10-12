@@ -62,8 +62,18 @@ describe("provider harness compatibility", () => {
         getCapabilities: async () => ({
           defaultHarness: "pi",
           harnesses: [
-            { name: "pi", harnessConfig: true, sessionModel: true },
-            { name: "claude-code", harnessConfig: true, sessionModel: true },
+            {
+              name: "pi",
+              harnessConfig: true,
+              sessionModel: true,
+              sessionSettings: ["mode"],
+            },
+            {
+              name: "claude-code",
+              harnessConfig: true,
+              sessionModel: true,
+              sessionSettings: ["mode"],
+            },
           ],
         }),
       },

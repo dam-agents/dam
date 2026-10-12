@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A new session or terminal carries the picked harness, provider and model only when the agent's runtime advertises sessionSettings. Older images ignore the pair (Pi falls back to its built-in Anthropic default), so they get no pair and run on the agent's defaults.
+// TEST_OVERVIEW: A new session or terminal carries the picked harness, provider and model only when every harness with a harness config advertises sessionSettings. Older images ignore the pair (Pi falls back to its built-in Anthropic default), so they get no pair and run on the agent's defaults.
 import type { HarnessCapability } from "agent-runtime-api";
 import { beforeEach, expect, it, vi } from "vitest";
 

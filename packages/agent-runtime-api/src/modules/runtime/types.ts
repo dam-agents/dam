@@ -360,6 +360,14 @@ export const harnessCapability = z.object({
   sessionSettings: z.array(z.string().min(1)).optional(),
 });
 export type HarnessCapability = z.infer<typeof harnessCapability>;
+export function routesSessionPairs(
+  carried: readonly Pick<
+    HarnessCapability,
+    "harnessConfig" | "sessionSettings"
+  >[],
+): boolean {
+  return !carried.some((h) => h.harnessConfig && !h.sessionSettings);
+}
 
 function advertisedKinds<T extends string>(known: readonly T[]) {
   const recognised = new Set<string>(known);
