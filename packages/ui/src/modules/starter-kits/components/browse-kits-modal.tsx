@@ -19,10 +19,10 @@ const DEFAULT_KIT = {
 };
 
 const HARNESS_PILLS = [
-  ["bob", "bg-purple-500/15 text-purple-700 dark:text-purple-300"],
-  ["claude-code", "bg-orange-500/15 text-orange-700 dark:text-orange-300"],
-  ["codex", "bg-green-500/15 text-green-700 dark:text-green-300"],
-  ["pi", "bg-blue-900/15 text-blue-900 dark:bg-blue-500/20 dark:text-blue-300"],
+  ["bob", "text-purple-600 dark:text-purple-400"],
+  ["claude-code", "text-orange-600 dark:text-orange-400"],
+  ["codex", "text-green-600 dark:text-green-400"],
+  ["pi", "text-blue-900 dark:text-blue-400"],
 ] as const;
 
 export function BrowseKitsModal() {
@@ -107,9 +107,12 @@ export function BrowseKitsModal() {
                             key={harness}
                             variant="muted"
                             size="sm"
-                            className={`gap-1.5 ${color}`}
+                            className="gap-1.5"
                           >
-                            <Icon aria-hidden="true" className="size-3.5" />
+                            <Icon
+                              aria-hidden="true"
+                              className={`size-3.5 ${color}`}
+                            />
                             {label}
                           </Badge>
                         );
