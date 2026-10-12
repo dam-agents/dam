@@ -251,3 +251,12 @@ export async function setSessionMode(
     }),
   );
 }
+
+export async function readSessionHistory(
+  agentId: string,
+  sessionId: string,
+): Promise<readonly string[]> {
+  if (agentLacksLiveUpdates(agentId)) return [];
+  return (await agentTrpc(agentId).sessions.history.query({ sessionId }))
+    .frames;
+}

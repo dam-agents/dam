@@ -30,8 +30,13 @@ import {
 } from "../../agents/api/queries.js";
 import { findAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys } from "../api/keys.js";
-import { setSessionRunning } from "../api/queries.js";
+import {
+  fetchSessionHistory,
+  listedSessionRunning,
+  setSessionRunning,
+} from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
+import { previewFromHistory } from "../lib/history-preview.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
 import { useAcpConnection } from "./use-acp-connection.js";
@@ -151,8 +156,22 @@ export function useAcpSession(
       useStore.getState().setSessionError(null);
       setSessionId(sid);
 
+      let loaded = false;
+      if (agentOperable)
+        fetchSessionHistory(selectedAgent, sid)
+          .then((frames) => {
+            if (loaded || useStore.getState().sessionId !== sid) return;
+            const preview = previewFromHistory(frames, {
+              turnInFlight: listedSessionRunning(selectedAgent, sid),
+            });
+            if (preview.length > 0) setMessages(preview);
+          })
+          .catch(() => {});
+
       try {
-        const fresh = await loadSessionHistory(sid);
+        const fresh = await loadSessionHistory(sid).finally(() => {
+          loaded = true;
+        });
         if (useStore.getState().sessionId !== sid) return;
         setMessages(fresh);
 
@@ -173,6 +192,7 @@ export function useAcpSession(
     },
     [
       selectedAgent,
+      agentOperable,
       loadSessionHistory,
       resetConnection,
       setMessages,

@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -183,6 +183,8 @@ An image may declare a **session-history provider**: it fills the log with no ha
 Resume is the better fit: the log already holds the history, so a harness that streams its replay only after answering the load would otherwise duplicate it.
 Otherwise, or on provider failure, the runtime's own `session/load` fills the log, reaching no client.
 Waiters are then served from the log, shielding the UI from per-harness gaps and the cold-subprocess problem.
+The same replay is also readable as data, over the pod's own tRPC surface, from the log or the provider a load would use.
+The UI reads it the moment a past session opens and renders the newest turns from it, so the conversation shows before the ACP load engages the session; the load's answer then replaces what was rendered, so the load stays the authority for what the thread shows.
 
 #### Prompt delivery
 

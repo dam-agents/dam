@@ -452,14 +452,15 @@ export function ChatView() {
     }
   }, [messages.length]);
 
+  const historyShown = !loadingSession || messages.length > 0;
   useLayoutEffect(() => {
-    if (loadingSession) return;
+    if (!historyShown) return;
     const el = messagesRef.current;
     if (!el) return;
     stickRef.current = true;
     setShowJump(false);
     el.scrollTop = el.scrollHeight;
-  }, [loadingSession, sessionId]);
+  }, [historyShown, sessionId]);
 
   const pendingResumeSessionId = useStore((s) => s.pendingResumeSessionId);
   const setPendingResumeSessionId = useStore(
@@ -803,7 +804,7 @@ export function ChatView() {
               <div className="@container relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
                   <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 flex flex-col gap-8 min-h-full">
-                    {loadingSession && (
+                    {!historyShown && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
                         Loading session…
