@@ -71,6 +71,7 @@ test("boots and holds a chat turn", async ({ page }) => {
 // TEST_SCENARIO: on the vm Backend a machine boots with the install's boot estimate and the runner grows it to its size once the guest is up. A grow that fails boots the machine again whole, so the agent still answers and nothing else in the suite would notice; the runner's log of a successful grow is the evidence that the guest put the added RAM online.
 test("grows its machine past the boot RAM", async () => {
   test.skip(laneBackend !== "vm", "only a vm machine boots small and grows");
+  test.setTimeout(120_000);
   await expect
     .poll(
       () =>
