@@ -13,7 +13,7 @@ use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
 use crate::imagecache::{CacheConfig, ImageCache};
 use crate::launch::{ImageLaunch, LAUNCH_FILE};
-use crate::plan::{READY_GRACE, UNHEALTHY_RESTART};
+use crate::plan::{READY_GRACE, STALLED_RESTART, UNHEALTHY_RESTART};
 use crate::state::RUNTIME_FILE;
 use std::path::Path;
 
@@ -1293,10 +1293,7 @@ async fn a_guest_that_went_quiet_is_restarted_once_and_counted() {
             quiet_since: Some(SystemTime::now() - UNHEALTHY_RESTART - Duration::from_secs(1)),
         }
     });
-    assert_eq!(
-        h.server.put("m1", spec(true)).unwrap().state,
-        STATE_RESTARTING
-    );
+    h.server.put("m1", spec(true)).unwrap();
     let status = h.settle("m1").await;
     assert_eq!(status.restarts, 1);
     let calls = vec!["create m1", "start m1", "stop m1", "update m1", "start m1"];
@@ -1305,6 +1302,89 @@ async fn a_guest_that_went_quiet_is_restarted_once_and_counted() {
     assert_eq!(h.server.put("m1", spec(true)).unwrap().state, STATE_RUNNING);
     assert_eq!(h.settle("m1").await.restarts, 1);
     assert_eq!(h.fake.calls(), calls, "the restart earned another one");
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: marks the machine quiet for just longer than STALLED_RESTART, as a guest that stopped answering that long ago looks.
+fn stall(h: &Harness, id: &str) {
+    h.machine(id, |m| {
+        m.health.quiet_since = Some(SystemTime::now() - STALLED_RESTART - Duration::from_secs(1))
+    });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a guest on the machine's port again, once the one stopped before it has let the port go.
+async fn guest_again(h: &Harness) -> Arc<AtomicBool> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while TcpListener::bind(("127.0.0.1", h.base + LOOPBACK_OFFSET)).is_err() {
+        assert!(Instant::now() < deadline, "the old guest kept its port");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    guest(h.base)
+}
+
+// TEST_SCENARIO: a guest that answered in this boot and then stopped answering is restarted by the prober itself, once it has been quiet past STALLED_RESTART, without waiting for the controller's next ensure. Its replacement is not restarted while it boots, and when it stalls again soon after, it waits the long UNHEALTHY_RESTART instead, so a guest a reboot does not cure is not restarted every minute.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stalled_guest_is_restarted_soon_but_not_in_a_loop() {
+    let h = Harness::new("stalled");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let up = guest(h.base);
+    h.until("m1", "ready", |s| s.ready).await;
+    up.store(false, Ordering::SeqCst);
+    stall(&h, "m1");
+    h.server.probe("m1");
+    let status = h.settle("m1").await;
+    assert_eq!(status.restarts, 1, "{status:?}");
+    let calls = vec!["create m1", "start m1", "stop m1", "update m1", "start m1"];
+    assert_eq!(h.fake.calls(), calls);
+
+    stall(&h, "m1");
+    h.server.probe("m1");
+    assert_eq!(h.settle("m1").await.restarts, 1);
+    assert_eq!(
+        h.fake.calls(),
+        calls,
+        "a boot not yet answered was restarted"
+    );
+
+    let up = guest_again(&h).await;
+    h.until("m1", "ready again", |s| s.ready).await;
+    up.store(false, Ordering::SeqCst);
+    stall(&h, "m1");
+    h.server.probe("m1");
+    assert_eq!(h.settle("m1").await.restarts, 1);
+    assert_eq!(
+        h.fake.calls(),
+        calls,
+        "a second stall soon after the first was restarted at once"
+    );
+
+    h.machine("m1", |m| {
+        m.gave_up = Some(Instant::now() - UNHEALTHY_RESTART - Duration::from_secs(1))
+    });
+    stall(&h, "m1");
+    h.server.probe("m1");
+    assert_eq!(h.settle("m1").await.restarts, 2);
+}
+
+// TEST_SCENARIO: what must not be restarted as stalled: a boot whose guest has not answered yet, however long a slow first boot or image unpack takes, and a guest that answers again after a long silence, as a busy one does.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_booting_or_answering_guest_is_not_restarted_as_stalled() {
+    let h = Harness::new("not-stalled");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.machine("m1", |m| m.health.ever_ready = true);
+    stall(&h, "m1");
+    h.server.probe("m1");
+    assert_eq!(h.settle("m1").await.restarts, 0);
+
+    let _guest = guest(h.base);
+    h.until("m1", "ready", |s| s.ready).await;
+    stall(&h, "m1");
+    h.server.probe("m1");
+    let status = h.settle("m1").await;
+    assert_eq!(status.restarts, 0);
+    assert!(status.ready);
+    assert_eq!(h.fake.calls(), vec!["create m1", "start m1"]);
 }
 
 // TEST_SCENARIO: an unpacked image is the root filesystem of every machine of it, so eviction never takes one a machine is running from — the cache goes over its budget instead.

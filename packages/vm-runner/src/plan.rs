@@ -5,13 +5,16 @@ use crate::state::is_image_ref;
 
 // UNIT_BOUNDARY_DESCRIPTION: the next thing the runner does to bring one machine to the spec it was asked for, and nothing about doing it. The controller sends the whole desired spec on every reconcile, so this decision is made again and again against a machine that is already in some state. It is pure so that a wrong decision can be found without a hypervisor, before it restarts every agent once a minute.
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a machine that once answered may stay quiet before it is restarted. A machine that has never answered is still booting, and one that answered a moment ago is between checks, so both halves of the condition are needed.
+// UNIT_BOUNDARY_DESCRIPTION: how long a machine that once answered may stay quiet before it is restarted, while the boot it runs now has not answered yet, or soon after it was last restarted for going quiet. A machine that has never answered is still booting, and one that answered a moment ago is between checks, so both halves of the condition are needed.
 pub const UNHEALTHY_RESTART: Duration = Duration::from_secs(10 * 60);
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a machine whose current boot has answered may stay quiet before it is restarted. The probe asks the agent runtime's own HTTP server, the one every turn reaches the agent through, and that server answers from its event loop without waiting on a tool call or a turn, so a guest busy with work still answers inside the probe's two seconds; one silent this long has an agent that no turn can reach. At the steady cadence a probe that misses takes about twelve seconds, so this is the fifth miss in a row, and a stalled guest is restarted within about a minute of its first miss instead of staying dead until idle hibernation stops it. It is far below the container Backend's liveness budget because that probe waits five seconds per try against this one's two, and a vm guest has no kubelet to restart its agent alone.
+pub const STALLED_RESTART: Duration = Duration::from_secs(45);
 
 // UNIT_BOUNDARY_DESCRIPTION: the same, for a machine whose VMM another VM runtime booted. The runner assumes it manages such a machine as well as its own, and treats a guest gone quiet as the sign that it does not: a reboot onto its own runtime costs seconds, where waiting out the ordinary grace would leave the agent down for minutes on a failure the reboot fixes. Three steady probes.
 pub const FOREIGN_UNHEALTHY_RESTART: Duration = Duration::from_secs(30);
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a machine that has answered stays ready through missed probes: one interval of the prober's steady cadence, so the machine reads unready on the second consecutive miss and not the first. The probe is bounded to two seconds and a guest under nested virtualization, or on a busy node, takes one to two to answer, so a single miss says nothing about the guest — reporting it would flap the Agent's readiness and fail the deliveries riding on it. Quiet longer than UNHEALTHY_RESTART restarts.
+// UNIT_BOUNDARY_DESCRIPTION: how long a machine that has answered stays ready through missed probes: one interval of the prober's steady cadence, so the machine reads unready on the second consecutive miss and not the first. The probe is bounded to two seconds and a guest under nested virtualization, or on a busy node, takes one to two to answer, so a single miss says nothing about the guest — reporting it would flap the Agent's readiness and fail the deliveries riding on it. Quiet longer than quiet_limit restarts.
 pub const READY_GRACE: Duration = crate::server::STEADY_PROBE;
 
 // UNIT_BOUNDARY_DESCRIPTION: one step towards the desired spec. Each step is whole: a start or a restart applies every change to the stopped machine — size, env, image and egress allowlist — before it boots, so one step is enough unless a newer spec arrives while it runs. `unhealthy` marks a restart the runner chose because the guest went quiet; only those are counted as the agent's restarts.
@@ -78,6 +81,21 @@ impl Health {
             return false;
         };
         self.ever_ready && now.duration_since(since).is_ok_and(|quiet| quiet > limit)
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a machine may stay quiet before the runner restarts it. A foreign machine gets FOREIGN_UNHEALTHY_RESTART. A boot that has answered gets STALLED_RESTART, unless the runner restarted the machine for going quiet less than UNHEALTHY_RESTART ago: a guest that stalls again so soon is not cured by a reboot, so it is restarted at most once per UNHEALTHY_RESTART instead of every minute. A boot that has not answered is a slow boot, and gets UNHEALTHY_RESTART.
+pub fn quiet_limit(
+    foreign: bool,
+    boot_answered: bool,
+    since_unhealthy_restart: Option<Duration>,
+) -> Duration {
+    if foreign {
+        FOREIGN_UNHEALTHY_RESTART
+    } else if boot_answered && since_unhealthy_restart.is_none_or(|ago| ago >= UNHEALTHY_RESTART) {
+        STALLED_RESTART
+    } else {
+        UNHEALTHY_RESTART
     }
 }
 
@@ -478,6 +496,27 @@ mod tests {
 
         quiet.observed_running(true, later(UNHEALTHY_RESTART));
         assert!(!quiet.quiet_beyond(later(UNHEALTHY_RESTART * 3), UNHEALTHY_RESTART));
+    }
+
+    // TEST_SCENARIO: a guest that answered in this boot and then stalled is restarted soon. A boot not yet answered is a slow boot and keeps the long limit, and a guest that stalls again within UNHEALTHY_RESTART of its last such restart waits that long too, so a guest a reboot does not cure is not restarted every minute.
+    #[test]
+    fn a_stall_after_an_answer_is_given_up_on_soon_but_not_in_a_loop() {
+        assert_eq!(quiet_limit(false, true, None), STALLED_RESTART);
+        assert_eq!(quiet_limit(false, false, None), UNHEALTHY_RESTART);
+        assert_eq!(
+            quiet_limit(
+                false,
+                true,
+                Some(UNHEALTHY_RESTART - Duration::from_secs(1))
+            ),
+            UNHEALTHY_RESTART
+        );
+        assert_eq!(
+            quiet_limit(false, true, Some(UNHEALTHY_RESTART)),
+            STALLED_RESTART
+        );
+        assert_eq!(quiet_limit(true, false, None), FOREIGN_UNHEALTHY_RESTART);
+        assert!(STALLED_RESTART > READY_GRACE * 4);
     }
 
     // TEST_SCENARIO: a machine that answered is still ready for one steady probe interval of silence and not a moment longer; one that never answered gets no grace at all.
