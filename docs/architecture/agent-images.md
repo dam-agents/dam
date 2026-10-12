@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -75,6 +75,8 @@ Layers are packed as plain tars: a local cluster imports them as they are, and C
   The entrypoint maps `agent` to uid 0 for SSH logins and prepares sshd.
 
 On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-entrypoint) trusts every CA under `/etc/platform/ca` in the system bundle — the gateway's MITM CA, and the extra CAs the install names for a TLS-inspecting proxy beyond it — and the agent's environment sets `NODE_USE_SYSTEM_CA`, so Node reads that bundle like every other client, seeds a new home from the working-dir seed, and discards the caches on the home that no tool it ships reads ([persistence](persistence.md#per-agent-pvcs) owns the rule).
+The environment also points `SSL_CERT_DIR` at `/etc/platform/ca`: Node's system store reads every file in that directory, and the default, `/etc/ssl/certs`, holds about 300 links to certificates the bundle already has, which cost every node process a quarter of a second on a machine before it could exit or make its first TLS call.
+OpenSSL-based clients still find every root in the bundle, and Go also reads the platform CAs from the directory itself.
 The bundle, and Chromium's store below, record what they were last built from and are rebuilt only when it changes: a machine's root and every home outlive a boot, and `update-ca-certificates` forks several times for each root the distribution ships, which takes seconds on a machine.
 The bundle's record also holds the image's distribution roots, since a machine's root outlives a new image too.
 On a machine it also points docker's client at the gateway, so containers and builds the agent starts go through it too, and puts the share's runtime wrapper in front of docker's and k3s's runc, so they trust the MITM CA as well.

@@ -132,6 +132,7 @@ func TestBuildAgentStatefulSet_Running(t *testing.T) {
 	}
 	assert.Equal(t, "/etc/platform/ca/ca.crt", envMap["NODE_EXTRA_CA_CERTS"])
 	assert.Equal(t, "1", envMap["NODE_USE_SYSTEM_CA"], "Node reads the system bundle, which the entrypoint fills with every platform CA")
+	assert.Equal(t, "/etc/platform/ca", envMap["SSL_CERT_DIR"], "Node's system store reads every file in SSL_CERT_DIR, and the default /etc/ssl/certs holds about 300 links to certificates the bundle already has: reading them cost every node process about 250 ms on a machine")
 	_, hasSSLCertFile := envMap["SSL_CERT_FILE"]
 	assert.False(t, hasSSLCertFile, "SSL_CERT_FILE must be left to the base image")
 	_, hasGitCAInfo := envMap["GIT_SSL_CAINFO"]
