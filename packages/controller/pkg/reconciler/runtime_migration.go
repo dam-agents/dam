@@ -1121,7 +1121,7 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old home volume read-only, as the identity the volume calls for. It runs confined: the runtime's default seccomp profile, no capability beyond the one reading may need, no privilege escalation and a read-only root, under the agent pods' own RuntimeClass, since it only reads. It reaches only the owner's runner, pinned by the runner pod's address in its hosts file so it needs no DNS, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volume attaches.
+// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old home volume read-only, as the identity the volume calls for. It runs confined: the runtime's default seccomp profile, no capability beyond the one reading may need, no privilege escalation and a read-only root. It runs under the cluster's default runtime, not the agent pods' RuntimeClass: a Kata pod's memory cgroup holds the whole VM but is sized from the container's limit plus a fixed overhead, far below the guest's RAM, so reading a home of a few hundred MiB fills the guest page cache, the kernel kills the VMM, and the pod is left running with nothing able to stop it. The pod runs only platform tooling over the agent's data, never agent code, as the storage migration's copy does. It reaches only the owner's runner, pinned by the runner pod's address in its hosts file so it needs no DNS, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volume attaches.
 func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, source, runnerIP string, reader runtimeMigrationIdentity) (*batchv1.Job, error) {
 	name := agent.Name
 	cfg := r.config
@@ -1234,9 +1234,7 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 		},
 	}
 	applyAgentBaseScheduling(&job.Spec.Template.Spec, cfg.AgentBase)
-	if rc := agent.Spec.RuntimeClassName; rc != "" {
-		job.Spec.Template.Spec.RuntimeClassName = &rc
-	}
+	job.Spec.Template.Spec.RuntimeClassName = nil
 	return job, nil
 }
 
