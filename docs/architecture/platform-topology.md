@@ -134,7 +134,7 @@ Its responsibilities are:
   The SSH wire is opaque here — this is `dam ssh`'s transport.
   Available only on images that ship `sshd`.
 - Run the browser panel's display stack and its browser: the `browser` tRPC procedures keep agent-browser's browser running and run the panel's toolbar, and the stream socket relayed from the api-server on `/api/browser/display` it hands to the display's stream server ([browser-panel](browser-panel.md)).
-- Hold the agent side of the runtime channel: call the api-server's `hello` on boot and reconnect, accept `applyState` deliveries over its tRPC surface, apply declarative state contributions under the agent's HOME (e.g. `~/.config/gh/hosts.yml` for granted GitHub Enterprise app connections), and dispatch runtime events (schedule triggers, workspace seeding) to in-pod handlers.
+- Hold the agent side of the runtime channel: call the api-server's `hello` on boot and reconnect, accept `applyState` deliveries over its tRPC surface, apply declarative state contributions under the agent's HOME, and dispatch runtime events (schedule triggers, workspace seeding) to in-pod handlers.
   See [runtime delivery](runtime-delivery.md).
 - On a shared knowledge base, own share freshness: watch the share roots, persist a dirty marker on the agent volume, and after a quiet period initiate the publish handshake against the api-server — plan locally, upload to presigned URLs, report completion.
   A scheduled or running flush reports the pod busy so hibernation waits ([knowledge bases](knowledge-bases.md)).
@@ -218,7 +218,7 @@ So a reply never lands above a newer message, unprompted work shows as the lates
 | ui → api-server (`<rel>-apiserver`) | tRPC over WebSocket | Resource CRUD, permission flows, terms acceptance, and the live-events subscription (server-pushed cache invalidation) |
 | ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live chat session, permission prompts, streaming output; also carries session list/create/delete and mode changes, all over ACP (sessions are agent-owned) |
 | ui → api-server | WebSocket (binary terminal frames) | Live terminal session — input / output / resize / exit / session moved |
-| cli → api-server | tRPC over HTTP | Agent resolution, auth (same tRPC surface the UI uses). Session CRUD is removed — sessions are agent-owned over ACP; the CLI's terminal-resolution path still references the dropped `sessions.*` procedures and is pending migration |
+| cli → api-server | tRPC over HTTP | Agent resolution, auth (same tRPC surface the UI uses). Session CRUD is removed — sessions are agent-owned over ACP |
 | cli → api-server | WebSocket (binary terminal frames) | `dam chat` terminal attach — same frame protocol as the UI terminal path |
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
 | api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
