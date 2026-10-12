@@ -8,17 +8,27 @@ export function BindSharingText({
   audience,
 }: {
   agentName: string;
-  connectionNames: readonly string[];
+  connectionNames: readonly string[] | null;
   audience: SharedChannel;
 }) {
+  const name = (
+    <strong className="font-semibold text-foreground">{agentName}</strong>
+  );
+  const phrase = <SharedChannelsPhrase channels={[audience]} />;
+  if (connectionNames === null)
+    return (
+      <>
+        The connections of {name} could not be checked. If it has any, anyone in{" "}
+        {phrase} can ask it to use them, with your access.
+      </>
+    );
   const one = connectionNames.length === 1;
   return (
     <>
-      <strong className="font-semibold text-foreground">{agentName}</strong> has{" "}
+      {name} has{" "}
       {one ? "1 connection" : `${connectionNames.length} connections`}:{" "}
-      <BoldList items={connectionNames} limit={4} />. Anyone in{" "}
-      <SharedChannelsPhrase channels={[audience]} /> can ask it to use{" "}
-      {one ? "it" : "them"}, with your access.
+      <BoldList items={connectionNames} limit={4} />. Anyone in {phrase} can ask
+      it to use {one ? "it" : "them"}, with your access.
     </>
   );
 }

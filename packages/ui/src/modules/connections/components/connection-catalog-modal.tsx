@@ -45,7 +45,7 @@ type Pane =
   | { kind: "create-mcp" };
 
 export interface ChannelSharing {
-  channels: readonly SharedChannel[];
+  channels: readonly SharedChannel[] | null;
   confirm: () => Promise<boolean>;
   dismissed: boolean;
 }
@@ -171,6 +171,20 @@ export function ConnectionCatalogModal({
       })(),
   };
 
+  const grantSatellite =
+    satelliteGrant &&
+    ((satellite: SatelliteView): RowGrantControls => {
+      const controls = satelliteGrant(satellite);
+      return {
+        ...controls,
+        onToggle: (on) =>
+          void (async () => {
+            if (on && !(await confirmShare())) return;
+            controls.onToggle(on);
+          })(),
+      };
+    });
+
   const grantCreated = async (id: string) => {
     if (sandbox && !createShareConfirmed.current && !(await confirmShare())) {
       emitToast({ kind: "success", message: "Connection created." });
@@ -232,7 +246,7 @@ export function ConnectionCatalogModal({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {pane.kind === "browse" && (
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
-              {sharing?.dismissed && sharing.channels.length > 0 && (
+              {sharing?.dismissed && !!sharing.channels?.length && (
                 <SharedChannelsNotice>
                   This agent is bound to{" "}
                   <SharedChannelsPhrase channels={sharing.channels} />. Anyone
@@ -261,7 +275,7 @@ export function ConnectionCatalogModal({
               {activeTab === "mcp" && showSatellites && !narrowed && (
                 <CatalogSatellitesPane
                   satellites={satellites}
-                  grant={satelliteGrant}
+                  grant={grantSatellite}
                 />
               )}
             </div>

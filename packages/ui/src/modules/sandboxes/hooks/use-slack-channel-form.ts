@@ -7,6 +7,8 @@ import { z } from "zod";
 import { getBrand } from "../../../brand.js";
 import type { AgentView } from "../../../types.js";
 import { useConnectSlack } from "../../agents/api/mutations.js";
+import { useBindSharingConfirm } from "../../agents/hooks/use-bind-sharing-confirm.js";
+import { isSlackDirectMessageId } from "../lib/shared-channels.js";
 import { planSlackChannelSave } from "../lib/slack-channel-save.js";
 
 export type { SlackChannel };
@@ -67,6 +69,7 @@ export function useSlackChannelForm(
   const editing = !!channel;
 
   const connectSlack = useConnectSlack();
+  const bindConfirm = useBindSharingConfirm(editing ? null : agent);
 
   const form = useForm<SlackChannelFormValues>({
     resolver: zodResolver(slackChannelFormSchema),
@@ -84,6 +87,11 @@ export function useSlackChannelForm(
   });
 
   const onSubmit = form.handleSubmit(async (values) => {
+    const audience =
+      editing || isSlackDirectMessageId(values.channelId)
+        ? null
+        : { kind: "slack-channel" as const, name: null };
+    if (!(await bindConfirm.confirm(audience, "Connect"))) return;
     const connect = planSlackChannelSave({
       agentId: agent.id,
       channel,

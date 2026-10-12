@@ -15,12 +15,24 @@ export interface SharedConnectionConfirm {
 }
 
 export function useConfirmSharedConnection(
-  channels: readonly SharedChannel[],
+  channels: readonly SharedChannel[] | null,
 ): SharedConnectionConfirm {
   const { dismissed, confirm: confirmDismissible } = useDismissibleConfirm(
     DISMISSED_STORAGE_KEY,
   );
   const confirm = useCallback(async () => {
+    if (channels === null)
+      return confirmDismissible({
+        title: "This connection may be shared with a Slack or Telegram chat",
+        body: (
+          <>
+            The agent's channels did not load. If it is bound to a Slack channel
+            or a group chat, anyone there can ask it to use the connections you
+            add, with your access.
+          </>
+        ),
+        confirmLabel: "Add connection",
+      });
     if (channels.length === 0) return true;
     return confirmDismissible({
       title: `This connection will be shared with ${sharedChannelsTitle(channels)}`,

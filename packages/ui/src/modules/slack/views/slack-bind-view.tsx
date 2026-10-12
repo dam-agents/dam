@@ -7,6 +7,7 @@ import {
   type BindPickerCopy,
 } from "../../agents/components/bind/agent-bind-picker.js";
 import { BindTerminalPage } from "../../agents/components/bind/bind-terminal-page.js";
+import { isSlackDirectMessageId } from "../../sandboxes/lib/shared-channels.js";
 import { useBindSlackChannel } from "../api/mutations.js";
 import { useSlackBindFlow } from "../api/queries.js";
 import {
@@ -104,7 +105,7 @@ function pickerCopy(
       "Everyone in the channel will be able to use the agent. Turns run under the agent's own connected accounts and API tokens, and your acceptance of the Terms of Use covers every turn.",
     action: "Add to channel",
     audience:
-      !flow || flow.slackChannelId.startsWith("D")
+      !flow || isSlackDirectMessageId(flow.slackChannelId)
         ? null
         : {
             kind: "slack-channel",

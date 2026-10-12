@@ -12,9 +12,12 @@ export type SharedChannel =
   | { kind: "slack-group-dm" }
   | { kind: "telegram-chat"; name: string | null };
 
+export const isSlackDirectMessageId = (slackChannelId: string): boolean =>
+  slackChannelId.startsWith("D");
+
 const isSlackDirectMessage = (channel: SlackChannel): boolean =>
   channel.label?.kind === "direct-message" ||
-  channel.slackChannelId.startsWith("D");
+  isSlackDirectMessageId(channel.slackChannelId);
 
 const toSharedSlackChannel = (channel: SlackChannel): SharedChannel =>
   channel.label?.kind === "group-direct-message"

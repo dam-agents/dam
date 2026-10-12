@@ -55,6 +55,8 @@ Every turn relays single-track to the main agent pod; the **binding owner's** Te
 
 Telegram is structurally identical — with no workspace to anchor per-user identity, consent attaches to the conversation and everyone in the bound chat drives the Agent.
 
+Members use every granted Connection and Satellite; the UI warns, never blocks, when a group binding and grants meet.
+
 #### Ambient mode
 
 A Slack binding can additionally run in **ambient mode**: the agent reads along with the whole channel conversation and decides for itself when to chime in.
