@@ -157,7 +157,12 @@ describe("resolveFirePair", () => {
         getCapabilities: async () => ({
           defaultHarness: "claude-code",
           harnesses: [
-            { name: "claude-code", harnessConfig: true, sessionModel: true },
+            {
+              name: "claude-code",
+              harnessConfig: true,
+              sessionModel: true,
+              sessionSettings: ["mode"],
+            },
           ],
         }),
       },
@@ -172,6 +177,47 @@ describe("resolveFirePair", () => {
   });
 });
 
+describe("resolveFirePair on an agent too old for session pairs", () => {
+  /** TEST_SCENARIO: An image built before session settings carries Pi with a
+   * harness config but drops a lease's model, so Pi would fall back to its
+   * built-in Anthropic default. Schedule fires and channel turns name no pair
+   * there, and the runtime runs them on the agent's own defaults. */
+  it("names no pair when a configured harness lacks session settings", async () => {
+    const pair = await resolveFirePair(
+      {
+        pairRepo: {
+          read: async () => ({
+            harness: "pi",
+            provider: "curve",
+            model: "rits/zai-org/glm-5-3",
+          }),
+          write: async () => {},
+          grantedProviders: async () => [{ id: "curve", type: "curve-bender" }],
+        },
+        catalog: {
+          default: "claude-code",
+          harnesses: [
+            {
+              name: "pi",
+              displayName: "Pi",
+              providers: ["curve-bender"],
+              tags: [],
+              experimental: false,
+            },
+          ],
+          telemetryEnv: () => [],
+        },
+        getCapabilities: async () => ({
+          defaultHarness: "pi",
+          harnesses: [{ name: "pi", harnessConfig: true, sessionModel: false }],
+        }),
+      },
+      "agent-1",
+      {},
+    );
+    expect(pair).toBeUndefined();
+  });
+});
 describe("resolveFirePair on a harness outside the catalog", () => {
   /** TEST_SCENARIO: A custom template's agent, such as the e2e mock, runs a
    * harness the catalog does not offer. Its channel turns and schedule fires
