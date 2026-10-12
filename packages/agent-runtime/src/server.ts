@@ -944,6 +944,7 @@ server.on("upgrade", (req, socket, head) => {
       preparedSshd = undefined;
       return null;
     });
+    socket.on("error", () => socket.destroy());
     void preparedSshd.then((prepared) => {
       if (!prepared) {
         socket.destroy();
