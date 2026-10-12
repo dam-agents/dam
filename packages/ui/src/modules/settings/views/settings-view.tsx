@@ -89,7 +89,6 @@ export function SettingsView() {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
-  const setView = useStore((s) => s.setView);
   const user = getUser();
 
   return (
@@ -119,7 +118,6 @@ export function SettingsView() {
               description="Customize the look and feel of the interface."
             />
 
-            {}
             <div className="mb-8">
               <SectionLabel spaced>Theme</SectionLabel>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -165,7 +163,6 @@ export function SettingsView() {
               description="Manage your account and session."
             />
 
-            <SectionLabel spaced>Profile</SectionLabel>
             <Card className="flex items-center gap-4 p-4">
               <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-base">
                 {(user?.profile.preferred_username ??
@@ -185,8 +182,6 @@ export function SettingsView() {
                 Log out
               </Button>
             </Card>
-
-
           </div>
         )}
 

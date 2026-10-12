@@ -1,5 +1,11 @@
 import type { CarbonIconType } from "@carbon/icons-react";
-import { Book, ChevronRight, Document, LogoGithub } from "@carbon/icons-react";
+import {
+  Book,
+  ChevronRight,
+  Document,
+  Launch,
+  LogoGithub,
+} from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
@@ -13,7 +19,10 @@ import { DOCS_URL, SOURCE_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
 import { AppVersionRow } from "./app-version-row.js";
 
-const ROW = cn(LIST_ROW, "w-full text-left transition-colors hover:bg-muted/40");
+const ROW = cn(
+  LIST_ROW,
+  "w-full text-left transition-colors hover:bg-muted/40",
+);
 
 export function AboutTab() {
   const setView = useStore((s) => s.setView);
@@ -27,6 +36,7 @@ export function AboutTab() {
             icon={Book}
             title="Documentation"
             description="Guides and reference for using agents."
+            external
           />
         </a>
         <a href={SOURCE_URL} {...externalLinkProps} className={ROW}>
@@ -34,6 +44,7 @@ export function AboutTab() {
             icon={LogoGithub}
             title="Source code"
             description="The repository on GitHub."
+            external
           />
         </a>
         <button type="button" onClick={() => setView("terms")} className={ROW}>
@@ -53,11 +64,14 @@ function AboutRowBody({
   icon: Icon,
   title,
   description,
+  external = false,
 }: {
   icon: CarbonIconType;
   title: string;
   description: ReactNode;
+  external?: boolean;
 }) {
+  const Trailing = external ? Launch : ChevronRight;
   return (
     <>
       <Icon size={20} className="shrink-0 text-muted-foreground" />
@@ -69,7 +83,7 @@ function AboutRowBody({
           {description}
         </span>
       </span>
-      <ChevronRight size={16} className="shrink-0 text-muted-foreground" />
+      <Trailing size={16} className="shrink-0 text-muted-foreground" />
     </>
   );
 }
