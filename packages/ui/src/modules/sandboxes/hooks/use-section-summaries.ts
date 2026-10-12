@@ -35,6 +35,7 @@ import type { SandboxSection } from "../../platform/lib/routes.js";
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { useSchedules } from "../../schedules/api/queries.js";
 import { isUpcoming } from "../../schedules/lib/once-schedule.js";
+import { useProviderConnections } from "../../sessions/api/session-pair.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
@@ -193,6 +194,13 @@ export function useSectionSummaries(agent: AgentView | null): {
     return count === 0 ? "No knowledge bases" : plural(count, "knowledge base");
   }, [apps, appsLoaded, connectionsQuery.data]);
 
+  const providers = useProviderConnections(agent?.id ?? null);
+  const providersSummary = providers.loaded
+    ? providers.granted.length === 0
+      ? "None attached"
+      : providers.granted.map((p) => p.name).join(", ")
+    : undefined;
+
   const { data: monthSpend, isError: spendUnavailable } = useAgentMonthSpend(
     agent?.id ?? null,
   );
@@ -207,6 +215,7 @@ export function useSectionSummaries(agent: AgentView | null): {
   return {
     summaries: {
       setup,
+      providers: providersSummary,
       connections,
       network,
       environment,

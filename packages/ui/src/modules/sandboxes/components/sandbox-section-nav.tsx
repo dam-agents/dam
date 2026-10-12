@@ -20,6 +20,12 @@ export const SECTIONS: SectionEntry[] = [
       "How long this agent stays awake and how much compute it gets.",
   },
   {
+    section: "providers",
+    title: "Providers",
+    description:
+      "Choose which of your connected LLM providers this agent can use.",
+  },
+  {
     section: "connections",
     title: "Connections",
     description:

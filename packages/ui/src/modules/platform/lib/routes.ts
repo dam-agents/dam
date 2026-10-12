@@ -17,6 +17,7 @@ export type SettingsTab = z.infer<typeof settingsTabSchema>;
 
 const sandboxSectionSchema = z.enum([
   "setup",
+  "providers",
   "connections",
   "knowledge",
   "network",
