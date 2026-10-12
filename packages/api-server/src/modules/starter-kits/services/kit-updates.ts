@@ -7,6 +7,7 @@ import type {
   KitUpdateStatus,
   SchedulesService,
   SeedStamp,
+  SessionPair,
   StarterKitsService,
 } from "api-server-api";
 
@@ -45,6 +46,7 @@ export interface KitUpdatesDeps {
   familyTitles: () => Promise<ReadonlyMap<string, string>>;
   wakeAgent: (agentId: string) => Promise<void>;
   runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
+  sessionPair: (agentId: string) => Promise<SessionPair | null | undefined>;
   now?: () => Date;
 }
 
@@ -133,10 +135,11 @@ export function createKitUpdates(deps: KitUpdatesDeps): KitUpdateOps {
         });
       const targetCommit = status.latest!;
       const { agent, stamp, current } = found;
-      const [granted, schedules, familyTitles] = await Promise.all([
+      const [granted, schedules, familyTitles, pair] = await Promise.all([
         deps.grantedTemplates(agentId),
         deps.schedules.list(agentId),
         deps.familyTitles(),
+        deps.sessionPair(agentId),
       ]);
       const task = composeKitUpdatePrompt({
         stamp,
@@ -155,7 +158,7 @@ export function createKitUpdates(deps: KitUpdatesDeps): KitUpdateOps {
       const pending = { targetCommit, startedAt: at.toISOString() };
       await deps.marks.begin(agentId, stamp, pending);
       await deps.runtimeMutator.bump(agentId, [
-        kitUpdateEvent(agentId, task, at),
+        kitUpdateEvent(agentId, task, at, pair),
       ]);
       await deps.runtimeMutator.enqueueAfterCommit(agentId);
       await deps.wakeAgent(agentId);

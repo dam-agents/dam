@@ -246,6 +246,7 @@ function makeHarness(
     },
     kitUpstream: NO_UPSTREAM,
     kitUpdateMarks: NO_MARKS,
+    sessionPair: async () => undefined,
     runtimeMutator: {
       async bump(agentId, events) {
         calls.bumped.push({ agentId, events });
@@ -687,6 +688,7 @@ describe("starter kits: apply", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      sessionPair: async () => undefined,
       runtimeMutator: {
         bump: async () => 1,
         enqueueAfterCommit: async () => {},
@@ -805,6 +807,7 @@ describe("starter kits: apply", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      sessionPair: async () => undefined,
       runtimeMutator: {
         bump: async () => 1,
         enqueueAfterCommit: async () => {},
@@ -906,6 +909,7 @@ describe("starter kits: onboarding turn", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      sessionPair: async () => undefined,
       runtimeMutator: {
         bump: async () => {
           throw new Error("outbox down");

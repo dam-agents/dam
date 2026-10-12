@@ -1592,6 +1592,7 @@ export async function bootstrap() {
     harnessCatalog,
     starterKitsRepo: resolvedCatalog,
     kitUpstream,
+    firePair,
     reposService,
     apiKeysModule,
     satellitesBoot,

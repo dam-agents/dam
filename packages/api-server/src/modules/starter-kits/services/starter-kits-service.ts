@@ -11,6 +11,7 @@ import type {
   AgentsService,
   ConnectionsService,
   SchedulesService,
+  SessionPair,
   SkillsService,
   StarterKitApplyInput,
   StarterKitApplyResult,
@@ -71,6 +72,7 @@ export interface StarterKitsServiceDeps {
   wakeAgent: (agentId: string) => Promise<void>;
   markAgentOnboarded: (agentId: string, at: string) => Promise<void>;
   runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
+  sessionPair: (agentId: string) => Promise<SessionPair | null | undefined>;
   egressRules: {
     seed(
       agentId: string,
@@ -232,7 +234,7 @@ export function createStarterKitsService(
     if (task === null) return;
     const at = new Date();
     await deps.runtimeMutator.bump(agentId, [
-      initializationEvent(agentId, task, at),
+      initializationEvent(agentId, task, at, await deps.sessionPair(agentId)),
     ]);
     await deps.runtimeMutator.enqueueAfterCommit(agentId);
   }
@@ -257,6 +259,7 @@ export function createStarterKitsService(
     familyTitles,
     wakeAgent: deps.wakeAgent,
     runtimeMutator: deps.runtimeMutator,
+    sessionPair: deps.sessionPair,
   });
 
   return {
