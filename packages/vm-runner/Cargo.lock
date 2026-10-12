@@ -439,6 +439,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete"
+version = "4.6.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "037e2a1a92236d0aff7e845093f64661d6df4c02c9fcc61a60e9e1d736fa392f"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "clap_derive"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2685,7 +2694,7 @@ checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 
 [[package]]
 name = "smolfile"
-version = "1.24.1"
+version = "1.27.0"
 dependencies = [
  "serde",
  "smolvm-protocol",
@@ -2710,13 +2719,14 @@ dependencies = [
 
 [[package]]
 name = "smolvm"
-version = "1.24.1"
+version = "1.27.0"
 dependencies = [
  "async-stream",
  "axum",
  "axum-server 0.7.3",
  "base64 0.22.1",
  "clap",
+ "clap_complete",
  "dirs",
  "futures-util",
  "getrandom 0.3.4",
@@ -2776,7 +2786,7 @@ dependencies = [
 
 [[package]]
 name = "smolvm-checkpoint"
-version = "1.24.1"
+version = "1.27.0"
 dependencies = [
  "hex",
  "libc",
@@ -2791,7 +2801,7 @@ dependencies = [
 
 [[package]]
 name = "smolvm-credentials"
-version = "1.24.1"
+version = "1.27.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2815,7 +2825,7 @@ dependencies = [
 
 [[package]]
 name = "smolvm-cuda"
-version = "1.24.1"
+version = "1.27.0"
 dependencies = [
  "getrandom 0.3.4",
  "libc",
@@ -2824,13 +2834,14 @@ dependencies = [
 
 [[package]]
 name = "smolvm-network"
-version = "1.24.1"
+version = "1.27.0"
 dependencies = [
  "crossbeam-queue",
  "getrandom 0.3.4",
  "humantime",
  "libc",
  "polling",
+ "serde_json",
  "sha2 0.10.9",
  "smoltcp",
  "smolvm-protocol",
@@ -2840,7 +2851,7 @@ dependencies = [
 
 [[package]]
 name = "smolvm-pack"
-version = "1.24.1"
+version = "1.27.0"
 dependencies = [
  "crc32fast",
  "dirs",
@@ -2860,7 +2871,7 @@ dependencies = [
 
 [[package]]
 name = "smolvm-protocol"
-version = "1.24.1"
+version = "1.27.0"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -2870,7 +2881,7 @@ dependencies = [
 
 [[package]]
 name = "smolvm-registry"
-version = "1.24.1"
+version = "1.27.0"
 dependencies = [
  "bytes",
  "dirs",
@@ -2878,6 +2889,8 @@ dependencies = [
  "futures-util",
  "hex",
  "reqwest 0.12.28",
+ "rustls",
+ "rustls-native-certs",
  "serde",
  "serde_json",
  "sha2 0.10.9",
