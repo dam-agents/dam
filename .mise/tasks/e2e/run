@@ -57,12 +57,25 @@ cleanup() {
       echo "--- VM host: load, busiest threads, VMM threads by name and state ---"
       uptime || true
       ps -eLo pid,tid,stat,pcpu,comm --sort=-pcpu 2>/dev/null | head -25 || true
-      ps -eLo pid,stat,comm 2>/dev/null | awk '$3 ~ /^smolvm/ {n[$1" "$3" "substr($2,1,1)]++} END {for (k in n) print n[k], k}' | sort -rn | head -40 || true
+      for pid in $(pgrep '^VM:' 2>/dev/null); do
+        echo "### VMM $pid: tid comm state cpu-ticks-in-5s cpu-ticks-total"
+        declare -A t0=()
+        for t in /proc/$pid/task/*; do t0[${t##*/}]=$(awk '{print $14+$15}' "$t/stat" 2>/dev/null); done
+        sleep 5
+        for t in /proc/$pid/task/*; do
+          tid=${t##*/}; now=$(awk '{print $14+$15}' "$t/stat" 2>/dev/null)
+          echo "$tid $(cat "$t/comm" 2>/dev/null | tr ' ' _) $(awk '{print $3}' "$t/stat" 2>/dev/null) $((now - ${t0[$tid]:-0})) $now"
+        done | sort -k4 -rn | head -20
+        for tid in $(for t in /proc/$pid/task/*; do echo "$(awk '{print $14+$15}' "$t/stat") ${t##*/}"; done | sort -rn | head -3 | awk '{print $2}'); do
+          echo "# kernel stack of $tid ($(cat /proc/$pid/task/$tid/comm))"; sudo cat /proc/$pid/task/$tid/stack 2>&1 | head -12
+        done
+        unset t0
+      done
       echo ""
-      echo "--- VM guest consoles (tail) ---"
+      echo "--- VM guest consoles (tail) and guest kernel lines ---"
       for pod in $(kubectl get pods -n platform-agents -o name 2>/dev/null | grep vm-runner-[0-9a-f]); do
         kubectl exec -n platform-agents "$pod" -- sh -c \
-          'for f in $(find /var/lib/platform -name "agent-console.log" -o -name "agent-startup-error.log" 2>/dev/null); do echo "### $f"; tail -c 30000 "$f"; done' 2>&1 || true
+          'for f in $(find /var/lib/platform -name "agent-console.log" 2>/dev/null); do echo "### $f"; tail -c 8000 "$f"; done; for f in $(find /var/lib/platform -name "agent-startup-error.log" 2>/dev/null); do echo "### $f"; grep -v "virtio-net:" "$f" | tail -150; done' 2>&1 || true
       done
     fi
     echo ""
