@@ -258,7 +258,9 @@ describe("session pair model choices", () => {
 
   it("shows loading and stopped states without selectable placeholders", () => {
     state.loading = true;
-    expect(renderPicker()).toContain("Loading models…");
+    const loading = renderPicker();
+    expect(loading).toContain("Loading models…");
+    expect(loading).toContain("animate-spin");
     state.operable = false;
     expect(renderPicker()).toContain(
       "Start the agent to list this provider&#x27;s models.",

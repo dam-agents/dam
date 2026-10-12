@@ -1,6 +1,7 @@
 import { Add, Unlink, WarningAltFilled } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
+import { useState } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -365,6 +367,7 @@ function ProviderModels({
     harness,
     provider.id,
   );
+  const [retrying, setRetrying] = useState(false);
   const models =
     data?.availableModels === null ? fallback : (data?.availableModels ?? []);
   const unavailable = isError || data?.availableModels === undefined;
@@ -387,19 +390,27 @@ function ProviderModels({
         ))}
         {models.length === 0 && (
           <li className="px-1 py-1 text-muted-foreground">
-            {!operable
-              ? "Start the agent to list this provider's models."
-              : isLoading
-                ? "Loading models…"
-                : unavailable
-                  ? "Couldn't load this provider's models."
-                  : "No models available."}
-            {operable && !isLoading && unavailable && (
+            {!operable ? (
+              "Start the agent to list this provider's models."
+            ) : isLoading || retrying ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner size={12} className="text-muted-foreground" />
+                Loading models…
+              </span>
+            ) : unavailable ? (
+              "Couldn't load this provider's models."
+            ) : (
+              "No models available."
+            )}
+            {operable && !isLoading && !retrying && unavailable && (
               <Button
                 variant="link"
                 size="inline"
                 className="ml-1"
-                onClick={() => void refetch()}
+                onClick={() => {
+                  setRetrying(true);
+                  void refetch().finally(() => setRetrying(false));
+                }}
               >
                 Retry
               </Button>
