@@ -74,7 +74,7 @@ export interface PromptScheduler {
     ) => Pick<PromptSubmission, "source" | "frame" | "typed" | "blocks">,
   ): boolean;
   remove(sessionId: string, promptId: string): PromptSubmission | null;
-  onToolsIdle(sessionId: string): void;
+  onSteerPoint(sessionId: string): void;
   forget(sessionId: string): void;
   clear(): void;
 }
@@ -98,7 +98,7 @@ export interface PromptSchedulerDeps {
     sessionId: string,
     turn: { promptId: string | null; runPrompt: boolean },
   ) => void;
-  toolsIdle?: (sessionId: string) => boolean;
+  atSteerPoint?: (sessionId: string) => boolean;
   queueParkMs?: number;
   steerWaitMs?: number;
 }
@@ -115,10 +115,13 @@ export interface PromptSchedulerDeps {
  * A steerable prompt that arrives while a turn runs and nothing waits ahead of
  * it is steered into that turn instead of queued, when the harness steers; so
  * is the head of the queue, one at a time, whenever a turn is running and no
- * steer is out, so a queue drains into the turn in order. A steer waits for
- * the turn's open tool calls to finish, so the agent reads it next to their
- * results; until then the prompt is an ordinary queued one, editable, and a
- * prompt that has waited steerWaitMs is steered regardless. The steer is a round
+ * steer is out, so a queue drains into the turn in order. A steer waits for a
+ * steer point — the agent is not writing and has no tool call open, which is
+ * right after its tools finish — because the harness aborts whatever the agent
+ * is generating to take a steer, and would cut a reply off mid-sentence. Until
+ * then the prompt is an ordinary queued one, editable; a turn that ends first
+ * starts it as the next turn, and a prompt that has waited steerWaitMs is
+ * steered regardless. The steer is a round
  * trip: while it is out, the queue holds, so a turn ending in that window
  * cannot start a later prompt ahead of it. Injected, the prompt is part of the
  * running turn and its sender is answered when that turn ends; refused, it
@@ -293,7 +296,7 @@ export function createPromptScheduler(
     return (
       entry.steerable === true &&
       entry.steerRefused !== true &&
-      ((deps.toolsIdle?.(sessionId) ?? true) || waitedOut(entry)) &&
+      ((deps.atSteerPoint?.(sessionId) ?? true) || waitedOut(entry)) &&
       deps.steer !== undefined &&
       activeTurns.has(sessionId) &&
       !steering.has(sessionId) &&
@@ -598,7 +601,7 @@ export function createPromptScheduler(
       return entry ?? null;
     },
 
-    onToolsIdle(sessionId) {
+    onSteerPoint(sessionId) {
       steerFromQueue(sessionId);
     },
 

@@ -10,9 +10,10 @@ import {
  * TEST_OVERVIEW: When the Prompt Scheduler steers a prompt into the running
  * turn.
  *
- * A steer waits until the turn has no open tool call, so the agent reads the
- * prompt next to the tool results and is not cut off mid-tool. Until then the
- * prompt is an ordinary queued one. It never waits longer than the steer wait
+ * A steer waits for a steer point: the agent is not writing and has no tool
+ * call open. The harness aborts whatever the agent is generating to take a
+ * steer, so steering outside one cuts a reply off. Until then the prompt is an
+ * ordinary queued one. It never waits longer than the steer wait
  * (`steerWaitMs`): after that it is steered regardless. A setting queued
  * before the prompt — a model or mode change — applies between turns, so a
  * prompt behind one is never steered past it.
@@ -39,7 +40,7 @@ function submission(
   };
 }
 
-function schedulerWith(tools: { idle: boolean }) {
+function schedulerWith(point: { reached: boolean }) {
   const steer = vi.fn(() => new Promise<never>(() => {}));
   const scheduler = createPromptScheduler({
     canStart: () => true,
@@ -47,14 +48,14 @@ function schedulerWith(tools: { idle: boolean }) {
     sendToAgent: () => true,
     canSteer: () => true,
     steer,
-    toolsIdle: () => tools.idle,
+    atSteerPoint: () => point.reached,
     steerWaitMs: STEER_WAIT_MS,
   });
   scheduler.submit(submission(1));
   return { scheduler, steer };
 }
 
-describe("prompt scheduler: steering waits for tool calls", () => {
+describe("prompt scheduler: steering waits for a steer point", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -63,28 +64,29 @@ describe("prompt scheduler: steering waits for tool calls", () => {
   });
 
   /**
-   * TEST_SCENARIO: A prompt sent while a tool call runs must stay queued, so
-   * the user can still change it, and be steered the moment the last open
-   * tool call settles.
+   * TEST_SCENARIO: A prompt sent while the agent writes or runs a tool must
+   * stay queued, so the user can still change it, and be steered the moment
+   * the turn reaches a steer point.
    */
-  it("steers once the turn's tool calls are done", () => {
-    const tools = { idle: false };
-    const { scheduler, steer } = schedulerWith(tools);
+  it("steers once the turn reaches a steer point", () => {
+    const point = { reached: false };
+    const { scheduler, steer } = schedulerWith(point);
 
     expect(scheduler.submit(submission(2, { steerable: true }))).toBe("queued");
     expect(steer).not.toHaveBeenCalled();
 
-    tools.idle = true;
-    scheduler.onToolsIdle("s1");
+    point.reached = true;
+    scheduler.onSteerPoint("s1");
     expect(steer).toHaveBeenCalledTimes(1);
   });
 
   /**
-   * TEST_SCENARIO: A tool call can run for a long time. The prompt must not
-   * wait for it beyond the steer wait; after that it is steered anyway.
+   * TEST_SCENARIO: A tool call or a reply can run for a long time. The prompt
+   * must not wait for a steer point beyond the steer wait; after that it is
+   * steered anyway.
    */
   it("steers anyway once the steer wait has passed", () => {
-    const { scheduler, steer } = schedulerWith({ idle: false });
+    const { scheduler, steer } = schedulerWith({ reached: false });
 
     scheduler.submit(submission(2, { steerable: true }));
     vi.advanceTimersByTime(STEER_WAIT_MS - 1);
@@ -95,11 +97,10 @@ describe("prompt scheduler: steering waits for tool calls", () => {
   });
 
   /**
-   * TEST_SCENARIO: A prompt with no open tool call ahead of it is steered at
-   * once, as before the wait existed.
+   * TEST_SCENARIO: A prompt sent at a steer point is steered at once.
    */
-  it("steers at once when no tool call is open", () => {
-    const { scheduler, steer } = schedulerWith({ idle: true });
+  it("steers at once at a steer point", () => {
+    const { scheduler, steer } = schedulerWith({ reached: true });
 
     expect(scheduler.submit(submission(2, { steerable: true }))).toBe(
       "steering",
@@ -113,7 +114,7 @@ describe("prompt scheduler: steering waits for tool calls", () => {
    * queued behind it and never steered into the current turn.
    */
   it("never steers a prompt past a pending setting", () => {
-    const { scheduler, steer } = schedulerWith({ idle: true });
+    const { scheduler, steer } = schedulerWith({ reached: true });
 
     expect(scheduler.submitSetting(submission(2))).toBe("queued");
     expect(scheduler.submit(submission(3, { steerable: true }))).toBe("queued");

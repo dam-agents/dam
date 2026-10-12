@@ -75,3 +75,8 @@ that turn. Repeat with a pasted screenshot: the agent describes it.
   After 60 s it is steered regardless. This keeps the agent from being cut off mid-tool, which
   the Claude Code adapter's immediate delivery does.
 - Stop is the way to cut in at once; Esc in the message box stops too.
+- Testing showed a steer still cut off a reply the agent was writing: the Claude Code adapter
+  delivers a steer at the SDK's `now` priority, which aborts the generation in progress. A steer
+  now also waits while the agent writes or thinks — from the turn's start, and from each text or
+  thought chunk, until a tool call starts — so it lands only right after the agent's tools finish.
+  A single reply with no tool calls has no such point; its steered prompt runs as the next turn.
