@@ -318,11 +318,12 @@ function applyShadows(pi: ExtensionAPI, spec: ProviderSpec, url: string, state: 
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: OpenAI-named proxy models use Responses for tools with reasoning, and GPT-5+ and o-series models reason, so Pi keeps their thinking level. Opaque aliases stay on Chat Completions until discovery supplies API metadata.
+// UNIT_BOUNDARY_DESCRIPTION: OpenAI-named proxy models use Responses for tools with reasoning, and GPT-5+ and o-series models reason, so Pi keeps their thinking level. Opaque aliases stay on Chat Completions until discovery supplies API metadata. The proxy caches a Claude prompt only when the request marks it, so Claude models get Anthropic cache markers.
 function buildModelConfig({ envPrefix, compat }: ProviderSpec, model: DiscoveredModel): ProviderModelConfig {
 	const contextWindow = model.contextWindow ?? intEnv(`${envPrefix}_CONTEXT_WINDOW`, 128000);
 	const maxTokens = Math.min(intEnv(`${envPrefix}_MAX_TOKENS`, 16384), contextWindow);
 	const responses = envPrefix === "OPENAI_PROXY" && /(^|\/)(gpt-([5-9]|\d{2,})|o[1-9](?:-|$))/i.test(model.id);
+	const claude = envPrefix === "OPENAI_PROXY" && /(^|\/)claude-/i.test(model.id);
 	return {
 		id: model.id,
 		name: model.id,
@@ -337,6 +338,7 @@ function buildModelConfig({ envPrefix, compat }: ProviderSpec, model: Discovered
 			supportsReasoningEffort: true,
 			supportsUsageInStreaming: false,
 			...(envPrefix === "RITS" ? { maxTokensField: "max_tokens" as const } : {}),
+			...(claude ? { cacheControlFormat: "anthropic" as const } : {}),
 			requiresThinkingAsText: boolEnv(`${envPrefix}_THINKING_AS_TEXT`, false),
 			thinkingFormat: env(`${envPrefix}_THINKING_FORMAT`) as any,
 			...compat,
