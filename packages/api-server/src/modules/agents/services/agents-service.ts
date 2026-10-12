@@ -459,6 +459,7 @@ export function executeSlackBind(deps: {
 
 export function executeTemplateUpgrade(deps: {
   owner: string | undefined;
+  actorKind?: "user" | "system";
   getAgent: (id: string) => Promise<InfraAgent | null>;
   readTemplateSpec: ReadTemplateSpec;
   patchSpec: (
@@ -497,7 +498,7 @@ export function executeTemplateUpgrade(deps: {
     securityLog("info", "agent.upgrade", {
       category: "resource",
       actor: deps.owner ?? null,
-      actorKind: "user",
+      actorKind: deps.actorKind ?? "user",
       agentId: id,
       result: "success",
       detail: {
