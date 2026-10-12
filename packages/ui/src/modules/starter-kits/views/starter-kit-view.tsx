@@ -443,6 +443,23 @@ function KitDetail({
         </DialogHeader>
 
         <DialogBody>
+          {form.name && (
+            <div
+              className="mb-8 flex min-w-0 items-center gap-3"
+              data-testid="kit-agent-identity"
+            >
+              <EditableIdentity
+                name={form.name}
+                avatar={avatar}
+                onRename={(name) => update({ name })}
+                onAvatarChange={(next) => update({ avatar: next })}
+                avatarSize={36}
+                mood="idle"
+                nameClassName="text-base font-semibold text-foreground"
+                nameTag="h2"
+              />
+            </div>
+          )}
           <h2 className="mb-3 text-base font-semibold text-foreground">
             Included
           </h2>
@@ -649,28 +666,9 @@ function KitDetail({
           <Button variant="ghost" onClick={onBack}>
             <ArrowLeft size={16} /> Back
           </Button>
-          <div className="flex min-w-0 items-center gap-4">
-            {form.name && (
-              <div
-                className="flex min-w-0 items-center gap-2"
-                data-testid="kit-agent-identity"
-              >
-                <EditableIdentity
-                  name={form.name}
-                  avatar={avatar}
-                  onRename={(name) => update({ name })}
-                  onAvatarChange={(next) => update({ avatar: next })}
-                  avatarSize={28}
-                  mood="idle"
-                  nameClassName="text-sm font-medium text-foreground"
-                  nameTag="h2"
-                />
-              </div>
-            )}
-            <Button onClick={() => void create()} disabled={!canCreate}>
-              {apply.isPending ? "Creating…" : "Use this starter kit"}
-            </Button>
-          </div>
+          <Button onClick={() => void create()} disabled={!canCreate}>
+            {apply.isPending ? "Creating…" : "Use this starter kit"}
+          </Button>
         </DialogFooter>
         {connectAccepts && (
           <ConnectionCatalogModal
