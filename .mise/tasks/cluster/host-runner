@@ -93,7 +93,7 @@ mem_mib="${PLATFORM_VM_RUNNER_MEMORY_MIB:-$(( $(sysctl -n hw.memsize) / 1048576 
     --port-min="$HOST_RUNNER_PORT_MIN" --port-max="$HOST_RUNNER_PORT_MAX" \
     --token-file="$R/token" --tls-cert="$R/tls.crt" --tls-key="$R/tls.key" \
     --state-dir="$R/machines" --image-dir="$images" --image-budget-bytes=$((50 << 30)) --tools-dir="$tools" \
-    --memory-mib="$mem_mib" --reserve-mib=256 \
+    --memory-mib="$mem_mib" --reserve-mib=256 --boot-mib=2048 \
     --smolvm="$release/smolvm" --platform-init="$R/platform-init" --platform-runc="$R/platform-runc" --crane="$(command -v crane)" \
     >> "$R/runner.log" 2>&1 &
   echo $! > "$R/runner.pid"

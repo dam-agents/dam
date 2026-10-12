@@ -354,3 +354,13 @@ func TestIdleChecker_ZeroPerAgentTimeoutNeverHibernates(t *testing.T) {
 	assert.Equal(t, int32(1), *gotSS.Spec.Replicas, "an always-on agent keeps running however long it sits idle")
 	assert.Equal(t, 5*time.Minute, checker.checkInterval(), "an always-on agent does not speed the sweep up")
 }
+
+// TEST_SCENARIO: A vm agent starts fast enough that nobody plans around its sleep, so it always takes the chart's vm idle timeout and ignores its own override, "0s" included.
+func TestEffectiveIdleTimeout_VMIgnoresOverride(t *testing.T) {
+	base := config.AgentBase{IdleTimeout: config.Duration(time.Hour), VMIdleTimeout: config.Duration(5 * time.Minute)}
+	never := &metav1.Duration{}
+	assert.Equal(t, 5*time.Minute, effectiveIdleTimeout(never, true, base))
+	assert.Equal(t, 5*time.Minute, effectiveIdleTimeout(nil, true, base))
+	assert.Equal(t, time.Duration(0), effectiveIdleTimeout(never, false, base))
+	assert.Equal(t, time.Hour, effectiveIdleTimeout(nil, false, base))
+}

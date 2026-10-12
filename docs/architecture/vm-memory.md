@@ -1,14 +1,16 @@
 # VM memory
 
-Last verified: 2026-10-05
+Last verified: 2026-10-12
 
-An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes. A machine's size is the most its guest can see; the host commits only the pages the guest touches, and the guest hands freed pages back through free-page reporting, so an idle agent on a 2 GiB machine holds a few hundred MiB.
+An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes. That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md).
+
+**Every machine may grow to half the pool.** A machine's size is half of what its runner hands out — the runner's memory limit less its reserve — whatever its Agent's spec names, so one agent can use most of the pool while a runaway guest meets its own OOM killer before it takes the runner, and every sibling, over the limit. Every machine gets the install's vCPUs (`virtualization.runner.machineCPUs`); they are threads of a runner with no CPU limit, so an idle machine costs nothing and busy ones share the node. The [host runner](vm-host-runner.md) admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the Agent's spec still sets its machine's memory; its vCPUs still come from the install. A machine's size is the most its guest can see; the host commits only the pages the guest touches, and the guest hands freed pages back through free-page reporting, so an idle agent on a 2 GiB machine holds a few hundred MiB.
 
 **The runner measures every running machine.** Its health prober reads the resident memory of each machine's VMM at the steady probe cadence and reports it in the machine's status. The figure is kept out of what moves the status version, so it never wakes a waiting status read on its own.
 
-**A running machine is counted at its use plus headroom.** That is its measured use plus a per-machine headroom (`virtualization.runner.headroomMiB`), never more than its size. A machine not yet measured, and every machine an action is bringing up, counts at its full size, so a boot is never admitted into room it may need. Admission, the committed-memory metric and the runner's memory request all count the same way.
+**A running machine is counted at its use plus headroom.** That is its measured use plus a per-machine headroom (`virtualization.runner.headroomMiB`), never more than its size. A machine not yet measured, and every machine an action is bringing up, counts at a boot estimate (`virtualization.runner.bootMiB`), or its size when that is smaller, until the runner first measures it about ten seconds in. Counting a boot at half the pool would let only two machines boot at once, so a runner roll or a few wakes together would refuse the rest; the cost is that a guest touching more than the estimate before its first measurement is under-counted until then. Admission, the committed-memory metric and the runner's memory request all count the same way.
 
-**Admission is against use, so an owner may run more machines than their sizes add up to.** A machine starts while every machine's count, the start's own size and the runner's reserve fit under the runner's limit; otherwise the runner refuses it with the shortfall named, and the Agent is parked as [budgets](budgets.md) describes.
+**Admission is against use, so an owner may run more machines than their sizes add up to.** A machine starts while every machine's count, the start's own count and the runner's reserve fit under the runner's limit; otherwise the runner refuses it with the shortfall named, and the Agent is parked as [budgets](budgets.md) describes.
 
 **The scheduler reserves what the machines use.** The controller keeps the runner pod's memory request, resized in place, at the machines' counts plus the reserve, in 512 MiB steps so a guest that drifts at every probe does not resize the pod, within the install's request and the limit. A cluster without in-place resize keeps the install's request.
 
