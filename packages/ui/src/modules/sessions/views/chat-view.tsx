@@ -633,38 +633,35 @@ export function ChatView() {
               </h1>
             )}
             {agentView && (
-              <span className="flex shrink-0 @max-[119px]:hidden">
+              <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
                 <VmRuntimeBadge
                   agent={agentView}
                   labelClassName="@max-[279px]:sr-only"
                 />
               </span>
             )}
-            {canOpenBrowser && selectedAgent && (
+            <div className="ml-auto flex shrink-0">
+              {canOpenBrowser && selectedAgent && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Open browser"
+                  tooltip="Open browser"
+                  onClick={() => void openBrowser(selectedAgent)}
+                >
+                  <Globe size={16} />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon-sm"
-                aria-label="Open browser"
-                tooltip="Open browser"
-                onClick={() => void openBrowser(selectedAgent)}
-                className="ml-auto shrink-0"
+                aria-label="Configure agent"
+                tooltip="Configure agent"
+                onClick={handleConfigureSandbox}
               >
-                <Globe size={16} />
+                <Tools size={16} />
               </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Configure agent"
-              tooltip="Configure agent"
-              onClick={handleConfigureSandbox}
-              className={cn(
-                "shrink-0",
-                !(canOpenBrowser && selectedAgent) && "ml-auto",
-              )}
-            >
-              <Tools size={16} />
-            </Button>
+            </div>
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2 pl-6 pr-14 md:pr-16">
