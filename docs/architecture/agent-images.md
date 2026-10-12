@@ -78,7 +78,7 @@ On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-
 The bundle, and Chromium's store below, record what they were last built from and are rebuilt only when it changes: a machine's root and every home outlive a boot, and `update-ca-certificates` forks several times for each root the distribution ships, which takes seconds on a machine.
 The bundle's record also holds the image's distribution roots, since a machine's root outlives a new image too.
 A store no boot has touched yet, on a container's or a new machine root, is the one the image's build made, so the entrypoint adds only the platform CAs to it, with the same result as `update-ca-certificates` but not its pass over every root.
-Every other rebuild, and any store with an update hook such as Java's keystore, runs `update-ca-certificates` itself.
+Every other rebuild, a failed add, and any store with an update hook such as Java's keystore run `update-ca-certificates` itself.
 On a machine it also points docker's client at the gateway, so containers and builds the agent starts go through it too, and puts the share's runtime wrapper in front of docker's and k3s's runc, so they trust the MITM CA as well.
 A container's root is its own image, which trusts only public roots; when the container starts, the wrapper gives it copies of the image's own bundle with the CA appended, at a path of its own mounted read-only, and points the common CA variables there; a variable the image sets to a bundle is pointed at a copy of that file.
 The image's own files are never mounted over, so a build that regenerates its trust store still works, nothing lands in a built image, and no Dockerfile changes.
