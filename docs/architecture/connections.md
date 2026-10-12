@@ -225,7 +225,9 @@ the seed, which takes the first of the names the endpoint lists once
 they are ordered — from the OpenAI model list when the key is refused
 the model-information route ([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
 Claude Code reaches custom upstreams through its in-pod model gateway,
-which fronts each granted provider apart.
+which fronts each granted provider apart. The endpoint caches a Claude
+prompt only when the request marks it: Claude Code marks its own, and the
+image's Pi extension marks Pi's. GPT models cache on their own.
 
 ### App preset: IBM ETE LiteLLM CurveBender
 

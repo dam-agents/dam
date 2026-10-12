@@ -32,14 +32,23 @@ rm -rf "${PI_CODING_AGENT_DIR:-$shared}/extensions/pi-dynamic-providers"
 mem="$(mise where npm:@zhafron/pi-memory 2>/dev/null)/node_modules/@zhafron/pi-memory"
 [ -d "$shared/npm/node_modules/@zhafron/pi-memory" ] || [ ! -d "$mem" ] ||
   set -- -e "$mem" "$@"
+provider= pin=
 if [ -n "$AWS_BEARER_TOKEN_BEDROCK" ]; then
-  set -- "$@" --provider amazon-bedrock
+  provider=amazon-bedrock pin=$AWS_BEDROCK_MODEL
 elif [ -n "$OPENAI_PROXY_URL" ]; then
-  set -- "$@" --provider openai-proxy
+  provider=openai-proxy pin=$OPENAI_PROXY_MODEL
 elif [ -n "$RITS_URL" ]; then
-  set -- "$@" --provider rits
+  provider=rits pin=$RITS_MODEL
 elif [ -n "$OPENAI_BASE_URL" ]; then
-  set -- "$@" --provider openai
+  provider=openai pin=$OPENAI_MODEL
 fi
-[ -z "$PLATFORM_MODEL" ] || set -- "$@" --model "$PLATFORM_MODEL"
+# Pi refuses --provider without --model. The agent's default lease names no
+# model, so it runs on the saved default, else the provider's pin.
+model=$PLATFORM_MODEL
+if [ -n "$provider" ] && [ -z "$model" ]; then
+  model=$(jq -r '.defaultModel // empty' "$shared/settings.json" 2>/dev/null)
+  model=${model:-$pin}
+fi
+[ -z "$provider" ] || [ -z "$model" ] || set -- "$@" --provider "$provider"
+[ -z "$model" ] || set -- "$@" --model "$model"
 exec pi -e /usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts "$@"
