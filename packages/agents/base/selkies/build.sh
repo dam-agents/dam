@@ -15,7 +15,12 @@ if [ ! -x "$out/opt/selkies/bin/selkies" ]; then
   trap 'rm -rf "$work"' EXIT
   mkdir -p "$work/out/opt/selkies/site" "$work/out/opt/selkies/bin"
   "$python" -m pip install --quiet --disable-pip-version-check --root-user-action=ignore --no-deps \
-    --only-binary=:all: --require-hashes --target "$work/out/opt/selkies/site" -r "$here/requirements.txt"
+    --only-binary=:all: --require-hashes --no-compile --target "$work/out/opt/selkies/site" -r "$here/requirements.txt"
+  # Bytecode pip compiles records each source's mtime, which the image resets,
+  # and this build's temporary path: stale in the image, and new bytes every
+  # build. Hash-checked bytecode under the image path is neither.
+  PYTHONHASHSEED=0 "$python" -m compileall -q -j0 --invalidation-mode checked-hash \
+    -s "$work/out" -p / "$work/out/opt/selkies/site"
   cat >"$work/out/opt/selkies/bin/selkies" <<'WRAPPER'
 #!/bin/sh
 export PYTHONPATH="/opt/selkies/site${PYTHONPATH:+:$PYTHONPATH}"
