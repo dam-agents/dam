@@ -1,10 +1,13 @@
 # Mise tasks
 
-Rules for defining and running tasks. mise runs everything (`mise tasks --all` lists it); never call `pnpm`, `go`, `helm`, or `kubectl` directly.
+Rules for defining and running tasks.
+mise runs everything (`mise tasks --all` lists it); never call `pnpm`, `go`, `helm`, or `kubectl` directly.
 
 ## Layout
 
-The repo is a mise monorepo (`monorepo_root = true` in [`.mise/config.toml`](../../.mise/config.toml), with a single `mise.lock` at the repo root). Every package directory listed under `[monorepo].config_roots` is a config root: `.mise/tasks/` holds its scripted tasks, and `.mise/config.toml` exists only when there is something declarative to hold (aggregators, template `extends`, `[deps]` providers). Its tasks are addressed by path:
+The repo is a mise monorepo (`monorepo_root = true` in [`.mise/config.toml`](../../.mise/config.toml), with a single `mise.lock` at the repo root).
+Every package directory listed under `[monorepo].config_roots` is a config root: `.mise/tasks/` holds its scripted tasks, and `.mise/config.toml` exists only when there is something declarative to hold (aggregators, template `extends`, `[deps]` providers).
+Its tasks are addressed by path:
 
 | Where | Address | Example |
 |---|---|---|
@@ -13,28 +16,48 @@ The repo is a mise monorepo (`monorepo_root = true` in [`.mise/config.toml`](../
 | Same task in every package | `//...:<task>` | `mise run '//...:test'` |
 | Repo-level task | bare name, or `//:<task>` from a package | `mise run check`, `mise run cluster:install` |
 
-Repo-level tasks (aggregators and their `check:*` leaves, `release:*`, `cluster:*`, `e2e*`, `skills:*`) live in [`.mise/config.toml`](../../.mise/config.toml) when they are one-liners, under [`.mise/tasks/`](../../.mise/tasks/) when they have a script body (the `cluster:*` operations included). Documentation checks are their own config root, `//docs:*`. The aggregators fan out: `check` = the root's own `check:*` leaves + `//...:check` (`//...` covers every package root but never the root itself), and `fix` runs `fix:comment-types` and `fix:markdown` first (the first rewrites sources the formatters then format, the second skill files the manifest then hashes), then `fix:skill-manifest`, `//docs:fix` and `//packages/...:fix`, each named, so a new root `fix:*` leaf or config root outside `packages/` joins that list (a `run` step, unlike `depends`, would reach the root `fix` itself through `//...`). `mise run e2e` is an alias of the file task `e2e:run`, since a file and a directory cannot share the name `e2e`. Inside a package, the convention is the same names one level down: `check` depends on `:check:*`, `fix` on `:fix:*`.
+Repo-level tasks (aggregators and their `check:*` leaves, `release:*`, `cluster:*`, `e2e*`, `skills:*`) live in [`.mise/config.toml`](../../.mise/config.toml) when they are one-liners, under [`.mise/tasks/`](../../.mise/tasks/) when they have a script body (the `cluster:*` operations included).
+Documentation checks are their own config root, `//docs:*`.
+The aggregators fan out: `check` = the root's own `check:*` leaves + `//...:check` (`//...` covers every package root but never the root itself), and `fix` runs `fix:comment-types` and `fix:markdown` first (the first rewrites sources the formatters then format, the second skill files the manifest then hashes), then `fix:skill-manifest`, `//docs:fix` and `//packages/...:fix`, each named, so a new root `fix:*` leaf or config root outside `packages/` joins that list (a `run` step, unlike `depends`, would reach the root `fix` itself through `//...`).
+`mise run e2e` is an alias of the file task `e2e:run`, since a file and a directory cannot share the name `e2e`.
+Inside a package, the convention is the same names one level down: `check` depends on `:check:*`, `fix` on `:fix:*`.
 
 ## File tasks
 
-Standalone scripts are tasks too: an executable under a root's `.mise/tasks/` is a task named by its path (`.mise/tasks/check/version` → `check:version`; `packages/db/.mise/tasks/new` → `//packages/db:new`), so `:check:*` picks it up like any TOML task. Metadata rides in a header (`#MISE key=value` in shell, `//MISE` in JavaScript): `description`, `sources`, `outputs`, `cache`, `depends`. Node files are extensionless ESM entrypoints (`#!/usr/bin/env node`); a task file that also serves as a module (the ADR index generator) guards its entry point so importing it runs nothing. Arguments pass through verbatim after the first `--` (`mise run image:resolve -- paths codex`). A task that takes flags or positionals declares them in `#USAGE` lines instead of parsing `"$@"` by hand (`#USAGE flag "--force"`, `#USAGE arg "<tar>..." var=#true`); mise parses them and hands the script `$usage_<name>` variables, and a repeatable one arrives shell-quoted for `eval "xs=($usage_x)"`. A hidden helper that other scripts call by path rather than through a nested `mise run` (about 0.4 s each) uses the `#!/usr/bin/env -S usage bash` shebang, so its `#USAGE` lines parse without mise (`image:pack`, `image:pull`, `image:name-layout`). Sandbox fields are not accepted in file headers; a script that must be sandboxed gets a TOML task with `file = ...` instead. Scripts that are not tasks live outside `.mise/tasks/`: [`.mise/lib/cluster.sh`](../../.mise/lib/cluster.sh), which every `cluster:*` and `e2e:*` task sources to resolve `LIMA_INSTANCE` and `KUBECONFIG` (the `e2e:*` tasks and the Playwright run task pin `LIMA_INSTANCE=platform-k3s-test` in their `env`). [`.mise/lib/lima-build.sh`](../../.mise/lib/lima-build.sh) is sourced by the image tasks that need a Linux host of the image's arch (the agents' and the VM runner's): off Linux they build in the dev cluster's Lima VM.
+Standalone scripts are tasks too: an executable under a root's `.mise/tasks/` is a task named by its path (`.mise/tasks/check/version` → `check:version`; `packages/db/.mise/tasks/new` → `//packages/db:new`), so `:check:*` picks it up like any TOML task.
+Metadata rides in a header (`#MISE key=value` in shell, `//MISE` in JavaScript): `description`, `sources`, `outputs`, `cache`, `depends`.
+Node files are extensionless ESM entrypoints (`#!/usr/bin/env node`); a task file that also serves as a module (the ADR index generator) guards its entry point so importing it runs nothing.
+Arguments pass through verbatim after the first `--` (`mise run image:resolve -- paths codex`).
+A task that takes flags or positionals declares them in `#USAGE` lines instead of parsing `"$@"` by hand (`#USAGE flag "--force"`, `#USAGE arg "<tar>..." var=#true`); mise parses them and hands the script `$usage_<name>` variables, and a repeatable one arrives shell-quoted for `eval "xs=($usage_x)"`.
+A hidden helper that other scripts call by path rather than through a nested `mise run` (about 0.4 s each) uses the `#!/usr/bin/env -S usage bash` shebang, so its `#USAGE` lines parse without mise (`image:pack`, `image:pull`, `image:name-layout`).
+Sandbox fields are not accepted in file headers; a script that must be sandboxed gets a TOML task with `file = ...` instead.
+Scripts that are not tasks live outside `.mise/tasks/`: [`.mise/lib/cluster.sh`](../../.mise/lib/cluster.sh), which every `cluster:*` and `e2e:*` task sources to resolve `LIMA_INSTANCE` and `KUBECONFIG` (the `e2e:*` tasks and the Playwright run task pin `LIMA_INSTANCE=platform-k3s-test` in their `env`).
+[`.mise/lib/lima-build.sh`](../../.mise/lib/lima-build.sh) is sourced by the image tasks that need a Linux host of the image's arch (the agents' and the VM runner's): off Linux they build in the dev cluster's Lima VM.
 
 ## Naming and descriptions
 
-- **Every task has a one-line `description`.** A check states the rule it enforces ("Every GitHub Actions `uses:` is pinned to a commit SHA"); any other task starts with a verb. Rationale, environment knobs and examples go in a comment beside the header (a `UNIT_BOUNDARY_DESCRIPTION` in a Node task file), arguments in `#USAGE`.
+- **Every task has a one-line `description`.** A check states the rule it enforces ("Every GitHub Actions `uses:` is pinned to a commit SHA"); any other task starts with a verb.
+  Rationale, environment knobs and examples go in a comment beside the header (a `UNIT_BOUNDARY_DESCRIPTION` in a Node task file), arguments in `#USAGE`.
 - **Leaves are named by role, not tool**: `check:format` / `fix:format`, `check:lint` / `fix:lint`, `check:tsc`, so `//...:check:format` reaches every language.
-- **Generated files pair up**: `fix:<artifact>` regenerates it and `check:<artifact>` fails on drift, so `mise run fix` regenerates everything. A fix leaf that writes files another fix leaf rewrites (a formatter over generated code) depends on it. A generator that asks questions or takes a name (`//packages/db:generate`, `//packages/db:new`) authors a new file rather than reprojecting one, and stays outside `fix`.
+- **Generated files pair up**: `fix:<artifact>` regenerates it and `check:<artifact>` fails on drift, so `mise run fix` regenerates everything.
+  A fix leaf that writes files another fix leaf rewrites (a formatter over generated code) depends on it.
+  A generator that asks questions or takes a name (`//packages/db:generate`, `//packages/db:new`) authors a new file rather than reprojecting one, and stays outside `fix`.
 - **Verbs for the rest**: `dev` runs a watch-mode dev server, `run` runs a built artifact, `build` builds it, `oci` packs its image tar.
 
 ## Dependencies
 
 pnpm itself is a mise tool (`pnpm = "…"` in `.mise/config.toml`, the single pin), so `package.json` carries no `packageManager` field and a `corepack enable` shim on the machine must be removed (`corepack disable`) or it shadows the pinned version.
 
-Project dependencies are not tasks. Each config root declares `[deps]` providers: built-in ones (`pnpm` at the root, `go` in the controller, `uv` in the Python driver SDK) and custom ones for anything that only prepares the ground for tasks (chart dependencies in `helm/`, the keycloakify `kc.gen.tsx` codegen); with `auto = true` they run before any `mise run` or `mise x` when their inputs changed or their outputs are missing, across every config root. Nothing needs to call them explicitly before a `mise run`; `mise deps --monorepo` installs them all without running a task (a provider whose script CI also needs runs it by path, like the chart's [`helm/.mise/deps`](../../helm/.mise/deps): `mise deps`, `mise run` and `mise x` all install every tool of the toolset first, which costs a job that needs one tool a minute and more), and `mise run --no-deps <task>` skips them. `mise deps --monorepo` installs every provider, so something only a few tasks need and expensive to fetch (Playwright's Chromium) stays a task those tasks depend on. No task depends on an install step, which is also what keeps cached tasks cacheable (a dependency without a cache key would make its dependents uncacheable).
+Project dependencies are not tasks.
+Each config root declares `[deps]` providers: built-in ones (`pnpm` at the root, `go` in the controller, `uv` in the Python driver SDK) and custom ones for anything that only prepares the ground for tasks (chart dependencies in `helm/`, the keycloakify `kc.gen.tsx` codegen); with `auto = true` they run before any `mise run` or `mise x` when their inputs changed or their outputs are missing, across every config root.
+Nothing needs to call them explicitly before a `mise run`; `mise deps --monorepo` installs them all without running a task (a provider whose script CI also needs runs it by path, like the chart's [`helm/.mise/deps`](../../helm/.mise/deps): `mise deps`, `mise run` and `mise x` all install every tool of the toolset first, which costs a job that needs one tool a minute and more), and `mise run --no-deps <task>` skips them.
+`mise deps --monorepo` installs every provider, so something only a few tasks need and expensive to fetch (Playwright's Chromium) stays a task those tasks depend on.
+No task depends on an install step, which is also what keeps cached tasks cacheable (a dependency without a cache key would make its dependents uncacheable).
 
 ## Templates
 
-Repeated task shapes are `[task_templates]` in `.mise/config.toml`; a package task picks one with `extends`. A TypeScript package takes its whole standard set (`check`, `fix`, and the `check:*` and `fix:*` leaves) from [`.mise/ts-package.toml`](../../.mise/ts-package.toml), and adds `test` if it has a suite:
+Repeated task shapes are `[task_templates]` in `.mise/config.toml`; a package task picks one with `extends`.
+A TypeScript package takes its whole standard set (`check`, `fix`, and the `check:*` and `fix:*` leaves) from [`.mise/ts-package.toml`](../../.mise/ts-package.toml), and adds `test` if it has a suite:
 
 ```toml
 [task_config]
@@ -44,24 +67,42 @@ includes = ["{{vars.repo_root}}/.mise/ts-package.toml", ".mise/tasks"]
 extends = "ts:test"
 ```
 
-`includes` replaces the default task sources, so it names the package's own `.mise/tasks` too. A task the package's config defines replaces the included one of the same name, so an override still `extends` its template.
+`includes` replaces the default task sources, so it names the package's own `.mise/tasks` too.
+A task the package's config defines replaces the included one of the same name, so an override still `extends` its template.
 
-Local fields override the template's `run`, `depends`, and `sources` wholesale; `env` and `tools` merge. Templates render in the extending package, so `{{config_root}}` is that package and `{{vars.repo_root}}` is the repo root. Add a template when a third package needs the same task; override a field instead of copying the template when one package differs.
+Local fields override the template's `run`, `depends`, and `sources` wholesale; `env` and `tools` merge.
+Templates render in the extending package, so `{{config_root}}` is that package and `{{vars.repo_root}}` is the repo root.
+Add a template when a third package needs the same task; override a field instead of copying the template when one package differs.
 
-Templates: `ts:check:{tsc,lint,format}`, `ts:fix:{lint,format}`, `ts:test`. Agent images are one task, `//packages/agents:oci [-- <agent>…]`, which packs them one at a time: the default image onto a Debian base its own apt-get extended under chroot, the rest onto the default image. Every image's base is a `base_image_*` var in the root config's `[vars]`, which its build task reads with `mise config get` (some run by path, outside `mise run`). The other images' `:oci` tasks pack a tree onto a base pinned by digest with `image:pack`, which keeps each base as a local OCI layout, so a rebuild downloads nothing, and adds its layers as plain tars. Every image tar is an OCI layout, and a build's own layers stay plain tars: a local cluster imports them as they are, and `image:ci-build` gzips them with pigz only for a push (`image:gzip-layout`). Security scanners (trivy, govulncheck, cargo audit, pnpm audit) are not tasks: `security.yml` runs them against the published images and lockfiles. A scan's answer changes with its advisory database, which no task input captures, so a cached pass would replay stale.
+Templates: `ts:check:{tsc,lint,format}`, `ts:fix:{lint,format}`, `ts:test`.
+Agent images are one task, `//packages/agents:oci [-- <agent>…]`, which packs them one at a time: the default image onto a Debian base its own apt-get extended under chroot, the rest onto the default image.
+Every image's base is a `base_image_*` var in the root config's `[vars]`, which its build task reads with `mise config get` (some run by path, outside `mise run`).
+The other images' `:oci` tasks pack a tree onto a base pinned by digest with `image:pack`, which keeps each base as a local OCI layout, so a rebuild downloads nothing, and adds its layers as plain tars.
+Every image tar is an OCI layout, and a build's own layers stay plain tars: a local cluster imports them as they are, and `image:ci-build` gzips them with pigz only for a push (`image:gzip-layout`).
+Security scanners (trivy, govulncheck, cargo audit, pnpm audit) are not tasks: `security.yml` runs them against the published images and lockfiles.
+A scan's answer changes with its advisory database, which no task input captures, so a cached pass would replay stale.
 
 ## Artifact cache
 
-A task with `sources` and `outputs` (`outputs = []` for a pure check) and `cache = { enabled = true }` is keyed by the content of its sources, its definition, resolved tool versions, platform, and its dependencies' cache keys. A hit restores the outputs and replays the log. Rules that keep hits honest:
+A task with `sources` and `outputs` (`outputs = []` for a pure check) and `cache = { enabled = true }` is keyed by the content of its sources, its definition, resolved tool versions, platform, and its dependencies' cache keys.
+A hit restores the outputs and replays the log.
+Rules that keep hits honest:
 
 - **Declare every input.** Cross-package reads are covered by depending on the upstream package's task (`^check:tsc` = the same task in every pnpm workspace dependency); `pnpm-lock.yaml` is in every TypeScript key.
 - **Never depend on an install step.** Installs are `[deps]` providers, not tasks; a dependency that runs without a cache key makes every dependent uncacheable.
-- **Never cache what talks to the outside**: image builds, cluster ops, anything reading a registry or a live cluster. The image:pack images' `:oci` tasks do declare `sources` and `outputs`, without the cache: mise then skips one only while its tar is newer than every source, so a repeated `cluster:install` does not rebuild an unchanged image. A pulled tar is dated to 1980, so it never passes for a build of the checkout.
+- **Never cache what talks to the outside**: image builds, cluster ops, anything reading a registry or a live cluster.
+  The image:pack images' `:oci` tasks do declare `sources` and `outputs`, without the cache: mise then skips one only while its tar is newer than every source, so a repeated `cluster:install` does not rebuild an unchanged image.
+  A pulled tar is dated to 1980, so it never passes for a build of the checkout.
 
-Inspect with `mise run --task-cache-explain <task>`; bypass with `mise run --task-cache off <task>`. Flags go before the task name. CI restores the artifact directory between runs, and a main push saves only the artifacts that run read or wrote, since nothing else ever evicts one; there is no remote cache yet (`task.cache.remote_url` is the upgrade path).
+Inspect with `mise run --task-cache-explain <task>`; bypass with `mise run --task-cache off <task>`.
+Flags go before the task name.
+CI restores the artifact directory between runs, and a main push saves only the artifacts that run read or wrote, since nothing else ever evicts one; there is no remote cache yet (`task.cache.remote_url` is the upgrade path).
 
 ## Sandboxing
 
-Checks run sandboxed (Landlock on Linux, Seatbelt on macOS): `deny_net = true` for anything that is pure files, `deny_write = true` where the tool writes nothing. `deny_write` blocks the whole tree except `/tmp`; tools that write caches into the tree or `$HOME` (Go, uv, vitest, drizzle-kit) keep write access and deny only the network. Test suites are not sandboxed: the network sandbox blocks every inet socket, loopback included.
+Checks run sandboxed (Landlock on Linux, Seatbelt on macOS): `deny_net = true` for anything that is pure files, `deny_write = true` where the tool writes nothing.
+`deny_write` blocks the whole tree except `/tmp`; tools that write caches into the tree or `$HOME` (Go, uv, vitest, drizzle-kit) keep write access and deny only the network.
+Test suites are not sandboxed: the network sandbox blocks every inet socket, loopback included.
 
-When a sandboxed task fails with `Operation not permitted` or `Permission denied`, the task found a real undeclared side effect. Either fix the tool invocation or drop exactly the one `deny_*` it needs, with a comment saying why.
+When a sandboxed task fails with `Operation not permitted` or `Permission denied`, the task found a real undeclared side effect.
+Either fix the tool invocation or drop exactly the one `deny_*` it needs, with a comment saying why.

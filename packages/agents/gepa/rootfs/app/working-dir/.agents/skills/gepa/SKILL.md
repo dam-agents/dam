@@ -12,60 +12,37 @@ description: >-
 
 # GEPA — reflective text optimization
 
-GEPA (Genetic-Pareto) evolves the text components of a system against a
-metric: a **task model** executes each candidate on training examples, an
-**evaluator** scores the results, and a **reflection model** reads the full
-traces to diagnose failures and propose improved text — while a Pareto
-frontier keeps the best candidates across rounds. It fits objectives that are
-**measurable as a number**: answer accuracy, rubric scores, error rates.
+GEPA (Genetic-Pareto) evolves the text components of a system against a metric: a **task model** executes each candidate on training examples, an **evaluator** scores the results, and a **reflection model** reads the full traces to diagnose failures and propose improved text — while a Pareto frontier keeps the best candidates across rounds.
+It fits objectives that are **measurable as a number**: answer accuracy, rubric scores, error rates.
 
-> Upstream: https://github.com/gepa-ai/gepa — pinned PyPI release in
-> `$GEPA_VENV`
-> (`"$GEPA_VENV/bin/python" -c 'from importlib.metadata import version; print(version("gepa"))'`
-> for the exact version; this reference is written against 0.1.4).
+> Upstream: https://github.com/gepa-ai/gepa — pinned PyPI release in `$GEPA_VENV` (`"$GEPA_VENV/bin/python" -c 'from importlib.metadata import version; print(version("gepa"))'` for the exact version; this reference is written against 0.1.4).
 
-**GEPA has no CLI — it is a library.** Every run is a `driver.py` you author
-that calls `gepa.optimize(...)`, run with the venv's interpreter,
-`"$GEPA_VENV/bin/python"`; never `pip install gepa` yourself, it's pre-installed.
+**GEPA has no CLI — it is a library.** Every run is a `driver.py` you author that calls `gepa.optimize(...)`, run with the venv's interpreter, `"$GEPA_VENV/bin/python"`; never `pip install gepa` yourself, it's pre-installed.
 
-Everything platform-specific lives elsewhere: how this pod reaches model providers (credentials, gateway,
-probing) is the **`platform-models` skill**; how to operate runs in this pod
-(pre-launch gate, run directories, backgrounding, resume-on-wake, guardrails,
-extra venv deps) is the pod's system context (**`AGENTS.md`**).
+Everything platform-specific lives elsewhere: how this pod reaches model providers (credentials, gateway, probing) is the **`platform-models` skill**; how to operate runs in this pod (pre-launch gate, run directories, backgrounding, resume-on-wake, guardrails, extra venv deps) is the pod's system context (**`AGENTS.md`**).
 
 ## Step 1 — pick the two models
 
-GEPA talks to models through **LiteLLM**: `task_lm` and `reflection_lm` are
-LiteLLM model strings (e.g. `openai/<id>`, `anthropic/<id>`) — or plain
-Python callables, which is how tests stub them out (see the worked example).
+GEPA talks to models through **LiteLLM**: `task_lm` and `reflection_lm` are LiteLLM model strings (e.g. `openai/<id>`, `anthropic/<id>`) — or plain Python callables, which is how tests stub them out (see the worked example).
 
-**Pick two different models on purpose**: `task_lm` runs once per (candidate
-× example) — cheap and fast wins; `reflection_lm` runs once per iteration and
-does the actual reasoning — use the strongest model available.
+**Pick two different models on purpose**: `task_lm` runs once per (candidate × example) — cheap and fast wins; `reflection_lm` runs once per iteration and does the actual reasoning — use the strongest model available.
 
-How to discover which providers/models this pod can reach, wire the
-credentials, and probe both models before writing the driver is defined in
-the **`platform-models` skill** — follow it now, then come back with a
-working `task_lm` + `reflection_lm` (+ `reflection_lm_kwargs`).
+How to discover which providers/models this pod can reach, wire the credentials, and probe both models before writing the driver is defined in the **`platform-models` skill** — follow it now, then come back with a working `task_lm` + `reflection_lm` (+ `reflection_lm_kwargs`).
 
 ## Step 2 — author the driver
 
 ### Path A: prompt optimization with the built-in `DefaultAdapter`
 
-No adapter code needed. Supply `task_lm`, a dataset, and (optionally) an
-evaluator; the single component of `seed_candidate` becomes the **system
-prompt** the task model runs with. Dataset items are dicts with exactly these
-keys:
+No adapter code needed.
+Supply `task_lm`, a dataset, and (optionally) an evaluator; the single component of `seed_candidate` becomes the **system prompt** the task model runs with.
+Dataset items are dicts with exactly these keys:
 
 ```python
 {"input": "<user message>", "answer": "<expected answer>", "additional_context": {}}
 ```
 
-The default evaluator (`ContainsAnswerEvaluator`) scores 1.0 when `answer`
-appears verbatim in the response — fine for extraction/QA tasks. For anything
-else, pass a custom `evaluator` callable returning an `EvaluationResult`;
-**rich `feedback` text is what the reflection model learns from**, so say
-*why* the score is what it is:
+The default evaluator (`ContainsAnswerEvaluator`) scores 1.0 when `answer` appears verbatim in the response — fine for extraction/QA tasks.
+For anything else, pass a custom `evaluator` callable returning an `EvaluationResult`; **rich `feedback` text is what the reflection model learns from**, so say *why* the score is what it is:
 
 ```python
 from gepa.adapters.default_adapter.default_adapter import EvaluationResult
@@ -97,41 +74,25 @@ print(result.best_candidate)
 print(result.val_aggregate_scores[result.best_idx])
 ```
 
-As few as ~3 training examples work to start; 10–50 with a held-out `valset`
-is the comfortable range.
+As few as ~3 training examples work to start; 10–50 with a held-out `valset` is the comfortable range.
 
-**Reflection reads only the `trainset` — `valset` only scores.** A failure
-mode that appears solely in held-out validation examples never enters the
-reflective feedback, so GEPA cannot fix it (worse: with a perfectly-scoring
-trainset, `skip_perfect_score` skips proposals entirely and the run idles to
-its budget). Put an example of **every failure mode you want optimized** into
-the `trainset`; keep `valset` for honest measurement.
+**Reflection reads only the `trainset` — `valset` only scores.** A failure mode that appears solely in held-out validation examples never enters the reflective feedback, so GEPA cannot fix it (worse: with a perfectly-scoring trainset, `skip_perfect_score` skips proposals entirely and the run idles to its budget).
+Put an example of **every failure mode you want optimized** into the `trainset`; keep `valset` for honest measurement.
 
 ### Path B: anything else — a custom `GEPAAdapter`
 
-To optimize text inside a *system you run yourself* (an agent's instructions,
-a pipeline's code snippet, a config), author a `GEPAAdapter` subclass with two
-methods, then pass `adapter=` **instead of** `task_lm`/`evaluator`:
+To optimize text inside a *system you run yourself* (an agent's instructions, a pipeline's code snippet, a config), author a `GEPAAdapter` subclass with two methods, then pass `adapter=` **instead of** `task_lm`/`evaluator`:
 
-- `evaluate(batch, candidate, capture_traces)` — instantiate the system with
-  the candidate's texts, run it on the batch, return an `EvaluationBatch` of
-  scores + outputs (+ trajectories when `capture_traces=True`).
-- `make_reflective_dataset(candidate, eval_batch, components_to_update)` —
-  distill the trajectories into `{"Inputs", "Generated Outputs", "Feedback"}`
-  records the reflection model reads.
+- `evaluate(batch, candidate, capture_traces)` — instantiate the system with the candidate's texts, run it on the batch, return an `EvaluationBatch` of scores + outputs (+ trajectories when `capture_traces=True`).
+- `make_reflective_dataset(candidate, eval_batch, components_to_update)` — distill the trajectories into `{"Inputs", "Generated Outputs", "Feedback"}` records the reflection model reads.
 
-Crib from the shipped adapters in `gepa/adapters/` (`default_adapter`,
-`generic_rag_adapter`, `dspy_adapter`, `langchain_adapter`, `mcp_adapter`,
-`terminal_bench_adapter`, …) — read them from the installed package:
-`"$GEPA_VENV/bin/python" -c "import gepa, os; print(os.path.dirname(gepa.__file__))"`.
-`seed_candidate` may hold **multiple named components**; GEPA evolves them
-round-robin. There is also `gepa.optimize_anything.optimize_anything`, a
-single-metric convenience wrapper for free-form text artifacts.
+Crib from the shipped adapters in `gepa/adapters/` (`default_adapter`, `generic_rag_adapter`, `dspy_adapter`, `langchain_adapter`, `mcp_adapter`, `terminal_bench_adapter`, …) — read them from the installed package: `"$GEPA_VENV/bin/python" -c "import gepa, os; print(os.path.dirname(gepa.__file__))"`.
+`seed_candidate` may hold **multiple named components**; GEPA evolves them round-robin.
+There is also `gepa.optimize_anything.optimize_anything`, a single-metric convenience wrapper for free-form text artifacts.
 
 ## Step 3 — smoke-eval, then launch
 
-Before any full run, score the **seed candidate** on a couple of examples
-without optimizing, and confirm the baseline looks sensible to the user:
+Before any full run, score the **seed candidate** on a couple of examples without optimizing, and confirm the baseline looks sensible to the user:
 
 ```python
 from gepa.adapters.default_adapter.default_adapter import DefaultAdapter
@@ -140,10 +101,8 @@ batch = adapter.evaluate(trainset[:2], {"system_prompt": "<seed>"}, capture_trac
 print(batch.scores, batch.trajectories[0]["feedback"])
 ```
 
-This costs a handful of task-model calls and catches the silent failure mode
-(evaluator scores the wrong thing) before the budget burns. Then present the
-cost estimate, get the go-ahead, and launch backgrounded per the pre-launch
-gate in `AGENTS.md`.
+This costs a handful of task-model calls and catches the silent failure mode (evaluator scores the wrong thing) before the budget burns.
+Then present the cost estimate, get the go-ahead, and launch backgrounded per the pre-launch gate in `AGENTS.md`.
 
 ## `gepa.optimize` reference (the knobs that matter here)
 
@@ -161,11 +120,8 @@ gate in `AGENTS.md`.
 | `display_progress_bar` | keep `False` for backgrounded runs |
 | `seed` | RNG seed for reproducibility |
 
-Budget intuition: each optimization iteration costs roughly
-`reflection_minibatch_size` × 2 task-evaluations (before/after) plus one
-full-`valset` pass when a candidate improves, plus one reflection call. With
-the default minibatch of 3 and a 20-example valset, `max_metric_calls=300`
-buys on the order of 10–20 iterations.
+Budget intuition: each optimization iteration costs roughly `reflection_minibatch_size` × 2 task-evaluations (before/after) plus one full-`valset` pass when a candidate improves, plus one reflection call.
+With the default minibatch of 3 and a 20-example valset, `max_metric_calls=300` buys on the order of 10–20 iterations.
 
 ## Outputs
 
@@ -175,16 +131,12 @@ Under `run_dir/`:
 - `candidates.json` — every candidate proposed so far, in proposal order.
 - `generated_best_outputs_valset/` — best outputs per validation example.
 
-The driver's `gepa.optimize` returns a `GEPAResult`: `best_candidate` (the
-winning text(s)), `best_idx`, `val_aggregate_scores` (per-candidate mean
-validation score), and `to_dict()` for a JSON-safe dump.
+The driver's `gepa.optimize` returns a `GEPAResult`: `best_candidate` (the winning text(s)), `best_idx`, `val_aggregate_scores` (per-candidate mean validation score), and `to_dict()` for a JSON-safe dump.
 
 ## Worked example — instruction following on a toy QA set
 
-A self-contained Path-A objective: evolve a system prompt until the task
-model answers containment-style questions correctly. (Also the CI/local smoke
-fixture — with the two LMs stubbed as plain callables it runs with **zero**
-network calls; not a user-facing "demo".)
+A self-contained Path-A objective: evolve a system prompt until the task model answers containment-style questions correctly.
+(Also the CI/local smoke fixture — with the two LMs stubbed as plain callables it runs with **zero** network calls; not a user-facing "demo".)
 
 ```python
 import gepa
@@ -210,15 +162,9 @@ result = gepa.optimize(
 print(result.best_candidate["system_prompt"])
 ```
 
-Stubbing for the no-network smoke: `task_lm` may be any
-`(messages) -> str` callable, and `reflection_lm` any `(prompt) -> str`
-callable whose reply wraps the proposed instruction in a ``` block (that's
-the format the default proposer parses).
+Stubbing for the no-network smoke: `task_lm` may be any `(messages) -> str` callable, and `reflection_lm` any `(prompt) -> str` callable whose reply wraps the proposed instruction in a ``` block (that's the format the default proposer parses).
 
 ## Reporting (and optional PR)
 
-Report the best candidate's aggregate validation score against the seed's,
-the winning text from `result.best_candidate`, and where the run artifacts
-live. If the optimized text belongs in a repo and a GitHub connection is
-granted, open a PR with the change via `gh` — which works through the
-connection, never a held token (see `AGENTS.md`).
+Report the best candidate's aggregate validation score against the seed's, the winning text from `result.best_candidate`, and where the run artifacts live.
+If the optimized text belongs in a repo and a GitHub connection is granted, open a PR with the change via `gh` — which works through the connection, never a held token (see `AGENTS.md`).

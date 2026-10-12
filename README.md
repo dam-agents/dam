@@ -30,13 +30,18 @@
 
 ## Why DAM?
 
-Every team running agents ends up building the same infrastructure. DAM provides it as a platform.
+Every team running agents ends up building the same infrastructure.
+DAM provides it as a platform.
 
-* **🛡️ Security enforced by infrastructure.** Agents run in isolated sandboxes with no credentials or cluster access. A paired gateway injects credentials and is the only network exit, enforced by Kubernetes NetworkPolicy. Risky actions can require human approval.
+* **🛡️ Security enforced by infrastructure.** Agents run in isolated sandboxes with no credentials or cluster access.
+  A paired gateway injects credentials and is the only network exit, enforced by Kubernetes NetworkPolicy.
+  Risky actions can require human approval.
 
-* **🔋 Always on.** Agents run in the cluster and continue working after your laptop closes. Persistent workspaces preserve files, memory, and learned context across restarts and long running sessions.
+* **🔋 Always on.** Agents run in the cluster and continue working after your laptop closes.
+  Persistent workspaces preserve files, memory, and learned context across restarts and long running sessions.
 
-* **🤝 Built for teams.** Agents can live in Slack or Telegram and be shared across teammates. The web UI and `dam` CLI connect to the same live sessions.
+* **🤝 Built for teams.** Agents can live in Slack or Telegram and be shared across teammates.
+  The web UI and `dam` CLI connect to the same live sessions.
 
 * **🧠 Any harness, any model.** Use Claude Code, Codex, Pi Agent, Bob, or any ACP compatible runtime with your own model endpoints.
 
@@ -56,7 +61,8 @@ Build software factories, PR review agents, automated debugging workflows, and c
 
 The DAM team runs agents such as **software factory**, which takes a PRD through the backlog toward merged code, **code guardian**, which reviews pull requests and follows up on unresolved comments, and **buggy**, which turns obvious development issues into pull requests.
 
-Agents can also collaborate directly. Give the same task to Claude Code and Codex, compare results and cost, or use one model to plan, another to implement, and another to review.
+Agents can also collaborate directly.
+Give the same task to Claude Code and Codex, compare results and cost, or use one model to plan, another to implement, and another to review.
 
 ### Experiments & research
 
@@ -68,7 +74,8 @@ Run personal and team agents in Slack that maintain context, respond to messages
 
 ### Knowledge bases
 
-Use agents to maintain team knowledge instead of maintaining a wiki manually. Agents can turn meetings, feedback, and discussions into durable, linked knowledge.
+Use agents to maintain team knowledge instead of maintaining a wiki manually.
+Agents can turn meetings, feedback, and discussions into durable, linked knowledge.
 
 ---
 
@@ -98,7 +105,8 @@ Use agents to maintain team knowledge instead of maintaining a wiki manually. Ag
 | **Pi Agent**    | Multi provider coding harness                       |
 | **Bob**         | Enterprise coding assistant for IBM workflows       |
 
-Bring your own harness with [ACP](https://agentclientprotocol.com/get-started/introduction). ACP compatible runtimes can use DAM's platform capabilities without a custom adapter.
+Bring your own harness with [ACP](https://agentclientprotocol.com/get-started/introduction).
+ACP compatible runtimes can use DAM's platform capabilities without a custom adapter.
 
 ---
 
@@ -114,7 +122,8 @@ The chart includes Keycloak, Postgres, Redis, and an optional telemetry backend.
 
 Configure harness templates, model endpoints, credentials, budgets, and isolation in [`values.yaml`](deploy/helm/platform/values.yaml).
 
-DAM requires an Istio ambient mesh. Before deploying to production, read [`docs/architecture.md`](docs/architecture.md) and [`docs/architecture/security-and-credentials.md`](docs/architecture/security-and-credentials.md).
+DAM requires an Istio ambient mesh.
+Before deploying to production, read [`docs/architecture.md`](docs/architecture.md) and [`docs/architecture/security-and-credentials.md`](docs/architecture/security-and-credentials.md).
 
 ---
 
@@ -140,11 +149,15 @@ The hosted deployment provides IBM internal model endpoints and integrations tha
 * [mise](https://mise.jdx.dev)
 * macOS or Linux
 
-Nothing needs Docker or another container runtime on your machine. Each package's `:oci` task writes its image tar to the package's `dist/oci/`, and on macOS the images that need Linux build inside the k3s VM. The Keycloak theme's full preview (`mise run //packages/keycloak-theme:run`) runs the Keycloak image's server on the host's Java.
+Nothing needs Docker or another container runtime on your machine.
+Each package's `:oci` task writes its image tar to the package's `dist/oci/`, and on macOS the images that need Linux build inside the k3s VM.
+The Keycloak theme's full preview (`mise run //packages/keycloak-theme:run`) runs the Keycloak image's server on the host's Java.
 
-On Linux, install QEMU to run k3s in a VM, or set `IS_SANDBOX=1` when running directly in an existing VM. The cluster tasks run their privileged steps through sudo, or directly when already root, so a root sandbox needs no sudo.
+On Linux, install QEMU to run k3s in a VM, or set `IS_SANDBOX=1` when running directly in an existing VM.
+The cluster tasks run their privileged steps through sudo, or directly when already root, so a root sandbox needs no sudo.
 
-On Linux, the agent and VM runner images build with sudo, and the VM runner's image build (only with virtualization on) needs a C toolchain with glibc's static library (`build-essential` on Debian and Ubuntu). Everything else needs no C toolchain of the machine's own: on Linux, Rust builds use the zig the repository's mise installs.
+On Linux, the agent and VM runner images build with sudo, and the VM runner's image build (only with virtualization on) needs a C toolchain with glibc's static library (`build-essential` on Debian and Ubuntu).
+Everything else needs no C toolchain of the machine's own: on Linux, Rust builds use the zig the repository's mise installs.
 
 ### Setup
 
@@ -177,6 +190,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to contribute and [`AGENTS.md`]
 
 ## Built in the open
 
-DAM is developed in the open. Issues, pull requests, roadmap decisions, and development all happen in this repository.
+DAM is developed in the open.
+Issues, pull requests, roadmap decisions, and development all happen in this repository.
 
 See the [GitHub issues](https://github.com/dam-agents/dam/issues) to follow the work, report problems, or contribute.

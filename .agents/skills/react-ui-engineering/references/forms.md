@@ -4,11 +4,13 @@
 
 ## When to use React Hook Form + Zod
 
-**[HIGH]** Use RHF + Zod when **any** holds: ≥ 3 fields; cross-field validation (`confirmPassword === password`, "at least one of these three"); a multi-step flow (wizard, tabs sharing validation); dirty-tracking (disable Save until changed, warn on unsaved navigate-away); or schema reuse across submit, API parsing and edit pre-fill. Below that (a 1–2 field input, search box, inline edit), controlled `useState` is fine.
+**[HIGH]** Use RHF + Zod when **any** holds: ≥ 3 fields; cross-field validation (`confirmPassword === password`, "at least one of these three"); a multi-step flow (wizard, tabs sharing validation); dirty-tracking (disable Save until changed, warn on unsaved navigate-away); or schema reuse across submit, API parsing and edit pre-fill.
+Below that (a 1–2 field input, search box, inline edit), controlled `useState` is fine.
 
 ## Schema and setup
 
-**[HIGH] The schema is the source of truth; the values type is inferred.** Reuse it for the mutation input instead of redeclaring the shape. It lives in the module (`modules/<domain>/api/schemas.ts` or `types.ts`).
+**[HIGH] The schema is the source of truth; the values type is inferred.** Reuse it for the mutation input instead of redeclaring the shape.
+It lives in the module (`modules/<domain>/api/schemas.ts` or `types.ts`).
 
 ```ts
 export const createAgentSchema = z.object({
@@ -84,11 +86,14 @@ export const schema = z.object({
 }).refine((v) => v.password === v.confirmPassword, { message: "Passwords must match", path: ["confirmPassword"] });
 ```
 
-Async ("is this name taken?"): a debounced TQ query keyed on the value, plus `form.trigger(fieldName)` or `form.setError`. Check on blur or submit; don't block typing.
+Async ("is this name taken?"): a debounced TQ query keyed on the value, plus `form.trigger(fieldName)` or `form.setError`.
+Check on blur or submit; don't block typing.
 
 ## Dirty-tracking and reset
 
-Use `formState.isDirty` / `dirtyFields`: `disabled={!form.formState.isDirty || createAgent.isPending}`, and intercept route changes while dirty. Never hand-roll it with refs and deep-compares. After a successful submit, close the dialog (unmounting the form) or `form.reset(newDefaults)` if staying on the page.
+Use `formState.isDirty` / `dirtyFields`: `disabled={!form.formState.isDirty || createAgent.isPending}`, and intercept route changes while dirty.
+Never hand-roll it with refs and deep-compares.
+After a successful submit, close the dialog (unmounting the form) or `form.reset(newDefaults)` if staying on the page.
 
 ## Server errors
 
