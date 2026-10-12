@@ -550,8 +550,7 @@ function buildAgentsNow(facts: AnalyticsFacts): AnalyticsReport["agentsNow"] {
   for (const a of agents) {
     const row = rowOf(a);
     row.agents++;
-    if (neverHibernates(a, facts.sizing.idleTimeoutMinutes))
-      row.alwaysOn++;
+    if (neverHibernates(a, facts.sizing.idleTimeoutMinutes)) row.alwaysOn++;
   }
   const live = new Set(agents.map((a) => a.id));
   const agentsBySize = new Map<SizeRow, Set<string>>();
