@@ -165,9 +165,3 @@ export function useUpdateGitHubUserTokenScope() {
     },
   });
 }
-
-export function useTestAnthropic() {
-  return useMutation({
-    ...trpc.connections.testAnthropic.mutationOptions(),
-  });
-}
