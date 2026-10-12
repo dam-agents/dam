@@ -67,6 +67,8 @@ struct Args {
     reserve_mib: i64,
     #[arg(long = "headroom-mib", default_value_t = 256)]
     headroom_mib: i64,
+    #[arg(long = "boot-mib", default_value_t = 0)]
+    boot_mib: i64,
     // UNIT_BOUNDARY_DESCRIPTION: whether the install lets machines run KVM themselves. The runner nests a guest only when this is set and the node's KVM allows it. Nesting is the kernel's default on Intel and AMD, and turning it off on a node takes a module reload, so the node alone is no choice at all: the install makes it, and only one that sets `virtualization.runner.nestedVirtualization` passes this flag.
     #[arg(long = "nested-virtualization")]
     nested_virtualization: bool,
@@ -264,6 +266,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             memory_mib: i32::try_from(args.memory_mib)?,
             reserve_mib: i32::try_from(args.reserve_mib)?,
             headroom_mib: i32::try_from(args.headroom_mib)?,
+            boot_mib: i32::try_from(args.boot_mib)?,
             listen: publisher(&args.publish_address)?,
             runtime: std::env::current_exe()
                 .ok()

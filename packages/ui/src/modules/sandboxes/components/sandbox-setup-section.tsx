@@ -55,29 +55,31 @@ export function SandboxSetupSection({ agent }: { agent: AgentView }) {
         />
       </section>
 
-      <SandboxSizeSection
-        sizeCpuMilli={sizeCpuMilli}
-        sizeMemoryMi={sizeMemoryMi}
-        onChange={async (next) => {
-          if (
-            sizeRestartsAgent &&
-            !(await showConfirm(
-              "Changing the size restarts the agent — in-flight work is interrupted.",
-              "Restart agent?",
-              { confirmLabel: "Resize & restart" },
-            ))
-          )
-            return;
-          updateSize.mutate({
-            id: agent.id,
-            size: {
-              cpu: `${next.sizeCpuMilli}m`,
-              memory: `${next.sizeMemoryMi}Mi`,
-            },
-          });
-        }}
-        currentSize={sizeRestartsAgent ? agent.size : undefined}
-      />
+      {!agent.vm && (
+        <SandboxSizeSection
+          sizeCpuMilli={sizeCpuMilli}
+          sizeMemoryMi={sizeMemoryMi}
+          onChange={async (next) => {
+            if (
+              sizeRestartsAgent &&
+              !(await showConfirm(
+                "Changing the size restarts the agent — in-flight work is interrupted.",
+                "Restart agent?",
+                { confirmLabel: "Resize & restart" },
+              ))
+            )
+              return;
+            updateSize.mutate({
+              id: agent.id,
+              size: {
+                cpu: `${next.sizeCpuMilli}m`,
+                memory: `${next.sizeMemoryMi}Mi`,
+              },
+            });
+          }}
+          currentSize={sizeRestartsAgent ? agent.size : undefined}
+        />
+      )}
 
       {(features.data?.["strict-connection-addressing"] === true ||
         agent.requireConnectionAddress) && (

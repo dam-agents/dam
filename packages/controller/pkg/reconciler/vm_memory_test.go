@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
@@ -91,4 +93,26 @@ func TestSizingLeavesTheRunningRecordToTheReconcileThatDecidedIt(t *testing.T) {
 
 	running, _ := r.vmRunning.Load(agent.Name)
 	assert.Equal(t, false, running)
+}
+
+// TEST_SCENARIO: a vm agent has no size of its own: on a runner with a memory limit every machine may grow to half of what the runner hands out, whatever its spec names, so one agent can use most of the pool and a runaway guest still hits its own OOM killer first. Until the runner measures it, a machine counts at the boot estimate rather than that half, or a runner roll would boot only two machines at a time.
+func TestAMachineIsSizedToHalfThePoolAndCountedAtTheBootEstimateUntilMeasured(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	r.config.VM.Runner.BootMiB = 2048
+	peerVMAgent(t, r, "peer-up", "512Mi", "20Gi", true)
+	ctx := context.Background()
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, (16384-512)/2, node.spec("my-agent").MemoryMiB, "the machine was sized from the agent's spec")
+
+	d, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
+	require.NoError(t, err)
+	assert.Equal(t, 2*2048, d.memoryMiB, "unmeasured machines count at the boot estimate")
+
+	r.noteMachineUse("peer-up", measured(6000))
+	d, err = r.ownerRunnerDemand(ctx, testOwner, agent, true)
+	require.NoError(t, err)
+	assert.Equal(t, 2048+6000+256, d.memoryMiB, "a measured machine counts at its use, past the boot estimate")
 }

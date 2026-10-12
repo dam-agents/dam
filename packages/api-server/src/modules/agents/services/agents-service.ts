@@ -56,9 +56,10 @@ import {
   executeRuntimeMigration,
   type RuntimeMigrationWrite,
 } from "./runtime-migration.js";
-import type {
-  AgentMount,
-  RuntimeMigrationContext,
+import {
+  type AgentMount,
+  isVmBackend,
+  type RuntimeMigrationContext,
 } from "../domain/runtime-migration.js";
 import { runtimeMigrationPlan } from "../domain/runtime-migration-plan.js";
 import {
@@ -1249,6 +1250,13 @@ export function createAgentsService(deps: {
           deps.resizeLock(`resize:${deps.owner ?? ""}`, async () => {
             const current = await deps.repo.get(input.id, deps.owner);
             if (!current) return null;
+            if (isVmBackend(current.spec)) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message:
+                  "A VM agent has no size: it shares its owner's VM runner.",
+              });
+            }
             if (!current.hibernated && !current.overBudget) {
               const gate = deps.resizeGate;
               if (!gate) {
