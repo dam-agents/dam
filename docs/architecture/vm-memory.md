@@ -14,9 +14,19 @@ The [host runner](vm-host-runner.md) admits against a share of the Mac's memory 
 A new size reaches a running machine at its next start, not by rebooting it ([vm-runner](vm-runner.md)); until then the controller counts it at the larger of the two sizes, in memory and in vCPUs.
 A machine's size is the most its guest can see; the host commits only the pages the guest touches, and the guest hands freed pages back through free-page reporting, so an idle agent on a 2 GiB machine holds a few hundred MiB.
 
-**Guest RAM and the guest kernel are mapped for huge pages.** KVM maps guest memory in 2 MiB pages only where the host address agrees with the guest address modulo 2 MiB, and an ordinary allocation almost never does.
+**A machine boots small and grows.** A guest's kernel writes a page descriptor for every page of its RAM before it runs anything, and under nested virtualization that costs 65 to 85 ms per GiB: most of a second for a 12 GiB machine.
+So the runner boots each machine with the boot estimate below (`virtualization.runner.bootMiB`), or its size when that is smaller, and grows it to its size as soon as the start returns, through the virtio-mem area smolvm gives every guest.
+The guest kernel leaves added RAM offline unless told otherwise, and its virtio-mem driver adds no more once 1 GiB of it waits offline, so the runner first has the guest kernel online each block as it adds it; the VMM then maps the added RAM, and the start ends once the guest has plugged it all and the guest agent confirms it is online.
+Every boot does this again, since each boots from the estimate.
+Readiness does not wait for the grow, which runs while the workload starts, because waiting would put the same page work back on the path; a guest that allocates past the estimate before the grow ends meets its own OOM killer.
+A machine that cannot grow is stopped and booted again whole within the same start, so no running machine stays small.
+smolvm's own resize is not used: it refuses a VMM without a cgroup of its own, which no VMM in a runner pod has, and admits growth against the host's free memory rather than by use.
+The added RAM is a file the VMM owns, so free-page reporting returns its freed pages as it does the boot RAM's.
+
+**Boot RAM and the guest kernel are mapped for huge pages.** KVM maps guest memory in 2 MiB pages only where the host address agrees with the guest address modulo 2 MiB, and an ordinary allocation almost never does.
 Under nested virtualization each guest page the guest touches first then costs a fault through both hypervisors, about 20 µs for each 4 KiB.
-The platform's libkrun patch therefore places the guest RAM, and a copy of the guest kernel, at host addresses that agree, and asks the host for transparent huge pages there.
+The platform's libkrun patch therefore places the boot RAM, and a copy of the guest kernel, at host addresses that agree, and asks the host for transparent huge pages there.
+The added RAM is a shared-memory file, which a host whose shared-memory huge pages are off (as on RHEL by default) backs with 4 KiB pages whatever its placement.
 
 **The runner measures every running machine.** Its health prober reads the resident memory of each machine's VMM at the steady probe cadence and reports it in the machine's status.
 The figure is kept out of what moves the status version, so it never wakes a waiting status read on its own.

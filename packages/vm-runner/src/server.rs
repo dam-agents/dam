@@ -1042,12 +1042,18 @@ impl Server {
         let started = Instant::now();
         let runtime = self.runtime.clone();
         let target = id.to_string();
+        let size = spec.memory_mib;
+        let boot = if self.config.boot_mib > 0 {
+            size.min(self.config.boot_mib)
+        } else {
+            size
+        };
         let result = bounded(
             "the runtime's start",
             Some(RUNTIME_CALL_LIMIT),
             None,
             None,
-            move || runtime.start(&target),
+            move || boot_and_grow(&*runtime, &target, boot, size),
         );
         self.metrics
             .start(action, started.elapsed(), result.is_ok());
@@ -1543,6 +1549,20 @@ impl Server {
         }
         (state, status)
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: boots a machine with `boot` MiB of guest RAM and then grows it to its `size`. A guest's kernel writes a page descriptor for every page of its RAM before it runs anything, and under nested virtualization that costs 65 to 85 ms per GiB, so a 12 GiB machine booted whole spends most of a second on RAM it does not need yet. The grow runs as soon as the start returns, while the workload is starting, and readiness does not wait for it: the prober reports the guest ready when it answers. A machine that cannot grow is booted again at its full size, so a running machine always has the size its spec names.
+fn boot_and_grow(runtime: &dyn Runtime, id: &str, boot: i32, size: i32) -> anyhow::Result<()> {
+    runtime.start(id, boot)?;
+    if boot == size {
+        return Ok(());
+    }
+    let Err(e) = runtime.grow(id, size) else {
+        return Ok(());
+    };
+    tracing::warn!(machine = id, error = %format!("{e:#}"), boot_mib = boot, memory_mib = size, "the guest could not grow to its size; booting it again whole");
+    runtime.stop(id)?;
+    runtime.start(id, size)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a seed capability may seed, beyond the machine it is signed for. The machine must be marked as created for a migration in the latest spec the runner holds for it, so a capability never reaches a machine that is not being migrated. Its disk must hold no home yet — no guest has answered from it — so a capability never replaces a home. A seed already stored but not yet booted from may be replaced: an attempt can store its seed and still fail, its answer lost, and only the next Job's fresh capability can then finish the copy, since the controller removes a seed only once the guest has booted from it. The controller moves past the copy only after a Job succeeds, and drops the migration mark then, so no capability reaches a seed it has accepted. And the capability must not have been spent: each one seeds once, recorded on the runner's claim beside the machine, where it outlives a runner restart.

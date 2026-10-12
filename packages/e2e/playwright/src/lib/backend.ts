@@ -253,6 +253,28 @@ function hostPods(selector: string): { uid: string; ready: boolean }[] {
     });
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the grows the agent's VM runner logged, as the fields of each JSON log line whose operation is a grow: one that succeeded logs "machine operation" (or "machine operation was slow"), one that failed "machine operation failed". The runner belongs to the agent's owner, so the grows of the owner's other machines are in it too.
+export function runnerGrows(agentId: string): Record<string, unknown>[] {
+  const logs = kubectl(
+    "-n",
+    AGENT_NS,
+    "logs",
+    "-l",
+    hostSelector(agentId, "vm"),
+    "--tail=-1",
+  );
+  return logs.split("\n").flatMap((line) => {
+    try {
+      const { fields } = JSON.parse(line) as {
+        fields?: Record<string, unknown>;
+      };
+      return fields?.op === "grow" ? [fields] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
 export async function deleteBackendHost(
   agentId: string,
   backend: Backend,
