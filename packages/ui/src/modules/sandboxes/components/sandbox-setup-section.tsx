@@ -39,52 +39,48 @@ export function SandboxSetupSection({ agent }: { agent: AgentView }) {
 
   return (
     <>
-      {!agent.vm && (
-        <section className="mb-8">
-          <SleepAfterIdleField
-            value={hibernationTimeoutMin}
-            onChange={async (next) => {
-              if (
-                await confirmHibernationChange(
-                  agent.hibernationTimeoutMin,
-                  next,
-                  showConfirm,
-                )
-              )
-                updateSleep.mutate({
-                  id: agent.id,
-                  hibernationTimeoutMin: next,
-                });
-            }}
-          />
-        </section>
-      )}
-
-      {!agent.vm && (
-        <SandboxSizeSection
-          sizeCpuMilli={sizeCpuMilli}
-          sizeMemoryMi={sizeMemoryMi}
+      <section className="mb-8">
+        <SleepAfterIdleField
+          value={hibernationTimeoutMin}
           onChange={async (next) => {
             if (
-              sizeRestartsAgent &&
-              !(await showConfirm(
-                "Changing the size restarts the agent — in-flight work is interrupted.",
-                "Restart agent?",
-                { confirmLabel: "Resize & restart" },
-              ))
+              await confirmHibernationChange(
+                agent.hibernationTimeoutMin,
+                next,
+                showConfirm,
+              )
             )
-              return;
-            updateSize.mutate({
-              id: agent.id,
-              size: {
-                cpu: `${next.sizeCpuMilli}m`,
-                memory: `${next.sizeMemoryMi}Mi`,
-              },
-            });
+              updateSleep.mutate({
+                id: agent.id,
+                hibernationTimeoutMin: next,
+              });
           }}
-          currentSize={sizeRestartsAgent ? agent.size : undefined}
         />
-      )}
+      </section>
+
+      <SandboxSizeSection
+        sizeCpuMilli={sizeCpuMilli}
+        sizeMemoryMi={sizeMemoryMi}
+        onChange={async (next) => {
+          if (
+            sizeRestartsAgent &&
+            !(await showConfirm(
+              "Changing the size restarts the agent — in-flight work is interrupted.",
+              "Restart agent?",
+              { confirmLabel: "Resize & restart" },
+            ))
+          )
+            return;
+          updateSize.mutate({
+            id: agent.id,
+            size: {
+              cpu: `${next.sizeCpuMilli}m`,
+              memory: `${next.sizeMemoryMi}Mi`,
+            },
+          });
+        }}
+        currentSize={sizeRestartsAgent ? agent.size : undefined}
+      />
 
       {(features.data?.["strict-connection-addressing"] === true ||
         agent.requireConnectionAddress) && (
