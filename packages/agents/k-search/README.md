@@ -50,11 +50,10 @@ Both are the same image — only the eval backend (env) and GPU request differ.
 
 ## Modal through the DAM gateway
 
-The modal client ignores `HTTPS_PROXY` on both its transports, so DAM's
-proxy-only egress would drop it. `dam_modal_proxy_patch.py` (auto-loaded via a
-`.pth`) fixes this: it teaches grpclib to CONNECT through the proxy and rebuilds
-modal's aiohttp blob session with `trust_env=True`. All modal traffic then flows
-through the gateway.
+DAM's egress is proxy-only. The modal client is installed with its
+`api-proxy-support` extra, so both its transports, gRPC and the aiohttp blob
+session, CONNECT through `HTTPS_PROXY`. All modal traffic then flows through
+the gateway.
 
 Requirements — supplied by the **Modal connection** granted to the agent:
 - `MODAL_TOKEN_SECRET` — the secret; gateway-injected into the

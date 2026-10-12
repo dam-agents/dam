@@ -23,7 +23,7 @@ import {
   mergeLocalFailures,
   settleReplay,
 } from "../../acp/session-projection.js";
-import type { AcpUpdate, UpdateHandler } from "../../acp/types.js";
+import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
 import { readNextSessionPair } from "../api/session-pair.js";
@@ -48,10 +48,7 @@ export interface LiveConnection {
 
 interface CollectedUpdate {
   update: AcpUpdate;
-  at?: string;
-  telemetryPromptId?: string;
-  model?: string;
-  turnId?: string;
+  frame: FrameMeta;
 }
 
 export type ConnectionState = "idle" | "live" | "reloading" | "reconnecting";
@@ -299,15 +296,7 @@ export function useAcpConnection(
           updateSessionId === collector.sid &&
           frame?.replayFor === collector.token
         ) {
-          collector.updates.push({
-            update,
-            ...(frame.at !== undefined && { at: frame.at }),
-            ...(frame.telemetryPromptId !== undefined && {
-              telemetryPromptId: frame.telemetryPromptId,
-            }),
-            ...(frame.model !== undefined && { model: frame.model }),
-            ...(frame.turnId !== undefined && { turnId: frame.turnId }),
-          });
+          collector.updates.push({ update, frame });
           return;
         }
         handler(update, updateSessionId, frame);
@@ -389,6 +378,7 @@ export function useAcpConnection(
                     ? { older: clipped.data.older }
                     : {}),
                 },
+                frame: {},
               },
               ...collector.updates,
             ]
@@ -396,15 +386,7 @@ export function useAcpConnection(
       const settled = dropSuperseded(
         settleReplay(
           updates.reduce<Message[]>(
-            (acc, collected) =>
-              applyUpdate(
-                acc,
-                collected.update,
-                collected.at,
-                collected.telemetryPromptId,
-                collected.model,
-                collected.turnId,
-              ),
+            (acc, { update, frame }) => applyUpdate(acc, update, frame),
             [],
           ),
           { turnInFlight: turn.success && turn.data.inFlight },

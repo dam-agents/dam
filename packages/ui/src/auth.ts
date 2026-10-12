@@ -27,6 +27,7 @@ export async function initAuth(): Promise<User | null> {
     redirect_uri: `${window.location.origin}/auth/callback`,
     post_logout_redirect_uri: `${window.location.origin}/`,
     response_type: "code",
+    redirectMethod: "replace",
     scope: "openid profile",
     userStore: new WebStorageStateStore({ store: sessionStorage }),
     automaticSilentRenew: true,

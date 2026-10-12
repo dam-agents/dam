@@ -39,16 +39,7 @@ export function useAcpUpdateHandler(): () => UpdateHandler {
 
       if (kind === "config_option_update") return;
 
-      setMessages((prev) =>
-        applyUpdate(
-          prev,
-          update,
-          frame?.at,
-          frame?.telemetryPromptId,
-          frame?.model,
-          frame?.turnId,
-        ),
-      );
+      setMessages((prev) => applyUpdate(prev, update, frame));
     };
   }, [dismissStalePermission, setMessages]);
 }

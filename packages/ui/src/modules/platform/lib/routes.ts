@@ -38,6 +38,7 @@ export type Route =
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
   | { view: "starter-kit"; catalog: string; kit: string }
   | { view: "artifacts" }
+  | { view: "analytics" }
   | { view: "not-found"; path: string };
 
 export type View = Route["view"];
@@ -99,6 +100,7 @@ export function parseRoute(path: string): Route {
   if (path === "/slack/bind") return { view: "slack-bind" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
   if (path === "/artifacts") return { view: "artifacts" };
+  if (path === "/analytics") return { view: "analytics" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
@@ -151,6 +153,8 @@ export function routeToPath(route: Route): string {
       return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}`;
     case "artifacts":
       return "/artifacts";
+    case "analytics":
+      return "/analytics";
     case "not-found":
       return route.path;
     default: {

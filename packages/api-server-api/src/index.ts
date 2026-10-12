@@ -602,6 +602,10 @@ export { termsDocumentSchema } from "./modules/terms/schemas.js";
 export { PRE_TERMS_PROCEDURES } from "./modules/terms/types.js";
 
 export type { EntryPointChoice, UsageService } from "./modules/usage/types.js";
+export {
+  USAGE_REPORT_FRAME,
+  usageReportFrameReadySchema,
+} from "./modules/usage/schemas.js";
 
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";

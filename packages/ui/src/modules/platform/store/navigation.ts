@@ -11,7 +11,7 @@ import {
   type View,
 } from "../lib/routes.js";
 
-type ParameterlessView = "home" | "terms" | "artifacts";
+type ParameterlessView = "home" | "terms" | "artifacts" | "analytics";
 
 export interface NavigationSlice {
   view: View;

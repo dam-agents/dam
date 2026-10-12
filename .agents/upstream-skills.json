@@ -1,7 +1,7 @@
 {
   "repo": "https://github.com/dam-agents/code-guardian",
   "ref": "main",
-  "commit": "6d93b39ba42f8ce64cffa0b85fae9cab89592105",
+  "commit": "69f9fe2ea79191c8b21ac8a8ce082617d71d8b5d",
   "skills": {
     "pr-open": {
       "SKILL.md": "735a92fd5be587ab25687fa6b9fc449b4ec3dae9"

@@ -16,6 +16,7 @@ const canonicalPaths = [
   "/sandboxes/sb-1/connections",
   "/starter-kits/platform/code-reviewer",
   "/artifacts",
+  "/analytics",
   "/nonexistent",
 ];
 
