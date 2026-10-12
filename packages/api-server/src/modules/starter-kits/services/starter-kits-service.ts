@@ -281,12 +281,6 @@ export function createStarterKitsService(
       const loaded = await requireKit(input.catalog, input.kitId);
       const { kit, version } = loaded;
 
-      if (!kit.image && !input.templateId)
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "this kit brings no agent image; pick a harness",
-        });
-
       const unmet = unmetRequiredConnections(
         kit,
         await grantedTemplates(input.connectionIds),

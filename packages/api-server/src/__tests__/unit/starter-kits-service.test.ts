@@ -485,18 +485,18 @@ describe("starter kits: apply", () => {
     expect(calls.created).toEqual([]);
   });
 
-  it("requires a harness when the kit brings no image, and uses the image when it does", async () => {
-    const { service } = makeHarness(LOADED);
-    await expect(
-      service.apply({
-        catalog: "platform",
-        kitId: "code-reviewer",
-        name: "r",
-        connectionIds: ["c-gh"],
-        skipSchedules: [],
-        scheduleOverrides: [],
-      }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  it("leaves the template to create's default when the kit brings no image, and uses the image when it does", async () => {
+    const { service, calls } = makeHarness(LOADED);
+    await service.apply({
+      catalog: "platform",
+      kitId: "code-reviewer",
+      name: "r",
+      connectionIds: ["c-gh"],
+      skipSchedules: [],
+      scheduleOverrides: [],
+    });
+    expect(calls.created[0].templateId).toBeUndefined();
+    expect(calls.created[0].image).toBeUndefined();
 
     const pinned = makeHarness({
       ...LOADED,

@@ -6,10 +6,6 @@ import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
-import {
-  AgentCreateView,
-  StarterKitSetupView,
-} from "./modules/agents/views/agent-create-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import {
   ActivityButton,
@@ -19,7 +15,7 @@ import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
-import { parseRoute, type Route } from "./modules/platform/lib/routes.js";
+import { parseRoute } from "./modules/platform/lib/routes.js";
 import { isDarkTheme } from "./modules/platform/store/theme.js";
 import { NotFoundView } from "./modules/platform/views/not-found-view.js";
 import { PendingBindModal } from "./modules/sandboxes/components/channels/pending-bind-modal.js";
@@ -27,8 +23,8 @@ import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js"
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
+import { BrowseKitsModal } from "./modules/starter-kits/components/browse-kits-modal.js";
 import { StarterKitDetailView } from "./modules/starter-kits/views/starter-kit-view.js";
-import { StarterKitsView } from "./modules/starter-kits/views/starter-kits-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
 import { useStore } from "./store.js";
@@ -58,12 +54,11 @@ export default function App() {
   return <MainApp />;
 }
 
-const SETUP_VIEWS = new Set<Route["view"]>(["agent-new", "starter-kit-new"]);
-
 function MainApp() {
   const view = useStore((s) => s.view);
   const activityOpen = useStore((s) => s.activityView !== null);
   const setActivityView = useStore((s) => s.setActivityView);
+  const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
 
   useLiveEvents();
   useAgentCrashToasts();
@@ -71,7 +66,7 @@ function MainApp() {
 
   useEffect(() => {
     const path = window.location.pathname;
-    if (SETUP_VIEWS.has(parseRoute(path).view)) return;
+    if (parseRoute(path).view === "starter-kit") return;
     const params = new URLSearchParams(window.location.search);
     const oauthResult = params.get("oauth");
     if (!oauthResult) return;
@@ -108,6 +103,7 @@ function MainApp() {
         {activityOpen && (
           <NotificationsPanel onClose={() => setActivityView(null)} />
         )}
+        {kitBrowserOpen && <BrowseKitsModal />}
         <DialogOverlay />
         <PendingBindModal />
         <ConnectionBanner />
@@ -127,9 +123,7 @@ function MainApp() {
           <div
             className={cn(
               "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
-              view === "home" ||
-                view === "starter-kits" ||
-                view === "starter-kit"
+              view === "home" || view === "starter-kit"
                 ? "max-w-[1200px]"
                 : view === "settings" || view === "sandbox-home"
                   ? "max-w-[1040px]"
@@ -138,19 +132,13 @@ function MainApp() {
           >
             {view === "sandbox-home" ? (
               <SandboxHomeView />
-            ) : view === "home" ? (
-              <HomeView />
-            ) : view === "agent-new" ? (
-              <AgentCreateView kit={null} />
-            ) : view === "settings" ? (
-              <SettingsView />
-            ) : view === "starter-kits" || view === "starter-kit" ? (
+            ) : view === "home" || view === "starter-kit" ? (
               <>
-                <StarterKitsView />
+                <HomeView />
                 {view === "starter-kit" && <StarterKitDetailView />}
               </>
-            ) : view === "starter-kit-new" ? (
-              <StarterKitSetupView />
+            ) : view === "settings" ? (
+              <SettingsView />
             ) : view === "artifacts" ? (
               <ArtifactsView />
             ) : (
@@ -162,6 +150,7 @@ function MainApp() {
       {activityOpen && (
         <NotificationsPanel onClose={() => setActivityView(null)} />
       )}
+      {kitBrowserOpen && <BrowseKitsModal />}
       <DialogOverlay />
       <PendingBindModal />
       <ConnectionBanner />
