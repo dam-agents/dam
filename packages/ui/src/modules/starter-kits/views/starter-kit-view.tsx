@@ -25,6 +25,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { useAgents } from "../../agents/api/queries.js";
 import { resolveCharacter } from "../../agents/components/avatar/agent-avatar.js";
+import { EditableIdentity } from "../../agents/components/editable-agent-identity.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import {
   formatSizeLabel,
@@ -358,14 +359,21 @@ function KitDetail({
     !invalidSchedules.some((n) => !form.skippedSchedules.includes(n)) &&
     isStarterKitSetupComplete(kit, form, owned, templateById);
 
+  const avatar = useMemo(
+    () =>
+      form.avatar ??
+      leastUsedCharacter(
+        (agents ?? []).map((a) => resolveCharacter(a.name, a.avatar)),
+      ),
+    [form.avatar, agents],
+  );
+
   const create = async () => {
     if (!canCreate) return;
     try {
       const result = await apply.mutateAsync({
         ...buildStarterKitApplyInput(kit, form, owned, templateById),
-        avatar: leastUsedCharacter(
-          agents.map((a) => resolveCharacter(a.name, a.avatar)),
-        ),
+        avatar,
       });
       reset();
       const skipped = result.skills?.skipped.length ?? 0;
@@ -641,9 +649,28 @@ function KitDetail({
           <Button variant="ghost" onClick={onBack}>
             <ArrowLeft size={16} /> Back
           </Button>
-          <Button onClick={() => void create()} disabled={!canCreate}>
-            {apply.isPending ? "Creating…" : "Use this starter kit"}
-          </Button>
+          <div className="flex min-w-0 items-center gap-4">
+            {form.name && (
+              <div
+                className="flex min-w-0 items-center gap-2"
+                data-testid="kit-agent-identity"
+              >
+                <EditableIdentity
+                  name={form.name}
+                  avatar={avatar}
+                  onRename={(name) => update({ name })}
+                  onAvatarChange={(next) => update({ avatar: next })}
+                  avatarSize={28}
+                  mood="idle"
+                  nameClassName="text-sm font-medium text-foreground"
+                  nameTag="h2"
+                />
+              </div>
+            )}
+            <Button onClick={() => void create()} disabled={!canCreate}>
+              {apply.isPending ? "Creating…" : "Use this starter kit"}
+            </Button>
+          </div>
         </DialogFooter>
         {connectAccepts && (
           <ConnectionCatalogModal
