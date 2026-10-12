@@ -24,7 +24,7 @@ export function OwnerSchedulesView() {
   const rows = ownerScheduleRows(data ?? [], agents);
 
   return (
-    <div className="anim-in">
+    <div>
       <PageHeader
         title="Schedules"
         description="Everything that runs on its own across your agents. Open one to change, pause or delete it in its agent."

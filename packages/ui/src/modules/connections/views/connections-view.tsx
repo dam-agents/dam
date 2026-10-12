@@ -27,7 +27,7 @@ export function ConnectionsView() {
   );
 
   return (
-    <div className="w-full max-w-2xl">
+    <div>
       <PageHeader
         title="Connections"
         description="Connections are the services and credentials your agents can reach."

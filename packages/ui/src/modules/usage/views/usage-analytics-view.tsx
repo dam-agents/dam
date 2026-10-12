@@ -12,7 +12,7 @@ export function UsageAnalyticsView() {
   const open = useOpenUsageReport();
 
   return (
-    <div className="anim-in">
+    <div>
       <PageHeader
         title="Usage analytics"
         description={`How people are adopting ${brandShort}: who comes back each week, how new users get through their first three weeks, which features they pick up, and what the live agents look like.`}

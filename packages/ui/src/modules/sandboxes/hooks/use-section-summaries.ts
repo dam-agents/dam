@@ -17,7 +17,6 @@ import {
   useSkillSourceCount,
   useSkillsState,
 } from "../../agents/api/skills.js";
-import { useArtifacts } from "../../artifacts/api/queries.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import {
   formatSizeLabel,
@@ -184,17 +183,6 @@ export function useSectionSummaries(agent: AgentView | null): {
     return `${plural(running, "schedule")} running`;
   }, [agent, schedules]);
 
-  const { data: agentArtifacts } = useArtifacts(
-    agent ? { agentId: agent.id } : null,
-  );
-  const artifactsSummary = useMemo(() => {
-    if (!agent || !agentArtifacts) return undefined;
-    if (agentArtifacts.length === 0) return "No artifacts";
-    const shared = agentArtifacts.filter((a) => a.shareUrl !== null).length;
-    const base = `${agentArtifacts.length} artifact${agentArtifacts.length === 1 ? "" : "s"}`;
-    return shared > 0 ? `${base} · ${shared} shared` : base;
-  }, [agent, agentArtifacts]);
-
   const knowledgeSummary = useMemo(() => {
     if (!appsLoaded || !connectionsQuery.data) return undefined;
     const granted = new Set(
@@ -226,7 +214,6 @@ export function useSectionSummaries(agent: AgentView | null): {
       channels: channelsSummary,
       skills,
       schedules: schedulesSummary,
-      artifacts: artifactsSummary,
       usage: usageSummary,
       knowledge: knowledgeSummary,
     },

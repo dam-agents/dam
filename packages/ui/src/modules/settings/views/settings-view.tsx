@@ -34,6 +34,8 @@ const baseTabs: readonly TabDef<SettingsTab>[] = [
   { value: "schedules", label: "Schedules" },
 ];
 
+const WIDE_TABS = new Set<SettingsTab>(["usage", "analytics"]);
+
 const themeOptions = [
   {
     value: "light" as const,
@@ -101,9 +103,15 @@ export function SettingsView() {
         className="flex-row overflow-x-auto px-1.5 py-1 [&>button]:shrink-0 md:flex-col md:overflow-x-visible md:px-0 md:py-0 md:w-[180px] shrink-0"
       />
 
-      <div className="flex-1 min-w-0">
+      <div
+        key={activeTab}
+        className={cn(
+          "anim-in min-w-0 flex-1",
+          !WIDE_TABS.has(activeTab) && "max-w-2xl",
+        )}
+      >
         {activeTab === "appearance" && (
-          <div className="anim-in">
+          <div>
             <PageHeader
               title="Appearance"
               description="Customize the look and feel of the interface."
@@ -149,7 +157,7 @@ export function SettingsView() {
         {activeTab === "api-keys" && <ApiKeysList />}
 
         {activeTab === "account" && (
-          <div className="anim-in">
+          <div>
             <PageHeader
               title="Account"
               description="Manage your account and session."
@@ -187,8 +195,8 @@ export function SettingsView() {
         )}
 
         {activeTab === "providers" && (
-          <div className="anim-in">
-            <div className="w-full max-w-2xl">
+          <div>
+            <div>
               <PageHeader
                 title="Providers"
                 description="Connect an LLM provider to give agents access to its models."
@@ -202,13 +210,13 @@ export function SettingsView() {
         )}
 
         {activeTab === "connections" && (
-          <div className="anim-in">
+          <div>
             <ConnectionsView />
           </div>
         )}
 
         {activeTab === "usage" && (
-          <div className="anim-in">
+          <div>
             <UsageView />
           </div>
         )}

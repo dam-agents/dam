@@ -147,15 +147,15 @@ function CreatorChip({ agentId }: { agentId: string | null }) {
 }
 
 function AgentCreatorChip({ agentId }: { agentId: string }) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const selectAgent = useStore((s) => s.selectAgent);
   const agentName = useAgentDisplayName(agentId);
   return (
-    <Tooltip content={`Open ${agentName}'s artifacts`}>
+    <Tooltip content={`Open ${agentName}`}>
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          navigateToSandboxHome(agentId, "artifacts");
+          selectAgent(agentId);
         }}
         className="inline-flex max-w-24 items-center gap-1 rounded-full bg-muted px-2 py-px transition-colors hover:bg-accent-light hover:text-accent sm:max-w-40"
       >

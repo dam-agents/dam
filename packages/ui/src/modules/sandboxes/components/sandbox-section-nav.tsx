@@ -46,12 +46,6 @@ export const SECTIONS: SectionEntry[] = [
     description: "Schedules let your agent run tasks periodically.",
   },
   {
-    section: "artifacts",
-    title: "Artifacts",
-    description:
-      "Pages and files this agent has published to your artifact library.",
-  },
-  {
     section: "usage",
     title: "Usage",
     description:

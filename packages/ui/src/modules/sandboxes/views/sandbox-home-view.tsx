@@ -7,7 +7,6 @@ import { useAgents, useIsAgentInaccessible } from "../../agents/api/queries.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
-import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { KnowledgeSection } from "../../knowledge-bases/components/knowledge-section.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
@@ -49,7 +48,7 @@ export function SandboxHomeView() {
 
   if (!agent || !display) {
     return (
-      <div className="mx-auto w-full max-w-[720px] px-4 pt-10 md:px-8">
+      <div>
         {!agentId && (
           <p className="text-sm text-muted-foreground">No agent selected.</p>
         )}
@@ -61,63 +60,57 @@ export function SandboxHomeView() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[1040px] px-4 pt-6 pb-8 md:px-8 md:pt-12">
-          <div className="flex flex-col gap-6 md:flex-row md:gap-10">
-            <SandboxSectionNav
-              header={<SandboxIdentity agent={agent} display={display} />}
-              active={section}
-              onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
-              summaries={summaries}
-              warnings={warnings}
+    <>
+      <div className="flex flex-col gap-6 md:flex-row md:gap-10">
+        <SandboxSectionNav
+          header={<SandboxIdentity agent={agent} display={display} />}
+          active={section}
+          onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
+          summaries={summaries}
+          warnings={warnings}
+        />
+        <div className="min-w-0 flex-1 md:max-w-[760px]">
+          <SandboxHomeHeader
+            agent={agent}
+            display={display}
+            title={sectionEntry?.title ?? ""}
+            description={sectionEntry?.description}
+          />
+          {section === "setup" ? (
+            <SandboxSetupSection agent={agent} />
+          ) : section === "knowledge" ? (
+            <KnowledgeSection agent={agent} />
+          ) : section === "network" ? (
+            <AgentEgressEditor agentId={agent.id} />
+          ) : section === "environment" ? (
+            <EnvTab agent={agent} />
+          ) : section === "channels" ? (
+            <SandboxChannelsSection agentId={agent.id} />
+          ) : section === "skills" ? (
+            <SandboxSkillsSection agent={agent} />
+          ) : section === "schedules" ? (
+            <SchedulesPanel
+              agentId={agent.id}
+              onResumeSession={(sessionId) =>
+                openAgentSession(agent.id, sessionId)
+              }
             />
-            <div className="min-w-0 flex-1 md:max-w-[760px]">
-              <SandboxHomeHeader
-                agent={agent}
-                display={display}
-                title={sectionEntry?.title ?? ""}
-                description={sectionEntry?.description}
-              />
-              {section === "setup" ? (
-                <SandboxSetupSection agent={agent} />
-              ) : section === "knowledge" ? (
-                <KnowledgeSection agent={agent} />
-              ) : section === "network" ? (
-                <AgentEgressEditor agentId={agent.id} />
-              ) : section === "environment" ? (
-                <EnvTab agent={agent} />
-              ) : section === "channels" ? (
-                <SandboxChannelsSection agentId={agent.id} />
-              ) : section === "skills" ? (
-                <SandboxSkillsSection agent={agent} />
-              ) : section === "schedules" ? (
-                <SchedulesPanel
-                  agentId={agent.id}
-                  onResumeSession={(sessionId) =>
-                    openAgentSession(agent.id, sessionId)
-                  }
-                />
-              ) : section === "artifacts" ? (
-                <SandboxArtifactsSection agentId={agent.id} />
-              ) : section === "usage" ? (
-                <SandboxUsageSection agentId={agent.id} />
-              ) : (
-                <ConnectionsSection
-                  agentId={agent.id}
-                  oauthReturnView={routeToPath({
-                    view: "sandbox-home",
-                    agentId: agent.id,
-                    sandboxSection: "connections",
-                  })}
-                />
-              )}
-            </div>
-          </div>
+          ) : section === "usage" ? (
+            <SandboxUsageSection agentId={agent.id} />
+          ) : (
+            <ConnectionsSection
+              agentId={agent.id}
+              oauthReturnView={routeToPath({
+                view: "sandbox-home",
+                agentId: agent.id,
+                sandboxSection: "connections",
+              })}
+            />
+          )}
         </div>
       </div>
       <PendingRestartBar agentId={agent.id} />
-    </div>
+    </>
   );
 }
 
@@ -137,10 +130,10 @@ function RestartBar({
   const restart = useApplyPendingRestartWithConfirm(agentId, pendingRestart);
   return (
     <div
-      className="border-t border-border bg-background"
+      className="sticky bottom-0 mt-8 border-t border-border bg-background"
       data-testid="pending-restart-bar"
     >
-      <div className="mx-auto flex w-full max-w-[1040px] items-center justify-end gap-3 px-4 py-3 md:px-8">
+      <div className="flex items-center justify-end gap-3 py-3">
         <p className="text-sm text-muted-foreground">
           Changes need agent restart to fully apply.
         </p>

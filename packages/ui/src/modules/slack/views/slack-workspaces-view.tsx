@@ -16,7 +16,7 @@ export function SlackWorkspacesView() {
   const link = invitation.data;
 
   return (
-    <div className="anim-in">
+    <div>
       <PageHeader
         title="Slack workspaces"
         description={`Connect another Slack workspace so its channels can reach ${brandShort} agents.`}

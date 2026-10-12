@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-10
+Last verified: 2026-10-11
 
 ## Overview
 
@@ -353,9 +353,6 @@ flowchart LR
   drag held near the top or bottom edge of the list scrolls it, so a folder
   off screen can still take the drop.
   Nothing reads membership as a claim about provenance.
-- Each sandbox's home view gains an **Artifacts section** listing what that
-  agent published, grouped into the same collapsible folder groups as the
-  library, with the same actions.
 - The Home feed's session cards carry **artifact chips** — what the session
   touched since the card was last dismissed, opening the preview dialog in
   place.
@@ -371,7 +368,7 @@ flowchart LR
   opening either evicts the other; both ask before they displace an unsaved
   edit, and so does every dismissal of a surface holding one. Deleting the
   artifact a preview is showing closes that preview.
-- On the two agent-scoped surfaces a folder shows only that agent's artifacts,
+- On the agent-scoped chat surface a folder shows only that agent's artifacts,
   and a folder that holds none of them is not listed, so the agent's artifacts
   stay in view. **Move to folder…** still offers every user folder as a filing
   target, and a moved artifact makes its folder appear. The library itself
