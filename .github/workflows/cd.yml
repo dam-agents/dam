@@ -659,6 +659,9 @@ jobs:
           SKIP_IMAGE_BUILD: "1"
           CI_IMAGES_STATUS: /tmp/ci-images.status
           E2E_HOST_PROVISIONED: "1"
+          # The vm lane's harness tools installer: anonymous GitHub API calls
+          # from the runner's shared address hit the 60-an-hour limit.
+          HARNESS_TOOLS_GITHUB_TOKEN: ${{ github.token }}
       - &e2e-image-log
         name: Image fetch log
         if: ${{ !cancelled() }}
