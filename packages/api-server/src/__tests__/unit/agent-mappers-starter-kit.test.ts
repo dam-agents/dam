@@ -23,7 +23,7 @@ function agentView(annotations: Record<string, string>) {
     infra,
     [],
     [],
-    60,
+    { container: 60, vm: 5 },
     false,
     undefined,
     {} as RuntimeFeatures,

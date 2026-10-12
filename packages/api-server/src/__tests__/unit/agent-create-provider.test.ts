@@ -108,7 +108,7 @@ function setup(
     secretRefs: unused(),
     agentDefaultLimits: { cpu: "1", memory: "1Gi" },
     agentDefaultMounts: [],
-    agentIdleTimeoutMinutes: 30,
+    agentIdleTimeoutMinutes: { container: 30, vm: 5 },
     cleanupHooks: [],
     readTemplateSpec: async (id) =>
       templates[id] ? { spec: templates[id] as TemplateSpec } : null,

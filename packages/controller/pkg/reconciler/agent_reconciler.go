@@ -164,7 +164,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	timer.mark("gatewayEgressNetworkPolicy")
 
-	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, r.config.AgentBase.IdleTimeout.AsDuration())
+	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, agent.Spec.IsVM(), r.config.AgentBase)
 	running := shouldRunMigrating(agent.Annotations, migration, idleTimeout, time.Now().UTC())
 
 	lastActivity := agent.Annotations[annLastActivity]

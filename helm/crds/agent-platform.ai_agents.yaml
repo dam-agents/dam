@@ -155,6 +155,7 @@ spec:
               hibernationTimeout:
                 description: 'HibernationTimeout overrides the chart-wide idle timeout
                   for this Agent: "0s" never hibernates, omitted inherits the default.
+                  A vm Agent ignores it and always takes the chart-wide vm idle timeout.
                   The UI writes it (presented in minutes); the controller and api-server
                   resolve the effective value.'
                 type: string

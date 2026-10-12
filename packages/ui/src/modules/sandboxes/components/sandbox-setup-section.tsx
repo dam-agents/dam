@@ -39,21 +39,26 @@ export function SandboxSetupSection({ agent }: { agent: AgentView }) {
 
   return (
     <>
-      <section className="mb-8">
-        <SleepAfterIdleField
-          value={hibernationTimeoutMin}
-          onChange={async (next) => {
-            if (
-              await confirmHibernationChange(
-                agent.hibernationTimeoutMin,
-                next,
-                showConfirm,
+      {!agent.vm && (
+        <section className="mb-8">
+          <SleepAfterIdleField
+            value={hibernationTimeoutMin}
+            onChange={async (next) => {
+              if (
+                await confirmHibernationChange(
+                  agent.hibernationTimeoutMin,
+                  next,
+                  showConfirm,
+                )
               )
-            )
-              updateSleep.mutate({ id: agent.id, hibernationTimeoutMin: next });
-          }}
-        />
-      </section>
+                updateSleep.mutate({
+                  id: agent.id,
+                  hibernationTimeoutMin: next,
+                });
+            }}
+          />
+        </section>
+      )}
 
       {!agent.vm && (
         <SandboxSizeSection

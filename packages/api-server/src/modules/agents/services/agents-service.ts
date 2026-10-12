@@ -40,6 +40,7 @@ import {
   assembleSpecFromImage,
   resolveEffectiveHibernationTimeoutMin,
   type DefaultResourceLimits,
+  type IdleTimeoutMinutes,
 } from "../domain/spec-assembly.js";
 import {
   ANN_AGENT_KIND,
@@ -531,7 +532,7 @@ export interface ResizeGatePort {
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   agentEnvRepo: AgentEnvRepository;
-  agentIdleTimeoutMinutes: number;
+  agentIdleTimeoutMinutes: IdleTimeoutMinutes;
   owner: string | undefined;
   readTemplateSpec: ReadTemplateSpec;
   presetSeeder?: PresetSeeder;
@@ -1432,6 +1433,7 @@ export function createAgentsService(deps: {
       if (!current) return null;
       const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
         current.spec.hibernationTimeout,
+        current.spec.backend?.type === "vm",
         deps.agentIdleTimeoutMinutes,
       );
       const infra =

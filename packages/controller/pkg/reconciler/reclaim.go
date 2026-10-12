@@ -108,7 +108,7 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 			return nil, fmt.Errorf("decoding agent %s: %w", item.GetName(), err)
 		}
 		idleSince, ok := reclaimEligible(peer.Annotations,
-			effectiveIdleTimeout(peer.Spec.HibernationTimeout, r.config.AgentBase.IdleTimeout.AsDuration()), now)
+			effectiveIdleTimeout(peer.Spec.HibernationTimeout, peer.Spec.IsVM(), r.config.AgentBase), now)
 		if !ok {
 			continue
 		}

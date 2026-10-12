@@ -1,11 +1,18 @@
 import type { TemplateSpec } from "api-server-api";
 import { durationToMinutes } from "../../../duration.js";
 
+export interface IdleTimeoutMinutes {
+  container: number;
+  vm: number;
+}
+
 export function resolveEffectiveHibernationTimeoutMin(
   override: string | undefined,
-  globalIdleTimeoutMin: number,
+  vm: boolean,
+  idle: IdleTimeoutMinutes,
 ): number {
-  return override != null ? durationToMinutes(override) : globalIdleTimeoutMin;
+  if (vm) return idle.vm;
+  return override != null ? durationToMinutes(override) : idle.container;
 }
 
 export interface DefaultResourceLimits {
