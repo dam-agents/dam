@@ -67,6 +67,8 @@ cleanup() {
     echo "=== End diagnostics ==="
   fi
 
+  echo "=== EXPERIMENT vm-spin-probe ==="
+  cat /tmp/vm-spin-probe.log 2>/dev/null || true
   # A GitHub-hosted runner is a fresh VM per job and is discarded after it.
   if [ -z "${GITHUB_ACTIONS:-}" ]; then
     echo ""
@@ -115,6 +117,22 @@ mise run e2e:install
 # outside the cluster.
 rm -f packages/e2e/playwright/.auth/*.json
 
+# EXPERIMENT: sample smolvm relay threads per VMM every 10 s.
+if [ -n "${GITHUB_ACTIONS:-}" ] && [ -n "${E2E_VIRTUALIZATION:-}" ]; then
+  (
+    while :; do
+      ts=$(date -u +%H:%M:%S)
+      echo "$ts load $(cut -d' ' -f1-3 /proc/loadavg)"
+      for p in $(pgrep -f _boot-vm || true); do
+        name=$(tr '\0' ' ' < /proc/$p/cmdline 2>/dev/null | grep -oE 'agent-[0-9a-f]{16}' | head -1)
+        sudo sh -c "for t in /proc/$p/task/*; do printf '%s %s\n' \"\$(cat \$t/comm)\" \"\$(cut -d')' -f2 \$t/stat | cut -d' ' -f2)\"; done" 2>/dev/null \
+          | awk -v ts="$ts" -v p="$p" -v n="$name" '$1 ~ /^smolvm-tcp/ {t++; if ($2=="R") r++} {all++; if ($2=="R") ar++} END {printf "%s vmm %s %s threads=%d running=%d tcp=%d tcpRunning=%d\n", ts, p, n, all, ar, t, r}'
+        sudo ps -o pid,pcpu,etime -p "$p" --no-headers 2>/dev/null | sed "s/^/$ts ps /"
+      done
+      sleep 10
+    done
+  ) > /tmp/vm-spin-probe.log 2>&1 &
+fi
 e2e_mark "suite started"
 suite_rc=0
 PLATFORM_BASE_URL="http://localhost:5555" \
