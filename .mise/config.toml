@@ -1,4 +1,6 @@
-min_version = "2026.10.2"
+# 2026.10.4 (2026-10-07) is under the 7-day floor: it builds pipx venvs on
+# mise's own Python, not whichever one uv finds. Floor passes 2026-10-14.
+min_version = "2026.10.4"
 monorepo_root = true
 
 [monorepo]
@@ -32,14 +34,20 @@ auto = true
 "conda:pigz" = "latest"
 "github:Boshen/cargo-shear" = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
-"go:honnef.co/go/tools/cmd/staticcheck" = "latest"
+# Staticcheck 0.8.1 cannot read go1.27.2's export data (dominikh/go-tools#1832).
+# The pin is its unreleased fix, commit f1838cc3 (2026-10-09), under the
+# 7-day floor; return to latest once a release after 0.8.1 ships it.
+"go:honnef.co/go/tools/cmd/staticcheck" = "v0.7.0-0.dev.0.20261009221906-f1838cc308e5"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
 "go:sigs.k8s.io/crdify" = "latest"
 "npm:json-schema-to-typescript" = "latest"
 "npm:knip" = "latest"
 crane = "latest"
-fd = "latest"
 gh = "latest"
+# go1.27.2 (2026-10-08) is locked under the 7-day floor: it fixes the
+# stdlib CVEs in the controller image. Until it ages past the floor
+# (2026-10-15), a re-lock with --bump --minimum-release-age 7d drops it to
+# 1.27.1: re-lock go alone without the flag afterwards.
 go = "1.27"
 gum = "latest"
 helm = "latest"
@@ -127,7 +135,7 @@ depends = ["//...:test"]
 [tasks."check:task-files"]
 description = "Every file task under a .mise/tasks directory is executable"
 run = """
-bad=$(fd --hidden --type f --full-path '/[.]mise/tasks/' --exec-batch sh -c 'for f; do [ -x "$f" ] || echo "$f"; done' sh)
+bad=$(git ls-files -co --exclude-standard | grep -E '(^|/)[.]mise/tasks/' | while read -r f; do [ ! -f "$f" ] || [ -x "$f" ] || echo "$f"; done)
 [ -z "$bad" ] || { echo "not executable (chmod +x):"; echo "$bad"; exit 1; }
 """
 outputs = []
