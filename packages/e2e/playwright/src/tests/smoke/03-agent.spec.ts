@@ -12,7 +12,7 @@ import { bootTimeoutMs, onLaneBackend } from "../../lib/backend.js";
 import { getConnectionId } from "../../lib/connections.js";
 import { agentName, connectionName, harnessName } from "../../lib/fixtures.js";
 
-test("one-click create from the Default kit, then the mock agent with the connection attached", async ({
+test("one-click create from the Default kit, then the mock agent with the connection and default provider", async ({
   page,
 }) => {
   test.setTimeout(bootTimeoutMs(300_000));
@@ -63,18 +63,11 @@ test("one-click create from the Default kit, then the mock agent with the connec
     await expect(page).toHaveURL(/\/chat\//);
   });
 
-  await test.step("the default provider was granted at create", async () => {
+  await test.step("the one-click agent boots with a generated avatar", async () => {
     const agent = (await api.agents.list.query()).find((a) =>
       /^agent(-\d+)?$/.test(a.name),
     );
     expect(agent?.avatar).toBeTruthy();
-    const openai = (await api.connections.list.query()).find(
-      (c) => c.templateId === "openai",
-    );
-    const { connections } = await api.connections.getAgentConnections.query({
-      agentId: agent!.id,
-    });
-    expect(connections.map((c) => c.connectionId)).toContain(openai!.id);
     await waitForAgentIdRunning(api, agent!.id);
     await deleteAgentIfPresent(api, agent!.name);
   });
@@ -88,5 +81,18 @@ test("one-click create from the Default kit, then the mock agent with the connec
       }),
     );
     await waitForAgentRunning(api, agentName);
+  });
+
+  await test.step("the default provider was granted at create", async () => {
+    const agent = (await api.agents.list.query()).find(
+      (a) => a.name === agentName,
+    );
+    const openai = (await api.connections.list.query()).find(
+      (c) => c.templateId === "openai",
+    );
+    const { connections } = await api.connections.getAgentConnections.query({
+      agentId: agent!.id,
+    });
+    expect(connections.map((c) => c.connectionId)).toContain(openai!.id);
   });
 });
