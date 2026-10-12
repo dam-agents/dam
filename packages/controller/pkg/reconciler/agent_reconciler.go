@@ -2,6 +2,9 @@ package reconciler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -801,7 +804,14 @@ func stampRollRev(ss *appsv1.StatefulSet, rollRev string) {
 	ss.Spec.Template.Annotations[annRollRev] = rollRev
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: writes an agent's or gateway's StatefulSet only when it would change. Every reconcile renders both, and the agent reconciles run on one worker for the whole install, so an update that waits holds up every other agent's start. An update waits for every admission webhook that matches StatefulSets, even when it changes nothing, and a webhook whose service has no ready endpoint can hold it until the webhook's timeout (10-12 s measured). The stored template carries the API server's defaults and never equals the rendered one, so the rendered template and update strategy are hashed onto the StatefulSet, and an unchanged hash with the right replica count sends nothing. The cost: a hand edit to the template stays until the rendered template next changes.
 func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.StatefulSet, running bool) error {
+	raw, err := json.Marshal([]any{desired.Spec.Template, desired.Spec.UpdateStrategy})
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(raw)
+	hash := hex.EncodeToString(sum[:8])
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		existing, err := r.client.AppsV1().StatefulSets(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
 		if errors.IsNotFound(err) {
@@ -810,11 +820,16 @@ func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.
 				replicas = 1
 			}
 			desired.Spec.Replicas = &replicas
+			metav1.SetMetaDataAnnotation(&desired.ObjectMeta, annStatefulSetTemplate, hash)
 			_, err = r.client.AppsV1().StatefulSets(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
 			return err
 		}
 		if err != nil {
 			return err
+		}
+		scaled := !running || (existing.Spec.Replicas != nil && *existing.Spec.Replicas == 1)
+		if scaled && existing.Annotations[annStatefulSetTemplate] == hash {
+			return nil
 		}
 		if running {
 			one := int32(1)
@@ -822,6 +837,7 @@ func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.
 		}
 		existing.Spec.Template = desired.Spec.Template
 		existing.Spec.UpdateStrategy = desired.Spec.UpdateStrategy
+		metav1.SetMetaDataAnnotation(&existing.ObjectMeta, annStatefulSetTemplate, hash)
 		_, err = r.client.AppsV1().StatefulSets(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	})

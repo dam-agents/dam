@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -39,6 +39,7 @@ flowchart LR
 A stateless Go reconciler built on client-go.
 It is change-driven — it watches the `Agent` custom resource (`agent-platform.ai/v1`) plus agent-labelled pods, backed by two bounded periodic passes: a slow drift sweep re-reconciling every agent, and a short retry tick for agents parked over budget.
 It reconciles the StatefulSet, Service, NetworkPolicy, and per-agent Secret for each agent, computes agent readiness from the pod pair onto the Agent status, hibernates idle agents by scaling the pair to zero, and deletes agent and gateway pods stranded NotReady on a configuration it has already superseded (the one case where it evicts a pod outside hibernation — see [security-and-credentials](security-and-credentials.md) and [agent-lifecycle](agent-lifecycle.md)).
+Agent reconciles run on one worker for the whole install, so a StatefulSet is written only when its rendered template, update strategy or replica count changes: the rendered template is hashed onto the StatefulSet, and an unchanged render sends no update through the cluster's admission webhooks.
 The schedule loop lives in the api-server, not here (see [schedules](schedules.md)).
 The controller writes only the `status` subresource on the resources it owns; it never writes `spec`.
 See [`packages/controller/`](../../packages/controller/).
