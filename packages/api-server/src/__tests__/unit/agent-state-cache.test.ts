@@ -235,6 +235,53 @@ describe("agent state cache", () => {
     fire("error", new Error("dropped"));
     await expect(sub.changed).resolves.toBeUndefined();
   });
+  // TEST_SCENARIO: The api-server writes an agent and reads it straight back, as the UI does when it refetches after a save. The update returns only once the informer holds the written version, so the read sees the write rather than the version before it.
+  it("returns from an update only once the cache holds the write", async () => {
+    const before = {
+      ...agent("a1"),
+      metadata: { ...agent("a1").metadata, resourceVersion: "5" },
+      spec: { description: "old" },
+    };
+    const after = {
+      ...before,
+      metadata: { ...before.metadata, resourceVersion: "6" },
+      spec: { description: "new" },
+    };
+    const { client } = fakeK8s([before]);
+    const live = { ...client, patchCustomObject: async () => after };
+    const f = cacheOver([before], live);
+    await settled(null);
+    const repo = createAgentsRepository(live, f.cache);
+
+    let returned = false;
+    const update = repo
+      .updateSpec("a1", undefined, { description: "new" })
+      .then(() => {
+        returned = true;
+      });
+    await settled(null);
+    expect(returned).toBe(false);
+
+    f.cached.set("a1", after);
+    f.fire("update", after);
+    await update;
+    expect((await repo.get("a1"))?.spec.description).toBe("new");
+  });
+
+  // TEST_SCENARIO: A controller status write can land between the update and the informer's delivery of it, so the cache holds a later version than the one written. That later version also carries the write, and the wait ends.
+  it("ends the wait on a later version than the one written", async () => {
+    const at = (rv: string) => ({
+      ...agent("a1"),
+      metadata: { ...agent("a1").metadata, resourceVersion: rv },
+    });
+    const f = cacheOver([at("5")]);
+    await settled(null);
+
+    const waited = f.cache.awaitObserved("a1", "6");
+    f.cached.set("a1", at("7"));
+    f.fire("update", at("7"));
+    await expect(waited).resolves.toBeUndefined();
+  });
 });
 
 describe("poll wake-up", () => {
