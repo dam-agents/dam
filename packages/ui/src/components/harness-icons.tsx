@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 import { BobFilledIcon, ClaudeIcon, CodexIcon, PiIcon } from "./brand-icons.js";
 
-const ICONS: Record<
+export const HARNESS_ICONS: Record<
   HarnessFamily,
   {
     label: string;
@@ -53,10 +53,10 @@ export function HarnessIcons({
     <span className={cn("flex items-center gap-2", className)}>
       {harnesses
         .filter((name): name is HarnessFamily =>
-          Object.keys(ICONS).includes(name),
+          Object.keys(HARNESS_ICONS).includes(name),
         )
         .map((name) => {
-          const { Icon, label, bg, iconClass } = ICONS[name];
+          const { Icon, label, bg, iconClass } = HARNESS_ICONS[name];
           const icon = (
             <span
               key={name}
