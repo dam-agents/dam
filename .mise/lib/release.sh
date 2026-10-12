@@ -24,9 +24,10 @@ open_main_bump_pr() {
   pr_url=$(gh pr create --base main --head "$bump_branch" --title "bump: v$version" --body "Bump pending version on \`main\` to $version $reason." \
     || gh pr view "$bump_branch" --json url --jq .url)
 
-  local stale
-  for stale in $(gh pr list --base main --state open --json number,headRefName \
-    --jq ".[] | select((.headRefName | startswith(\"bump/\")) and .headRefName != \"$bump_branch\") | .number"); do
+  local stale_prs stale
+  stale_prs=$(gh pr list --base main --state open --json number,headRefName \
+    --jq ".[] | select((.headRefName | startswith(\"bump/\")) and .headRefName != \"$bump_branch\") | .number")
+  for stale in $stale_prs; do
     gh pr close "$stale" --delete-branch --comment "Superseded by $pr_url."
   done
 
