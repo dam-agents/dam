@@ -4,6 +4,7 @@ import {
   Bot,
   type CarbonIconType,
   Checkmark,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Close,
@@ -18,6 +19,8 @@ import {
   Settings,
   Time,
   TrashCan,
+  View,
+  ViewOff,
 } from "@carbon/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -151,6 +154,9 @@ export function IconRail({
   const activeSessionId = useStore((s) => s.sidebarActiveSessionId);
   const setSidebarActiveSession = useStore((s) => s.setSidebarActiveSession);
   const [scopedAgentId, setScopedAgentId] = useState<string | null>(null);
+  const [excludedAgentIds, setExcludedAgentIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const clickVariant = useAgentClickVariant((s) => s.variant);
   const scopedAgent = scopedAgentId
     ? (agents.find((a) => a.id === scopedAgentId) ?? null)
@@ -159,11 +165,21 @@ export function IconRail({
     setScopedAgentId(id);
     setActivityCount(SIDEBAR_ACTIVITY_PAGE);
   };
+  const toggleExcluded = (id: string) => {
+    setExcludedAgentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setActivityCount(SIDEBAR_ACTIVITY_PAGE);
+  };
   const [agentSessionCounts, setAgentSessionCounts] = useState<
     Record<string, number>
   >({});
   useEffect(() => {
     setScopedAgentId(null);
+    setExcludedAgentIds(new Set());
     useStore.setState({ expandedSidebarAgents: new Set() });
   }, [clickVariant]);
   useEffect(() => {
@@ -273,13 +289,16 @@ export function IconRail({
     () => feedItems.filter((item) => matchesActivityFilter(item, activityFilter)),
     [feedItems, activityFilter],
   );
-  const filteredFeed = useMemo(
-    () =>
-      scopedAgentId
-        ? globalFilteredFeed.filter((item) => item.agentId === scopedAgentId)
-        : globalFilteredFeed,
-    [globalFilteredFeed, scopedAgentId],
-  );
+  const filteredFeed = useMemo(() => {
+    let result = globalFilteredFeed;
+    if (scopedAgentId) {
+      result = result.filter((item) => item.agentId === scopedAgentId);
+    }
+    if (excludedAgentIds.size > 0) {
+      result = result.filter((item) => !excludedAgentIds.has(item.agentId));
+    }
+    return result;
+  }, [globalFilteredFeed, scopedAgentId, excludedAgentIds]);
   const visibleActivity = filteredFeed.slice(0, activityCount);
   const hasMoreActivity = activityCount < filteredFeed.length;
 
@@ -494,6 +513,9 @@ export function IconRail({
                           className={cn(
                             "group/agent relative flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer",
                             isSelected && "bg-muted",
+                            clickVariant === 6 &&
+                              excludedAgentIds.has(agent.id) &&
+                              "opacity-40",
                           )}
                         >
                           <AgentAvatar
@@ -504,12 +526,49 @@ export function IconRail({
                           <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
                             {agent.name}
                           </span>
-                          {hasUnread && !isSelected && (
+                          {hasUnread && !isSelected && clickVariant !== 6 && (
                             <span
                               aria-label="Unread sessions"
                               className="absolute top-1/2 right-3 size-2 -translate-y-1/2 rounded-full bg-accent group-hover/agent:invisible group-focus-within/agent:invisible"
                             />
                           )}
+                          {clickVariant === 6 ? (
+                            <span className="flex shrink-0 items-center gap-0.5">
+                              <Tooltip
+                                content={
+                                  excludedAgentIds.has(agent.id)
+                                    ? "Show in activity"
+                                    : "Hide from activity"
+                                }
+                                side="right"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleExcluded(agent.id);
+                                  }}
+                                  className={cn(
+                                    "rounded p-0.5 transition-colors",
+                                    excludedAgentIds.has(agent.id)
+                                      ? "text-muted-foreground/50 hover:text-foreground"
+                                      : "text-muted-foreground opacity-0 group-hover/agent:opacity-100 hover:text-foreground",
+                                  )}
+                                  aria-label={
+                                    excludedAgentIds.has(agent.id)
+                                      ? `Show ${agent.name} in activity`
+                                      : `Hide ${agent.name} from activity`
+                                  }
+                                >
+                                  {excludedAgentIds.has(agent.id) ? (
+                                    <ViewOff size={16} />
+                                  ) : (
+                                    <View size={16} />
+                                  )}
+                                </button>
+                              </Tooltip>
+                            </span>
+                          ) : (
                           <span
                             className={cn(
                               "flex shrink-0 items-center gap-0.5 transition-opacity group-hover/agent:opacity-100 focus-within:opacity-100",
@@ -531,6 +590,7 @@ export function IconRail({
                             </Tooltip>
                             <AgentOverflowMenu display={display} />
                           </span>
+                          )}
                         </div>
                         )}
                         {isExpanded &&
@@ -682,6 +742,72 @@ export function IconRail({
               </div>
             )}
 
+            {clickVariant === 7 && agents.length > 0 && hasActivity && (
+              <div className="mt-4 px-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {agents.map((agent) => {
+                    const isExcluded = excludedAgentIds.has(agent.id);
+                    const isFocused = scopedAgentId === agent.id;
+                    return (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        onClick={() => {
+                          if (isFocused) {
+                            setScope(null);
+                          } else if (isExcluded) {
+                            toggleExcluded(agent.id);
+                          } else {
+                            setScope(agent.id);
+                          }
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          if (isFocused) setScope(null);
+                          toggleExcluded(agent.id);
+                        }}
+                        className={cn(
+                          "flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors",
+                          isFocused
+                            ? "border-accent bg-accent/10 text-accent"
+                            : isExcluded
+                              ? "border-border bg-background text-muted-foreground/40 line-through"
+                              : "border-border bg-background text-foreground hover:bg-muted",
+                        )}
+                      >
+                        <span className="truncate">{agent.name}</span>
+                        {isFocused && (
+                          <Close
+                            size={12}
+                            className="shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setScope(null);
+                            }}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                  {(scopedAgentId || excludedAgentIds.size > 0) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScope(null);
+                        setExcludedAgentIds(new Set());
+                      }}
+                      className="flex h-7 items-center rounded-full px-2 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1.5 px-1 text-[11px] text-muted-foreground/60">
+                  Click to focus · Right-click to exclude
+                </p>
+              </div>
+            )}
+
             {hasActivity && (
               <div className="mt-6 pb-4">
                 <div ref={activitySentinelRef} className="h-0" />
@@ -693,7 +819,7 @@ export function IconRail({
                       : "border-b border-transparent",
                   )}
                 >
-                  {clickVariant === 1 && scopedAgent ? (
+                  {(clickVariant === 1 || clickVariant === 6) && scopedAgent ? (
                     <button
                       type="button"
                       onClick={() => setScope(null)}
@@ -794,6 +920,127 @@ export function IconRail({
                         </span>
                       </span>
                     </div>
+                  </div>
+                )}
+                {clickVariant === 6 && !scopedAgent && excludedAgentIds.size > 0 && (
+                  <div className="-mt-1 mb-3 flex items-center gap-1.5 px-5">
+                    <span className="text-xs text-muted-foreground">
+                      {excludedAgentIds.size} agent{excludedAgentIds.size > 1 ? "s" : ""} hidden
+                    </span>
+                    <span className="text-xs text-muted-foreground">·</span>
+                    <button
+                      type="button"
+                      onClick={() => setExcludedAgentIds(new Set())}
+                      className="text-xs text-accent hover:text-accent/80"
+                    >
+                      Show all
+                    </button>
+                  </div>
+                )}
+                {clickVariant === 8 && (
+                  <div className="-mt-1 mb-3 px-5">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className={cn(
+                            "flex h-8 w-full items-center justify-between rounded-lg border px-3 text-sm transition-colors hover:bg-muted",
+                            scopedAgentId || excludedAgentIds.size > 0
+                              ? "border-accent/30 bg-accent/5 text-foreground"
+                              : "border-border bg-background text-muted-foreground",
+                          )}
+                        >
+                          <span className="min-w-0 truncate">
+                            {scopedAgent
+                              ? `Only: ${scopedAgent.name}`
+                              : excludedAgentIds.size > 0
+                                ? `${agents.length - excludedAgentIds.size} of ${agents.length} agents`
+                                : "All agents"}
+                          </span>
+                          <ChevronDown size={16} className="shrink-0 ml-1" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        align="start"
+                        side="bottom"
+                        className="w-[280px] p-1"
+                      >
+                        <div className="flex items-center justify-between px-2 py-1.5">
+                          <span className="text-xs font-medium text-muted-foreground">
+                            Show activity from
+                          </span>
+                          {(scopedAgentId || excludedAgentIds.size > 0) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setScope(null);
+                                setExcludedAgentIds(new Set());
+                              }}
+                              className="text-xs text-muted-foreground hover:text-foreground"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          {agents.map((agent) => {
+                            const isOnly = scopedAgentId === agent.id;
+                            const isExcluded = excludedAgentIds.has(agent.id);
+                            return (
+                              <div
+                                key={agent.id}
+                                className="group/scope flex items-center gap-1 rounded-md px-2 py-1.5 hover:bg-muted"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (isExcluded) {
+                                      toggleExcluded(agent.id);
+                                    } else {
+                                      toggleExcluded(agent.id);
+                                    }
+                                    if (scopedAgentId) setScope(null);
+                                  }}
+                                  className={cn(
+                                    "flex size-4 shrink-0 items-center justify-center rounded border transition-colors",
+                                    isExcluded
+                                      ? "border-border bg-background"
+                                      : "border-accent bg-accent text-white",
+                                  )}
+                                >
+                                  {!isExcluded && <Checkmark size={12} />}
+                                </button>
+                                <span
+                                  className={cn(
+                                    "min-w-0 flex-1 truncate text-sm",
+                                    isExcluded
+                                      ? "text-muted-foreground"
+                                      : "text-foreground",
+                                  )}
+                                >
+                                  {agent.name}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setExcludedAgentIds(new Set());
+                                    setScope(isOnly ? null : agent.id);
+                                  }}
+                                  className={cn(
+                                    "shrink-0 rounded px-1.5 py-0.5 text-xs transition-colors",
+                                    isOnly
+                                      ? "bg-accent/10 text-accent"
+                                      : "text-muted-foreground opacity-0 group-hover/scope:opacity-100 hover:bg-muted hover:text-foreground",
+                                  )}
+                                >
+                                  {isOnly ? "Only" : "Only"}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 )}
                 {visibleActivity.length === 0 && (
@@ -1299,7 +1546,8 @@ function defaultActivityFilter(): ActivityFilter {
 
 function isActivityFiltered(filter: ActivityFilter): boolean {
   return (
-    filter.channelTypes.size < CHANNEL_TYPES.length || filter.state !== "any"
+    filter.channelTypes.size < CHANNEL_TYPES.length ||
+    filter.state !== "any"
   );
 }
 

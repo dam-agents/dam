@@ -13,6 +13,9 @@ export const AGENT_CLICK_VARIANTS = [
   { label: "Drill in", note: "Nav switches to the agent's own view, ‹ All agents to go back" },
   { label: "Filter menu", note: "Agent becomes part of the Activity filter" },
   { label: "Segmented toggle", note: "All | agent toggle above the activity list" },
+  { label: "Eye toggles", note: "Eye icon on each agent row: click to hide/show in feed, click name to focus" },
+  { label: "Agent pills", note: "Togglable agent pill bar between agents & activity" },
+  { label: "Scope bar", note: "\"All agents ▾\" dropdown in activity header for focus + exclude" },
 ];
 
 function readVariant(): number {
