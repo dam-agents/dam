@@ -5,11 +5,9 @@ import { Button } from "@/components/ui/button";
 
 export function OverlayFrame({
   onBack,
-  footer,
   children,
 }: {
   onBack: () => void;
-  footer?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -26,11 +24,6 @@ export function OverlayFrame({
       <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 py-24 text-center">
         {children}
       </div>
-      {footer && (
-        <div className="absolute inset-x-0 bottom-10 flex justify-center px-6">
-          {footer}
-        </div>
-      )}
     </div>
   );
 }

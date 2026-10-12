@@ -28,6 +28,7 @@ interface BaseProps {
   showModel?: boolean;
   isLast: boolean;
   hasPendingPermission: boolean;
+  waitingForAgent?: boolean;
   onRetry: OnRetry;
   onFileClick: (path: string) => void;
   onDelete: (id: string) => void;
@@ -96,6 +97,7 @@ export const ChatMessage = memo(function ChatMessage({
   timeLabel,
   timeTitle,
   hasPendingPermission,
+  waitingForAgent = false,
   onRetry,
   onFileClick,
   onDelete,
@@ -185,12 +187,27 @@ export const ChatMessage = memo(function ChatMessage({
             </span>
           )}
           {isAssistant && isLast && !readOnly && <PermissionStatusLine />}
-          {isAssistant && streaming && !queued && !hasPendingPermission && (
-            <span role="status" className="inline-flex items-center py-1">
-              <WorkingDots size="md" className="text-accent" />
-              <span className="sr-only">Working</span>
-            </span>
-          )}
+          {isAssistant &&
+            streaming &&
+            waitingForAgent &&
+            parts.length === 0 && (
+              <span
+                data-testid="prompt-waits-for-start-indicator"
+                className="text-xs text-muted-foreground italic"
+              >
+                Sends when the agent is ready…
+              </span>
+            )}
+          {isAssistant &&
+            streaming &&
+            !queued &&
+            !(waitingForAgent && parts.length === 0) &&
+            !hasPendingPermission && (
+              <span role="status" className="inline-flex items-center py-1">
+                <WorkingDots size="md" className="text-accent" />
+                <span className="sr-only">Working</span>
+              </span>
+            )}
           {isAssistant && stopped && !streaming && (
             <p
               data-testid="reply-stopped-marker"

@@ -78,7 +78,7 @@ export function SessionsSidebar({
     activeSessionId: sessionId,
   });
   const sessions: SessionView[] = listed ?? EMPTY;
-  const loading = listed === undefined && isFetching;
+  const loading = listed === undefined && (isFetching || !agentOperable);
   const filtered = sessionFilter.length < SESSION_CATEGORIES.length;
 
   const visibleSessions = useMemo(
