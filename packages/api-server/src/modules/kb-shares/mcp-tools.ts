@@ -2,8 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { json, run } from "../../core/mcp-tool-result.js";
 import type { KbShareAgentOps } from "./compose.js";
 
-const OWNER_LINK_NOTE =
-  "The owner copies the share link from the knowledge base page — it is never available to agents.";
+const OWNER_LINK_NOTE = "The share link is never available to agents.";
 
 export function registerKbShareTools(
   server: McpServer,
@@ -11,7 +10,7 @@ export function registerKbShareTools(
 ): void {
   server.tool(
     "share_knowledge_base",
-    `Share THIS knowledge base with the team: publishes a read-only snapshot behind a durable share link and keeps it fresh automatically. Idempotent — if the knowledge base is already shared, returns its current share status. ${OWNER_LINK_NOTE}`,
+    `Publish THIS knowledge base as a read-only shared snapshot; if it is already shared, return its current share status. Knowledge base sharing is paused while it is redesigned: do not offer sharing and do not call this tool, because the owner cannot see or stop a share from the UI. To check an existing share, call get_share_status. ${OWNER_LINK_NOTE}`,
     {},
     () =>
       run(async () => {
