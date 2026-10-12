@@ -920,10 +920,8 @@ export function ChatView() {
                     <ChatColumn>
                       <SessionPairPicker
                         {...pickable}
-                        defaultOpen={pairPickerOpen}
-                        onOpenChange={(open) =>
-                          !open && setPairPickerOpen(false)
-                        }
+                        open={pairPickerOpen}
+                        onOpenChange={setPairPickerOpen}
                       />
                     </ChatColumn>
                   </div>

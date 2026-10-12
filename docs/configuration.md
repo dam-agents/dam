@@ -21,7 +21,7 @@ By default a gateway injects a Connection's credential into every request to its
 
 It is set per agent:
 
-- **Create page and agent settings:** turn on *Addressed credential injection* under Settings → Experimental features to see the switch. Settings show it without the flag on an agent that already has it, so it can be turned off. Changing it there restarts the agent's gateway.
+- **Agent settings:** turn on *Addressed credential injection* under Settings → Experimental features to see the switch. Settings show it without the flag on an agent that already has it, so it can be turned off. Changing it there restarts the agent's gateway.
 - **Starter kit:** `requireConnectionAddress: true` in `kit.yaml`. A kit sets it whether or not the creating user has the feature flag on.
 
 Values the platform hands an agent already carry an address. A Custom Header Connection that sets no environment variable must be reached through its path prefix on such an agent.

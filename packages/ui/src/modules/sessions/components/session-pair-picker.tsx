@@ -40,7 +40,7 @@ interface Props {
   agentId: string;
   carried: readonly HarnessCapability[];
   defaultHarness: string;
-  defaultOpen?: boolean;
+  open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
 
@@ -48,7 +48,7 @@ export function SessionPairPicker({
   agentId,
   carried,
   defaultHarness,
-  defaultOpen,
+  open,
   onOpenChange,
 }: Props) {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
@@ -115,7 +115,7 @@ export function SessionPairPicker({
     );
 
   return (
-    <Popover defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
