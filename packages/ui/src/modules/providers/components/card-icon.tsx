@@ -30,9 +30,9 @@ const STYLES: Record<
   },
   "curve-bender": {
     Icon: LiteLLMIcon,
-    bg: "bg-icon-violet",
+    bg: "bg-icon-rose",
   },
-  bob: { Icon: BobIcon, bg: "bg-icon-blue" },
+  bob: { Icon: BobIcon, bg: "bg-icon-violet" },
   bedrock: { Icon: Cloud, bg: "bg-icon-ochre" },
 };
 
