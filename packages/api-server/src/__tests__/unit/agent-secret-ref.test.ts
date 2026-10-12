@@ -72,7 +72,7 @@ function setup() {
     secretRefs: createAgentSecretRefPort(k8sWithSecrets()),
     agentDefaultLimits: { cpu: "1", memory: "1Gi" },
     agentDefaultMounts: [],
-    agentIdleTimeoutMinutes: 30,
+    agentIdleTimeoutMinutes: { container: 30, vm: 5 },
     cleanupHooks: [],
     readTemplateSpec: async () => null,
     runtimeMutator: unused<AgentsDeps["runtimeMutator"]>({

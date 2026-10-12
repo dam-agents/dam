@@ -35,6 +35,7 @@ type AgentBase struct {
 	AccessMode       string   `json:"accessMode,omitempty"`
 
 	IdleTimeout            Duration `json:"idleTimeout,omitempty"`
+	VMIdleTimeout          Duration `json:"vmIdleTimeout,omitempty"`
 	TerminationGracePeriod int64    `json:"terminationGracePeriod,omitempty"`
 
 	ExtraLabels      map[string]string `json:"extraLabels,omitempty"`

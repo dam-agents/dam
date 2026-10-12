@@ -5,6 +5,7 @@ import type { Db } from "db";
 import { createXactLock } from "../../core/xact-lock.js";
 import type { AgentsService, ConnectionsService } from "api-server-api";
 import { createK8sClient } from "./infrastructure/k8s.js";
+import type { IdleTimeoutMinutes } from "./domain/spec-assembly.js";
 import type { AgentStateCache } from "./infrastructure/agent-state-cache.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 import { createAgentSecretRefPort } from "./infrastructure/agent-secret-ref-port.js";
@@ -75,7 +76,7 @@ export function composeAgentsModule(deps: {
   resolveSlackWorkspace: AgentsServiceDeps["resolveSlackWorkspace"];
   agentStateCache: AgentStateCache;
   namespace: string;
-  agentIdleTimeoutMinutes: number;
+  agentIdleTimeoutMinutes: IdleTimeoutMinutes;
   agentDefaultLimits: { cpu: string; memory: string };
   install: AgentsInstallSettings;
   resizeGate?: ResizeGatePort;

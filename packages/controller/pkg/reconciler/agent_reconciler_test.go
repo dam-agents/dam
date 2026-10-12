@@ -78,6 +78,7 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		AgentBase: config.AgentBase{
 			TerminationGracePeriod: 5,
 			IdleTimeout:            config.Duration(time.Hour),
+			VMIdleTimeout:          config.Duration(time.Hour),
 			ContainerSecurityContext: &corev1.SecurityContext{
 				Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 			},

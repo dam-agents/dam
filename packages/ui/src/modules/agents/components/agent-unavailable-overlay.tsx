@@ -107,7 +107,7 @@ export function AgentUnavailableOverlay({
         <p className="max-w-105 text-sm text-muted-foreground">
           Lost contact with the agent. Reconnecting…
         </p>
-        <StartupTip sandbox={agent.name} />
+        <StartupTip sandbox={agent.name} vm={agent.vm} />
       </OverlayFrame>
     );
   }
@@ -152,7 +152,7 @@ export function AgentUnavailableOverlay({
           The agent is starting up.
         </p>
       )}
-      {!Icon && <StartupTip sandbox={agent.name} />}
+      {!Icon && <StartupTip sandbox={agent.name} vm={agent.vm} />}
       {display.slowStart && !agent.podTerminationReason && (
         <div className="flex max-w-105 flex-col gap-2 text-sm">
           <p
@@ -207,7 +207,7 @@ function overlayDescription(
 function SkipTheWait({ agent }: { agent: AgentView }) {
   const updateAgent = useUpdateAgent();
   const showConfirm = useStore((s) => s.showConfirm);
-  if (agent.hibernationTimeoutMin === 0) return null;
+  if (agent.vm || agent.hibernationTimeoutMin === 0) return null;
 
   const keepAlwaysOn = async () => {
     const ok = await showConfirm(
