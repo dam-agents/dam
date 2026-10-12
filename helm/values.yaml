@@ -258,7 +258,12 @@ virtualization:
     # REQUIRED when virtualization.enabled — the install fails without
     # limits.memory. Machines are processes of this pod, so that limit is also
     # what the runner admits them against (it refuses one that does not fit,
-    # keeping `reserveMiB` for itself). A running machine counts at what its
+    # keeping `reserveMiB` for itself). It is the owner's whole memory pool:
+    # vm agents have no size of their own and do not count toward the user's
+    # budget; every machine may grow to half of the limit less `reserveMiB`,
+    # so one agent can use most of the pool while a runaway guest hits its
+    # own OOM killer before it takes the runner, and every machine with it.
+    # A running machine counts at what its
     # guest measurably uses plus `headroomMiB`, never above its size, so an
     # owner can run more machines than their sizes add up to; near the limit
     # the controller hibernates the owner's idle agents. `requests.memory` is
@@ -277,6 +282,17 @@ virtualization:
     # Memory each running machine is counted at beyond what it was last
     # measured using, for its guest to grow into before the controller acts.
     headroomMiB: 256
+    # Memory a machine is counted at until the runner first measures it,
+    # about ten seconds into its boot, when that is less than its size.
+    # Counting a boot at its full size, half the pool, would let only two
+    # machines boot at once, so a runner roll or a few wakes together would
+    # refuse the rest. A guest that touches more than this before its first
+    # measurement is under-counted until then.
+    bootMiB: 2048
+    # vCPUs every machine gets. They are threads of the runner, which has no
+    # CPU limit, so an idle machine costs nothing and a busy one shares the
+    # node with the owner's other machines.
+    machineCPUs: 4
     # true = runners may give the node's virtualization extensions to the
     # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization,
     # or controller.agent.templateDefaults.nestedVirtualization for all),

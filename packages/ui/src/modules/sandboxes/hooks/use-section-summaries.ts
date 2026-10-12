@@ -96,7 +96,7 @@ export function useSectionSummaries(agent: AgentView | null): {
 
   const { data: budget } = useBudgetReserved();
   const setup =
-    agent && budget
+    agent && !agent.vm && budget
       ? formatSizeLabel(sizeInMi(agent.size), slotUnitOf(budget))
       : undefined;
 

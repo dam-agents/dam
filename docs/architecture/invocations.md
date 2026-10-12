@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-08
+Last verified: 2026-10-12
 
 ## Overview
 
@@ -24,7 +24,7 @@ sequenceDiagram
 
 ## Spawning
 
-**A target is set up like a kit-created Agent.** The spawn carries an **Agent Setup** — the part of a [starter kit](starter-kits.md) that decides what an Agent is and has: a repository to seed, an install command, env, CPU, memory and disk, the vm backend, external skills. Kits and spawns share the one definition, so a setup option added for kits reaches spawns in the same change, or is deliberately kit-only. What a kit carries about discovery or about outliving one task — catalog display, schedules, channels, knowledge-base shares, a hibernation override — has no meaning for a target and is not accepted. The spawn's prompt plays the role a kit's onboarding plays: it is the target's first and only turn.
+**A target is set up like a kit-created Agent.** The spawn carries an **Agent Setup** — the part of a [starter kit](starter-kits.md) that decides what an Agent is and has: a repository to seed, an install command, env, CPU, memory and disk, the vm backend, external skills. A vm target takes only the disk: its machine has no CPU or memory size and shares its owner's [pool](vm-memory.md). Kits and spawns share the one definition, so a setup option added for kits reaches spawns in the same change, or is deliberately kit-only. What a kit carries about discovery or about outliving one task — catalog display, schedules, channels, knowledge-base shares, a hibernation override — has no meaning for a target and is not accepted. The spawn's prompt plays the role a kit's onboarding plays: it is the target's first and only turn.
 
 **A spawn names a harness.** A harness in the install's harness catalog runs on the default Template — its image, size, env and mounts — with the target's own harness set to it, exactly as an Agent created there would; a harness only a custom Template declares still resolves to that Template. A harness the install does not carry is refused, naming the ones it does; the image catalogue the Driver reads lists each with its effective Size. A spawn may bring its own image instead, the way a kit with its own image does: the target is then created from that image with the install's defaults, and the harness, when named, only says what runs inside it. Either way the harness catalog, or the custom Template, states the providers the harness can run on, which is what Provider Inheritance checks. The trigger that opens the target's first session names its harness, the inherited provider and the model, so that session opens on the [lease](agent-lifecycle.md#session-inside-the-pod) for them.
 
@@ -38,7 +38,7 @@ sequenceDiagram
 
 **Attenuation.** Beyond the provider, a target receives exactly the connections the spawn names, and each must already be granted to the Driver. Network reach needs no grant of its own: a target has no egress identity and runs under its Driver's rules ([Egress Aliasing](security-and-credentials.md)); its spend is attributed to its root Driver ([observability](observability.md)).
 
-**Admission.** A target sized past its owner's [budget](budgets.md) Ceiling could never start, so the spawn fails at once with the figures. One that fits the Ceiling but not the room free now queues and starts when room frees; the wait counts against its deadline.
+**Admission.** A target sized past its owner's [budget](budgets.md) Ceiling could never start, so the spawn fails at once with the figures. A vm target stands outside the budget and is never refused here. One that fits the Ceiling but not the room free now queues and starts when room frees; the wait counts against its deadline.
 
 ## Outcomes
 
