@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 
+import { HARNESS_ICONS } from "@/components/harness-icons";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 
@@ -12,9 +14,16 @@ import { useStarterKits } from "../api/queries.js";
 import { KitCard, KitFilterBar, useKitFilter } from "./kit-browser.js";
 
 const DEFAULT_KIT = {
-  name: "Default",
-  text: "This is the tabula rasa. Use a plain harness (Bob, Claude, ...).",
+  name: "Generalist",
+  text: "The vanilla option: only a harness without any preset. Use it directly, or as a foundation for a specialized agent.",
 };
+
+const HARNESS_PILLS = [
+  ["bob", "text-icon-violet"],
+  ["claude-code", "text-icon-clay"],
+  ["codex", "text-icon-green"],
+  ["pi", "text-icon-blue"],
+] as const;
 
 export function BrowseKitsModal() {
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
@@ -90,6 +99,25 @@ export function BrowseKitsModal() {
                     <p className="text-sm text-muted-foreground">
                       {DEFAULT_KIT.text}
                     </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {HARNESS_PILLS.map(([harness, color]) => {
+                        const { Icon, label } = HARNESS_ICONS[harness];
+                        return (
+                          <Badge
+                            key={harness}
+                            variant="muted"
+                            size="sm"
+                            className="gap-1.5"
+                          >
+                            <Icon
+                              aria-hidden="true"
+                              className={`size-3.5 ${color}`}
+                            />
+                            {label}
+                          </Badge>
+                        );
+                      })}
+                    </div>
                   </button>
                 )}
                 {shown.map((kit) => (
