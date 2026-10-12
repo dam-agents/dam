@@ -18,10 +18,10 @@ minimumReleaseAgeExclude:
   - "@earendil-works/pi-mcp@1.0.4"
   - "@earendil-works/pi-telemetry@1.0.4"
   - "@earendil-works/pi-tui@1.0.4"
-  # source-map-js 1.2.2 (2026-09-30) fixes CVE-2026-93749, an event-loop DoS
-  # through indexed source-map section offsets. Drop this once it ages past
-  # the floor (2026-10-08).
-  - "source-map-js@1.2.2"
+  # vite 8.3.3 (2026-10-06) fixes GHSA-rq7h-c2jc-7f22, GHSA-vfpm-58rq-9qcg
+  # and GHSA-9jrq-w75r-8gcw, dev-server reads outside `server.fs.allow`.
+  # Drop this once it ages past the floor (2026-10-13).
+  - "vite@8.3.3"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while
