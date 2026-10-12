@@ -310,7 +310,8 @@ export type PlatformRemoveQueuedParams = z.infer<
 export const platformRewriteFromParamsSchema = z.object({
   sessionId: z.string().min(1),
   mode: z.enum(["rewind", "fork"]),
-  upToMessageId: z.string().min(1).nullable(),
+  messageId: z.string().min(1),
+  upToMessageId: z.string().min(1).nullable().optional(),
   prompt: z.array(promptBlockSchema).min(1),
   promptId: z.string().min(1),
   title: z.string().min(1).optional(),

@@ -21,6 +21,7 @@ interface Waiter {
 interface BootstrapState {
   waiters: Waiter[];
   fills: ((loaded: boolean) => void)[];
+  adjustLines?: (lines: string[]) => string[];
   deadline: ReturnType<typeof setTimeout>;
   harnessLoadId: number | null;
 }
@@ -44,7 +45,11 @@ export interface SessionBootstrap {
     cursor: string,
     opts?: { loadToken?: string },
   ): void;
-  fill(sessionId: string, done: (loaded: boolean) => void): void;
+  fill(
+    sessionId: string,
+    done: (loaded: boolean) => void,
+    adjustLines?: (lines: string[]) => string[],
+  ): void;
   onLoadResponse(sessionId: string, frame: unknown): void;
   has(sessionId: string): boolean;
   dropChannel(channel: ClientChannel): void;
@@ -227,7 +232,8 @@ export function createSessionBootstrap(
   function serveFromProvider(sessionId: string, lines: string[]): void {
     const boot = bootstrapBySession.get(sessionId);
     if (!boot) return;
-    for (const line of lines) deps.transcript.appendReplay(sessionId, line);
+    const served = boot.adjustLines ? boot.adjustLines(lines) : lines;
+    for (const line of served) deps.transcript.appendReplay(sessionId, line);
     deps.transcript.cacheMetadata(
       sessionId,
       { sessionId, modes: null, configOptions: null },
@@ -279,16 +285,19 @@ export function createSessionBootstrap(
     sessionId: string,
     waiter: Waiter | null,
     fill?: (loaded: boolean) => void,
+    adjustLines?: (lines: string[]) => string[],
   ): void {
     const boot = bootstrapBySession.get(sessionId);
     if (boot) {
       if (waiter !== null) boot.waiters.push(waiter);
       if (fill !== undefined) boot.fills.push(fill);
+      boot.adjustLines ??= adjustLines;
       return;
     }
     const state: BootstrapState = {
       waiters: waiter === null ? [] : [waiter],
       fills: fill === undefined ? [] : [fill],
+      adjustLines,
       harnessLoadId: null,
       deadline: setTimeout(
         () => expireFill(sessionId, state),
@@ -378,12 +387,12 @@ export function createSessionBootstrap(
       if (channel.isOpen()) channel.send(error);
     },
 
-    fill(sessionId, done) {
+    fill(sessionId, done, adjustLines) {
       if (deps.transcript.metadataOf(sessionId).cached) {
         done(true);
         return;
       }
-      park(sessionId, null, done);
+      park(sessionId, null, done, adjustLines);
     },
 
     onLoadResponse(sessionId, frame) {

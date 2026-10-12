@@ -93,3 +93,14 @@ know (message 3 is gone). Reload: three messages are not there, the list has one
   and switches to the new id without loading it; the runtime answers before the new session's
   first frame so the tab already follows the new id. The edited prompt is not editable while it
   briefly queues behind the harness load.
+
+## Follow-up after testing (operator)
+
+- Rewinding to a message sent mid-turn started an empty session and lost every message above it:
+  the client cut after the last reply above the message, and a steered message has none. The cut
+  is now the entry right before the message in the harness's own history (the session-history
+  provider stamps each frame with its entry), found by the message's id or, for one sent live, by
+  its text. A message steered into a running turn is a starting point like any other; a message
+  the history does not hold is refused.
+- The harness stamps the last entry it copies with the time of the fork; the copy now keeps the
+  original's times.

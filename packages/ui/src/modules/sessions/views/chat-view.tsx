@@ -885,7 +885,8 @@ export function ChatView() {
                                 "transition-opacity",
                               )}
                             >
-                              {rewritable && upTo !== undefined ? (
+                              {rewritable &&
+                              rewritePoints.has(item.message.id) ? (
                                 <RewritableMessage
                                   message={item.message}
                                   onRewrite={(mode, text) =>

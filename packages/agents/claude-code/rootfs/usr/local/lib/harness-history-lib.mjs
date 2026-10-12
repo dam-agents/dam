@@ -79,9 +79,7 @@ function modelOf(message, parentToolUseId) {
     : null;
 }
 
-function withStamp(notification, at, telemetryPromptId, model) {
-  if (at === null && telemetryPromptId === null && model === null)
-    return notification;
+function withStamp(notification, entry, at, telemetryPromptId, model) {
   const meta = objectOr(notification._meta);
   return {
     ...notification,
@@ -89,6 +87,7 @@ function withStamp(notification, at, telemetryPromptId, model) {
       ...meta,
       platform: {
         ...objectOr(meta.platform),
+        ...(entry ? { entry } : {}),
         ...(at !== null ? { at } : {}),
         ...(telemetryPromptId !== null ? { telemetryPromptId } : {}),
         ...(model !== null ? { model } : {}),
@@ -166,6 +165,7 @@ export async function loadHistory(sessionId) {
           method: "session/update",
           params: withStamp(
             notification,
+            messageId,
             at,
             telemetryPromptId,
             modelOf(message, parentToolUseId),

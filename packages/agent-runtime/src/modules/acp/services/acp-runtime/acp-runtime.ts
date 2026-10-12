@@ -50,6 +50,11 @@ import {
   undeliveredOf,
 } from "../../domain/mappers.js";
 import {
+  rewriteCutOf,
+  withOriginalTimes,
+  type RewriteCut,
+} from "../../domain/rewrite-cut.js";
+import {
   composeSessionList,
   type ListedHarnessSession,
 } from "../../domain/session-list.js";
@@ -486,6 +491,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     runTextBuffers.set(sessionId, buffer);
   }
   const supersededEchoes = new Map<string, Set<string>>();
+  const rewritingSessions = new Set<string>();
 
   function supersedeEcho(sessionId: string, id: string): void {
     const ids = supersededEchoes.get(sessionId) ?? new Set<string>();
@@ -890,10 +896,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     });
   }
 
-  function rewriteRefusal(
-    sessionId: string,
-    upToMessageId: string | null,
-  ): string | null {
+  function rewriteRefusal(sessionId: string): string | null {
     const entry = deps.sessionMetadata?.get(sessionId);
     const meta = entry?.meta;
     if (
@@ -906,9 +909,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       meta?.initialization === true
     )
       return "only a chat session can be rewritten";
-    if (upToMessageId !== null && !sessionForkSupported)
-      return "this agent cannot rewrite a conversation";
     if (
+      rewritingSessions.has(sessionId) ||
       promptScheduler.hasWork(sessionId) ||
       pendingRequests.hasFor(sessionId) ||
       bootstrap.has(sessionId)
@@ -940,12 +942,71 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         }),
       );
     const oldId = params.sessionId;
-    const refusal = rewriteRefusal(oldId, params.upToMessageId);
+    const refusal = rewriteRefusal(oldId);
     if (refusal !== null) {
       fail(refusal, REWRITE_REFUSED_CODE);
       return;
     }
-    const fresh = params.upToMessageId === null;
+    rewritingSessions.add(oldId);
+    const failRewrite = (message: string, code?: string): void => {
+      rewritingSessions.delete(oldId);
+      fail(message, code);
+    };
+    void rewriteCutFor(oldId, params).then(({ cut, history }) => {
+      if (cut.kind === "missing") {
+        failRewrite(
+          "this message is not in the agent's own history, so the conversation cannot be cut there",
+          REWRITE_REFUSED_CODE,
+        );
+        return;
+      }
+      if (cut.kind === "after" && !sessionForkSupported) {
+        failRewrite(
+          "this agent cannot rewrite a conversation",
+          REWRITE_REFUSED_CODE,
+        );
+        return;
+      }
+      forkForRewrite(channel, id, params, cut, history, failRewrite);
+    });
+  }
+
+  async function rewriteCutFor(
+    sessionId: string,
+    params: PlatformRewriteFromParams,
+  ): Promise<{ cut: RewriteCut; history: string[] | null }> {
+    const history =
+      (await deps.historyProvider?.fetch(sessionId).catch(() => null)) ?? null;
+    const resolved =
+      history === null
+        ? null
+        : rewriteCutOf(
+            history,
+            transcript.lines(sessionId).frames,
+            params.messageId,
+          );
+    if (resolved !== null) return { cut: resolved, history };
+    if (params.upToMessageId === undefined)
+      return { cut: { kind: "missing" }, history: null };
+    return {
+      cut:
+        params.upToMessageId === null
+          ? { kind: "start" }
+          : { kind: "after", entry: params.upToMessageId },
+      history: null,
+    };
+  }
+
+  function forkForRewrite(
+    channel: ClientChannel,
+    id: unknown,
+    params: PlatformRewriteFromParams,
+    cut: Exclude<RewriteCut, { kind: "missing" }>,
+    history: string[] | null,
+    fail: (message: string, code?: string) => void,
+  ): void {
+    const oldId = params.sessionId;
+    const fresh = cut.kind === "start";
     requestFromHarness(
       fresh ? "session/new" : "session/fork",
       {
@@ -955,7 +1016,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         ...(!fresh && {
           _meta: {
             jetbrains: {
-              air: { fork: { version: 1, messageId: params.upToMessageId } },
+              air: {
+                fork: {
+                  version: 1,
+                  messageId: cut.kind === "after" ? cut.entry : null,
+                },
+              },
             },
           },
         }),
@@ -974,32 +1040,41 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             newId,
             (frame as { result?: unknown }).result,
           );
-        bootstrap.fill(newId, (loaded) => {
-          if (!loaded) {
-            fail("the rewritten session could not be loaded");
-            return;
-          }
-          const meta = {
-            ...(deps.sessionMetadata?.get(oldId)?.meta ?? {}),
-            ...(params.title !== undefined && { customTitle: params.title }),
-          };
-          if (params.mode === "rewind") {
-            deps.sessionMetadata?.adopt(newId, oldId, meta);
-            retireSession(oldId);
-            tearDownSession(oldId);
-          } else {
-            deps.sessionMetadata?.set(newId, meta);
-          }
-          sendToChannel(
-            channel,
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id,
-              result: { sessionId: newId },
-            }),
-          );
-          submitRewrittenPrompt(channel, newId, params);
-        });
+        const adjustLines =
+          history === null
+            ? undefined
+            : (lines: string[]) => withOriginalTimes(lines, history);
+        bootstrap.fill(
+          newId,
+          (loaded) => {
+            if (!loaded) {
+              fail("the rewritten session could not be loaded");
+              return;
+            }
+            rewritingSessions.delete(oldId);
+            const meta = {
+              ...(deps.sessionMetadata?.get(oldId)?.meta ?? {}),
+              ...(params.title !== undefined && { customTitle: params.title }),
+            };
+            if (params.mode === "rewind") {
+              deps.sessionMetadata?.adopt(newId, oldId, meta);
+              retireSession(oldId);
+              tearDownSession(oldId);
+            } else {
+              deps.sessionMetadata?.set(newId, meta);
+            }
+            sendToChannel(
+              channel,
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id,
+                result: { sessionId: newId },
+              }),
+            );
+            submitRewrittenPrompt(channel, newId, params);
+          },
+          adjustLines,
+        );
       },
     );
   }

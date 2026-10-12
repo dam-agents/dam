@@ -272,7 +272,7 @@ export function useAcpSession(
   const rewriteFrom = useCallback(
     async (rewrite: {
       messageId: string;
-      upToMessageId: string | null;
+      upToMessageId: string | null | undefined;
       mode: RewriteMode;
       text: string;
       title: string | null;
@@ -293,7 +293,10 @@ export function useAcpSession(
         {
           sessionId: live.sessionId,
           mode: rewrite.mode,
-          upToMessageId: rewrite.upToMessageId,
+          messageId: rewrite.messageId,
+          ...(rewrite.upToMessageId !== undefined && {
+            upToMessageId: rewrite.upToMessageId,
+          }),
           prompt: promptBlocksOf(parts),
           promptId,
           ...(rewrite.title

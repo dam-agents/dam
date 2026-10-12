@@ -1078,28 +1078,36 @@ function appendQueuedUser(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Where the conversation can be rewritten from: for
- * each user message that started a turn, the id of the last agent message
- * before it, which a rewrite keeps, or null when nothing precedes it. A
- * message steered into a running turn, a queued or undelivered one, and one
- * whose preceding reply carries no message id are not rewritable.
+ * UNIT_BOUNDARY_DESCRIPTION: Which user messages a conversation can be
+ * rewound or forked from, and the cut each one would take if the agent cannot
+ * find it in its own history. Every sent message counts, a steered one too: a
+ * rewrite keeps exactly what shows above the message. The fallback cut is the
+ * reply just above it (its last harness message id), null for a message with
+ * nothing above it, and undefined when what is above is not a reply with an id
+ * — another message, or older history that is not loaded.
  */
 export function rewritePointsOf(
   messages: Message[],
-): Map<string, string | null> {
-  const points = new Map<string, string | null>();
-  let sawReply = false;
-  let lastMessageId: string | undefined;
+): Map<string, string | null | undefined> {
+  const points = new Map<string, string | null | undefined>();
+  let above: Message | null = null;
+  let olderHidden = false;
   for (const m of messages) {
-    if (m.notice) continue;
-    if (m.role === "assistant") {
-      if (hasAgentContent(m)) sawReply = true;
-      if (m.lastMessageId !== undefined) lastMessageId = m.lastMessageId;
+    if (m.notice) {
+      olderHidden = true;
       continue;
     }
-    if (m.queued || m.steered || m.error !== undefined) continue;
-    if (!sawReply) points.set(m.id, null);
-    else if (lastMessageId !== undefined) points.set(m.id, lastMessageId);
+    if (m.role === "user" && !m.queued && m.error === undefined)
+      points.set(m.id, fallbackCutBelow(above, olderHidden));
+    above = m;
   }
   return points;
+}
+
+function fallbackCutBelow(
+  above: Message | null,
+  olderHidden: boolean,
+): string | null | undefined {
+  if (above === null) return olderHidden ? undefined : null;
+  return above.role === "assistant" ? above.lastMessageId : undefined;
 }

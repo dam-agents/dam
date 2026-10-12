@@ -1,0 +1,212 @@
+import { describe, expect, it } from "vitest";
+import {
+  createSessionMetadata,
+  createWorld,
+  frames,
+  type Client,
+  type World,
+} from "./acp-world.js";
+import type { HistoryProvider } from "../../../infrastructure/history-provider.js";
+
+/**
+ * TEST_OVERVIEW: Rewinding or forking a conversation from one of its user
+ * messages (`platform/rewriteFrom`).
+ *
+ * The runtime reads the harness's own history through the session-history
+ * provider and asks the harness to fork right before the message being
+ * rewritten, whatever sits above it: a reply, a tool result, or another user
+ * message, as a steered message has. Only the first message starts a new,
+ * empty session. A message the history does not hold is refused, never cut
+ * somewhere else. The copy loads with the original's times, though the
+ * harness stamps the last entry it copies with the time of the fork.
+ */
+
+const SESSION = "s-original";
+const COPY = "s-copy";
+
+function line(
+  update: Record<string, unknown>,
+  platform: Record<string, unknown>,
+  sessionId = SESSION,
+): string {
+  return JSON.stringify({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: { sessionId, update, _meta: { platform } },
+  });
+}
+
+function userLine(id: string, text: string, at: string, sessionId = SESSION) {
+  return line(
+    {
+      sessionUpdate: "user_message_chunk",
+      messageId: id,
+      content: { type: "text", text },
+    },
+    { entry: id, at },
+    sessionId,
+  );
+}
+
+function toolLines(sessionId = SESSION, resultAt = "2026-10-08T07:00:40Z") {
+  return [
+    line(
+      { sessionUpdate: "tool_call", toolCallId: "t1", title: "sleep 30" },
+      { entry: "msg_a", at: "2026-10-08T07:00:30Z" },
+      sessionId,
+    ),
+    line(
+      { sessionUpdate: "tool_call_update", toolCallId: "t1", status: "completed" },
+      { entry: "tr1", at: resultAt },
+      sessionId,
+    ),
+  ];
+}
+
+const original = [
+  userLine("u1", "My name is Petr, wait 30 seconds.", "2026-10-08T07:00:00Z"),
+  ...toolLines(),
+  userLine("u2", "I changed my mind", "2026-10-08T07:00:45Z"),
+];
+
+const copy = [
+  userLine("c1", "My name is Petr, wait 30 seconds.", "2026-10-08T07:00:00Z", COPY),
+  ...toolLines(COPY, "2026-10-12T10:00:00Z"),
+];
+
+function providerOf(histories: Record<string, string[]>): HistoryProvider {
+  return {
+    fetch: (sessionId) => Promise.resolve(histories[sessionId] ?? null),
+  };
+}
+
+async function settle(): Promise<void> {
+  for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+}
+
+async function readyWorld(
+  histories: Record<string, string[]>,
+): Promise<{ world: World; bob: Client }> {
+  const metadata = createSessionMetadata();
+  metadata.store.set(SESSION, {});
+  const world = createWorld({
+    sessionMetadata: metadata.store,
+    historyProvider: providerOf(histories),
+  });
+  const bob = world.connect();
+  bob.send(frames.initialize(1));
+  world.harness().replyTo("initialize", {
+    agentCapabilities: { sessionCapabilities: { fork: {} } },
+  });
+  await settle();
+  return { world, bob };
+}
+
+function rewriteFrom(id: number, messageId: string) {
+  return {
+    jsonrpc: "2.0",
+    id,
+    method: "platform/rewriteFrom",
+    params: {
+      sessionId: SESSION,
+      mode: "fork",
+      messageId,
+      prompt: [{ type: "text", text: "I changed my mind, wish me the worst day!" }],
+      promptId: "p-new",
+    },
+  };
+}
+
+function forkPointOf(world: World): unknown {
+  const fork = world.harness().received("session/fork")[0];
+  return (
+    fork?.params as {
+      _meta?: { jetbrains?: { air?: { fork?: { messageId?: string } } } };
+    }
+  )?._meta?.jetbrains?.air?.fork?.messageId;
+}
+
+describe("acp-runtime: rewriting a conversation", () => {
+  /**
+   * TEST_SCENARIO: Forking from a steered message must keep the first message
+   * and the tool call that ran before the steer, so the harness is asked to
+   * fork after the tool result. Before, the client cut after the last reply
+   * above the message, found none, and started an empty session: the first
+   * message was lost.
+   */
+  it("should fork right before a steered message", async () => {
+    const { world, bob } = await readyWorld({ [SESSION]: original });
+
+    bob.send(rewriteFrom(2, "u2"));
+    await settle();
+
+    expect(world.harness().received("session/new")).toEqual([]);
+    expect(forkPointOf(world)).toBe("tr1");
+  });
+
+  /**
+   * TEST_SCENARIO: Only the first message has nothing above it, so rewriting
+   * it is the one case that starts a new session instead of a fork.
+   */
+  it("should start a new session for the first message", async () => {
+    const { world, bob } = await readyWorld({ [SESSION]: original });
+
+    bob.send(rewriteFrom(2, "u1"));
+    await settle();
+
+    expect(world.harness().received("session/fork")).toEqual([]);
+    expect(world.harness().received("session/new")).toHaveLength(1);
+  });
+
+  /**
+   * TEST_SCENARIO: A message the agent's history does not hold has no place
+   * to cut before. The rewrite must be refused, and the harness never asked.
+   */
+  it("should refuse a message the history does not hold", async () => {
+    const { world, bob } = await readyWorld({ [SESSION]: original });
+
+    bob.send(rewriteFrom(2, "unknown"));
+    await settle();
+
+    expect(world.harness().received("session/fork")).toEqual([]);
+    expect(world.harness().received("session/new")).toEqual([]);
+    expect(bob.reply(2)).toMatchObject({
+      error: { message: expect.stringContaining("not in the agent's own history") },
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: The harness stamps the copy's last entry with the time of
+   * the fork. A viewer of the copy must see that entry at its original time,
+   * not as written today.
+   */
+  it("should load the copy with the original's times", async () => {
+    const { world, bob } = await readyWorld({
+      [SESSION]: original,
+      [COPY]: copy,
+    });
+
+    bob.send(rewriteFrom(2, "u2"));
+    await settle();
+    world.harness().replyTo("session/fork", { sessionId: COPY });
+    await settle();
+    expect(bob.reply(2)).toMatchObject({ result: { sessionId: COPY } });
+
+    const carol = world.connect();
+    carol.send(frames.loadSession(3, COPY));
+    await settle();
+    const times = carol
+      .saw("session/update")
+      .filter((f) => (f.params as { sessionId?: string }).sessionId === COPY)
+      .map(
+        (f) =>
+          (f.params as { _meta?: { platform?: { at?: string } } })._meta
+            ?.platform?.at,
+      );
+    expect(times).toEqual([
+      "2026-10-08T07:00:00Z",
+      "2026-10-08T07:00:30Z",
+      "2026-10-08T07:00:40Z",
+    ]);
+  });
+});
