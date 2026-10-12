@@ -46,6 +46,37 @@ describe("initialization plugin", () => {
     ]);
   });
 
+  it("opens the session on the harness, provider and model the event names", async () => {
+    const { driver, calls } = fakeDriver();
+    const handler = createInitializationPlugin({ driver }).bindEvent!(
+      "initialization",
+      { impl: "initialization" },
+    );
+    await handler(
+      {
+        task: "Update the kit.",
+        harness: "codex",
+        provider: "p-1",
+        model: "m",
+      },
+      ctx,
+    );
+    expect(calls[0]?.platformMeta).toMatchObject({
+      initialization: true,
+      harness: "codex",
+      provider: "p-1",
+      model: "m",
+    });
+  });
+  it("falls back to the harness's default model when the event names no harness", async () => {
+    const { driver, calls } = fakeDriver();
+    const handler = createInitializationPlugin({
+      driver,
+      harnessDefault: async () => "saved-default",
+    }).bindEvent!("initialization", { impl: "initialization" });
+    await handler({ task: "Update the kit." }, ctx);
+    expect(calls[0]?.platformMeta?.model).toBe("saved-default");
+  });
   it("refuses to bind any other kind", () => {
     const { driver } = fakeDriver();
     expect(() =>

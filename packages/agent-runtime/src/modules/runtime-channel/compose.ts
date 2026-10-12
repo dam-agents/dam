@@ -151,15 +151,16 @@ export async function composeRuntimeChannel(
   };
   const registry = createPluginRegistry();
   for (const plugin of opts.plugins) registry.register(plugin);
+  const harnessDefault = async (): Promise<string | null> =>
+    harnessConfigPlugin?.supported
+      ? ((await harnessConfigPlugin.readCurrent({ discover: false }))
+          .defaultModel ?? null)
+      : null;
   registry.register(
     createTriggerPlugin({
       driver: opts.triggerDriver,
       stateStore: triggerStateStore,
-      harnessDefault: async () =>
-        harnessConfigPlugin?.supported
-          ? ((await harnessConfigPlugin.readCurrent({ discover: false }))
-              .defaultModel ?? null)
-          : null,
+      harnessDefault,
       runPrecheck: createPrecheckRunner({
         workDir: opts.workDir,
         envReader: opts.envReader,
@@ -175,7 +176,9 @@ export async function composeRuntimeChannel(
   registry.register(
     createWorkspaceCommandPlugin({ workDir: opts.workDir, log }),
   );
-  registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
+  registry.register(
+    createInitializationPlugin({ driver: opts.triggerDriver, harnessDefault }),
+  );
   registry.register(
     createSatelliteOutcomePlugin({ driver: opts.triggerDriver }),
   );

@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-08
+Last verified: 2026-10-12
 
 ## Overview
 
@@ -81,7 +81,7 @@ An Agent created from a kit with a seed carries a **Seed Stamp** beside its Kit 
 
 **What changed** is read lazily for the hover card: the definition's own `VERSION` and `CHANGELOG.md` at both ends of the range, or, for a repository without a changelog, the compare API's commit list, cached for good because two commits never change.
 
-**Starting an update** marks it pending on the Agent with the head it targets and queues a session on the initialization session's rail. Its briefing is platform-composed like Kit Onboarding: the commit range, and the kit's **current catalog entry** against the Agent's live state. The user picks which upstream changes to take and decides every conflict; their own changes are **never committed or pushed**, and a declined change becomes one of them. What they decide for later updates is kept inside the checkout's git directory, outside history. The agent creates schedules and installs skills with its own tools and offers the user the connections and env it cannot set; the definition's own migration steps run after the checkout moves. The platform applies nothing, so the invariant below holds.
+**Starting an update** marks it pending on the Agent with the head it targets and queues a session on the initialization session's rail. The session runs on the harness, provider and model the owner saved as the agent's default, resolved the way a [schedule](schedules.md) fire resolves them; on an agent whose runtime holds one harness, it runs on that harness's default model. Its briefing is platform-composed like Kit Onboarding: the commit range, and the kit's **current catalog entry** against the Agent's live state. The user picks which upstream changes to take and decides every conflict; their own changes are **never committed or pushed**, and a declined change becomes one of them. What they decide for later updates is kept inside the checkout's git directory, outside history. The agent creates schedules and installs skills with its own tools and offers the user the connections and env it cannot set; the definition's own migration steps run after the checkout moves. The platform applies nothing, so the invariant below holds.
 
 **Completion is the agent's word.** While an update is pending the agent's MCP session carries a tool that reports it done for the targeted commit — moving the Seed Stamp there even when every change was declined — and one that withdraws it. Both clear the pending mark and raise the agents hint, so the UI drops the button at once. An abandoned update stays pending; the button then reopens its session or starts again against the current head.
 

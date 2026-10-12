@@ -83,6 +83,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     harnessCatalog: harnesses,
     starterKitsRepo,
     kitUpstream,
+    firePair,
     reposService,
     connectionsBoot,
     apiKeysModule,
@@ -241,6 +242,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       markAgentOnboarded: (agentId, at) =>
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
+      sessionPair: (agentId) => firePair(agentId, {}),
       egressRules: createKitRulesSeederAdapter(db, l7Hosts),
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),

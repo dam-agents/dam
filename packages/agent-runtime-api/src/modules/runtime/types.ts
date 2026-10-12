@@ -241,6 +241,10 @@ export const workspaceCommandEvent = z.object({
 
 export const initializationEventPayload = z.object({
   task: z.string().min(1),
+  harness: z.string().min(1).optional(),
+  provider: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  settings: sessionSettingsSchema.optional(),
 });
 
 export const initializationEvent = z.object({

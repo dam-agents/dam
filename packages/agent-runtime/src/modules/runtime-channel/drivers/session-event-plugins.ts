@@ -16,10 +16,18 @@ import type {
 
 type SessionStart = Parameters<TriggerSessionDriver["start"]>[0];
 
+interface SessionEventDeps {
+  driver: TriggerSessionDriver;
+  harnessDefault?: () => Promise<string | null>;
+}
+
 function sessionEventPlugin(
   name: string,
-  toStart: (payload: unknown) => SessionStart,
-): (deps: { driver: TriggerSessionDriver }) => Plugin {
+  toStart: (
+    payload: unknown,
+    deps: SessionEventDeps,
+  ) => SessionStart | Promise<SessionStart>,
+): (deps: SessionEventDeps) => Plugin {
   return (deps) => ({
     name,
     bindEvent(kind: string): EventHandler {
@@ -29,7 +37,7 @@ function sessionEventPlugin(
         );
       }
       return async (payload) => {
-        await deps.driver.start(toStart(payload));
+        await deps.driver.start(await toStart(payload, deps));
       };
     },
   });
@@ -37,14 +45,25 @@ function sessionEventPlugin(
 
 export const createInitializationPlugin = sessionEventPlugin(
   "initialization",
-  (payload) => ({
-    task: initializationEventPayload.parse(payload).task,
-    platformMeta: {
-      type: SessionType.Regular,
-      mode: SessionMode.Chat,
-      initialization: true,
-    },
-  }),
+  async (payload, deps) => {
+    const { task, ...pair } = initializationEventPayload.parse(payload);
+    const model =
+      pair.model ??
+      (pair.harness === undefined
+        ? await deps.harnessDefault?.()
+        : undefined) ??
+      undefined;
+    return {
+      task,
+      platformMeta: {
+        type: SessionType.Regular,
+        mode: SessionMode.Chat,
+        initialization: true,
+        ...pair,
+        ...(model !== undefined && { model }),
+      },
+    };
+  },
 );
 
 /**
