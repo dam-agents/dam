@@ -58,6 +58,10 @@ export function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useAutoResize(textareaRef, input);
+  useEffect(() => {
+    // UNIT_BOUNDARY_DESCRIPTION: skipped on mobile, where focusing pops the keyboard over the transcript.
+    if (key && !blockedReason && !isMobile()) textareaRef.current?.focus();
+  }, [key, blockedReason, textareaRef]);
 
   const consumeDroppedAttachments = useStore(
     (s) => s.consumeDroppedAttachments,

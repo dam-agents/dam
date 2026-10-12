@@ -30,7 +30,7 @@ import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 export function SandboxHomeView() {
   const agentId = useStore((s) => s.agentId);
-  const section = useStore((s) => s.sandboxSection);
+  const storedSection = useStore((s) => s.sandboxSection);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const agentsQuery = useAgents();
@@ -44,7 +44,13 @@ export function SandboxHomeView() {
   const display = useResolvedAgentDisplay(agent);
 
   const { summaries, warnings } = useSectionSummaries(agent);
-  const sectionEntry = SECTIONS.find((e) => e.section === section);
+  // UNIT_BOUNDARY_DESCRIPTION: vm agents have no setup settings, so links to "setup" land on the first section they do have.
+  const sections = agent?.vm
+    ? SECTIONS.filter((e) => e.section !== "setup")
+    : SECTIONS;
+  const section =
+    storedSection === "setup" && agent?.vm ? "providers" : storedSection;
+  const sectionEntry = sections.find((e) => e.section === section);
 
   if (!agent || !display) {
     return (
@@ -63,6 +69,7 @@ export function SandboxHomeView() {
     <>
       <div className="flex flex-col gap-6 md:flex-row md:gap-10">
         <SandboxSectionNav
+          sections={sections}
           header={<SandboxIdentity agent={agent} display={display} />}
           active={section}
           onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
