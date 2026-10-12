@@ -27,14 +27,8 @@ function render(tip: string) {
   );
 }
 
-export function StartupTip({
-  sandbox,
-  vm = false,
-}: {
-  sandbox: string;
-  vm?: boolean;
-}) {
-  const tips = useMemo(() => startupTips(sandbox, vm), [sandbox, vm]);
+export function StartupTip({ sandbox }: { sandbox: string }) {
+  const tips = useMemo(() => startupTips(sandbox), [sandbox]);
   const [index, setIndex] = useState(() =>
     Math.floor(Math.random() * tips.length),
   );

@@ -107,7 +107,7 @@ export function AgentUnavailableOverlay({
         <p className="max-w-105 text-sm text-muted-foreground">
           Lost contact with the agent. Reconnecting…
         </p>
-        <StartupTip sandbox={agent.name} vm={agent.vm} />
+        <StartupTip sandbox={agent.name} />
       </OverlayFrame>
     );
   }
@@ -152,7 +152,7 @@ export function AgentUnavailableOverlay({
           The agent is starting up.
         </p>
       )}
-      {!Icon && <StartupTip sandbox={agent.name} vm={agent.vm} />}
+      {!Icon && <StartupTip sandbox={agent.name} />}
       {display.slowStart && !agent.podTerminationReason && (
         <div className="flex max-w-105 flex-col gap-2 text-sm">
           <p
