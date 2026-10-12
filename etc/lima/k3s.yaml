@@ -66,8 +66,8 @@ provision:
       if [ ! -d /var/lib/rancher/k3s ]; then
         # Pinned: k3s ships the Gateway API CRDs through its own gateway-api-crd
         # chart, so GATEWAY_API_VERSION in .mise/tasks/cluster/install must match the
-        # bundle this k3s carries (v1.6.1 in v1.37.0).
-        export INSTALL_K3S_VERSION="v1.37.0+k3s1"
+        # bundle this k3s carries (v1.6.1 in v1.37.1).
+        export INSTALL_K3S_VERSION="v1.37.1+k3s1"
         export INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --https-listen-port 16443"
         # Skip the k3s-selinux RPM when SELinux isn't active (absent or Disabled):
         # its binary relabel step fails under set -e on a disabled-SELinux host.

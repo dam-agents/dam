@@ -556,7 +556,7 @@ CERT_MANAGER_PID=$!
 # Istio 1.29.x is the floor for ambient L7 with locked-down waypoint HCM; the
 # Kubernetes 1.37 that k3s runs needs Istio 1.31 or later.
 # Pinned: Gateway API standard channel, at exactly the bundle k3s's own
-# `gateway-api-crd` chart ships (v1.6.1 in k3s v1.37.0). That chart owns these
+# `gateway-api-crd` chart ships (v1.6.1 in k3s v1.37.1). That chart owns these
 # CRDs too (it takes ownership of ones applied without Helm metadata, like
 # ours) and rewrites them to its bundle whenever its job runs. Since v1.5 the
 # bundle also installs the cluster-scoped safe-upgrades
@@ -884,7 +884,7 @@ if [ -n "${CLICKSTACK:-}" ]; then
     --version 1.13.0 --namespace clickstack-operators --wait --timeout 5m \
     --take-ownership \
     --set registry.operator=quay.io/dam-agents \
-    --set community.agent.version=108.0.26.9062-1 \
+    --set community.agent.version=108.0.27.9091-1 \
     --set operator.watchNamespace=default \
     --set 'operator.watchedResources={mongodbcommunity}'
   kubectl wait --for=condition=Established --timeout=120s \
