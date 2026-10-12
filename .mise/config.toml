@@ -32,7 +32,10 @@ auto = true
 "conda:pigz" = "latest"
 "github:Boshen/cargo-shear" = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
-"go:honnef.co/go/tools/cmd/staticcheck" = "latest"
+# Staticcheck 0.8.1 cannot read go1.27.2's export data (dominikh/go-tools#1832).
+# The pin is its unreleased fix, commit f1838cc3 (2026-10-09), under the
+# 7-day floor; return to latest once a release after 0.8.1 ships it.
+"go:honnef.co/go/tools/cmd/staticcheck" = "v0.7.0-0.dev.0.20261009221906-f1838cc308e5"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"
 "go:sigs.k8s.io/crdify" = "latest"
 "npm:json-schema-to-typescript" = "latest"
@@ -40,6 +43,10 @@ auto = true
 crane = "latest"
 fd = "latest"
 gh = "latest"
+# go1.27.2 (2026-10-08) is locked under the 7-day floor: it fixes the
+# stdlib CVEs in the controller image. Until it ages past the floor
+# (2026-10-15), a re-lock with --bump --minimum-release-age 7d drops it to
+# 1.27.1: re-lock go alone without the flag afterwards.
 go = "1.27"
 gum = "latest"
 helm = "latest"
