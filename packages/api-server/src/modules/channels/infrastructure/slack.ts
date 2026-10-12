@@ -1291,7 +1291,7 @@ export type SlackWorkerDeps = {
     slackChannelId: string,
     ambient: boolean,
   ) => Promise<void>;
-  setSlackChannelIgnoreApps?: (
+  setSlackChannelIgnoreApps: (
     agentId: string,
     slackChannelId: string,
     ignoreApps: boolean,
@@ -1325,7 +1325,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     channelRegistry,
     unbindSlackChannel,
     setSlackChannelAmbient,
-    setSlackChannelIgnoreApps = async () => {},
+    setSlackChannelIgnoreApps,
     setSlackDefault,
     brand,
     isTermsAccepted,
@@ -1474,10 +1474,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     conversation: string,
     channelId: string,
   ): boolean {
-    if (sender.kind === "person") {
-      botPosts.notePersonPost(conversation);
-      return true;
-    }
+    if (sender.kind === "person") return true;
     if (botPosts.admitBotPost(conversation)) return true;
     getLogger().info(
       { channelId, sender: sender.kind },

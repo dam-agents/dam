@@ -114,6 +114,7 @@ function harness(
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelIgnoreApps: async () => {},
     setSlackDefault: async () => true,
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,

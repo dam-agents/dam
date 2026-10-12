@@ -106,6 +106,7 @@ function harness(
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelIgnoreApps: async () => {},
     setSlackDefault: async (agentId: string, channelId: string) => {
       defaultCalls.push({ agentId, channelId });
       return true;
@@ -297,9 +298,10 @@ describe("ambient read-along with several connected agents", () => {
 
   /**
    * TEST_SCENARIO: knowing that a peer replied is not enough. A later agent
-   * cannot read the channel — bot posts never come back inbound, no tool reads
-   * messages, and a resumed session injects no history — so the peer's reply
-   * has to travel with the turn or the agent can never build on it.
+   * cannot read the channel in time — the peer's post comes back inbound only
+   * as a later turn of its own, no tool reads messages, and a resumed session
+   * injects no history — so the peer's reply has to travel with the turn or
+   * the agent cannot build on it in its answer.
    */
   it("carries what an earlier agent said into the later agent's prompt", async () => {
     const h = harness(
