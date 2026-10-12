@@ -1221,10 +1221,20 @@ const SCOPE_WITHHELD_USERS =
 const SCOPE_WITHHELD_REACTIONS =
   "this workspace did not grant the permission to read reactions (reactions:read)";
 
+const AGENT_SIGNATURE_RE = /^:[a-z0-9_'+-]+: \*[^*\n]*\*\n\n/;
+
 type AgentPersona = {
   persona: Pick<SlackPostMessage, "username" | "iconUrl">;
   sign: (text: string, bold: "*" | "**") => string;
 };
+
+function withoutAgentSignature<T extends { text: string; sender: SlackSender }>(
+  event: T,
+): T {
+  return event.sender.kind === "agent"
+    ? { ...event, text: event.text.replace(AGENT_SIGNATURE_RE, "") }
+    : event;
+}
 
 const SCOPE_CAPABILITIES: Array<{ scope: string; backs: string }> = [
   { scope: "app_mentions:read", backs: "answering mentions" },
@@ -4472,11 +4482,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   }
 
   async function handleInbound(
-    event: SlackMentionEvent,
+    signedEvent: SlackMentionEvent,
     opts: { directMessage: boolean },
   ) {
     if (!gateway) return;
 
+    const event = withoutAgentSignature(signedEvent);
     const sender = event.sender;
     if (opts.directMessage && sender.kind !== "person") return;
     if (
@@ -5248,8 +5259,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     void queue.submit(msg);
   }
 
-  async function handleChannelMessage(event: SlackChannelMessageEvent) {
+  async function handleChannelMessage(signedEvent: SlackChannelMessageEvent) {
     if (!gateway) return;
+    const event = withoutAgentSignature(signedEvent);
     const sender = event.sender;
     const slackUserId = sender.kind === "person" ? sender.user : "";
     const conversation = botPostConversation(event.channel, event.threadTs);
