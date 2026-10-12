@@ -1,6 +1,7 @@
 import {
   ArrowDown,
   ArrowLeft,
+  Globe,
   Renew,
   Tools,
   TrashCan,
@@ -67,6 +68,7 @@ import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
+import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
@@ -202,6 +204,7 @@ export function ChatView() {
   const openBrowserAgentId = useStore((s) =>
     s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
   );
+  const openBrowser = useOpenBrowser();
   const browserMaximized = useStore((s) => s.browserMaximized);
   const openDelegation = useStore((s) =>
     s.openDelegation?.driverAgentId === s.selectedAgent
@@ -637,13 +640,28 @@ export function ChatView() {
                 />
               </span>
             )}
+            {canOpenBrowser && selectedAgent && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Open browser"
+                tooltip="Open browser"
+                onClick={() => void openBrowser(selectedAgent)}
+                className="ml-auto shrink-0"
+              >
+                <Globe size={16} />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon-sm"
               aria-label="Configure agent"
               tooltip="Configure agent"
               onClick={handleConfigureSandbox}
-              className="ml-auto shrink-0"
+              className={cn(
+                "shrink-0",
+                !(canOpenBrowser && selectedAgent) && "ml-auto",
+              )}
             >
               <Tools size={16} />
             </Button>
