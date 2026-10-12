@@ -1,12 +1,17 @@
 # Ubiquitous Language
 
-Domain terms used across this project. Each term is scoped to its bounded context, except for the cross-cutting Substrate and Live Updates vocabulary below.
+Domain terms used across this project.
+Each term is scoped to its bounded context, except for the cross-cutting Substrate and Live Updates vocabulary below.
 
-Two registers live in this file. The **domain vocabulary** (from [Substrate](#substrate) down) is the language code and docs use. [User-Facing Terminology](#user-facing-terminology) is the language the GUI uses. They are deliberately not the same list: a domain term is not automatically a word users read, and several domain terms are never shown.
+Two registers live in this file.
+The **domain vocabulary** (from [Substrate](#substrate) down) is the language code and docs use.
+[User-Facing Terminology](#user-facing-terminology) is the language the GUI uses.
+They are deliberately not the same list: a domain term is not automatically a word users read, and several domain terms are never shown.
 
 ## User-Facing Terminology
 
-The words the GUI puts in front of users, decided in #3216. Copy follows this table; code keeps its own names from the domain sections below.
+The words the GUI puts in front of users, decided in #3216.
+Copy follows this table; code keeps its own names from the domain sections below.
 
 Two rules govern the whole set:
 
@@ -36,7 +41,8 @@ The retirement list is what stops a struck word from creeping back: a surface th
 
 ## Substrate
 
-Persistence vocabulary shared by every bounded context. See [`docs/architecture/persistence.md`](architecture/persistence.md) for the substrate split.
+Persistence vocabulary shared by every bounded context.
+See [`docs/architecture/persistence.md`](architecture/persistence.md) for the substrate split.
 
 | Term | Definition |
 |------|-----------|
@@ -50,7 +56,9 @@ Persistence vocabulary shared by every bounded context. See [`docs/architecture/
 
 ## Live Updates
 
-Eventing and cache-freshness vocabulary shared by every bounded context. Three words that sound interchangeable are not — each names one delivery guarantee, and using the wrong one hides which guarantee a reader gets. See [`docs/architecture/platform-topology.md`](architecture/platform-topology.md) for the layering.
+Eventing and cache-freshness vocabulary shared by every bounded context.
+Three words that sound interchangeable are not — each names one delivery guarantee, and using the wrong one hides which guarantee a reader gets.
+See [`docs/architecture/platform-topology.md`](architecture/platform-topology.md) for the layering.
 
 | Term | Definition |
 |------|-----------|
@@ -123,7 +131,10 @@ Eventing and cache-freshness vocabulary shared by every bounded context. Three w
 
 ## Invocations (bounded context) — proposed, in-flight (PR #2816)
 
-Replaces the first-cut "Sandbox" spawn record. The word *Sandbox* is retired as a domain term here (it collides with the #892 user-facing rename of Agent); what the spawn primitive actually models is a run-once, typed request from one Agent to another. Lifecycle (autosweep) is **not** here — it lives on the Agent (Sweepable / Agent Lifetime / Agent Sweep). This context owns only the result contract.
+Replaces the first-cut "Sandbox" spawn record.
+The word *Sandbox* is retired as a domain term here (it collides with the #892 user-facing rename of Agent); what the spawn primitive actually models is a run-once, typed request from one Agent to another.
+Lifecycle (autosweep) is **not** here — it lives on the Agent (Sweepable / Agent Lifetime / Agent Sweep).
+This context owns only the result contract.
 
 | Term | Definition |
 |------|-----------|
@@ -142,7 +153,10 @@ Replaces the first-cut "Sandbox" spawn record. The word *Sandbox* is retired as 
 
 ## Skills — api-server side (bounded context)
 
-Catalog and orchestration view of skills. Distinct from the agent-runtime's Skills context — same words, different responsibilities. The api-server owns *which sources are connected, which skills are installed where, and what was published from which Agent*; it never manipulates files on a pod directly. Per [`docs/architecture/persistence.md`](../docs/architecture/persistence.md), every concept here is Application State and lives in Postgres or in api-server config.
+Catalog and orchestration view of skills.
+Distinct from the agent-runtime's Skills context — same words, different responsibilities.
+The api-server owns *which sources are connected, which skills are installed where, and what was published from which Agent*; it never manipulates files on a pod directly.
+Per [`docs/architecture/persistence.md`](../docs/architecture/persistence.md), every concept here is Application State and lives in Postgres or in api-server config.
 
 | Term | Definition |
 |------|-----------|
@@ -154,7 +168,9 @@ Catalog and orchestration view of skills. Distinct from the agent-runtime's Skil
 
 ## Skills — agent-runtime side (bounded context)
 
-Pod-side operational view of skills ([`docs/architecture/agent-skills.md`](../docs/architecture/agent-skills.md)). Distinct from the api-server's Skills context — same words, different responsibilities. Agent-runtime owns *what files are where on this pod and how to mutate them*; it never reasons about source catalogs or drift.
+Pod-side operational view of skills ([`docs/architecture/agent-skills.md`](../docs/architecture/agent-skills.md)).
+Distinct from the api-server's Skills context — same words, different responsibilities.
+Agent-runtime owns *what files are where on this pod and how to mutate them*; it never reasons about source catalogs or drift.
 
 | Term | Definition |
 |------|-----------|
@@ -200,7 +216,8 @@ Pod-side operational view of skills ([`docs/architecture/agent-skills.md`](../do
 
 ## Connections (bounded context) — proposed, in-flight design
 
-Generalises today's split between `OAuthAppDescriptor` (OAuth-app registry) and `ProviderPreset` (typed-secret registry) into one model. Terms below are in active design; structure (subtype axes, push channel, capability negotiation) is being grilled.
+Generalises today's split between `OAuthAppDescriptor` (OAuth-app registry) and `ProviderPreset` (typed-secret registry) into one model.
+Terms below are in active design; structure (subtype axes, push channel, capability negotiation) is being grilled.
 
 | Term | Definition |
 |------|-----------|
@@ -219,7 +236,9 @@ Generalises today's split between `OAuthAppDescriptor` (OAuth-app registry) and 
 
 ## Knowledge Bases (bounded context)
 
-A Knowledge Base is an Agent that builds and maintains a body of knowledge the user works with through chat. The platform owns the pairing, not the knowledge: no ingestion pipeline, no query API, no schema — the agent bootstraps its own tooling. Phase 1 of epic #2796.
+A Knowledge Base is an Agent that builds and maintains a body of knowledge the user works with through chat.
+The platform owns the pairing, not the knowledge: no ingestion pipeline, no query API, no schema — the agent bootstraps its own tooling.
+Phase 1 of epic #2796.
 
 | Term | Definition |
 |------|-----------|
@@ -229,7 +248,8 @@ A Knowledge Base is an Agent that builds and maintains a body of knowledge the u
 
 ## Satellites (bounded context) — proposed, in design
 
-A Satellite is an MCP server running on the user's own machine, reached by a queue the machine polls over outbound HTTPS. It lets an Agent call tools on a host it has no other access to — Architecture in [`docs/architecture/satellites.md`](architecture/satellites.md); the design record, with what has since changed, is [`docs/plans/satellites.md`](plans/satellites.md).
+A Satellite is an MCP server running on the user's own machine, reached by a queue the machine polls over outbound HTTPS.
+It lets an Agent call tools on a host it has no other access to — Architecture in [`docs/architecture/satellites.md`](architecture/satellites.md); the design record, with what has since changed, is [`docs/plans/satellites.md`](plans/satellites.md).
 
 | Term | Definition |
 |------|-----------|
@@ -284,7 +304,8 @@ A Satellite is an MCP server running on the user's own machine, reached by a que
 
 ## Case Studies (bounded context)
 
-Agent-written, sanitized weekly self-accounts and the platform store behind them. See [`docs/architecture/case-studies.md`](architecture/case-studies.md).
+Agent-written, sanitized weekly self-accounts and the platform store behind them.
+See [`docs/architecture/case-studies.md`](architecture/case-studies.md).
 
 | Term | Definition |
 |------|-----------|
@@ -297,7 +318,9 @@ Agent-written, sanitized weekly self-accounts and the platform store behind them
 
 ## Metrics (bounded context)
 
-The user-facing spend read path over agent telemetry — owner-scoped reads that back the Settings Usage tab. Distinct from Usage Tracking, which is activity analytics (who did what, when): tokens and cost are Spend, and live here. See [`docs/architecture/metrics.md`](architecture/metrics.md).
+The user-facing spend read path over agent telemetry — owner-scoped reads that back the Settings Usage tab.
+Distinct from Usage Tracking, which is activity analytics (who did what, when): tokens and cost are Spend, and live here.
+See [`docs/architecture/metrics.md`](architecture/metrics.md).
 
 | Term | Definition |
 |------|-----------|
@@ -308,7 +331,8 @@ The user-facing spend read path over agent telemetry — owner-scoped reads that
 
 ## Agent Telemetry (bounded context)
 
-The user-facing read path over the raw signals an agent produced — the structural counterpart to Metrics, which reads the same store for Spend alone. See [`docs/architecture/agent-telemetry.md`](architecture/agent-telemetry.md).
+The user-facing read path over the raw signals an agent produced — the structural counterpart to Metrics, which reads the same store for Spend alone.
+See [`docs/architecture/agent-telemetry.md`](architecture/agent-telemetry.md).
 
 | Term | Definition |
 |------|-----------|
@@ -320,7 +344,9 @@ The user-facing read path over the raw signals an agent produced — the structu
 
 ## Budgets (bounded context)
 
-Fair-sharing of the cluster's fixed compute pool between users. Distinct from Spend under Metrics (tokens/cost accounting) — a Budget bounds *concurrent reservation*, never spend. Enforcement lives in the controller at the 0→1 scale transition; the api-server only displays and explains.
+Fair-sharing of the cluster's fixed compute pool between users.
+Distinct from Spend under Metrics (tokens/cost accounting) — a Budget bounds *concurrent reservation*, never spend.
+Enforcement lives in the controller at the 0→1 scale transition; the api-server only displays and explains.
 
 | Term | Definition |
 |------|-----------|
@@ -361,7 +387,9 @@ Fair-sharing of the cluster's fixed compute pool between users. Distinct from Sp
 
 ## Starter Kits (bounded context) — in design (#3576, #3638)
 
-A Starter Kit is a package applied to an Agent — never an Agent, never a Template. Terms below were settled in the format design session of 2026-09-10; the V1 cut is a snapshot at create plus a user-confirmed Kit Pull, with seeding, a read-only definition, work-dir backups and an automatic Update as later increments. Kits are catalog-only platform inputs: the platform never reads configuration back out of an Agent's own repository, so an agent committing to it can widen nothing the platform enforces.
+A Starter Kit is a package applied to an Agent — never an Agent, never a Template.
+Terms below were settled in the format design session of 2026-09-10; the V1 cut is a snapshot at create plus a user-confirmed Kit Pull, with seeding, a read-only definition, work-dir backups and an automatic Update as later increments.
+Kits are catalog-only platform inputs: the platform never reads configuration back out of an Agent's own repository, so an agent committing to it can widen nothing the platform enforces.
 
 | Term | Definition |
 |------|-----------|

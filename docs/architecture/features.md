@@ -4,126 +4,70 @@ Last verified: 2026-10-08
 
 ## Overview
 
-**Experimental features** are per-user toggles for pre-release surfaces. Every
-feature defaults **off**; a user opts in through a hidden "Experimental
-features" settings tab (revealed by five taps on the version string). The
-current features are advanced connection types, the new sandbox runtime,
-interactive artifacts, addressed credential injection (a create-page and agent-settings switch for an agent whose gateway injects only requests that name a connection; a starter kit sets the same field whatever the flag says; the flag also shows the [browser panel](browser-panel.md) on such agents), agent telemetry (a per-reply timeline
-in the conversation), and the processes panel (a chat-view section listing what
-runs in the agent, what keeps it awake and what finished, with each process's output,
-a Stop per process and a keep switch per background process, and a header indicator that replaces the
-background-task one; see [agent-processes](agent-processes.md)). Graduating a feature to always-on is deletion: drop its
-id from the enum and its gates from the UI — stored rows for a dropped id are
-simply never read again (Knowledge Bases, the
-[starter kit](starter-kits.md) catalog, session costs and
-[agent avatars](agent-avatars.md) graduated this way).
+**Experimental features** are per-user toggles for pre-release surfaces.
+Every feature defaults **off**; a user opts in through a hidden "Experimental features" settings tab (revealed by five taps on the version string).
+The current features are advanced connection types, the new sandbox runtime, interactive artifacts, addressed credential injection (a create-page and agent-settings switch for an agent whose gateway injects only requests that name a connection; a starter kit sets the same field whatever the flag says; the flag also shows the [browser panel](browser-panel.md) on such agents), agent telemetry (a per-reply timeline in the conversation), and the processes panel (a chat-view section listing what runs in the agent, what keeps it awake and what finished, with each process's output, a Stop per process and a keep switch per background process, and a header indicator that replaces the background-task one; see [agent-processes](agent-processes.md)).
+Graduating a feature to always-on is deletion: drop its id from the enum and its gates from the UI — stored rows for a dropped id are simply never read again (Knowledge Bases, the [starter kit](starter-kits.md) catalog, session costs and [agent avatars](agent-avatars.md) graduated this way).
 
-An operator can take a feature out of users' hands: the chart's `features`
-value gives each feature a mode, `experimental` (the default, and what an
-omitted feature reads as) leaving the per-user switch, `on` or `off` deciding
-for every user whatever they stored. A pinned feature's switch is hidden from
-the settings tab, and the api-server answers its flag from the mode, so every
-surface that reads flags — the UI and agent surfaces alike — sees the same
-answer. Stored rows are kept, so returning a feature to `experimental` restores
-each user's own choice.
+An operator can take a feature out of users' hands: the chart's `features` value gives each feature a mode, `experimental` (the default, and what an omitted feature reads as) leaving the per-user switch, `on` or `off` deciding for every user whatever they stored.
+A pinned feature's switch is hidden from the settings tab, and the api-server answers its flag from the mode, so every surface that reads flags — the UI and agent surfaces alike — sees the same answer.
+Stored rows are kept, so returning a feature to `experimental` restores each user's own choice.
 
-A per-user flag says what a user wants to see; it cannot say what the install
-can do. The same module therefore answers a second, install-wide question —
-whether this deployment supports microVMs — read from the chart's own value
-rather than from any stored row. The settings tab leaves the new sandbox runtime out entirely on an install that cannot run it, since its switch would change nothing there. A surface that needs both, like either form that
-creates an agent, asks both and acts only once each has answered: an unanswered
-question reads like a no, and an agent would otherwise be created as
-something its author did not choose. **A kit that declares `backend: vm` is the exception, and reads neither answer**
-([starter-kits](starter-kits.md#kit-backend)): the kit says its work needs a
-machine, so the agent gets one whether or not its owner ever opted in, and a
-kit that declares nothing gets the ordinary sandbox even from an owner who did.
-The flag still decides what that owner *sees* — a `vm` kit wears a badge rather
-than being hidden — and the install-wide answer still decides whether the kit is
-offered at all. The rule is the same one stated above from the other side: a
-per-user flag says what a user wants to see, and here the kit, not the user, is
-choosing the runtime. The new sandbox runtime is not a choice
-inside the form — with both answers yes, every agent the form creates is a
-microVM, and the form says so in a notice pointing back at the flag.
+A per-user flag says what a user wants to see; it cannot say what the install can do.
+The same module therefore answers a second, install-wide question — whether this deployment supports microVMs — read from the chart's own value rather than from any stored row.
+The settings tab leaves the new sandbox runtime out entirely on an install that cannot run it, since its switch would change nothing there.
+A surface that needs both, like either form that creates an agent, asks both and acts only once each has answered: an unanswered question reads like a no, and an agent would otherwise be created as something its author did not choose.
+**A kit that declares `backend: vm` is the exception, and reads neither answer** ([starter-kits](starter-kits.md#kit-backend)): the kit says its work needs a machine, so the agent gets one whether or not its owner ever opted in, and a kit that declares nothing gets the ordinary sandbox even from an owner who did.
+The flag still decides what that owner *sees* — a `vm` kit wears a badge rather than being hidden — and the install-wide answer still decides whether the kit is offered at all.
+The rule is the same one stated above from the other side: a per-user flag says what a user wants to see, and here the kit, not the user, is choosing the runtime.
+The new sandbox runtime is not a choice inside the form — with both answers yes, every agent the form creates is a microVM, and the form says so in a notice pointing back at the flag.
 
 ### Install preflight
 
-The install-wide answer is the chart's value alone, and turning it on asks an
-operator to get several things right at once: a device plugin, the runner's
-identity, its memory limit, its egress ranges, the image budget. Each one gone
-wrong would otherwise surface only as a vm Agent that never becomes ready. So
-the chart refuses the values the controller cannot use, and the
-[controller](platform-topology.md#controller) checks the install against the
-cluster at startup and on a periodic pass: that a schedulable node in the
-[VM runners'](platform-topology.md#vm-runner) placement advertises the device
-resources, that the runner ServiceAccount exists, and that the values it hands
-each runner are usable. A **problem** is logged and named on every vm Agent
-whose runner is not ready.
+The install-wide answer is the chart's value alone, and turning it on asks an operator to get several things right at once: a device plugin, the runner's identity, its memory limit, its egress ranges, the image budget.
+Each one gone wrong would otherwise surface only as a vm Agent that never becomes ready.
+So the chart refuses the values the controller cannot use, and the [controller](platform-topology.md#controller) checks the install against the cluster at startup and on a periodic pass: that a schedulable node in the [VM runners'](platform-topology.md#vm-runner) placement advertises the device resources, that the runner ServiceAccount exists, and that the values it hands each runner are usable.
+A **problem** is logged and named on every vm Agent whose runner is not ready.
 
-What the check cannot see is said as a **warning**, logged only and never on an
-Agent — so silence on an Agent is not a pass:
+What the check cannot see is said as a **warning**, logged only and never on an Agent — so silence on an Agent is not a pass:
 
-- **Nodes it may not list.** Reading nodes needs a cluster-wide read-only
-  grant the chart adds with virtualization; an install without it gets a log
-  line instead of the device check.
-- **Egress that reaches the cluster.** The runner's egress ranges match
-  in-cluster addresses too. No portable API names the pod range, so the
-  exceptions are never defaulted from the cluster; the controller instead
-  checks the ones configured against an address it knows sits in each range —
-  the API server's Service address and its own pod address. Reaching one is
-  only a warning, because an install may leave a range open on purpose.
-- **Taints.** Placement is checked against the node selector alone; the
-  scheduler's own message on the runner pod says when a toleration is missing.
+- **Nodes it may not list.** Reading nodes needs a cluster-wide read-only grant the chart adds with virtualization; an install without it gets a log line instead of the device check.
+- **Egress that reaches the cluster.** The runner's egress ranges match in-cluster addresses too.
+  No portable API names the pod range, so the exceptions are never defaulted from the cluster; the controller instead checks the ones configured against an address it knows sits in each range — the API server's Service address and its own pod address.
+  Reaching one is only a warning, because an install may leave a range open on purpose.
+- **Taints.** Placement is checked against the node selector alone; the scheduler's own message on the runner pod says when a toleration is missing.
 
-The api-server does not read this result: a failed preflight does not withdraw
-the install-wide answer.
+The api-server does not read this result: a failed preflight does not withdraw the install-wide answer.
 
 Flags are stored server-side, per user, in Postgres — not in the browser.
-That is deliberate: feature surfaces are not necessarily UI-only. A
-pre-release surface can include agent-facing pieces — MCP tools on the
-per-agent platform MCP server, registered per session from the owner's flags
-— and a browser-local flag could not reach that decision. (Server-stored
-flags replaced earlier localStorage-based debug toggles for the same
-surfaces; users who had those set re-enable via the menu.)
+That is deliberate: feature surfaces are not necessarily UI-only.
+A pre-release surface can include agent-facing pieces — MCP tools on the per-agent platform MCP server, registered per session from the owner's flags — and a browser-local flag could not reach that decision.
+(Server-stored flags replaced earlier localStorage-based debug toggles for the same surfaces; users who had those set re-enable via the menu.)
 
 ## What a flag does — and does not — gate
 
-A feature flag is **progressive disclosure, not authorization**. It controls
-where a feature *appears*:
+A feature flag is **progressive disclosure, not authorization**.
+It controls where a feature *appears*:
 
-- **UI surfaces** — navigation destinations, settings tabs, panels. All
-  current features gate only these.
-- **Agent surface** — whether the feature's MCP tools are registered into an
-  agent's MCP session, decided at session creation. A toggle then reaches
-  live agents when their session rolls over (bounded by the session TTL) and
-  new sessions immediately. No current feature carries an agent surface (the
-  artifact library did before its promotion to a standard surface); the
-  session-creation check is reintroduced with the next feature that needs
-  it.
+- **UI surfaces** — navigation destinations, settings tabs, panels.
+  All current features gate only these.
+- **Agent surface** — whether the feature's MCP tools are registered into an agent's MCP session, decided at session creation.
+  A toggle then reaches live agents when their session rolls over (bounded by the session TTL) and new sessions immediately.
+  No current feature carries an agent surface (the artifact library did before its promotion to a standard surface); the session-creation check is reintroduced with the next feature that needs it.
 
-- **A rollup inside a shared read** — where a feature adds one section to a
-  response every caller already receives, the flag decides whether that
-  section is computed. The gate is a cost decision, not an access one: the
-  section rides in a procedure nobody can opt out of, so leaving it ungated
-  would charge every user its backing queries to render nothing. Off, the
-  field comes back empty; the procedure itself stays open. No current
-  feature gates a rollup (the spend-by-session-kind rollup in
-  [metrics](metrics.md) did before it graduated).
+- **A rollup inside a shared read** — where a feature adds one section to a response every caller already receives, the flag decides whether that section is computed.
+  The gate is a cost decision, not an access one: the section rides in a procedure nobody can opt out of, so leaving it ungated would charge every user its backing queries to render nothing.
+  Off, the field comes back empty; the procedure itself stays open.
+  No current feature gates a rollup (the spend-by-session-kind rollup in [metrics](metrics.md) did before it graduated).
 
-What none of these do is **gate an endpoint**: the feature's tRPC procedures
-remain callable by the authenticated owner regardless of the flag, and a
-flagged-off client that calls one gets a valid, owner-scoped answer rather
-than a refusal. Every endpoint is owner-scoped and safe on its own terms —
-a flag decides what is shown and what is computed, it is not a security
-boundary. Anything that must actually be denied is enforced by auth and
-owner scoping, never by a flag check.
+What none of these do is **gate an endpoint**: the feature's tRPC procedures remain callable by the authenticated owner regardless of the flag, and a flagged-off client that calls one gets a valid, owner-scoped answer rather than a refusal.
+Every endpoint is owner-scoped and safe on its own terms — a flag decides what is shown and what is computed, it is not a security boundary.
+Anything that must actually be denied is enforced by auth and owner scoping, never by a flag check.
 
 ## Semantics
 
-- Only explicit toggles are stored; unknown or removed feature ids in storage
-  are ignored rather than surfaced, so retiring a feature needs no data
-  migration.
-- Flags are read through an owner-scoped service, same composition pattern as
-  every other per-user module.
+- Only explicit toggles are stored; unknown or removed feature ids in storage are ignored rather than surfaced, so retiring a feature needs no data migration.
+- Flags are read through an owner-scoped service, same composition pattern as every other per-user module.
 
 ## Where the code lives
 

@@ -140,6 +140,7 @@ export function FilesPanel({
                 onCancel={controller.handleCancelNew}
               />
             )}
+            {controller.rootLoading && <FileListSkeleton />}
             {controller.rootIsLoadedEmpty && (
               <p className="px-4 py-5 text-xs text-muted-foreground">
                 No files yet
@@ -157,5 +158,19 @@ export function FilesPanel({
         )}
       </div>
     </SidebarSection>
+  );
+}
+
+function FileListSkeleton() {
+  return (
+    <div aria-hidden className="animate-pulse">
+      {["w-1/3", "w-1/2", "w-2/5"].map((width) => (
+        <div key={width} className="px-4 py-1.5 text-sm">
+          <span
+            className={`inline-block h-[0.7em] ${width} rounded bg-muted align-middle`}
+          />
+        </div>
+      ))}
+    </div>
   );
 }

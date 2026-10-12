@@ -8,7 +8,8 @@ description: |
 
 ## Execution Rules
 
-- Present ONE item per message. Show its status, and if action is needed, ask and **STOP**.
+- Present ONE item per message.
+  Show its status, and if action is needed, ask and **STOP**.
 - If an item is already aligned, say so and immediately proceed to the next item in the same message.
 - If an item needs action, show current vs expected and ask: _"Want me to align this?"_
 - Never auto-apply changes — every modification requires explicit user confirmation.
@@ -17,16 +18,34 @@ description: |
 
 ## Checklist
 
-- [ ] **1. Gather state** — Read `.claude/settings.json`, `CLAUDE.md`, and check for `.claude/settings.local.json` (note existence, don't modify). If `.claude/settings.json` doesn't exist, ask if you should create it. If `CLAUDE.md` doesn't exist, ask if you should create it.
-- [ ] **2. Attribution config** — Check `.claude/settings.json` for the expected `attribution` block (see Reference A).
-- [ ] **3. Allowed tools** — Check `allowedTools` as a set (see Reference B). Report missing entries and flag extra entries (don't remove extras — they may be project-specific).
-- [ ] **4. Worktrees convention** — Check `.gitignore` includes `.worktrees/`. Check `CLAUDE.md` for a Worktrees section (see Reference C).
-- [ ] **5. Architecture principles** — Check `CLAUDE.md` for a Separation of Concerns & DRY section (see Reference D).
-- [ ] **6. Commit conventions** — Check `CLAUDE.md` for a Commit Conventions section covering all 5 items (see Reference E).
-- [ ] **7. Meeting format** — **Skip if no `meetings/` directory.** Check `CLAUDE.md` for a Meeting Format section (see Reference F).
-- [ ] **8. Recommend skills** — Review repo purpose/tech stack. For each relevant skill from Reference G, explain why it fits and ask to install. Skip skills that don't match.
-- [ ] **9. Check skill updates** — Run `npx skills check`. If updates available, ask to run `npx skills update`. Skip if no `skills-lock.json`.
-- [ ] **10. Summary** — Print the alignment summary (see Reference H).
+- [ ] **1.
+  Gather state** — Read `.claude/settings.json`, `CLAUDE.md`, and check for `.claude/settings.local.json` (note existence, don't modify).
+  If `.claude/settings.json` doesn't exist, ask if you should create it.
+  If `CLAUDE.md` doesn't exist, ask if you should create it.
+- [ ] **2.
+  Attribution config** — Check `.claude/settings.json` for the expected `attribution` block (see Reference A).
+- [ ] **3.
+  Allowed tools** — Check `allowedTools` as a set (see Reference B).
+  Report missing entries and flag extra entries (don't remove extras — they may be project-specific).
+- [ ] **4.
+  Worktrees convention** — Check `.gitignore` includes `.worktrees/`.
+  Check `CLAUDE.md` for a Worktrees section (see Reference C).
+- [ ] **5.
+  Architecture principles** — Check `CLAUDE.md` for a Separation of Concerns & DRY section (see Reference D).
+- [ ] **6.
+  Commit conventions** — Check `CLAUDE.md` for a Commit Conventions section covering all 5 items (see Reference E).
+- [ ] **7.
+  Meeting format** — **Skip if no `meetings/` directory.** Check `CLAUDE.md` for a Meeting Format section (see Reference F).
+- [ ] **8.
+  Recommend skills** — Review repo purpose/tech stack.
+  For each relevant skill from Reference G, explain why it fits and ask to install.
+  Skip skills that don't match.
+- [ ] **9.
+  Check skill updates** — Run `npx skills check`.
+  If updates available, ask to run `npx skills update`.
+  Skip if no `skills-lock.json`.
+- [ ] **10.
+  Summary** — Print the alignment summary (see Reference H).
 
 ## References
 

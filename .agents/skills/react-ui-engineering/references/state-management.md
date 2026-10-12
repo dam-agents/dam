@@ -7,16 +7,22 @@
 **[CRITICAL] Never duplicate across lineages.** Server-owned data isn't copied into Zustand; Zustand state isn't shadowed in `useState`; URL state isn't mirrored into Zustand without a strong reason (e.g. a brief optimistic beat before the route resolves).
 
 Decision recipe:
-1. From the server, or persisted there? → **TanStack Query**. Stop.
-2. Needed by components that aren't parent/child? → **Zustand or Context** (pick one per project).
-3. Would a refresh or shared link lose something that matters? → **URL**.
+1. From the server, or persisted there?
+   → **TanStack Query**.
+   Stop.
+2. Needed by components that aren't parent/child?
+   → **Zustand or Context** (pick one per project).
+3. Would a refresh or shared link lose something that matters?
+   → **URL**.
 4. Otherwise → **`useState`**.
 
 ## Zustand
 
-**[HIGH]** Fits app-wide client state when the tree is deep, selector-level performance matters, or state must live outside React. React Context is the simpler default for fresh projects; use Zustand only with a concrete reason.
+**[HIGH]** Fits app-wide client state when the tree is deep, selector-level performance matters, or state must live outside React.
+React Context is the simpler default for fresh projects; use Zustand only with a concrete reason.
 
-**[CRITICAL] Never store TQ-cacheable data in Zustand.** A legacy slice decomposes into: UI bits (selected id, filter, view mode) stay; the server list + fetch become a TQ query hook (`useAgents()`); create/update/delete become TQ mutation hooks; hand-rolled `runQuery`/`runAction`/retry wrappers are deleted. A slice left empty is deleted.
+**[CRITICAL] Never store TQ-cacheable data in Zustand.** A legacy slice decomposes into: UI bits (selected id, filter, view mode) stay; the server list + fetch become a TQ query hook (`useAgents()`); create/update/delete become TQ mutation hooks; hand-rolled `runQuery`/`runAction`/retry wrappers are deleted.
+A slice left empty is deleted.
 
 One slice per domain via `StateCreator`, holding only UI state:
 
@@ -36,7 +42,8 @@ export const createAgentsUiSlice: StateCreator<AppStore, [], [], AgentsUiSlice> 
 });
 ```
 
-**[CRITICAL] Every slice exports selector hooks**; components never call `useStore((s) => ...)` inline. Import sites stay clean and slice refactors don't touch every component.
+**[CRITICAL] Every slice exports selector hooks**; components never call `useStore((s) => ...)` inline.
+Import sites stay clean and slice refactors don't touch every component.
 
 ```ts
 export const useSelectedAgentId = () => useStore((s) => s.selectedAgentId);
@@ -91,4 +98,5 @@ Files: `contexts/theme/theme-context.ts`, `theme-provider.tsx`, `index.ts` (the 
 
 ## URL state
 
-**[HIGH]** The URL owns what should survive a refresh or be shareable: route/subview, active tab in a persistent panel, filters, sort, pagination, search query, and the selected entity id when it determines the page. Use `useSearchParams` or the router equivalent.
+**[HIGH]** The URL owns what should survive a refresh or be shareable: route/subview, active tab in a persistent panel, filters, sort, pagination, search query, and the selected entity id when it determines the page.
+Use `useSearchParams` or the router equivalent.

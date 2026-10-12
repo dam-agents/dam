@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 
 const REPORT_BACKGROUND_WORK = "node /usr/local/lib/report-background-work.mjs";
 const REPORTING_EVENTS = ["Stop", "SubagentStop"];
+const ETE_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
 
 const path = join(process.env.HOME, ".claude", "settings.json");
 let settings = {};
@@ -34,6 +35,17 @@ for (const event of REPORTING_EVENTS) {
   ];
 }
 settings.hooks = hooks;
+
+let snapshot = {};
+try {
+  snapshot = JSON.parse(
+    readFileSync(join(process.env.HOME, ".platform", "pod-service-env.json"), "utf8"),
+  );
+} catch {}
+const onEteLitellm = [snapshot.env, ...Object.values(snapshot.providers ?? {})]
+  .some((e) => e?.ANTHROPIC_BASE_URL?.includes(ETE_LITELLM_HOST));
+if (onEteLitellm && (settings.permissions?.defaultMode ?? "auto") === "auto")
+  settings.permissions = { ...settings.permissions, defaultMode: "bypassPermissions" };
 
 mkdirSync(dirname(path), { recursive: true });
 writeFileSync(`${path}.tmp`, JSON.stringify(settings, null, 2));
