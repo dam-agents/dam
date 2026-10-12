@@ -170,6 +170,7 @@ import {
 } from "./slack-routing.js";
 import type { SlackSender } from "./slack-sender.js";
 import { createBotPostLoopBound } from "../domain/bot-post-loop-bound.js";
+import { createAmbientTurnWindow } from "../domain/ambient-turn-window.js";
 import {
   parseWhisperSession,
   whisperSessionMetadata,
@@ -1423,6 +1424,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   };
 
   const botPosts = createBotPostLoopBound();
+  const ambientTurns = createAmbientTurnWindow();
 
   const BOT_MENTION_SEEN_TTL_MS = 10 * 60 * 1000;
   const botMentionsSeen = new Map<string, number>();
@@ -4960,6 +4962,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               channelId,
             },
           });
+          ambientTurns.enter(reader.instanceName, channelId);
           const { posted, replyText } = await relayAmbientTurn({
             teamId: reader.teamId,
             roster,
@@ -4983,7 +4986,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             files: kept,
             droppedFiles: dropped.map((f) => f.name),
             externalActorId: last.slackUserId,
-          });
+          }).finally(() => ambientTurns.leave(reader.instanceName, channelId));
           if (posted)
             answeredAlready.push({ name: reader.name, text: replyText });
         }
@@ -5024,6 +5027,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const slackUserId = sender.kind === "person" ? sender.user : "";
     const conversation = botPostConversation(event.channel, event.threadTs);
     if (sender.kind === "person") botPosts.notePersonPost(conversation);
+
+    if (
+      sender.kind === "agent" &&
+      ambientTurns.covers(sender.agentId, event.channel)
+    ) {
+      getLogger().debug(
+        { agentId: sender.agentId, channelId: event.channel },
+        "slack.ambient.round_reply_skipped",
+      );
+      return;
+    }
 
     const bindings = await channelRegistry.resolveSlackBindings(event.channel);
     const reached = bindings.some(

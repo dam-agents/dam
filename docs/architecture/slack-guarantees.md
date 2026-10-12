@@ -106,7 +106,7 @@ flowchart TD
 | Mixed bindings: one reads along, another is mention-only | Ambient is per binding. Plain messages reach only readers. A tagged mention reaches one Agent, default or named; readers aren't handed it live | A reader may meet it later as history and take it as open if the answer sits in a thread |
 | A plain message names an Agent without `@` | Readers only; the named one answers if it reads along, the others are told to stay silent | A mention-only Agent gets nothing; the silence is prompt only |
 | An Agent's post tags the bot and names a peer | The peer gets a turn, as if a person had asked; the post never starts a turn for its author | At most three bot posts in a row per thread start turns, until a person posts |
-| An Agent posts where others read along | Every reader but the author gets it | Each reader spends a turn on it, even to stay silent |
+| An Agent posts where others read along | Every reader but the author gets it; a reply in an ambient round does not, since the round already handed it on | A reader that went before it in the round never sees that reply live; each reader spends a turn per post, even to stay silent |
 | Another app or a webhook posts (CI, alerts, deploys) | Routed like a person's post: a tag reaches one Agent, readers get plain posts | On by default; `/dam apps X off` makes one binding ignore apps; same three-in-a-row limit |
 
 ### 1.6 Proactive and cross-channel posts
