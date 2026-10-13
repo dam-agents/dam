@@ -19,10 +19,14 @@ const CAPS = { page: 40000, index: 8000 };
 const ARCH_DIR = join(REPO_ROOT, "docs", "architecture");
 const INDEX_PATH = join(REPO_ROOT, "docs", "architecture.md");
 
-/* UNIT_BOUNDARY_DESCRIPTION: Leading whitespace does not count, so breaking a list item's
-sentences onto indented lines (fix:markdown) leaves the size unchanged. */
+/* UNIT_BOUNDARY_DESCRIPTION: Formatting does not count: neither leading whitespace, so
+breaking a list item's sentences onto indented lines (fix:markdown) leaves the size unchanged,
+nor the padding and dashes fix:markdown adds to align a table's columns. */
 function measure(content) {
-  return content.replace(/^[ \t]+/gm, "").length;
+  return content
+    .replace(/^[ \t]+/gm, "")
+    .replace(/^\|.*\|$/gm, (row) => row.replace(/ *\| */g, " | ").trim().replace(/-{3,}/g, "---"))
+    .length;
 }
 
 function capFor(filePath) {

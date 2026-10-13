@@ -7,11 +7,14 @@ Rules for writing project documentation under [`docs/`](../).
 Docs are split into a few kinds.
 Pick the right one before writing — putting the wrong content in the wrong place is the most common drift source.
 
-- **Guidelines** ([`docs/guidelines/`](.)) — rules to follow when writing docs, issues, or PRs.
+- **Guidelines** ([`docs/guidelines/`](.))
+  — rules to follow when writing docs, issues, or PRs.
   This page is one.
   Prescriptive, not descriptive.
+
 - **Strategy** ([`docs/strategy/`](../strategy/)) — high-level overview of what Platform is trying to be, for product, security, and positioning audiences.
   Independent of how the current system happens to be built.
+
 - **Architecture** ([`docs/architecture/`](../architecture/)) — the authoritative architectural overview of the system as it exists today.
   One page per subsystem, indexed from [`docs/architecture.md`](../architecture.md).
 
@@ -28,9 +31,10 @@ Pick the right one before writing — putting the wrong content in the wrong pla
 
 In every Markdown file, prose has one sentence per line: a single newline after each sentence, and a blank line between paragraphs as usual.
 Markdown renders both the same, and a diff or merge conflict then covers the sentence that changed, not the whole paragraph.
-`mise run fix:markdown` formats the files (`mise run fix` includes it), and `mise run check:markdown` fails on a file it would change; [`.mdslw.toml`](../../.mdslw.toml) configures it.
+`mise run fix:markdown` formats the files with panache as GitHub-Flavored Markdown (`mise run fix` includes it), and `mise run check:markdown` fails on a file it would change; [`panache.toml`](../../panache.toml) configures it.
+Besides the sentence breaks, the formatter also pads table columns to one width and normalizes emphasis, list markers and rules; let it, rather than hand-aligning.
 Accepted ADRs and vendored upstream skills are exempt, because they are never edited here.
-A generator that writes Markdown emits one sentence per line too.
+A generated Markdown file is excluded in `panache.toml`, because its generator's check compares bytes; the generator emits one sentence per line itself.
 
 ## Vocabulary
 
