@@ -59,7 +59,7 @@ func createRolloutRunner(t *testing.T, r *AgentReconciler, owner string) {
 	t.Helper()
 	ctx := context.Background()
 	issueRunnerTLS(t, r, owner)
-	_, _, err := r.ensureRunner(ctx, owner, runnerDemand{})
+	_, _, err := r.ensureRunner(ctx, owner)
 	require.NoError(t, err)
 	sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, r.runnerName(owner), metav1.GetOptions{})
 	require.NoError(t, err)
@@ -140,7 +140,7 @@ func TestANewOwnersRunnerIsCreatedDuringARoll(t *testing.T) {
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 
 	issueRunnerTLS(t, r, "owner-new")
-	_, _, err := r.ensureRunner(ctx, "owner-new", runnerDemand{})
+	_, _, err := r.ensureRunner(ctx, "owner-new")
 	require.NoError(t, err)
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-new"))
 }

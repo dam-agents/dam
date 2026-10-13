@@ -63,6 +63,9 @@ pub struct MachineStatus {
     // UNIT_BOUNDARY_DESCRIPTION: the host memory the running machine's VMM holds, as the prober last measured it. The guest hands freed memory back, so this is what the machine uses, and what the controller sizes the runner's memory request by. Zero while nothing has been measured, which the controller reads as the machine's full size.
     #[serde(rename = "usedMiB", skip_serializing_if = "is_zero")]
     pub used_mib: i32,
+    // UNIT_BOUNDARY_DESCRIPTION: the disk the machine's last start asked for, in GiB; the disk itself never shrinks below a larger earlier one. A runner that reports it grows a disk at the machine's next start rather than restarting it, which is how the controller knows it may send a larger disk to a running machine. Zero before the first start, and from an older runner.
+    #[serde(rename = "diskGiB", skip_serializing_if = "is_zero")]
+    pub disk_gib: i32,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub message: String,
     // UNIT_BOUNDARY_DESCRIPTION: changes whenever anything else in this status changes. A status read given `since` with this value waits until it changes, which is how the controller learns that a booting guest answered without polling for it.
@@ -74,6 +77,46 @@ pub struct MachineStatus {
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine boots with the node's virtualization extensions: its spec asks for them and this runner grants them. The controller puts it on the Agent, so an owner who asked sees whether they got it.
     #[serde(skip_serializing_if = "is_zero")]
     pub nested: bool,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what the owner's machines use of the runner, as the usage read answers it: the claim every disk sits on, the memory the runner hands out and how much of it admission counts as committed, and each machine's own share. The api-server reads it to show a user their pools and to refuse a new agent once storage is critically full; it names machine ids and sizes only, so a read-only capability is enough to fetch it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct RunnerUsage {
+    pub storage: StorageUsage,
+    pub memory: MemoryUsage,
+    pub machines: Vec<MachineUsage>,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the claim's use as the storage guard measures it; both zero when it could not be measured.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct StorageUsage {
+    #[serde(rename = "usedBytes")]
+    pub used_bytes: u64,
+    #[serde(rename = "usableBytes")]
+    pub usable_bytes: u64,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the memory limit the runner admits against and what admission counts as committed on it, in MiB. A limit of zero is a runner told nothing about its memory.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct MemoryUsage {
+    #[serde(rename = "limitMiB")]
+    pub limit_mib: i32,
+    #[serde(rename = "committedMiB")]
+    pub committed_mib: i64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct MachineUsage {
+    pub id: String,
+    pub state: String,
+    #[serde(rename = "usedMiB", skip_serializing_if = "is_zero")]
+    pub used_mib: i32,
+    #[serde(rename = "diskGiB", skip_serializing_if = "is_zero")]
+    pub disk_gib: i32,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the answer to a seed upload: how many bytes the runner stored and their SHA-256, in lowercase hex. The uploader counts and hashes what it sent the same way, so a seed cut short or changed on the way is caught before the machine boots from it.
@@ -254,6 +297,7 @@ mod tests {
                 cpus: 2,
                 memory_mib: 2048,
                 used_mib: 640,
+                disk_gib: 20,
                 message: "up".into(),
                 version: 1,
                 home_seeded_from:
@@ -268,6 +312,25 @@ mod tests {
                 target: "quay.io/x/vm-runner@sha256:2".into(),
                 held: HELD_RUNTIME.into(),
                 message: "built against another runtime".into(),
+            },
+        );
+        matches_the_contract(
+            "runner-usage",
+            &RunnerUsage {
+                storage: StorageUsage {
+                    used_bytes: 32212254720,
+                    usable_bytes: 107374182400,
+                },
+                memory: MemoryUsage {
+                    limit_mib: 12288,
+                    committed_mib: 3072,
+                },
+                machines: vec![MachineUsage {
+                    id: "agent-a".into(),
+                    state: STATE_RUNNING.into(),
+                    used_mib: 640,
+                    disk_gib: 100,
+                }],
             },
         );
         matches_the_contract(

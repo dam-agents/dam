@@ -34,6 +34,13 @@ pub fn working_set_mib(cgroup: &Path) -> anyhow::Result<i64> {
     Ok((current - inactive_file).max(0) >> 20)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the memory limit the kernel holds the runner to, from the cgroup's memory.max. The controller resizes the runner pod's limit in place when the owner's pool changes, and the limit the runner was started with does not follow, so admission and pressure read this one. A cgroup with no limit, or none to read, gives None.
+pub fn limit_mib(cgroup: &Path) -> Option<i64> {
+    let max = read(cgroup, "memory.max").ok()?;
+    let bytes: i64 = max.trim().parse().ok()?;
+    Some(bytes >> 20)
+}
+
 fn read(cgroup: &Path, file: &str) -> anyhow::Result<String> {
     let path = cgroup.join(file);
     fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))
@@ -74,5 +81,16 @@ mod tests {
         .unwrap();
         assert_eq!(working_set_mib(dir.path()).unwrap(), 2048);
         assert!(working_set_mib(&dir.path().join("absent")).is_err());
+    }
+
+    // TEST_SCENARIO: a cgroup with no limit writes `max` in memory.max, and a host without the file has no cgroup to read; neither may read as a limit of zero, which admission takes as no limit at all.
+    #[test]
+    fn the_limit_is_the_cgroups_memory_max_when_it_has_one() {
+        let dir = TempDir::new("pressure-limit");
+        fs::write(dir.path().join("memory.max"), format!("{}\n", 12u64 << 30)).unwrap();
+        assert_eq!(limit_mib(dir.path()), Some(12288));
+        fs::write(dir.path().join("memory.max"), "max\n").unwrap();
+        assert_eq!(limit_mib(dir.path()), None);
+        assert_eq!(limit_mib(&dir.path().join("absent")), None);
     }
 }

@@ -4,16 +4,19 @@ import type { AgentService } from "./agent-service.js";
 export interface WaitOptions {
   timeoutSeconds: number;
   graceSeconds: number;
+  initialState?: AgentView["state"];
   onStateChange?: (state: AgentView["state"]) => void;
 }
 
 export type WaitResult =
   | { kind: "ready"; agent: AgentView }
   | { kind: "error"; agent: AgentView }
-  | { kind: "timeout"; lastState: AgentView["state"] }
+  | { kind: "refused"; agent: AgentView }
+  | { kind: "timeout"; agent: AgentView }
   | { kind: "transport"; reason: string };
 
 const POLL_INTERVAL_MS = 2000;
+const STALE_REFUSAL_GRACE_MS = 10_000;
 
 export async function waitForRunning(
   svc: AgentService,
@@ -23,7 +26,10 @@ export async function waitForRunning(
   if (opts.graceSeconds > 0) {
     await sleep(opts.graceSeconds * 1000);
   }
-  const deadline = Date.now() + opts.timeoutSeconds * 1000;
+  const startedAt = Date.now();
+  const deadline = startedAt + opts.timeoutSeconds * 1000;
+  let sawUnrefused =
+    opts.initialState !== undefined && opts.initialState !== "over_budget";
   let lastState: AgentView["state"] | undefined;
   while (true) {
     const result = await svc.get(id);
@@ -37,8 +43,10 @@ export async function waitForRunning(
     }
     if (agent.state === "running") return { kind: "ready", agent };
     if (agent.state === "error") return { kind: "error", agent };
-    if (Date.now() >= deadline)
-      return { kind: "timeout", lastState: agent.state };
+    if (agent.state !== "over_budget") sawUnrefused = true;
+    else if (sawUnrefused || Date.now() - startedAt >= STALE_REFUSAL_GRACE_MS)
+      return { kind: "refused", agent };
+    if (Date.now() >= deadline) return { kind: "timeout", agent };
     await sleep(POLL_INTERVAL_MS);
   }
 }

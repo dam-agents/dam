@@ -224,3 +224,73 @@ describe("dam agent create provider selection (#3786)", () => {
     );
   });
 });
+
+describe("dam agent create --wait on a refused start (#4760)", () => {
+  const shortfall =
+    "the owner's VM runner has 512 MiB free and this machine needs 2048 MiB";
+
+  beforeEach(() => {
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${code}`);
+    });
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  function refused(extra: Record<string, unknown>) {
+    const { run, create, getAgent } = setup();
+    create.mockResolvedValue({ ...agent, state: "starting" });
+    const parked = { ...agent, state: "over_budget", ...extra };
+    getAgent.mockResolvedValue({ ok: true, value: parked });
+    return { run, getAgent, parked };
+  }
+
+  /** TEST_SCENARIO: A new agent that its owner's pool cannot hold is parked
+   * on its first reconcile; the wait names the refusal at that first poll
+   * instead of polling until the timeout. */
+  it("stops at the first over_budget poll and prints the refusal", async () => {
+    const { run, getAgent } = refused({
+      overBudget: true,
+      overBudgetMessage: shortfall,
+    });
+    await run(["--wait"], EXIT_RUNTIME_FAILURE);
+    expect(getAgent).toHaveBeenCalledTimes(1);
+    expect(process.stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining(`could not start: ${shortfall}`),
+    );
+    expect(process.stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining("free room"),
+    );
+  });
+
+  /** TEST_SCENARIO: Scripted callers read the refusal from the Agent payload,
+   * so --json prints the parked Agent with its message on stdout. */
+  it("emits the parked Agent under --json", async () => {
+    const { run, parked } = refused({ overBudgetMessage: shortfall });
+    await run(["--wait", "--json"], EXIT_RUNTIME_FAILURE);
+    expect(process.stdout.write).toHaveBeenCalledWith(
+      `${JSON.stringify(parked)}\n`,
+    );
+  });
+
+  /** TEST_SCENARIO: A start refused because the owner's storage is full
+   * lands in the error state with its text on podTerminationReason only; the
+   * wait prints that text, not "unknown". */
+  it("prints the pod termination reason for an error with no reconcile error", async () => {
+    const { run, getAgent } = setup();
+    getAgent.mockResolvedValue({
+      ok: true,
+      value: {
+        ...agent,
+        state: "error",
+        podTerminationReason: "your agents' shared storage is full",
+      },
+    });
+    await run(["--wait"], EXIT_RUNTIME_FAILURE);
+    expect(process.stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining("your agents' shared storage is full"),
+    );
+  });
+});

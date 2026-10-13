@@ -32,7 +32,6 @@ const WEEK_MS = 7 * 24 * 3600_000;
 const INPUTS = {
   virtualizationEnabled: true,
   defaultMounts: [{ path: "/home/agent", persist: true }],
-  defaultStorageSize: "10Gi",
   retentionMs: WEEK_MS,
 };
 
@@ -53,8 +52,8 @@ function agent(
 }
 
 describe("the runtime migration plan", () => {
-  // TEST_SCENARIO: an agent whose HOME mount asks for more than its storageSize. The plan sizes the disk for HOME's volume, as the container backend sized it, and says the old volumes are kept for the install's window.
-  it("sizes the disk for HOME and names the retention window", () => {
+  // TEST_SCENARIO: the plan names no disk size, even for an agent whose HOME mount asks for one, since its disk on the new runtime grows inside its owner's storage pool; it says the old volumes are kept for the install's window.
+  it("names no disk size and names the retention window", () => {
     const plan = runtimeMigrationPlan(
       agent({
         mounts: [
@@ -66,24 +65,10 @@ describe("the runtime migration plan", () => {
     );
     expect(plan).toEqual({
       unmovable: [],
-      storageSize: "16Gi",
-      storageResized: true,
       bootsSleepingAgent: false,
       retentionMs: WEEK_MS,
       refusal: null,
     });
-  });
-
-  it("keeps the disk the agent asks for when HOME names no size", () => {
-    const plan = runtimeMigrationPlan(
-      agent({
-        storageSize: "20Gi",
-        mounts: [{ path: "/home/agent", persist: true }],
-      }),
-      INPUTS,
-    );
-    expect(plan.storageSize).toBe("20Gi");
-    expect(plan.storageResized).toBe(false);
   });
 
   // TEST_SCENARIO: the controller boots the machine once even for an agent that was asleep, because only a guest that answered proves the copy; the user has to know that the move spends budget.

@@ -57,8 +57,14 @@ func (r *AgentReconciler) vmPreflight(ctx context.Context) vmPreflightResult {
 	var res vmPreflightResult
 	spec := r.config.VM.Runner
 
-	if _, err := imageBudgetBytes(spec); err != nil {
+	if budget, err := imageBudgetBytes(spec); err != nil {
 		res.problems = append(res.problems, err.Error()+" (virtualization.imageCache.budget)")
+	} else if storage, err := resource.ParseQuantity(spec.Storage); err != nil {
+		res.problems = append(res.problems, fmt.Sprintf("the runner's storage %q is not a quantity (virtualization.runner.storage)", spec.Storage))
+	} else if runnerOwnsImageCache(spec) && storage.Value() <= budget {
+		res.problems = append(res.problems, fmt.Sprintf(
+			"the image cache budget (%s) takes the whole of each owner's storage (%s), so no agent's disk has room (virtualization.imageCache.budget, virtualization.runner.storage)",
+			spec.ImageCacheBudget, spec.Storage))
 	}
 	if spec.Resources != nil {
 		limit := spec.Resources.Limits.Memory().Value() >> 20

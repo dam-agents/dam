@@ -10,8 +10,9 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::api::{
-    MachineSpec, MachineStatus, RunnerPressure, SeedResult, State, REASON_BOOT_FAILED,
-    REASON_HOME_FULL, REASON_OUT_OF_CAPACITY, REASON_STORAGE_FULL,
+    MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage, SeedResult,
+    State, StorageUsage, REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_OUT_OF_CAPACITY,
+    REASON_STORAGE_FULL,
 };
 use crate::cache::{self, pinned_digest};
 use crate::cacheapi::CacheClient;
@@ -388,7 +389,7 @@ impl Server {
         };
         let now = crate::pressure::pressured(
             i64::from(working_set_mib),
-            i64::from(self.config.memory_mib),
+            i64::from(self.memory_limit_mib()),
             was,
         );
         let signal = now != was
@@ -429,7 +430,7 @@ impl Server {
         RunnerPressure {
             version: machines.pressure.version,
             pressured: machines.pressure.pressured,
-            limit_mib: self.config.memory_mib,
+            limit_mib: self.memory_limit_mib(),
             working_set_mib: machines.pressure.working_set_mib,
         }
     }
@@ -1332,10 +1333,45 @@ impl Server {
             .ok();
         self.metrics.render(&Gauges {
             budget_bytes: self.config.image_budget,
-            limit_mib: self.config.memory_mib,
+            limit_mib: self.memory_limit_mib(),
             reserve_mib: self.config.reserve_mib,
             committed_mib: committed,
             storage: (self.config.measure_storage)(),
+        })
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the usage read: the claim's use, the memory admission counts against the limit, and each machine's state, measured memory and disk, built from what the runner has recorded like a status is.
+    pub fn usage(&self) -> anyhow::Result<RunnerUsage> {
+        let committed = self.capacity().committed(
+            None,
+            &self.committing(),
+            &|other| self.known_running(other),
+            &|other| self.resident(other),
+        )?;
+        let storage = (self.config.measure_storage)().unwrap_or(StorageUse { used: 0, usable: 0 });
+        let machines = self
+            .list()?
+            .into_iter()
+            .map(|id| {
+                let status = self.status(&id);
+                MachineUsage {
+                    id,
+                    state: status.state,
+                    used_mib: status.used_mib,
+                    disk_gib: status.disk_gib,
+                }
+            })
+            .collect();
+        Ok(RunnerUsage {
+            storage: StorageUsage {
+                used_bytes: storage.used,
+                usable_bytes: storage.usable,
+            },
+            memory: MemoryUsage {
+                limit_mib: self.memory_limit_mib(),
+                committed_mib: committed,
+            },
+            machines,
         })
     }
 
@@ -1456,10 +1492,19 @@ impl Server {
         }
     }
 
+    fn memory_limit_mib(&self) -> i32 {
+        self.config
+            .cgroup_dir
+            .as_deref()
+            .and_then(crate::pressure::limit_mib)
+            .and_then(|mib| i32::try_from(mib).ok())
+            .unwrap_or(self.config.memory_mib)
+    }
+
     fn capacity(&self) -> Capacity<'_> {
         Capacity {
             state_dir: &self.config.state_dir,
-            limit_mib: self.config.memory_mib,
+            limit_mib: self.memory_limit_mib(),
             reserve_mib: self.config.reserve_mib,
             headroom_mib: self.config.headroom_mib,
             boot_mib: self.config.boot_mib,
@@ -1761,6 +1806,7 @@ impl Server {
         if let Some(spec) = applied {
             status.cpus = spec.cpus;
             status.memory_mib = spec.memory_mib;
+            status.disk_gib = spec.storage_gib;
             status.used_mib = entry
                 .and_then(|e| e.resident_mib)
                 .filter(|_| state == State::Running)

@@ -44,8 +44,8 @@ func userBudgetCR(cpu, memory string) *unstructured.Unstructured {
 		ObjectMeta: metav1.ObjectMeta{Name: "budget-" + budgetOwner, Namespace: "test-agents"},
 		Spec: apiv1.UserBudgetSpec{
 			Owner:  budgetOwner,
-			CPU:    resource.MustParse(cpu),
-			Memory: resource.MustParse(memory),
+			CPU:    new(resource.MustParse(cpu)),
+			Memory: new(resource.MustParse(memory)),
 		},
 	}
 	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(b)

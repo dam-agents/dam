@@ -159,6 +159,7 @@ Because the claim decides membership in those streams, receiving it is itself an
 
 An agent reports itself as never applied when its cursor no longer describes its disk: its home lost the env file the last delivery wrote, as after a runtime migration, or its image binds its contribution drivers differently from when it applied.
 The platform then re-delivers the whole snapshot to every driver.
+The dispatch a `hello` enqueues waits for the Agent to be ready, except for a migrated machine whose migration is verified: it is ready only after its Backend switches, and its runtime waits only seconds for the env before it starts the harness without it ([runtime migration](vm-runtime-migration.md)).
 
 ```mermaid
 sequenceDiagram

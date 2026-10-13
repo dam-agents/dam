@@ -28,7 +28,7 @@ func (r *AgentReconciler) runnerReleaseName(owner string) string {
 // UNIT_BOUNDARY_DESCRIPTION: names the runner release an owner's runner pod should run: the runner image this controller is configured with. The pod's loader reads it from the mounted ConfigMap and hands the machines to that release once the node's stager has staged it, so a new runner image reaches every owner without a pod restart. The ConfigMap is owned by the runner's Deployment, so it goes wherever the Deployment goes.
 func (r *AgentReconciler) applyRunnerRelease(ctx context.Context, owner string) error {
 	ns, name, release := r.config.Namespace, r.runnerReleaseName(owner), r.config.VM.Runner.Image
-	dep, err := r.client.AppsV1().Deployments(ns).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
+	dep, err := r.runnerDeployment(ctx, r.runnerName(owner), true)
 	if k8serrors.IsNotFound(err) {
 		return nil
 	}
@@ -85,14 +85,16 @@ func (r *AgentReconciler) runnerReleaseNamedLongAgo(ctx context.Context, owner s
 	return err == nil && time.Since(at) > runnerReleaseUnreachableRoll
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner pod as the roll compares it. With releases staged on the node, the pod's image is only the release it started with — the loader runs whichever one the controller names — so the image, and the env that tells the loader which release it is, are left out: a new runner image alone changes no pod and restarts no machine.
+// UNIT_BOUNDARY_DESCRIPTION: the runner pod as the roll compares it. Its memory limit is the owner's pool, and its memory request is clamped to that pool, and the controller changes both on the running pod in place, so both are left out: a UserBudget that raises or lowers the pool restarts no machine, and a pod created later takes the pool rendered then. With releases staged on the node, the pod's image is only the release it started with — the loader runs whichever one the controller names — so the image, and the env that tells the loader which release it is, are left out too: a new runner image alone changes no pod and restarts no machine.
 func runnerRollSpec(spec appsv1.DeploymentSpec, releases bool) appsv1.DeploymentSpec {
-	if !releases {
-		return spec
-	}
 	spec = *spec.DeepCopy()
 	for i := range spec.Template.Spec.Containers {
 		c := &spec.Template.Spec.Containers[i]
+		delete(c.Resources.Limits, corev1.ResourceMemory)
+		delete(c.Resources.Requests, corev1.ResourceMemory)
+		if !releases {
+			continue
+		}
 		c.Image = ""
 		for j := range c.Env {
 			if c.Env[j].Name == vmRunnerBuiltinEnv {
