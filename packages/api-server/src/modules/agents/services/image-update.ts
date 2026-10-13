@@ -18,7 +18,7 @@ import { executeTemplateUpgrade } from "./agents-service.js";
 // UNIT_BOUNDARY_DESCRIPTION: how long an always-on Agent must go without activity before it is restarted onto its Template's current image. It stands in for the idle timeout such an Agent does not have, so a user who just stepped away is not restarted under them.
 const ALWAYS_ON_QUIET_MS = 60 * 60_000;
 
-// UNIT_BOUNDARY_DESCRIPTION: how long an Agent must stay ready on the new image before the move counts as proven. A container that crashes some seconds after it first becomes ready, or a guest that answers and then goes quiet, is ready for a moment between the exits that the controller reports as StartFailed, so a single ready read must not end the move first.
+// UNIT_BOUNDARY_DESCRIPTION: how long an Agent must stay ready on the new image before the move counts as proven. A container that crashes some seconds after it first becomes ready, or a guest that answers and then goes quiet, is ready for a moment between the exits that the controller reports as StartFailed, so a single ready read must not end the move first. A ready read without a readable transition time starts the hold at the first tick that sees it, and the hold restarts whenever the Agent reads not ready, so the move is neither proven at once nor held forever.
 const READY_HOLD_MS = 5 * 60_000;
 
 export type ImageMove = "now" | "if-pod-idle";
@@ -72,6 +72,7 @@ export function createImageUpdate(deps: {
 }): ImageUpdate {
   const moveOf = (agent: InfraAgent, templateImage: string) =>
     imageMove(agent, templateImage, deps.idleTimeoutMinutes, new Date());
+  const readySeen = new Map<string, number>();
 
   async function idlePod(id: string): Promise<boolean> {
     try {
@@ -117,11 +118,12 @@ export function createImageUpdate(deps: {
     const from = live?.imageUpdateFrom;
     if (!live || !from || !live.specStart) return;
     const failed = live.specStart === "failed";
-    if (
-      !failed &&
-      Date.now() - (live.readySince?.getTime() ?? Date.now()) < READY_HOLD_MS
-    )
-      return;
+    if (!failed) {
+      const since =
+        live.readySince?.getTime() ?? readySeen.get(id) ?? Date.now();
+      if (!live.readySince) readySeen.set(id, since);
+      if (Date.now() - since < READY_HOLD_MS) return;
+    }
     const written = await deps.writeSpec(id, {
       ...(failed ? { spec: { image: from } } : {}),
       annotations: {
@@ -158,6 +160,8 @@ export function createImageUpdate(deps: {
       let migrated = 0;
       for (const agent of await deps.listAgents()) {
         try {
+          if (agent.specStart !== "ready" || !agent.imageUpdateFrom)
+            readySeen.delete(agent.id);
           if (agent.imageUpdateFrom && agent.specStart) {
             await settle(agent.id);
             continue;
