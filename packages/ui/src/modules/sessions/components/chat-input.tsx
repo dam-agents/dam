@@ -1,4 +1,10 @@
-import { Add, Close, Document, SendAltFilled, Stop } from "@carbon/icons-react";
+import {
+  Add,
+  Close,
+  Document,
+  SendAltFilled,
+  StopFilledAlt,
+} from "@carbon/icons-react";
 import {
   type KeyboardEvent,
   type RefObject,
@@ -280,7 +286,7 @@ export function ChatInput({
                 aria-label="Stop"
                 tooltip="Stop (Esc)"
               >
-                <Stop size={16} />
+                <StopFilledAlt size={16} />
               </Button>
             )}
             {showSend && (
