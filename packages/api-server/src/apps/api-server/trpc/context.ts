@@ -274,6 +274,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ownsApproval: async (approvalId) =>
         (await createApprovalsRepository(db).getPending(approvalId))
           ?.ownerSub === user.sub,
+      ownsAgent: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
     });
     const files = composeFilesModule(
       agentsRepo,

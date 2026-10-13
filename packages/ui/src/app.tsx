@@ -50,8 +50,20 @@ export default function App() {
   }, [theme]);
 
   if (view === "terms") return <TermsView />;
-  if (view === "telegram-bind") return <TelegramBindView />;
-  if (view === "slack-bind") return <SlackBindView />;
+  if (view === "telegram-bind")
+    return (
+      <>
+        <TelegramBindView />
+        <DialogOverlay />
+      </>
+    );
+  if (view === "slack-bind")
+    return (
+      <>
+        <SlackBindView />
+        <DialogOverlay />
+      </>
+    );
   if (view === "analytics") return <UsageReportView />;
   return <MainApp />;
 }

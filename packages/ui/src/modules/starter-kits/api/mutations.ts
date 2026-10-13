@@ -12,7 +12,6 @@ export function useApplyStarterKit() {
     meta: {
       invalidates: [
         agentsKeys.listWithChannels(),
-        trpc.agents.list.queryKey(),
         trpc.budgets.reserved.queryKey(),
         trpc.schedules.listForOwner.queryKey(),
       ],
@@ -28,7 +27,7 @@ export function useStartKitUpdate() {
     meta: {
       invalidates: [
         trpc.starterKits.updates.queryKey(),
-        trpc.agents.list.queryKey(),
+        agentsKeys.listWithChannels(),
       ],
       errorToast: "Couldn't start the kit update",
     },

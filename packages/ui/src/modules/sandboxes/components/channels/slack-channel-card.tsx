@@ -15,7 +15,7 @@ import {
   findSlackChannels,
   isSlackConversationGone,
   slackChannelLabel,
-} from "../../hooks/use-slack-channel-form.js";
+} from "../../lib/slack-channels.js";
 import { ChannelRow } from "./channel-row.js";
 import { SlackChannelModal } from "./slack-channel-modal.js";
 

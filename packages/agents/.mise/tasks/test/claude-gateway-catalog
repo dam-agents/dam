@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const gateway = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/model-gateway.mjs", import.meta.url));
 let listing = null;
+let listingHeld = Promise.resolve();
 const forwarded = [];
 const upstream = createServer((req, res) => {
   let body = "";
@@ -21,7 +22,7 @@ const upstream = createServer((req, res) => {
   req.on("end", () => {
     res.setHeader("content-type", "application/json");
     if (req.url.startsWith("/v1/models")) {
-      if (listing) res.end(JSON.stringify({ data: listing.map((id) => ({ id })) }));
+      void listingHeld.then(() => { if (listing) res.end(JSON.stringify({ data: listing.map((id) => ({ id })) })); });
       return;
     }
     forwarded.push(JSON.parse(body).model);
@@ -67,9 +68,12 @@ try {
 
   // TEST_SCENARIO: The provider retired the model the kept list named for a tier, and Claude Code already started with that name. The listing that follows the start replaces the list, and a request for the retired name goes to the tier's current model instead of failing at the provider.
   listing = ["rits/zai-org/glm-5-4"];
+  let releaseListing;
+  listingHeld = new Promise((resolve) => { releaseListing = resolve; });
   forwarded.length = 0;
   await withGateway(["rits/zai-org/glm-5-3"], async ({ home }) => {
     assert.match(await envSh(), /claude\/rits\/zai-org\/glm-5-3/);
+    releaseListing();
     for (let i = 0; i < 50 && !(await fetch("http://127.0.0.1:24180/p/cb/v1/models").then((r) => r.text())).includes("glm-5-4"); i++) await new Promise((r) => setTimeout(r, 100));
     await fetch("http://127.0.0.1:24180/p/cb/v1/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "claude/rits/zai-org/glm-5-3" }) });
     assert.deepEqual(forwarded, ["rits/zai-org/glm-5-4"]);

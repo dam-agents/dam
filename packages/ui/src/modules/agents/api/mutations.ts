@@ -22,7 +22,7 @@ import { seedEmptySessionList } from "../../sessions/api/queries.js";
 import { agentsKeys } from "./queries.js";
 
 const invalidatesAgentsList = {
-  invalidates: [agentsKeys.listWithChannels(), trpc.agents.list.queryKey()],
+  invalidates: [agentsKeys.listWithChannels()],
 };
 
 const invalidatesAgentsAndBudget = {

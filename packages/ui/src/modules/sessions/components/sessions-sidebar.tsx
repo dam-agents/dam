@@ -29,6 +29,7 @@ import { useAgentBackgroundWork } from "../api/background-work.js";
 import {
   prefetchSessionHistory,
   setSessionSeen,
+  useProvisionalSessions,
   useSessionPages,
 } from "../api/queries.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
@@ -81,8 +82,12 @@ export function SessionsSidebar({
     enabled: agentOperable,
     activeSessionId: sessionId,
   });
-  const sessions: SessionView[] = listed ?? EMPTY;
-  const loading = listed === undefined && (isFetching || !agentOperable);
+  const lastKnown = useProvisionalSessions(selectedAgent, listed === undefined);
+  const provisional = listed === undefined && !!lastKnown?.length;
+  const sessions: SessionView[] =
+    listed ?? (provisional ? lastKnown : undefined) ?? EMPTY;
+  const loading =
+    listed === undefined && !provisional && (isFetching || !agentOperable);
   const filtered = sessionFilter.length < SESSION_CATEGORIES.length;
 
   const visibleSessions = useMemo(
@@ -245,7 +250,11 @@ export function SessionsSidebar({
       style={style}
       ref={ref}
     >
-      <div className="flex-1 overflow-y-auto">
+      <div
+        className="flex-1 overflow-y-auto"
+        data-provisional={provisional ? "true" : undefined}
+        aria-busy={provisional || loading}
+      >
         {loading && <SessionListSkeleton />}
         {!loading && visibleSessions.length === 0 && (
           <p className="px-4 py-5 text-xs text-muted-foreground">
