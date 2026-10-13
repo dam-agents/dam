@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-10-07
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -288,6 +288,9 @@ flowchart TD
 BullMQ retries cover transport failures (network blip, agent crash mid-call) and the boot window: a `hello`-triggered dispatch whose agent is a heartbeat short of Ready throws to fast-retry on the backoff, so fresh config lands in ~a second instead of waiting a full sweep tick.
 A plain dispatch to an agent that isn't running exits clean and the row simply stays behind: while the agent is down the sweep does not re-attempt delivery to it.
 The row is picked up once the agent is back — by its `hello` when its cursor is behind, and otherwise by the next sweep tick, which is what covers a row left unsettled by driver failures the agent has already answered for.
+Ready needs the gateway pod as well as the agent, so a grant that rolls the gateway takes the Agent out of Ready while the agent itself runs on and sends no `hello`, and the grant's own dispatch can land in that window.
+So the api-server also watches for the Agent's Ready condition turning True and re-enqueues a row whose desired version is not settled yet: the grant's state lands as soon as the gateway is back, not on the next sweep tick up to a minute later.
+The first sighting of each Agent, at watch start or relist, is only a baseline, so a restarted replica re-enqueues nothing.
 
 Every `applyState` call carries a deadline of about a minute.
 An agent that accepts the request but never answers — a pod wedged on memory pressure, a harness that stopped serving — fails that attempt onto the backoff instead of holding a worker slot until the transport gives up on its own, which takes minutes.
