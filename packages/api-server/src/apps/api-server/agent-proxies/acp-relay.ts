@@ -243,6 +243,7 @@ export function createAcpRelay(
             upstream.close(1000, "client gone");
             return;
           }
+          actor.attached();
           for (const msg of pending) {
             if (upstream.readyState === WebSocket.OPEN) {
               if (!msg.isBinary) trackIfPrompt(tryParse(msg.data));

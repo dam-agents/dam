@@ -1,4 +1,4 @@
-import { addUpgradeSecurityHeaders } from "./upgrade.js";
+import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
@@ -17,6 +17,7 @@ export interface SshRelay {
     socket: Duplex,
     head: Buffer,
     agentId: string,
+    actor: RelayActor,
   ): void;
   close(): void;
 }
@@ -41,6 +42,7 @@ export function createSshRelay(
     socket: Duplex,
     head: Buffer,
     agentId: string,
+    actor: RelayActor,
   ) {
     wss.handleUpgrade(req, socket, head, async (client) => {
       client.on("error", () => client.terminate());
@@ -111,6 +113,7 @@ export function createSshRelay(
       const us = upstream;
       us.on("open", () => {
         if (clientGone || overflow) return closeWs(us);
+        actor.attached();
         client.off("message", buffer);
         for (const [d, b] of pending) us.send(d, { binary: b });
         client.on("message", (d, isBinary) => {

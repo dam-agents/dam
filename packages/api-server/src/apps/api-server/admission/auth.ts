@@ -347,7 +347,11 @@ export async function authenticatePrincipal(
   return { ok: true, principal };
 }
 
-export function logWsAttach(sub: string, site: WsAuthSite): void {
+export function logWsAttach(
+  sub: string,
+  site: WsAuthSite,
+  sinceConnectMs?: number,
+): void {
   securityLog("info", "relay.attach", {
     category: "privileged",
     actor: sub,
@@ -356,6 +360,9 @@ export function logWsAttach(sub: string, site: WsAuthSite): void {
     ...(site.agentId !== undefined ? { agentId: site.agentId } : {}),
     result: "success",
     sourceIp: site.sourceIp,
-    detail: { relay: site.relay },
+    detail: {
+      relay: site.relay,
+      ...(sinceConnectMs !== undefined ? { sinceConnectMs } : {}),
+    },
   });
 }
