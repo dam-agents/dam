@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A provisional session row is display-only: its rename, delete and export actions stay visible but disabled until the agent answers for its sessions.
+// TEST_OVERVIEW: A provisional session row is display-only: its rename and delete actions, which call the agent, stay visible but disabled until the agent answers for its sessions; export reads the platform's telemetry and stays enabled.
 import { SessionMode, SessionType } from "api-server-api";
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -46,8 +46,10 @@ function render(provisional: boolean) {
   );
 }
 
-it("disables every action on a provisional row", () => {
-  expect(render(true).match(/<li aria-disabled="true">/g)).toHaveLength(3);
+it("disables the agent's actions on a provisional row and keeps export", () => {
+  const html = render(true);
+  expect(html.match(/<li aria-disabled="true">/g)).toHaveLength(2);
+  expect(html).toMatch(/<li><svg[^>]*>.*<\/svg> Export telemetry<\/li>/);
 });
 
 it("keeps the actions enabled on a row the agent listed", () => {

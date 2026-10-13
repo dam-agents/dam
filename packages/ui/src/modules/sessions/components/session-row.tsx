@@ -83,11 +83,12 @@ export function SessionRow({
 
   const startPress = useCallback(() => {
     didLongPress.current = false;
+    if (provisional) return;
     timerRef.current = setTimeout(() => {
       didLongPress.current = true;
       setMenuOpen(true);
     }, LONG_PRESS_MS);
-  }, []);
+  }, [provisional]);
 
   const dwellRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startDwell = useCallback(() => {
@@ -178,6 +179,7 @@ export function SessionRow({
       onTouchEnd={endPress}
       onTouchCancel={endPress}
       onContextMenu={(e) => {
+        if (provisional) return;
         e.preventDefault();
         setMenuOpen(true);
       }}
@@ -222,7 +224,6 @@ export function SessionRow({
             {onExportTimeline && (
               <DropdownMenuItem
                 data-testid="session-export-timeline-button"
-                disabled={provisional}
                 onSelect={onExportTimeline}
               >
                 <Download size={14} /> Export telemetry
@@ -283,7 +284,6 @@ export function SessionRow({
             variant="ghost"
             size="sm"
             className="w-full justify-start"
-            disabled={provisional}
             onClick={(e) => {
               e.stopPropagation();
               setMenuOpen(false);
@@ -297,7 +297,6 @@ export function SessionRow({
             tone="danger"
             size="sm"
             className="w-full justify-start"
-            disabled={provisional}
             onClick={(e) => {
               e.stopPropagation();
               setMenuOpen(false);
