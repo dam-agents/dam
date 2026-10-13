@@ -315,7 +315,7 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 					"name":                      "default",
 					"domains":                   []any{"*"},
 					"routes":                    buildChainForwardRoutes(c),
-					"request_headers_to_remove": []any{connectionAddressHeader, spendCallHeader},
+					"request_headers_to_remove": []any{connectionAddressHeader},
 				},
 			},
 		},
@@ -358,9 +358,10 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 		filters = append(filters, connectionAddressHTTPFilter(c))
 	}
 	if c.Metered() {
-		filters = append(filters, spendMeterHTTPFilter(p, c))
+		filters = append(filters, spendMeterHTTPFilter(p, c), withSpendMetadata(extAuthzHTTPFilter(p)))
+	} else {
+		filters = append(filters, extAuthzHTTPFilter(p))
 	}
-	filters = append(filters, extAuthzHTTPFilter(p))
 	for _, cred := range c.Credentials {
 		rivals := c.RivalsOf(cred)
 		gate := func(filter ev, innerName string) ev { return skippedForRivals(filter, innerName, rivals) }

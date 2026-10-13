@@ -13,8 +13,8 @@ The parts:
 - **The meter**, in the agent's paired gateway pod ([credential-gateway](credential-gateway.md)), reads the usage in each provider reply and sends one spend record per call to the api-server.
 - **The api-server** receives the records on the same per-agent port that answers the gateway's ext_authz checks, so a record is tied to its agent the same way a check is ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)).
 
-The api-server does not accept spend records yet, so the gateway drops them.
-The api-server can price a call ([Prices](#prices)), but the ledger and the limits are not built yet.
+The api-server prices each record when it arrives ([Prices](#prices)) and keeps the daily ledger ([Ledger](#ledger)).
+The limits are not built yet.
 
 ```mermaid
 flowchart LR
@@ -36,8 +36,11 @@ flowchart LR
 The gateway knows this from the Connection's provider template, which the api-server writes on the Connection's Secret.
 A chain for any other Connection, and an allow-only chain, has no meter.
 
-**On the request.** Before the ext_authz check, the meter gives the call an id that the agent cannot set: it replaces any value the agent sent.
-The gate sees the id, and the gateway removes it before the provider.
+**On the request.** Before the ext_authz check, the meter gives the call an id that the agent cannot set, and it names the call's Connection and that Connection's provider.
+The Connection is the one that the request named, else the chain's only model-provider Connection.
+An address that names no Connection of the chain counts as no address, so a false address cannot hide a call.
+When the chain has several model-provider Connections and the request names none, the meter names all their providers and no Connection.
+The meter keeps these facts in the call's gateway metadata, out of the agent's reach, and the gateway hands them to the ext_authz check, so the gate and the ledger see the same call.
 The meter also removes the request's compression offer, because a compressed reply cannot be read as it passes.
 It notes the path without the query and without a Connection address prefix, the API dialect of the path, and whether the path is billable.
 Billable paths are the model calls: Anthropic Messages, OpenAI Chat Completions, legacy Completions, Responses and Embeddings, and the Bedrock invoke and converse calls, streamed or not.
@@ -50,10 +53,11 @@ It reads counts only inside usage objects in the structure of the reply.
 It takes the reply's model and service tier only from the highest level of the reply where they occur, because a reply can repeat request fields at a lower level, such as Responses metadata, and the agent sets those.
 Text from the model sits inside JSON strings, where quotes are escaped, so model text cannot form a usage object.
 For each count the highest value wins, so a repeated or forged object can only raise a count, never lower it.
+A reply that reports the passes of one call apart, such as a compaction pass and an answer pass, counts the sum of the passes, because the provider bills each pass.
 It keeps the raw counts with the dialect and leaves their meaning to pricing: input, output, cache reads, cache writes and their five-minute and one-hour parts, cached tokens, web searches, Bob credits, the service tier, the speed, the inference geography and the reply's model.
 
 **The record.** The gateway sends spend records over a gRPC access log to the agent's ext-authz Service, the address that only this agent's gateway can reach.
-A record names the payer, which is the root driver for an Invocation target, and the Connection when the request addressed one of the chain's model-provider Connections.
+A record names the payer, which is the root driver for an Invocation target, and the Connection and providers that the meter named on the request.
 It carries the reply size, the proxy's own cost figure when the reply has one, and whether the reply ended with its format's end event.
 A reply that stops early keeps the counts read so far and is not marked complete.
 
@@ -96,3 +100,41 @@ When a reply carries a proxy cost figure above zero, DAM compares it with its ow
 **Updating prices.** The Anthropic table changes only through a reviewed update to a newer pinned version of LiteLLM's list, which the regular dependency update proposes.
 The update stops when a copied price lacks one of its token prices, so a broken upstream list never reaches DAM.
 Operator prices change through the chart.
+
+## Ledger
+
+**Receiving.** The api-server ties a stream of records to its agent by the Service address, as it ties a check.
+It drops the record of a call that the gate refused, because the gate counts its own refusals.
+It prices each record at once, in the unit of the call's provider: dollars for paid providers, list-price dollars for the Claude subscription, Bobcoins for Bob, and nothing for free providers.
+When the meter named several providers, the call counts at the provider whose unit is real dollars, marked estimated.
+A call without a Connection keeps its cost under an unknown Connection, so it still counts for the agent and the owner.
+
+**Who pays.** A call counts for its payer and the payer's owner, on the UTC day the call started.
+So a sub-agent's calls count for its root driver.
+
+**Daily rollup.** Postgres keeps one row per day, payer, Connection and model: the cost, the token counts, the web searches, the counts of calls, estimated calls and refused calls, and the most expensive single call.
+A row outlives its agent, so the spend of a deleted agent still counts for its owner.
+
+**Day counters.** Redis keeps the day's totals per payer and unit, per owner and unit, and per payer and Connection, so the limit check reads no database.
+A missing counter, for example after a Redis restart, is rebuilt from the rollup, and a counter that fails to update is dropped so that the next read rebuilds it.
+
+**One call, many records.** Each periodic record and the final record carry the call's counts so far, not increments.
+The api-server keeps the amounts it last applied for each call and adds only the difference, in one atomic step, so two replicas never count the same part twice and a call counts once.
+A periodic record that arrives after the final one changes nothing.
+
+## Estimates
+
+DAM counts high and marks a call estimated when its usage is missing or unsure:
+
+- **A stream that stopped early** keeps the counts read so far, and its output is estimated from the reply size when that gives more.
+- **A successful reply without usage** counts as the payer's most expensive call on that Connection that day, else in the last seven days, because the reply does not show its input.
+  A failed reply without usage counts nothing, because the provider does not bill it.
+- **A call cut before any reply arrived**, by a timeout, an interrupt or a gateway restart, counts the same way as a successful reply without usage, because the provider may still bill it.
+- **A Bob reply without Bobcoins** counts as the payer's most expensive call on that Connection that day, else in the last seven days.
+  Bob Shell cancels one call in each prompt before Bob sends its Bobcoins, so Bob totals run higher than Bob's own figure.
+- **A call whose record never arrived.**
+  The gate notes each metered call when it starts.
+  Sixty minutes later, a periodic sweep finishes a call that has only periodic records from its last counts, and counts a call with no record as the payer's most expensive call on that Connection that day, else in the last seven days, else at nothing with a warning.
+  A real record that arrives later corrects the estimate.
+
+**Shutdown.** A stopping api-server takes no new streams, ends every open record stream with a success status so that each gateway reconnects to another replica and loses no record, and gives the open calls twenty seconds before it closes the port.

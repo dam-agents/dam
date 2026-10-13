@@ -45,6 +45,7 @@ export {
   satelliteJobs,
   resourceAlerts,
   avatarImages,
+  spendDaily,
 } from "./schema.js";
 export {
   eq,

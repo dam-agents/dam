@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -9,7 +10,6 @@ import (
 const (
 	spendMeterFilterName     = "spend_meter"
 	spendMetadataNamespace   = "platform.spend"
-	spendCallHeader          = "x-platform-call"
 	spendRecordLogName       = "spend"
 	spendRecordFlushInterval = "2s"
 	proxyCostHeader          = "x-litellm-response-cost"
@@ -23,6 +23,11 @@ func spendMeterHTTPFilter(p bootstrapParams, c envoyHostChain) ev {
 			"default_source_code": ev{"inline_string": luaSpendMeterScript(p, c)},
 		},
 	}
+}
+
+func withSpendMetadata(extAuthz ev) ev {
+	extAuthz["typed_config"].(ev)["metadata_context_namespaces"] = []any{spendMetadataNamespace}
+	return extAuthz
 }
 
 func spendRecordAccessLog(p bootstrapParams) ev {
@@ -60,23 +65,39 @@ func withoutPeriodicRecords(loggers []any) []any {
 	return loggers
 }
 
-func luaStringSet(items []string) string {
-	sorted := append([]string(nil), items...)
-	sort.Strings(sorted)
-	entries := make([]string, 0, len(sorted))
-	for _, item := range sorted {
-		entries = append(entries, "["+strconv.Quote(item)+"] = true")
+func luaStringMap(items map[string]string) string {
+	keys := make([]string, 0, len(items))
+	for key := range items {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	entries := make([]string, 0, len(keys))
+	for _, key := range keys {
+		entries = append(entries, "["+strconv.Quote(key)+"] = "+strconv.Quote(items[key]))
 	}
 	return "{" + strings.Join(entries, ", ") + "}"
 }
 
 func luaSpendMeterScript(p bootstrapParams, c envoyHostChain) string {
+	templates := c.MeteredConnectionTemplates()
+	var defaultConn string
+	var providers []string
+	for id, templateID := range templates {
+		if len(templates) == 1 {
+			defaultConn = id
+		}
+		if !slices.Contains(providers, templateID) {
+			providers = append(providers, templateID)
+		}
+	}
+	sort.Strings(providers)
 	return "local NS = " + strconv.Quote(spendMetadataNamespace) + "\n" +
-		"local CALL_HEADER = " + strconv.Quote(spendCallHeader) + "\n" +
 		"local ADDRESS_HEADER = " + strconv.Quote(connectionAddressHeader) + "\n" +
 		"local ADDRESSED_PATH = " + strconv.Quote(luaAddressedPathPattern()) + "\n" +
 		"local PAYER = " + strconv.Quote(p.PayerID()) + "\n" +
-		"local CONNECTIONS = " + luaStringSet(c.MeteredConnectionIDs()) + "\n" +
+		"local CONNECTIONS = " + luaStringMap(templates) + "\n" +
+		"local DEFAULT_CONN = " + strconv.Quote(defaultConn) + "\n" +
+		"local CHAIN_PROVIDERS = " + strconv.Quote(strings.Join(providers, ",")) + "\n" +
 		luaSpendMeterBody
 }
 
@@ -151,9 +172,8 @@ local function dialect_of(path)
   return nil
 end
 
-local function object_end(text, open)
+local function close_of(text, open, opener, closer, limit)
   local depth, quoted, i = 0, false, open
-  local limit = open + MAX_OBJECT
   while i <= #text do
     if i > limit then return false end
     local c = string.byte(text, i)
@@ -161,15 +181,34 @@ local function object_end(text, open)
       if c == 92 then i = i + 1 elseif c == 34 then quoted = false end
     elseif c == 34 then
       quoted = true
-    elseif c == 123 then
+    elseif c == opener then
       depth = depth + 1
-    elseif c == 125 then
+    elseif c == closer then
       depth = depth - 1
       if depth == 0 then return i end
     end
     i = i + 1
   end
   return nil
+end
+
+local function object_end(text, open)
+  return close_of(text, open, 123, 125, open + MAX_OBJECT)
+end
+
+local function counts_in(text, add)
+  local counts = {}
+  for key, value in string.gmatch(text, '"([%w_]+)"%s*:%s*(%-?[%d%.]+[eE]?[%-+]?%d*)') do
+    local field, number = FIELDS[key], tonumber(value)
+    if field ~= nil and number ~= nil then
+      if add then
+        counts[field] = (counts[field] or 0) + number
+      elseif number > (counts[field] or -1) then
+        counts[field] = number
+      end
+    end
+  end
+  return counts
 end
 
 local function b64decode(s)
@@ -250,13 +289,22 @@ local function new_meter(format)
     end
   end
 
+  local function raise(counts)
+    for field, number in pairs(counts) do
+      if number > (fields[field] or -1) then fields[field] = number end
+    end
+  end
+
   local function merge(object)
-    for key, value in string.gmatch(object, '"([%w_]+)"%s*:%s*(%-?[%d%.]+[eE]?[%-+]?%d*)') do
-      local field, number = FIELDS[key], tonumber(value)
-      if field ~= nil and number ~= nil and number > (fields[field] or -1) then
-        fields[field] = number
+    local s, open = string.find(object, '"iterations"%s*:%s*%[')
+    if s ~= nil then
+      local close = close_of(object, open, 91, 93, #object)
+      if close then
+        raise(counts_in(string.sub(object, open, close), true))
+        object = string.sub(object, 1, s - 1) .. string.sub(object, close + 1)
       end
     end
+    raise(counts_in(object, false))
     for key, value in string.gmatch(object, '"([%w_]+)"%s*:%s*"([%w_%-]+)"') do
       if TEXT_FIELDS[key] then fields[key] = value end
     end
@@ -364,20 +412,28 @@ end
 
 function envoy_on_request(rh)
   local h = rh:headers()
-  local call_id = next_call_id(rh)
-  h:replace(CALL_HEADER, call_id)
   h:remove("accept-encoding")
   local path = string.match(h:get(":path") or "/", "^[^?]*")
   path = string.match(path, ADDRESSED_PATH) or path
+  local conn = h:get(ADDRESS_HEADER)
+  local providers = CHAIN_PROVIDERS
+  if conn ~= nil and CONNECTIONS[conn] ~= nil then
+    providers = CONNECTIONS[conn]
+  elseif DEFAULT_CONN ~= "" then
+    conn, providers = DEFAULT_CONN, CONNECTIONS[DEFAULT_CONN]
+  else
+    conn = nil
+  end
   local dialect = dialect_of(path)
   local md = rh:streamInfo():dynamicMetadata()
-  md:set(NS, "call_id", call_id)
+  md:set(NS, "call_id", next_call_id(rh))
   md:set(NS, "payer", PAYER)
   md:set(NS, "path", path)
   md:set(NS, "billable", dialect ~= nil)
-  if dialect ~= nil then md:set(NS, "dialect", dialect) end
-  local conn = h:get(ADDRESS_HEADER)
-  if conn ~= nil and CONNECTIONS[conn] then md:set(NS, "conn", conn) end
+  if dialect == nil then return end
+  md:set(NS, "dialect", dialect)
+  md:set(NS, "providers", providers)
+  if conn ~= nil then md:set(NS, "conn", conn) end
 end
 
 function envoy_on_response(rh)

@@ -145,6 +145,17 @@ export type {
   CpuCongestion,
   BudgetsService,
 } from "./modules/budgets/types.js";
+export {
+  SPEND_DAILY_MAX_DAYS,
+  spendDailyInputSchema,
+  spendUnitSchema,
+} from "./modules/spend/schemas.js";
+export type {
+  SpendDailyInput,
+  SpendDailyRow,
+  SpendService,
+  SpendUnit,
+} from "./modules/spend/types.js";
 export type { AgentSpecCR } from "./crd-types.gen.js";
 export type {
   EventReportInput,

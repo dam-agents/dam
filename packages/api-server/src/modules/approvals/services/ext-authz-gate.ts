@@ -16,6 +16,13 @@ export type ExtAuthzVerdict = "allow" | "deny";
 
 export const approvalChannelOf = (id: string) => `approval:${id}`;
 
+interface SpendCall {
+  callId: string;
+  payer: string;
+  connectionId: string | null;
+  providers: readonly string[];
+}
+
 interface ExtAuthzGateInput {
   agentId: string;
   host: string;
@@ -23,6 +30,7 @@ interface ExtAuthzGateInput {
   tls: boolean;
   method: string;
   path: string;
+  spendCall?: SpendCall | null;
 }
 
 export interface ExtAuthzGate {
@@ -46,6 +54,16 @@ export interface EgressRuleMatcher {
   ): Promise<{ verdict: ExtAuthzVerdict } | null>;
 }
 
+export interface SpendCallNotes {
+  callStarted(
+    call: SpendCall & {
+      agentId: string;
+      ownerSub: string;
+      startedAt: Date;
+    },
+  ): Promise<void>;
+}
+
 export interface EgressAttendance {
   hasOpenChannelTurn(agentId: string): Promise<boolean>;
   hasInteractiveSession(agentId: string): Promise<boolean>;
@@ -57,13 +75,22 @@ interface CreateExtAuthzGateDeps {
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
   attendance: EgressAttendance;
+  spend: SpendCallNotes;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
 }
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
   return {
-    async gateRequest({ agentId, host: requestHost, port, tls, method, path }) {
+    async gateRequest({
+      agentId,
+      host: requestHost,
+      port,
+      tls,
+      method,
+      path,
+      spendCall,
+    }) {
       const host = canonicalEgressHost(requestHost);
       const identity = await deps.identityResolver.resolve(agentId);
       if (!identity) {
@@ -82,6 +109,15 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       }
 
       const via = identity.agentId !== agentId ? agentId : undefined;
+
+      if (spendCall) {
+        await deps.spend.callStarted({
+          ...spendCall,
+          agentId,
+          ownerSub: identity.ownerSub,
+          startedAt: new Date(),
+        });
+      }
 
       if (deps.platformAllowedAuthorities.includes(`${host}:${port}`)) {
         securityLog("info", "egress.decision", {

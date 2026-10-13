@@ -39,21 +39,23 @@ Server code goes into the `spend` module (`packages/api-server/src/modules/spend
    - A call that the gate refuses also sends a billable record, because the meter runs before the gate.
      Envoy marks that entry with the response flag for an external-authorization refusal.
      Do not count such a record as a call or as spend: the gate counts its own refusals (slice 04).
-   - Give the spend ingest service one record: agent, call id, payer, address Connection, path, dialect, status, raw counts, model, tier, speed, inference geography, reply bytes, `complete`, the cost header, and whether the entry is periodic or final (`access_log_type`).
+   - Give the spend ingest service one record: agent, call id, payer, Connection, providers, path, dialect, status, raw counts, model, tier, speed, inference geography, reply bytes, `complete`, the cost header, and whether the entry is periodic or final (`access_log_type`).
 3. **Ingest service** (spend module, services layer).
    - **Payer and owner:** the payer is the record's `payer` (the root driver).
      Find the owner with a port that `bootstrap.ts` wires to `agentsRepo.resolveIdentity`.
-   - **Connection:** with a port to the connections module.
-     Use the address Connection when the record has one.
-     Otherwise use the one Connection of the agent's grants whose injection host is the request authority.
-     Cache the agent's metered Connections for 30 seconds.
-     When no Connection matches (for example, a grant was removed while the call ran), log a warning, and keep the record under the Connection id `unknown` in the unit `usd`, priced as `estimate`.
-     The cost then still counts for the agent and the owner.
-   - **Unit:** from the Connection's template, with the README's table.
+   - **Connection and provider:** from the record, which the gateway stamps (README, "Identity"; changed 2026-10-13, replaces the grant lookup by host).
+     The meter of slice 01 now writes the Connection and its provider template on every billable call.
+     When the record names several providers, use the one whose unit is real dollars, mark the call estimated, and keep it under the Connection id `unknown`.
+   - **Unit:** from the provider template, with the README's table.
    - **Usage:** map the raw counts to the normalized usage of slice 02.
      OpenAI counts cached tokens inside the prompt tokens: subtract them.
+     LiteLLM's Chat replies for Claude also count the cache writes inside `prompt_tokens`: subtract them too.
      When `complete` is false or a count is missing, estimate the missing output tokens from the reply bytes (bytes ÷ 3), and mark the call estimated.
-     Check whether an Anthropic reply's `usage.iterations` list (sent after context compaction) is already inside the top-level counts: LiteLLM adds the iterations together, and the meter reads only the top-level counts.
+     A failed reply (status not 2xx) with no usage counts nothing.
+     A Bob reply without `credits` counts as the payer's most expensive call on that Connection today, else in the last 7 days.
+   - **Compaction (checked 2026-10-13):** an Anthropic reply's top-level counts leave out the compaction pass, and the bill is the sum of `usage.iterations`.
+     The meter now adds the iterations of a usage object per field, and keeps the higher of that sum and the top-level counts.
+     This changes slice 01's Lua meter and bumps the bootstrap revision.
    - **Price:** call the slice 02 lookup and formula.
      A source of `estimate` also marks the call estimated.
      A source of `unpriced` (OpenAI and Bedrock without an operator price) keeps the tokens with cost 0, and it is not an estimated call.
@@ -85,16 +87,15 @@ Server code goes into the `spend` module (`packages/api-server/src/modules/spend
      Keep them inside the spend module.
 6. **Calls with no record.**
    - The ext_authz gate gets a spend port (`packages/api-server/src/modules/approvals/services/ext-authz-gate.ts`), wired in `bootstrap.ts`.
-     After identity, for a billable path on a metered Connection host, the gate tells the spend module that the call started.
-     It uses the `x-platform-call` header that slice 01 sets.
-     The spend module owns the billable-path rules in TypeScript.
-     Keep them the same as the meter's rules in slice 01.
+     After identity, for a billable call, the gate tells the spend module that the call started.
+     The gate reads the call id, the payer, the Connection and the providers from the meter's metadata, which the ext_authz filter sends with the check (`metadata_context_namespaces`, `AttributeContext.metadata_context`).
+     So the gate uses the meter's own billable-path rules, with no copy in TypeScript, and the `x-platform-call` header of slice 01 is gone.
      In this slice the port never refuses.
      Slice 04 adds the verdict to the same port.
    - The spend module adds the call to a Redis sorted set of calls in flight, with the start time.
    - A periodic job (`core/periodic-jobs.ts`), every 5 minutes, takes the calls that started more than 60 minutes ago:
      - with a periodic record: finish the call from its last counts, and mark it estimated;
-     - with no record at all: count it as the highest single-call cost of that payer and Connection today, and mark it estimated.
+     - with no record at all: count it as the highest single-call cost of that payer and Connection today, else in the last 7 days, else 0 with a warning, and mark it estimated.
    - Store the estimate as the call's last applied amounts.
      If the real final record arrives later, the delta corrects the estimate.
 7. **Clean shutdown** in `packages/api-server/src/index.ts`.
@@ -119,15 +120,15 @@ Server code goes into the `spend` module (`packages/api-server/src/modules/spend
 
 ## Acceptance criteria
 
-- [ ] After a model call on the dev cluster, `dam spend daily <agent>` shows a non-zero cost within 5 seconds.
-- [ ] The cost of one call matches the hand calculation of slice 02 within 1 micro-dollar, for a call with known token counts.
-- [ ] A long Claude Code reply produces periodic records, and the final total equals the sum that Claude Code reports in tokens (input, output, cache read, cache write).
-- [ ] A Pi call on IBM LiteLLM and a Codex call (Responses) are both counted.
-- [ ] A Bob call (if a Bob Connection exists) adds Bobcoins, not dollars.
-- [ ] A sub-agent's call counts for its root driver.
-- [ ] `/v1/messages/count_tokens` calls are not counted.
-- [ ] A restart of the api-server during a reply loses no record (`mise run cluster:kubectl -- -n <ns> rollout restart deploy/<api-server>` during a long reply).
-- [ ] `mise run check`, `mise run test` and `mise run check:comment-types` pass.
+- [x] After a model call on the dev cluster, `dam spend daily <agent>` shows a non-zero cost within 5 seconds.
+- [x] The cost of one call matches the hand calculation of slice 02 within 1 micro-dollar, for a call with known token counts.
+- [x] A long Claude Code reply produces periodic records, and the final total equals the sum that Claude Code reports in tokens (input, output, cache read, cache write).
+- [x] A Pi call on IBM LiteLLM and a Codex call (Responses) are both counted.
+- [x] A Bob call (if a Bob Connection exists) adds Bobcoins, not dollars.
+- [x] A sub-agent's call counts for its root driver.
+- [x] `/v1/messages/count_tokens` calls are not counted.
+- [x] A restart of the api-server during a reply loses no record (`mise run cluster:kubectl -- -n <ns> rollout restart deploy/<api-server>` during a long reply).
+- [x] `mise run check`, `mise run test` and `mise run check:comment-types` pass.
 
 ## Smoke test
 

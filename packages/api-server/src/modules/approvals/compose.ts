@@ -16,6 +16,7 @@ import {
   type EgressRuleMatcher,
   type ExtAuthzGate,
   type AgentIdentityResolver,
+  type SpendCallNotes,
 } from "./services/ext-authz-gate.js";
 import {
   createDeliverySweeper,
@@ -55,6 +56,7 @@ interface ComposeApprovalsSystemDeps {
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
   attendance: EgressAttendance;
+  spend: SpendCallNotes;
   wrapperFrameSender: WrapperFrameSender;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
@@ -75,6 +77,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     identityResolver: deps.identityResolver,
     ruleMatcher: deps.ruleMatcher,
     attendance: deps.attendance,
+    spend: deps.spend,
     holdSeconds: deps.holdSeconds,
     platformAllowedAuthorities: deps.platformAllowedAuthorities,
   });

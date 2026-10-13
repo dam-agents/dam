@@ -29,6 +29,7 @@ import type { GettingStartedService } from "./modules/getting-started/types.js";
 import type { HarnessConfigService } from "./modules/harness-config/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
+import type { SpendService } from "./modules/spend/types.js";
 import type { StarterKitsService } from "./modules/starter-kits/types.js";
 import type { ReposService } from "./modules/repos/types.js";
 import type { MetricsService } from "./modules/metrics/types.js";
@@ -81,6 +82,7 @@ export interface ApiContext {
   satellites: SatellitesService;
   satelliteWorker: SatelliteWorkerOps;
   budgets: BudgetsService;
+  spend: SpendService;
   user: UserIdentity;
   e2eEnabled: boolean;
   virtualizationEnabled: boolean;

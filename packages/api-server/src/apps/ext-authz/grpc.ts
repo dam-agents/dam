@@ -1,5 +1,10 @@
 import * as grpc from "@grpc/grpc-js";
 import type { ExtAuthzGate } from "../../modules/approvals/compose.js";
+import {
+  parseSpendMetadata,
+  SPEND_METADATA_NAMESPACE,
+  type SpendIngest,
+} from "../../modules/spend/index.js";
 import { securityLog } from "../../core/security-log.js";
 import { stripConnectionEgressPrefix } from "api-server-api";
 import {
@@ -7,6 +12,8 @@ import {
   type AuthorizationServer,
   type CheckResponse,
 } from "../../proto-gen/external_auth.gen.js";
+import { AccessLogServiceService } from "../../proto-gen/accesslog.gen.js";
+import { createSpendRecordStreams } from "./spend-records.js";
 
 const GRPC_STATUS_OK = 0;
 const GRPC_STATUS_PERMISSION_DENIED = 7;
@@ -15,12 +22,13 @@ export interface ExtAuthzGrpcAppDeps {
   port: number;
   holdSeconds: number;
   gate: ExtAuthzGate;
+  spend: SpendIngest;
   releaseName: string;
 }
 
 export async function startExtAuthzGrpcApp(
   deps: ExtAuthzGrpcAppDeps,
-): Promise<{ server: grpc.Server; port: number }> {
+): Promise<{ port: number; stop(deadlineMs: number): Promise<void> }> {
   const server = new grpc.Server({
     "grpc.keepalive_time_ms": Math.min(60_000, deps.holdSeconds * 1000),
     "grpc.keepalive_timeout_ms": 20_000,
@@ -28,6 +36,11 @@ export async function startExtAuthzGrpcApp(
   });
 
   const expectedPrefix = `${deps.releaseName}-extauthz-`;
+  const spendRecords = createSpendRecordStreams({
+    agentFromAuthority: (authority) =>
+      parseInstanceFromAuthority(authority, expectedPrefix),
+    ingest: deps.spend,
+  });
 
   const impl: AuthorizationServer = {
     check: async (call, callback) => {
@@ -80,6 +93,11 @@ export async function startExtAuthzGrpcApp(
           return;
         }
 
+        const spend = parseSpendMetadata(
+          call.request.attributes?.metadataContext?.filterMetadata[
+            SPEND_METADATA_NAMESPACE
+          ],
+        );
         const verdict = await deps.gate.gateRequest({
           agentId,
           host,
@@ -87,6 +105,12 @@ export async function startExtAuthzGrpcApp(
           tls,
           method,
           path: httpReq?.path ? stripConnectionEgressPrefix(httpReq.path) : "*",
+          spendCall: spend && {
+            callId: spend.callId,
+            payer: spend.payer,
+            connectionId: spend.connectionId,
+            providers: spend.providers,
+          },
         });
         callback(
           null,
@@ -114,6 +138,7 @@ export async function startExtAuthzGrpcApp(
   };
 
   server.addService(AuthorizationService, impl);
+  server.addService(AccessLogServiceService, spendRecords.service);
 
   const port = await new Promise<number>((res, rej) => {
     server.bindAsync(
@@ -131,7 +156,18 @@ export async function startExtAuthzGrpcApp(
       },
     );
   });
-  return { server, port };
+
+  const stop = async (deadlineMs: number) => {
+    const drained = new Promise<boolean>((res) =>
+      server.tryShutdown(() => res(true)),
+    );
+    spendRecords.endAll();
+    const deadline = new Promise<boolean>((res) =>
+      setTimeout(() => res(false), deadlineMs).unref(),
+    );
+    if (!(await Promise.race([drained, deadline]))) server.forceShutdown();
+  };
+  return { port, stop };
 }
 
 function parseInstanceFromAuthority(

@@ -6,10 +6,13 @@
 //
 // Source: github.com/envoyproxy/envoy → api/envoy/service/auth/v3/external_auth.proto
 //                                       api/envoy/service/auth/v3/attribute_context.proto
+//                                       api/envoy/config/core/v3/base.proto (Metadata)
 
 syntax = "proto3";
 
 package envoy.service.auth.v3;
+
+import "google/protobuf/struct.proto";
 
 service Authorization {
   rpc Check (CheckRequest) returns (CheckResponse);
@@ -23,7 +26,14 @@ message AttributeContext {
   Peer source = 1;
   Peer destination = 2;
   Request request = 4;
+  // Populated on model-provider chains: the gateway's spend meter writes its
+  // metadata namespace before the ext_authz filter runs.
+  Metadata metadata_context = 11;
   TLSSession tls_session = 12;
+}
+
+message Metadata {
+  map<string, google.protobuf.Struct> filter_metadata = 1;
 }
 
 message Peer {

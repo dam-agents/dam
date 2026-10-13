@@ -141,28 +141,32 @@ func (c envoyHostChain) HostRewrite() string {
 func (c envoyHostChain) Credentialed() bool { return len(c.Credentials) > 0 || len(c.Signers) > 0 }
 
 func (c envoyHostChain) ConnectionIDs() []string {
-	return c.connectionIDsWhere(func(string) bool { return true })
-}
-
-var meteredProviderTemplates = []string{"anthropic", "anthropic-oauth", "openai", "ibm-litellm", "curve-bender", "bob", "bedrock"}
-
-func (c envoyHostChain) MeteredConnectionIDs() []string {
-	return c.connectionIDsWhere(func(templateID string) bool {
-		return slices.Contains(meteredProviderTemplates, templateID)
-	})
-}
-
-func (c envoyHostChain) Metered() bool { return len(c.MeteredConnectionIDs()) > 0 }
-
-func (c envoyHostChain) connectionIDsWhere(fromTemplate func(templateID string) bool) []string {
 	seen := map[string]bool{}
 	var out []string
-	add := func(id, templateID string) {
-		if id == "" || seen[id] || !fromTemplate(templateID) {
+	add := func(id string) {
+		if id == "" || seen[id] {
 			return
 		}
 		seen[id] = true
 		out = append(out, id)
+	}
+	for _, cred := range c.Credentials {
+		add(cred.ConnectionID)
+	}
+	for _, signer := range c.Signers {
+		add(signer.ConnectionID)
+	}
+	return out
+}
+
+var meteredProviderTemplates = []string{"anthropic", "anthropic-oauth", "openai", "ibm-litellm", "curve-bender", "bob", "bedrock"}
+
+func (c envoyHostChain) MeteredConnectionTemplates() map[string]string {
+	out := map[string]string{}
+	add := func(id, templateID string) {
+		if id != "" && slices.Contains(meteredProviderTemplates, templateID) {
+			out[id] = templateID
+		}
 	}
 	for _, cred := range c.Credentials {
 		add(cred.ConnectionID, cred.TemplateID)
@@ -172,6 +176,8 @@ func (c envoyHostChain) connectionIDsWhere(fromTemplate func(templateID string) 
 	}
 	return out
 }
+
+func (c envoyHostChain) Metered() bool { return len(c.MeteredConnectionTemplates()) > 0 }
 
 func (c envoyHostChain) Signs(connectionID string) bool {
 	return connectionID != "" && slices.ContainsFunc(c.Signers, func(s envoySigner) bool { return s.ConnectionID == connectionID })
@@ -916,7 +922,7 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 	return volumes
 }
 
-const envoyBootstrapTemplateRev = "v22-spend-meter-speed-geo"
+const envoyBootstrapTemplateRev = "v23-spend-meter-connection-stamp"
 
 func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}

@@ -249,6 +249,7 @@ import {
   listPendingApprovalAgentIds,
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
+import { composeSpendSystem } from "./modules/spend/index.js";
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
@@ -1224,6 +1225,19 @@ export async function bootstrap() {
       `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
   });
 
+  const spend = composeSpendSystem({
+    db,
+    redis: sharedRedis,
+    priceOverrides: config.spendPriceOverrides,
+    owners: {
+      ownerOf: async (agentId) =>
+        (await agentsRepo.resolveIdentity(agentId))?.owner ?? null,
+    },
+  });
+  await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
+    spend.ingest.settleUnrecordedCalls(),
+  );
+
   const objectStoreAgentUrl = config.objectStorageAgentEndpoint
     ? new URL(config.objectStorageAgentEndpoint)
     : null;
@@ -1245,6 +1259,7 @@ export async function bootstrap() {
     },
     ruleMatcher: createEgressRuleMatchAdapter(db),
     attendance: turnAttendance,
+    spend: spend.ingest,
     wrapperFrameSender,
     holdSeconds: config.approvalHoldSeconds,
     platformAllowedAuthorities: objectStoreAgentUrl
@@ -1790,6 +1805,7 @@ export async function bootstrap() {
     port: config.extAuthzPort,
     holdSeconds: config.approvalHoldSeconds,
     gate: extAuthzGate,
+    spend: spend.ingest,
     releaseName: config.releaseName,
   };
 

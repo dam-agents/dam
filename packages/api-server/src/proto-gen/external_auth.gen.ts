@@ -10,6 +10,7 @@ import type {
   handleUnaryCall,
   UntypedServiceImplementation,
 } from "@grpc/grpc-js";
+import { Struct } from "./google/protobuf/struct.gen";
 
 export const protobufPackage = "envoy.service.auth.v3";
 
@@ -22,7 +23,23 @@ export interface AttributeContext {
   source: Peer | undefined;
   destination: Peer | undefined;
   request: Request | undefined;
+  /**
+   * Populated on model-provider chains: the gateway's spend meter writes its
+   * metadata namespace before the ext_authz filter runs.
+   */
+  metadataContext: Metadata | undefined;
   tlsSession: TLSSession | undefined;
+  _unknownFields?: { [key: number]: Uint8Array[] } | undefined;
+}
+
+export interface Metadata {
+  filterMetadata: { [key: string]: { [key: string]: any } | undefined };
+  _unknownFields?: { [key: number]: Uint8Array[] } | undefined;
+}
+
+export interface Metadata_FilterMetadataEntry {
+  key: string;
+  value: { [key: string]: any } | undefined;
   _unknownFields?: { [key: number]: Uint8Array[] } | undefined;
 }
 
@@ -183,6 +200,7 @@ function createBaseAttributeContext(): AttributeContext {
     source: undefined,
     destination: undefined,
     request: undefined,
+    metadataContext: undefined,
     tlsSession: undefined,
     _unknownFields: {},
   };
@@ -201,6 +219,9 @@ export const AttributeContext: MessageFns<AttributeContext> = {
     }
     if (message.request !== undefined) {
       Request.encode(message.request, writer.uint32(34).fork()).join();
+    }
+    if (message.metadataContext !== undefined) {
+      Metadata.encode(message.metadataContext, writer.uint32(90).fork()).join();
     }
     if (message.tlsSession !== undefined) {
       TLSSession.encode(message.tlsSession, writer.uint32(98).fork()).join();
@@ -256,6 +277,14 @@ export const AttributeContext: MessageFns<AttributeContext> = {
             message.request = Request.decode(reader, reader.uint32());
             continue;
           }
+          case 11: {
+            if (tag !== 90) {
+              break;
+            }
+
+            message.metadataContext = Metadata.decode(reader, reader.uint32());
+            continue;
+          }
           case 12: {
             if (tag !== 98) {
               break;
@@ -301,6 +330,10 @@ export const AttributeContext: MessageFns<AttributeContext> = {
       object.request !== undefined && object.request !== null
         ? Request.fromPartial(object.request)
         : undefined;
+    message.metadataContext =
+      object.metadataContext !== undefined && object.metadataContext !== null
+        ? Metadata.fromPartial(object.metadataContext)
+        : undefined;
     message.tlsSession =
       object.tlsSession !== undefined && object.tlsSession !== null
         ? TLSSession.fromPartial(object.tlsSession)
@@ -308,6 +341,214 @@ export const AttributeContext: MessageFns<AttributeContext> = {
     return message;
   },
 };
+
+function createBaseMetadata(): Metadata {
+  return { filterMetadata: {}, _unknownFields: {} };
+}
+
+export const Metadata: MessageFns<Metadata> = {
+  encode(
+    message: Metadata,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
+    globalThis.Object.entries(message.filterMetadata).forEach(
+      ([key, value]: [string, { [key: string]: any } | undefined]) => {
+        if (value !== undefined) {
+          Metadata_FilterMetadataEntry.encode(
+            { key: key as any, value },
+            writer.uint32(10).fork(),
+          ).join();
+        }
+      },
+    );
+    if (message._unknownFields !== undefined) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
+        const tag = parseInt(key, 10);
+        for (const value of values) {
+          writer.uint32(tag).raw(value);
+        }
+      }
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Metadata {
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseMetadata();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            const entry1 = Metadata_FilterMetadataEntry.decode(
+              reader,
+              reader.uint32(),
+            );
+            if (entry1.value !== undefined) {
+              message.filterMetadata[entry1.key] = entry1.value;
+            }
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        const buf = reader.skip(tag & 7);
+
+        const list = message._unknownFields![tag];
+
+        if (list === undefined) {
+          message._unknownFields![tag] = [buf];
+        } else {
+          list.push(buf);
+        }
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  create(base?: DeepPartial<Metadata>): Metadata {
+    return Metadata.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<Metadata>): Metadata {
+    const message = createBaseMetadata();
+    message.filterMetadata = (
+      globalThis.Object.entries(object.filterMetadata ?? {}) as [
+        string,
+        { [key: string]: any } | undefined,
+      ][]
+    ).reduce(
+      (
+        acc: { [key: string]: { [key: string]: any } | undefined },
+        [key, value]: [string, { [key: string]: any } | undefined],
+      ) => {
+        if (value !== undefined) {
+          acc[key] = value;
+        }
+        return acc;
+      },
+      {},
+    );
+    return message;
+  },
+};
+
+function createBaseMetadata_FilterMetadataEntry(): Metadata_FilterMetadataEntry {
+  return { key: "", value: undefined, _unknownFields: {} };
+}
+
+export const Metadata_FilterMetadataEntry: MessageFns<Metadata_FilterMetadataEntry> =
+  {
+    encode(
+      message: Metadata_FilterMetadataEntry,
+      writer: BinaryWriter = new BinaryWriter(),
+    ): BinaryWriter {
+      if (message.key !== "") {
+        writer.uint32(10).string(message.key);
+      }
+      if (message.value !== undefined) {
+        Struct.encode(
+          Struct.wrap(message.value),
+          writer.uint32(18).fork(),
+        ).join();
+      }
+      if (message._unknownFields !== undefined) {
+        for (const [key, values] of globalThis.Object.entries(
+          message._unknownFields,
+        )) {
+          const tag = parseInt(key, 10);
+          for (const value of values) {
+            writer.uint32(tag).raw(value);
+          }
+        }
+      }
+      return writer;
+    },
+
+    decode(
+      input: BinaryReader | Uint8Array,
+      length?: number,
+    ): Metadata_FilterMetadataEntry {
+      const reader =
+        input instanceof BinaryReader ? input : new BinaryReader(input);
+      const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+      if (previousRecursionDepth >= 100) {
+        throw new globalThis.Error("protobuf decode recursion limit exceeded");
+      }
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+      try {
+        const end = length === undefined ? reader.len : reader.pos + length;
+        const message = createBaseMetadata_FilterMetadataEntry();
+        while (reader.pos < end) {
+          const tag = reader.uint32();
+          switch (tag >>> 3) {
+            case 1: {
+              if (tag !== 10) {
+                break;
+              }
+
+              message.key = reader.string();
+              continue;
+            }
+            case 2: {
+              if (tag !== 18) {
+                break;
+              }
+
+              message.value = Struct.unwrap(
+                Struct.decode(reader, reader.uint32()),
+              );
+              continue;
+            }
+          }
+          if ((tag & 7) === 4 || tag === 0) {
+            break;
+          }
+          const buf = reader.skip(tag & 7);
+
+          const list = message._unknownFields![tag];
+
+          if (list === undefined) {
+            message._unknownFields![tag] = [buf];
+          } else {
+            list.push(buf);
+          }
+        }
+        return message;
+      } finally {
+        (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+      }
+    },
+
+    create(
+      base?: DeepPartial<Metadata_FilterMetadataEntry>,
+    ): Metadata_FilterMetadataEntry {
+      return Metadata_FilterMetadataEntry.fromPartial(base ?? {});
+    },
+    fromPartial(
+      object: DeepPartial<Metadata_FilterMetadataEntry>,
+    ): Metadata_FilterMetadataEntry {
+      const message = createBaseMetadata_FilterMetadataEntry();
+      message.key = object.key ?? "";
+      message.value = object.value ?? undefined;
+      return message;
+    },
+  };
 
 function createBasePeer(): Peer {
   return { address: undefined, _unknownFields: {} };

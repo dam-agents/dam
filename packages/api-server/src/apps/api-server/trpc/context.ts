@@ -10,6 +10,7 @@ import { composeHarnessConfigModule } from "../../../modules/harness-config/inde
 import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
 import { findExternalUsersByIdentity } from "../../../modules/channels/infrastructure/identity-links-repository.js";
+import { composeSpendForOwner } from "../../../modules/spend/index.js";
 import {
   createDisabledMetricsService,
   createMetricsService,
@@ -388,6 +389,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       satellites,
       satelliteWorker: satellitesBoot.workerOps,
       budgets,
+      spend: composeSpendForOwner({
+        db,
+        ownerSub: user.sub,
+        agentBinding: user.agentIds,
+      }),
       user,
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,

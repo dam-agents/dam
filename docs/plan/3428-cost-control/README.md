@@ -70,7 +70,9 @@ flowchart LR
 
 1. The harness sends a model call through the gateway, as today.
 2. On a model-provider chain, a small Lua filter gives the call a call id that the agent cannot set.
-   It puts the id in a request header for the gate, and the chain removes that header before the provider.
+   It also names the call's Connection and provider (see "Identity").
+   It writes these facts into the stream's dynamic metadata, and the ext_authz filter sends that metadata to the gate (`metadata_context_namespaces`).
+   The agent cannot set or read this metadata.
 3. The ext_authz gate in the api-server checks the limits for the call (slices 04 and 05).
    If a limit is reached, the gate refuses the call with the refusal for its API path.
    If not, the gate notes that the call started (slice 03), and the call continues.
@@ -92,9 +94,12 @@ flowchart LR
   A sub-agent's spend counts for its root driver and that driver's owner.
   The gateway already knows this id as the attribution id that the controller renders.
   The meter puts it in each record, so a record that arrives after an Invocation target was deleted still has a payer.
-- **The Connection:** the address header (`x-platform-conn`) when the request names one.
-  Otherwise the one Connection of the agent's grants whose host matches.
-  The meter copies the address header into the record, because the chain removes the header before the provider.
+- **The Connection and its provider:** the gateway stamps them, because the controller knows each chain's metered Connections and their provider templates (decided 2026-10-13).
+  The meter uses the Connection that the request names (`x-platform-conn`), else the chain's only metered Connection.
+  An address that names no metered Connection of the chain counts as no address, so a false address cannot hide a call.
+  When the chain has several metered Connections and the request names none, the record names all their providers and no Connection.
+  The api-server then counts the call at the provider whose unit is real dollars (in practice an Anthropic key next to a Claude subscription on `api.anthropic.com`), under the Connection id `unknown`, marked estimated.
+  The api-server needs no grant lookup, so a grant or Connection that is removed while a call runs does not matter.
 
 ### Units and provider rules
 
@@ -156,10 +161,14 @@ DAM counts high and marks the cost "estimated":
 
 - **A stream that stopped early:** keep the counts that the meter has.
   Estimate the output tokens from the reply size.
-- **A reply with no usage:** estimate the tokens from the reply size.
+- **A successful reply with no usage:** estimate the tokens from the reply size.
+- **A failed reply (status not 2xx) with no usage:** count nothing, because the provider does not bill it (decided 2026-10-13).
+- **A Bob reply without `usage.credits`:** count it as the most expensive call of that payer on that Connection today, else in the last 7 days (decided 2026-10-13).
 - **A call with no record at all:** the gate noted its start, but no record arrived.
   This happens when the api-server stops while calls run.
-  After 60 minutes, the api-server counts it as the most expensive call of that agent on that Connection today.
+  After 60 minutes, the api-server counts it as the most expensive call of that payer on that Connection today, else in the last 7 days, else 0 with a warning (decided 2026-10-13).
+- **Compaction:** an Anthropic reply after server-side compaction lists each pass in `usage.iterations`, and its top-level counts leave the compaction pass out.
+  The meter adds the iterations, as the provider bills them (decided 2026-10-13).
 
 ### Ledger
 
@@ -298,7 +307,7 @@ Amounts are integers in micro-units of the unit, like the existing `cost_usd_mic
 | --- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---- |
 | 01  | [Gateway meter and ADR-101](./01-gateway-meter.md)                         | Controller: model-provider chains, call id, Lua meter, `accept-encoding` removal, gRPC access log with periodic flush. ADR-101.                     | —          | ✅   |
 | 02  | [Price table](./02-price-table.md)                                         | Pure price lookup with LiteLLM's cost rules, Anthropic table from a pinned LiteLLM commit, IBM's own prices in Helm, meter reads speed and geo.     | —          | ✅   |
-| 03  | [Receive, price and store usage](./03-receive-and-store.md)                | AccessLogService, identity, Connection, periodic-to-final deltas, pricing at ingest, `spend_daily` and Redis counters, estimates, clean shutdown.   | 01, 02     |      |
+| 03  | [Receive, price and store usage](./03-receive-and-store.md)                | AccessLogService, identity, Connection, periodic-to-final deltas, pricing at ingest, `spend_daily` and Redis counters, estimates, clean shutdown.   | 01, 02     | ✅   |
 | 04  | [Agent limit, refusal and "continue?"](./04-agent-limit-and-refusal.md)    | Limit tables, `spend` router, gate refusal per API path, `spend_limit` approval, continue, chat error rule, CLI `dam spend`, harness refusal tests. | 03         |      |
 | 05  | [Ceiling, own limit, provider limits](./05-ceiling-and-provider-limits.md) | `UserSpendLimit` CRD and Helm default, own daily limit, Connection limits in their units, ceiling refusal, CLI flags.                               | 04         |      |
 | 06  | [Stop unattended work, agent read](./06-unattended-work.md)                | Schedule holds, sub-agent spawn refusal, read-only MCP tool.                                                                                        | 04         |      |

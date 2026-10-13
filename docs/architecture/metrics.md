@@ -223,10 +223,12 @@ Both variants are chosen once at composition time from the same configuration, s
 Attribution is trustworthy; the numbers are self-reported.
 The two guarantees are different and this subsystem inherits both from the export path — see [observability — trusted attribution](observability.md#trusted-attribution) for the mechanism.
 
-- **Counters are agent-reported.** Token and cost figures come from the agent's own telemetry: the Model Router's records are computed by platform code inside the agent's pod, and an agent runs untrusted code that can misreport them (inflate a token count, understate a cost, post records of its own to the rail).
+- **Counters are agent-reported.** Token and cost figures come from the agent's own telemetry: the Model Router's records are computed by platform code inside the agent's pod, and an agent runs untrusted code that can misreport them (inflate a token count, understate a cost, report a negative one, post records of its own to the rail).
   The read path does not attempt to independently verify them; it reports what was exported.
-- **Attribution is gateway-stamped and unforgeable.** The owner attribution attribute every query filters on is stamped by the agent's paired gateway, overwriting anything the agent set, and the collector drops any owner attribution the gateway did not stamp.
+- **Attribution is gateway-stamped and unforgeable.** The agent attribution every query filters on is stamped by the agent's paired gateway, overwriting anything the agent set, and the collector drops any agent attribution the gateway did not stamp; the owner follows from the agent.
   So an agent can only ever pollute *its own* spend — never make its telemetry appear under another user, and never read another user's.
   The guarantee is **attribution, not content integrity**: whose spend is bounded exactly; how much is self-declared.
+- **Metered Spend is a different number.** The agent's gateway measures every model call from the provider's reply, and the api-server prices it ([spend-limits](spend-limits.md)).
+  The agent cannot change that number, so spend limits use it; the figures on this page stay agent-reported and serve display only, and the two need not agree.
 - **Display identity is not attribution.** The agent's user-facing name travels in a separate, agent-exported attribute that exists only for finding an instance in the exploration UI.
   It is display-only and never used for scoping or ownership — the gateway-stamped id is the sole authority for whose data this is.
