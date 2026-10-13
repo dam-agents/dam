@@ -71,6 +71,8 @@ The write fails and reports a delivery failure, and the file stays as it is unti
   The image pins the CLI.
 - `[features] plugins = false` stops the plugin catalog sync from `chatgpt.com`, `github.com` and `api.github.com`.
   MCP servers in `[mcp_servers.*]` are not plugins, so they still start.
+- `[features] daemon_auto_start = false` stops the terminal TUI from starting a shared app-server daemon.
+  That daemon outlives the session, runs from its own copy of the CLI under `~/.codex/packages/`, and checks for and installs updates every hour, which restarts it mid-turn.
 
 The terminal TUI still fetches its announcement tip from `raw.githubusercontent.com`.
 Codex has no setting to turn that off.
