@@ -47,7 +47,10 @@ const (
 	LabelPoolAvailable = "agent-platform.ai/pool-available"
 )
 
-const annRollRev = "agent-platform.ai/roll-rev"
+const (
+	annRollRev             = "agent-platform.ai/roll-rev"
+	annStatefulSetTemplate = "agent-platform.ai/statefulset-template"
+)
 
 func sanitizeMountName(path string) string {
 	return strings.ReplaceAll(strings.TrimPrefix(path, "/"), "/", "-")
