@@ -85,7 +85,8 @@ Reproduce the role shape out-of-band, as the provider's admin role:
   Then `GRANT usage_readers TO <read-only login>   WITH INHERIT TRUE` for whichever login should read the metrics — that membership is what survives future view migrations.
   The `WITH INHERIT TRUE` matters: on PostgreSQL 16+ a membership confers the group's privileges only when that option is on, and it defaults to the member's own `INHERIT` attribute.
   A read-only login is often created `NOINHERIT` as hardening, and then a bare `GRANT` records a membership that confers nothing — the reconcile still reports every passthrough readable for the group, while the login is denied on each of them.
-  (On 15 and older the option does not exist; the login itself must be `INHERIT`.) Verify with `SELECT pg_has_role('<login>', 'usage_readers', 'USAGE')`, which must be true.
+  (On 15 and older the option does not exist; the login itself must be `INHERIT`.)
+  Verify with `SELECT pg_has_role('<login>', 'usage_readers', 'USAGE')`, which must be true.
   Order does not matter, but a restart does: the api-server reconciles the view grants at startup, so a role created after a release is picked up by the **next api-server start** — and nothing in a release forces one, so create the role before the release or restart the api-server afterwards (`kubectl rollout restart deploy/<api-server>`).
   A restart is cheap and safe on its own: migrations are journal-gated, so a start with no new migration files applies no DDL.
   Confirm with the `usage.grants.reconciled` log line, which lists what the role can read.

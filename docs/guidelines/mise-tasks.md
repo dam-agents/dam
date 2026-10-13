@@ -9,12 +9,12 @@ The repo is a mise monorepo (`monorepo_root = true` in [`.mise/config.toml`](../
 Every package directory listed under `[monorepo].config_roots` is a config root: `.mise/tasks/` holds its scripted tasks, and `.mise/config.toml` exists only when there is something declarative to hold (aggregators, template `extends`, `[deps]` providers).
 Its tasks are addressed by path:
 
-| Where | Address | Example |
-|---|---|---|
-| Package task, from anywhere | `//<path>:<task>` | `mise run //packages/ui:check:tsc` |
-| Package task, from inside the package | `:<task>` | `cd packages/ui && mise :check` |
-| Same task in every package | `//...:<task>` | `mise run '//...:test'` |
-| Repo-level task | bare name, or `//:<task>` from a package | `mise run check`, `mise run cluster:install` |
+| Where                                 | Address                                  | Example                                      |
+| ------------------------------------- | ---------------------------------------- | -------------------------------------------- |
+| Package task, from anywhere           | `//<path>:<task>`                        | `mise run //packages/ui:check:tsc`           |
+| Package task, from inside the package | `:<task>`                                | `cd packages/ui && mise :check`              |
+| Same task in every package            | `//...:<task>`                           | `mise run '//...:test'`                      |
+| Repo-level task                       | bare name, or `//:<task>` from a package | `mise run check`, `mise run cluster:install` |
 
 Repo-level tasks (aggregators and their `check:*` leaves, `release:*`, `cluster:*`, `e2e*`, `skills:*`) live in [`.mise/config.toml`](../../.mise/config.toml) when they are one-liners, under [`.mise/tasks/`](../../.mise/tasks/) when they have a script body (the `cluster:*` operations included).
 Documentation checks are their own config root, `//docs:*`.

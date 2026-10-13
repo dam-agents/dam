@@ -4,12 +4,12 @@
 
 ## When to use React Hook Form + Zod
 
-**[HIGH]** Use RHF + Zod when **any** holds: ≥ 3 fields; cross-field validation (`confirmPassword === password`, "at least one of these three"); a multi-step flow (wizard, tabs sharing validation); dirty-tracking (disable Save until changed, warn on unsaved navigate-away); or schema reuse across submit, API parsing and edit pre-fill.
+**\[HIGH\]** Use RHF + Zod when **any** holds: ≥ 3 fields; cross-field validation (`confirmPassword === password`, "at least one of these three"); a multi-step flow (wizard, tabs sharing validation); dirty-tracking (disable Save until changed, warn on unsaved navigate-away); or schema reuse across submit, API parsing and edit pre-fill.
 Below that (a 1–2 field input, search box, inline edit), controlled `useState` is fine.
 
 ## Schema and setup
 
-**[HIGH] The schema is the source of truth; the values type is inferred.** Reuse it for the mutation input instead of redeclaring the shape.
+**\[HIGH\] The schema is the source of truth; the values type is inferred.** Reuse it for the mutation input instead of redeclaring the shape.
 It lives in the module (`modules/<domain>/api/schemas.ts` or `types.ts`).
 
 ```ts
@@ -39,7 +39,7 @@ const onSubmit = form.handleSubmit((values) => createAgent.mutateAsync(values));
 
 ## Field components
 
-**[HIGH] Wrap common fields (text, textarea, select, checkbox) in `FormField` components** that standardize label + input + error, in `src/components/form/`:
+**\[HIGH\] Wrap common fields (text, textarea, select, checkbox) in `FormField` components** that standardize label + input + error, in `src/components/form/`:
 
 ```tsx
 interface Props {
@@ -71,11 +71,11 @@ export function FormTextField({ name, label, control, rules, placeholder, autoFo
 <FormTextField control={form.control} name="name" label="Name" autoFocus />
 ```
 
-**[MODERATE]** `Controller` for anything but plain inputs (selects, custom components, date pickers); `register` for plain `<input>`/`<textarea>`; never both on one field.
+**\[MODERATE\]** `Controller` for anything but plain inputs (selects, custom components, date pickers); `register` for plain `<input>`/`<textarea>`; never both on one field.
 
 ## Validation
 
-**[HIGH]** Data-shape validation (`min(1)`, `max(500)`, `email()`, `enum(...)`) goes in the Zod schema, which is shared with the server; UX-only validation ("can't submit while an async check is pending") goes in `rules` or component logic.
+**\[HIGH\]** Data-shape validation (`min(1)`, `max(500)`, `email()`, `enum(...)`) goes in the Zod schema, which is shared with the server; UX-only validation ("can't submit while an async check is pending") goes in `rules` or component logic.
 
 Cross-field: `.refine()` / `.superRefine()`, with `path` telling RHF which field shows the error.
 

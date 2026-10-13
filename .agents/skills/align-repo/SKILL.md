@@ -11,7 +11,7 @@ description: |
 - Present ONE item per message.
   Show its status, and if action is needed, ask and **STOP**.
 - If an item is already aligned, say so and immediately proceed to the next item in the same message.
-- If an item needs action, show current vs expected and ask: _"Want me to align this?"_
+- If an item needs action, show current vs expected and ask: *"Want me to align this?"*
 - Never auto-apply changes — every modification requires explicit user confirmation.
 - **Merge, don't overwrite** — add missing keys without clobbering existing ones.
 - **Preserve existing content** in CLAUDE.md — don't remove or reorder existing sections.
@@ -147,12 +147,12 @@ One concise paragraph summarizing the meeting.
 
 ### G. Available skills
 
-| Skill | What it does | When to suggest |
-|---|---|---|
-| `process-transcript` | Converts VTT meeting transcripts into structured markdown notes | Repos that track meetings or have a `meetings/` directory |
-| `ralph-it` | Picks the next user story from a PRD GitHub issue, implements it, and opens a PR | Repos that use GitHub issues for PRDs or have structured user stories |
-| `write-a-prd` | Interviews the user and writes a PRD, then submits it as a GitHub issue | Any repo that plans features via PRDs or GitHub issues |
-| `adr` | Creates and updates Architecture Decision Records in `docs/adrs/` | Repos that track architectural decisions or have a `docs/adrs/` directory |
+| Skill                | What it does                                                                     | When to suggest                                                           |
+| -------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `process-transcript` | Converts VTT meeting transcripts into structured markdown notes                  | Repos that track meetings or have a `meetings/` directory                 |
+| `ralph-it`           | Picks the next user story from a PRD GitHub issue, implements it, and opens a PR | Repos that use GitHub issues for PRDs or have structured user stories     |
+| `write-a-prd`        | Interviews the user and writes a PRD, then submits it as a GitHub issue          | Any repo that plans features via PRDs or GitHub issues                    |
+| `adr`                | Creates and updates Architecture Decision Records in `docs/adrs/`                | Repos that track architectural decisions or have a `docs/adrs/` directory |
 
 Install command: `npx skills add https://github.com/apocohq/skills --skill <skill-name> -a claude-code -y`
 

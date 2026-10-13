@@ -1,7 +1,8 @@
 ---
 name: platform-s3
 description: >
-  Use before reading or writing an S3-compatible bucket (IBM Cloud Object Storage, AWS S3, MinIO, Ceph) inside a Platform agent pod, and whenever an S3 request fails with a signature error or a 400 or 403 from the egress gateway. Covers how S3 keys work here (the gateway signs every request, so the keys you hold are placeholders), which buckets this agent holds (`grep '^\[' ~/.aws/credentials`), how to pick one (`AWS_PROFILE`, `--profile`), how to install a client on demand (`uv tool install awscli`, `uv pip install boto3`), what the gateway's STREAMING and out-of-bucket refusals mean, and what does not work (presigned URLs, rclone, minio-go).
+  Use before reading or writing an S3-compatible bucket (IBM Cloud Object Storage, AWS S3, MinIO, Ceph) inside a Platform agent pod, and whenever an S3 request fails with a signature error or a 400 or 403 from the egress gateway.
+  Covers how S3 keys work here (the gateway signs every request, so the keys you hold are placeholders), which buckets this agent holds (`grep '^\[' ~/.aws/credentials`), how to pick one (`AWS_PROFILE`, `--profile`), how to install a client on demand (`uv tool install awscli`, `uv pip install boto3`), what the gateway's STREAMING and out-of-bucket refusals mean, and what does not work (presigned URLs, rclone, minio-go).
 ---
 
 You are running inside a Platform agent pod.

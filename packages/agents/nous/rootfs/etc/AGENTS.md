@@ -203,13 +203,15 @@ Call it for `slack` and `telegram`; a channel is bound if it returns a non-empty
          echo $! > "$NOUS_CAMPAIGN_PARENT/.bridge.pid"; }
      ```
      A race (two launches at once) is harmless: the loser hits the in-use port and exits cleanly.
+
   2. Add a `channels:` block to `campaign.yaml`, with `channel=` set to the bound type (`slack` or `telegram`):
      ```yaml
      channels:
        - kind: webhook
          url: http://127.0.0.1:8765/gate?channel=slack
      ```
-  3. Tell the user you've wired progress reporting to their <slack|telegram> thread.
+
+  3. Tell the user you've wired progress reporting to their <slack\|telegram> thread.
 - **No channel bound** → skip silently (no `channels:` block, no bridge).
   Don't mention it unless the user asks about messenger reporting — then point them at binding a channel in the platform UI.
 

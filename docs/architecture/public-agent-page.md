@@ -61,7 +61,7 @@ Two properties follow, and both are the point:
 
 Read responses are uncacheable, so nothing downstream can turn the generic answer into a stored one that later contradicts a named one.
 
-**Accepted consequence: releasing a binding retroactively blanks every historical Slack link in that conversation.** The Agent's old posts keep their footers, but those links now render the generic page, because being named follows the binding as it stands _now_, not as it stood when the post was made.
+**Accepted consequence: releasing a binding retroactively blanks every historical Slack link in that conversation.** The Agent's old posts keep their footers, but those links now render the generic page, because being named follows the binding as it stands *now*, not as it stood when the post was made.
 This is correct behaviour and it will be reported as a bug.
 Making it not happen means either keeping a name public after the binding that justified it is gone, or recording per-post disclosure state — the first breaks the rule above, the second buys very little.
 
@@ -69,14 +69,14 @@ Making it not happen means either keeping a name public after the binding that j
 
 **Public reads never touch the K8s API.** An Agent's name lives on its Agent custom resource, so the naive implementation lets anyone with a shell drive control-plane reads at whatever rate they like, on the one endpoint with no principal behind it to rate-limit against.
 
-Caching does not substitute for fixing this, and the reason is worth stating because it inverts the usual intuition: **Agent ids are unguessable, which cuts the wrong way.** Every probe of a random id is a distinct cache key and therefore a _guaranteed miss_.
+Caching does not substitute for fixing this, and the reason is worth stating because it inverts the usual intuition: **Agent ids are unguessable, which cuts the wrong way.** Every probe of a random id is a distinct cache key and therefore a *guaranteed miss*.
 A cache in front of a read-through would pass essentially all hostile traffic through to the control plane while absorbing only the repeat views of genuinely shared links.
 
 So the page reads an owner-agnostic **Postgres projection** of the Agent's name and owner, held by the Agents context.
-The binding check gates every read _before_ either the projection or K8s is consulted, so control-plane reads are bounded by the number of bound Agents rather than by request volume.
+The binding check gates every read *before* either the projection or K8s is consulted, so control-plane reads are bounded by the number of bound Agents rather than by request volume.
 A miss is only ever paid once per Agent: a view that finds no Agent behind a binding writes a **tombstone** row, so the negative answer is stored too.
 That matters because a Channel Binding can outlive its Agent — channel cleanup swallows a failed delete and leaves the row — and without a stored negative every view of such an id would reach the control plane again.
-A control-plane read that _fails_ is not an answer either way, so it writes nothing: the view degrades to the generic page and the next one tries again.
+A control-plane read that *fails* is not an answer either way, so it writes nothing: the view degrades to the generic page and the next one tries again.
 Both halves matter.
 A hiccup that tombstoned would blank a live Agent for good, and a hiccup that escaped as a 500 would make the status code vary with which ids are real, which is the oracle this page is built to deny.
 The owner's **display name** is resolved from the identity directory for display, and a failed lookup omits the owner line rather than failing the page.
@@ -84,11 +84,11 @@ It is a name and never the email: the identity directory holds a real mailbox, a
 
 Three mechanisms keep the projection current, each with **one** job:
 
-| Mechanism     | Job                                                                                                                                                                                                                               |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Lazy fill** | Fills a missing row on first page view, behind the binding check, and tombstones the id when the Agent is gone. This is the entire backfill story — there is no migration backfill and no boot walk, because an Agent nobody has ever looked up costs nothing to not have. |
+| Mechanism     | Job                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Lazy fill** | Fills a missing row on first page view, behind the binding check, and tombstones the id when the Agent is gone. This is the entire backfill story — there is no migration backfill and no boot walk, because an Agent nobody has ever looked up costs nothing to not have.                                                                                                                                     |
 | **Saga**      | Keeps a **bound** Agent's row current as it is created and updated, and pre-warms the row on a bind, so the first click after a bind is already warm. Create and update ask whether the Agent is bound first: the page never names an unbound Agent, and a row nothing can reach still costs the reconcile a control-plane read. A bind is the exception that writes without asking, being itself the binding. |
-| **Reconcile** | Periodically refreshes rows **that already exist and are still bound**. It does not scan bindings looking for Agents to add — that is lazy fill's job. Its only purpose is catching a replica that died between the K8s write and the Postgres write. |
+| **Reconcile** | Periodically refreshes rows **that already exist and are still bound**. It does not scan bindings looking for Agents to add — that is lazy fill's job. Its only purpose is catching a replica that died between the K8s write and the Postgres write.                                                                                                                                                          |
 
 Deletion belongs to none of the three: the agent cleanup retires the row on every deletion path ([persistence § Lifetime](persistence.md#lifetime)), and the deletion event is only a notification here.
 Nothing ever removes a row, so a delete inserts no tombstone; the leftover-binding case is already bounded by lazy fill's tombstone on first view.

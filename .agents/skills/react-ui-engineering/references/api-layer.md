@@ -4,10 +4,10 @@
 
 ## Principles
 
-**[CRITICAL] Server I/O is isolated from UI.** Components never call `fetch`, `authFetch` or tRPC procedures; they import a query/mutation hook from their module's `api/`.
+**\[CRITICAL\] Server I/O is isolated from UI.** Components never call `fetch`, `authFetch` or tRPC procedures; they import a query/mutation hook from their module's `api/`.
 The fetcher layer knows URLs, auth, parsing and typed errors; the UI knows hooks returning `{ data, isLoading, error, mutate }`.
 
-**[HIGH] Every non-tRPC response is Zod-validated** before reaching application code; tRPC is typed end to end, raw `fetch` is not.
+**\[HIGH\] Every non-tRPC response is Zod-validated** before reaching application code; tRPC is typed end to end, raw `fetch` is not.
 
 ## Layers
 
@@ -71,7 +71,7 @@ export async function disconnectMcp(connectionId: string) {
 
 ## Errors
 
-**[HIGH]** Use a typed error hierarchy; at minimum:
+**\[HIGH\]** Use a typed error hierarchy; at minimum:
 
 ```ts
 export class ApiError extends Error {
