@@ -20,6 +20,7 @@ Opening the PR is the `pr-open` skill's; each fix round is the `review-remediati
 ## The loop
 
 - No PR yet → open it with the `pr-open` skill.
+  A change to the web UI carries screenshots or a recording in its body or first comment ([`AGENTS.md`](../../../AGENTS.md) → **Web UI proof**).
   Large change → **ask** whether to stack; never decide alone.
   Stacks use GitHub's feature (`gh extension install github/gh-stack`, `gh stack --help`), never hand-rolled base-branch chains.
 - `gh pr ready <n>` brings `dam-code-guardian` (usually right).
