@@ -128,6 +128,23 @@ func TestACriticalPoolNamesItsUserOncePerCrossing(t *testing.T) {
 	assert.Equal(t, 2, eventsWithReason(t, r, "VMPoolCritical"))
 }
 
+// TEST_SCENARIO: a controller that restarts while a pool stays critical does not name its user again, since the Event it wrote before the restart is still there; a pool critical for another resource still is.
+func TestARestartDoesNotRepeatACriticalPoolsEvent(t *testing.T) {
+	r, node, _ := poolPassReconciler(t)
+	node.usage.Storage.UsableBytes, node.usage.Storage.UsedBytes = 100, 95
+	r.PoolPass(context.Background())
+	require.Equal(t, 1, eventsWithReason(t, r, "VMPoolCritical"))
+
+	r.poolLevels.Range(func(key, _ any) bool { r.poolLevels.Delete(key); return true })
+	r.PoolPass(context.Background())
+	assert.Equal(t, 1, eventsWithReason(t, r, "VMPoolCritical"), "the restart repeated the storage pool's event")
+
+	r.poolLevels.Range(func(key, _ any) bool { r.poolLevels.Delete(key); return true })
+	node.usage.Memory.LimitMiB, node.usage.Memory.CommittedMiB = 1000, 950
+	r.PoolPass(context.Background())
+	assert.Equal(t, 2, eventsWithReason(t, r, "VMPoolCritical"), "the memory pool's first crossing was not announced")
+}
+
 // TEST_SCENARIO: a resize the node refuses puts a RunnerCapacity condition and one Warning Event on each of the user's vm Agents, and hands them back to be reconciled; readiness is not the condition's to change. It stays quiet while the state holds, and once the node applies the resize the condition goes and the agents are handed back again.
 func TestARefusedResizeIsAConditionAndAnEventOnTheUsersAgents(t *testing.T) {
 	r, _, agent := poolPassReconciler(t)

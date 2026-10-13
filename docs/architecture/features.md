@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -34,7 +34,7 @@ A **problem** is logged and named on every vm Agent whose runner is not ready.
 
 What the check cannot see is said as a **warning**, logged only and never on an Agent — so silence on an Agent is not a pass:
 
-- **Nodes it may not list.** Reading nodes needs a cluster-wide read-only grant the chart adds with virtualization; an install without it gets a log line instead of the device check.
+- **Nodes it may not list.** Reading nodes needs a cluster-wide read-only grant the chart adds with virtualization, which also feeds the node capacity in the operators' [pool metrics](observability.md#alerts); an install without it gets a log line instead of the device check, and pool metrics without node capacity.
 - **Egress that reaches the cluster.** The runner's egress ranges match in-cluster addresses too.
   No portable API names the pod range, so the exceptions are never defaulted from the cluster; the controller instead checks the ones configured against an address it knows sits in each range — the API server's Service address and its own pod address.
   Reaching one is only a warning, because an install may leave a range open on purpose.

@@ -37,6 +37,7 @@ import {
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { useInstallCapabilities } from "../../features/api/queries.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
@@ -299,6 +300,11 @@ function KitDetail({
   const selectAgent = useStore((s) => s.selectAgent);
   const templates = useConnectionTemplates();
   const budget = useBudgetReserved();
+  const install = useInstallCapabilities().data;
+  const vm =
+    kit.backend === "vm" ||
+    (install?.virtualization === true &&
+      install.features["vm-sandboxes"] === "on");
   const connections = useAppConnections();
   const agents = useAgents().data?.list;
   const apply = useApplyStarterKit();
@@ -390,12 +396,12 @@ function KitDetail({
   };
 
   const size = useMemo(() => {
-    if (!kit.resources || !budget.data || kit.backend === "vm") return null;
+    if (!kit.resources || !budget.data || vm) return null;
     const unit = slotUnitOf(budget.data);
     const mi = sizeInMi(kit.resources);
     if (mi.cpuMilli === 0 && mi.memoryMi === 0) return null;
     return { label: formatSizeLabel(mi, unit) };
-  }, [kit.resources, kit.backend, budget.data]);
+  }, [kit.resources, vm, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
   const kbSeed = kit.knowledgeBase ? kit.seed : undefined;
@@ -431,7 +437,7 @@ function KitDetail({
                 {skillCount} {skillCount === 1 ? "skill" : "skills"}
               </Badge>
             )}
-            {kit.backend === "vm" && (
+            {vm && (
               <Badge variant="muted" size="sm">
                 {VM_BACKEND_LABEL}
               </Badge>

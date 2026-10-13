@@ -194,8 +194,8 @@ func (r *AgentReconciler) poolLevelsOf(ctx context.Context, owner string, agents
 	} {
 		level := poolLevel(m.used, m.limit)
 		pool.Runners[[2]string{m.resource, level}]++
-		previous, _ := r.poolLevels.Swap(owner+"/"+m.resource, level)
-		if level != "critical" || previous == "critical" {
+		previous, seen := r.poolLevels.Swap(owner+"/"+m.resource, level)
+		if level != "critical" || previous == "critical" || (!seen && r.poolCriticalAnnounced(ctx, agents, m.resource)) {
 			continue
 		}
 		msg := fmt.Sprintf("this user's VM %s pool is %d%% full", m.resource, m.used*100/m.limit)
@@ -205,6 +205,25 @@ func (r *AgentReconciler) poolLevelsOf(ctx context.Context, owner string, agents
 	}
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether a pool the controller sees for the first time since it started was already announced, by a VMPoolCritical Event on one of the user's agents for that resource. The level is kept in memory alone, so without this a restart repeats the Event of a pool that never left critical; the cluster drops Events after its TTL (an hour by default), so a restart later than that announces it once more.
+func (r *AgentReconciler) poolCriticalAnnounced(ctx context.Context, agents []*apiv1.Agent, resource string) bool {
+	if len(agents) == 0 {
+		return false
+	}
+	events, err := r.client.CoreV1().Events(r.config.Namespace).List(ctx, metav1.ListOptions{
+		FieldSelector: "reason=VMPoolCritical,involvedObject.name=" + agents[0].Name,
+	})
+	if err != nil {
+		slog.DebugContext(ctx, "vm pool: listing the user's pool events", "error", err)
+		return false
+	}
+	for _, e := range events.Items {
+		if e.Reason == "VMPoolCritical" && e.InvolvedObject.Name == agents[0].Name && strings.Contains(e.Message, "VM "+resource+" pool") {
+			return true
+		}
+	}
+	return false
+}
 func (r *AgentReconciler) vmAgentsByOwner(ctx context.Context) map[string][]*apiv1.Agent {
 	byOwner := map[string][]*apiv1.Agent{}
 	if r.agentCache == nil {

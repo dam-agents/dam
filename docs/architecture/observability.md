@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -207,7 +207,7 @@ Traces are sampled, so they explain individual fires and turns; counting stays w
 ### VM runner
 
 The [VM runner](vm-runner.md) is the one platform service that does not push.
-It stays off the mesh, and the collector admits only mesh identities, so a runner's export would be refused; the collector **scrapes** every runner instead.
+It stays off the mesh, and the collector's export port admits only mesh identities, so a runner's export would be refused; the collector **scrapes** every runner instead.
 A runner serves its metrics on a scrape port apart from the machine API: that API's token creates and deletes machines, and a scraper holding it could too, so the scrape carries no token and the runner's NetworkPolicy, admitting only the collector to that port, is its whole gate.
 The collector finds runners by listing pods in the agent namespace — read-only, granted only when the vm backend is on — and keeps only the port a runner names for metrics.
 The scrape exists when both the telemetry backend and the vm backend are enabled.
