@@ -13,6 +13,6 @@ export default defineConfig({
     js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
   },
   outDir: "dist/js",
-  splitting: false,
+  splitting: true,
   clean: true,
 });
