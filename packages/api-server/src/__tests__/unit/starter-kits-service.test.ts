@@ -1132,16 +1132,23 @@ describe("starter kits: domain helpers", () => {
 });
 
 describe("starter kits: connection addressing", () => {
-  // TEST_SCENARIO: a kit can ask for an agent whose gateway injects only addressed requests, whatever the creating user's own feature flags say, and a kit that does not ask leaves the create untouched.
-  it("passes the kit's choice to the create only when it asks for it", async () => {
-    const strict = makeHarness({
-      ...LOADED,
-      kit: kit({ requireConnectionAddress: true }),
-    });
-    await strict.service.apply(APPLY);
-    expect(strict.calls.created[0]).toMatchObject({
-      requireConnectionAddress: true,
-    });
+  // TEST_SCENARIO: a kit can turn named connections on or off for its agent, and a kit that says nothing leaves the create to its own default.
+  it.each([true, false])(
+    "passes the kit's choice %s to the create",
+    async (value) => {
+      const set = makeHarness({
+        ...LOADED,
+        kit: kit({ requireConnectionAddress: value }),
+      });
+      await set.service.apply(APPLY);
+      expect(set.calls.created[0]).toMatchObject({
+        requireConnectionAddress: value,
+      });
+    },
+  );
+
+  // TEST_SCENARIO: a kit that does not name the field leaves it out of the create, so the create's default decides.
+  it("leaves the create untouched when the kit says nothing", async () => {
 
     const plain = makeHarness(LOADED);
     await plain.service.apply(APPLY);
