@@ -11,17 +11,26 @@ import { formatError } from "../../../core/format-error.js";
 import { emit, EventType } from "../../../events.js";
 import { hasDotSegment } from "../domain/dot-segment.js";
 import { canonicalEgressHost } from "api-server-api";
+import type { SpendCheck, SpendLimitQuestion } from "../../spend/index.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
+export interface DeniedResponse {
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: string;
+}
+
+export type ExtAuthzDecision =
+  | ExtAuthzVerdict
+  | { readonly verdict: "refuse"; readonly response: DeniedResponse };
+
 export const approvalChannelOf = (id: string) => `approval:${id}`;
 
-interface SpendCall {
-  callId: string;
-  payer: string;
-  connectionId: string | null;
-  providers: readonly string[];
-}
+type SpendCall = Omit<
+  Parameters<SpendCheck["checkCall"]>[0],
+  "agentId" | "ownerSub" | "startedAt"
+>;
 
 interface ExtAuthzGateInput {
   agentId: string;
@@ -34,7 +43,7 @@ interface ExtAuthzGateInput {
 }
 
 export interface ExtAuthzGate {
-  gateRequest(input: ExtAuthzGateInput): Promise<ExtAuthzVerdict>;
+  gateRequest(input: ExtAuthzGateInput): Promise<ExtAuthzDecision>;
 }
 
 export interface AgentIdentityResolver {
@@ -54,16 +63,6 @@ export interface EgressRuleMatcher {
   ): Promise<{ verdict: ExtAuthzVerdict } | null>;
 }
 
-export interface SpendCallNotes {
-  callStarted(
-    call: SpendCall & {
-      agentId: string;
-      ownerSub: string;
-      startedAt: Date;
-    },
-  ): Promise<void>;
-}
-
 export interface EgressAttendance {
   hasOpenChannelTurn(agentId: string): Promise<boolean>;
   hasInteractiveSession(agentId: string): Promise<boolean>;
@@ -75,7 +74,7 @@ interface CreateExtAuthzGateDeps {
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
   attendance: EgressAttendance;
-  spend: SpendCallNotes;
+  spend: SpendCheck;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
 }
@@ -111,12 +110,38 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       const via = identity.agentId !== agentId ? agentId : undefined;
 
       if (spendCall) {
-        await deps.spend.callStarted({
+        const spend = await deps.spend.checkCall({
           ...spendCall,
           agentId,
           ownerSub: identity.ownerSub,
           startedAt: new Date(),
         });
+        if (spend.verdict === "refuse") {
+          await askToContinue(
+            deps,
+            spendCall.payer,
+            identity.ownerSub,
+            spend.questions,
+          );
+          securityLog("warn", "egress.decision", {
+            category: "egress",
+            actor: identity.ownerSub,
+            actorKind: "agent",
+            surface: "ext-authz",
+            agentId: identity.agentId,
+            target: host,
+            decision: "deny",
+            reason: "spend-limit",
+            detail: {
+              method,
+              path: path.split("?")[0],
+              basis: "spend",
+              status: spend.response.status,
+              via,
+            },
+          });
+          return { verdict: "refuse", response: spend.response };
+        }
       }
 
       if (deps.platformAllowedAuthorities.includes(`${host}:${port}`)) {
@@ -277,6 +302,48 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
     },
   };
 }
+
+function spendLimitApprovalId(question: SpendLimitQuestion): string {
+  return `spendlimit:${question.limitId}:${question.day}:${String(question.extensions)}`;
+}
+
+async function askToContinue(
+  deps: CreateExtAuthzGateDeps,
+  agentId: string,
+  ownerSub: string,
+  questions: readonly SpendLimitQuestion[],
+): Promise<void> {
+  for (const question of questions) {
+    const id = spendLimitApprovalId(question);
+    const asked = await deps.repo
+      .insertIfAbsent({
+        id,
+        type: "spend_limit",
+        agentId,
+        ownerSub,
+        sessionId: null,
+        payload: { kind: "spend_limit", ...question },
+        expiresAt: new Date(Date.parse(`${question.day}T00:00:00Z`) + DAY_MS),
+      })
+      .catch((err: unknown) => {
+        getLogger().error(
+          { approvalId: id, reason: formatError(err) },
+          "spend.question_not_asked",
+        );
+        return false;
+      });
+    if (asked) {
+      emit({
+        type: EventType.ApprovalRequested,
+        approvalId: id,
+        agentId,
+        ownerSub,
+      });
+    }
+  }
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 type SettledVerdict =
   | { verdict: ExtAuthzVerdict; reason: "hold-resolved" }

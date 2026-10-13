@@ -29,6 +29,7 @@ Apply `/typescript-engineering` for server, contract and CLI code, and `/react-u
    - `spend.status({ agentId? })`;
    - `spend.setLimit({ scope, amountMicros })`, with only the `agent` scope kind in this slice.
      Owner-scoped: the agent must belong to the caller.
+     It needs `agents:manage` and an unrestricted principal, so an API key bound to an agent cannot change a limit (D4).
      A limit of 0 is allowed and refuses every paid call.
 3. **Limit rules** (spend domain, pure):
    - effective amount = amount × (1 + extensions today);
@@ -42,7 +43,8 @@ Apply `/typescript-engineering` for server, contract and CLI code, and `/react-u
    - The soft-limit text with `config.brand.name`, no digits.
 5. **The gate.**
    - Extend the spend port of slice 03: for a billable call it now returns either "allow" or "refuse" with the response and the reached limits.
-   - It reads the Redis day counters only (no Postgres on the hot path).
+   - It reads the limits and today's extensions from Postgres, one indexed query per billable call, so a new limit or a "continue" applies at once on every replica (decided 2026-10-13).
+     It reads today's spend from the Redis day counters only, never by summing `spend_daily`.
    - In `packages/api-server/src/modules/approvals/services/ext-authz-gate.ts`, check spend after identity and before the egress rules.
      A refused call:
      - gets the shaped response;
@@ -59,7 +61,8 @@ Apply `/typescript-engineering` for server, contract and CLI code, and `/react-u
      Add a payload kind `spend_limit` with the limit id, the scope, the agent, the unit, the day, the amount and the extension count when DAM asked.
      Update `describeApprovalPayload` in `format.ts`.
    - The gate inserts the row with `expiresAt` at the next UTC midnight.
-     It inserts at most one row per limit, day and extension count (a lookup like `findActivePendingExtAuthz`).
+     It inserts at most one row per limit, day and extension count: the row id is fixed by these three, and the insert does nothing when the row exists.
+     So a dismissed question is not asked again that day, and two replicas never ask twice.
      It emits `ApprovalRequested`, so that Home and the toasts update as for other approvals.
    - `approvals-service.ts`: on a `spend_limit` row, every allow action resolves the row with the verdict allow.
      This includes `approveOnce`, `approvePermanent` and `approveHost`.
@@ -89,7 +92,7 @@ Apply `/typescript-engineering` for server, contract and CLI code, and `/react-u
    - Claude Code;
    - Codex;
    - Pi;
-   - Bob, if a Bob Connection exists;
+   - Bob, if a Bob Connection exists (the agent limit is in dollars, so it never refuses Bob calls (D15); a Bob refusal comes with the Connection limits in slice 05);
    - Claude Code on Bedrock, if a Bedrock Connection exists.
      For each, record:
    - the number of tries in the gateway log (expect 1);
@@ -106,20 +109,20 @@ Apply `/typescript-engineering` for server, contract and CLI code, and `/react-u
 
 ## Acceptance criteria
 
-- [ ] `dam spend limit set <agent> --usd 0.01` stores the limit, and `dam spend status <agent>` shows it with today's spend, what is left and the state.
-- [ ] When the limit is reached, the next model call is refused:
+- [x] `dam spend limit set <agent> --usd 0.01` stores the limit, and `dam spend status <agent>` shows it with today's spend, what is left and the state.
+- [x] When the limit is reached, the next model call is refused:
   - Claude Code tries once and shows the soft text;
   - Codex and Pi try once and show the soft text;
   - the gateway log shows one refused request per prompt.
-- [ ] The refused call adds 1 to the refused calls of the day.
-- [ ] One `spend_limit` approval appears, and further refusals at the same level do not add more.
-- [ ] `dam approval approve <id>` on it adds one extension.
+- [x] The refused call adds 1 to the refused calls of the day.
+- [x] One `spend_limit` approval appears, and further refusals at the same level do not add more.
+- [x] `dam approval approve <id>` on it adds one extension.
   The effective limit doubles, the next prompt works, and at the new level DAM asks again.
-- [ ] After `dismiss`, DAM does not ask again that day.
-- [ ] Free paths (`count_tokens`, model lists) are never refused.
-- [ ] Calls on a `free` Connection (Curve Bender) are never refused.
-- [ ] The chat shows the new hint, not "top up the provider account".
-- [ ] `mise run check`, `mise run test` and `mise run check:comment-types` pass.
+- [x] After `dismiss`, DAM does not ask again that day.
+- [x] Free paths (`count_tokens`, model lists) are never refused.
+- [x] Calls on a `free` Connection (Curve Bender) are never refused.
+- [x] The chat shows the new hint, not "top up the provider account".
+- [x] `mise run check`, `mise run test` and `mise run check:comment-types` pass.
 
 ## Smoke test
 

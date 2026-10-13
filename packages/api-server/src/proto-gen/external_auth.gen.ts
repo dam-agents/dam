@@ -99,13 +99,45 @@ export interface Status {
   _unknownFields?: { [key: number]: Uint8Array[] } | undefined;
 }
 
+/**
+ * envoy/type/v3/http_status.proto: the enum StatusCode is a varint on the
+ * wire, so int32 carries the same bytes.
+ */
+export interface HttpStatus {
+  code: number;
+  _unknownFields?: { [key: number]: Uint8Array[] } | undefined;
+}
+
+/**
+ * envoy/config/core/v3/base.proto. Envoy sets (overwrites) a denied-response
+ * header when `append` is unset, so the other fields are left out.
+ */
+export interface HeaderValue {
+  key: string;
+  value: string;
+  _unknownFields?: { [key: number]: Uint8Array[] } | undefined;
+}
+
+export interface HeaderValueOption {
+  header: HeaderValue | undefined;
+  _unknownFields?: { [key: number]: Uint8Array[] } | undefined;
+}
+
+/**
+ * Sent with a non-OK status to give the downstream client a shaped refusal
+ * (status, headers, body) instead of Envoy's default bare 403.
+ */
+export interface DeniedHttpResponse {
+  status: HttpStatus | undefined;
+  headers: HeaderValueOption[];
+  body: string;
+  _unknownFields?: { [key: number]: Uint8Array[] } | undefined;
+}
+
 export interface CheckResponse {
-  /**
-   * OkHttpResponse / DeniedHttpResponse fields exist upstream; we rely on
-   * status.code = 0 → OK, anything else → PERMISSION_DENIED, which Envoy
-   * honors regardless of whether the http details are populated.
-   */
   status: Status | undefined;
+  /** OkHttpResponse (field 3) exists upstream; we never send it. */
+  deniedResponse: DeniedHttpResponse | undefined;
   _unknownFields?: { [key: number]: Uint8Array[] } | undefined;
 }
 
@@ -1300,8 +1332,364 @@ export const Status: MessageFns<Status> = {
   },
 };
 
+function createBaseHttpStatus(): HttpStatus {
+  return { code: 0, _unknownFields: {} };
+}
+
+export const HttpStatus: MessageFns<HttpStatus> = {
+  encode(
+    message: HttpStatus,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
+    if (message.code !== 0) {
+      writer.uint32(8).int32(message.code);
+    }
+    if (message._unknownFields !== undefined) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
+        const tag = parseInt(key, 10);
+        for (const value of values) {
+          writer.uint32(tag).raw(value);
+        }
+      }
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): HttpStatus {
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseHttpStatus();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 8) {
+              break;
+            }
+
+            message.code = reader.int32();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        const buf = reader.skip(tag & 7);
+
+        const list = message._unknownFields![tag];
+
+        if (list === undefined) {
+          message._unknownFields![tag] = [buf];
+        } else {
+          list.push(buf);
+        }
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  create(base?: DeepPartial<HttpStatus>): HttpStatus {
+    return HttpStatus.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<HttpStatus>): HttpStatus {
+    const message = createBaseHttpStatus();
+    message.code = object.code ?? 0;
+    return message;
+  },
+};
+
+function createBaseHeaderValue(): HeaderValue {
+  return { key: "", value: "", _unknownFields: {} };
+}
+
+export const HeaderValue: MessageFns<HeaderValue> = {
+  encode(
+    message: HeaderValue,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== "") {
+      writer.uint32(18).string(message.value);
+    }
+    if (message._unknownFields !== undefined) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
+        const tag = parseInt(key, 10);
+        for (const value of values) {
+          writer.uint32(tag).raw(value);
+        }
+      }
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): HeaderValue {
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseHeaderValue();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.key = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.value = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        const buf = reader.skip(tag & 7);
+
+        const list = message._unknownFields![tag];
+
+        if (list === undefined) {
+          message._unknownFields![tag] = [buf];
+        } else {
+          list.push(buf);
+        }
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  create(base?: DeepPartial<HeaderValue>): HeaderValue {
+    return HeaderValue.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<HeaderValue>): HeaderValue {
+    const message = createBaseHeaderValue();
+    message.key = object.key ?? "";
+    message.value = object.value ?? "";
+    return message;
+  },
+};
+
+function createBaseHeaderValueOption(): HeaderValueOption {
+  return { header: undefined, _unknownFields: {} };
+}
+
+export const HeaderValueOption: MessageFns<HeaderValueOption> = {
+  encode(
+    message: HeaderValueOption,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
+    if (message.header !== undefined) {
+      HeaderValue.encode(message.header, writer.uint32(10).fork()).join();
+    }
+    if (message._unknownFields !== undefined) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
+        const tag = parseInt(key, 10);
+        for (const value of values) {
+          writer.uint32(tag).raw(value);
+        }
+      }
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): HeaderValueOption {
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseHeaderValueOption();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.header = HeaderValue.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        const buf = reader.skip(tag & 7);
+
+        const list = message._unknownFields![tag];
+
+        if (list === undefined) {
+          message._unknownFields![tag] = [buf];
+        } else {
+          list.push(buf);
+        }
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  create(base?: DeepPartial<HeaderValueOption>): HeaderValueOption {
+    return HeaderValueOption.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<HeaderValueOption>): HeaderValueOption {
+    const message = createBaseHeaderValueOption();
+    message.header =
+      object.header !== undefined && object.header !== null
+        ? HeaderValue.fromPartial(object.header)
+        : undefined;
+    return message;
+  },
+};
+
+function createBaseDeniedHttpResponse(): DeniedHttpResponse {
+  return { status: undefined, headers: [], body: "", _unknownFields: {} };
+}
+
+export const DeniedHttpResponse: MessageFns<DeniedHttpResponse> = {
+  encode(
+    message: DeniedHttpResponse,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
+    if (message.status !== undefined) {
+      HttpStatus.encode(message.status, writer.uint32(10).fork()).join();
+    }
+    for (const v of message.headers) {
+      HeaderValueOption.encode(v!, writer.uint32(18).fork()).join();
+    }
+    if (message.body !== "") {
+      writer.uint32(26).string(message.body);
+    }
+    if (message._unknownFields !== undefined) {
+      for (const [key, values] of globalThis.Object.entries(
+        message._unknownFields,
+      )) {
+        const tag = parseInt(key, 10);
+        for (const value of values) {
+          writer.uint32(tag).raw(value);
+        }
+      }
+    }
+    return writer;
+  },
+
+  decode(
+    input: BinaryReader | Uint8Array,
+    length?: number,
+  ): DeniedHttpResponse {
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseDeniedHttpResponse();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.status = HttpStatus.decode(reader, reader.uint32());
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.headers.push(
+              HeaderValueOption.decode(reader, reader.uint32()),
+            );
+            continue;
+          }
+          case 3: {
+            if (tag !== 26) {
+              break;
+            }
+
+            message.body = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        const buf = reader.skip(tag & 7);
+
+        const list = message._unknownFields![tag];
+
+        if (list === undefined) {
+          message._unknownFields![tag] = [buf];
+        } else {
+          list.push(buf);
+        }
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  create(base?: DeepPartial<DeniedHttpResponse>): DeniedHttpResponse {
+    return DeniedHttpResponse.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<DeniedHttpResponse>): DeniedHttpResponse {
+    const message = createBaseDeniedHttpResponse();
+    message.status =
+      object.status !== undefined && object.status !== null
+        ? HttpStatus.fromPartial(object.status)
+        : undefined;
+    message.headers =
+      object.headers?.map((e) => HeaderValueOption.fromPartial(e)) || [];
+    message.body = object.body ?? "";
+    return message;
+  },
+};
+
 function createBaseCheckResponse(): CheckResponse {
-  return { status: undefined, _unknownFields: {} };
+  return { status: undefined, deniedResponse: undefined, _unknownFields: {} };
 }
 
 export const CheckResponse: MessageFns<CheckResponse> = {
@@ -1311,6 +1699,12 @@ export const CheckResponse: MessageFns<CheckResponse> = {
   ): BinaryWriter {
     if (message.status !== undefined) {
       Status.encode(message.status, writer.uint32(10).fork()).join();
+    }
+    if (message.deniedResponse !== undefined) {
+      DeniedHttpResponse.encode(
+        message.deniedResponse,
+        writer.uint32(18).fork(),
+      ).join();
     }
     if (message._unknownFields !== undefined) {
       for (const [key, values] of globalThis.Object.entries(
@@ -1347,6 +1741,17 @@ export const CheckResponse: MessageFns<CheckResponse> = {
             message.status = Status.decode(reader, reader.uint32());
             continue;
           }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.deniedResponse = DeniedHttpResponse.decode(
+              reader,
+              reader.uint32(),
+            );
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -1375,6 +1780,10 @@ export const CheckResponse: MessageFns<CheckResponse> = {
     message.status =
       object.status !== undefined && object.status !== null
         ? Status.fromPartial(object.status)
+        : undefined;
+    message.deniedResponse =
+      object.deniedResponse !== undefined && object.deniedResponse !== null
+        ? DeniedHttpResponse.fromPartial(object.deniedResponse)
         : undefined;
     return message;
   },

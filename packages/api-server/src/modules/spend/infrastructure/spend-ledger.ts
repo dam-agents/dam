@@ -16,6 +16,7 @@ import type { CallAmounts, DayCounter, SpendRow } from "../domain/ledger.js";
 
 export interface SpendLedger {
   add(row: SpendRow, delta: CallAmounts, callCostMicros: number): Promise<void>;
+  addRefusal(row: SpendRow): Promise<void>;
   total(counter: DayCounter): Promise<number>;
   highestCall(query: {
     payer: string;
@@ -90,6 +91,33 @@ export function createSpendLedger(db: Db): SpendLedger {
             calls: added("calls"),
             estimatedCalls: added("estimatedCalls"),
             maxCallCostMicros: sql`greatest(${spendDaily.maxCallCostMicros}, excluded.max_call_cost_micros)`,
+            updatedAt: sql`now()`,
+          },
+        });
+    },
+
+    async addRefusal(row) {
+      await db
+        .insert(spendDaily)
+        .values({
+          day: row.day,
+          payerAgentId: row.payer,
+          connectionId: row.connectionId,
+          model: row.model,
+          ownerSub: row.ownerSub,
+          providerTemplate: row.provider,
+          unit: row.unit,
+          refusedCalls: 1,
+        })
+        .onConflictDoUpdate({
+          target: [
+            spendDaily.day,
+            spendDaily.payerAgentId,
+            spendDaily.connectionId,
+            spendDaily.model,
+          ],
+          set: {
+            refusedCalls: added("refusedCalls"),
             updatedAt: sql`now()`,
           },
         });

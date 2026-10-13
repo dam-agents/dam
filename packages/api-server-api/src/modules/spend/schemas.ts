@@ -2,6 +2,12 @@ import { z } from "zod";
 
 export const SPEND_DAILY_MAX_DAYS = 92;
 
+export const MICROS_PER_UNIT = 1_000_000;
+
+export const PLATFORM_REFUSAL_HEADER = "x-platform-refusal";
+
+export const SPEND_LIMIT_MAX_MICROS = 1_000_000 * MICROS_PER_UNIT;
+
 export const spendUnitSchema = z.enum(["usd", "usd_list", "bobcoin", "free"]);
 
 const utcDaySchema = z
@@ -43,3 +49,37 @@ export const spendDailyInputSchema = z
       });
     }
   });
+
+export const spendLimitScopeSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("agent"), agentId: z.string().min(1) }),
+]);
+
+export const spendLimitAmountSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(SPEND_LIMIT_MAX_MICROS);
+
+export const spendLimitAmountTextSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^\d+(\.\d{1,6})?$/,
+    "an amount looks like 10 or 0.25, with at most 6 decimals",
+  )
+  .transform((text) => {
+    const [whole = "0", fraction = ""] = text.split(".");
+    return Number(whole) * MICROS_PER_UNIT + Number(fraction.padEnd(6, "0"));
+  })
+  .pipe(spendLimitAmountSchema);
+
+export const spendStatusInputSchema = z
+  .object({ agentId: z.string().min(1).optional() })
+  .optional();
+
+export const spendSetLimitInputSchema = z.object({
+  scope: spendLimitScopeSchema,
+  amountMicros: spendLimitAmountSchema.nullable(),
+});
+
+export const spendLimitStateSchema = z.enum(["ok", "warn", "reached"]);

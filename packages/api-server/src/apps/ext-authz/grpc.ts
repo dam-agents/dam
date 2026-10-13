@@ -1,5 +1,9 @@
 import * as grpc from "@grpc/grpc-js";
-import type { ExtAuthzGate } from "../../modules/approvals/compose.js";
+import { match } from "ts-pattern";
+import type {
+  ExtAuthzDecision,
+  ExtAuthzGate,
+} from "../../modules/approvals/compose.js";
 import {
   parseSpendMetadata,
   SPEND_METADATA_NAMESPACE,
@@ -98,7 +102,7 @@ export async function startExtAuthzGrpcApp(
             SPEND_METADATA_NAMESPACE
           ],
         );
-        const verdict = await deps.gate.gateRequest({
+        const decision = await deps.gate.gateRequest({
           agentId,
           host,
           port,
@@ -110,14 +114,10 @@ export async function startExtAuthzGrpcApp(
             payer: spend.payer,
             connectionId: spend.connectionId,
             providers: spend.providers,
+            dialect: spend.dialect,
           },
         });
-        callback(
-          null,
-          verdict === "allow"
-            ? { status: { code: GRPC_STATUS_OK, message: "" } }
-            : denied("policy denied"),
-        );
+        callback(null, checkResponseOf(decision));
       } catch (err) {
         securityLog("error", "egress.decision", {
           category: "egress",
@@ -192,5 +192,28 @@ function stripPort(host: string): string {
 }
 
 function denied(message: string): CheckResponse {
-  return { status: { code: GRPC_STATUS_PERMISSION_DENIED, message } };
+  return {
+    status: { code: GRPC_STATUS_PERMISSION_DENIED, message },
+    deniedResponse: undefined,
+  };
+}
+
+function checkResponseOf(decision: ExtAuthzDecision): CheckResponse {
+  return match(decision)
+    .with("allow", () => ({
+      status: { code: GRPC_STATUS_OK, message: "" },
+      deniedResponse: undefined,
+    }))
+    .with("deny", () => denied("policy denied"))
+    .with({ verdict: "refuse" }, ({ response }) => ({
+      status: { code: GRPC_STATUS_PERMISSION_DENIED, message: "spend limit" },
+      deniedResponse: {
+        status: { code: response.status },
+        headers: Object.entries(response.headers).map(([key, value]) => ({
+          header: { key, value },
+        })),
+        body: response.body,
+      },
+    }))
+    .exhaustive();
 }

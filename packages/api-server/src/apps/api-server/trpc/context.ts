@@ -10,7 +10,6 @@ import { composeHarnessConfigModule } from "../../../modules/harness-config/inde
 import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
 import { findExternalUsersByIdentity } from "../../../modules/channels/infrastructure/identity-links-repository.js";
-import { composeSpendForOwner } from "../../../modules/spend/index.js";
 import {
   createDisabledMetricsService,
   createMetricsService,
@@ -61,6 +60,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     telegramBindFlows,
     slackBindFlows,
     seedSources,
+    spendForOwner,
     wrapperFrameSender,
     presetSeeder,
     trustedHosts,
@@ -389,10 +389,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       satellites,
       satelliteWorker: satellitesBoot.workerOps,
       budgets,
-      spend: composeSpendForOwner({
-        db,
+      spend: spendForOwner({
         ownerSub: user.sub,
         agentBinding: user.agentIds,
+        isAgentOwnedBy: (agentId, ownerSub) =>
+          agentsRepo.isOwnedBy(agentId, ownerSub),
       }),
       user,
       e2eEnabled: config.e2eEnabled,

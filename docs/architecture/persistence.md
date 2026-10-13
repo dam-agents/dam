@@ -128,7 +128,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   The snapshot bytes live in the object store; this row is the queryable index and access record, and answering a consumer's request must not require the owning agent to be running.
   Owned by [knowledge-bases](knowledge-bases.md#sharing).
 - **delegation records** — one row per Invocation (`invocations`), kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
-- **spend** — the daily Metered Spend (`spend_daily`), not rebuildable, as costs are fixed when priced; Redis caches its day totals.
+- **spend** — the daily Metered Spend (`spend_daily`), not rebuildable, as costs are fixed when priced, and the owner's daily limits (`spend_limits`); Redis caches its day totals.
   Owned by [spend-limits](spend-limits.md).
 
 Several of those rows carry an owner's Keycloak sub, and they carry it **differently on purpose**: the usage mirror hashes it, because pseudonymized identifiers are that subsystem's whole premise, while the public agent profile and the attention record store the real sub, as channel bindings already do.
@@ -356,7 +356,7 @@ Operators keep the old shared filesystem available until the last RWX volume dra
 | Satellite delete         | satellite row, grants and jobs removed          | n/a                                                                                                            | n/a                    | n/a                        |
 
 **Agent-scoped rows follow the Agent.** No Postgres table references an Agent by foreign key — the custom resource is the authoritative record, so the database cannot cascade on its own and the api-server owns the cleanup.
-An API delete runs one cleanup per record kind from a single declared list: schedules (their queued fires cancelled), runtime-delivery outbox and events, egress rules, pending approvals, connection grants, environment variables, API-key scopes, satellite grants and jobs, the image-pull Secret, channel bindings, skills, knowledge-base shares (revoked, snapshots purged), the attention record, the usage mirror (marked deleted) and the public profile (retired); running Invocations the Agent drove are failed and its delegation records deleted.
+An API delete runs one cleanup per record kind from a single declared list: schedules (their queued fires cancelled), runtime-delivery outbox and events, egress rules, pending approvals, connection grants, environment variables, API-key scopes, satellite grants and jobs, the image-pull Secret, channel bindings, skills, knowledge-base shares (revoked, snapshots purged), the attention record, the usage mirror (marked deleted), the public profile (retired) and spend limits; running Invocations the Agent drove are failed and its delegation records deleted.
 A periodic orphan sweep backstops that list: it diffs every kind's agent ids against the live custom resources and re-runs every cleanup for each id that no longer resolves.
 The deletion event carries no cleanup; both paths emit it only to notify runtime reactions — the UI hint and the Slack worker registration.
 The sweep names the owner on it only when a surviving channel, schedule or share row still records one; the UI hint is the one consumer that needs it, and the agent watch already delivers that hint when the custom resource disappears.

@@ -9,6 +9,7 @@ import {
 } from "api-server-api";
 import { z } from "zod";
 
+import { getBrand } from "../../brand.js";
 import { connectionWentAway } from "./close-race.js";
 
 export function describeJsonRpcError(
@@ -82,12 +83,21 @@ const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
   ],
 ];
 
+function spendQuotaHint(raw: string): string | null {
+  if (!/spend quota exceeded/i.test(raw)) return null;
+  return /platform operator/i.test(raw)
+    ? "You reached your spend ceiling for today. Ask the platform operator for a higher ceiling, or wait for the next UTC day."
+    : `This Agent reached a spend limit for today. Its owner can continue in ${getBrand().name}, or the limit starts again at the next UTC day.`;
+}
+
 export function describeSendError(raw: string): SendErrorDescription {
   if (
     raw === QUEUE_FULL_DESCRIPTION.message ||
     raw.startsWith(PROMPT_QUEUE_FULL_MESSAGE)
   )
     return QUEUE_FULL_DESCRIPTION;
+  const spendHint = spendQuotaHint(raw);
+  if (spendHint) return { message: raw, hint: spendHint };
   for (const [pattern, hint] of SEND_ERROR_HINTS) {
     if (!pattern.test(raw)) continue;
     if (/credential secret/i.test(raw)) return { message: raw };

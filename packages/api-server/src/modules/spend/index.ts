@@ -1,5 +1,15 @@
-export { composeSpendSystem, composeSpendForOwner } from "./compose.js";
+export {
+  composeSpendSystem,
+  createSpendLimitsCleanupHook,
+  listSpendLimitAgentIds,
+  type SpendSystem,
+} from "./compose.js";
 export type { SpendIngest } from "./services/spend-ingest.js";
+export type {
+  SpendCheck,
+  SpendLimitQuestion,
+  SpendVerdict,
+} from "./services/spend-check.js";
 export type { CallRecord } from "./domain/call.js";
 export {
   parseSpendMetadata,

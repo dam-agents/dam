@@ -1,4 +1,4 @@
-# 01 — Gateway meter and ADR-101
+# 01 — Gateway meter and ADR-104
 
 **Part of:** Cost control — see [README](./README.md)
 
@@ -8,7 +8,7 @@ This slice puts the trusted spend meter into each agent's gateway.
 On every model-provider chain, the gateway gives each call a call id, removes `accept-encoding`, reads the usage in the reply with a Lua filter, and sends one record per call to the api-server through a gRPC access log.
 The api-server receiver comes in slice 03, so in this slice the records are refused by the api-server and are lost.
 That is expected.
-The slice also records the decision in ADR-101.
+The slice also records the decision in ADR-104.
 
 The meter design was tested on 2026-10-09 and 2026-10-13 (research page, sections "Test of the meter" and "Records lost when a gateway restarts").
 The test files of that spike are gone.
@@ -19,7 +19,7 @@ The Lua code is new, but the rules below come from the tested spike.
 Apply `/adr` for step 1.
 The controller is Go: run its tasks with `mise run //packages/controller:<task>`.
 
-1. **ADR-101.**
+1. **ADR-104.**
    Use the `/adr` skill.
    - Number 101: 098 belongs to open PR #4620, and 099 and 100 are on main.
    - Status accepted, owner `@PetrBulanek`, date 2026-10-13 (Petr approved it on that day).
@@ -112,7 +112,7 @@ The controller is Go: run its tasks with `mise run //packages/controller:<task>`
 
 ## Acceptance criteria
 
-- [x] ADR-101 exists with the thesis above, and the ADR index is regenerated.
+- [x] ADR-104 exists with the thesis above, and the ADR index is regenerated.
 - [x] A gateway of an agent with an IBM LiteLLM Connection has, on that host's chain, the filter order `connection_address`, `spend_meter`, `ext_authz`, then the existing filters.
 - [x] A chain of a non-provider Connection (for example GitHub) has no `spend_meter` and no gRPC logger.
 - [x] The model chain's HCM has the gRPC logger with `buffer_size_bytes: 0`, the 2-second flush interval, and the existing loggers with the periodic filter.

@@ -1,13 +1,19 @@
-import type { ApprovalView } from "api-server-api";
+import { type ApprovalView, describeApprovalPayload } from "api-server-api";
+import { match } from "ts-pattern";
 
 export function approvalHeadline(approval: ApprovalView): string {
-  return approval.payload.kind === "ext_authz"
-    ? "Wants to access network"
-    : "Wants to run a command";
+  return match(approval.payload)
+    .with({ kind: "ext_authz" }, () => "Wants to access network")
+    .with({ kind: "acp_native" }, () => "Wants to run a command")
+    .with({ kind: "spend_limit" }, () => "Reached its spend limit")
+    .exhaustive();
 }
 
 export function approvalDetail(approval: ApprovalView): string {
   const payload = approval.payload;
+  if (payload.kind === "spend_limit") {
+    return describeApprovalPayload(payload).subtitle;
+  }
   if (payload.kind !== "ext_authz") return payload.toolName;
   const target =
     payload.path === "*"

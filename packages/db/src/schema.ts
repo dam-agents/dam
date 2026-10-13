@@ -14,6 +14,7 @@ import {
   integer,
   doublePrecision,
   customType,
+  unique,
 } from "drizzle-orm/pg-core";
 
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
@@ -1069,4 +1070,41 @@ export const spendDaily = pgTable(
     }),
     index("spend_daily_owner_day_idx").on(table.ownerSub, table.day),
   ],
+);
+
+export const spendLimits = pgTable(
+  "spend_limits",
+  {
+    id: text("id").primaryKey(),
+    ownerSub: text("owner_sub").notNull(),
+    scope: text("scope").notNull(),
+    agentId: text("agent_id"),
+    connectionId: text("connection_id"),
+    unit: text("unit").notNull(),
+    amountMicros: bigint("amount_micros", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("spend_limits_scope_key")
+      .on(table.ownerSub, table.scope, table.agentId, table.connectionId)
+      .nullsNotDistinct(),
+    index("spend_limits_agent_idx").on(table.agentId),
+  ],
+);
+
+export const spendLimitExtensions = pgTable(
+  "spend_limit_extensions",
+  {
+    limitId: text("limit_id")
+      .notNull()
+      .references(() => spendLimits.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    extensions: integer("extensions").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.limitId, table.day] })],
 );

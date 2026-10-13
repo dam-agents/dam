@@ -35,6 +35,7 @@ function makeService(seed: PendingApprovalRow) {
   const inserts: { verdict: string; agentId: string }[] = [];
   const repo: ApprovalsRepository = {
     insertPending: async () => true,
+    insertIfAbsent: async () => true,
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
     findActivePendingExtAuthz: async () => null,
     listPendingForOwner: async () => rows,

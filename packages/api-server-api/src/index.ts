@@ -146,14 +146,31 @@ export type {
   BudgetsService,
 } from "./modules/budgets/types.js";
 export {
+  MICROS_PER_UNIT,
+  PLATFORM_REFUSAL_HEADER,
   SPEND_DAILY_MAX_DAYS,
+  SPEND_LIMIT_MAX_MICROS,
   spendDailyInputSchema,
+  spendLimitAmountSchema,
+  spendLimitAmountTextSchema,
+  spendLimitScopeSchema,
+  spendLimitStateSchema,
+  spendSetLimitInputSchema,
+  spendStatusInputSchema,
   spendUnitSchema,
 } from "./modules/spend/schemas.js";
+export { formatSpendAmount } from "./modules/spend/format.js";
 export type {
   SpendDailyInput,
   SpendDailyRow,
+  SpendLimitScope,
+  SpendLimitState,
+  SpendLimitView,
   SpendService,
+  SpendSetLimitInput,
+  SpendStatus,
+  SpendStatusInput,
+  SpendTotal,
   SpendUnit,
 } from "./modules/spend/types.js";
 export type { AgentSpecCR } from "./crd-types.gen.js";
@@ -580,6 +597,7 @@ export type {
   ApprovalStatus,
   ApprovalVerdict,
   ApprovalPayload,
+  SpendLimitPayload,
   AcpPermissionOption,
   AcpPermissionOptionKind,
   ApprovalView,

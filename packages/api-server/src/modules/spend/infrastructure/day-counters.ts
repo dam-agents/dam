@@ -3,6 +3,7 @@ import { match } from "ts-pattern";
 import type { DayCounter } from "../domain/ledger.js";
 
 export interface DayCounters {
+  read(counter: DayCounter): Promise<number | null>;
   addIfPresent(counter: DayCounter, deltaMicros: number): Promise<boolean>;
   setIfMissing(counter: DayCounter, totalMicros: number): Promise<void>;
   drop(counter: DayCounter): Promise<void>;
@@ -35,6 +36,11 @@ function counterKey(counter: DayCounter): string {
 
 export function createRedisDayCounters(redis: Redis): DayCounters {
   return {
+    async read(counter) {
+      const value = await redis.get(counterKey(counter));
+      return value === null ? null : Number(value);
+    },
+
     async addIfPresent(counter, deltaMicros) {
       const added = await redis.eval(
         ADD_IF_PRESENT_SCRIPT,

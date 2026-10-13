@@ -1,5 +1,5 @@
 import type { Db } from "db";
-import type { ApprovalsService } from "api-server-api";
+import type { ApprovalsService, SpendLimitPayload } from "api-server-api";
 import { createApprovalsRepository } from "./infrastructure/approvals-repository.js";
 import {
   createApprovalsService,
@@ -14,10 +14,11 @@ import {
   createExtAuthzGate,
   type EgressAttendance,
   type EgressRuleMatcher,
+  type ExtAuthzDecision,
   type ExtAuthzGate,
   type AgentIdentityResolver,
-  type SpendCallNotes,
 } from "./services/ext-authz-gate.js";
+import type { SpendCheck } from "../spend/index.js";
 import {
   createDeliverySweeper,
   type DeliverySweeper,
@@ -56,7 +57,7 @@ interface ComposeApprovalsSystemDeps {
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
   attendance: EgressAttendance;
-  spend: SpendCallNotes;
+  spend: SpendCheck;
   wrapperFrameSender: WrapperFrameSender;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
@@ -97,8 +98,25 @@ export function createApprovalsCleanupHook(
   return (agentId) => repo.deleteForAgent(agentId);
 }
 
+export function createSpendQuestionReader(db: Db): {
+  read(approvalId: string): Promise<SpendLimitPayload | null>;
+} {
+  const repo = createApprovalsRepository(db);
+  return {
+    async read(approvalId) {
+      const row = await repo.getPending(approvalId);
+      return row?.payload.kind === "spend_limit" ? row.payload : null;
+    },
+  };
+}
+
 export function listPendingApprovalAgentIds(db: Db): Promise<string[]> {
   return createApprovalsRepository(db).listDistinctAgentIds();
 }
 
-export type { ApprovalsRelayService, ExtAuthzGate, WrapperFrameSender };
+export type {
+  ApprovalsRelayService,
+  ExtAuthzDecision,
+  ExtAuthzGate,
+  WrapperFrameSender,
+};

@@ -14,7 +14,7 @@ The parts:
 - **The api-server** receives the records on the same per-agent port that answers the gateway's ext_authz checks, so a record is tied to its agent the same way a check is ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)).
 
 The api-server prices each record when it arrives ([Prices](#prices)) and keeps the daily ledger ([Ledger](#ledger)).
-The limits are not built yet.
+Before a metered call goes out, the ext_authz check refuses it when a spend limit is reached ([Limits](#limits), [Refusal](#refusal)), and the owner can continue ([Continue](#continue)).
 
 ```mermaid
 flowchart LR
@@ -138,3 +138,44 @@ DAM counts high and marks a call estimated when its usage is missing or unsure:
   A real record that arrives later corrects the estimate.
 
 **Shutdown.** A stopping api-server takes no new streams, ends every open record stream with a success status so that each gateway reconnects to another replica and loses no record, and gives the open calls twenty seconds before it closes the port.
+
+## Limits
+
+**Agent limit.** The owner sets a daily dollar limit for one agent.
+It counts the agent's metered dollar spend on paid providers in the current UTC day, sub-agents included, because their calls count for their root driver.
+The Claude subscription, Bob and free providers do not count in it, and it never refuses their calls.
+A limit of zero refuses every paid call.
+Only the owner sets or removes a limit, from an unrestricted login: an agent, and an API key bound to an agent, cannot change it.
+
+**Soft.** At the limit, the gate refuses the call and asks the owner whether to continue; it never holds the call.
+At 80% of a limit, its state changes to a warning, and nothing else happens.
+A limit is deleted with its agent.
+
+**The check.** On each metered call, the gate reads the payer's limits and today's extensions from the database, and today's spend from the day counters, never from the rollup.
+A missing counter is rebuilt from the rollup first.
+A call that already streams continues to its end, so the spend can pass a limit by the calls that were running.
+
+## Refusal
+
+The shape follows the API path of each call, never the agent's harness, because one agent can run several harnesses.
+
+- **Anthropic Messages and Bedrock paths:** a "too many requests" status that tells the client not to retry, and when to try again: the next UTC midnight, at least 61 seconds away.
+  Claude Code then stops at once; a plain retryable answer makes it retry for minutes, and a "bad request" answer makes it retry and turn off features for the session.
+- **OpenAI Chat, Responses and embeddings paths, Bob included:** a "bad request" status.
+  Codex and Pi stop at once and show the text; to a "too many requests" answer, Codex shows its own text instead.
+
+The body is plain text: "Spend quota exceeded for today.", then what to do next, with the product name.
+It has no digits, because Pi retries when the text names a retryable status code and stops when it says "quota exceeded"; a product name with digits is left out.
+Paths that are not metered, such as model lists and token counting, are never refused.
+Every refusal carries the `x-platform-refusal` header, so the [Model Router](harness-config.md#the-model-router) passes it to the harness unchanged and does not explain it as a provider error.
+
+**Recorded refusal.** Codex and Pi end a refused turn like a normal one, so the platform cannot see the refusal in the turn.
+So the gate counts each refusal in the day's rollup, under an unknown model, because the gate does not read the request body.
+
+## Continue
+
+At a refusal, the gate asks the owner on Home with a spend-limit approval.
+There is one question per limit, day and extension count, so further refusals at the same level add no question.
+"Continue" is any allow verdict on it: it adds one extension for that day, so the effective limit is the amount times one plus the extensions, and the gate asks again at the new level.
+A deny stops the agent for the day: the limit stays reached, and the gate does not ask again that day.
+A question expires at the next UTC midnight, when the limit starts again, and no verdict on it writes an egress rule.

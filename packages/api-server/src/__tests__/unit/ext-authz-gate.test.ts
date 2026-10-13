@@ -10,7 +10,7 @@ import {
   type ApprovalResolved,
 } from "../../events.js";
 
-const noSpend = { callStarted: async () => {} };
+const noSpend = { checkCall: async () => ({ verdict: "allow" as const }) };
 
 interface FakeRepo {
   repo: ApprovalsRepository;
@@ -26,6 +26,7 @@ function makeFakeRepo(): FakeRepo {
   const expirePendingCalls: string[] = [];
   let inserts = 0;
   const repo: ApprovalsRepository = {
+    insertIfAbsent: async () => true,
     insertPending: async (input) => {
       inserts++;
       rows.push({

@@ -246,10 +246,15 @@ import {
 import {
   composeApprovalsSystem,
   createApprovalsCleanupHook,
+  createSpendQuestionReader,
   listPendingApprovalAgentIds,
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
-import { composeSpendSystem } from "./modules/spend/index.js";
+import {
+  composeSpendSystem,
+  createSpendLimitsCleanupHook,
+  listSpendLimitAgentIds,
+} from "./modules/spend/index.js";
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
@@ -1233,6 +1238,8 @@ export async function bootstrap() {
       ownerOf: async (agentId) =>
         (await agentsRepo.resolveIdentity(agentId))?.owner ?? null,
     },
+    questions: createSpendQuestionReader(db),
+    brandName: config.brand.name,
   });
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
     spend.ingest.settleUnrecordedCalls(),
@@ -1259,7 +1266,7 @@ export async function bootstrap() {
     },
     ruleMatcher: createEgressRuleMatchAdapter(db),
     attendance: turnAttendance,
-    spend: spend.ingest,
+    spend: spend.check,
     wrapperFrameSender,
     holdSeconds: config.approvalHoldSeconds,
     platformAllowedAuthorities: objectStoreAgentUrl
@@ -1370,6 +1377,11 @@ export async function bootstrap() {
       name: "pending-approvals",
       listAgentIds: () => listPendingApprovalAgentIds(db),
       cleanup: createApprovalsCleanupHook(db),
+    },
+    {
+      name: "spend-limits",
+      listAgentIds: () => listSpendLimitAgentIds(db),
+      cleanup: createSpendLimitsCleanupHook(db),
     },
     {
       name: "registry-pull-secrets",
@@ -1689,6 +1701,7 @@ export async function bootstrap() {
     slackBindFlows,
     seedSources,
     redisBus,
+    spendForOwner: spend.forOwner,
     approvalsRelay,
     wrapperFrameSender,
     presetSeeder,
@@ -1818,6 +1831,7 @@ export async function bootstrap() {
     usageMetrics.stop();
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
+    spend.extendSaga.unsubscribe();
     usage.stop();
     audit.stop();
     gettingStarted.stop();

@@ -38,7 +38,7 @@ Read these architecture pages first: [credential-gateway](../../architecture/cre
 The meter and the limit check run only in parts that the agent cannot change: the agent's gateway (Envoy) and the api-server.
 No part of this feature runs in the agent pod.
 The spend that a harness or an in-pod component reports stays for display only.
-ADR-101 (slice 01) records this decision.
+ADR-104 (slice 01) records this decision.
 
 ```mermaid
 flowchart LR
@@ -252,6 +252,7 @@ The new `spend` module in `packages/api-server-api` (`router.ts` plus browser-sa
   `scope` is one of `{ kind: "agent", agentId }`, `{ kind: "owner" }`, `{ kind: "connection", agentId, connectionId }`.
   The unit follows from the scope.
   Slice 04 ships only the `agent` kind; slice 05 adds the other two.
+  It needs `agents:manage` and an unrestricted principal, so an API key bound to an agent cannot change a limit.
 - `spend.daily({ agentId?, from, to })`: metered spend per UTC day, payer agent and unit, with the count of estimated calls, for the meters.
   Slice 03 adds it, so that slice 03 can be verified.
 - "Continue" uses the existing approvals router, so the existing UI and CLI actions work.
@@ -305,10 +306,10 @@ Amounts are integers in micro-units of the unit, like the existing `cost_usd_mic
 
 | #   | Title                                                                      | Scope                                                                                                                                               | Depends on | Done |
 | --- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---- |
-| 01  | [Gateway meter and ADR-101](./01-gateway-meter.md)                         | Controller: model-provider chains, call id, Lua meter, `accept-encoding` removal, gRPC access log with periodic flush. ADR-101.                     | —          | ✅   |
+| 01  | [Gateway meter and ADR-104](./01-gateway-meter.md)                         | Controller: model-provider chains, call id, Lua meter, `accept-encoding` removal, gRPC access log with periodic flush. ADR-104.                     | —          | ✅   |
 | 02  | [Price table](./02-price-table.md)                                         | Pure price lookup with LiteLLM's cost rules, Anthropic table from a pinned LiteLLM commit, IBM's own prices in Helm, meter reads speed and geo.     | —          | ✅   |
 | 03  | [Receive, price and store usage](./03-receive-and-store.md)                | AccessLogService, identity, Connection, periodic-to-final deltas, pricing at ingest, `spend_daily` and Redis counters, estimates, clean shutdown.   | 01, 02     | ✅   |
-| 04  | [Agent limit, refusal and "continue?"](./04-agent-limit-and-refusal.md)    | Limit tables, `spend` router, gate refusal per API path, `spend_limit` approval, continue, chat error rule, CLI `dam spend`, harness refusal tests. | 03         |      |
+| 04  | [Agent limit, refusal and "continue?"](./04-agent-limit-and-refusal.md)    | Limit tables, `spend` router, gate refusal per API path, `spend_limit` approval, continue, chat error rule, CLI `dam spend`, harness refusal tests. | 03         | ✅   |
 | 05  | [Ceiling, own limit, provider limits](./05-ceiling-and-provider-limits.md) | `UserSpendLimit` CRD and Helm default, own daily limit, Connection limits in their units, ceiling refusal, CLI flags.                               | 04         |      |
 | 06  | [Stop unattended work, agent read](./06-unattended-work.md)                | Schedule holds, sub-agent spawn refusal, read-only MCP tool.                                                                                        | 04         |      |
 | 07  | [Screens](./07-screens.md)                                                 | Limit fields and meters in the agent page, Providers section, Settings and Home; approval card text.                                                | 04, 05     |      |
@@ -351,7 +352,7 @@ Do not use "Usage" for money: it means activity analytics.
 
 - `/typescript-engineering` for all server-side TypeScript (api-server, contract, CLI).
 - `/react-ui-engineering` for `packages/ui` (slices 04 and 07).
-- `/adr` for ADR-101 (slice 01).
+- `/adr` for ADR-104 (slice 01).
 - `cluster-ops` for the dev cluster smoke tests.
 
 **Repo rules:**
