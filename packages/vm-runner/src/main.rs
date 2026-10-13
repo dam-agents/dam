@@ -104,7 +104,7 @@ fn gateway_host_port(boot_config: &Path) -> anyhow::Result<Option<u16>> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the `--max-image-size` flag.
+// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the `--max-image-size` flag. SMOLVM_MOUNT_DAX gives every mount a machine boots with a 2 GiB DAX window, so the guest maps the host's page cache instead of copying each read through FUSE into its own: the harness tools, which every harness start reads `node` and its modules from, and the share. smolvm has no per-mount switch. Both mounts are read-only, and the runner replaces a share file by a rename and never writes one in place, so a mapped file is never truncated under the guest. The window costs the guest 32 MiB of RAM per mount for its page structs. smolvm ignores the variable on arm64, whose guest kernel has no FUSE DAX. DAX is safe only on the Linux 6.12 guest kernel smolvm.pin names: from 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens it (smol-machines/smolvm#1741), and the vm e2e lane holds the kernel to that. Setting it to 0 turns DAX off to compare.
 fn configure_smolvm(launcher: &Path) {
     let install = launcher.parent().unwrap_or(Path::new("/"));
     let lib = install.join("lib");
@@ -125,6 +125,9 @@ fn configure_smolvm(launcher: &Path) {
     }
     if std::env::var_os("SMOLVM_MAX_IMAGE_BYTES").is_none() {
         std::env::set_var("SMOLVM_MAX_IMAGE_BYTES", MAX_IMAGE_BYTES.to_string());
+    }
+    if std::env::var_os("SMOLVM_MOUNT_DAX").is_none() {
+        std::env::set_var("SMOLVM_MOUNT_DAX", "1");
     }
 }
 
@@ -446,7 +449,7 @@ mod tests {
             .is_loopback());
     }
 
-    // TEST_SCENARIO: the image's entrypoint names the smolvm release's launcher, and everything the VMM loads is found beside it — its libraries ahead of any already on the library path, and its guest agent's root filesystem — as the release's own launcher script finds them.
+    // TEST_SCENARIO: the image's entrypoint names the smolvm release's launcher, and everything the VMM loads is found beside it — its libraries ahead of any already on the library path, and its guest agent's root filesystem — as the release's own launcher script finds them. Its mounts are DAX-mapped by default.
     #[test]
     fn the_smolvm_release_is_found_beside_its_launcher() {
         let install =
@@ -454,6 +457,7 @@ mod tests {
         std::fs::create_dir_all(install.join("agent-rootfs")).unwrap();
         std::env::set_var("LD_LIBRARY_PATH", "/usr/lib/other");
         std::env::remove_var("SMOLVM_AGENT_ROOTFS");
+        std::env::remove_var("SMOLVM_MOUNT_DAX");
         configure_smolvm(&install.join("smolvm"));
         assert_eq!(
             std::env::var_os("SMOLVM_LIB_DIR"),
@@ -467,6 +471,7 @@ mod tests {
             std::env::var_os("SMOLVM_AGENT_ROOTFS"),
             Some(install.join("agent-rootfs").into_os_string())
         );
+        assert_eq!(std::env::var("SMOLVM_MOUNT_DAX").as_deref(), Ok("1"));
         let _ = std::fs::remove_dir_all(&install);
     }
 
