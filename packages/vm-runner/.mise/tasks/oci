@@ -171,6 +171,14 @@ tar -xzf "$(fetch "https://github.com/google/go-containerregistry/releases/downl
   -C "$b/opt/smolvm/agent-rootfs/usr/local/bin" --no-same-owner crane
 install -m 755 "$b/opt/smolvm/agent-rootfs/usr/local/bin/crane" "$b/usr/local/bin/crane"
 
+# The release stager copies this tree, and prunes its old copies, as root with
+# no capability, so root, which owns every file here in the image, must read
+# every file and enter and write every directory. smolvm's own modes already
+# allow it; this keeps a release that ships, say, a 0000 /etc/shadow from
+# failing the stage. Only the owner's bits change: the guest's root reads past
+# them anyway, and no other uid gains anything.
+find "$b" \( -type d -exec chmod u+rwx {} + \) -o \( -type f -exec chmod u+r {} + \)
+
 # A mise project of its own, outside the repo, whose config is image.toml and
 # the copies of the tree above; it names no tools. Its base is read before
 # mise is isolated from the repo.
