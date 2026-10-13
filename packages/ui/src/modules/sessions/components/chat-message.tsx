@@ -131,6 +131,7 @@ export const ChatMessage = memo(function ChatMessage({
   const { role, parts, streaming, queued, error, stopped } = message;
   const isAssistant = role === "assistant";
   const undelivered = !isAssistant && error !== undefined;
+  if (isAssistant && streaming && queued && parts.length === 0) return null;
 
   return (
     <div
@@ -140,6 +141,7 @@ export const ChatMessage = memo(function ChatMessage({
         "flex flex-col gap-1",
         isLast && streaming && "anim-in",
         isAssistant ? "items-start" : "items-end",
+        !isAssistant && queued && "opacity-60",
       )}
     >
       <div
@@ -185,14 +187,6 @@ export const ChatMessage = memo(function ChatMessage({
               onFileClick={readOnly ? undefined : onFileClick}
             />
           ))}
-          {isAssistant && streaming && parts.length === 0 && queued && (
-            <span
-              data-testid="prompt-queued-indicator"
-              className="text-xs text-muted-foreground italic"
-            >
-              Waiting for previous prompt…
-            </span>
-          )}
           {isAssistant && isLast && !readOnly && <PermissionStatusLine />}
           {isAssistant && streaming && !queued && !hasPendingPermission && (
             <span role="status" className="inline-flex items-center py-1">

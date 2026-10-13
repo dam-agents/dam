@@ -224,6 +224,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         parts: userParts,
         streaming: false,
         at: new Date().toISOString(),
+        ...(startingQueued && { queued: true }),
       };
       const aMsg: Message = {
         id: aId,
@@ -231,6 +232,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         parts: [],
         streaming: true,
         promptId,
+        ...(startingQueued && { queued: true }),
         ...(hidden ? {} : { retryWith: retryPayload }),
       };
       if (retryOf !== undefined) {

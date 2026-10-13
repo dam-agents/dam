@@ -164,7 +164,9 @@ function applyUpdateOf(
 
     case "platform_prompt_accepted":
       if (update.steered) return withSteeredSend(messages, update.promptId);
-      return update.queued && waitsBehindAnotherReply(messages, update.promptId)
+      if (!update.queued)
+        return setQueuedByPromptId(messages, update.promptId, false);
+      return waitsBehindAnotherReply(messages, update.promptId)
         ? setQueuedByPromptId(messages, update.promptId, true)
         : messages;
 
@@ -211,11 +213,13 @@ function setQueuedByPromptId(
   promptId: string,
   queued: boolean,
 ): Message[] {
-  return messages.map((m) =>
-    m.promptId === promptId && m.streaming && m.parts.length === 0
-      ? { ...m, queued }
-      : m,
-  );
+  return messages.map((m) => {
+    if (m.promptId === promptId && m.streaming && m.parts.length === 0)
+      return { ...m, queued };
+    if (m.role === "user" && m.id === promptId && m.queued !== queued)
+      return { ...m, queued };
+    return m;
+  });
 }
 
 /**
@@ -226,7 +230,7 @@ function setQueuedByPromptId(
 function withSteeredSend(messages: Message[], promptId: string): Message[] {
   const marked = messages.flatMap((m): Message[] => {
     if (m.role === "user" && m.id === promptId)
-      return [{ ...m, steered: true }];
+      return [{ ...m, steered: true, queued: false }];
     return isPlaceholder(m) && m.promptId === promptId ? [] : [m];
   });
   return continueTurnBelow(marked, promptId) ?? marked;
