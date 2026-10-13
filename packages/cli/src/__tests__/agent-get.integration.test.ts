@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -177,11 +177,9 @@ describe("dam agent get (integration)", () => {
   afterAll(async () => {});
 
   async function configureServer(url: string) {
-    const r = await runDam(["config", "set", "server", url], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
-    expect(r.exitCode).toBe(0);
+    const dir = join(home, ".config", "dam");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "config.toml"), `server = "${url}"\n`);
   }
 
   it("get by id: prints the vertical layout, exit 0", async () => {

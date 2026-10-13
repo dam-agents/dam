@@ -106,6 +106,11 @@ test("deleting inactive and active sessions preserves the right navigation (#423
     await expect(
       page.getByTestId("chat-message").getByText(secondPrompt, { exact: true }),
     ).toBeVisible();
+    await page
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: "Session deleted" })
+      .getByRole("button", { name: "Close toast" })
+      .click();
     await expect(page.getByText("Session deleted")).toBeHidden();
   });
 

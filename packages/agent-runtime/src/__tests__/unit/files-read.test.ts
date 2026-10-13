@@ -19,16 +19,20 @@ describe("readFileSafe text and binary classification", () => {
     return result.value;
   };
 
-  // TEST_SCENARIO: An SVG written with the usual XML declaration is the file an agent produces for a chart. It must read as text so the file panel can edit it and promote it to an artifact.
-  it("reads an SVG with an XML declaration as text", async () => {
+  // TEST_SCENARIO: An SVG written with the usual XML declaration is the file an agent produces for a chart. It must read as text so the file panel can edit it and promote it to an artifact, the same as an SVG without the declaration.
+  it("reads an SVG as text with or without an XML declaration", async () => {
     const svg = '<?xml version="1.0" encoding="UTF-8"?>\n<svg></svg>\n';
     writeFileSync(join(work, "chart.svg"), svg);
+    writeFileSync(join(work, "plain.svg"), "<svg></svg>\n");
 
     const file = await read("chart.svg");
-
     expect(file.binary).toBe(false);
     expect(file.mimeType).toBe("image/svg+xml");
     expect(file.content).toBe(svg);
+    expect(await read("plain.svg")).toMatchObject({
+      binary: false,
+      mimeType: "image/svg+xml",
+    });
   });
 
   // TEST_SCENARIO: The same declaration on a plain .xml file takes the XML mime type from the extension branch rather than the detection.
@@ -39,16 +43,6 @@ describe("readFileSafe text and binary classification", () => {
 
     expect(file.binary).toBe(false);
     expect(file.mimeType).toBe("application/xml");
-  });
-
-  // TEST_SCENARIO: An SVG without the declaration already worked before this rule existed; both spellings must now agree.
-  it("reads an SVG without a declaration as the same text result", async () => {
-    writeFileSync(join(work, "plain.svg"), "<svg></svg>\n");
-
-    const file = await read("plain.svg");
-
-    expect(file.binary).toBe(false);
-    expect(file.mimeType).toBe("image/svg+xml");
   });
 
   // TEST_SCENARIO: A detected format that really is binary must stay binary; the XML carve-out must not widen into every detection.

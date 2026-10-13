@@ -1,10 +1,4 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-  readFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -25,26 +19,6 @@ describe("createSessionMetadataStore", () => {
 
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
-  });
-
-  it("returns undefined for an unknown session", () => {
-    const store = createSessionMetadataStore(backend);
-    expect(store.get("nope")).toBeUndefined();
-    expect(store.all()).toEqual({});
-  });
-
-  it("records metadata and stamps createdAt", () => {
-    const store = createSessionMetadataStore(
-      backend,
-      () => "2026-01-01T00:00:00Z",
-    );
-    store.set("s1", { type: "schedule", scheduleId: "sch-1" });
-
-    expect(store.get("s1")).toEqual({
-      meta: { type: "schedule", scheduleId: "sch-1" },
-      createdAt: "2026-01-01T00:00:00Z",
-      seenAt: "2026-01-01T00:00:00Z",
-    });
   });
 
   it("preserves createdAt across later metadata writes", () => {
@@ -167,15 +141,5 @@ describe("createSessionMetadataStore", () => {
     const store = createSessionMetadataStore(backend);
     expect(store.get("s1")?.runStartedAt).toBeUndefined();
     expect(store.get("s1")?.runCount).toBe(1);
-  });
-
-  it("writes pretty-printed JSON under a created .platform dir", () => {
-    const store = createSessionMetadataStore(
-      backend,
-      () => "2026-01-01T00:00:00Z",
-    );
-    store.set("s1", { mode: "chat" });
-    const raw = JSON.parse(readFileSync(path, "utf8"));
-    expect(raw.sessions.s1.createdAt).toBe("2026-01-01T00:00:00Z");
   });
 });

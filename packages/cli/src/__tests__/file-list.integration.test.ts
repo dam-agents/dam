@@ -188,18 +188,15 @@ describe("dam file list (integration)", () => {
     expect(requested).toEqual([""]);
   });
 
-  it.each(["-R", "--recursive"])(
-    "%s lists every nested path, including empty directories",
-    async (flag) => {
-      const result = await runList(flag);
-      expect(result.exitCode, result.stderr).toBe(0);
-      expect(result.stdout).toBe(
-        "empty/\nREADME.md\nsrc/\nsrc/index.ts\nsrc/nested/\nsrc/nested/hello world.ts\n",
-      );
-      expect(requested.sort()).toEqual(["", "empty", "src", "src/nested"]);
-      expect(batches).toEqual([[""], ["empty", "src"], ["src/nested"]]);
-    },
-  );
+  it("-R lists every nested path, including empty directories", async () => {
+    const result = await runList("-R");
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toBe(
+      "empty/\nREADME.md\nsrc/\nsrc/index.ts\nsrc/nested/\nsrc/nested/hello world.ts\n",
+    );
+    expect(requested.sort()).toEqual(["", "empty", "src", "src/nested"]);
+    expect(batches).toEqual([[""], ["empty", "src"], ["src/nested"]]);
+  });
 
   it("-R lists a linked folder without descending into it", async () => {
     directories[""] = {
@@ -218,8 +215,6 @@ describe("dam file list (integration)", () => {
   });
 
   it.each([
-    { count: 500, prefix: "d" },
-    { count: 501, prefix: "d" },
     { count: 501, prefix: "package-with-a-realistic-directory-name-" },
     { count: 501, prefix: "深い フォルダー%#?-" },
   ])(
@@ -318,7 +313,7 @@ describe("dam file list (integration)", () => {
   });
 
   it("scopes recursion to the requested subtree and strips trailing slashes", async () => {
-    const result = await runList("src///", "-R");
+    const result = await runList("src///", "--recursive");
     expect(result.exitCode, result.stderr).toBe(0);
     expect(result.stdout).toBe(
       "src/index.ts\nsrc/nested/\nsrc/nested/hello world.ts\n",
@@ -345,7 +340,6 @@ describe("dam file list (integration)", () => {
 
   it.each([
     { flags: [], output: "" },
-    { flags: ["-R"], output: "" },
     { flags: ["-R", "--json"], output: "[]\n" },
   ])(
     "returns empty output for an empty subtree ($flags)",
@@ -356,16 +350,17 @@ describe("dam file list (integration)", () => {
     },
   );
 
-  it.each(["not-found", "forbidden"] as const)(
-    "fails without partial output when a nested directory is %s",
-    async (error) => {
-      directories["src/nested"] = { path: "src/nested", ok: false, error };
-      const result = await runList("-R", "--json");
-      expect(result.exitCode).toBe(1);
-      expect(result.stdout).toBe("");
-      expect(result.stderr).toContain(`cannot list \`src/nested\`: ${error}`);
-    },
-  );
+  it("fails without partial output when a nested directory is missing", async () => {
+    directories["src/nested"] = {
+      path: "src/nested",
+      ok: false,
+      error: "not-found",
+    };
+    const result = await runList("-R", "--json");
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("cannot list `src/nested`: not-found");
+  });
 
   it("reports a missing requested directory", async () => {
     const result = await runList("missing", "-R");

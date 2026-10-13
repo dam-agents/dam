@@ -132,7 +132,12 @@ describe("telegram message handler", () => {
   });
 
   it("treats `/start` and an `@bot` suffix as the bind command", async () => {
-    for (const text of ["/start", "/bind@krodo_bot", "/start deep-link"]) {
+    for (const text of [
+      "/start",
+      "/bind@krodo_bot",
+      "/start deep-link",
+      "/start@krodo_bot login",
+    ]) {
       const h = harness();
       const thread = makeThread({ isDM: true });
       await h.handle(thread, { text, author: author() }, true);
@@ -189,18 +194,6 @@ describe("telegram message handler", () => {
       "hello agent",
       expect.objectContaining({ userId: "tg-7" }),
     );
-  });
-
-  it("treats /start (bare or deep-linked) as bind intent", async () => {
-    const h = harness();
-    for (const text of ["/start", "/start login", "/start@krodo_bot login"]) {
-      const dm = makeThread({ isDM: true });
-      await h.handle(dm, { text, author: author() }, true);
-      expect(dm.posts.join("\n")).toContain(
-        "Connect this chat to one of your agents",
-      );
-    }
-    expect(h.pendingOAuthFlowsMap.size).toBe(3);
   });
 
   it("ignores the bot's own messages", async () => {

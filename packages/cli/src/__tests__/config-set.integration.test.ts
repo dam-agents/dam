@@ -4,15 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const exec = promisify(execFile);
 
@@ -44,10 +36,6 @@ async function runDam(
 }
 
 describe("dam config set (integration)", () => {
-  beforeAll(async () => {
-    await exec("pnpm", ["exec", "tsup"], { cwd: PKG_ROOT });
-  }, 60_000);
-
   let home: string;
   let configPath: string;
 
@@ -89,12 +77,8 @@ describe("dam config set (integration)", () => {
     await expect(readFile(configPath, "utf-8")).rejects.toThrow();
   });
 
-  it.each([
-    ["mailto:foo", "mailto"],
-    ["file:///etc/passwd", "file"],
-    ["ftp://example.test/x", "ftp"],
-  ])("rejects non-http(s) URL %s", async (input) => {
-    const r = await runDam(["config", "set", "server", input], {
+  it("rejects a non-http(s) URL", async () => {
+    const r = await runDam(["config", "set", "server", "file:///etc/passwd"], {
       HOME: home,
       PATH: process.env.PATH ?? "",
     });

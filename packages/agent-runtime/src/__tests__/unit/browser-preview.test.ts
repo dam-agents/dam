@@ -402,7 +402,7 @@ describe("recovery", () => {
     watching(browser);
     await until(launched);
     fake.browser.failPing = true;
-    await pause(300);
+    await pause(150);
     expect(fake.browser.pings).toBeGreaterThan(3);
     expect(fake.calls.filter(isLaunch)).toHaveLength(1);
     expect(stops).toBe(0);
@@ -417,7 +417,7 @@ describe("recovery", () => {
     await until(() => panel.states().includes("ready"));
     fake.browser.hangPing = true;
     const before = fake.browser.pings;
-    await pause(300);
+    await pause(100);
     expect(fake.browser.pings - before).toBeLessThanOrEqual(1);
   });
 
@@ -460,7 +460,7 @@ describe("display stream", () => {
     const { ws, messages } = await connectTo();
     ws.send("hello");
     ws.send(Buffer.from([1, 2, 3]));
-    await pause(700);
+    await pause(100);
     up = new WebSocketServer({ port, host: "127.0.0.1" });
     up.on("connection", (sock) => {
       sock.on("message", (d: Buffer, binary: boolean) =>

@@ -295,10 +295,12 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     expect(after.id).not.toEqual(before.id);
   });
 
-  /** TEST_SCENARIO: Taking provider B away recycles B's process and leaves
-   * A's running. Reopening B's session starts no process on credentials B no
-   * longer has, and prompting it fails naming the provider. */
-  it("recycles only the removed provider's process and refuses its sessions", () => {
+  /** TEST_SCENARIO: Taking provider B away shuts B's process down rather than
+   * restarting it without a credential, leaves A's running, and closes the
+   * client that used B, so a turn it still shows as running ends. Reopening
+   * B's session starts no process on credentials B no longer has, and
+   * prompting it fails naming the provider. */
+  it("shuts down only the removed provider's process and refuses its sessions", () => {
     const world = createLeaseWorld({ providers: ["conn-a", "conn-b"] });
     const client = world.connect();
     startSession(world, client, "claude-code/conn-a", "s-a", 1, {});
@@ -309,6 +311,8 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     world.revoke("conn-b");
     expect(world.harness("claude-code/conn-b").killed()).toBe(true);
     expect(world.harness("claude-code/conn-a").killed()).toBe(false);
+    expect(client.isOpen()).toBe(false);
+    expect(world.router.leases().map((l) => l.provider)).toEqual(["conn-a"]);
 
     const fresh = world.connect();
     fresh.send({
@@ -654,22 +658,6 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     expect(client.reply(4)?.result).toEqual({ model: "opus" });
   });
 
-  /** TEST_SCENARIO: A process whose provider was taken away holds no
-   * credential the agent may still use, so it is shut down rather than
-   * restarted without one, and a client that used it is told, so a turn it
-   * still shows as running ends. */
-  it("shuts down the process of a removed provider", () => {
-    const world = createLeaseWorld({ providers: ["conn-a", "conn-b"] });
-    const client = world.connect();
-    startSession(world, client, "claude-code/conn-b", "s-b", 1, {
-      provider: "conn-b",
-    });
-    world.revoke("conn-b");
-    expect(world.harness("claude-code/conn-b").killed()).toBe(true);
-    expect(world.harnessCount("claude-code/conn-b")).toBe(1);
-    expect(client.isOpen()).toBe(false);
-    expect(world.router.leases().map((l) => l.provider)).toEqual(["conn-a"]);
-  });
   /** TEST_SCENARIO: A mode picked during a turn belongs to the session's next
    * turn: it reaches the harness only once the running turn ends, and the
    * prompt sent after it waits for the harness to take the mode first. Another

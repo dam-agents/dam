@@ -16,6 +16,16 @@ const suite: NamedProject[] = [
     testMatch: /01-.*\.spec\.ts$/,
     use: { ...devices["Desktop Chrome"] },
   },
+  ...(laneBackend === "vm"
+    ? [
+        {
+          name: "harness-tools",
+          testMatch: /22-.*\.spec\.ts$/,
+          dependencies: ["auth"],
+          use: { ...devices["Desktop Chrome"] },
+        },
+      ]
+    : []),
   {
     name: "connection",
     testMatch: /02-.*\.spec\.ts$/,
@@ -61,25 +71,19 @@ const suite: NamedProject[] = [
   {
     name: "kb-share",
     testMatch: /17-.*\.spec\.ts$/,
-    dependencies: ["auth", "slack-ambient"],
+    dependencies: ["auth"],
     use: { ...devices["Desktop Chrome"] },
   },
   {
     name: "satellites",
     testMatch: /18-.*\.spec\.ts$/,
-    dependencies: ["auth", "slack-inchat"],
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
-  {
-    name: "slack",
-    testMatch: /07-.*\.spec\.ts$/,
-    dependencies: ["injection"],
+    dependencies: ["auth"],
     use: { ...devices["Desktop Chrome"], storageState },
   },
   {
     name: "slack-shared",
     testMatch: /08-slack-shared\.spec\.ts$/,
-    dependencies: ["slack"],
+    dependencies: ["injection"],
     use: { ...devices["Desktop Chrome"] },
   },
   {
@@ -127,10 +131,10 @@ const suite: NamedProject[] = [
   ...(laneBackend === "vm"
     ? [
         {
-          name: "harness-tools",
-          testMatch: /22-.*\.spec\.ts$/,
-          dependencies: ["auth"],
-          use: { ...devices["Desktop Chrome"] },
+          name: "runtime-migration",
+          testMatch: /20-.*\.spec\.ts$/,
+          dependencies: ["connection-regrant"],
+          use: { ...devices["Desktop Chrome"], storageState },
         },
       ]
     : []),
@@ -176,25 +180,15 @@ const suite: NamedProject[] = [
     : []),
 ];
 
-const backendSpecs: NamedProject[] = [
-  {
-    name: "agent-backend",
-    testMatch: /19-.*\.spec\.ts$/,
-    dependencies:
-      laneBackend === "vm" ? suite.map(({ name }) => name) : ["agent"],
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
-  ...(laneBackend === "vm"
-    ? [
-        {
-          name: "runtime-migration",
-          testMatch: /20-.*\.spec\.ts$/,
-          dependencies: ["agent-backend"],
-          use: { ...devices["Desktop Chrome"], storageState },
-        },
-      ]
-    : []),
-];
+const agentBackend: NamedProject = {
+  name: "agent-backend",
+  testMatch: /19-.*\.spec\.ts$/,
+  dependencies:
+    laneBackend === "vm"
+      ? suite.map(({ name }) => name)
+      : ["connection-regrant"],
+  use: { ...devices["Desktop Chrome"], storageState },
+};
 
 export default defineConfig({
   testDir: "./src/tests",
@@ -220,5 +214,5 @@ export default defineConfig({
       ],
     },
   },
-  projects: [...suite, ...backendSpecs],
+  projects: [...suite, agentBackend],
 });

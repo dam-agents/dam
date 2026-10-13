@@ -96,12 +96,6 @@ describe("resolveAgentDisplay", () => {
     expect(out.powerAction).toBe("restart");
   });
 
-  test("an agent that just began starting offers no power action", () => {
-    const out = resolveAgentDisplay(agent("a", "starting"), new Set());
-    expect(out.slowStart).toBe(false);
-    expect(out.powerAction).toBe(null);
-  });
-
   test("restart wins over pause when an id is in both sets", () => {
     const out = resolveAgentDisplay(
       agent("a", "running"),

@@ -22,16 +22,13 @@ describe("ensureFrontmatterName", () => {
   ];
 
   it.each(cases)(
-    "%s — a real YAML parser sees the confirmed name",
+    "%s — a real YAML parser and parseFrontmatter see the confirmed name",
     (_, src) => {
-      expect(yamlName(ensureFrontmatterName(src, "New Name"))).toBe("New Name");
+      const out = ensureFrontmatterName(src, "New Name");
+      expect(yamlName(out)).toBe("New Name");
+      expect(parseFrontmatter(out).name).toBe("New Name");
     },
   );
-
-  it.each(cases)("%s — parseFrontmatter agrees with YAML", (_, src) => {
-    const out = ensureFrontmatterName(src, "New Name");
-    expect(parseFrontmatter(out).name).toBe(yamlName(out));
-  });
 
   it("quotes a name that would otherwise break the block", () => {
     const out = ensureFrontmatterName("---\nname: Old\n---\n", "Weird: #name");

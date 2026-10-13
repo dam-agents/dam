@@ -12,6 +12,8 @@ import { createUndeliveredPromptStore } from "../../../infrastructure/undelivere
  * when the sandbox is idle, after the running turn ends when it is not,
  * and — when the caller forces it — after a bounded grace period even if
  * work never drains, so a revoked credential cannot stay usable forever.
+ * The idle and mid-turn swaps are pinned in
+ * `acp-runtime-mass-disconnect.test.ts`.
  */
 
 const SESSION = "sess-env";
@@ -36,30 +38,6 @@ function createMemoryBackend(): DocumentStoreBackend {
 describe("acp-runtime: env changes", () => {
   afterEach(() => {
     vi.useRealTimers();
-  });
-
-  /**
-   * TEST_SCENARIO: An env change lands while the sandbox is idle. The harness
-   * must be swapped before the next prompt, or the agent would keep using
-   * the old credentials. Anyone connected is closed with the recycle reason,
-   * and the next client to connect gets a fresh process.
-   */
-  it("should recycle the harness right away when nothing is running", () => {
-    const world = createWorld();
-    const client = world.connect();
-    client.send(frames.initialize(1));
-    const before = world.harness();
-
-    world.runtime.refreshEnv({ force: false });
-
-    expect(before.killed()).toBe(true);
-    expect(client.closes[0]).toMatchObject({
-      code: 1011,
-      reason: "agent recycled for env change",
-    });
-
-    world.connect();
-    expect(world.harnessCount()).toBe(2);
   });
 
   /**
@@ -103,35 +81,6 @@ describe("acp-runtime: env changes", () => {
         .readFor(SESSION)
         .flatMap((p) => p.blocks.map((b) => (b.type === "text" ? b.text : ""))),
     ).toEqual(["then check the logs"]);
-  });
-
-  /**
-   * TEST_SCENARIO: An env change lands in the middle of a turn. Killing the
-   * harness now would cut the user's answer off for a change that can wait.
-   * The recycle is deferred: the sender still gets the full reply, and the
-   * swap happens the moment the turn ends.
-   */
-  it("should let the running turn finish and deliver its answer before recycling", () => {
-    const world = createWorld();
-    const client = world.connect();
-    client.send(frames.initialize(1));
-    client.send(frames.newSession(2));
-    world.harness().replyTo("session/new", { sessionId: "s1" });
-    client.send(frames.prompt(3, "s1", "rotate the deploy key"));
-
-    world.runtime.refreshEnv({ force: false });
-
-    expect(world.harness().killed()).toBe(false);
-    expect(client.isOpen()).toBe(true);
-
-    world.harness().replyToSession("session/prompt", "s1");
-
-    expect(client.reply(3)).toBeDefined();
-    expect(world.harness().killed()).toBe(true);
-    expect(client.closes[0]).toMatchObject({
-      code: 1011,
-      reason: "agent recycled for env change",
-    });
   });
 
   /**

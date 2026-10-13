@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { WorkItem } from "api-server-api";
 import { parseCommandSurface } from "../modules/satellite/domain/command-surface.js";
 import {
@@ -40,11 +40,8 @@ const PATTERNS = `
 
 const IDENTITY = { name: "test-box", maxConcurrent: 4 };
 
-function surface(timeout?: string) {
-  const parsed = parseCommandSurface(PATTERNS, {
-    ...IDENTITY,
-    ...(timeout === undefined ? {} : { timeout }),
-  });
+function surface() {
+  const parsed = parseCommandSurface(PATTERNS, IDENTITY);
   if (!parsed.ok) throw new Error(parsed.error);
   return parsed.value;
 }
@@ -54,10 +51,14 @@ interface Reported {
   outcome: Parameters<WorkerTransport["report"]>[0]["outcome"];
 }
 
-function harness(items: WorkItem[], timeout?: string) {
+function harness(items: WorkItem[], timeoutMs?: number) {
   const reports: Reported[] = [];
   const lines: string[] = [];
   let handedOut = false;
+  let drained: () => void = () => {};
+  const untilDrained = new Promise<WorkItem[]>((r) => {
+    drained = () => r([]);
+  });
   let resolveAll: () => void = () => {};
   const allReported = new Promise<void>((r) => {
     resolveAll = r;
@@ -66,19 +67,22 @@ function harness(items: WorkItem[], timeout?: string) {
   const transport: WorkerTransport = {
     connect: async () => {},
     claim: async () => {
-      if (handedOut) return [];
+      if (handedOut) return untilDrained;
       handedOut = true;
       return items;
     },
     heartbeat: async () => {},
-    drain: async () => {},
+    drain: async () => drained(),
     report: async (input) => {
       reports.push({ sequence: input.sequence, outcome: input.outcome });
       if (reports.length === items.length) resolveAll();
     },
   };
 
-  const parsed = surface(timeout);
+  const parsed = {
+    ...surface(),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  };
   const backend = createCommandBackend(parsed);
   const worker = createWorker({
     name: parsed.pushed.name,
@@ -131,38 +135,48 @@ describe("the satellite worker", () => {
   });
 
   it("refuses a command the local manifest does not permit, without running it", async () => {
-    const [report] = await drive([runItem(2, ["/bin/echo", "$(whoami)"])]);
-    expect(report?.outcome.status).toBe("done");
-    if (report?.outcome.status !== "done") return;
-    expect(report.outcome.isError).toBe(true);
-    expect(report.outcome.exitCode).toBeNull();
-    expect(report.outcome.output).toContain("refused locally");
-  });
-
-  it("refuses a program that appears in no pattern", async () => {
-    const [report] = await drive([runItem(3, ["/bin/cat", "/etc/passwd"])]);
-    expect(report?.outcome.status).toBe("done");
-    if (report?.outcome.status !== "done") return;
-    expect(report.outcome.isError).toBe(true);
+    const reports = await drive([
+      runItem(2, ["/bin/echo", "$(whoami)"]),
+      runItem(3, ["/bin/cat", "/etc/passwd"]),
+    ]);
+    expect(reports).toHaveLength(2);
+    for (const report of reports) {
+      expect(report.outcome.status).toBe("done");
+      if (report.outcome.status !== "done") return;
+      expect(report.outcome.isError).toBe(true);
+      expect(report.outcome.exitCode).toBeNull();
+      expect(report.outcome.output).toContain("refused locally");
+    }
   });
 
   it("runs several jobs at once", async () => {
-    const reports = await drive([
-      runItem(1, ["/bin/echo", "hello"]),
-      runItem(2, ["/bin/echo", "goodbye"]),
-      runItem(3, ["/bin/sleep", "1"]),
+    const { worker, backend, reports, allReported } = harness([
+      runItem(1, ["/usr/bin/tail", "-f", "/etc/hosts"]),
+      runItem(2, ["/usr/bin/tail", "-f", "/etc/hosts"]),
     ]);
-    expect(reports).toHaveLength(3);
-    expect(reports.every((r) => r.outcome.status === "done")).toBe(true);
+    const running = worker.start();
+    await vi.waitFor(() => expect(worker.runningCount).toBe(2));
+    backend.cancel(1);
+    backend.cancel(2);
+    await allReported;
+    await worker.drain();
+    await running;
+    expect(reports.map((r) => r.outcome.status)).toEqual([
+      "cancelled",
+      "cancelled",
+    ]);
   });
 });
 
 describe("the worker's log", () => {
   const AGENT = { id: "agent-1a2b", name: "Builder" };
 
-  it("names the agent behind a request and what it asked to run", async () => {
-    const { lines } = await driveLogged([
+  it("names the agent behind each request and reads each outcome differently", async () => {
+    const { reports, lines } = await driveLogged([
       runItem(1, ["/bin/echo", "hello"], AGENT),
+      runItem(2, ["/bin/cat", "/etc/passwd"], AGENT),
+      runItem(3, ["/usr/bin/false"], AGENT),
+      runItem(4, ["/bin/echo", "hello"], { id: "agent-9z", name: null }),
     ]);
     expect(lines).toContain(
       "REQUEST #1 from Builder (agent-1a2b): /bin/echo hello",
@@ -170,37 +184,17 @@ describe("the worker's log", () => {
     expect(
       lines.some((line) => /^DONE #1 in \d+\.\ds: exit 0$/.test(line)),
     ).toBe(true);
-  });
-
-  it("says a refused command was blocked, and why, without reporting that flag", async () => {
-    const { reports, lines } = await driveLogged([
-      runItem(1, ["/bin/cat", "/etc/passwd"], AGENT),
-    ]);
-    expect(lines.find((line) => line.startsWith("BLOCKED #1: "))).toContain(
+    expect(lines.find((line) => line.startsWith("BLOCKED #2: "))).toContain(
       "refused locally",
     );
-    expect(Object.keys(reports[0]?.outcome ?? {})).not.toContain("blocked");
-  });
-
-  it("tells a command that ran and failed apart from one that was blocked", async () => {
-    const { lines } = await driveLogged([
-      runItem(1, ["/usr/bin/false"], AGENT),
-    ]);
-    expect(lines.some((line) => /^FAILED #1 in .*: exit 1$/.test(line))).toBe(
+    expect(
+      Object.keys(reports.find((r) => r.sequence === 2)?.outcome ?? {}),
+    ).not.toContain("blocked");
+    expect(lines.some((line) => /^FAILED #3 in .*: exit 1$/.test(line))).toBe(
       true,
     );
-    expect(lines.some((line) => line.startsWith("BLOCKED"))).toBe(false);
-  });
-
-  it("falls back to the agent's id when its name is unknown", async () => {
-    const { lines } = await driveLogged([
-      runItem(1, ["/bin/echo", "hello"], { id: "agent-9z", name: null }),
-    ]);
-    expect(lines).toContain("REQUEST #1 from agent-9z: /bin/echo hello");
-  });
-
-  it("prints where to add the satellite right after it connects", async () => {
-    const { lines } = await driveLogged([runItem(1, ["/bin/echo", "hello"])]);
+    expect(lines.some((line) => line.startsWith("BLOCKED #3"))).toBe(false);
+    expect(lines).toContain("REQUEST #4 from agent-9z: /bin/echo hello");
     const connected = lines.findIndex((line) =>
       line.startsWith("connected as"),
     );
@@ -240,6 +234,7 @@ describe("claiming work", () => {
   it("takes new work as soon as a slot frees, without waiting out the poll", async () => {
     const reports: number[] = [];
     let calls = 0;
+    let drained: () => void = () => {};
     let finished: () => void = () => {};
     const bothDone = new Promise<void>((r) => {
       finished = r;
@@ -249,12 +244,14 @@ describe("claiming work", () => {
       claim: async ({ capacity }) => {
         if (capacity === 0) return new Promise<never>(() => {});
         calls++;
-        if (calls === 1) return [runItem(1, ["/bin/sleep", "1"])];
+        if (calls === 1) return [runItem(1, ["/bin/echo", "goodbye"])];
         if (calls === 2) return [runItem(2, ["/bin/echo", "hello"])];
-        return [];
+        return new Promise((r) => {
+          drained = () => r([]);
+        });
       },
       heartbeat: async () => {},
-      drain: async () => {},
+      drain: async () => drained(),
       report: async (input) => {
         reports.push(input.sequence);
         if (reports.length === 2) finished();
@@ -283,7 +280,7 @@ describe("claiming work", () => {
       connect: async () => {},
       claim: async ({ satellite }) => {
         calls++;
-        if (calls === 1) return [runItem(1, ["/bin/sleep", "1"])];
+        if (calls === 1) return [runItem(1, ["/bin/echo", "hello"])];
         throw new SatelliteRemovedError(satellite);
       },
       heartbeat: async () => {},
@@ -301,20 +298,7 @@ describe("claiming work", () => {
 });
 
 describe("a job that does not run to completion", () => {
-  it("reports a cancelled job as cancelled, not as a finished one that failed", async () => {
-    const { worker, backend, reports, allReported } = harness([
-      runItem(1, ["/bin/sleep", "9"]),
-    ]);
-    const running = worker.start();
-    await new Promise((r) => setTimeout(r, 300));
-    backend.cancel(1);
-    await allReported;
-    await worker.drain();
-    await running;
-    expect(reports[0]?.outcome.status).toBe("cancelled");
-  });
-
-  it("still reports what the job printed before it was killed", async () => {
+  it("reports a cancelled job as cancelled, with what it printed before it was killed", async () => {
     const { worker, backend, reports, allReported } = harness([
       runItem(1, ["/usr/bin/tail", "-f", "/etc/hosts"]),
     ]);
@@ -336,7 +320,7 @@ describe("a job that does not run to completion", () => {
   it("reports a job killed at its timeout as interrupted, naming the timeout", async () => {
     const { worker, reports, allReported } = harness(
       [runItem(1, ["/bin/sleep", "9"])],
-      "1s",
+      50,
     );
     const running = worker.start();
     await allReported;

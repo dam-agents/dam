@@ -34,7 +34,7 @@ fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(30);
     while !done() {
         assert!(Instant::now() < deadline, "timed out waiting for {what}");
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(20));
     }
 }
 
@@ -110,6 +110,7 @@ fn a_release_takes_over_the_machines_and_a_broken_one_gives_them_back() {
         .env(release::RELEASE_FILE_ENV, dir.join("release"))
         .env(release::LOADER_DIR_ENV, dir.join("loader"))
         .env(release::BUILTIN_RELEASE_ENV, "runner:1")
+        .env("VM_RUNNER_LOADER_POLL_MS", "50")
         .env("RUNNER_LOG", dir.join("runners"))
         .env("MACHINE_LOG", dir.join("machines"))
         .spawn()

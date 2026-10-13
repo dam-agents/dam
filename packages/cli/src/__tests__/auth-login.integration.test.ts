@@ -3,7 +3,6 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import {
   afterAll,
   afterEach,
@@ -14,8 +13,6 @@ import {
   it,
 } from "vitest";
 import { parse as parseToml } from "smol-toml";
-
-const exec = promisify(execFile);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(HERE, "../..");
@@ -157,9 +154,7 @@ let clusterUp = false;
 
 beforeAll(async () => {
   clusterUp = await isClusterUp();
-  if (!clusterUp) return;
-  await exec("pnpm", ["exec", "tsup"], { cwd: PKG_ROOT });
-}, 60_000);
+});
 
 describe.runIf(true)(
   "dam auth login (integration vs local k3s Keycloak)",
