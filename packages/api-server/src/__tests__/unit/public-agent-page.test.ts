@@ -283,7 +283,12 @@ describe("public agent profile saga", () => {
    */
   it("writes the row for a bound agent on create, update and slack connect", async () => {
     for (const event of [
-      { type: EventType.AgentCreated, agentId: "agent-1", ownerSub: "sub-1" },
+      {
+        type: EventType.AgentCreated,
+        agentId: "agent-1",
+        ownerSub: "sub-1",
+        character: "stack",
+      },
       { type: EventType.AgentUpdated, agentId: "agent-1" },
       {
         type: EventType.SlackConnected,
@@ -326,6 +331,7 @@ describe("public agent profile saga", () => {
       type: EventType.AgentCreated,
       agentId: "agent-1",
       ownerSub: "sub-1",
+      character: "stack",
     });
     emit({ type: EventType.AgentUpdated, agentId: "agent-1" });
     await flushMicrotasks();

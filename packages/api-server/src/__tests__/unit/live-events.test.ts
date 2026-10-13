@@ -158,6 +158,7 @@ describe("hintFor", () => {
         type: EventType.AgentCreated,
         agentId: "a1",
         ownerSub: "u1",
+        character: "stack",
       }),
     ).toEqual({ ownerSub: "u1", hint: { topic: "agents", agentId: "a1" } });
     expect(
