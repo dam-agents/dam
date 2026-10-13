@@ -817,7 +817,7 @@ fn purge_discarded(dir: &Path, names: &[impl AsRef<str>]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free, the scratch folders lose their files least recently used first, in passes of decreasing age, until EVICT_UNTIL_PERCENT is free or only files used within the last pass's age are left — so a file a running tool is writing is never taken. Only files on the disk are deleted: the walk stays on the disk's device, follows no symlink and leaves the image's trust cache alone. A deleted file that is still open frees its space only when it is closed.
+// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free or the runner marks the owner's claim short of room, the scratch folders lose their files least recently used first, in passes of decreasing age, until EVICT_UNTIL_PERCENT is free and the mark is gone, or only files used within the last pass's age are left — so a file a running tool is writing is never taken. The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Only files on the disk are deleted: the walk stays on the disk's device, follows no symlink and leaves the image's trust cache alone. A deleted file that is still open frees its space only when it is closed.
 const EVICT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const EVICT_BELOW_PERCENT: u64 = 10;
 const EVICT_UNTIL_PERCENT: u64 = 20;
@@ -839,7 +839,7 @@ fn evict_scratch() {
         .collect();
     loop {
         std::thread::sleep(EVICT_INTERVAL);
-        if free_percent(home).is_none_or(|free| free >= EVICT_BELOW_PERCENT) {
+        if !evicting(free_percent(home), claim_short(), EVICT_BELOW_PERCENT) {
             continue;
         }
         let now = std::time::SystemTime::now()
@@ -853,21 +853,41 @@ fn evict_scratch() {
             if freed > 0 {
                 logf!("the disk is short of room: deleted {freed} bytes of scratch unused for {age} s");
             }
-            if free_percent(home).is_some_and(|free| free >= EVICT_UNTIL_PERCENT) {
+            if !evicting(free_percent(home), claim_short(), EVICT_UNTIL_PERCENT) {
                 break;
             }
         }
     }
 }
 
-fn free_percent(path: &Path) -> Option<u64> {
+// UNIT_BOUNDARY_DESCRIPTION: whether scratch is still to be freed: the disk has less than `percent` free, or the owner's claim under it is short. A disk whose room cannot be read is left alone unless the claim is short.
+fn evicting(free: Option<u64>, claim_short: bool, percent: u64) -> bool {
+    claim_short || free.is_some_and(|free| free < percent)
+}
+
+fn claim_short() -> bool {
+    Path::new(guest::STORAGE_SHORT_PATH).exists()
+}
+
+fn statvfs(path: &Path) -> Option<libc::statvfs> {
     let path = cstring(path.as_os_str()).ok()?;
     // SAFETY: statvfs is plain old data, and all-zero bytes are a valid value of it.
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
     // SAFETY: `path` is NUL-terminated and lives for the call, and `stat` is a live, writable statvfs.
     let rc = unsafe { libc::statvfs(path.as_ptr(), &mut stat) };
+    (rc == 0).then_some(stat)
+}
+
+fn free_percent(path: &Path) -> Option<u64> {
+    let stat = statvfs(path)?;
     #[allow(clippy::unnecessary_cast)]
-    (rc == 0 && stat.f_blocks > 0).then(|| stat.f_bavail as u64 * 100 / stat.f_blocks as u64)
+    (stat.f_blocks > 0).then(|| stat.f_bavail as u64 * 100 / stat.f_blocks as u64)
+}
+
+fn free_bytes(path: &Path) -> Option<u64> {
+    let stat = statvfs(path)?;
+    #[allow(clippy::unnecessary_cast)]
+    Some((stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: deletes the files under `dir` last used before `cutoff`, in seconds since the epoch, and returns the bytes they held. Only regular files and symlinks are deleted, never a socket or fifo a running process may still be listening on. A file counts as used at the latest of its access, modification and change times. A directory left empty is removed only if it too was unused before the cutoff, so one a tool just made stays. The walk holds one directory open per level of the tree.
@@ -1564,10 +1584,18 @@ fn supervise(binary: &Path, command: &[OsString], trust: Option<&Path>) -> ! {
                 NOT_STARTED
             }
         };
+        let full = status != 0
+            && free_bytes(Path::new(guest::AGENT_HOME))
+                .is_some_and(|free| free < guest::HOME_FULL_BYTES);
         announce(&format!(
-            "the image entrypoint {} after {}s",
+            "the image entrypoint {} after {}s{}",
             exit_description(status),
-            started.elapsed().as_secs()
+            started.elapsed().as_secs(),
+            if full {
+                format!("; {}", guest::HOME_FULL)
+            } else {
+                String::new()
+            }
         ));
         end_the_rest(&mut stopping);
         if stopping {
@@ -1784,6 +1812,16 @@ mod tests {
     // TEST_OVERVIEW: platform-init is what makes a machine's persistence the platform's promise rather than the image's behaviour. The mounting itself needs a guest, but everything that decides what ends up on the disk — seeding the home from the image exactly once, never leaving a half-copy behind, keeping the boot log readable, which mounts follow the image onto its root and when that root is kept, which cache folders are cleared from the home, resolving the entrypoint it hands off to — is ordinary file or table work and is covered here.
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // TEST_SCENARIO: a guest's own disk can read as nearly empty while the owner's claim under it fills, so the runner's mark alone starts and continues eviction; without it, the disk's own free share decides, and a disk whose room cannot be read is left alone.
+    #[test]
+    fn scratch_is_freed_while_the_disk_or_the_claim_is_short() {
+        assert!(evicting(Some(5), false, EVICT_BELOW_PERCENT));
+        assert!(!evicting(Some(50), false, EVICT_BELOW_PERCENT));
+        assert!(evicting(Some(50), true, EVICT_BELOW_PERCENT));
+        assert!(evicting(None, true, EVICT_UNTIL_PERCENT));
+        assert!(!evicting(None, false, EVICT_BELOW_PERCENT));
+    }
 
     struct TempDir(PathBuf);
 

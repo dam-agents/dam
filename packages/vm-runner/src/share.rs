@@ -36,6 +36,9 @@ pub const SEED_EXPECTED_FILE: &str = "seed-expected";
 // UNIT_BOUNDARY_DESCRIPTION: the share's record of the image the boot about to run boots, which platform-init reads at guest::IMAGE_PATH to decide whether the machine keeps its root. A start writes it, not write_share, because every boot passes a start and the image a start boots is the one in smolvm's record at that moment.
 pub const IMAGE_FILE: &str = "image";
 
+// UNIT_BOUNDARY_DESCRIPTION: the share's mark that the owner's claim is short of room, which platform-init looks for at guest::STORAGE_SHORT_PATH. write_share leaves it alone: the runner's storage check owns it, and sets or clears it in every machine's share at each look.
+pub const STORAGE_SHORT_FILE: &str = "storage-short";
+
 // UNIT_BOUNDARY_DESCRIPTION: the machine directory's record of the seed now in the share, as its upload was answered: the runner's own bookkeeping, outside the share the guest reads. It is what a start compares with the seed the spec expects, so the seed is checked without reading many GiB again on every start. It is removed before a new seed is renamed into the share and written after, so it never names a seed that is not there.
 pub const SEED_DIGEST_FILE: &str = "seed-digest";
 
@@ -80,6 +83,17 @@ fn digest_of(seed: &SeedResult) -> SeedDigest {
         sha256: seed.sha256.clone(),
         bytes: seed.bytes,
     }
+}
+
+pub fn mark_storage_short(share: &Path, short: bool) -> io::Result<()> {
+    let mark = share.join(STORAGE_SHORT_FILE);
+    if !short {
+        return remove_if_present(&mark);
+    }
+    if mark.exists() {
+        return Ok(());
+    }
+    files::write(&mark, b"", CA_MODE)
 }
 
 pub fn seeded(share: &Path) -> bool {
@@ -282,6 +296,11 @@ mod tests {
             guest::IMAGE_PATH,
             format!("{}/{IMAGE_FILE}", guest::SHARE_PATH),
             "the guest looks for the image record where a start does not write it"
+        );
+        assert_eq!(
+            guest::STORAGE_SHORT_PATH,
+            format!("{}/{STORAGE_SHORT_FILE}", guest::SHARE_PATH),
+            "the guest looks for the storage mark where the runner does not set it"
         );
     }
 

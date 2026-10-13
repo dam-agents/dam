@@ -47,6 +47,13 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
             "This agent failed to start: its sandbox VM didn't boot. " +
             "Check the agent's page or contact its owner."
           );
+        case "MachineStorageFull":
+          return (
+            "This agent failed to start: the storage its owner's agents " +
+            "share is full. Its owner can delete an agent they no longer " +
+            "need, clear caches inside their agents, or ask an admin for " +
+            "more storage."
+          );
         case "MachineRunnerUnschedulable":
           return (
             "This agent failed to start: the cluster has no node that can " +

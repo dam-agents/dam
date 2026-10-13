@@ -25,6 +25,7 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -1293,6 +1294,54 @@ func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Contains(t, cond.Message, "does not fit", "the runner's own explanation reaches the user")
+}
+
+// TEST_SCENARIO: a runner whose claim is full refuses a machine under MachineStorageFull, which is not the memory refusal. The Agent is not parked, since parking halts a machine, and the runner's explanation reaches the AgentPodReady condition the api-server classifies a wake by.
+func TestAStorageRefusalIsPublishedWithoutParking(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateAbsent,
+		Reason:  vmrunner.ReasonStorageFull,
+		Message: "your agents' shared storage is 93% full",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.Equal(t, int32(1), agentSSReplicas(t, r, GatewayName("my-agent")), "a storage refusal does not park the agent")
+	obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	got, err := FromCacheObject[apiv1.Agent](obj)
+	require.NoError(t, err)
+	cond := apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionFalse, cond.Status)
+	assert.Equal(t, vmrunner.ReasonStorageFull, cond.Reason)
+	assert.Contains(t, cond.Message, "93% full")
+}
+
+// TEST_SCENARIO: a full home inside a guest is the same failure a container agent reports from its termination message, so the runner's reason for it is published as HomeVolumeFull, and the api-server's and UI's existing copy for a full home applies to a vm agent too.
+func TestAFullHomeInsideAGuestIsPublishedAsAFullHomeVolume(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateRunning,
+		Reason:  vmrunner.ReasonHomeFull,
+		Message: "the agent's disk is full",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	got, err := FromCacheObject[apiv1.Agent](obj)
+	require.NoError(t, err)
+	cond := apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
+	require.NotNil(t, cond)
+	assert.Equal(t, apiv1.ReasonHomeVolumeFull, cond.Reason)
+	assert.Contains(t, cond.Message, "disk is full")
 }
 
 // TEST_SCENARIO: a machine no Agent of this owner claims holds guest memory forever, so the sweep deletes it — and ownership is part of the match, because an Agent of the same name belonging to someone else says nothing about this runner's machine.

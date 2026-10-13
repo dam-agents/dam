@@ -33,6 +33,7 @@ export const POD_FAILURE_REASONS = new Set([
   "MachineBootFailed",
   "MachineImageUnavailable",
   "MachineRunnerUnschedulable",
+  "MachineStorageFull",
 ]);
 
 export const GATEWAY_FAILURE_REASONS = new Set([
@@ -139,6 +140,8 @@ export function describeWakeFailure(c: WakeFailureCause): string {
           return "the agent's microVM did not boot";
         case "MachineRunnerUnschedulable":
           return "the VM runner for this agent's owner cannot be placed on any node";
+        case "MachineStorageFull":
+          return "the storage its owner's agents share is full";
         default:
           return "the agent crashed while starting";
       }
