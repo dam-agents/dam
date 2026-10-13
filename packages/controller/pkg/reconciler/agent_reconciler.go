@@ -1,11 +1,13 @@
 package reconciler
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -16,6 +18,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"log/slog"
@@ -53,6 +57,7 @@ type AgentReconciler struct {
 	lifetime        context.Context
 	podResize       atomic.Int32
 	agentCache      cache.GenericLister
+	podCache        corelisters.PodLister
 	vmRunning       sync.Map
 	vmLive          sync.Map
 	resizeNotices   sync.Map
@@ -78,6 +83,12 @@ func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg 
 
 func (r *AgentReconciler) WithAgentCache(lister cache.GenericLister) *AgentReconciler {
 	r.agentCache = lister
+	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a reconcile reads an agent's pods up to three times, and every change to those pods already requeues the agent through the pod informer, so the informer's cache answers instead of the API server. A reconciler built without the cache — the tests — reads them live.
+func (r *AgentReconciler) WithPodCache(lister corelisters.PodLister) *AgentReconciler {
+	r.podCache = lister
 	return r
 }
 
@@ -519,7 +530,13 @@ func (r *AgentReconciler) podCurrentAndReady(ctx context.Context, ssName string)
 }
 
 func (r *AgentReconciler) readPod(ctx context.Context, ssName string) (*corev1.Pod, error) {
-	pod, err := r.client.CoreV1().Pods(r.config.Namespace).Get(ctx, ssName+"-0", metav1.GetOptions{})
+	var pod *corev1.Pod
+	var err error
+	if r.podCache != nil {
+		pod, err = r.podCache.Pods(r.config.Namespace).Get(ssName + "-0")
+	} else {
+		pod, err = r.client.CoreV1().Pods(r.config.Namespace).Get(ctx, ssName+"-0", metav1.GetOptions{})
+	}
 	if errors.IsNotFound(err) {
 		return nil, nil
 	}
@@ -884,12 +901,22 @@ func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, stat
 	if err != nil {
 		return fmt.Errorf("building selector: %w", err)
 	}
-	pods, err := r.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
+	var pods []*corev1.Pod
+	if r.podCache != nil {
+		pods, err = r.podCache.Pods(namespace).List(sel)
+	} else {
+		var list *corev1.PodList
+		if list, err = r.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: sel.String()}); err == nil {
+			for i := range list.Items {
+				pods = append(pods, &list.Items[i])
+			}
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("listing pods: %w", err)
 	}
-	for _, p := range pods.Items {
-		if !podStuckOnSupersededRevision(ss, &p) {
+	for _, p := range pods {
+		if !podStuckOnSupersededRevision(ss, p) {
 			continue
 		}
 		if p.DeletionTimestamp != nil {
@@ -899,7 +926,7 @@ func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, stat
 			"namespace", namespace, "statefulset", statefulSetName, "pod", p.Name,
 			"podRev", p.Labels["controller-revision-hash"],
 			"currentRev", ss.Status.CurrentRevision, "targetRev", ss.Status.UpdateRevision)
-		if err := r.client.CoreV1().Pods(namespace).Delete(ctx, p.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+		if err := r.client.CoreV1().Pods(namespace).Delete(ctx, p.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &p.UID, ResourceVersion: &p.ResourceVersion}}); err != nil && !errors.IsNotFound(err) && !errors.IsConflict(err) {
 			return fmt.Errorf("deleting stuck pod %s: %w", p.Name, err)
 		}
 	}
@@ -943,10 +970,26 @@ func (r *AgentReconciler) applyUnstructured(ctx context.Context, gvr schema.Grou
 		if err != nil {
 			return err
 		}
+		if unstructuredCurrent(existing, desired) {
+			return nil
+		}
 		desired.SetResourceVersion(existing.GetResourceVersion())
 		_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
 		return err
 	})
+}
+
+func unstructuredCurrent(existing, desired *unstructured.Unstructured) bool {
+	for _, field := range [][]string{{"spec"}, {"metadata", "labels"}, {"metadata", "annotations"}, {"metadata", "ownerReferences"}} {
+		have, _, _ := unstructured.NestedFieldNoCopy(existing.Object, field...)
+		want, _, _ := unstructured.NestedFieldNoCopy(desired.Object, field...)
+		haveJSON, errHave := json.Marshal(have)
+		wantJSON, errWant := json.Marshal(want)
+		if errHave != nil || errWant != nil || !bytes.Equal(haveJSON, wantJSON) {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *AgentReconciler) applyConfigMap(ctx context.Context, desired *corev1.ConfigMap) error {
@@ -958,6 +1001,10 @@ func (r *AgentReconciler) applyConfigMap(ctx context.Context, desired *corev1.Co
 		}
 		if err != nil {
 			return err
+		}
+		if maps.Equal(existing.Data, desired.Data) && maps.Equal(existing.Labels, desired.Labels) &&
+			equality.Semantic.DeepEqual(existing.OwnerReferences, desired.OwnerReferences) {
+			return nil
 		}
 		existing.Data = desired.Data
 		existing.OwnerReferences = desired.OwnerReferences
