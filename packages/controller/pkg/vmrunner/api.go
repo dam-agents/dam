@@ -82,7 +82,13 @@ type MachineStatus struct {
 	// UNIT_BOUNDARY_DESCRIPTION: the host memory the running machine's VMM
 	// UNIT_BOUNDARY_DESCRIPTION: holds, as the runner last measured it. Zero
 	// UNIT_BOUNDARY_DESCRIPTION: until measured, which counts as MemoryMiB.
-	UsedMiB int    `json:"usedMiB,omitempty"`
+	UsedMiB int `json:"usedMiB,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the disk the machine's last start asked for,
+	// UNIT_BOUNDARY_DESCRIPTION: in GiB. Only a runner that grows a disk at
+	// UNIT_BOUNDARY_DESCRIPTION: the next start rather than restarting for it
+	// UNIT_BOUNDARY_DESCRIPTION: reports it, so zero on a running machine is
+	// UNIT_BOUNDARY_DESCRIPTION: an older runner a larger disk would reboot.
+	DiskGiB int    `json:"diskGiB,omitempty"`
 	Message string `json:"message,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: changes whenever anything else in this
 	// UNIT_BOUNDARY_DESCRIPTION: status changes. WaitStatus hands it back as

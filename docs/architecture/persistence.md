@@ -223,7 +223,7 @@ Toolchains the agent installed for itself are never touched; on the vm Backend o
 **The `vm` Backend has no PVCs, and one disk.** A pod attaches a volume per path, so a mount there is a size and a placement at once.
 A machine has a single disk, so its size is the Agent's own `storageSize`, stated once and rounded once, and the path it holds apart from the root is `HOME`.
 That is not a field an Agent sets: `HOME` is fixed on both backends, and it is already the only path every template and starter kit in the chart persists.
-The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete.
+The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size at the machine's next start and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete.
 It is per owner rather than per Agent, so the storage-class pin and the warm pool do not apply and the storage migration never sees it.
 An Agent whose mounts ask to persist a path outside `HOME` is refused rather than reconciled, because a machine cannot keep it and silently dropping it is how an agent comes to look healthy while discarding its work.
 

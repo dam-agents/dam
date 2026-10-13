@@ -24,6 +24,7 @@ pub fn router(server: Arc<Server>, token: Arc<Token>) -> Router {
     let machines = Router::new()
         .route("/release", get(release))
         .route("/machines", get(list))
+        .route("/usage", get(usage))
         .route("/machines/{id}", get(status).put(ensure).delete(remove))
         .route(
             "/machines/{id}/seed",
@@ -146,6 +147,15 @@ impl Token {
             .clone();
         capability::derive_key(current.as_bytes())
     }
+
+    fn usage_ok(&self, got: &str) -> bool {
+        let current = self
+            .current
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        capability::verify_usage(current.as_bytes(), got)
+    }
 }
 
 fn read_token(path: &std::path::Path) -> anyhow::Result<String> {
@@ -160,14 +170,15 @@ fn read_token(path: &std::path::Path) -> anyhow::Result<String> {
     Ok(token.to_string())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: who a request was let in as. The owner's token opens every route; a seed capability opens only the seed upload of the machine it names, and the upload is told which one it carries, since what a capability may seed is narrower still.
+// UNIT_BOUNDARY_DESCRIPTION: who a request was let in as. The owner's token opens every route; a seed capability opens only the seed upload of the machine it names, and the upload is told which one it carries, since what a capability may seed is narrower still; the usage capability opens only the usage read.
 #[derive(Debug, Clone)]
 pub enum Authority {
     Token,
     Capability(capability::Verified),
+    Usage,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the controller is the runner's only caller with its token, and a request without it gets nothing, not even a status. The one exception is a runtime migration's copy Job, which carries a seed capability instead and is let in to `PUT /machines/{id}/seed` alone, for the machine the capability names and before it expires. The token comparison takes the same time however much of the token matches.
+// UNIT_BOUNDARY_DESCRIPTION: the controller is the runner's only caller with its token, and a request without it gets nothing, not even a status. Two exceptions: a runtime migration's copy Job, which carries a seed capability instead and is let in to `PUT /machines/{id}/seed` alone, for the machine the capability names and before it expires; and the api-server, which carries the usage capability and is let in to `GET /usage` alone. The token comparison takes the same time however much of the token matches.
 async fn authorized(State(token): State<Arc<Token>>, mut request: Request, next: Next) -> Response {
     let got = request
         .headers()
@@ -177,6 +188,13 @@ async fn authorized(State(token): State<Arc<Token>>, mut request: Request, next:
     let got = got.strip_prefix("Bearer ").unwrap_or(got).to_string();
     if token.matches(got.as_bytes()) {
         request.extensions_mut().insert(Authority::Token);
+        return next.run(request).await;
+    }
+    if request.method() == axum::http::Method::GET
+        && request.uri().path() == "/usage"
+        && token.usage_ok(&got)
+    {
+        request.extensions_mut().insert(Authority::Usage);
         return next.run(request).await;
     }
     let Some(machine) = seed_upload_of(&request).filter(|_| capability::looks_like(&got)) else {
@@ -246,6 +264,14 @@ async fn release() -> Response {
         .map(|dir| crate::release::read_status(&crate::release::status_file(dir.as_ref())))
         .unwrap_or_default();
     Json(status).into_response()
+}
+
+async fn usage(State(server): State<Arc<Server>>) -> Response {
+    blocking(move || match server.usage() {
+        Ok(usage) => Json(usage).into_response(),
+        Err(e) => plain(StatusCode::INTERNAL_SERVER_ERROR, &format!("{e:#}")),
+    })
+    .await
 }
 
 async fn list(State(server): State<Arc<Server>>) -> Response {
@@ -351,6 +377,7 @@ async fn receive_seed(
     let capability = match authority {
         Authority::Token => None,
         Authority::Capability(verified) => Some(verified),
+        Authority::Usage => return plain(StatusCode::UNAUTHORIZED, "unauthorized"),
     };
     let machine = id.clone();
     let claimed = tokio::task::spawn_blocking(move || server.claim_seed(&id, capability)).await;
@@ -899,6 +926,41 @@ mod tests {
             std::fs::read(share.join(crate::share::SEED_FILE)).unwrap(),
             b"tar"
         );
+    }
+
+    // TEST_SCENARIO: the api-server carries the usage capability instead of the runner's token. It opens the usage read and nothing else; a seed capability does not open the usage read, and neither does a usage capability minted under another runner's token.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_usage_capability_opens_only_the_usage_read() {
+        let api = api_on("usage-scope", Arc::new(Parked(State::Stopped.into())));
+        created_for_migration(&api, "m1");
+        let usage = capability::mint_usage(b"secret");
+        for (method, path) in [
+            ("GET", "/machines"),
+            ("GET", "/machines/m1"),
+            ("PUT", "/machines/m1"),
+            ("DELETE", "/machines/m1"),
+            ("PUT", "/machines/m1/seed"),
+        ] {
+            assert_eq!(
+                call(&api, method, path, Some(&usage), SPEC).await,
+                (StatusCode::UNAUTHORIZED, "unauthorized\n".to_string()),
+                "{method} {path}"
+            );
+        }
+        for refused in [
+            seed_capability("m1", in_an_hour()),
+            capability::mint_usage(b"other"),
+        ] {
+            assert_eq!(
+                call(&api, "GET", "/usage", Some(&refused), "").await.0,
+                StatusCode::UNAUTHORIZED
+            );
+        }
+        let (status, body) = call(&api, "GET", "/usage", Some(&usage), "").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let read: crate::api::RunnerUsage = serde_json::from_str(&body).unwrap();
+        assert_eq!(read.machines.len(), 1, "{body}");
+        assert_eq!(read.machines[0].id, "m1");
     }
 
     // TEST_SCENARIO: a capability outlives its Job only by its expiry. Presented after it, it is refused with a reason the Job's error carries to the Agent, and nothing is stored.
