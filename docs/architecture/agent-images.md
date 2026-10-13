@@ -42,6 +42,8 @@ Playwright's browsers sit there too, each image naming its own.
 An install cut short (the installer killed, a node drained) is redone on the next run rather than taken as done: mise records a version as mid-install only in its cache, so the installer keeps that cache in the node directory too, and it removes any version directory left empty.
 
 The directory is in the boot path: an agent that starts on a node before its installer has finished has no harness until its next start.
+A download host that stalls or trickles fails the install in bounded time, after mise's own retries, and the kubelet restarts the installer until it succeeds, each run keeping what the last one installed.
+CI's vm lane restores the node directory from a cache that main writes, keyed on the lockfile and the installer, so on a hit the installer reaches no download host.
 On a Mac, whose [host runner](vm-host-runner.md) runs outside the cluster, the tools are copied from the k3s node onto a case-sensitive volume of the runner's.
 
 Only the agent-runtime and the two driver SDKs (JavaScript and Python) come from the rest of the repo; the build compiles them into each image.

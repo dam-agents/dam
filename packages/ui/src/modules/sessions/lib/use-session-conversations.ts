@@ -8,7 +8,7 @@ import {
 import { useCallback, useMemo } from "react";
 
 import { useAgents } from "../../agents/api/queries.js";
-import { slackChannelLabel } from "../../sandboxes/hooks/use-slack-channel-form.js";
+import { slackChannelLabel } from "../../sandboxes/lib/slack-channels.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 
 type SessionConversationLabel = (session: SessionView) => string | undefined;
