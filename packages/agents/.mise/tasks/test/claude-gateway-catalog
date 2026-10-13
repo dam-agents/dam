@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const gateway = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/model-gateway.mjs", import.meta.url));
 let listing = null;
+let listingAnswered = Promise.resolve();
 const forwarded = [];
 const upstream = createServer((req, res) => {
   let body = "";
@@ -21,7 +22,8 @@ const upstream = createServer((req, res) => {
   req.on("end", () => {
     res.setHeader("content-type", "application/json");
     if (req.url.startsWith("/v1/models")) {
-      if (listing) res.end(JSON.stringify({ data: listing.map((id) => ({ id })) }));
+      const ids = listing;
+      if (ids) void listingAnswered.then(() => res.end(JSON.stringify({ data: ids.map((id) => ({ id })) })));
       return;
     }
     forwarded.push(JSON.parse(body).model);
@@ -48,8 +50,9 @@ async function withGateway(catalog, run) {
     });
     await run({ home, listenedAfterMs: Date.now() - started });
   } finally {
+    const exited = child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : once(child, "exit");
     child.kill();
-    await once(child, "exit");
+    await exited;
     rmSync(home, { recursive: true, force: true });
   }
 }
@@ -67,9 +70,12 @@ try {
 
   // TEST_SCENARIO: The provider retired the model the kept list named for a tier, and Claude Code already started with that name. The listing that follows the start replaces the list, and a request for the retired name goes to the tier's current model instead of failing at the provider.
   listing = ["rits/zai-org/glm-5-4"];
+  let answerListing = () => {};
+  listingAnswered = new Promise((resolve) => { answerListing = resolve; });
   forwarded.length = 0;
   await withGateway(["rits/zai-org/glm-5-3"], async ({ home }) => {
     assert.match(await envSh(), /claude\/rits\/zai-org\/glm-5-3/);
+    answerListing();
     for (let i = 0; i < 50 && !(await fetch("http://127.0.0.1:24180/p/cb/v1/models").then((r) => r.text())).includes("glm-5-4"); i++) await new Promise((r) => setTimeout(r, 100));
     await fetch("http://127.0.0.1:24180/p/cb/v1/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "claude/rits/zai-org/glm-5-3" }) });
     assert.deepEqual(forwarded, ["rits/zai-org/glm-5-4"]);
@@ -79,6 +85,7 @@ try {
 
   // TEST_SCENARIO: A first start, with no kept list, on a provider that does not answer the listing. The gateway waits a short while for it, not the listing's whole timeout, because Claude Code and the person opening a chat wait behind it.
   listing = null;
+  listingAnswered = Promise.resolve();
   await withGateway(null, async ({ listenedAfterMs }) => {
     assert.ok(listenedAfterMs < 5_000, `listened after ${listenedAfterMs} ms`);
   });
