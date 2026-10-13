@@ -32,6 +32,7 @@ import { promptSecret } from "../../shared/prompt-secret.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { EXIT_RUNTIME_FAILURE, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { waitForRunning } from "../services/wait-for-state.js";
+import { failureReason, REFUSAL_HINT, refusalReason } from "./wait-or-exit.js";
 import type { TemplateService } from "../../template/index.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
@@ -258,6 +259,7 @@ async function runCreate(
     waitResult = await waitForRunning(svc, agent.id, {
       timeoutSeconds: WAIT_TIMEOUT_SECONDS,
       graceSeconds: 0,
+      initialState: agent.state,
       onStateChange: (state) => {
         spin.message(`Waiting for agent to start (state: ${state})...`);
       },
@@ -281,14 +283,19 @@ async function runCreate(
     }
     case "error":
       spin.stop(
-        `Agent entered error state: ${waitResult.agent.error ?? "unknown"}`,
+        `Agent entered error state: ${failureReason(waitResult.agent)}`,
       );
       note(`dam agent get ${name}`, "Inspect");
       process.exit(EXIT_RUNTIME_FAILURE);
       return;
+    case "refused":
+      spin.stop(`Agent could not start: ${refusalReason(waitResult.agent)}`);
+      note(`${REFUSAL_HINT}\ndam agent get ${name}`, "Free room");
+      process.exit(EXIT_RUNTIME_FAILURE);
+      return;
     case "timeout":
       spin.stop(
-        `Agent still starting after ${WAIT_TIMEOUT_SECONDS}s (state: ${waitResult.lastState})`,
+        `Agent still starting after ${WAIT_TIMEOUT_SECONDS}s (state: ${waitResult.agent.state})`,
       );
       note(`dam agent get ${name}`, "Check status");
       process.exit(EXIT_SUCCESS);
