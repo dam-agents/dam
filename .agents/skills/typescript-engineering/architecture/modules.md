@@ -4,13 +4,17 @@ The server is organized into **modules**, each a vertical slice for one bounded 
 
 ## Bounded contexts
 
-A bounded context is a boundary within which one domain model and language apply. The same real-world concept is modeled differently per context: in **Identity** a User has credentials, sessions and login history; in **Billing** a Customer has a payment method, invoices and a plan; in **Shipping** a Recipient has an address and delivery preferences. Each context owns its model and models only what it needs; there is no unified model.
+A bounded context is a boundary within which one domain model and language apply.
+The same real-world concept is modeled differently per context: in **Identity** a User has credentials, sessions and login history; in **Billing** a Customer has a payment method, invoices and a plan; in **Shipping** a Recipient has an address and delivery preferences.
+Each context owns its model and models only what it needs; there is no unified model.
 
-Bounded context (strategic DDD: where is the model's boundary?), vertical slice (architecture: how does code reflect it?) and module (codebase: what's the folder called?) are three views of one thing; module ↔ bounded context is 1:1. **Modules follow business boundaries, not technical concerns**: `identity/`, `billing/`, `orders/`, never `database/`, `middleware/`, `utils/`.
+Bounded context (strategic DDD: where is the model's boundary?), vertical slice (architecture: how does code reflect it?) and module (codebase: what's the folder called?) are three views of one thing; module ↔ bounded context is 1:1.
+**Modules follow business boundaries, not technical concerns**: `identity/`, `billing/`, `orders/`, never `database/`, `middleware/`, `utils/`.
 
 ## Definition vs implementation
 
-- **Definition** (contract package): *what* the module exposes. Flat, no layers.
+- **Definition** (contract package): *what* the module exposes.
+  Flat, no layers.
   ```
   packages/api-contract/src/modules/
     identity/
@@ -18,9 +22,11 @@ Bounded context (strategic DDD: where is the model's boundary?), vertical slice 
       router.ts   tRPC router accepting a service implementation
     billing/ ...
   ```
-  The router delegates every call to the service implementation (no business logic); the service interface is the method contract the server implements. Interface naming (`*Service`, `*Context`, …) is free, but file, interface and variable names agree within a project.
+  The router delegates every call to the service implementation (no business logic); the service interface is the method contract the server implements.
+  Interface naming (`*Service`, `*Context`, …) is free, but file, interface and variable names agree within a project.
 
-- **Implementation** (server package): *how* it works, in the three layers ([slice-composition.md](slice-composition.md)). Validation stays in the contract package.
+- **Implementation** (server package): *how* it works, in the three layers ([slice-composition.md](slice-composition.md)).
+  Validation stays in the contract package.
   ```
   packages/server/src/modules/
     identity/
@@ -38,7 +44,8 @@ Within a module the layer rule holds, `services → domain ← infrastructure`: 
 
 ## Composition root (`compose.ts`)
 
-The **only place** concrete infrastructure is referenced: takes raw dependencies (DB connections, API clients), returns wired services. Factory pattern: [infrastructure.md](infrastructure.md).
+The **only place** concrete infrastructure is referenced: takes raw dependencies (DB connections, API clients), returns wired services.
+Factory pattern: [infrastructure.md](infrastructure.md).
 
 ```typescript
 // modules/orders/compose.ts
@@ -53,7 +60,9 @@ export function composeOrdersModule(db: Database, owner: string) {
 
 ## Public API (`index.ts`)
 
-The **only** entry point other modules may import. It exports domain event types and their type guards; nothing else. Services, entities, value objects, aggregates and infrastructure stay private.
+The **only** entry point other modules may import.
+It exports domain event types and their type guards; nothing else.
+Services, entities, value objects, aggregates and infrastructure stay private.
 
 ```typescript
 // modules/orders/index.ts

@@ -1,96 +1,52 @@
 # SkyDiscover agent (AdaEvolve & EvoX)
 
-Runs [**SkyDiscover**](https://github.com/skydiscover-ai/skydiscover) — the
-Berkeley Sky lab's unified framework for LLM-driven code & algorithm
-optimization: an LLM proposes candidate programs, an evaluator scores each
-against a measurable objective, and the search loops toward better solutions —
-as a platform agent type.
+Runs [**SkyDiscover**](https://github.com/skydiscover-ai/skydiscover) — the Berkeley Sky lab's unified framework for LLM-driven code & algorithm optimization: an LLM proposes candidate programs, an evaluator scores each against a measurable objective, and the search loops toward better solutions — as a platform agent type.
 
 One image backs **two curated presets**, SkyDiscover's own search strategies:
 
-- **AdaEvolve** (`--search adaevolve`) — multi-island adaptive search (UCB,
-  migration, paradigm breakthroughs); adapts search parameters on the fly for
-  fast early gains on short budgets.
-- **EvoX** (`--search evox`) — a self-evolving paradigm that co-adapts
-  solution generation and experience management, evolving the search strategy
-  itself for stronger long-horizon gains.
+- **AdaEvolve** (`--search adaevolve`) — multi-island adaptive search (UCB, migration, paradigm breakthroughs); adapts search parameters on the fly for fast early gains on short budgets.
+- **EvoX** (`--search evox`) — a self-evolving paradigm that co-adapts solution generation and experience management, evolving the search strategy itself for stronger long-horizon gains.
 
-Each preset is its own template over this single image, differing only in the
-injected `SKYDISCOVER_SEARCH` env (the agent defaults every run's `--search`
-to it) — the same one-image/N-templates pattern as k-search/k-search-local.
-SkyDiscover's *wrapped* backends (`--search openevolve|gepa|shinkaevolve` and
-the `*_native` variants) are deliberately **not** installed — those ship as
-their own workload images (openevolve, gepa, shinkaevolve packages).
+Each preset is its own template over this single image, differing only in the injected `SKYDISCOVER_SEARCH` env (the agent defaults every run's `--search` to it) — the same one-image/N-templates pattern as k-search/k-search-local.
+SkyDiscover's *wrapped* backends (`--search openevolve|gepa|shinkaevolve` and the `*_native` variants) are deliberately **not** installed — those ship as their own workload images (openevolve, gepa, shinkaevolve packages).
 
-This is a **conversational, claude-code-driven workload**, not a bare CLI. You
-point it at a target repo (or a from-scratch problem) and a measurable
-objective in chat ("evolve this function to run faster on this input set");
-it authors the run inputs, runs the search, and reports the winning program
-(and can open a PR with it).
+This is a **conversational, claude-code-driven workload**, not a bare CLI.
+You point it at a target repo (or a from-scratch problem) and a measurable objective in chat ("evolve this function to run faster on this input set"); it authors the run inputs, runs the search, and reports the winning program (and can open a PR with it).
 
 ## Required connections
 
-- **Model provider** (required) — an OpenAI- and Anthropic-compatible endpoint
-  (an IBM-LiteLLM-class connection). A single such connection powers both the
-  conversation and SkyDiscover's search loop; a pure-OpenAI provider only
-  covers the loop and leaves the agent itself without a model.
-- **GitHub** — needed to clone a private target repo or to open a PR with the
-  evolved code. A report-only run against a public repo needs no GitHub access.
+- **Model provider** (required) — an OpenAI- and Anthropic-compatible endpoint (an IBM-LiteLLM-class connection).
+  A single such connection powers both the conversation and SkyDiscover's search loop; a pure-OpenAI provider only covers the loop and leaves the agent itself without a model.
+- **GitHub** — needed to clone a private target repo or to open a PR with the evolved code.
+  A report-only run against a public repo needs no GitHub access.
 
 ## Image
 
-Built as a mise environment over the `claude-code` image's ([`image.toml`](image.toml))
-so it inherits the Claude harness, the model gateway, and CA trust — the pod
-holds no credentials. On top it adds the `skydiscover` package
-in a venv at `$SKYDISCOVER_VENV` (a mise `pipx:` tool from the upstream git
-repo at a pinned commit) — base package only:
-AdaEvolve and EvoX need no extras, the `external` extra (wrapped backends) is
-deliberately absent, and the heavy `math` extra is runtime-installed per run
-when a task needs it — except `scipy`, which is baked in (the venv resets
-with every pod restart, and nearly every numerical task was paying a
-minutes-long runtime install for it). The install is a git ref rather than a PyPI pin because
-the 0.1.0 wheel (latest release) predates EvoX's config data files — its code
-loads `search/evox/config/search.yaml`, which landed upstream only after the
-release, so `--search evox` crashes on every released wheel — and the
-`skydiscover optimize` CLI the skill drives. A build-time check
-([`check-packaging.py`](check-packaging.py)) fails the build when upstream
-packaging drifts from what the skill says: the EvoX config and the agentic
-tool schemas ship, `search.share_llm` exists, and the CLI is `skydiscover`.
+Built as a mise environment over the `default` image's ([`image.toml`](image.toml)) so it inherits the Claude harness, the model gateway, and CA trust — the pod holds no credentials.
+On top it adds the `skydiscover` package in a venv at `$SKYDISCOVER_VENV` (a mise `pipx:` tool from the upstream git repo at a pinned commit) — base package only: AdaEvolve and EvoX need no extras, the `external` extra (wrapped backends) is deliberately absent, and the heavy `math` extra is runtime-installed per run when a task needs it — except `scipy`, which is baked in (the venv resets with every pod restart, and nearly every numerical task was paying a minutes-long runtime install for it).
+The install is a git ref rather than a PyPI pin because the 0.1.0 wheel (latest release) predates EvoX's config data files — its code loads `search/evox/config/search.yaml`, which landed upstream only after the release, so `--search evox` crashes on every released wheel — and the `skydiscover optimize` CLI the skill drives.
+A build-time check ([`check-packaging.py`](check-packaging.py)) fails the build when upstream packaging drifts from what the skill says: the EvoX config and the agentic tool schemas ship, `search.share_llm` exists, and the CLI is `skydiscover`.
 Switch back to a version pin on the next release that carries them.
-SkyDiscover's Synthesize module (`skydiscover init`) ships in the same
-package but is not part of this workload; the skill tells the agent never to
-run it. Both
-harnesses (chat and terminal) are inherited unchanged from the base;
-SkyDiscover customizes behavior via `AGENTS.md` + the `skydiscover` skill, not
-the harness scripts.
+SkyDiscover's Synthesize module (`skydiscover init`) ships in the same package but is not part of this workload; the skill tells the agent never to run it.
+Both harnesses (chat and terminal) are inherited unchanged from the base; SkyDiscover customizes behavior via `AGENTS.md` + the `skydiscover` skill, not the harness scripts.
 
 How the pod reaches models without holding keys (`openai/`-prefixed model ids
-+ `--api-base`, the placeholder-key idiom) is defined once in the `skydiscover`
-skill's Step 1.
++ `--api-base`, the placeholder-key idiom) is defined once in the `skydiscover` skill's Step 1.
 
 ## Build
 
 ```sh
-mise run //packages/agents:oci -- skydiscover   # claude-code plus this workload's mise environment
+mise run //packages/agents:oci -- skydiscover   # the default image plus this workload's mise environment
 mise run cluster:build -- agents                 # rebuild + restart agent pods in the dev cluster
 ```
 
 The pinned commit is the `version` in [`image.toml`](image.toml).
 
-`values-local.yaml` points the adaevolve/evox templates at the locally-built
-`platform-skydiscover:latest` but keeps them `enabled: false`; flip one to
-`true` to show it in the local catalog. `cluster:install`/`cluster:build -- agents`
-resolve the build from the image repository basename, so both presets build
-(and load) the one skydiscover image.
+`values-local.yaml` points the adaevolve/evox templates at the locally-built `platform-skydiscover:latest` but keeps them `enabled: false`; flip one to `true` to show it in the local catalog.
+`cluster:install`/`cluster:build -- agents` resolve the build from the image repository basename, so both presets build (and load) the one skydiscover image.
 
 ## CI / publishing
 
-The skydiscover image is published by CI (`.github/workflows/cd.yml`): the
-per-arch `build-workloads` job runs after `merge-agents` — it builds `FROM`
-claude-code, so it pulls its base by the same per-commit tag — and
-`merge-workloads` publishes the multi-arch manifest to the public
-`quay.io/dam-agents/skydiscover` (no `imagePullSecret`). Registering the
-component in `.mise/tasks/image/resolve`'s `WORKLOADS` list is what enrolls it
-in that job. Both templates (`adaevolve`, `evox`) are enabled in
-`values.yaml` under "Pre-configured Images" (`category: preconfigured`,
-`experimental: true`).
+The skydiscover image is published by CI (`.github/workflows/cd.yml`): the per-arch `build-workloads` job runs after `merge-agents` — it builds `FROM` the default image, so it pulls its base by the same per-commit tag — and `merge-workloads` publishes the multi-arch manifest to the public `quay.io/dam-agents/skydiscover` (no `imagePullSecret`).
+Registering the component in `.mise/tasks/image/resolve`'s `WORKLOADS` list is what enrolls it in that job.
+Both templates (`adaevolve`, `evox`) are enabled in `values.yaml` under "Pre-configured Images" (`category: preconfigured`, `experimental: true`).

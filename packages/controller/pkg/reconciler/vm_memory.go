@@ -24,28 +24,42 @@ const (
 	memoryTargetPercent   = 80
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: remembers what the runner last measured a
-// UNIT_BOUNDARY_DESCRIPTION: machine's VMM holding; a machine that is not
+// UNIT_BOUNDARY_DESCRIPTION: remembers the running machine as the runner
+// UNIT_BOUNDARY_DESCRIPTION: last reported it: what its VMM holds, and the
+// UNIT_BOUNDARY_DESCRIPTION: size it booted with, which a new size reaches
+// UNIT_BOUNDARY_DESCRIPTION: only at its next start. A machine that is not
 // UNIT_BOUNDARY_DESCRIPTION: running holds nothing to remember.
 func (r *AgentReconciler) noteMachineUse(name string, machine vmrunner.MachineStatus) {
-	if machine.State == vmrunner.StateRunning && machine.UsedMiB > 0 {
-		r.vmUsedMiB.Store(name, machine.UsedMiB)
+	if machine.State == vmrunner.StateRunning {
+		r.vmLive.Store(name, machine)
 		return
 	}
-	r.vmUsedMiB.Delete(name)
+	r.vmLive.Delete(name)
+}
+
+func (r *AgentReconciler) liveMachine(name string) vmrunner.MachineStatus {
+	live, _ := r.vmLive.Load(name)
+	machine, _ := live.(vmrunner.MachineStatus)
+	return machine
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a machine that should run is counted at,
 // UNIT_BOUNDARY_DESCRIPTION: the same way the runner admits it: its measured
-// UNIT_BOUNDARY_DESCRIPTION: use plus headroom, never above its size, and its
-// UNIT_BOUNDARY_DESCRIPTION: full size until the runner has measured it.
+// UNIT_BOUNDARY_DESCRIPTION: use plus headroom, never above its size, and the
+// UNIT_BOUNDARY_DESCRIPTION: boot estimate, or its size when that is smaller
+// UNIT_BOUNDARY_DESCRIPTION: or no estimate is set, until the runner has measured it.
+// UNIT_BOUNDARY_DESCRIPTION: A running machine's size is the larger of the one
+// UNIT_BOUNDARY_DESCRIPTION: it booted with and the one its next start takes.
 func (r *AgentReconciler) accountedMemoryMiB(name string, spec *apiv1.AgentSpec) int {
-	size := r.machineMemoryMiB(spec)
-	used, ok := r.vmUsedMiB.Load(name)
-	if !ok {
+	live := r.liveMachine(name)
+	size := max(r.machineMemoryMiB(spec), live.MemoryMiB)
+	if live.UsedMiB == 0 {
+		if boot := r.config.VM.Runner.BootMiB; boot > 0 {
+			return min(size, boot)
+		}
 		return size
 	}
-	return min(size, used.(int)+r.config.VM.Runner.HeadroomMiB)
+	return min(size, live.UsedMiB+r.config.VM.Runner.HeadroomMiB)
 }
 
 func (r *AgentReconciler) runnerLimitMiB() int {

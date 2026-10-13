@@ -5,7 +5,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
-import type { DirListResult } from "agent-runtime-api";
+import type { DirListResult, HomeVolume } from "agent-runtime-api";
 
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
@@ -69,6 +69,20 @@ export function useDirSnapshot(agentId: string | null, path: string) {
     placeholderData: keepPreviousData,
     select: (data) => data.results.find((r) => r.path === path) ?? null,
     meta: { errorToast: "Couldn't refresh file tree" },
+  });
+}
+
+const VOLUME_POLL_MS = 60_000;
+
+export function useHomeVolume(agentId: string | null) {
+  const operable = useIsAgentOperable(agentId);
+  return useQuery({
+    queryKey: fileKeys.volume(agentId ?? "_none"),
+    queryFn: async (): Promise<HomeVolume | null> =>
+      clientFor(agentId!).files.volume.query(),
+    enabled: !!agentId && operable,
+    refetchInterval: VOLUME_POLL_MS,
+    retry: 0,
   });
 }
 

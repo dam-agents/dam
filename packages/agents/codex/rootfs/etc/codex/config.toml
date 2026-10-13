@@ -21,3 +21,5 @@ trust_level = "trusted"
 # MCP servers in [mcp_servers.*] do not depend on it.
 [features]
 plugins = false
+# Interactive launches otherwise leave a background daemon that copies the CLI aside and self-updates hourly
+daemon_auto_start = false

@@ -24,4 +24,6 @@ export const acpSessionsKeys = {
     ] as const,
   session: (agentId: string | null, sessionId: string | null) =>
     [...acpSessionsKeys.agent(agentId), "session", sessionId] as const,
+  history: (agentId: string, sessionId: string) =>
+    [...acpSessionsKeys.agent(agentId), "history", sessionId] as const,
 };

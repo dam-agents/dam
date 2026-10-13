@@ -81,17 +81,25 @@ describe("acp-runtime: steer points", () => {
    */
   it("steers right after the agent's tool calls finish", async () => {
     const { world, bob } = await turnRunning();
-    world
-      .harness()
-      .emit(update({ sessionUpdate: "tool_call", toolCallId: "t1", status: "in_progress" }));
+    world.harness().emit(
+      update({
+        sessionUpdate: "tool_call",
+        toolCallId: "t1",
+        status: "in_progress",
+      }),
+    );
 
     bob.send(uiPrompt(4, "I changed my mind"));
     await settle();
     expect(world.harness().received(STEER_METHOD)).toEqual([]);
 
-    world
-      .harness()
-      .emit(update({ sessionUpdate: "tool_call_update", toolCallId: "t1", status: "completed" }));
+    world.harness().emit(
+      update({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "completed",
+      }),
+    );
     await settle();
     expect(world.harness().received(STEER_METHOD)).toHaveLength(1);
   });

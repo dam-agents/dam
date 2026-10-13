@@ -78,6 +78,7 @@ func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object
 		AgentBase: config.AgentBase{
 			TerminationGracePeriod: 5,
 			IdleTimeout:            config.Duration(time.Hour),
+			VMIdleTimeout:          config.Duration(time.Hour),
 			ContainerSecurityContext: &corev1.SecurityContext{
 				Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 			},
@@ -626,6 +627,40 @@ func TestReconcile_Idempotent(t *testing.T) {
 	require.NoError(t, err)
 	err = r.Reconcile(context.Background(), agent)
 	require.NoError(t, err)
+}
+
+func TestReconcile_SkipsUnchangedStatefulSetUpdates(t *testing.T) {
+	agent := agentCR()
+	r, client := setupReconciler(t, agent)
+	ctx := context.Background()
+	statefulSetUpdates := func() []string {
+		var names []string
+		for _, a := range client.Actions() {
+			if a.GetVerb() == "update" && a.GetResource().Resource == "statefulsets" {
+				names = append(names, a.(k8stesting.UpdateAction).GetObject().(*appsv1.StatefulSet).Name)
+			}
+		}
+		return names
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	client.ClearActions()
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Empty(t, statefulSetUpdates(), "an unchanged render must not write the StatefulSets")
+
+	gw, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-agent-gateway", metav1.GetOptions{})
+	require.NoError(t, err)
+	gw.Spec.Replicas = new(int32(0))
+	_, err = client.AppsV1().StatefulSets("test-agents").Update(ctx, gw, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	client.ClearActions()
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, []string{"my-agent-gateway"}, statefulSetUpdates(), "a running agent's gateway at zero replicas must be scaled back up")
+
+	r.config.EnvoyImage = "mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.0"
+	client.ClearActions()
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Contains(t, statefulSetUpdates(), "my-agent-gateway", "a changed render must be written")
 }
 
 func TestDelete_CleansPVCs(t *testing.T) {

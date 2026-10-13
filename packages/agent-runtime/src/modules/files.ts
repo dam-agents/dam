@@ -21,6 +21,7 @@ import type {
 } from "agent-runtime-api";
 import { err, ok } from "agent-runtime-api";
 
+import { readHomeVolume } from "../core/home-volume-full.js";
 import { IMPORT_STAGING_PREFIX } from "../core/import-staging.js";
 import { noticeStream } from "../core/notice-stream.js";
 import { createFilesWatcher } from "./files-watch.js";
@@ -109,6 +110,7 @@ export function createFilesService(workingDir: string): FilesService {
 
   return {
     listDirs: (paths) => Promise.all(paths.map((p) => listDir(workingDir, p))),
+    volume: () => readHomeVolume(workingDir),
     watchDirs: (paths, signal) =>
       noticeStream(
         { topic: "workspace" } as const,

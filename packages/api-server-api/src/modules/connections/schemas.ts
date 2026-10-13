@@ -246,8 +246,3 @@ export const connectionCreateInputSchema = z.discriminatedUnion("authKind", [
   noneCreateInput,
 ]);
 export type ConnectionCreateInput = z.infer<typeof connectionCreateInputSchema>;
-
-export const connectionTestAnthropicInputSchema = z.object({
-  value: z.string().min(1),
-  envName: z.enum(["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]),
-});

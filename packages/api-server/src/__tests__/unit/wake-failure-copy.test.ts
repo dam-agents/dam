@@ -6,6 +6,17 @@ import { wakeFailureUserCopy } from "../../modules/channels/infrastructure/wake-
 
 const notReady = { ready: false, hibernated: false } as const;
 
+describe("wakeFailureUserCopy for a start failure", () => {
+  it("names a full home volume instead of a generic crash", () => {
+    const failure = classifyWakeFailure({
+      ...notReady,
+      agentPodNotReadyReason: "HomeVolumeFull",
+    });
+    expect(wakeFailureUserCopy(failure)).toContain("home volume is full");
+    expect(wakeFailureUserCopy(failure)).not.toContain("crashed");
+  });
+});
+
 describe("wakeFailureUserCopy for a refusal", () => {
   it("carries the VM runner's own refusal as the whole explanation", () => {
     const copy = wakeFailureUserCopy(

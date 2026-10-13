@@ -437,7 +437,7 @@ mod tests {
         fn update(&self, _: &str, _: &Update<'_>) -> anyhow::Result<()> {
             Ok(())
         }
-        fn start(&self, _: &str) -> anyhow::Result<()> {
+        fn start(&self, _: &str, _: i32) -> anyhow::Result<()> {
             Ok(())
         }
         fn stop(&self, _: &str) -> anyhow::Result<()> {
@@ -464,7 +464,7 @@ mod tests {
         fn update(&self, _: &str, _: &Update<'_>) -> anyhow::Result<()> {
             Ok(())
         }
-        fn start(&self, _: &str) -> anyhow::Result<()> {
+        fn start(&self, _: &str, _: i32) -> anyhow::Result<()> {
             Ok(())
         }
         fn stop(&self, _: &str) -> anyhow::Result<()> {
@@ -526,6 +526,7 @@ mod tests {
                 memory_mib: 1 << 20,
                 reserve_mib: 0,
                 headroom_mib: 0,
+                boot_mib: 0,
                 listen: Some(Arc::new(|_| std::net::TcpListener::bind("127.0.0.1:0"))),
                 runtime: None,
             },

@@ -58,6 +58,10 @@ export function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useAutoResize(textareaRef, input);
+  useEffect(() => {
+    // UNIT_BOUNDARY_DESCRIPTION: skipped on mobile, where focusing pops the keyboard over the transcript.
+    if (key && !blockedReason && !isMobile()) textareaRef.current?.focus();
+  }, [key, blockedReason, textareaRef]);
 
   const consumeDroppedAttachments = useStore(
     (s) => s.consumeDroppedAttachments,
@@ -177,7 +181,7 @@ export function ChatInput({
   const promptHistory = usePromptHistory(recallPrompt);
 
   const send = useCallback(() => {
-    if (!key) return;
+    if (!key || loadingSession) return;
     const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
     const text = current.text.trim();
     const files =
@@ -186,7 +190,7 @@ export function ChatInput({
     promptHistory.reset();
     clearDraft(key);
     onSend(text, files);
-  }, [key, clearDraft, onSend, promptHistory]);
+  }, [key, loadingSession, clearDraft, onSend, promptHistory]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!isMobile() && promptHistory.navigate(e)) {
@@ -264,7 +268,7 @@ export function ChatInput({
               onPaste={onPaste}
               placeholder={placeholder}
               rows={1}
-              disabled={loadingSession || !key || !!blockedReason}
+              disabled={!key || !!blockedReason}
             />
             {showStop && (
               <Button

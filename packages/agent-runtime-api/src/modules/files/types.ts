@@ -36,8 +36,15 @@ export type FilesDomainError =
   | { kind: "AlreadyExists"; path: string }
   | { kind: "PayloadTooLarge"; detail: string };
 
+export interface HomeVolume {
+  freeBytes: number;
+  totalBytes: number;
+  full: boolean;
+}
+
 export interface FilesService {
   listDirs: (paths: string[]) => Promise<DirListResult[]>;
+  volume: () => Promise<HomeVolume | null>;
   readFileSafe: (
     rel: string,
   ) => Promise<Result<FileReadResult, FilesDomainError>>;

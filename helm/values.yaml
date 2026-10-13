@@ -258,7 +258,12 @@ virtualization:
     # REQUIRED when virtualization.enabled — the install fails without
     # limits.memory. Machines are processes of this pod, so that limit is also
     # what the runner admits them against (it refuses one that does not fit,
-    # keeping `reserveMiB` for itself). A running machine counts at what its
+    # keeping `reserveMiB` for itself). It is the owner's whole memory pool:
+    # vm agents have no size of their own and do not count toward the user's
+    # budget; every machine may grow to half of the limit less `reserveMiB`,
+    # so one agent can use most of the pool while a runaway guest hits its
+    # own OOM killer before it takes the runner, and every machine with it.
+    # A running machine counts at what its
     # guest measurably uses plus `headroomMiB`, never above its size, so an
     # owner can run more machines than their sizes add up to; near the limit
     # the controller hibernates the owner's idle agents. `requests.memory` is
@@ -269,14 +274,30 @@ virtualization:
     # It needs in-place pod resize (the `pods/resize` subresource,
     # Kubernetes 1.33+); on an older cluster the request stays where it is
     # set, and the controller logs that once. A node with no room defers or
-    # refuses the resize, which the controller reports too. Leave the CPU
-    # limit unset: it would throttle every guest at once.
+    # refuses the resize, which the controller reports too. The controller
+    # also sets the running pod's CPU limit in place, to `machineCPUs` for
+    # every machine that should run plus one more for the runner, so one
+    # owner's runaway VMM cannot take the node. A `limits.cpu` here caps that
+    # limit: below the machines' vCPUs it throttles every guest at once.
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
     # Memory each running machine is counted at beyond what it was last
     # measured using, for its guest to grow into before the controller acts.
     headroomMiB: 256
+    # Memory a machine is counted at until the runner first measures it,
+    # about ten seconds into its boot, when that is less than its size.
+    # Counting a boot at its full size, half the pool, would let only two
+    # machines boot at once, so a runner roll or a few wakes together would
+    # refuse the rest. A guest that touches more than this before its first
+    # measurement is under-counted until then. Each machine also boots with
+    # this much RAM, or its size when that is less, and is grown to its size
+    # once the guest is up: a boot costs time for every GiB it starts with.
+    bootMiB: 2048
+    # vCPUs every machine gets. They are threads of the runner, so an idle
+    # machine costs nothing; the runner's CPU limit covers these vCPUs for
+    # every machine that should run (see `resources`).
+    machineCPUs: 4
     # true = runners may give the node's virtualization extensions to the
     # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization,
     # or controller.agent.templateDefaults.nestedVirtualization for all),
@@ -1512,6 +1533,9 @@ controller:
 
       # Lifecycle
       idleTimeout: "1h" # hibernate idle agents; "0s" disables
+      # vm agents start fast, so they always take this and ignore their own
+      # hibernationTimeout
+      vmIdleTimeout: "5m"
       terminationGracePeriod: 5 # gateway pods have a hardcoded drain
 
       # Pod metadata + scheduling
@@ -2052,6 +2076,9 @@ harnessTools:
   nodeSelector: {}
   tolerations: []
   scc: ""
+  # A GitHub token for the installer's API lookups, which otherwise share the
+  # node address's anonymous limit. Any token works; it needs no scope.
+  githubToken: ""
   # The installer's; the idling container that keeps the pod scheduled asks
   # for almost nothing.
   resources:

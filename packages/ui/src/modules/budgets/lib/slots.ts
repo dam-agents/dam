@@ -132,7 +132,7 @@ export function computeView(
 ): ComputeView {
   const unit = slotUnitOf(budget);
   const scaledUp = agents.filter(
-    (agent) => agent.state !== "hibernated" && !agent.overBudget,
+    (agent) => agent.state !== "hibernated" && !agent.overBudget && !agent.vm,
   );
   const held = scaledUp.map((agent) => {
     const size = sizeInMi(agent.size);

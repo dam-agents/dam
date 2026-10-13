@@ -26,6 +26,7 @@ export interface WakeConditionsSnapshot {
 
 export const POD_FAILURE_REASONS = new Set([
   "OutOfMemory",
+  "HomeVolumeFull",
   "ImagePullFailure",
   "InvalidImageName",
   "ContainerTerminated",
@@ -126,6 +127,8 @@ export function describeWakeFailure(c: WakeFailureCause): string {
       switch (c.terminationReason) {
         case "OutOfMemory":
           return "the agent ran out of memory";
+        case "HomeVolumeFull":
+          return "the agent's home volume is full";
         case "ImagePullFailure":
           return "the agent image cannot be pulled";
         case "InvalidImageName":

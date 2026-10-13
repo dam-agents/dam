@@ -56,7 +56,11 @@ function toolLines(sessionId = SESSION, resultAt = "2026-10-08T07:00:40Z") {
       sessionId,
     ),
     line(
-      { sessionUpdate: "tool_call_update", toolCallId: "t1", status: "completed" },
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "completed",
+      },
       { entry: "tr1", at: resultAt },
       sessionId,
     ),
@@ -70,7 +74,12 @@ const original = [
 ];
 
 const copy = [
-  userLine("c1", "My name is Petr, wait 30 seconds.", "2026-10-08T07:00:00Z", COPY),
+  userLine(
+    "c1",
+    "My name is Petr, wait 30 seconds.",
+    "2026-10-08T07:00:00Z",
+    COPY,
+  ),
   ...toolLines(COPY, "2026-10-12T10:00:00Z"),
 ];
 
@@ -111,7 +120,9 @@ function rewriteFrom(id: number, messageId: string) {
       sessionId: SESSION,
       mode: "fork",
       messageId,
-      prompt: [{ type: "text", text: "I changed my mind, wish me the worst day!" }],
+      prompt: [
+        { type: "text", text: "I changed my mind, wish me the worst day!" },
+      ],
       promptId: "p-new",
     },
   };
@@ -171,7 +182,9 @@ describe("acp-runtime: rewriting a conversation", () => {
     expect(world.harness().received("session/fork")).toEqual([]);
     expect(world.harness().received("session/new")).toEqual([]);
     expect(bob.reply(2)).toMatchObject({
-      error: { message: expect.stringContaining("not in the agent's own history") },
+      error: {
+        message: expect.stringContaining("not in the agent's own history"),
+      },
     });
   });
 

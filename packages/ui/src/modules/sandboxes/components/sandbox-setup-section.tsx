@@ -50,7 +50,10 @@ export function SandboxSetupSection({ agent }: { agent: AgentView }) {
                 showConfirm,
               )
             )
-              updateSleep.mutate({ id: agent.id, hibernationTimeoutMin: next });
+              updateSleep.mutate({
+                id: agent.id,
+                hibernationTimeoutMin: next,
+              });
           }}
         />
       </section>

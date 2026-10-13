@@ -14,7 +14,7 @@ export function WelcomeEntryPoints() {
         {brand} runs agents in the cloud. Each one gets its own isolated
         environment, with your credentials and tools already set up.
       </p>
-      <div>
+      <div className="flex flex-wrap gap-2">
         <EntryPointButtons />
       </div>
     </Callout>

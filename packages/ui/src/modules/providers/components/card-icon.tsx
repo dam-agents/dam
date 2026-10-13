@@ -5,6 +5,7 @@ import {
   AnthropicIcon,
   BobFilledIcon,
   BobIcon,
+  CurveBenderIcon,
   LiteLLMIcon,
   OpenAIIcon,
 } from "@/components/brand-icons";
@@ -26,13 +27,13 @@ const STYLES: Record<
   openai: { Icon: OpenAIIcon, bg: "bg-icon-green" },
   "ibm-litellm": {
     Icon: LiteLLMIcon,
-    bg: "bg-icon-blue",
+    bg: "bg-icon-rose",
   },
   "curve-bender": {
-    Icon: LiteLLMIcon,
-    bg: "bg-icon-violet",
+    Icon: CurveBenderIcon,
+    bg: "bg-icon-teal",
   },
-  bob: { Icon: BobIcon, bg: "bg-icon-blue" },
+  bob: { Icon: BobIcon, bg: "bg-icon-violet" },
   bedrock: { Icon: Cloud, bg: "bg-icon-ochre" },
 };
 

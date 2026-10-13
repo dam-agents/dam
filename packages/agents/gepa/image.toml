@@ -1,4 +1,4 @@
-# The gepa config environment over claude-code's: mise -E claude-code,gepa.
+# The gepa config environment, packed onto the default image.
 
 # gepa ships no executable, so litellm, one of its dependencies, carries the
 # venv, with gepa's [full] extra minus mlflow and wandb, which AGENTS.md forbids.

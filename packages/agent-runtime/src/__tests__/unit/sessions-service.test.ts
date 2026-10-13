@@ -86,6 +86,64 @@ describe("createSessionsService", () => {
     expect(listCalls).toHaveLength(4);
   });
 
+  // TEST_SCENARIO: the first list after a boot starts the harness cold; the platform's own session records answer within the grace, and the harness-only sessions follow through a change notice that keeps the listing it just read.
+  it("answers from the platform's records when the harness is slow, then announces the rest", async () => {
+    let answer: (v: unknown) => void = () => {};
+    let listCalls = 0;
+    const caller: InProcessCaller = {
+      request: async <T>(method: string): Promise<T> => {
+        if (method !== "session/list") return {} as T;
+        listCalls++;
+        return new Promise<T>((resolve) => {
+          answer = resolve as (v: unknown) => void;
+        });
+      },
+      notify: () => {},
+      close: () => {},
+    };
+    const changes = createSessionChanges(0);
+    const notices: number[] = [];
+    changes.subscribe(() => notices.push(1));
+    const store = fakeStore();
+    store.all = () => ({
+      platform: {
+        meta: { mode: "chat" },
+        createdAt: "2026-08-27T10:00:00.000Z",
+      },
+    });
+    const service = createSessionsService({
+      openCaller: () => caller,
+      sessionMetadata: store,
+      isRunning: () => false,
+      changes,
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      log: () => {},
+    });
+
+    const first = service.list();
+    await vi.advanceTimersByTimeAsync(300);
+    const early = await first;
+    expect(early.sessions.map((s) => s.sessionId)).toEqual(["platform"]);
+    expect(early.incomplete).toBe(true);
+    expect(notices).toHaveLength(0);
+
+    answer({
+      sessions: [
+        { sessionId: "terminal", updatedAt: "2026-08-27T11:00:00.000Z" },
+      ],
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(notices).toHaveLength(1);
+
+    const second = await service.list();
+    expect(second.sessions.map((s) => s.sessionId).sort()).toEqual([
+      "platform",
+      "terminal",
+    ]);
+    expect(second.incomplete).toBeUndefined();
+    expect(listCalls).toBe(1);
+  });
   // TEST_SCENARIO: the agent renames its own session through the platform tool, which knows the session only by its reference; clearing the title hands the row back to the harness's title.
   it("sets a title on the session a reference names, and clears it with null", async () => {
     const entries: Record<string, SessionMetaEntry> = {

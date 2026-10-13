@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#MISE description="Break Markdown prose after every sentence; `-- --check` only reports the files it would change"
+#USAGE flag "--check"
+# Config in .mdslw.toml. Skips symlinks, accepted ADRs (bodies are immutable)
+# and vendored upstream skills (changed upstream only).
+set -euo pipefail
+vendored=$(jq -r '.skills | keys[] | ".agents/skills/\(.)/"' .agents/upstream-skills.json)
+git ls-files -s '*.md' | awk '$1 != 120000 { print $4 }' | grep -vF "$vendored" |
+  while read -r f; do [[ $f != docs/adrs/* ]] || grep -qiE '^status: *propos' "$f" && echo "$f"; done |
+  xargs mdslw --report changed --mode "$([ "${usage_check:-false}" = true ] && echo check || echo format)"

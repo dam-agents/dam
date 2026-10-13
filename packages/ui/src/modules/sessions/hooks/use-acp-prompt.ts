@@ -20,6 +20,8 @@ import {
   hasStreamingAssistant,
 } from "../../acp/session-projection.js";
 import { buildPromptBlocks } from "../../acp/utils.js";
+import { untilAgentOperable } from "../../agents/api/queries.js";
+import { LEFT_BEFORE_START } from "../../agents/lib/agent-start.js";
 import { acpSessionsKeys } from "../api/keys.js";
 import { optimisticInsertSession } from "../api/queries.js";
 import { harnessOfSession } from "../api/session-pair.js";
@@ -266,14 +268,21 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           ];
         });
       };
-      delivery.beginSend(promptId, failDelivery, {
-        waking: agentRunState !== "running",
-        recover: recoverDelivery,
-      });
+      const hold = untilAgentOperable(selectedAgent);
+      if (hold) recordUndeliveredLocally(LEFT_BEFORE_START);
 
       let started: StartedSession | null = null;
       let detached = false;
       try {
+        if (hold) {
+          await hold;
+          forgetUndelivered(draftKey(selectedAgent, intendedSessionId), uId);
+        }
+        delivery.beginSend(promptId, failDelivery, {
+          waking: !hold && agentRunState !== "running",
+          recover: recoverDelivery,
+        });
+
         let connection: ClientConnection;
         let sessionId: string;
         let isOpen: () => boolean;

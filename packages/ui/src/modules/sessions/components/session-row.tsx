@@ -36,6 +36,8 @@ import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
 
 const LONG_PRESS_MS = 400;
+// UNIT_BOUNDARY_DESCRIPTION: a pointer resting this long on a row reads its history ahead of the click; a pointer sweeping across the list reads nothing.
+const PREFETCH_DWELL_MS = 100;
 
 const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
 
@@ -50,6 +52,7 @@ interface Props {
   cost?: SessionRuntime;
   conversation?: string;
   onResume: () => void;
+  onPrefetch?: () => void;
   onRename: () => void;
   onDelete: () => void;
   onExportTimeline?: () => void;
@@ -66,6 +69,7 @@ export function SessionRow({
   cost,
   conversation,
   onResume,
+  onPrefetch,
   onRename,
   onDelete,
   onExportTimeline,
@@ -82,6 +86,17 @@ export function SessionRow({
       setMenuOpen(true);
     }, LONG_PRESS_MS);
   }, []);
+
+  const dwellRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startDwell = useCallback(() => {
+    if (!onPrefetch || dwellRef.current) return;
+    dwellRef.current = setTimeout(onPrefetch, PREFETCH_DWELL_MS);
+  }, [onPrefetch]);
+  const endDwell = useCallback(() => {
+    if (dwellRef.current) clearTimeout(dwellRef.current);
+    dwellRef.current = null;
+  }, []);
+  useEffect(() => endDwell, [endDwell]);
 
   const endPress = useCallback(() => {
     if (timerRef.current) {
@@ -154,6 +169,9 @@ export function SessionRow({
         active ? "bg-muted" : "hover:bg-muted/60",
       )}
       {...clickableProps(handleClick)}
+      onPointerEnter={startDwell}
+      onPointerLeave={endDwell}
+      onFocus={onPrefetch}
       onTouchStart={startPress}
       onTouchEnd={endPress}
       onTouchCancel={endPress}

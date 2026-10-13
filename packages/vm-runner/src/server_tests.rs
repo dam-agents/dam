@@ -13,7 +13,7 @@ use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
 use crate::imagecache::{CacheConfig, ImageCache};
 use crate::launch::{ImageLaunch, LAUNCH_FILE};
-use crate::plan::{READY_GRACE, UNHEALTHY_RESTART};
+use crate::plan::{READY_GRACE, STALLED_RESTART, UNHEALTHY_RESTART};
 use crate::state::RUNTIME_FILE;
 use std::path::Path;
 
@@ -36,6 +36,8 @@ struct Fake {
     start_delay: Mutex<Duration>,
     stop_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
+    fail_grow_once: Mutex<Option<String>>,
+    booted_mib: Mutex<Vec<i32>>,
     console: Mutex<String>,
     panic_on_state: AtomicBool,
     nests: AtomicBool,
@@ -99,14 +101,28 @@ impl Runtime for Fake {
         Ok(())
     }
 
-    fn start(&self, id: &str) -> anyhow::Result<()> {
+    fn start(&self, id: &str, boot_mib: i32) -> anyhow::Result<()> {
         self.record(format!("start {id}"));
+        locked(&self.booted_mib).push(boot_mib);
         std::thread::sleep(*locked(&self.start_delay));
         if let Some(message) = locked(&self.fail_start_once).take() {
             anyhow::bail!(message);
         }
         locked(&self.state_fails_until_start).remove(id);
         locked(&self.states).insert(id.to_string(), State::Running);
+        Ok(())
+    }
+
+    fn grow(&self, id: &str, memory_mib: i32) -> anyhow::Result<()> {
+        self.record(format!("grow {id} {memory_mib}"));
+        assert_eq!(
+            locked(&self.states).get(id),
+            Some(&State::Running),
+            "grown before it booted"
+        );
+        if let Some(message) = locked(&self.fail_grow_once).take() {
+            anyhow::bail!(message);
+        }
         Ok(())
     }
 
@@ -187,6 +203,7 @@ impl Harness {
             memory_mib: 1 << 20,
             reserve_mib: 0,
             headroom_mib: 0,
+            boot_mib: 0,
             listen: Some(Arc::new(move |port| match locked(&held).remove(&port) {
                 Some(listener) => Ok(listener),
                 None => TcpListener::bind(("127.0.0.1", port)),
@@ -429,6 +446,87 @@ async fn a_stopped_machine_starts_again_on_the_same_port() {
     );
 }
 
+// TEST_SCENARIO: a guest's boot costs time for every GiB of RAM it boots with, so a machine boots with the runner's boot estimate and is grown to its spec's size as soon as its start returns, on every boot: the first, and one after a stop, whose record the update set back to the spec. The grow is part of the start, so the action ends only once the machine has its size.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_boots_small_and_is_grown_to_its_size_on_every_boot() {
+    let h = Harness::with("boot-small", |c| c.boot_mib = 1024);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+    h.server.put("m1", spec(true)).unwrap();
+    let again = h.settle("m1").await;
+    assert_eq!(again.state, STATE_RUNNING);
+    assert!(again.reason.is_empty(), "{again:?}");
+    assert_eq!(
+        h.fake.calls(),
+        vec![
+            "create m1",
+            "start m1",
+            "grow m1 2048",
+            "stop m1",
+            "update m1",
+            "start m1",
+            "grow m1 2048"
+        ]
+    );
+    assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 1024]);
+}
+
+// TEST_SCENARIO: a machine no larger than the boot estimate boots whole and is never grown, and so is every machine of a runner given no estimate.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_within_the_boot_estimate_boots_whole() {
+    for (name, boot_mib) in [("boot-whole-larger", 4096), ("boot-whole-none", 0)] {
+        let h = Harness::with(name, |c| c.boot_mib = boot_mib);
+        h.server.put("m1", spec(true)).unwrap();
+        assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+        assert_eq!(h.fake.calls(), vec!["create m1", "start m1"], "{name}");
+        assert_eq!(*locked(&h.fake.booted_mib), vec![2048], "{name}");
+    }
+}
+
+// TEST_SCENARIO: a guest that cannot grow would run with a fraction of the memory its spec and its agent count on. So the machine is stopped and booted again whole, in the same start, and reads running with no failure: the grow is an optimisation, never a reason for the agent not to run.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_that_cannot_grow_is_booted_again_whole() {
+    let h = Harness::with("grow-failed", |c| c.boot_mib = 1024);
+    *locked(&h.fake.fail_grow_once) = Some("the VMM did not add the RAM".into());
+    h.server.put("m1", spec(true)).unwrap();
+    let status = h.settle("m1").await;
+    assert_eq!(status.state, STATE_RUNNING);
+    assert!(status.reason.is_empty(), "{status:?}");
+    assert_eq!(
+        h.fake.calls(),
+        vec![
+            "create m1",
+            "start m1",
+            "grow m1 2048",
+            "stop m1",
+            "start m1"
+        ]
+    );
+    assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 2048]);
+}
+
+// TEST_SCENARIO: booting small changes nothing admission counts. A machine on its way up is counted at the boot estimate, as it was when it booted whole, and its spec's size stays its cap: two machines whose estimates fit are admitted while the first still boots, and a third is refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_booting_small_is_admitted_as_before() {
+    let h = Harness::with("boot-small-capacity", |c| {
+        c.memory_mib = 2500;
+        c.boot_mib = 1024;
+    });
+    *locked(&h.fake.start_delay) = Duration::from_millis(300);
+    h.server.put("m1", spec(true)).unwrap();
+    h.wait_for_call("start m1").await;
+    assert_eq!(
+        h.server.put("m2", spec(true)).unwrap().state,
+        STATE_CREATING
+    );
+    let refused = h.server.put("m3", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+    h.settle("m1").await;
+    h.settle("m2").await;
+}
+
 // TEST_SCENARIO: an agent moving to this backend brings its home as a seed, which platform-init reads only on the first boot. So the controller creates its machine stopped: a stopped spec with a whole shape creates the machine, its share, spec and port, and never starts it. Only the ensure that asks for it running boots it, onto the same machine.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_can_be_created_without_being_booted() {
@@ -626,7 +724,7 @@ async fn a_stopped_machine_whose_tree_is_gone_resolves_its_image_again() {
     );
 }
 
-// TEST_SCENARIO: a new revision or a new size restarts the running machine in place — stop, update, start — keeping its disk. A spec that has not changed does nothing at all.
+// TEST_SCENARIO: a new revision restarts the running machine in place — stop, update, start — keeping its disk. A spec that has not changed does nothing at all.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_changed_shape_restarts_the_machine_in_place() {
     let h = Harness::new("reshape");
@@ -642,6 +740,55 @@ async fn a_changed_shape_restarts_the_machine_in_place() {
         h.fake.calls(),
         vec!["create m1", "start m1", "stop m1", "update m1", "start m1"]
     );
+}
+
+// TEST_SCENARIO: a new size reaches a running machine only when it next starts. Until then the status reports the size the guest runs at and admission counts that one, so a second machine that fits beside it is let in; the start that applies the new size is admitted against it, and refused when it no longer fits. A restart asked for anything else applies it too.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_size_is_applied_at_the_next_start_and_not_before() {
+    let h = Harness::with("resize-on-start", |c| c.memory_mib = 5000);
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let resized = MachineSpec {
+        cpus: 4,
+        memory_mib: 4096,
+        ..spec(true)
+    };
+    let live = h.server.put("m1", resized.clone()).unwrap();
+    assert_eq!(live.state, STATE_RUNNING);
+    assert_eq!((live.cpus, live.memory_mib), (2, 2048));
+    assert_eq!(h.fake.calls(), vec!["create m1", "start m1"]);
+
+    h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
+
+    h.server
+        .put(
+            "m1",
+            MachineSpec {
+                running: false,
+                ..resized.clone()
+            },
+        )
+        .unwrap();
+    h.settle("m1").await;
+    let refused = h.server.put("m1", resized.clone()).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+
+    h.server.delete("m2").unwrap();
+    h.server.put("m1", resized.clone()).unwrap();
+    let woken = h.settle("m1").await;
+    assert_eq!(woken.state, STATE_RUNNING);
+    assert_eq!((woken.cpus, woken.memory_mib), (4, 4096));
+
+    let rolled = MachineSpec {
+        cpus: 1,
+        memory_mib: 1024,
+        revision: "r2".into(),
+        ..resized
+    };
+    assert_eq!(h.server.put("m1", rolled).unwrap().state, STATE_RESTARTING);
+    let restarted = h.settle("m1").await;
+    assert_eq!((restarted.cpus, restarted.memory_mib), (1, 1024));
 }
 
 // TEST_SCENARIO: the status says a machine nests only when its spec asks for it and its runner grants it, so the controller can tell the owner who asked whether they got it. A machine on the same runner that does not ask never reads as nested.
@@ -1080,6 +1227,7 @@ async fn a_restarted_runner_republishes_its_ports() {
             memory_mib: 1 << 20,
             reserve_mib: 0,
             headroom_mib: 0,
+            boot_mib: 0,
             listen: Some(listen),
             runtime: None,
         },
@@ -1242,10 +1390,7 @@ async fn a_guest_that_went_quiet_is_restarted_once_and_counted() {
             quiet_since: Some(SystemTime::now() - UNHEALTHY_RESTART - Duration::from_secs(1)),
         }
     });
-    assert_eq!(
-        h.server.put("m1", spec(true)).unwrap().state,
-        STATE_RESTARTING
-    );
+    h.server.put("m1", spec(true)).unwrap();
     let status = h.settle("m1").await;
     assert_eq!(status.restarts, 1);
     let calls = vec!["create m1", "start m1", "stop m1", "update m1", "start m1"];
@@ -1254,6 +1399,89 @@ async fn a_guest_that_went_quiet_is_restarted_once_and_counted() {
     assert_eq!(h.server.put("m1", spec(true)).unwrap().state, STATE_RUNNING);
     assert_eq!(h.settle("m1").await.restarts, 1);
     assert_eq!(h.fake.calls(), calls, "the restart earned another one");
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: marks the machine quiet for just longer than STALLED_RESTART, as a guest that stopped answering that long ago looks.
+fn stall(h: &Harness, id: &str) {
+    h.machine(id, |m| {
+        m.health.quiet_since = Some(SystemTime::now() - STALLED_RESTART - Duration::from_secs(1))
+    });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a guest on the machine's port again, once the one stopped before it has let the port go.
+async fn guest_again(h: &Harness) -> Arc<AtomicBool> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while TcpListener::bind(("127.0.0.1", h.base + LOOPBACK_OFFSET)).is_err() {
+        assert!(Instant::now() < deadline, "the old guest kept its port");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    guest(h.base)
+}
+
+// TEST_SCENARIO: a guest that answered in this boot and then stopped answering is restarted by the prober itself, once it has been quiet past STALLED_RESTART, without waiting for the controller's next ensure. Its replacement is not restarted while it boots, and when it stalls again soon after, it waits the long UNHEALTHY_RESTART instead, so a guest a reboot does not cure is not restarted every minute.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stalled_guest_is_restarted_soon_but_not_in_a_loop() {
+    let h = Harness::new("stalled");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let up = guest(h.base);
+    h.until("m1", "ready", |s| s.ready).await;
+    up.store(false, Ordering::SeqCst);
+    stall(&h, "m1");
+    h.server.probe("m1");
+    let status = h.settle("m1").await;
+    assert_eq!(status.restarts, 1, "{status:?}");
+    let calls = vec!["create m1", "start m1", "stop m1", "update m1", "start m1"];
+    assert_eq!(h.fake.calls(), calls);
+
+    stall(&h, "m1");
+    h.server.probe("m1");
+    assert_eq!(h.settle("m1").await.restarts, 1);
+    assert_eq!(
+        h.fake.calls(),
+        calls,
+        "a boot not yet answered was restarted"
+    );
+
+    let up = guest_again(&h).await;
+    h.until("m1", "ready again", |s| s.ready).await;
+    up.store(false, Ordering::SeqCst);
+    stall(&h, "m1");
+    h.server.probe("m1");
+    assert_eq!(h.settle("m1").await.restarts, 1);
+    assert_eq!(
+        h.fake.calls(),
+        calls,
+        "a second stall soon after the first was restarted at once"
+    );
+
+    h.machine("m1", |m| {
+        m.gave_up = Some(Instant::now() - UNHEALTHY_RESTART - Duration::from_secs(1))
+    });
+    stall(&h, "m1");
+    h.server.probe("m1");
+    assert_eq!(h.settle("m1").await.restarts, 2);
+}
+
+// TEST_SCENARIO: what must not be restarted as stalled: a boot whose guest has not answered yet, however long a slow first boot or image unpack takes, and a guest that answers again after a long silence, as a busy one does.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_booting_or_answering_guest_is_not_restarted_as_stalled() {
+    let h = Harness::new("not-stalled");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.machine("m1", |m| m.health.ever_ready = true);
+    stall(&h, "m1");
+    h.server.probe("m1");
+    assert_eq!(h.settle("m1").await.restarts, 0);
+
+    let _guest = guest(h.base);
+    h.until("m1", "ready", |s| s.ready).await;
+    stall(&h, "m1");
+    h.server.probe("m1");
+    let status = h.settle("m1").await;
+    assert_eq!(status.restarts, 0);
+    assert!(status.ready);
+    assert_eq!(h.fake.calls(), vec!["create m1", "start m1"]);
 }
 
 // TEST_SCENARIO: an unpacked image is the root filesystem of every machine of it, so eviction never takes one a machine is running from — the cache goes over its budget instead.
@@ -1597,6 +1825,24 @@ async fn the_prober_reports_a_guest_that_comes_up_to_a_waiting_read() {
         "a booting machine was not probed at the boot cadence"
     );
     assert_ne!(ready.version, booted.version);
+}
+
+// TEST_SCENARIO: the probe cadence is what the user waits on between the guest answering and the controller hearing of it, so a fresh boot is asked every FRESH_BOOT_PROBE. Each probe is also a console line, so a boot still quiet after SLOW_BOOT_AFTER falls back to BOOT_PROBE, and a guest that has answered is asked only at the steady cadence.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fresh_boot_is_probed_tightly_and_an_old_or_answered_one_is_not() {
+    let h = Harness::new("probe-cadence");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(h.machine("m1", |m| probe_every(m)), Some(FRESH_BOOT_PROBE));
+    h.machine("m1", |m| {
+        m.boot.as_mut().unwrap().at = Instant::now()
+            .checked_sub(SLOW_BOOT_AFTER + Duration::from_secs(1))
+            .unwrap()
+    });
+    assert_eq!(h.machine("m1", |m| probe_every(m)), Some(BOOT_PROBE));
+    let _guest = guest(h.base);
+    h.until("m1", "ready", |s| s.ready).await;
+    assert_eq!(h.machine("m1", |m| probe_every(m)), Some(STEADY_PROBE));
 }
 
 // TEST_SCENARIO: a guest that accepts its health check and never answers holds its probe for the whole health timeout. The other machines on their way up must still be probed at the boot cadence, or one hung guest would delay every wake on the runner by that timeout.
@@ -1944,6 +2190,7 @@ async fn a_hand_off_leaves_every_machine_running_for_the_next_runner() {
             memory_mib: 1 << 20,
             reserve_mib: 0,
             headroom_mib: 0,
+            boot_mib: 0,
             listen: Some(retrying_listen()),
             runtime: None,
         },

@@ -64,6 +64,14 @@ describe("classifyWakeFailure", () => {
       expected: { kind: "agent-pod-failed", terminationReason: "OutOfMemory" },
     },
     {
+      name: "HomeVolumeFull → agent-pod-failed",
+      snapshot: { ...base, agentPodNotReadyReason: "HomeVolumeFull" },
+      expected: {
+        kind: "agent-pod-failed",
+        terminationReason: "HomeVolumeFull",
+      },
+    },
+    {
       name: "ContainerTerminated → agent-pod-failed",
       snapshot: { ...base, agentPodNotReadyReason: "ContainerTerminated" },
       expected: {

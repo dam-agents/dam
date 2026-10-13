@@ -13,14 +13,19 @@ import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
  * They share a socket because a notice is always followed by a read, and a
  * connection per read costs a handshake on every turn of every awake agent.
  */
+export interface PodSessionList {
+  sessions: PodSession[];
+  incomplete: boolean;
+}
+
 export interface PodSessionSubscription {
   close(): void;
-  listSessions(): Promise<PodSession[]>;
+  listSessions(): Promise<PodSessionList>;
 }
 
 export interface PodSessionClient {
   watchAgent(agentId: string, onNotice: () => void): PodSessionSubscription;
-  listSessions(agentId: string): Promise<PodSession[]>;
+  listSessions(agentId: string): Promise<PodSessionList>;
 }
 
 export function createPodSessionClient(
@@ -54,7 +59,10 @@ export function createPodSessionClient(
       });
 
       return {
-        listSessions: async () => (await client.sessions.list.query()).sessions,
+        listSessions: async () => {
+          const page = await client.sessions.list.query();
+          return { sessions: page.sessions, incomplete: !!page.incomplete };
+        },
         close() {
           subscription.unsubscribe();
           wsClient.close();
@@ -65,8 +73,8 @@ export function createPodSessionClient(
     async listSessions(agentId) {
       const { wsClient, client } = connect(agentId);
       try {
-        const { sessions } = await client.sessions.list.query();
-        return sessions;
+        const page = await client.sessions.list.query();
+        return { sessions: page.sessions, incomplete: !!page.incomplete };
       } finally {
         wsClient.close();
       }

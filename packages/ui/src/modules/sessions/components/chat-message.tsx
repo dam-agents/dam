@@ -1,5 +1,12 @@
 import { StopFilledAlt } from "@carbon/icons-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -28,6 +35,7 @@ interface BaseProps {
   showModel?: boolean;
   isLast: boolean;
   hasPendingPermission: boolean;
+  pendingNotice?: ReactNode;
   onRetry: OnRetry;
   onFileClick: (path: string) => void;
   onDelete: (id: string) => void;
@@ -96,6 +104,7 @@ export const ChatMessage = memo(function ChatMessage({
   timeLabel,
   timeTitle,
   hasPendingPermission,
+  pendingNotice,
   onRetry,
   onFileClick,
   onDelete,
@@ -191,6 +200,7 @@ export const ChatMessage = memo(function ChatMessage({
               <span className="sr-only">Working</span>
             </span>
           )}
+          {isAssistant && streaming && parts.length === 0 && pendingNotice}
           {isAssistant && stopped && !streaming && (
             <p
               data-testid="reply-stopped-marker"

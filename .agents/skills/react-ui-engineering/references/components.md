@@ -6,15 +6,21 @@
 
 **[CRITICAL] A component does one thing.** One that juggles fetching, sub-form orchestration, several distinct regions and cross-cutting state is already too big; size is a proxy for responsibility.
 
-**[HIGH] ~300 lines is a warning flag, not a cap.** Past it, look for the extraction you've been avoiding (a tab, a complex row, a form section). Split along responsibility seams and let the number follow, never mechanically. Typical sizes: page composition 50–150 lines, feature component 100–250, leaf/presentational 20–80.
+**[HIGH] ~300 lines is a warning flag, not a cap.** Past it, look for the extraction you've been avoiding (a tab, a complex row, a form section).
+Split along responsibility seams and let the number follow, never mechanically.
+Typical sizes: page composition 50–150 lines, feature component 100–250, leaf/presentational 20–80.
 
-**[HIGH] Count the JSX in the return separately.** 40 lines of JSX plus 200 of logic is nothing like 200 lines of nested JSX, where indentation hides structure and every conditional compounds. Targets: leaf ≤ ~25 JSX lines, feature ≤ ~60 (or sooner, once scrolling one region loses the outer structure). Past them, extract by region (header, body, row, footer) even if the file length is fine.
+**[HIGH] Count the JSX in the return separately.** 40 lines of JSX plus 200 of logic is nothing like 200 lines of nested JSX, where indentation hides structure and every conditional compounds.
+Targets: leaf ≤ ~25 JSX lines, feature ≤ ~60 (or sooner, once scrolling one region loses the outer structure).
+Past them, extract by region (header, body, row, footer) even if the file length is fine.
 
 ## Subcomponent extraction
 
 **[CRITICAL] Extract when any holds:**
 
-1. **Anything non-trivial inside `.map(...)`**: more than ~10 JSX lines, any conditional branch, a multi-statement handler, or any per-item derivation (`isExpanded`, `sessions = ...`). The item component owns per-item state, derivations and handlers, not the parent. This is stricter than the general size rule because list items compound: today's small card grows badges, actions and an expanded view, and then every edit touches a 200-line parent.
+1. **Anything non-trivial inside `.map(...)`**: more than ~10 JSX lines, any conditional branch, a multi-statement handler, or any per-item derivation (`isExpanded`, `sessions = ...`).
+   The item component owns per-item state, derivations and handlers, not the parent.
+   This is stricter than the general size rule because list items compound: today's small card grows badges, actions and an expanded view, and then every edit touches a 200-line parent.
    ```tsx
    ❌ {connections.map((c) => (
         <div key={c.id} className="flex ...">{/* nested JSX, conditionals, handlers */}</div>
@@ -52,13 +58,15 @@ modules/{domain}/components/edit-xxx-dialog/
 
 Call it `Props` inside a component file; export it only when a parent needs the type.
 
-**[HIGH]** A prop with a meaningful default is optional in the type and defaulted in destructuring (`{ variant = "primary" }: Props`). Avoid optional props that switch how the component works: split it (`<AgentCard>`, `<AgentCardCompact>`) or take an explicit `mode` and `match` on it.
+**[HIGH]** A prop with a meaningful default is optional in the type and defaulted in destructuring (`{ variant = "primary" }: Props`).
+Avoid optional props that switch how the component works: split it (`<AgentCard>`, `<AgentCardCompact>`) or take an explicit `mode` and `match` on it.
 
 Type pass-through children explicitly (`children: ReactNode`), not via `PropsWithChildren`.
 
 ## Handlers
 
-**[HIGH]** `onX` for props, `handleX` internally. Inline handlers stay one statement; anything longer becomes a named function above the return.
+**[HIGH]** `onX` for props, `handleX` internally.
+Inline handlers stay one statement; anything longer becomes a named function above the return.
 
 ```tsx
 ✅ function handleToggle(id: string) { setAssigned((prev) => toggleInSet(prev, id)); }
@@ -102,7 +110,8 @@ For optional fields, narrow first so TypeScript keeps the narrowing (`if (!sched
 
 ## Derived state
 
-**[CRITICAL] Never copy derivable state into `useState`.** Compute on render; `useMemo` only if measurably expensive. A `useState` + `useEffect` copy is a second source of truth, the classic "why is this stale" bug.
+**[CRITICAL] Never copy derivable state into `useState`.** Compute on render; `useMemo` only if measurably expensive.
+A `useState` + `useEffect` copy is a second source of truth, the classic "why is this stale" bug.
 
 ```tsx
 ❌ const [filteredAgents, setFilteredAgents] = useState([]);
@@ -112,7 +121,9 @@ For optional fields, narrow first so TypeScript keeps the narrowing (`if (!sched
 
 ## Side effects
 
-**[HIGH]** `useEffect` synchronizes with external systems (subscriptions, DOM, network where TQ doesn't fit). Not for responding to user events (do it in the handler), not for fetching (TQ, `references/async-data.md`). More than ~2 effects means the component orchestrates too much: extract a hook.
+**[HIGH]** `useEffect` synchronizes with external systems (subscriptions, DOM, network where TQ doesn't fit).
+Not for responding to user events (do it in the handler), not for fetching (TQ, `references/async-data.md`).
+More than ~2 effects means the component orchestrates too much: extract a hook.
 
 ## Styling
 

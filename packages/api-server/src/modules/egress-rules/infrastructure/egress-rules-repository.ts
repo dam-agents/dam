@@ -31,6 +31,7 @@ export interface EgressRulesRepository {
     pathPattern: string,
   ): Promise<EgressRuleRow | null>;
   insert(row: NewEgressRule): Promise<EgressRuleRow>;
+  insertAll(rows: readonly NewEgressRule[]): Promise<void>;
   insertOrPromoteFromPreset(row: NewEgressRule): Promise<EgressRuleRow>;
   updateTakeOwnership(input: TakeOwnershipInput): Promise<EgressRuleRow | null>;
   listForAgent(agentId: string): Promise<EgressRuleRow[]>;
@@ -241,6 +242,25 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       return existing;
     },
 
+    async insertAll(rows) {
+      if (rows.length === 0) return;
+      await db
+        .insert(egressRules)
+        .values(
+          rows.map((row) => ({
+            id: row.id,
+            agentId: row.agentId,
+            host: row.host,
+            port: row.port ?? null,
+            method: row.method,
+            pathPattern: row.pathPattern,
+            verdict: row.verdict,
+            decidedBy: row.decidedBy,
+            source: row.source,
+          })),
+        )
+        .onConflictDoNothing();
+    },
     async insertOrPromoteFromPreset(row) {
       const inserted = await db
         .insert(egressRules)

@@ -39,6 +39,8 @@ import {
   setSlackChannelDefault,
   createAgentSweep,
   createRuntimeMigrationSwitch,
+  createRetiredImageMigration,
+  podIsIdle,
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
@@ -799,7 +801,7 @@ export async function bootstrap() {
         memory: config.agentDefaultMemoryLimit,
       },
       defaultStorage: config.agentDefaultStorageSize,
-      idleTimeoutMin: config.agentIdleTimeoutMinutes,
+      idleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     },
   });
   usage.start();
@@ -1518,6 +1520,20 @@ export async function bootstrap() {
   });
   await periodicJobs.register("runtime-migration-switch", 15_000, () =>
     runtimeMigrationSwitch.tick(),
+  );
+
+  const retiredImageMigration = createRetiredImageMigration({
+    listAgents: () => agentsRepo.list(),
+    getAgent: (id) => liveAgentsRepo.getLive(id, undefined),
+    readTemplateSpec: templatesRepo.readSpec,
+    writeSpec: (id, write) =>
+      liveAgentsRepo.writeRuntimeMigration(id, undefined, write),
+    podIsIdle: (id) => podIsIdle(id, config.namespace),
+    idleTimeoutMinutes: config.agentIdleTimeoutMinutes,
+    log: (message) => process.stderr.write(`${message}\n`),
+  });
+  await periodicJobs.register("retired-image-migration", 60_000, () =>
+    retiredImageMigration.tick(),
   );
 
   const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =

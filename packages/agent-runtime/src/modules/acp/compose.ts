@@ -148,6 +148,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   activeTurns: ActiveTurnStore;
   subAgentSessions: SubAgentSessionStore;
   platformMcpEntry: PlatformMcpEntryStore;
+  warmHistory: () => void;
 } {
   const sessionChanges = createSessionChanges();
   const platformMcpEntry = createPlatformMcpEntryStore(opts.stateBackend);
@@ -353,5 +354,8 @@ export function composeAcp(opts: ComposeAcpOptions): {
     activeTurns,
     subAgentSessions,
     platformMcpEntry,
+    warmHistory: () => {
+      for (const provider of historyProviders.values()) provider?.warm?.();
+    },
   };
 }

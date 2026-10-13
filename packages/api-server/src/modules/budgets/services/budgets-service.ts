@@ -4,7 +4,10 @@ import { parseCpuMilli, parseMemoryBytes } from "../../../core/quantities.js";
 
 export interface BudgetedAgent {
   id: string;
-  spec: { resources?: { limits?: Record<string, string> } };
+  spec: {
+    resources?: { limits?: Record<string, string> };
+    backend?: { type?: string };
+  };
   hibernated: boolean;
   overBudget: boolean;
 }
@@ -128,7 +131,7 @@ function reservedBy(agents: readonly BudgetedAgent[]): {
   let cpuMilli = 0;
   let memoryBytes = 0;
   for (const a of agents) {
-    if (a.hibernated || a.overBudget) continue;
+    if (a.hibernated || a.overBudget || a.spec.backend?.type === "vm") continue;
     cpuMilli += parseCpuMilli(a.spec.resources?.limits?.cpu);
     memoryBytes += parseMemoryBytes(a.spec.resources?.limits?.memory);
   }

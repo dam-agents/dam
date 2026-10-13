@@ -135,10 +135,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, false, err
 	}
 
-	cpu, _ := r.limitsOf(spec)
 	machine := vmrunner.MachineSpec{
 		Image:           spec.Image,
-		CPUs:            max(int((cpu.MilliValue()+999)/1000), 1),
+		CPUs:            max(r.config.VM.Runner.MachineCPUs, 1),
 		MemoryMiB:       r.machineMemoryMiB(spec),
 		StorageGiB:      storageGiB,
 		Env:             env,

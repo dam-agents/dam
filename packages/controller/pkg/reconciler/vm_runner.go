@@ -173,7 +173,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	}
 	ready := dep.Status.ReadyReplicas > 0
 	if ready {
-		r.resizeRunnerPod(ctx, owner, demand.memoryMiB)
+		r.resizeRunnerPod(ctx, owner, demand)
 	}
 	return client, ready, nil
 }
@@ -727,6 +727,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							"--memory-mib=$(RUNNER_MEMORY_MIB)",
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
 							fmt.Sprintf("--headroom-mib=%d", spec.HeadroomMiB),
+							fmt.Sprintf("--boot-mib=%d", spec.BootMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",
 							"--tls-key=/etc/vm-runner/tls.key",
 						}, nestedRunnerArgs(spec)...),

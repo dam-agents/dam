@@ -52,6 +52,10 @@ import {
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
+import {
+  AgentStartNotice,
+  hasStartNotice,
+} from "../../agents/components/agent-start-notice.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import {
@@ -78,6 +82,7 @@ import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
+import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import {
@@ -197,6 +202,15 @@ export function ChatView() {
     ? resolveAgentDisplay(agentView, restartingIds, undefined, slowStartIds)
     : null;
   const selectedAgentName = agentView?.name ?? selectedAgent;
+  const agentStarting =
+    agentDisplay?.state === "starting" ||
+    agentDisplay?.state === "preparing_workspace";
+  const startNotice = agentStarting &&
+    agentView &&
+    agentDisplay &&
+    hasStartNotice(agentView, agentDisplay) && (
+      <AgentStartNotice agent={agentView} display={agentDisplay} />
+    );
   const sessionId = useStore((s) => s.sessionId);
   const sessionMode = useStore((s) => s.sessionMode);
   const setSessionMode = useStore((s) => s.setSessionMode);
@@ -468,14 +482,15 @@ export function ChatView() {
     }
   }, [messages.length]);
 
+  const historyShown = !loadingSession || messages.length > 0;
   useLayoutEffect(() => {
-    if (loadingSession) return;
+    if (!historyShown) return;
     const el = messagesRef.current;
     if (!el) return;
     stickRef.current = true;
     setShowJump(false);
     el.scrollTop = el.scrollHeight;
-  }, [loadingSession, sessionId]);
+  }, [historyShown, sessionId]);
 
   const pendingResumeSessionId = useStore((s) => s.pendingResumeSessionId);
   const setPendingResumeSessionId = useStore(
@@ -819,11 +834,14 @@ export function ChatView() {
               <div className="@container relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
                   <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 flex flex-col gap-8 min-h-full">
-                    {loadingSession && (
+                    {!historyShown && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
                         Loading session…
                       </div>
+                    )}
+                    {loadingSession && startNotice && (
+                      <div className="flex justify-center">{startNotice}</div>
                     )}
                     {!loadingSession && sessionError && (
                       <SessionErrorCard
@@ -854,6 +872,9 @@ export function ChatView() {
                               onNewTerminal={handleNewTerminal}
                             />
                           )}
+                          {startNotice && (
+                            <div className="mt-6">{startNotice}</div>
+                          )}
                         </div>
                       )}
                     <DelegationOwnersProvider value={delegationOwners}>
@@ -881,6 +902,11 @@ export function ChatView() {
                             showModel={runStarts.length > 0}
                             {...timeProps(item.message.at, now)}
                             hasPendingPermission={hasPendingPermission}
+                            pendingNotice={
+                              item.index === messages.length - 1
+                                ? startNotice
+                                : undefined
+                            }
                             onRetry={sendPrompt}
                             onFileClick={openFileHandler}
                             onDelete={deleteMessage}
@@ -984,6 +1010,7 @@ export function ChatView() {
                   agentId={selectedAgent}
                 />
                 <KitUpdateBar agentId={selectedAgent} />
+                <HomeVolumeBar agentId={selectedAgent} />
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}
@@ -1121,7 +1148,10 @@ export function ChatView() {
 
       {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />
-      ) : selectedAgent && !agentInaccessible && !agentOperable ? (
+      ) : selectedAgent &&
+        !agentInaccessible &&
+        !agentOperable &&
+        !agentStarting ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}

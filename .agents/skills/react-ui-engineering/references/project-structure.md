@@ -45,17 +45,24 @@ agents/
 └── types.ts                 domain types not tied to the API
 ```
 
-**[HIGH]** Keys, fetchers and hooks stay in `api/`. Flat files are the default; split into `queries/` and `mutations/` folders (one hook per file) only once a module has ~5+ of each.
+**[HIGH]** Keys, fetchers and hooks stay in `api/`.
+Flat files are the default; split into `queries/` and `mutations/` folders (one hook per file) only once a module has ~5+ of each.
 
 ## Shared vs. domain
 
-Shared folders hold only truly generic code with no domain knowledge (`Button`, `useDebouncedCallback`, `formatRelativeTime`). **When unsure, keep it in the domain module** and promote on the second module's use; premature promotion builds a vague "misc" pile.
+Shared folders hold only truly generic code with no domain knowledge (`Button`, `useDebouncedCallback`, `formatRelativeTime`).
+**When unsure, keep it in the domain module** and promote on the second module's use; premature promotion builds a vague "misc" pile.
 
-**[HIGH] Don't hand-roll a generic primitive inline in a feature file.** A `Switch`, `Toggle`, `Spinner` or `Badge` (same category as `Button`/`Input`/`Modal`, all-generic props like `checked`, `onCheckedChange`, `label`, no domain types) buried in a 400-line form is pure styling + a11y wiring no other feature can find. Whether it should be shared is a human call: **flag it** ("this hand-rolled `Switch` looks like a generic primitive — extract to shared primitives?") and let the user decide; neither move it silently nor leave it silently. This overrides "keep it local" with escalation.
+**[HIGH] Don't hand-roll a generic primitive inline in a feature file.** A `Switch`, `Toggle`, `Spinner` or `Badge` (same category as `Button`/`Input`/`Modal`, all-generic props like `checked`, `onCheckedChange`, `label`, no domain types) buried in a 400-line form is pure styling + a11y wiring no other feature can find.
+Whether it should be shared is a human call: **flag it** ("this hand-rolled `Switch` looks like a generic primitive — extract to shared primitives?") and let the user decide; neither move it silently nor leave it silently.
+This overrides "keep it local" with escalation.
 
 ## File naming
 
-**[HIGH] One convention per project**: all kebab-case (`agent-card.tsx`, `use-mcp-picker.ts`), or PascalCase components with kebab-case hooks/utils. Never mixed. The file name matches its content (no `AgentCard` exported from `agent-list.tsx`). Exceptions: `types.ts`, `index.ts`, `constants.ts`, and tool configs (`vite.config.ts`, `tsconfig.json`).
+**[HIGH] One convention per project**: all kebab-case (`agent-card.tsx`, `use-mcp-picker.ts`), or PascalCase components with kebab-case hooks/utils.
+Never mixed.
+The file name matches its content (no `AgentCard` exported from `agent-list.tsx`).
+Exceptions: `types.ts`, `index.ts`, `constants.ts`, and tool configs (`vite.config.ts`, `tsconfig.json`).
 
 ## Subcomponent layout
 
@@ -67,11 +74,15 @@ No single-file folders; no 30 siblings sharing a prefix.
 
 ## Barrel files
 
-**[HIGH] No `index.ts` barrels for component directories**: they break tree-shaking in some bundler setups, invite circular imports and cost maintenance for no consumer benefit. Import from the component's file. Allowed: `api/index.ts` as a module's single API surface, and a context module's `index.ts` re-exporting its hook to enforce the provider-only entry point.
+**[HIGH] No `index.ts` barrels for component directories**: they break tree-shaking in some bundler setups, invite circular imports and cost maintenance for no consumer benefit.
+Import from the component's file.
+Allowed: `api/index.ts` as a module's single API surface, and a context module's `index.ts` re-exporting its hook to enforce the provider-only entry point.
 
 ## Imports
 
-**[MODERATE]** Path aliases (`@/`, `#/`) for cross-module imports, relative for siblings. Don't introduce aliases mid-feature; propose them in a separate PR. `../../../` means the file is in the wrong folder.
+**[MODERATE]** Path aliases (`@/`, `#/`) for cross-module imports, relative for siblings.
+Don't introduce aliases mid-feature; propose them in a separate PR.
+`../../../` means the file is in the wrong folder.
 
 ## Migrating from a layer layout
 

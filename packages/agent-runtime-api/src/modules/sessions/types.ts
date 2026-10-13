@@ -37,6 +37,8 @@ export type SessionListQuery = NonNullable<
 export interface SessionPage {
   sessions: PodSession[];
   nextCursor: SessionListCursor | null;
+  // UNIT_BOUNDARY_DESCRIPTION: set when the harness had not answered in time, so sessions only the harness knows may be missing; a reader must not take a session's absence from this page as its removal. A notice follows once the full list is ready.
+  incomplete?: true;
 }
 
 export type SetSessionTitleInput = z.infer<typeof setSessionTitleInputSchema>;

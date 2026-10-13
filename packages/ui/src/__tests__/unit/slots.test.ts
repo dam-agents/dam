@@ -132,6 +132,7 @@ describe("slots", () => {
           ...agent("parked", { cpu: "1", memory: "2Gi" }, "starting"),
           overBudget: true,
         },
+        { ...agent("vm", { cpu: "4", memory: "8Gi" }), vm: true },
       ],
       new Set(),
       budget,

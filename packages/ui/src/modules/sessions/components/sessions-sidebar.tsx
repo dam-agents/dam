@@ -26,7 +26,12 @@ import { isUnreadSession } from "../../home/lib/unread.js";
 import { useSessionCosts } from "../../metrics/api/queries.js";
 import { downloadTelemetryExport } from "../../telemetry/api/download-export.js";
 import { useAgentBackgroundWork } from "../api/background-work.js";
-import { setSessionSeen, useSessionPages } from "../api/queries.js";
+import {
+  prefetchSessionHistory,
+  setSessionSeen,
+  useProvisionalSessions,
+  useSessionPages,
+} from "../api/queries.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
 import { SESSION_CATEGORY_LABELS } from "../lib/session-category.js";
 import { useSessionConversations } from "../lib/use-session-conversations.js";
@@ -77,8 +82,12 @@ export function SessionsSidebar({
     enabled: agentOperable,
     activeSessionId: sessionId,
   });
-  const sessions: SessionView[] = listed ?? EMPTY;
-  const loading = listed === undefined && isFetching;
+  const lastKnown = useProvisionalSessions(selectedAgent, listed === undefined);
+  const provisional = listed === undefined && !!lastKnown?.length;
+  const sessions: SessionView[] =
+    listed ?? (provisional ? lastKnown : undefined) ?? EMPTY;
+  const loading =
+    listed === undefined && !provisional && (isFetching || !agentOperable);
   const filtered = sessionFilter.length < SESSION_CATEGORIES.length;
 
   const visibleSessions = useMemo(
@@ -155,6 +164,12 @@ export function SessionsSidebar({
           if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);
           onResumeSession(s.sessionId, s.mode);
         }}
+        {...(agentOperable &&
+          selectedAgent &&
+          s.mode !== SessionMode.Terminal && {
+            onPrefetch: () =>
+              prefetchSessionHistory(selectedAgent, s.sessionId),
+          })}
         onRename={() => setRenaming(s)}
         onDelete={() => confirmDelete(s.sessionId, s.title)}
         {...(telemetryEnabled && selectedAgent
@@ -235,7 +250,11 @@ export function SessionsSidebar({
       style={style}
       ref={ref}
     >
-      <div className="flex-1 overflow-y-auto">
+      <div
+        className="flex-1 overflow-y-auto"
+        data-provisional={provisional ? "true" : undefined}
+        aria-busy={provisional || loading}
+      >
         {loading && <SessionListSkeleton />}
         {!loading && visibleSessions.length === 0 && (
           <p className="px-4 py-5 text-xs text-muted-foreground">

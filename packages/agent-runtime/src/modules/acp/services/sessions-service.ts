@@ -26,6 +26,8 @@ import type { SessionChanges } from "./session-changes.js";
 const EMPTY_HISTORY: SessionHistory = { frames: [], truncated: false };
 
 const HARNESS_LISTING_TTL_MS = 30_000;
+// UNIT_BOUNDARY_DESCRIPTION: how long a list read waits for a harness listing still being read. The first read after a boot starts the harness cold, which takes seconds; past this the read answers from the platform's own session records and the last listing, and announces a change once the harness answers.
+const HARNESS_LISTING_GRACE_MS = 300;
 
 const HARNESS_ONLY_META: PlatformSessionMeta = { mode: "terminal" };
 const MAX_HARNESS_PAGES = 200;
@@ -86,33 +88,74 @@ export function createSessionsService(deps: {
 }): SessionsService {
   const now = deps.now ?? Date.now;
   let listing:
-    { readAt: number; sessions: Promise<ListedHarnessSession[]> } | undefined;
+    | {
+        readAt: number;
+        sessions: Promise<ListedHarnessSession[]>;
+        announced: boolean;
+      }
+    | undefined;
+  let lastListed: ListedHarnessSession[] = [];
   deps.changes.watch(() => {
     listing = undefined;
   });
 
-  function harnessListing(): Promise<ListedHarnessSession[]> {
+  function harnessListing() {
     if (listing && now() - listing.readAt < HARNESS_LISTING_TTL_MS)
-      return listing.sessions;
+      return listing;
     const caller = deps.openCaller();
     const entry = {
       readAt: now(),
       sessions: readHarnessListing(caller, deps.log).finally(() =>
         caller.close(),
       ),
+      announced: false,
     };
-    entry.sessions.catch(() => {
-      if (listing === entry) listing = undefined;
-    });
+    entry.sessions.then(
+      (sessions) => {
+        lastListed = sessions;
+      },
+      () => {
+        if (listing === entry) listing = undefined;
+      },
+    );
     listing = entry;
-    return entry.sessions;
+    return entry;
+  }
+
+  async function listedWithinGrace(): Promise<{
+    listed: ListedHarnessSession[];
+    complete: boolean;
+  }> {
+    const entry = harnessListing();
+    const late = Symbol("late");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const result = await Promise.race([
+      entry.sessions,
+      new Promise<typeof late>((resolve) => {
+        timer = setTimeout(() => resolve(late), HARNESS_LISTING_GRACE_MS);
+      }),
+    ]).finally(() => clearTimeout(timer));
+    if (result !== late) return { listed: result, complete: true };
+    if (!entry.announced) {
+      entry.announced = true;
+      entry.sessions.then(
+        () => deps.changes.announce(),
+        (error: unknown) => {
+          deps.log(
+            `session list: the harness listing failed after the list was answered without it: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          deps.changes.announce();
+        },
+      );
+    }
+    return { listed: lastListed, complete: false };
   }
 
   return {
     async list(query?: SessionListQuery): Promise<SessionPage> {
       const platformSessionOf = deps.terminalSessionPins?.();
-      const [listed, spendRows] = await Promise.all([
-        harnessListing(),
+      const [{ listed, complete }, spendRows] = await Promise.all([
+        listedWithinGrace(),
         deps.spendProvider?.read() ?? Promise.resolve(null),
       ]);
       const composed = composeSessionList(listed, deps.sessionMetadata.all(), {
@@ -121,7 +164,10 @@ export function createSessionsService(deps: {
         isRunning: deps.isRunning,
         platformSessionOf,
       });
-      const page = pageSessions(composed, query);
+      const paged = pageSessions(composed, query);
+      const page: SessionPage = complete
+        ? paged
+        : { ...paged, incomplete: true };
       if (!deps.spendProvider || !spendRows) return page;
       const spend = spendBySession(
         spendRows,
@@ -176,7 +222,9 @@ export function createSessionsService(deps: {
       const entry = deps.sessionMetadata.get(sessionId);
       if (
         !entry &&
-        !(await harnessListing()).some((s) => s.sessionId === sessionId)
+        !(await harnessListing().sessions).some(
+          (s) => s.sessionId === sessionId,
+        )
       )
         return false;
       const { customTitle: _previous, ...meta } =

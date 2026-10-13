@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-10-07
+Last verified: 2026-10-13
 
 ## System context
 
@@ -52,14 +52,17 @@ flowchart LR
   envoy -->|inject credentials| github
 ```
 
-The cluster boundary is the trust boundary. Browsers and Slack users reach Platform through the api-server; LLM and GitHub traffic from the agent always exits through the paired gateway pod, where Envoy injects credentials from K8s Secrets mounted on the gateway only. The agent pod's NetworkPolicy admits no path to TCP 80/443 other than the paired gateway, so credential injection is enforced by Kubernetes — not by the agent honoring `HTTPS_PROXY`. The agent pod has no service-account credentials and no upstream tokens of its own.
+The cluster boundary is the trust boundary.
+Browsers and Slack users reach Platform through the api-server; LLM and GitHub traffic from the agent always exits through the paired gateway pod, where Envoy injects credentials from K8s Secrets mounted on the gateway only.
+The agent pod's NetworkPolicy admits no path to TCP 80/443 other than the paired gateway, so credential injection is enforced by Kubernetes — not by the agent honoring `HTTPS_PROXY`.
+The agent pod has no service-account credentials and no upstream tokens of its own.
 
 ## Subsystems
 
 Each page is the authoritative, self-contained description of its subsystem.
 
 - [platform-topology](architecture/platform-topology.md) — the long-lived components, the protocols between them, and the K8s resource model; the [images](architecture/agent-images.md) agents run in.
-- [vm-runner](architecture/vm-runner.md) — `vm` hosts; [Mac](architecture/vm-host-runner.md), [image cache](architecture/vm-image-cache.md), [upgrades](architecture/vm-runner-upgrades.md).
+- [vm-runner](architecture/vm-runner.md) — `vm` hosts; [Mac](architecture/vm-host-runner.md), [image cache](architecture/vm-image-cache.md), [upgrades](architecture/vm-runner-upgrades.md), [runtime migration](architecture/vm-runtime-migration.md).
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; the [processes](architecture/agent-processes.md) inside; [sessions](architecture/sessions.md).
 - [schedules](architecture/schedules.md) — recurring and one-time work on an Agent: arming and firing occurrences, the Precheck that declines a fire before any model wakes, and the Session each fire opens.
 - [budgets](architecture/budgets.md) — per-user ceiling on concurrently reserved compute, enforced by the controller at the 0→1 scale transition; UserBudget CRs for privileged users.
@@ -87,7 +90,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [agent-telemetry](architecture/agent-telemetry.md) — the user-facing read path over raw agent traces and log records, scoped to the agents you own.
 - [metrics](architecture/metrics.md) — the user-facing spend read path behind the global and per-agent Usage surfaces: how much the agents you own have spent.
 - [logging](architecture/logging.md) — Pino structured logging to stdout, and the real-identity security audit trail built on it (the forensic counterpart to pseudonymized usage-tracking).
-- [observability](architecture/observability.md) — the optional, bundled agent-telemetry backend: an OTLP collector writing OpenTelemetry signals into a columnar store, gated by the mesh.
+- [observability](architecture/observability.md) — the optional, bundled agent-telemetry backend: an OTLP collector writing OpenTelemetry signals into a columnar store, gated by the mesh rather than ingestion tokens.
 - [supply-chain](security/supply-chain.md) — how each external dependency type is scanned for CVEs and defended against supply-chain attacks.
 - [code](security/code.md) — CodeQL SAST and pre-commit hardening.
 - [secrets](security/secrets.md) — GitHub secret storage, scanning, and push protection.
@@ -99,4 +102,3 @@ Higher-level documents that frame *what* Platform is trying to be, separate from
 
 - [Multiplayer model](strategy/multi-player.md) — what's private to each user, what's shared via channels, and what's install-wide plumbing.
 - [Security model](strategy/security-model.md) — the three structural risks of running AI agents, and which ones Platform addresses today.
-
