@@ -11,8 +11,12 @@ import {
   detectGithubOwnerRepo,
   type GitHubRestClient,
 } from "../infrastructure/github-rest-client.js";
+import { fetchGithubPath, isGithubNotFound } from "./fetch-github-path.js";
 import type { GitProtocolClient } from "../../git/protocol-client.js";
-import type { LocalSkillRepository } from "../infrastructure/local-skill-repository.js";
+import {
+  subPathEscapes,
+  type LocalSkillRepository,
+} from "../infrastructure/local-skill-repository.js";
 
 export interface InstallDeps {
   github: GitHubRestClient;
@@ -31,6 +35,7 @@ export async function runInstall(
       deps,
       input.sourceUrl,
       input.version,
+      input.path,
       tmp,
     );
     if (!fetched.ok) return fetched;
@@ -61,18 +66,18 @@ async function fetchSourceAtVersion(
   deps: InstallDeps,
   source: string,
   version: string,
+  subPath: string | undefined,
   dest: string,
 ): Promise<Result<void, SkillsDomainError>> {
   const host = detectGithubOwnerRepo(source);
+  if (host && subPath && !subPathEscapes(subPath)) {
+    return fetchGithubPath(deps, host, version, subPath, dest);
+  }
   if (host) {
     let bytes = await deps.github.fetchTarball(host, version, {
       withAuth: false,
     });
-    if (
-      !bytes.ok &&
-      bytes.error.kind === "UpstreamGitHubError" &&
-      bytes.error.status === 404
-    ) {
+    if (isGithubNotFound(bytes)) {
       bytes = await deps.github.fetchTarball(host, version, { withAuth: true });
     }
     if (!bytes.ok) return bytes;

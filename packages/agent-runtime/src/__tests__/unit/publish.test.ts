@@ -18,6 +18,7 @@ function makeDeps(): { deps: PublishDeps; treePaths: () => string[] } {
       ok({ state: "open" as const, draft: false, mergedAt: null }),
     getFileContent: async () => ok(""),
     fetchTarball: async () => ok(new Uint8Array()),
+    fetchSubtree: async () => ok([]),
     createBlob: async () => ok({ sha: "blob-sha" }),
     createTree: async (_host, body) => {
       captured = body.tree.map((e) => e.path);

@@ -13,7 +13,11 @@ import {
   type GitHubRestClient,
 } from "../infrastructure/github-rest-client.js";
 import type { GitProtocolClient } from "../../git/protocol-client.js";
-import type { LocalSkillRepository } from "../infrastructure/local-skill-repository.js";
+import {
+  subPathEscapes,
+  type LocalSkillRepository,
+} from "../infrastructure/local-skill-repository.js";
+import { fetchGithubPath, isGithubNotFound } from "./fetch-github-path.js";
 
 export interface ScanDeps {
   github: GitHubRestClient;
@@ -61,15 +65,22 @@ async function scanGithub(
   subPath?: string,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   let head = await deps.github.getCommitHead(host, { withAuth: false });
-  if (
-    !head.ok &&
-    head.error.kind === "UpstreamGitHubError" &&
-    head.error.status === 404
-  ) {
+  if (isGithubNotFound(head)) {
     head = await deps.github.getCommitHead(host, { withAuth: true });
   }
   if (!head.ok) return head;
   const version = head.value.sha;
+
+  if (subPath && !subPathEscapes(subPath)) {
+    return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
+      const fetched = await fetchGithubPath(deps, host, version, subPath, tmp);
+      if (isGithubNotFound(fetched)) {
+        return sourcePathError("path-missing", source, subPath, version);
+      }
+      if (!fetched.ok) return fetched;
+      return collectSkills(deps, source, tmp, version, subPath);
+    });
+  }
 
   const tarball = await deps.github.fetchTarball(host, version, {
     withAuth: false,

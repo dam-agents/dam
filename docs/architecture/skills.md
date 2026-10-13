@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-10-10
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -266,17 +266,18 @@ sequenceDiagram
 
   U->>API: skills.install(agentId, source, name, version)
   API->>RT: skills.install (NetworkPolicy-gated, no Bearer)
-  RT->>ENV: GET /repos/.../tarball/{version}
+  RT->>ENV: GET /repos/.../contents/{path}?ref={version}<br/>(tarball/{version} when the source has no path)
   ENV->>GH: + Authorization: Bearer <user GH token>
-  GH-->>ENV: tarball
-  ENV-->>RT: tarball
+  GH-->>ENV: directory listings + files (or tarball)
+  ENV-->>RT: directory listings + files (or tarball)
   RT->>PVC: write skill dir into every configured path
   RT-->>API: { contentHash }
   API->>DB: upsert agent_skills row
   API-->>U: updated installed list
 ```
 
-Public-source installs work identically except Envoy's filter chain has no credential to inject (no token swap, anonymous archive download).
+Public-source installs work identically except Envoy's filter chain has no credential to inject (no token swap, anonymous download).
+A source with a path is fetched by directory, so an agent whose egress rules allow only `GET api.github.com /repos/{owner}/{repo}/contents/{path}*` can install from it without reading the rest of the repository.
 
 ### Publish
 
