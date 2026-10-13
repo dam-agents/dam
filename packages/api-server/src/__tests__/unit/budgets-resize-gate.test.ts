@@ -135,4 +135,16 @@ describe("budgets meter (#1900)", () => {
     expect(reserved.cpu.ceilingMilli).toBe(8000);
     expect(reserved.memory.ceilingBytes).toBe(16 * 1024 ** 3);
   });
+
+  it("falls back to the chart default for a field the UserBudget leaves out", async () => {
+    const svc = createBudgetsService({
+      listAgents: async () => [],
+      readCeilingOverride: async () => ({ cpu: "8" }),
+      defaultCeiling: { cpu: "4", memory: "8Gi" },
+      slotSize: { cpu: "1", memory: "2Gi" },
+    });
+    const reserved = await svc.reserved();
+    expect(reserved.cpu.ceilingMilli).toBe(8000);
+    expect(reserved.memory.ceilingBytes).toBe(8 * 1024 ** 3);
+  });
 });

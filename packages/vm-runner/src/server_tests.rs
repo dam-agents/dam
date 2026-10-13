@@ -2355,6 +2355,32 @@ async fn a_working_set_past_ninety_five_percent_answers_a_pressure_wait_with_fre
     assert!(!ended.pressured, "{ended:?}");
 }
 
+// TEST_SCENARIO: the controller resizes the runner pod's memory limit in place when the owner's pool changes, and the runner keeps the limit it was started with in its arguments. So admission reads the limit the kernel holds: a start refused under the old limit is admitted once the cgroup's memory.max is raised, with no restart of the runner.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_memory_limit_raised_in_place_admits_what_the_old_one_refused() {
+    let cgroup = crate::testdir::TempDir::new("live-limit-cgroup");
+    let limit =
+        |mib: u64| fs::write(cgroup.path().join("memory.max"), (mib << 20).to_string()).unwrap();
+    limit(1000);
+    let dir = cgroup.path().to_path_buf();
+    let h = Harness::with("live-limit", move |c| {
+        c.memory_mib = 8000;
+        c.boot_mib = 1024;
+        c.cgroup_dir = Some(dir);
+    });
+    let refused = h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+    assert_eq!(h.server.pressure().limit_mib, 1000);
+
+    limit(4000);
+    assert_eq!(
+        h.server.put("m1", spec(true)).unwrap().state,
+        STATE_CREATING
+    );
+    assert_eq!(h.server.pressure().limit_mib, 4000);
+    h.settle("m1").await;
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: a runner over a claim whose use the test sets, starting at nothing measured.
 fn with_claim(name: &str) -> (Harness, Arc<Mutex<Option<StorageUse>>>) {
     let claim: Arc<Mutex<Option<StorageUse>>> = Arc::default();

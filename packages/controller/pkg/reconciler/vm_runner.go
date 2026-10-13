@@ -338,7 +338,7 @@ func (r *AgentReconciler) growRunnerPVC(ctx context.Context, owner string, claim
 
 func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, demand runnerDemand, refs []metav1.OwnerReference) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
-	size, ceiling, sizeErr := r.runnerClaimSize(owner, demand)
+	size, ceiling, sizeErr := r.runnerClaimSize(ctx, owner, demand)
 	if existing, err := r.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
 		if existing.DeletionTimestamp != nil {
 			return errRunnerTerminating
@@ -630,6 +630,12 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	}
 	if resources.Limits == nil {
 		resources.Limits = corev1.ResourceList{}
+	}
+	if pool := r.vmPoolOf(ctx, owner).memory; pool != nil {
+		resources.Limits[corev1.ResourceMemory] = *pool
+		if req, ok := resources.Requests[corev1.ResourceMemory]; ok && req.Cmp(*pool) > 0 {
+			resources.Requests[corev1.ResourceMemory] = *pool
+		}
 	}
 	for k, v := range spec.Devices {
 		q, err := resource.ParseQuantity(v)

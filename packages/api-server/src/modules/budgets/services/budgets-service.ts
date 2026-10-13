@@ -12,9 +12,11 @@ export interface BudgetedAgent {
   overBudget: boolean;
 }
 
+export type CeilingOverride = Partial<{ cpu: string; memory: string }>;
+
 interface BudgetsServiceDeps {
   listAgents(): Promise<BudgetedAgent[]>;
-  readCeilingOverride(): Promise<{ cpu: string; memory: string } | null>;
+  readCeilingOverride(): Promise<CeilingOverride | null>;
   defaultCeiling: { cpu: string; memory: string };
   slotSize: { cpu: string; memory: string };
 }
@@ -44,7 +46,7 @@ export function createResizeGate(
         deps.listAgents(),
         deps.readCeilingOverride(),
       ]);
-      const ceiling = override ?? deps.defaultCeiling;
+      const ceiling = { ...deps.defaultCeiling, ...override };
       const { cpuMilli, memoryBytes } = reservedBy(
         agents.filter((a) => a.id !== agent.id),
       );
@@ -81,7 +83,7 @@ export function createSpawnSizeGate(
   return {
     async assertCanEverFit(limits) {
       const override = await deps.readCeilingOverride();
-      const ceiling = override ?? deps.defaultCeiling;
+      const ceiling = { ...deps.defaultCeiling, ...override };
       const cpuMilli = parseCpuMilli(limits.cpu);
       const memoryBytes = parseMemoryBytes(limits.memory);
       const ceilCpu = parseCpuMilli(ceiling.cpu);
@@ -105,7 +107,7 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
         deps.readCeilingOverride(),
       ]);
       const { cpuMilli, memoryBytes } = reservedBy(agents);
-      const ceiling = override ?? deps.defaultCeiling;
+      const ceiling = { ...deps.defaultCeiling, ...override };
       return {
         cpu: {
           reservedMilli: cpuMilli,
