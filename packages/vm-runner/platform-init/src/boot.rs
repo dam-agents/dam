@@ -869,14 +869,25 @@ fn claim_short() -> bool {
     Path::new(guest::STORAGE_SHORT_PATH).exists()
 }
 
-fn free_percent(path: &Path) -> Option<u64> {
+fn statvfs(path: &Path) -> Option<libc::statvfs> {
     let path = cstring(path.as_os_str()).ok()?;
     // SAFETY: statvfs is plain old data, and all-zero bytes are a valid value of it.
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
     // SAFETY: `path` is NUL-terminated and lives for the call, and `stat` is a live, writable statvfs.
     let rc = unsafe { libc::statvfs(path.as_ptr(), &mut stat) };
+    (rc == 0).then_some(stat)
+}
+
+fn free_percent(path: &Path) -> Option<u64> {
+    let stat = statvfs(path)?;
     #[allow(clippy::unnecessary_cast)]
-    (rc == 0 && stat.f_blocks > 0).then(|| stat.f_bavail as u64 * 100 / stat.f_blocks as u64)
+    (stat.f_blocks > 0).then(|| stat.f_bavail as u64 * 100 / stat.f_blocks as u64)
+}
+
+fn free_bytes(path: &Path) -> Option<u64> {
+    let stat = statvfs(path)?;
+    #[allow(clippy::unnecessary_cast)]
+    Some((stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: deletes the files under `dir` last used before `cutoff`, in seconds since the epoch, and returns the bytes they held. Only regular files and symlinks are deleted, never a socket or fifo a running process may still be listening on. A file counts as used at the latest of its access, modification and change times. A directory left empty is removed only if it too was unused before the cutoff, so one a tool just made stays. The walk holds one directory open per level of the tree.
@@ -1573,10 +1584,18 @@ fn supervise(binary: &Path, command: &[OsString], trust: Option<&Path>) -> ! {
                 NOT_STARTED
             }
         };
+        let full = status != 0
+            && free_bytes(Path::new(guest::AGENT_HOME))
+                .is_some_and(|free| free < guest::HOME_FULL_BYTES);
         announce(&format!(
-            "the image entrypoint {} after {}s",
+            "the image entrypoint {} after {}s{}",
             exit_description(status),
-            started.elapsed().as_secs()
+            started.elapsed().as_secs(),
+            if full {
+                format!("; {}", guest::HOME_FULL)
+            } else {
+                String::new()
+            }
         ));
         end_the_rest(&mut stopping);
         if stopping {

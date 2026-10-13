@@ -1321,6 +1321,29 @@ func TestAStorageRefusalIsPublishedWithoutParking(t *testing.T) {
 	assert.Contains(t, cond.Message, "93% full")
 }
 
+// TEST_SCENARIO: a full home inside a guest is the same failure a container agent reports from its termination message, so the runner's reason for it is published as HomeVolumeFull, and the api-server's and UI's existing copy for a full home applies to a vm agent too.
+func TestAFullHomeInsideAGuestIsPublishedAsAFullHomeVolume(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateRunning,
+		Reason:  vmrunner.ReasonHomeFull,
+		Message: "the agent's disk is full",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	got, err := FromCacheObject[apiv1.Agent](obj)
+	require.NoError(t, err)
+	cond := apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
+	require.NotNil(t, cond)
+	assert.Equal(t, apiv1.ReasonHomeVolumeFull, cond.Reason)
+	assert.Contains(t, cond.Message, "disk is full")
+}
+
 // TEST_SCENARIO: a machine no Agent of this owner claims holds guest memory forever, so the sweep deletes it — and ownership is part of the match, because an Agent of the same name belonging to someone else says nothing about this runner's machine.
 func TestOrphanSweepDeletesAMachineNoAgentOfThisOwnerClaims(t *testing.T) {
 	ctx := context.Background()

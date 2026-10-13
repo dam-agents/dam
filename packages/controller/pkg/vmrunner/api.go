@@ -120,6 +120,7 @@ const (
 	ReasonBootFailed       = "MachineBootFailed"
 	ReasonSeedMissing      = "MachineSeedMissing"
 	ReasonStorageFull      = "MachineStorageFull"
+	ReasonHomeFull         = "MachineHomeFull"
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: which runner release a runner pod runs, as its loader last wrote it: the one running, the one the controller asked for, and, when the two differ, why the loader holds on to the one running.

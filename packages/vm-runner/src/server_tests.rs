@@ -6,9 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::*;
 use crate::api::{
-    REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, REASON_SEED_MISSING, REASON_STORAGE_FULL,
-    STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING, STATE_STARTING, STATE_STOPPED,
-    STATE_STOPPING,
+    REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE, REASON_SEED_MISSING,
+    REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING,
+    STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -2352,4 +2352,19 @@ async fn a_short_claim_marks_every_share_until_it_has_room_again() {
         h.server.check_storage();
         assert_eq!(mark.exists(), marked, "at {percent}%");
     }
+}
+
+// TEST_SCENARIO: a guest whose own disk filled has an agent that exits as it starts, which on its own reads as a boot that failed. platform-init marks that exit on the console, and the runner reports it as a full home, which the controller shows as the full home volume a container agent reports.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_boot_whose_console_shows_a_full_home_reports_it() {
+    let h = Harness::new("home-full");
+    *locked(&h.fake.fail_start_once) = Some("start machine: guest agent never became ready".into());
+    *locked(&h.fake.console) = "[ 2.0] platform-init: the image entrypoint exited with status 1 after 1s; the agent's home is full".into();
+    h.server.put("m1", spec(true)).unwrap();
+    let failed = h.settle("m1").await;
+    assert_eq!(failed.reason, REASON_HOME_FULL, "{failed:?}");
+    assert!(
+        failed.message.contains("the agent's disk is full"),
+        "{failed:?}"
+    );
 }

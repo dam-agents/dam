@@ -26,6 +26,16 @@ pub const TRIM_EVERY: Duration = Duration::from_secs(10);
 
 const CONSOLE_ENDS: &str = "\nthe guest console ends:\n";
 
+// UNIT_BOUNDARY_DESCRIPTION: whether the guest's last entrypoint exit in a console tail was with the agent's home full, as platform-init marks it (guest::HOME_FULL). Only the last exit counts, so a home freed since, whose entrypoint then exited for another reason, is not reported full.
+pub fn home_full(tail: &str) -> bool {
+    tail.lines()
+        .rev()
+        .find(|line| line.contains(ENTRYPOINT_EXITED))
+        .is_some_and(|line| line.contains(crate::guest::HOME_FULL))
+}
+
+const ENTRYPOINT_EXITED: &str = "platform-init: the image entrypoint ";
+
 pub fn with_console(message: &str, tail: &str) -> String {
     if tail.is_empty() {
         return message.to_string();
@@ -228,6 +238,20 @@ fn escape_len(rest: &str) -> Option<usize> {
 mod tests {
     use super::*;
     use crate::testdir::TempDir;
+
+    // TEST_SCENARIO: a full home inside a guest makes its agent exit as it starts, and platform-init marks that exit on the console. The runner names the home full only while the guest's last exit carries the mark, so a home freed since, whose entrypoint then exited for another reason, is not reported full; the hand-off line, which also names the entrypoint, is not an exit.
+    #[test]
+    fn a_full_home_is_read_from_the_last_exit_only() {
+        let full = "[ 1.0] platform-init: handing off to the image entrypoint [/entry]\n[ 2.0] platform-init: the image entrypoint exited with status 1 after 1s; the agent's home is full\n[ 3.0] platform-init: starting the image entrypoint again in 1s\n[ 4.0] platform-init: handing off to the image entrypoint [/entry]";
+        assert!(home_full(full));
+        let freed = format!(
+            "{full}\n[ 9.0] platform-init: the image entrypoint exited with status 2 after 30s"
+        );
+        assert!(!home_full(&freed));
+        assert!(!home_full(
+            "[ 1.0] platform-init: handing off to the image entrypoint [/entry]"
+        ));
+    }
 
     // TEST_SCENARIO: a guest can print anything to its console, and the tail goes into a Kubernetes condition that an operator reads. Colour codes and cursor moves are dropped whole, other control characters are dropped, and the text between them is kept as it was.
     #[test]

@@ -10,14 +10,14 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::api::{
-    MachineSpec, MachineStatus, SeedResult, State, REASON_BOOT_FAILED, REASON_OUT_OF_CAPACITY,
-    REASON_STORAGE_FULL,
+    MachineSpec, MachineStatus, SeedResult, State, REASON_BOOT_FAILED, REASON_HOME_FULL,
+    REASON_OUT_OF_CAPACITY, REASON_STORAGE_FULL,
 };
 use crate::cache::{self, pinned_digest};
 use crate::cacheapi::CacheClient;
 use crate::capability::Verified;
 use crate::capacity::Capacity;
-use crate::console::{with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
+use crate::console::{home_full, with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
 use crate::fetch::{failure_reason, on_own_claim, seed_missing, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::{
@@ -852,11 +852,12 @@ impl Server {
             tracing::error!(machine = %id, op = action.label(), error = %message, "machine action failed");
             let mut reason = failure_reason(&e);
             if reason == REASON_BOOT_FAILED {
-                message = with_console(&message, &self.console_tail(id));
-                if let Some(full) = self.storage_critical() {
-                    reason = REASON_STORAGE_FULL;
-                    message = format!("{}; {message}", full.refusal());
+                let tail = self.console_tail(id);
+                if let Some((why, explained)) = self.out_of_room(&tail) {
+                    reason = why;
+                    message = format!("{explained}; {message}");
                 }
+                message = with_console(&message, &tail);
             }
             self.metrics.failed(action, reason);
             Failed { message, reason }
@@ -1189,11 +1190,8 @@ impl Server {
             boot.at
         };
         let tail = self.console_tail(id);
-        let (message, reason) = match self.storage_critical() {
-            Some(full) => (
-                with_console(&full.refusal(), &tail),
-                Some(REASON_STORAGE_FULL),
-            ),
+        let (message, reason) = match self.out_of_room(&tail) {
+            Some((why, explained)) => (with_console(&explained, &tail), Some(why)),
             None => (with_console(SLOW_BOOT, &tail), None),
         };
         let mut machines = locked(&self.machines);
@@ -1235,6 +1233,19 @@ impl Server {
 
     fn storage_critical(&self) -> Option<StorageUse> {
         (self.config.measure_storage)().filter(StorageUse::critical)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: why a guest that failed to come up has no room, when it has none: the owner's claim is critically full, or the guest's own disk is, as its console says. A guest whose writes fail fails its boot with nothing typed in the error, so the room is what explains it; the claim comes first, because a full claim also fails every guest's writes.
+    fn out_of_room(&self, tail: &str) -> Option<(&'static str, String)> {
+        if let Some(full) = self.storage_critical() {
+            return Some((REASON_STORAGE_FULL, full.refusal()));
+        }
+        home_full(tail).then(|| {
+            (
+                REASON_HOME_FULL,
+                "the agent's disk is full, so the agent exits as it starts; the disk needs files removed or more space".to_string(),
+            )
+        })
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again, and every machine's share carries the mark that has its guest give back its scratch; what the guests keep beyond that is not the runner's to free.
