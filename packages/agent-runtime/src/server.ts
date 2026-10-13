@@ -84,6 +84,7 @@ import {
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
 import { leaseSpawnEnv } from "./core/runtime-env.js";
+import { reportHomeVolumeFullOnCrash } from "./core/home-volume-full.js";
 import {
   PROVIDER_REMOVED_REASON,
   type LeasePair,
@@ -96,6 +97,8 @@ const homeDir = config.PLATFORM_DEV
 const workDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
   : AGENT_WORK_DIR;
+
+reportHomeVolumeFullOnCrash(homeDir);
 
 try {
   mkdirSync(workDir, { recursive: true });

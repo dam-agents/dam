@@ -2,8 +2,11 @@ package reconciler
 
 import (
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
 func isPodReady(pod corev1.Pod) bool {
@@ -61,6 +64,9 @@ func podRestarts(pod *corev1.Pod) (restarts int32, reason string) {
 func classifyTermination(t *corev1.ContainerStateTerminated) (reason, message string, ok bool) {
 	if t.Reason == "OOMKilled" {
 		return "OutOfMemory", "out of memory (OOMKilled)", true
+	}
+	if t.ExitCode != 0 && strings.TrimSpace(t.Message) == apiv1.ReasonHomeVolumeFull {
+		return apiv1.ReasonHomeVolumeFull, "home volume is full (no space left on device)", true
 	}
 	if t.ExitCode != 0 {
 		msg := fmt.Sprintf("exited with code %d", t.ExitCode)

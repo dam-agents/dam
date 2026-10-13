@@ -42,6 +42,16 @@ describe("nextCrashNotices", () => {
     ]);
   });
 
+  // TEST_SCENARIO: the agent died because its home volume is full. The notice must name the disk, not a generic crash.
+  it("names a full home volume as the restart cause", () => {
+    expect(
+      replay(
+        [agent({ podRestarts: 1 })],
+        [agent({ podRestarts: 2, podRestartReason: "HomeVolumeFull" })],
+      ),
+    ).toEqual([[], ["Scout ran out of space in its home volume and restarted"]]);
+  });
+
   // TEST_SCENARIO: the cause of a restart is one the controller does not name. The user must still learn the agent restarted.
   it("reports an unnamed restart cause as a crash", () => {
     expect(

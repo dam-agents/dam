@@ -260,6 +260,12 @@ const ReasonStuckOnSupersededRevision = "StuckOnSupersededRevision"
 // scheduler's own account.
 const ReasonMachineRunnerUnschedulable = "MachineRunnerUnschedulable"
 
+// ReasonHomeVolumeFull is stamped on AgentPodReady when the agent container
+// exited because its home volume ran out of space. agent-runtime reports it as
+// the container's termination message, since the exit code alone cannot tell
+// it apart from any other crash.
+const ReasonHomeVolumeFull = "HomeVolumeFull"
+
 // AgentStatus is the observed state of an Agent. The controller is the sole
 // writer, via the status subresource.
 type AgentStatus struct {
