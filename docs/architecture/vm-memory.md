@@ -30,12 +30,14 @@ The request matters on a nested host whose huge-page defrag is `madvise`: a fall
 The added RAM is anonymous memory rather than libkrun's shared-memory file, which a host whose shared-memory huge pages are off (as on RHEL by default) backs with 4 KiB pages whatever its placement; only a branchable machine, which no runner starts, keeps the file.
 The guest writes the page descriptors of added RAM into that RAM itself, so huge pages also make the grow about five times faster.
 
-**The runner measures every running machine.** Its health prober reads the resident memory of each machine's VMM at the steady probe cadence and reports it in the machine's status.
+**The runner measures every running machine.** Its health prober reads the resident memory of each running machine's VMM at every probe and reports it in the machine's status.
 The figure is kept out of what moves the status version, so it never wakes a waiting status read on its own.
 
 **A running machine is counted at its use plus headroom.** That is its measured use plus a per-machine headroom (`virtualization.runner.headroomMiB`), never more than its size.
-A machine not yet measured, and every machine an action is bringing up, counts at a boot estimate (`virtualization.runner.bootMiB`), or its size when that is smaller, until the runner first measures it about ten seconds in.
-Counting a boot at half the pool would let only two machines boot at once, so a runner roll or a few wakes together would refuse the rest; the cost is that a guest touching more than the estimate before its first measurement is under-counted until then.
+A machine not yet measured, and every machine an action is bringing up, counts at a boot estimate (`virtualization.runner.bootMiB`), or its size when that is smaller, until the runner first measures it.
+That is about 100 ms after its start returns, before the agent's harness has started; only a guest whose harness answered during the start waits for the steady probe, about ten seconds on.
+So from then on a machine counts at little more than its booted guest until later probes see the harness grow.
+Counting a boot at half the pool would let only two machines boot at once, so a runner roll or a few wakes together would refuse the rest; the cost is that machines whose harnesses start together are under-counted until the probes catch up.
 Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below.
 
 **Admission is against use, so an owner may run more machines than their sizes add up to.** A machine starts while every machine's count, the start's own count and the runner's reserve fit under the runner's limit; otherwise the runner refuses it with the shortfall named, and the Agent is parked as [budgets](budgets.md) describes.

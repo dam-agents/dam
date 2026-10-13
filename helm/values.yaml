@@ -286,11 +286,12 @@ virtualization:
     # measured using, for its guest to grow into before the controller acts.
     headroomMiB: 256
     # Memory a machine is counted at until the runner first measures it,
-    # about ten seconds into its boot, when that is less than its size.
+    # usually about 100 ms after its start returns and before the agent's
+    # harness has started, when that is less than its size.
     # Counting a boot at its full size, half the pool, would let only two
     # machines boot at once, so a runner roll or a few wakes together would
-    # refuse the rest. A guest that touches more than this before its first
-    # measurement is under-counted until then. Each machine also boots with
+    # refuse the rest. A harness that is still starting at the first
+    # measurement is under-counted until later probes see it grow. Each machine also boots with
     # this much RAM, or its size when that is less, and is grown to its size
     # once the guest is up: a boot costs time for every GiB it starts with.
     bootMiB: 2048
