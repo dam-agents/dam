@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -214,7 +214,8 @@ What does **not** survive hibernation: anything written to the container's ephem
 `$HOME/.cache` is deliberately in this category: the base-image entrypoint redirects it to node-local disk (`/tmp/agent-cache`) so churn-heavy tool caches don't load the persistent volume, npm's cache with it.
 The redirect is best-effort: a failed swap costs speed, not the boot.
 
-**Caches outlive their tools.** A cache of a tool the image dropped stays on the volume until the home is full and the agent stops starting.
+**Caches outlive their tools.** A cache of a tool the image dropped stays on the volume until the home is full.
+A full home keeps agent-runtime up, unsaved state in memory; the chat says so.
 The entrypoint discards at boot the caches no shipped tool reads — Go's module cache, pnpm store layouts the shipped pnpm does not name (aube names its own), npm's once redirected — moved aside and deleted in the background.
 Toolchains the agent installed for itself are never touched; on the vm Backend only the discards apply.
 

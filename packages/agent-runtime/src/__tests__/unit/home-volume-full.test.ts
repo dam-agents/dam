@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   HOME_VOLUME_FULL_REASON,
   isHomeVolumeFull,
+  readHomeVolume,
   reportHomeVolumeFullOnCrash,
 } from "../../core/home-volume-full.js";
 
@@ -35,6 +36,20 @@ describe("isHomeVolumeFull", () => {
   it("does not for other errors or an unreadable home", () => {
     expect(isHomeVolumeFull(new Error("boom"), "/home", () => 0)).toBe(false);
     expect(isHomeVolumeFull(enospc(), "/home", () => null)).toBe(false);
+  });
+});
+
+describe("readHomeVolume", () => {
+  it("reports the free and total bytes of the volume holding the home", async () => {
+    const volume = await readHomeVolume(tmpdir());
+    expect(volume).not.toBeNull();
+    expect(volume!.totalBytes).toBeGreaterThan(0);
+    expect(volume!.freeBytes).toBeLessThanOrEqual(volume!.totalBytes);
+    expect(volume!.full).toBe(volume!.freeBytes < 64 * 1024 * 1024);
+  });
+
+  it("reports nothing for a home it cannot read", async () => {
+    expect(await readHomeVolume(join(tmpdir(), "no-such-home-xyz"))).toBe(null);
   });
 });
 

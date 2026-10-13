@@ -1,8 +1,26 @@
 import { statfsSync, writeFileSync } from "node:fs";
+import { statfs } from "node:fs/promises";
+import type { HomeVolume } from "agent-runtime-api";
 
 export const HOME_VOLUME_FULL_REASON = "HomeVolumeFull";
 
 const NEARLY_FULL_BYTES = 64 * 1024 * 1024;
+
+export async function readHomeVolume(
+  homeDir: string,
+): Promise<HomeVolume | null> {
+  try {
+    const s = await statfs(homeDir);
+    const freeBytes = s.bavail * s.bsize;
+    return {
+      freeBytes,
+      totalBytes: s.blocks * s.bsize,
+      full: freeBytes < NEARLY_FULL_BYTES,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function freeBytes(dir: string): number | null {
   try {

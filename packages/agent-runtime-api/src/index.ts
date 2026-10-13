@@ -57,6 +57,7 @@ export type {
   FileWriteOk,
   FilesDomainError,
   FilesService,
+  HomeVolume,
 } from "./modules/files/types.js";
 export type {
   GitHubErrorBody,
