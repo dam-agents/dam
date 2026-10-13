@@ -62,15 +62,19 @@ async function turnRunning(): Promise<{ world: World; bob: Client }> {
 
 describe("acp-runtime: steer points", () => {
   /**
-   * TEST_SCENARIO: The agent is writing its reply. A steer now would abort it
-   * mid-sentence, so the prompt must wait, and start as the next turn once
-   * the reply ends.
+   * TEST_SCENARIO: The agent is generating — from the turn's start, and while
+   * it writes its reply. A steer now would abort it mid-sentence, so the
+   * prompts must wait, and start as the next turn once the reply ends.
    */
   it("does not steer into a reply the agent is writing", async () => {
     const { world, bob } = await turnRunning();
-    world.harness().emit(frames.agentMessage(SESSION, "I'm here, Petr"));
 
-    bob.send(uiPrompt(4, "your mother"));
+    bob.send(uiPrompt(4, "and also this"));
+    await settle();
+    expect(world.harness().received(STEER_METHOD)).toEqual([]);
+
+    world.harness().emit(frames.agentMessage(SESSION, "I'm here, Petr"));
+    bob.send(uiPrompt(5, "your mother"));
     await settle();
     expect(world.harness().received(STEER_METHOD)).toEqual([]);
 
@@ -111,19 +115,6 @@ describe("acp-runtime: steer points", () => {
   });
 
   /**
-   * TEST_SCENARIO: Before the agent has run a tool, it is generating — the
-   * harness would abort that generation too — so the turn's start is no
-   * steer point either.
-   */
-  it("does not steer before the agent's first tool call", async () => {
-    const { world, bob } = await turnRunning();
-
-    bob.send(uiPrompt(4, "and also this"));
-    await settle();
-    expect(world.harness().received(STEER_METHOD)).toEqual([]);
-  });
-
-  /**
    * TEST_SCENARIO: Two messages wait while a tool runs. A later message may
    * change what an earlier one asked, so the agent must read them together:
    * the steer point after the tool takes both, as one steer carrying each in
@@ -131,28 +122,24 @@ describe("acp-runtime: steer points", () => {
    */
   it("steers everything waiting as one batch, in order", async () => {
     const { world, bob } = await turnRunning();
-    world
-      .harness()
-      .emit(
-        update({
-          sessionUpdate: "tool_call",
-          toolCallId: "t1",
-          status: "in_progress",
-        }),
-      );
+    world.harness().emit(
+      update({
+        sessionUpdate: "tool_call",
+        toolCallId: "t1",
+        status: "in_progress",
+      }),
+    );
 
     bob.send(uiPrompt(4, "be grumpy"));
     bob.send(uiPrompt(5, "be funny"));
     await settle();
-    world
-      .harness()
-      .emit(
-        update({
-          sessionUpdate: "tool_call_update",
-          toolCallId: "t1",
-          status: "completed",
-        }),
-      );
+    world.harness().emit(
+      update({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "completed",
+      }),
+    );
     await settle();
 
     const steers = world.harness().received(STEER_METHOD);

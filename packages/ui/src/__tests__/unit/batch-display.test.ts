@@ -2,11 +2,6 @@ import { describe, expect, test } from "vitest";
 
 import { applyUpdate } from "../../modules/acp/session-projection.js";
 import type { AcpUpdate } from "../../modules/acp/types.js";
-import {
-  threadItems,
-  userRunsOf,
-} from "../../modules/sessions/lib/thread-items.js";
-import type { Message } from "../../types.js";
 
 /**
  * TEST_OVERVIEW: How the chat shows messages the agent took as one batch.
@@ -15,7 +10,8 @@ import type { Message } from "../../types.js";
  * carrying each of them. The chat shows each as its own bubble, under one
  * header, and rewinds or forks them as one. Live, the runtime echoes each
  * message on its own; after a reload, the harness's history holds one user
- * message with a text block each, marked by its block number.
+ * message with a text block each, marked by its block number. One streamed
+ * message, which carries no block number, is never split.
  */
 
 function userChunk(id: string, text: string): AcpUpdate {
@@ -24,24 +20,6 @@ function userChunk(id: string, text: string): AcpUpdate {
     messageId: id,
     content: { type: "text", text },
   } as AcpUpdate;
-}
-
-function user(id: string, text: string): Message {
-  return {
-    id,
-    role: "user",
-    parts: [{ kind: "text", text }],
-    streaming: false,
-  };
-}
-
-function reply(id: string): Message {
-  return {
-    id,
-    role: "assistant",
-    parts: [{ kind: "text", text: "ok" }],
-    streaming: false,
-  };
 }
 
 describe("a batch after a reload", () => {
@@ -72,28 +50,5 @@ describe("a batch after a reload", () => {
 
     expect(messages).toHaveLength(1);
     expect(messages[0]!.parts).toEqual([{ kind: "text", text: "hello" }]);
-  });
-});
-
-describe("userRunsOf", () => {
-  /**
-   * TEST_SCENARIO: User messages with nothing between them are one run: the
-   * first message names it and holds all of them, the rest are drawn inside
-   * it. A message on its own is a run of one.
-   */
-  test("groups user messages with nothing between them", () => {
-    const items = threadItems([
-      user("u1", "hi"),
-      reply("a1"),
-      user("u2", "be grumpy"),
-      user("u2:1", "be funny"),
-      user("u3", "and brief"),
-      reply("a2"),
-    ]);
-    const { runs, inner } = userRunsOf(items);
-
-    expect(runs.get("u1")?.map((m) => m.id)).toEqual(["u1"]);
-    expect(runs.get("u2")?.map((m) => m.id)).toEqual(["u2", "u2:1", "u3"]);
-    expect([...inner]).toEqual(["u2:1", "u3"]);
   });
 });

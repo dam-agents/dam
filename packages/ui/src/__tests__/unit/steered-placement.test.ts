@@ -55,67 +55,64 @@ function shape(messages: Message[]): string[] {
 
 describe("steered message placement", () => {
   /**
-   * TEST_SCENARIO: After a reload the turn replays from the log in the order
-   * the runtime wrote it: the tool call, then the steered message, then the
-   * rest of the reply. The message must sit between them.
+   * TEST_SCENARIO: The message must sit between the tool call it waited for
+   * and the rest of the reply — live, while the sender's turn still streams
+   * when the echo arrives, and after a reload, when the turn replays from the
+   * log in the order the runtime wrote it.
    */
-  test("draws a replayed steered message below the tool call it waited for", () => {
-    const messages = [
-      [userEcho("u1", "My name is Petr"), {}],
-      [toolCall, TURN],
-      [toolDone, TURN],
-      [userEcho("u2", "I changed my mind", true), {}],
-      [reply, TURN],
-    ].reduce<Message[]>(
-      (acc, [u, meta]) => applyUpdate(acc, u as AcpUpdate, meta as object),
-      [],
-    );
+  test("draws a steered message below the tool call it waited for", () => {
+    {
+      const messages = [
+        [userEcho("u1", "My name is Petr"), {}],
+        [toolCall, TURN],
+        [toolDone, TURN],
+        [userEcho("u2", "I changed my mind", true), {}],
+        [reply, TURN],
+      ].reduce<Message[]>(
+        (acc, [u, meta]) => applyUpdate(acc, u as AcpUpdate, meta as object),
+        [],
+      );
 
-    expect(shape(messages)).toEqual([
-      "My name is Petr",
-      "sleep 30",
-      "I changed my mind",
-      "Have a bad day, Petr!",
-    ]);
-  });
+      expect(shape(messages)).toEqual([
+        "My name is Petr",
+        "sleep 30",
+        "I changed my mind",
+        "Have a bad day, Petr!",
+      ]);
+    }
+    {
+      const live: Message[] = [
+        {
+          id: "u1",
+          role: "user",
+          parts: [{ kind: "text", text: "My name is Petr" }],
+          streaming: false,
+        },
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [],
+          streaming: true,
+          promptId: "u1",
+          turnId: "t1",
+        },
+      ];
+      const messages = [
+        [toolCall, TURN],
+        [toolDone, TURN],
+        [userEcho("u2", "I changed my mind", true), {}],
+        [reply, TURN],
+      ].reduce<Message[]>(
+        (acc, [u, meta]) => applyUpdate(acc, u as AcpUpdate, meta as object),
+        live,
+      );
 
-  /**
-   * TEST_SCENARIO: Live, the sender's turn is still streaming when the echo
-   * of its steered message arrives. The message must land below the work done
-   * so far, and the reply that follows below the message.
-   */
-  test("draws a live steered message below the work done so far", () => {
-    const live: Message[] = [
-      {
-        id: "u1",
-        role: "user",
-        parts: [{ kind: "text", text: "My name is Petr" }],
-        streaming: false,
-      },
-      {
-        id: "a1",
-        role: "assistant",
-        parts: [],
-        streaming: true,
-        promptId: "u1",
-        turnId: "t1",
-      },
-    ];
-    const messages = [
-      [toolCall, TURN],
-      [toolDone, TURN],
-      [userEcho("u2", "I changed my mind", true), {}],
-      [reply, TURN],
-    ].reduce<Message[]>(
-      (acc, [u, meta]) => applyUpdate(acc, u as AcpUpdate, meta as object),
-      live,
-    );
-
-    expect(shape(messages)).toEqual([
-      "My name is Petr",
-      "sleep 30",
-      "I changed my mind",
-      "Have a bad day, Petr!",
-    ]);
+      expect(shape(messages)).toEqual([
+        "My name is Petr",
+        "sleep 30",
+        "I changed my mind",
+        "Have a bad day, Petr!",
+      ]);
+    }
   });
 });

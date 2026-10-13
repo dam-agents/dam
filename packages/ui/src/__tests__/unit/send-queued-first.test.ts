@@ -64,104 +64,25 @@ function user(messages: Message[]): Message | undefined {
 
 describe("a sent message: queued, then sent", () => {
   /**
-   * TEST_SCENARIO: The runtime confirms the queue. Nothing changes on screen:
-   * the message stays queued, and its placeholder never takes the working
-   * indicator.
+   * TEST_SCENARIO: A message sent while the agent answers stays queued while
+   * the runtime queues it — out of the conversation, so the running reply
+   * stays last — and moves in once the runtime starts it. A message the
+   * runtime marks starting, waiting only for its session, stays in the
+   * conversation as sent: nothing runs ahead of it.
    */
-  test("stays queued when the runtime queues it", () => {
-    const next = applyUpdate(sentWhileBusy(), accepted({ queued: true }));
+  test("moves into the conversation only when it starts", () => {
+    const queued = applyUpdate(sentWhileBusy(), accepted({ queued: true }));
+    expect(user(queued)?.queued).toBe(true);
+    expect(queued.filter((m) => !isQueuedSend(m)).map((m) => m.id)).toEqual([
+      "a1",
+    ]);
 
-    expect(user(next)?.queued).toBe(true);
-    expect(next.find((m) => m.id === "a2")?.queued).toBe(true);
-  });
+    const started = applyUpdate(sentWhileBusy(), accepted({ queued: false }));
+    expect(user(started)?.queued).toBe(false);
 
-  /**
-   * TEST_SCENARIO: The turn ended just before the message arrived, so the
-   * runtime started it at once. The message must read as sent, not queued.
-   */
-  test("drops the queued mark when the runtime starts it", () => {
-    const next = applyUpdate(sentWhileBusy(), accepted({ queued: false }));
-
-    expect(user(next)?.queued).toBe(false);
-    expect(next.find((m) => m.id === "a2")?.queued).toBe(false);
-  });
-
-  /**
-   * TEST_SCENARIO: The runtime steered the message into the running turn. It
-   * is part of that turn now, so it must read as sent and steered.
-   */
-  test("drops the queued mark when the runtime steers it", () => {
-    const next = applyUpdate(
-      sentWhileBusy(),
-      accepted({ queued: false, steered: true }),
-    );
-
-    expect(user(next)).toMatchObject({ queued: false, steered: true });
-  });
-
-  /**
-   * TEST_SCENARIO: The queue below the conversation shows the message from
-   * the start, so the conversation leaves it out. The running reply then stays
-   * the last message, keeps the working indicator, and never fades in again.
-   */
-  test("leaves the conversation to the running reply", () => {
-    const shown = sentWhileBusy().filter((m) => !isQueuedSend(m));
-
-    expect(shown.map((m) => m.id)).toEqual(["a1"]);
-  });
-
-  /**
-   * TEST_SCENARIO: Nothing runs and nothing waits, so the message is sent
-   * at once and shows in the conversation right away, with no queued step.
-   */
-  test("shows as sent at once when the session is idle", () => {
-    const idle: Message[] = [
-      {
-        id: "a0",
-        role: "assistant",
-        parts: [{ kind: "text", text: "done" }],
-        streaming: false,
-      },
-    ];
-
-    expect(sendWaits(idle, [])).toBe(false);
-  });
-
-  /**
-   * TEST_SCENARIO: A reply streams, the runtime holds a queue, or an earlier
-   * send still waits: any of them means the new message must queue behind.
-   */
-  test("waits behind a running reply, a queue, or an earlier send", () => {
-    const queued = [
-      { promptId: "p0", blocks: [], queuedAt: "", editable: true },
-    ];
-    const pendingOnly = sentWhileBusy().filter((m) => m.id !== "a1");
-
-    expect(sendWaits(sentWhileBusy().slice(0, 1), [])).toBe(true);
-    expect(sendWaits([], queued)).toBe(true);
-    expect(sendWaits(pendingOnly, [])).toBe(true);
-  });
-});
-
-describe("a message waiting only for its session", () => {
-  /**
-   * TEST_SCENARIO: After a wake, a restart or a rewind, the runtime queues a
-   * message until the harness has loaded the session, and marks it starting.
-   * Nothing runs ahead of it, so the chat must keep it in the conversation as
-   * sent rather than move it into the queue.
-   */
-  test("stays in the conversation while it is starting", () => {
-    const sent: Message[] = [
-      {
-        id: PROMPT,
-        role: "user",
-        parts: [{ kind: "text", text: "hi" }],
-        streaming: false,
-      },
-    ];
-
+    const starting = [{ ...user(started)! }];
     expect(
-      withoutQueuedSends(sent, [
+      withoutQueuedSends(starting, [
         {
           promptId: PROMPT,
           blocks: [],
@@ -170,6 +91,45 @@ describe("a message waiting only for its session", () => {
           starting: true,
         },
       ]),
-    ).toEqual(sent);
+    ).toEqual(starting);
+  });
+
+  /**
+   * TEST_SCENARIO: The runtime steered the message into the running turn. It
+   * is part of that turn now, so it must read as sent and steered, its reply
+   * placeholder gone.
+   */
+  test("drops the queued mark when the runtime steers it", () => {
+    const next = applyUpdate(
+      sentWhileBusy(),
+      accepted({ queued: false, steered: true }),
+    );
+
+    expect(user(next)).toMatchObject({ queued: false, steered: true });
+    expect(next.some((m) => m.id === "a2")).toBe(false);
+  });
+
+  /**
+   * TEST_SCENARIO: Only when nothing streams, nothing is queued and no
+   * earlier send waits is a message sent at once; any of them means it
+   * queues behind.
+   */
+  test("waits unless the session is surely idle", () => {
+    const idle: Message[] = [
+      {
+        id: "a0",
+        role: "assistant",
+        parts: [{ kind: "text", text: "done" }],
+        streaming: false,
+      },
+    ];
+    const queue = [
+      { promptId: "p0", blocks: [], queuedAt: "", editable: true },
+    ];
+
+    expect(sendWaits(idle, [])).toBe(false);
+    expect(sendWaits(sentWhileBusy().slice(0, 1), [])).toBe(true);
+    expect(sendWaits(idle, queue)).toBe(true);
+    expect(sendWaits(sentWhileBusy().slice(1), [])).toBe(true);
   });
 });

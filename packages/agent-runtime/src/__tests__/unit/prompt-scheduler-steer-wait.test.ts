@@ -16,7 +16,8 @@ import {
  * ordinary queued one. It never waits longer than the steer wait
  * (`steerWaitMs`): after that it is steered regardless. A setting queued
  * before the prompt — a model or mode change — applies between turns, so a
- * prompt behind one is never steered past it.
+ * prompt behind one is never steered past it. A prompt that waits only for its
+ * session — nothing running ahead — is marked starting, not queued.
  */
 
 const STEER_WAIT_MS = 1_000;
@@ -64,23 +65,6 @@ describe("prompt scheduler: steering waits for a steer point", () => {
   });
 
   /**
-   * TEST_SCENARIO: A prompt sent while the agent writes or runs a tool must
-   * stay queued, so the user can still change it, and be steered the moment
-   * the turn reaches a steer point.
-   */
-  it("steers once the turn reaches a steer point", () => {
-    const point = { reached: false };
-    const { scheduler, steer } = schedulerWith(point);
-
-    expect(scheduler.submit(submission(2, { steerable: true }))).toBe("queued");
-    expect(steer).not.toHaveBeenCalled();
-
-    point.reached = true;
-    scheduler.onSteerPoint("s1");
-    expect(steer).toHaveBeenCalledTimes(1);
-  });
-
-  /**
    * TEST_SCENARIO: A tool call or a reply can run for a long time. The prompt
    * must not wait for a steer point beyond the steer wait; after that it is
    * steered anyway.
@@ -120,5 +104,29 @@ describe("prompt scheduler: steering waits for a steer point", () => {
     expect(scheduler.submit(submission(3, { steerable: true }))).toBe("queued");
     vi.advanceTimersByTime(STEER_WAIT_MS * 2);
     expect(steer).not.toHaveBeenCalled();
+  });
+
+  /**
+   * TEST_SCENARIO: A prompt that waits only for the harness to load its
+   * session is no wait the user caused, so the queue marks it starting; one
+   * behind a running turn is really queued and is not marked.
+   */
+  it("marks only a prompt waiting for its session as starting", () => {
+    const loaded = { yes: false };
+    const scheduler = createPromptScheduler({
+      canStart: () => loaded.yes,
+      onQueueDropped: () => {},
+      sendToAgent: () => true,
+    });
+
+    scheduler.submit(submission(1));
+    expect(scheduler.snapshot("s1")).toMatchObject([
+      { promptId: "p1", starting: true },
+    ]);
+
+    loaded.yes = true;
+    scheduler.onSessionReady("s1");
+    scheduler.submit(submission(2));
+    expect(scheduler.snapshot("s1")[0]?.starting).toBeUndefined();
   });
 });

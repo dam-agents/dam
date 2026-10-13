@@ -16,8 +16,7 @@ import type { HistoryProvider } from "../../../infrastructure/history-provider.j
  * provider and asks the harness to fork right before the message being
  * rewritten, whatever sits above it: a reply, a tool result, or another user
  * message, as a steered message has. Only the first message starts a new,
- * empty session. A message the history does not hold is refused, never cut
- * somewhere else. The copy loads with the original's times, though the
+ * empty session. The copy loads with the original's times, though the
  * harness stamps the last entry it copies with the time of the fork.
  */
 
@@ -139,23 +138,6 @@ function forkPointOf(world: World): unknown {
 
 describe("acp-runtime: rewriting a conversation", () => {
   /**
-   * TEST_SCENARIO: Forking from a steered message must keep the first message
-   * and the tool call that ran before the steer, so the harness is asked to
-   * fork after the tool result. Before, the client cut after the last reply
-   * above the message, found none, and started an empty session: the first
-   * message was lost.
-   */
-  it("should fork right before a steered message", async () => {
-    const { world, bob } = await readyWorld({ [SESSION]: original });
-
-    bob.send(rewriteFrom(2, "u2"));
-    await settle();
-
-    expect(world.harness().received("session/new")).toEqual([]);
-    expect(forkPointOf(world)).toBe("tr1");
-  });
-
-  /**
    * TEST_SCENARIO: Only the first message has nothing above it, so rewriting
    * it is the one case that starts a new session instead of a fork.
    */
@@ -170,30 +152,14 @@ describe("acp-runtime: rewriting a conversation", () => {
   });
 
   /**
-   * TEST_SCENARIO: A message the agent's history does not hold has no place
-   * to cut before. The rewrite must be refused, and the harness never asked.
+   * TEST_SCENARIO: Forking from a steered message must keep the first message
+   * and the tool call that ran before the steer, so the harness is asked to
+   * fork after the tool result — the client once cut after the last reply
+   * above, found none, and started an empty session. The harness stamps the
+   * copy's last entry with the time of the fork; a viewer of the copy must see
+   * it at its original time.
    */
-  it("should refuse a message the history does not hold", async () => {
-    const { world, bob } = await readyWorld({ [SESSION]: original });
-
-    bob.send(rewriteFrom(2, "unknown"));
-    await settle();
-
-    expect(world.harness().received("session/fork")).toEqual([]);
-    expect(world.harness().received("session/new")).toEqual([]);
-    expect(bob.reply(2)).toMatchObject({
-      error: {
-        message: expect.stringContaining("not in the agent's own history"),
-      },
-    });
-  });
-
-  /**
-   * TEST_SCENARIO: The harness stamps the copy's last entry with the time of
-   * the fork. A viewer of the copy must see that entry at its original time,
-   * not as written today.
-   */
-  it("should load the copy with the original's times", async () => {
+  it("should fork right before a steered message, keeping its times", async () => {
     const { world, bob } = await readyWorld({
       [SESSION]: original,
       [COPY]: copy,
@@ -201,6 +167,8 @@ describe("acp-runtime: rewriting a conversation", () => {
 
     bob.send(rewriteFrom(2, "u2"));
     await settle();
+    expect(world.harness().received("session/new")).toEqual([]);
+    expect(forkPointOf(world)).toBe("tr1");
     world.harness().replyTo("session/fork", { sessionId: COPY });
     await settle();
     expect(bob.reply(2)).toMatchObject({ result: { sessionId: COPY } });

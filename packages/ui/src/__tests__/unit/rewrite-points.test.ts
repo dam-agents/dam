@@ -36,34 +36,25 @@ function reply(id: string, lastMessageId?: string): Message {
 
 describe("rewritePointsOf", () => {
   /**
-   * TEST_SCENARIO: A message steered into a running turn sits right below the
-   * first message, with no reply between them. It must still offer rewind,
-   * and its fallback must not be null: null starts an empty session, which
-   * lost the first message.
+   * TEST_SCENARIO: Every sent message is a starting point, a steered one too;
+   * a queued or failed one is not. The fallback names the reply above, and
+   * null — an empty session — only for the first message: a steered message
+   * with no reply above it falls back to nothing, since null there lost the
+   * first message.
    */
-  test("offers a steered message with no reply above it", () => {
+  test("falls back to the reply above, and null only for the first message", () => {
     const points = rewritePointsOf([
       user("first"),
       user("steered", { steered: true }),
       reply("r1", "msg_1"),
-    ]);
-
-    expect(points.has("steered")).toBe(true);
-    expect(points.get("steered")).toBeUndefined();
-  });
-
-  /**
-   * TEST_SCENARIO: A message below a reply falls back to cutting after that
-   * reply, and the first message to an empty session.
-   */
-  test("falls back to the reply above, and null for the first message", () => {
-    const points = rewritePointsOf([
-      user("first"),
-      reply("r1", "msg_1"),
       user("second"),
+      user("queued", { queued: true }),
+      user("failed", { error: { message: "not delivered" } }),
     ]);
 
+    expect([...points.keys()]).toEqual(["first", "steered", "second"]);
     expect(points.get("first")).toBeNull();
+    expect(points.get("steered")).toBeUndefined();
     expect(points.get("second")).toBe("msg_1");
   });
 
@@ -79,18 +70,5 @@ describe("rewritePointsOf", () => {
 
     expect(points.has("top")).toBe(true);
     expect(points.get("top")).toBeUndefined();
-  });
-
-  /**
-   * TEST_SCENARIO: A queued message has not reached the agent and a failed
-   * one never will, so neither is a starting point.
-   */
-  test("skips queued and failed messages", () => {
-    const points = rewritePointsOf([
-      user("queued", { queued: true }),
-      user("failed", { error: { message: "not delivered" } }),
-    ]);
-
-    expect([...points.keys()]).toEqual([]);
   });
 });
