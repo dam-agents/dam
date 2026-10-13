@@ -326,7 +326,7 @@ type AgentStatus struct {
 	// machine when the controller first read it at a spec generation. The
 	// runner's count is cumulative and names no spec, so ReasonCrashLoop counts
 	// the restarts since this baseline; kept here so a controller restart does
-	// not start the count again. Absent on the container backend.
+	// not start the count again. Only the vm backend writes or reads it.
 	// +optional
 	MachineRestartBaseline *MachineRestartBaseline `json:"machineRestartBaseline,omitempty"`
 }
