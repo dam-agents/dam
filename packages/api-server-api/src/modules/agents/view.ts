@@ -14,6 +14,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     templateUpdate: agent.templateUpdate ?? null,
     features: agent.features,
     image: agent.spec.image,
+    harness: agent.spec.harness,
     description: agent.spec.description,
     avatar: agent.spec.avatar ?? null,
     env: agent.spec.env,
