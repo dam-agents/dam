@@ -6,6 +6,8 @@ import {
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
 
+import { isConnectionClosed } from "./close-race.js";
+
 export function describeJsonRpcError(
   message: string,
   details: string | undefined,
@@ -110,7 +112,7 @@ export function classifyResumeError(e: unknown): ResumeErrorKind {
     const anyE = e as { code?: unknown; data?: { code?: unknown } };
     if (anyE.code === -32002) return "not-found";
     if (anyE.data?.code === "NOT_FOUND") return "not-found";
-    if (e instanceof DOMException) return "connection";
+    if (e instanceof DOMException || isConnectionClosed(e)) return "connection";
   }
   const msg = extractErrorMessage(e);
   if (/not\s*found/i.test(msg)) return "not-found";

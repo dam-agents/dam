@@ -12,6 +12,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { Attachment, MessagePart } from "../../../types.js";
+import { connectionWentAway } from "../../acp/close-race.js";
 import {
   classifyResumeError,
   extractErrorMessage,
@@ -60,6 +61,24 @@ async function classifyResumeFailure(
     listing = (await findAgentSession(agentId, sid)) ? "listed" : "absent";
   } catch {}
   return resumeFailureKind(kind, listing);
+}
+
+const GONE_AWAY_RETRY_DELAYS_MS = [500, 1_000, 2_000];
+
+async function retryWhileGoneAway<T>(
+  load: () => Promise<T>,
+  wanted: () => boolean,
+): Promise<T> {
+  for (const delay of GONE_AWAY_RETRY_DELAYS_MS) {
+    try {
+      return await load();
+    } catch (e) {
+      if (!connectionWentAway(e)) throw e;
+      await new Promise((r) => setTimeout(r, delay));
+      if (!wanted()) throw e;
+    }
+  }
+  return load();
 }
 
 export function useAcpSession(
@@ -184,7 +203,10 @@ export function useAcpSession(
       }
 
       try {
-        const fresh = await loadSessionHistory(sid).finally(() => {
+        const fresh = await retryWhileGoneAway(
+          () => loadSessionHistory(sid),
+          () => useStore.getState().sessionId === sid,
+        ).finally(() => {
           loaded = true;
         });
         if (useStore.getState().sessionId !== sid) return;

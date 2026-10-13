@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   connectionCloseReason,
+  connectionWentAway,
   isConnectionClosed,
   withCloseRace,
 } from "../../modules/acp/close-race.js";
@@ -24,7 +25,7 @@ import {
  * toast after an ordinary session switch.
  */
 
-function silentAgentConnection(): {
+function silentAgentConnection(closeCode: number | null = null): {
   connection: ClientConnection;
   closeStream: () => void;
 } {
@@ -37,7 +38,11 @@ function silentAgentConnection(): {
   const writable = new WritableStream<AnyMessage>();
   const connection = client().connect({ readable, writable });
   return {
-    connection: withCloseRace(connection, () => "switched session"),
+    connection: withCloseRace(
+      connection,
+      () => "switched session",
+      () => closeCode,
+    ),
     closeStream: () => closeReadable(),
   };
 }
@@ -103,5 +108,25 @@ describe("withCloseRace", () => {
     );
 
     expect(isConnectionClosed(err)).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: an api-server replica shuts down and closes the socket as
+   * going away (1001), or the socket drops (1006); the request fails as a
+   * connection that went away. A close the agent's side meant (1011) does not.
+   */
+  it("should tell a connection that went away from one the server closed", async () => {
+    for (const [code, wentAway] of [
+      [1001, true],
+      [1006, true],
+      [1011, false],
+    ] as const) {
+      const { connection, closeStream } = silentAgentConnection(code);
+      const turn = connection.agent.request("initialize", {
+        protocolVersion: 1,
+      });
+      closeStream();
+      expect(connectionWentAway(await rejectionOf(turn))).toBe(wentAway);
+    }
   });
 });
