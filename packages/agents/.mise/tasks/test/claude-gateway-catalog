@@ -2,6 +2,7 @@
 //MISE description="Test that Claude's model gateway starts on the model list it kept, and does not wait long for a provider that is slow to list"
 //MISE sources=["claude-code/rootfs/usr/local/lib/model-gateway.mjs", ".mise/tasks/test/claude-gateway-catalog"]
 //MISE outputs=[]
+//MISE wait_for=["//packages/agents:test:claude-gateway-tiers"]
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -55,31 +56,34 @@ async function withGateway(catalog, run) {
 
 const envSh = () => fetch("http://127.0.0.1:24180/p/cb/env.sh").then((r) => r.text());
 
-// TEST_SCENARIO: A wake: the gateway pod in front of the provider has only just started and does not answer the listing yet. The list the gateway kept from its last start is enough for Claude Code's tier models, so the gateway listens at once and Claude Code does not wait for the provider.
-listing = null;
-await withGateway(["rits/zai-org/glm-5-3"], async ({ listenedAfterMs }) => {
-  assert.ok(listenedAfterMs < 2_000, `listened after ${listenedAfterMs} ms`);
-  assert.match(await envSh(), /ANTHROPIC_DEFAULT_OPUS_MODEL='claude\/rits\/zai-org\/glm-5-3'/);
-});
-console.log("a kept model list lets the gateway listen before the provider answers");
+try {
+  // TEST_SCENARIO: A wake: the gateway pod in front of the provider has only just started and does not answer the listing yet. The list the gateway kept from its last start is enough for Claude Code's tier models, so the gateway listens at once and Claude Code does not wait for the provider.
+  listing = null;
+  await withGateway(["rits/zai-org/glm-5-3"], async ({ listenedAfterMs }) => {
+    assert.ok(listenedAfterMs < 2_000, `listened after ${listenedAfterMs} ms`);
+    assert.match(await envSh(), /ANTHROPIC_DEFAULT_OPUS_MODEL='claude\/rits\/zai-org\/glm-5-3'/);
+  });
+  console.log("a kept model list lets the gateway listen before the provider answers");
 
-// TEST_SCENARIO: The provider retired the model the kept list named for a tier, and Claude Code already started with that name. The listing that follows the start replaces the list, and a request for the retired name goes to the tier's current model instead of failing at the provider.
-listing = ["rits/zai-org/glm-5-4"];
-forwarded.length = 0;
-await withGateway(["rits/zai-org/glm-5-3"], async ({ home }) => {
-  assert.match(await envSh(), /claude\/rits\/zai-org\/glm-5-3/);
-  for (let i = 0; i < 50 && !(await fetch("http://127.0.0.1:24180/p/cb/v1/models").then((r) => r.text())).includes("glm-5-4"); i++) await new Promise((r) => setTimeout(r, 100));
-  await fetch("http://127.0.0.1:24180/p/cb/v1/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "claude/rits/zai-org/glm-5-3" }) });
-  assert.deepEqual(forwarded, ["rits/zai-org/glm-5-4"]);
-  assert.deepEqual(JSON.parse(readFileSync(join(home, ".platform/model-gateway-catalog.json"), "utf8")).cb.ids, ["rits/zai-org/glm-5-4"]);
-});
-console.log("a retired tier model goes to the tier's current model, and the new list is kept");
+  // TEST_SCENARIO: The provider retired the model the kept list named for a tier, and Claude Code already started with that name. The listing that follows the start replaces the list, and a request for the retired name goes to the tier's current model instead of failing at the provider.
+  listing = ["rits/zai-org/glm-5-4"];
+  forwarded.length = 0;
+  await withGateway(["rits/zai-org/glm-5-3"], async ({ home }) => {
+    assert.match(await envSh(), /claude\/rits\/zai-org\/glm-5-3/);
+    for (let i = 0; i < 50 && !(await fetch("http://127.0.0.1:24180/p/cb/v1/models").then((r) => r.text())).includes("glm-5-4"); i++) await new Promise((r) => setTimeout(r, 100));
+    await fetch("http://127.0.0.1:24180/p/cb/v1/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "claude/rits/zai-org/glm-5-3" }) });
+    assert.deepEqual(forwarded, ["rits/zai-org/glm-5-4"]);
+    assert.deepEqual(JSON.parse(readFileSync(join(home, ".platform/model-gateway-catalog.json"), "utf8")).cb.ids, ["rits/zai-org/glm-5-4"]);
+  });
+  console.log("a retired tier model goes to the tier's current model, and the new list is kept");
 
-// TEST_SCENARIO: A first start, with no kept list, on a provider that does not answer the listing. The gateway waits a short while for it, not the listing's whole timeout, because Claude Code and the person opening a chat wait behind it.
-listing = null;
-await withGateway(null, async ({ listenedAfterMs }) => {
-  assert.ok(listenedAfterMs < 5_000, `listened after ${listenedAfterMs} ms`);
-});
-console.log("with no kept list the gateway waits for the listing only briefly");
-upstream.closeAllConnections();
-upstream.close();
+  // TEST_SCENARIO: A first start, with no kept list, on a provider that does not answer the listing. The gateway waits a short while for it, not the listing's whole timeout, because Claude Code and the person opening a chat wait behind it.
+  listing = null;
+  await withGateway(null, async ({ listenedAfterMs }) => {
+    assert.ok(listenedAfterMs < 5_000, `listened after ${listenedAfterMs} ms`);
+  });
+  console.log("with no kept list the gateway waits for the listing only briefly");
+} finally {
+  upstream.closeAllConnections();
+  upstream.close();
+}
