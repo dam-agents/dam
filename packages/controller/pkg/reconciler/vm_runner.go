@@ -799,6 +799,7 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 
 // UNIT_BOUNDARY_DESCRIPTION: everything a runner owns is named after it, so this removes the lot. The caller holds the owner's lock and has just found the runner holding no machine. The Deployment goes first and only if it is still the one the caller checked — its UID and resourceVersion are preconditions — so a runner that a roll or a reconcile changed since is kept, with its claim, and looked at again on the next sweep.
 func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) bool {
+	r.unwatchRunnerPressure(owner)
 	name, ns := r.runnerName(owner), r.config.Namespace
 	opts := metav1.DeleteOptions{}
 	deps := r.client.AppsV1().Deployments(ns)

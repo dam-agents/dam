@@ -67,6 +67,10 @@ type AgentReconciler struct {
 	ownerless       sync.Map
 	machineWatchMu  sync.Mutex
 	machineWatches  map[string]*machineWatch
+	pressureWatches map[string]*machineWatch
+	memoryPassMu    sync.Mutex
+	memoryPassing   map[string]bool
+	pressureFreed   map[string]time.Time
 	preflightMu     sync.Mutex
 	preflight       vmPreflightResult
 	preflightDone   bool

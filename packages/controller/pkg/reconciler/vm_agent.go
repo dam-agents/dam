@@ -170,6 +170,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if err != nil {
 		return st, false, err
 	}
+	r.watchRunnerPressure(runner, owner)
 
 	if publish && st.Port > 0 {
 		if err := r.applyVMAgentService(ctx, name, owner, st.Port, ownerRef); err != nil {

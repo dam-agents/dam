@@ -56,10 +56,14 @@ A refused start is retried once their machines have stopped.
 No other owner's agent is touched.
 Because a running machine's use reaches the controller only when its agent reconciles, the controller also asks each owner's runner about its running machines every 30 seconds, which is what pressure is judged from and what moves the request between reconciles.
 That pass reconciles one of the owner's agents only when the request their counts call for differs from the runner pod's, so a count held within its step wakes nothing.
+The runner's own pressure signal runs the same pass for that owner at once, without waiting for the counted threshold, since the kernel's view is the one that kills the runner.
+Its need is the larger of the counted and the measured overshoot of the 80% target, and it may hibernate fewer agents than cover it: near an OOM kill, freeing some memory beats freeing none.
+The controller holds one watch on each owner's pressure, and a pass on it hibernates nothing more for fifteen seconds after one that did, because the machines it hibernated still count until they have stopped.
+The two passes never run together for one owner.
 
 **Guests give back cold page cache.** A guest keeps the files it read cached until something needs the memory, and the host counts that cache as the machine's.
 Every minute platform-init hands the cache on the kernel's inactive list to cgroup v2 proactive reclaim, and the freed pages return to the host within seconds.
 Guests have no swap, so only file pages go.
 
-**What can still go wrong.** Guests that grow together past their headroom between two passes can take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
-Headroom and the pressure threshold make that rarer; they cannot rule it out.
+**What can still go wrong.** Guests that grow faster than a second's sample and the seconds a hibernation takes can still take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
+The pressure signal makes that rarer; it cannot rule it out.
