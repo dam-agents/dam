@@ -15,9 +15,9 @@ import {
 import { extractErrorMessage, isQueueFullError } from "../../acp/errors.js";
 import {
   fileChipOf,
-  finalizeAllStreaming,
+  finalizeRunningReply,
   hasAgentContent,
-  hasStreamingAssistant,
+  sendWaits,
 } from "../../acp/session-projection.js";
 import { buildPromptBlocks } from "../../acp/utils.js";
 import { untilAgentOperable } from "../../agents/api/queries.js";
@@ -156,7 +156,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
 
       const aId = crypto.randomUUID();
       const promptId = crypto.randomUUID();
-      const uId = retryOf ?? promptId;
+      const uId = promptId;
       let reported = false;
       const dropBubble = () =>
         setMessages((p) => p.filter((m) => m.id !== aId));
@@ -180,12 +180,18 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         if (reported) return;
         reported = true;
         recordUndeliveredLocally(message);
+        const failed: Message = {
+          ...uMsg,
+          error: { message, retryWith: retryPayload },
+        };
         setMessages((p) =>
-          p.flatMap<Message>((m) => {
-            if (m.id === aId) return [];
-            if (m.id !== uId) return [m];
-            return [{ ...m, error: { message, retryWith: retryPayload } }];
-          }),
+          p.some((m) => m.id === uId)
+            ? p.flatMap<Message>((m) => {
+                if (m.id === aId) return [];
+                if (m.id !== uId) return [m];
+                return [failed];
+              })
+            : [...p.filter((m) => m.id !== aId), failed],
         );
       };
       const interruptTurn = (message: string) => {
@@ -202,13 +208,16 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       const finalizeBubble = () =>
         setMessages((p) =>
           p.map((m) =>
-            m.id === aId ? { ...m, streaming: false, queued: false } : m,
+            m.id === aId || (m.role === "assistant" && m.promptId === promptId)
+              ? { ...m, streaming: false, queued: false }
+              : m,
           ),
         );
       let delivered = false;
 
-      const startingQueued = hasStreamingAssistant(
+      const waits = sendWaits(
         useStore.getState().messages,
+        useStore.getState().queuedPrompts,
       );
       const uMsg: Message = {
         id: uId,
@@ -216,6 +225,8 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         parts: userParts,
         streaming: false,
         at: new Date().toISOString(),
+        sentHere: true,
+        ...(waits && { queued: true }),
       };
       const aMsg: Message = {
         id: aId,
@@ -223,6 +234,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         parts: [],
         streaming: true,
         promptId,
+        ...(waits && { queued: true }),
         ...(hidden ? {} : { retryWith: retryPayload }),
       };
       if (retryOf !== undefined) {
@@ -342,7 +354,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         const outcome = classifySendOutcome({
           connectionClosed: isConnectionClosed(err),
           delivered,
-          queued: bubble?.queued ?? startingQueued,
+          queued: bubble?.queued ?? false,
           queueFull: isQueueFullError(err),
           closeReason: connectionCloseReason(err),
           errorMessage: extractErrorMessage(err),
@@ -393,7 +405,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
     const started = startedRef.current;
     const conn = connectionRef.current?.connection ?? started?.connection;
     const sid = engagedSessionIdRef.current ?? started?.sessionId;
-    const finalizeLocally = () => setMessages((p) => finalizeAllStreaming(p));
+    const finalizeLocally = () => setMessages((p) => finalizeRunningReply(p));
     if (!conn || !sid) {
       finalizeLocally();
       return;

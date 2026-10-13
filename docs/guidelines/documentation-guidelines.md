@@ -12,7 +12,7 @@ Pick the right one before writing — putting the wrong content in the wrong pla
   This page is one.
   Prescriptive, not descriptive.
 
-- **Strategy** ([`docs/strategy/`](../strategy/)) — high-level overview of what Platform is trying to be, for product, security, and positioning audiences.
+- **Strategy** ([`docs/strategy/`](../strategy/)), indexed from [`docs/strategy.md`](../strategy.md) — high-level overview of what Platform is trying to be, for product, security, and positioning audiences.
   Independent of how the current system happens to be built.
 
 - **Architecture** ([`docs/architecture/`](../architecture/)) — the authoritative architectural overview of the system as it exists today.

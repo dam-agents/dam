@@ -8,7 +8,7 @@ How an owner's mode and config-defaults choices for each harness an agent carrie
 
 The choices travel as a `harness-config` Event over the [runtime channel](runtime-delivery.md) — that page owns delivery and capability gating; this one owns what the event means and everything built on it.
 
-These are each harness's defaults: writing them recycles only the [Harness Leases](agent-lifecycle.md#session-inside-the-pod) of that harness.
+These are each harness's defaults: writing them recycles only the [Harness Leases](sessions.md#session-inside-the-pod) of that harness.
 The model is not among them: each session picks its harness, provider and model, so the Config panel shows the settings of every carried harness and no model setting.
 Every harness gets its model as a lease's environment, which its scripts honour over the config file and a provider pin; a session's model is never switched inside a live harness, because a resumed session would fall back to the file's default.
 The runtime advertises its default harness and, per carried harness, the catalog.

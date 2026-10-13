@@ -99,6 +99,10 @@ export function notifyingSessionMetadataStore(
       store.finishRun(sessionId);
       changes.notify();
     },
+    adopt(sessionId, fromSessionId, meta) {
+      store.adopt(sessionId, fromSessionId, meta);
+      changes.notify();
+    },
     tombstone(sessionId) {
       store.tombstone(sessionId);
       changes.notify();

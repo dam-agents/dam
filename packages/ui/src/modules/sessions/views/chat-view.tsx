@@ -8,7 +8,11 @@ import {
   Warning,
 } from "@carbon/icons-react";
 import { routesSessionPairs } from "agent-runtime-api";
-import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
+import {
+  SessionMode,
+  SessionType,
+  TELEMETRY_MAX_SINCE_HOURS,
+} from "api-server-api";
 import {
   type CSSProperties,
   Fragment,
@@ -36,7 +40,8 @@ import {
 } from "../../../lib/persisted-prefs.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import type { AgentView } from "../../../types.js";
+import type { AgentView, Message } from "../../../types.js";
+import { isQueuedSend, rewritePointsOf } from "../../acp/session-projection.js";
 import {
   useHarnessConfigCurrent,
   useHarnessConfigStatus,
@@ -113,6 +118,11 @@ import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
+import { QueuedPrompts } from "../components/queued-prompts.js";
+import {
+  RewritableMessage,
+  RewriteMarker,
+} from "../components/rewritable-message.js";
 import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-notice.js";
 import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SessionPairPlaceholder } from "../components/session-pair-placeholder.js";
@@ -134,8 +144,14 @@ import {
   useSidebarPanels,
 } from "../hooks/use-sidebar-panels.js";
 import { draftKey } from "../lib/draft-key.js";
+import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
-import { dividerLabel, threadItems, timeProps } from "../lib/thread-items.js";
+import {
+  dividerLabel,
+  threadItems,
+  timeProps,
+  userRunsOf,
+} from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
 import type { SessionError } from "../store/sessions.js";
 
@@ -208,12 +224,17 @@ export function ChatView() {
   const setSessionMode = useStore((s) => s.setSessionMode);
   const setSessionId = useStore((s) => s.setSessionId);
   const messages = useStore((s) => s.messages);
+  const shown = useMemo(
+    () => messages.filter((m) => !isQueuedSend(m)),
+    [messages],
+  );
   const now = useNow(60_000);
   const runStarts = useStore((s) => s.runStarts);
   const items = useMemo(
-    () => threadItems(messages, runStarts),
-    [messages, runStarts],
+    () => threadItems(shown, runStarts),
+    [shown, runStarts],
   );
+  const userRuns = useMemo(() => userRunsOf(items), [items]);
   const deleteMessage = useDeleteUndelivered(selectedAgent, sessionId);
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
@@ -286,6 +307,7 @@ export function ChatView() {
     resumeSession,
     loadOlderMessages,
     sendPrompt,
+    rewriteFrom,
     stopAgent,
     chooseSessionModel,
     configureSession,
@@ -370,6 +392,28 @@ export function ChatView() {
       sessionTurns.data?.available === true ? sessionTurns.data.turns : [];
     return matchTurnsToReplies(rows, messages);
   }, [sessionTurns.data, messages]);
+
+  const harnessForks = useStore((s) => s.harnessForks);
+  const queueEmpty = useStore((s) => s.queuedPrompts.length === 0);
+  const { data: sessionView } = useAgentSession(selectedAgent, sessionId);
+  const rewritable =
+    harnessForks &&
+    queueEmpty &&
+    !busy &&
+    sessionView?.mode === SessionMode.Chat &&
+    sessionView.type === SessionType.Regular &&
+    !sessionView.threadTs &&
+    !sessionView.scheduleId &&
+    !sessionView.initialization;
+  const arrivalsRef = useRef(newLiveArrivals(sessionId));
+  if (arrivalsRef.current.sessionId !== sessionId)
+    arrivalsRef.current = newLiveArrivals(sessionId);
+  const arrived = noteArrivals(arrivalsRef.current, shown, loadingSession);
+  const rewritePoints = useMemo(() => rewritePointsOf(shown), [shown]);
+  const rewriting = useStore((s) => s.rewriting);
+  const rewriteIndex = rewriting
+    ? shown.findIndex((m) => m.id === rewriting.messageId)
+    : -1;
 
   const scrollToBottom = useCallback(() => {
     const el = messagesRef.current;
@@ -620,7 +664,7 @@ export function ChatView() {
     ? stateDotClass[agentDisplay.state]
     : "bg-warning";
 
-  const lastMessage = messages[messages.length - 1];
+  const lastMessage = shown[shown.length - 1];
   const statusLineInThread =
     lastMessage?.role === "assistant" && !lastMessage.notice;
 
@@ -872,26 +916,90 @@ export function ChatView() {
                             </div>
                           );
                         }
+                        if (userRuns.inner.has(item.message.id)) return null;
                         const turn = turnForMessage.get(item.message.id);
+                        const members = userRuns.runs.get(item.message.id) ?? [
+                          item.message,
+                        ];
+                        const lastIndex = item.index + members.length - 1;
+                        const bubbles = members.map((m, k) => (
+                          <ChatMessage
+                            key={m.id}
+                            message={m}
+                            continued={k > 0}
+                            arriving={arrived.has(m.id)}
+                            avatarAgent={agentView ?? undefined}
+                            isLast={item.index + k === shown.length - 1}
+                            showModel={runStarts.length > 0}
+                            {...timeProps(m.at, now)}
+                            hasPendingPermission={hasPendingPermission}
+                            pendingNotice={
+                              item.index + k === shown.length - 1
+                                ? startNotice
+                                : undefined
+                            }
+                            onRetry={sendPrompt}
+                            onFileClick={openFileHandler}
+                            onDelete={deleteMessage}
+                            onLoadOlder={loadOlderKeepingScroll}
+                          />
+                        ));
+                        const chatMessage =
+                          members.length === 1 ? (
+                            bubbles[0]
+                          ) : (
+                            <div className="flex flex-col gap-2">{bubbles}</div>
+                          );
+                        const runMessage: Message =
+                          members.length === 1
+                            ? item.message
+                            : {
+                                ...item.message,
+                                parts: members.flatMap((m) =>
+                                  m.parts.filter((p) => p.kind === "text"),
+                                ),
+                              };
+                        const upTo = rewritePoints.get(item.message.id);
+                        const editingHere =
+                          rewriting?.messageId === item.message.id;
+                        const doomed =
+                          rewriting?.mode === "rewind" &&
+                          rewriteIndex !== -1 &&
+                          item.index > rewriteIndex;
+                        const content =
+                          rewritable && rewritePoints.has(item.message.id) ? (
+                            <RewritableMessage
+                              message={runMessage}
+                              onRewrite={(mode, text) =>
+                                rewriteFrom({
+                                  messageId: item.message.id,
+                                  upToMessageId: upTo,
+                                  mode,
+                                  text,
+                                  title: sessionView?.title ?? null,
+                                })
+                              }
+                            >
+                              {chatMessage}
+                            </RewritableMessage>
+                          ) : (
+                            chatMessage
+                          );
                         return (
                           <Fragment key={item.message.id}>
-                            <ChatMessage
-                              message={item.message}
-                              avatarAgent={agentView ?? undefined}
-                              isLast={item.index === messages.length - 1}
-                              showModel={runStarts.length > 0}
-                              {...timeProps(item.message.at, now)}
-                              hasPendingPermission={hasPendingPermission}
-                              pendingNotice={
-                                item.index === messages.length - 1
-                                  ? startNotice
-                                  : undefined
-                              }
-                              onRetry={sendPrompt}
-                              onFileClick={openFileHandler}
-                              onDelete={deleteMessage}
-                              onLoadOlder={loadOlderKeepingScroll}
-                            />
+                            {doomed ? (
+                              <div className="opacity-30 grayscale">
+                                {content}
+                              </div>
+                            ) : (
+                              content
+                            )}
+                            {editingHere && rewriting && (
+                              <RewriteMarker
+                                mode={rewriting.mode}
+                                following={shown.length - 1 - lastIndex}
+                              />
+                            )}
                             {selectedAgent && sessionId && turn && (
                               <TurnTelemetry
                                 agentId={selectedAgent}
@@ -910,6 +1018,7 @@ export function ChatView() {
                         claimed={delegationOwners}
                       />
                     )}
+                    <QueuedPrompts onFileClick={openFileHandler} />
                     {telemetryEnabled && sessionTurns.isError && (
                       <p className="py-1 text-2xs text-muted-foreground/70">
                         Telemetry for this session could not be read.

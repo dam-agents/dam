@@ -78,7 +78,7 @@ An Agent may hold several **provider Connections**, and each session picks the o
 Creation grants the one it names, else a default one its harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), validating ownership, provider type, and active status; agent-management permission suffices to use a known provider id.
 The session picker offers the rest as "+ <Provider>".
 The agent's Providers section does the same outside a session: it lists every provider Connection the owner holds, each with a toggle that grants or revokes it, links to Settings to connect new ones, and picks the default pair for new sessions ([harness-config](harness-config.md)).
-A provider Connection's env is tagged with the Connection and lands in a per-provider layer rather than the agent-wide env, so only the [Harness Leases](agent-lifecycle.md#session-inside-the-pod) on that provider read it, and granting or revoking one recycles only those.
+A provider Connection's env is tagged with the Connection and lands in a per-provider layer rather than the agent-wide env, so only the [Harness Leases](sessions.md#session-inside-the-pod) on that provider read it, and granting or revoking one recycles only those.
 
 Credentials carry their own lifecycle.
 A stored one can be **updated in place** — the injected value, the client secret, the GitHub App private key, or the storage key pair, whichever the auth mode holds.

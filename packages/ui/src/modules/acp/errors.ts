@@ -1,5 +1,7 @@
 import {
   jsonRpcErrorDetails,
+  PROMPT_NOT_QUEUED_CODE,
+  PROMPT_NOT_QUEUED_MESSAGE,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
@@ -38,6 +40,14 @@ export const QUEUE_FULL_DESCRIPTION: SendErrorDescription = {
   message: "This conversation already has too many messages waiting.",
   hint: "The agent works through one message at a time. Wait for it to catch up, then send this again.",
 };
+
+export function isNotQueuedError(e: unknown): boolean {
+  if (e && typeof e === "object") {
+    const data = (e as { data?: { code?: unknown } }).data;
+    if (data?.code === PROMPT_NOT_QUEUED_CODE) return true;
+  }
+  return extractErrorMessage(e).startsWith(PROMPT_NOT_QUEUED_MESSAGE);
+}
 
 export function isQueueFullError(e: unknown): boolean {
   if (e && typeof e === "object") {

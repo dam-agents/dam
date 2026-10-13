@@ -165,9 +165,9 @@ How the title reaches the session list belongs to [platform topology](platform-t
 A schedule, recurring or [one-time](#one-time-schedules), can name the model its sessions run on: a cheap model for a frequent routine check, a strong one for a demanding task, without touching any other session: a schedule's model lives on its session alone.
 Only a harness whose manifest accepts a session model ([harness configuration](harness-config.md)) accepts one: elsewhere the model is refused when the schedule is saved, as is a name outside that harness's model list.
 
-Each fire opens its session on the schedule's model, or pins a resumed session to it before the resume, so a continuous schedule picks up an edited model at its next fire; the model reaches the harness as the env of that model's lease ([agent-lifecycle](agent-lifecycle.md#session-inside-the-pod)), and a pin the runtime refuses fails the run.
+Each fire opens its session on the schedule's model, or pins a resumed session to it before the resume, so a continuous schedule picks up an edited model at its next fire; the model reaches the harness as the env of that model's lease ([sessions](sessions.md#session-inside-the-pod)), and a pin the runtime refuses fails the run.
 
-**The harness and provider a fire runs on.** Where the agent's runtime picks the harness per session ([agent-lifecycle](agent-lifecycle.md#session-inside-the-pod)), each fire names the harness, provider and model it opens on: the pair a person last picked on the agent, model included.
+**The harness and provider a fire runs on.** Where the agent's runtime picks the harness per session ([sessions](sessions.md#session-inside-the-pod)), each fire names the harness, provider and model it opens on: the pair a person last picked on the agent, model included.
 A schedule's own model runs on the agent's own harness, on the first granted provider that harness can run on.
 A remembered provider since revoked, or one the harness cannot run on, falls back to the install's default harness on a still-granted provider it can run on, with that harness's default model; when no granted provider fits, the fire fails visibly, the reason on the schedule, rather than running elsewhere.
 A one-time task continuing its scheduling session keeps that session's pair.

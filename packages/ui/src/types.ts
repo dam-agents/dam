@@ -88,6 +88,9 @@ export interface Message {
   parts: MessagePart[];
   streaming: boolean;
   queued?: boolean;
+  sentHere?: boolean;
+  steered?: boolean;
+  lastMessageId?: string;
   promptId?: string;
   retryWith?: RetryPayload;
   notice?: boolean;

@@ -577,8 +577,22 @@ export {
   platformUndeliveredMetaSchema,
   platformSupersededMetaSchema,
   capInlineImages,
+  queuedPromptSchema,
+  platformQueueMetaSchema,
+  platformQueueChangedParamsSchema,
+  buildPlatformQueueChangedNotification,
+  platformUpdateQueuedParamsSchema,
+  platformRemoveQueuedParamsSchema,
+  platformSteerQueuedParamsSchema,
+  PROMPT_NOT_QUEUED_CODE,
+  PROMPT_NOT_QUEUED_MESSAGE,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
+  REWRITE_REFUSED_CODE,
+  platformRewriteFromParamsSchema,
+  STEER_METHOD,
+  steerResponseSchema,
+  steeringSupported,
 } from "./modules/acp/types.js";
 export type {
   PlatformTurnEndedParams,
@@ -589,6 +603,11 @@ export type {
   PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,
   PromptBlock,
+  QueuedPrompt,
+  PlatformQueueChangedParams,
+  PlatformUpdateQueuedParams,
+  PlatformRemoveQueuedParams,
+  PlatformRewriteFromParams,
 } from "./modules/acp/types.js";
 
 export { brandSchema } from "./modules/brand/types.js";

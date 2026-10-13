@@ -20,9 +20,12 @@ const h = vi.hoisted(() => {
     sessionId: null as string | null,
     sessionMode: null,
     messages: [] as Message[],
+    queuedPrompts: [] as unknown[],
     setSessionId: (id: string | null) => (state.sessionId = id),
     setMessages: vi.fn((m: Message[]) => (state.messages = m)),
     setBusy: () => {},
+    setQueuedPrompts: () => {},
+    setRewriting: () => {},
     setRunStarts: () => {},
     setSessionError: () => {},
   };
