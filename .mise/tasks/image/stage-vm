@@ -17,7 +17,8 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 # The record the runner reads beside the tree: what the image says to run.
-tar -xOf "$usage_tar" "$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].Config')" | jq \
+config="$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].Config')"
+tar -xOf "$usage_tar" "$config" | jq \
   '.config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
   > "$work/launch.json"
 
@@ -55,7 +56,10 @@ mv "$dest.new" "$dest"
 rm -rf "$dest.old" "$dest.tar"'
 
 # containerd's name for the image: a bare name or one without a registry
-# host is normalized onto docker.io, as `ctr images import` stores it.
+# host is normalized onto docker.io, as `ctr images import` stores it. The
+# node's image is used only when its ID is the tar's config digest: a tag
+# the node holds from an earlier build would give a tree that disagrees
+# with the launch record read from this tar.
 case "$IMAGE" in
   *.*/* | *:*/* | localhost/*) ref="$IMAGE" ;;
   */*) ref="docker.io/$IMAGE" ;;
@@ -66,7 +70,9 @@ if [ -n "${IS_SANDBOX:-}" ]; then
 else
   on_node() { limactl shell "$LIMA_INSTANCE" sudo "$@"; }
 fi
-if [ -z "${VM_HOST_RUNNER:-}" ] && [ -n "$(on_node k3s ctr images ls -q "name==$ref" 2>/dev/null)" ]; then
+digest="${config##*/}"; digest="sha256:${digest%.json}"
+if [ -z "${VM_HOST_RUNNER:-}" ] \
+  && [ "$(on_node k3s crictl inspecti -o go-template --template '{{.status.id}}' "$ref" 2>/dev/null)" = "$digest" ]; then
   if [ -n "${IS_SANDBOX:-}" ]; then
     as_root sh -c "$place" _ "$IMAGE_DIR/$name" "$ref" "$work/launch.json"
   else
