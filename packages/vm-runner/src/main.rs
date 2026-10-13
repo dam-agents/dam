@@ -202,6 +202,7 @@ fn main() -> anyhow::Result<()> {
     let token = http::Token::from_file(args.token_file.clone())?;
     configure_smolvm(&args.smolvm);
     prepare_host(&args)?;
+    let _claim = claim_state(&args.state_dir)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
@@ -213,6 +214,21 @@ fn main() -> anyhow::Result<()> {
 // UNIT_BOUNDARY_DESCRIPTION: how long the process waits, once it has closed, for blocking work still running. Closing already waited its own bounded time for the machines; a runtime call past that is stuck, and a dropped tokio runtime would wait for it without end, past the pod's grace, into the SIGKILL.
 const RUNTIME_EXIT_WAIT: Duration = Duration::from_secs(1);
 
+// UNIT_BOUNDARY_DESCRIPTION: waits until no other runner process holds this state, then holds it until this one exits. A deleted runner pod is replaced at once, while the old pod still runs its close beside the new one on the same claim, and that close stops every machine its records say is running: by then those are the new runner's machines, reached through the guest sockets both pods share, so the agents the new runner has just booted go down under it. The lock is flock(2) on a file of the claim, which the kernel holds for both pods on one node; it goes with the process, a hand-off's exit and a kill included, and the VMMs this runner spawns do not inherit it.
+fn claim_state(dir: &Path) -> anyhow::Result<std::fs::File> {
+    let path = dir.join(".runner.lock");
+    let file = std::fs::File::create(&path)
+        .map_err(|e| anyhow::anyhow!("opening {}: {e}", path.display()))?;
+    match file.try_lock() {
+        Ok(()) => {}
+        Err(std::fs::TryLockError::WouldBlock) => {
+            tracing::info!(path = %path.display(), "another runner still holds this state; waiting for it to close");
+            file.lock()?;
+        }
+        Err(std::fs::TryLockError::Error(e)) => anyhow::bail!("locking {}: {e}", path.display()),
+    }
+    Ok(file)
+}
 // UNIT_BOUNDARY_DESCRIPTION: the port range as the runner can publish it. Each machine's guest port sits on loopback at its published port plus LOOPBACK_OFFSET, so a range whose top plus the offset passes 65535 would publish a machine on a port that does not exist, and the arithmetic would overflow at the first such machine instead of failing here at start.
 fn check_ports(min: u16, max: u16) -> anyhow::Result<()> {
     anyhow::ensure!(min <= max, "--port-min is above --port-max");
@@ -435,6 +451,23 @@ mod tests {
         assert!(check_ports(args.port_min, args.port_max).is_ok());
     }
 
+    // TEST_SCENARIO: a runner started on state another runner process still holds waits for that one to let go, and takes the state the moment it does, so two runners never drive the same machines at once.
+    #[test]
+    fn a_runner_waits_for_the_one_still_holding_its_state() {
+        let dir = std::env::temp_dir().join(format!("vm-runner-claim-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let held = claim_state(&dir).unwrap();
+        let (claimed, waiting) = std::sync::mpsc::channel();
+        let second = dir.clone();
+        std::thread::spawn(move || claimed.send(claim_state(&second).map(|_| ())).unwrap());
+        assert!(waiting.recv_timeout(Duration::from_millis(300)).is_err());
+        drop(held);
+        waiting
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
     // TEST_SCENARIO: `:4600` is the flag's spelling of every interface on a port. It must bind, and a port that is not a number must be refused rather than read as some default.
     #[test]
     fn a_bare_port_binds_every_interface() {
