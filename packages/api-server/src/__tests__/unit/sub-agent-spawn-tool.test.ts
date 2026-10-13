@@ -10,7 +10,9 @@ import type {
  * TEST_OVERVIEW: spawn_subagent hands the spawn route what the driver SDK
  * would: the model, mode and config options the agent passes flat become the
  * request's harness config, so the platform records them and runs its checks,
- * and a spawn that names none sends no harness config at all.
+ * every spawn runs on the calling session's subagent model when the user
+ * set one, a model the catalog does not list for the harness is refused, and
+ * a spawn that names none of them sends no harness config at all.
  */
 
 type Handler = (
@@ -18,7 +20,12 @@ type Handler = (
   extra: { signal: AbortSignal },
 ) => Promise<unknown>;
 
-function setup() {
+function setup(
+  subagentModel?: () => Promise<string | null>,
+  catalogModels?: (
+    harness: string,
+  ) => Promise<{ alias: string; upstreamId: string; name: string }[] | null>,
+) {
   const tools = new Map<string, Handler>();
   const server = {
     tool: (name: string, _d: unknown, _shape: unknown, handler: Handler) => {
@@ -36,6 +43,8 @@ function setup() {
   registerSubAgentTools(server, {
     ops,
     awaits: { markAwaited: async () => {}, markCollected: async () => {} },
+    ...(subagentModel && { subagentModel }),
+    ...(catalogModels && { catalogModels }),
   });
   const spawn = tools.get("spawn_subagent")!;
   return {
@@ -73,6 +82,63 @@ describe("spawn_subagent harness config", () => {
     const s = setup();
     await s.spawn({ configOptions: {} });
     expect(s.spawned[0]!.harnessConfig).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: The user set a subagent model on the calling session, in
+   * Claude Code's own spelling. Every spawn runs on it, in the
+   * provider-qualified form the spawn route takes, whatever model the spawn
+   * names; a session with no setting keeps the spawn's own model, and one
+   * whose value is no provider-qualified name (a tier word) sends none. */
+  it("runs every spawn on the session's subagent model", async () => {
+    const set = setup(async () => "claude/ibm/azure/gpt-5.3-codex");
+    await set.spawn({});
+    expect(set.spawned[0]!.harnessConfig).toEqual({
+      model: "ibm/azure/gpt-5.3-codex",
+    });
+    const result = (await set.spawn({ model: "cb/rits/zai-org/glm-5-3" })) as {
+      content: { text: string }[];
+    };
+    expect(set.spawned[1]!.harnessConfig).toEqual({
+      model: "ibm/azure/gpt-5.3-codex",
+    });
+    expect(result.content[0]!.text).toMatch(/model argument is ignored/);
+    const unset = setup(async () => null);
+    await unset.spawn({ model: "cb/rits/zai-org/glm-5-3" });
+    expect(unset.spawned[0]!.harnessConfig).toEqual({
+      model: "cb/rits/zai-org/glm-5-3",
+    });
+    const tier = setup(async () => "sonnet");
+    await tier.spawn({});
+    expect(tier.spawned[0]!.harnessConfig).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: The agent names a model its providers do not list for
+   * the target harness (OpenAI's name for an IBM deployment). The spawn is
+   * refused naming the listed models, so no sub-agent sits on a refused
+   * model until its deadline; a listed one, in either spelling, spawns, and
+   * a harness the catalog has no view for is not checked. */
+  it("refuses a model the catalog does not list for the harness", async () => {
+    const listed = [
+      {
+        alias: "ibm",
+        upstreamId: "azure/gpt-5.3-codex",
+        name: "ibm/azure/gpt-5.3-codex",
+      },
+    ];
+    const s = setup(undefined, async (h) => (h === "codex" ? listed : null));
+    const refused = (await s.spawn({ model: "openai/gpt-5.3-codex" })) as {
+      content: { text: string }[];
+    };
+    expect(refused.content[0]!.text).toMatch(
+      /refused: no granted provider lists openai\/gpt-5.3-codex .*listed: ibm\/azure\/gpt-5.3-codex/,
+    );
+    expect(s.spawned).toEqual([]);
+    await s.spawn({ model: "claude/ibm/azure/GPT-5.3-codex" });
+    expect(s.spawned[0]!.harnessConfig).toEqual({
+      model: "ibm/azure/GPT-5.3-codex",
+    });
+    await s.spawn({ harness: "pi", model: "openai/gpt-5.3-codex" });
+    expect(s.spawned).toHaveLength(2);
   });
 
   it("refuses an empty model before the spawn", async () => {

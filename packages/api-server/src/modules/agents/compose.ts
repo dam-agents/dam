@@ -16,6 +16,7 @@ import {
   createAgentsRepository,
   type AgentsRepository,
 } from "./infrastructure/agents-repository.js";
+import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 import {
   createAgentsService,
@@ -103,6 +104,7 @@ export function composeAgentsModule(deps: {
   const k8s = createK8sClient(deps.api, deps.namespace);
   const repo = createAgentsRepository(k8s, deps.agentStateCache);
   const agentEnvRepo = createAgentEnvRepository(deps.db);
+  const agentsRuntimeRepo = createAgentsRuntimeRepo(deps.db);
   const registrySecretPort = createAgentRegistrySecretPort(k8s);
   const owner = deps.owner ?? "";
   return {
@@ -123,6 +125,8 @@ export function composeAgentsModule(deps: {
       resizeLock: createXactLock(deps.db),
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
+      lastHelloAt: async (agentId) =>
+        (await agentsRuntimeRepo.get(agentId))?.runtimeLastHelloAt ?? null,
       presetSeeder: deps.presetSeeder,
       cleanupHooks: deps.cleanupHooks,
       registrySecretPort,

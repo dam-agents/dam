@@ -610,3 +610,16 @@ describe("the spawn endpoint", () => {
     });
   });
 });
+
+describe("spawn model naming", () => {
+  /** TEST_SCENARIO: A target runs on the current image, whose runtime routes
+   * by model name, so a spawn that names the target's model must name its
+   * provider too; a bare name is refused before anything is created. */
+  test("refuses a bare model name for the target", async () => {
+    const { service, created } = makeService();
+    await expect(
+      service.spawn({ ...baseInput, harnessConfig: { model: "gpt-5.5" } }),
+    ).rejects.toThrow(/name the target's model with its provider/);
+    expect(created).toHaveLength(0);
+  });
+});

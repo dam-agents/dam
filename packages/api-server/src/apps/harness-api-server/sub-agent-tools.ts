@@ -1,6 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { spawnInvocationRequestSchema } from "api-server-api";
+import {
+  formatQualifiedModel,
+  parseQualifiedModel,
+  spawnInvocationRequestSchema,
+} from "api-server-api";
 import {
   errorResult,
   json,
@@ -102,7 +106,7 @@ const spawnInput = {
     .min(1)
     .optional()
     .describe(
-      "Model the sub-agent runs, as the agent's Config panel names it: on claude-code fable, opus, sonnet, haiku or claude/<provider model>; on codex, pi and bob a name from the provider's model list. Default: the harness's default model. The platform does not check the value, and a wrong one can hang the sub-agent until its deadline, so try a new name with a short ttlMs.",
+      "Model the sub-agent runs, provider-qualified (ibm/gpt-5.5, claude/ibm/aws/claude-sonnet-5-5 on claude-code). Ignored when the user set a subagent model on this session: the sub-agent then runs on that model. Otherwise it must be a model this agent's providers list for the target harness; the refusal names the listed ones. Unset, the harness's default model.",
     ),
   mode: z
     .string()
@@ -234,12 +238,65 @@ function summarize(settled: Settled[]) {
   };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the session's subagent model, when the user set
+ * one, is the model every platform sub-agent spawned from the session runs
+ * on, whatever the spawn names, as it is for the harness's own subagents.
+ * The setting is spelled the way the calling harness names models; the
+ * spawn route takes the provider-qualified form.
+ */
+async function sessionSubagentModel(
+  read: (() => Promise<string | null>) | undefined,
+): Promise<string | null> {
+  const value = await read?.();
+  const parsed = parseQualifiedModel(value, { claudePrefix: true });
+  return parsed ? formatQualifiedModel(parsed.alias, parsed.upstreamId) : null;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a model named the way Claude Code spells it (`claude/<alias>/<id>`) folds to the provider-qualified form the spawn route takes; a bare name stays as it is, for the route to refuse by name.
+const canonicalModel = (model: string | undefined): string | undefined => {
+  const parsed = parseQualifiedModel(model, { claudePrefix: true });
+  return parsed ? formatQualifiedModel(parsed.alias, parsed.upstreamId) : model;
+};
+
+export interface CatalogModelRef {
+  alias: string;
+  upstreamId: string;
+  name: string;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a model the agent's catalog does not list for
+ * the target harness is refused before anything is created, naming what is
+ * listed: a sub-agent on a model its harness refuses would otherwise sit
+ * until its deadline. A harness the catalog has no view for is not checked.
+ */
+function unlistedModel(
+  model: string,
+  listed: readonly CatalogModelRef[] | null,
+): string | null {
+  if (listed === null) return null;
+  const wanted = parseQualifiedModel(model, { claudePrefix: true });
+  const found =
+    wanted !== null &&
+    listed.some(
+      (m) =>
+        m.alias === wanted.alias &&
+        m.upstreamId.toLowerCase() === wanted.upstreamId.toLowerCase(),
+    );
+  if (found) return null;
+  const names = listed.map((m) => m.name);
+  return `no granted provider lists ${model} for that harness; listed: ${names.length > 0 ? names.join(", ") : "none"}`;
+}
+
 export function registerSubAgentTools(
   server: McpServer,
   deps: {
     ops: DriverOps;
     awaits: SubAgentAwaitMarks;
     requestSignal?: AbortSignal;
+    subagentModel?: () => Promise<string | null>;
+    catalogModels?: (harness: string) => Promise<CatalogModelRef[] | null>;
     waitMs?: number;
     pollMs?: number;
   },
@@ -251,8 +308,14 @@ export function registerSubAgentTools(
   server.tool("spawn_subagent", SPAWN_DESCRIPTION, spawnInput, (args) =>
     run(async () => {
       const { needs, ...rest } = args;
+      const sessionModel = await sessionSubagentModel(deps.subagentModel);
+      const model = sessionModel ?? canonicalModel(rest.model);
       const parsed = spawnInvocationRequestSchema.safeParse(
-        withHarnessConfig({ ...rest, schema: schemaFromText(rest.schema) }),
+        withHarnessConfig({
+          ...rest,
+          schema: schemaFromText(rest.schema),
+          ...(model !== undefined && model !== null && { model }),
+        }),
       );
       if (!parsed.success) {
         return errorResult(
@@ -260,6 +323,13 @@ export function registerSubAgentTools(
         );
       }
       const body = parsed.data;
+      if (model && body.harness && deps.catalogModels) {
+        const unlisted = unlistedModel(
+          model,
+          await deps.catalogModels(body.harness),
+        );
+        if (unlisted) return errorResult(`spawn_subagent refused: ${unlisted}`);
+      }
       const unmet = unmetNeed(needs, body, await ops.harness());
       if (unmet) {
         return errorResult(
@@ -275,6 +345,11 @@ export function registerSubAgentTools(
         [
           `[invoke] spawned ${tag} -> ${outcome.id}`,
           `needs: ${needs.join(", ")}`,
+          ...(sessionModel
+            ? [
+                `model: ${sessionModel} (the session's subagent model; a model argument is ignored while the user has it set)`,
+              ]
+            : []),
           JSON.stringify({ id: outcome.id }),
           `Call await_subagents with ["${outcome.id}"] to get its result.`,
         ].join("\n"),

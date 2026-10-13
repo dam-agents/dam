@@ -231,7 +231,7 @@ The catalog is not consulted: one that pins the kit behind the branch head still
 **What changed** is read lazily for the hover card: the definition's own `VERSION` and `CHANGELOG.md` at both ends of the range, or, for a repository without a changelog, the compare API's commit list, cached for good because two commits never change.
 
 **Starting an update** marks it pending on the Agent with the head it targets and queues a session on the initialization session's rail.
-The session runs on the harness, provider and model the owner saved as the agent's default, resolved the way a [schedule](schedules.md) fire resolves them; when no pair resolves, such as on an agent whose runtime has not yet reported its harnesses, it runs on the agent's default lease.
+The session runs on the harness, provider and model the owner saved as the agent's default, resolved the way a [schedule](schedules.md) fire resolves them; when no pair resolves, such as on an agent whose runtime has not yet reported its harnesses, it runs on the agent's default harness.
 Its briefing is platform-composed like Kit Onboarding: the commit range, and the kit's **current catalog entry** against the Agent's live state.
 The user picks which upstream changes to take and decides every conflict; their own changes are **never committed or pushed**, and a declined change becomes one of them.
 What they decide for later updates is kept inside the checkout's git directory, outside history.

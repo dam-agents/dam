@@ -14,9 +14,11 @@ export function sessionSettingsError(
 ): string | undefined {
   for (const [id, value] of Object.entries(settings)) {
     const option = catalog?.options.find(
-      (o) => o.id === id && o.category !== "model",
+      (o) => o.id === id && (o.id !== "model" || o.category !== "model"),
     );
-    if (!option?.choices.some((choice) => choice.value === value))
+    if (!option) return `Unsupported session setting: ${id}=${value}`;
+    if (option.category === "model" && option.choices.length === 0) continue;
+    if (!option.choices.some((choice) => choice.value === value))
       return `Unsupported session setting: ${id}=${value}`;
     const allowed = model
       ? catalog?.modelConstraints?.[model]?.[id]

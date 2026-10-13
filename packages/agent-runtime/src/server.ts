@@ -41,7 +41,19 @@ import { composeKbPublish } from "./modules/kb-publish/compose.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills, resolveGitHubToken } from "./modules/skills/index.js";
 import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.js";
-import { createPodServiceSupervisor } from "./modules/pod-service.js";
+import {
+  createPodServiceSupervisor,
+  createProviderEnvSnapshot,
+} from "./modules/pod-service.js";
+import {
+  createModelCatalog,
+  VENDORED_PRICE_TABLE,
+} from "./modules/model-catalog/index.js";
+import {
+  composeModelRouter,
+  routerEnvFor,
+  createModelCallExporter,
+} from "./modules/model-router/index.js";
 import {
   createSshService,
   prepareSshd,
@@ -72,6 +84,7 @@ import {
   createArtifactTouchReporter,
   createEnvPlugin,
   createEnvStateStore,
+  createModelDiscovery,
   createFilePlugin,
   createHarnessClient,
   createMcpEntryPlugin,
@@ -88,9 +101,19 @@ import { harnessManifestPaths } from "./modules/runtime-channel/manifest-paths.j
 import { leaseSpawnEnv } from "./core/runtime-env.js";
 import { reportHomeVolumeFullOnCrash } from "./core/home-volume-full.js";
 import {
+  canonicalModel,
   PROVIDER_REMOVED_REASON,
-  type LeasePair,
+  type SessionChoice,
 } from "./modules/acp/services/lease-router.js";
+import {
+  aliasForTemplateId,
+  HARNESS_HOME_PROVIDERS,
+  parseQualifiedModel,
+} from "api-server-api";
+import {
+  PROVIDER_DIALECTS,
+  renderName,
+} from "./modules/model-catalog/index.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const homeDir = config.PLATFORM_DEV
@@ -198,24 +221,167 @@ const artifactTouchReporter = createArtifactTouchReporter({
 
 const podServicePath = "/usr/local/bin/pod-service";
 const podLog = (msg: string) => process.stderr.write(`[pod-service] ${msg}\n`);
+const providerEnvSnapshot = createProviderEnvSnapshot({
+  stateBackend,
+  envReader: envStore,
+});
 const podService = existsSync(podServicePath)
   ? createPodServiceSupervisor({
       command: podServicePath,
-      stateBackend,
       envReader: envStore,
       log: podLog,
     })
   : null;
+const refreshPodEnv = (): void => {
+  providerEnvSnapshot.write();
+  podService?.refreshEnv();
+};
+
+const modelCatalog = createModelCatalog({
+  envState: () => envStore.state(),
+  envReady: envStore.ready,
+  discover: createModelDiscovery({
+    log: (msg) => process.stderr.write(`[model-catalog] ${msg}\n`),
+  }),
+  harnesses: Object.fromEntries(
+    Object.entries(harnessManifests).map(([name, m]) => [name, m.modelRouter]),
+  ),
+  table: VENDORED_PRICE_TABLE,
+  log: (msg) => process.stderr.write(`${msg}\n`),
+});
+
+if (envStore.ready()) void modelCatalog.refresh();
+modelCatalog.start();
+
+const modelRouterLog = (msg: string) => process.stderr.write(`${msg}\n`);
+const modelCallExporter = createModelCallExporter({
+  envState: () => envStore.state(),
+  log: modelRouterLog,
+});
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the lease router is composed after the Model
+ * Router, so its session lookup is bound once it exists.
+ */
+let sessionChoiceOf: ((sessionId: string) => SessionChoice) | null = null;
+const modelRouter = composeModelRouter({
+  sessionModelOf: (sessionId) => {
+    const choice = sessionChoiceOf?.(sessionId);
+    const subagentModel = choice?.settings?.subagentModel ?? null;
+    if (!choice?.model && !subagentModel) return null;
+    return { model: choice?.model ?? null, subagentModel };
+  },
+  catalog: modelCatalog,
+  envState: () => envStore.state(),
+  harnesses: Object.fromEntries(
+    Object.entries(harnessManifests).map(([name, m]) => [name, m.modelRouter]),
+  ),
+  defaultHarness,
+  port: config.PLATFORM_MODEL_ROUTER_PORT,
+  onCall: (record) => modelCallExporter.record(record),
+  log: modelRouterLog,
+});
+await modelRouter.listen();
+const grantedAliases = (): string[] => [
+  ...new Set(
+    envStore.state().providers.flatMap((l) => {
+      const alias = l.template ? aliasForTemplateId(l.template) : null;
+      return alias ? [alias] : [];
+    }),
+  ),
+];
+const aliasOfConnection = (connectionId: string): string | null => {
+  const layer = envStore.state().providers.find((l) => l.id === connectionId);
+  return layer?.template ? aliasForTemplateId(layer.template) : null;
+};
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the env of a provider Connection the router does
+ * not serve (Bedrock) still reaches every harness process, since Claude
+ * Code's shim picks Bedrock when it is set.
+ */
+const unroutedProviderEnv = (): Record<string, string> =>
+  Object.assign(
+    {},
+    ...envStore.state().providers.flatMap((l) => {
+      const alias = l.template ? aliasForTemplateId(l.template) : null;
+      const routed = alias !== null && PROVIDER_DIALECTS[alias].length > 0;
+      return routed ? [] : [l.env];
+    }),
+  ) as Record<string, string>;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the Connection a session runs on outside the
+ * router, when its model's alias names one the harness's manifest runs
+ * natively; a session with no model runs natively when the harness's home
+ * provider is such a Connection.
+ */
+const nativeConnectionOf = (
+  harness: string,
+  model: string | null,
+): string | null => {
+  const templates = harnessManifests[harness]?.modelRouter?.native?.templates;
+  if (!templates) return null;
+  const native = (alias: string) =>
+    envStore
+      .state()
+      .providers.find(
+        (l) =>
+          l.template !== undefined &&
+          templates.includes(l.template) &&
+          aliasForTemplateId(l.template) === alias,
+      )?.id ?? null;
+  if (model) {
+    const alias = parseQualifiedModel(model)?.alias;
+    return alias ? native(alias) : null;
+  }
+  const home = HARNESS_HOME_PROVIDERS[harness]?.[0];
+  return home ? native(home) : null;
+};
+const nativeEnv = (connectionId: string): Record<string, string> =>
+  envStore.state().providers.find((l) => l.id === connectionId)?.env ?? {};
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a terminal's harness starts with the same model
+ * env as its chat process: a native Connection's env and the harness's own
+ * model name, else the router's env and catalog name.
+ */
+const terminalModelEnv = (lease: {
+  harness: string;
+  model: string | null;
+}): Record<string, string> => {
+  const native = nativeConnectionOf(lease.harness, lease.model);
+  if (native)
+    return {
+      ...nativeEnv(native),
+      ...(lease.model !== null && {
+        PLATFORM_MODEL:
+          parseQualifiedModel(lease.model)?.upstreamId ?? lease.model,
+      }),
+    };
+  return {
+    ...unroutedProviderEnv(),
+    ...routerEnvOf(lease.harness),
+    ...(lease.model !== null && {
+      PLATFORM_MODEL: renderSessionModel(
+        lease.model,
+        harnessManifests[lease.harness]?.modelRouter,
+      ),
+    }),
+  };
+};
+const renderSessionModel = (
+  model: string,
+  binding: RuntimeManifest["modelRouter"],
+): string => {
+  const parsed = parseQualifiedModel(model);
+  return parsed ? renderName(parsed, binding) : model;
+};
+const routerEnvOf = (harness: string): Record<string, string> =>
+  routerEnvFor({
+    harness,
+    binding: harnessManifests[harness]?.modelRouter,
+    providers: modelCatalog.providers(),
+    port: modelRouter.port,
+  });
 
 process.env.PLATFORM_RUNTIME_URL = `http://127.0.0.1:${config.PORT}`;
-
-let seedHarnessModel: (() => Promise<void>) | null = null;
-let leaseModel:
-  | ((lease: {
-      harness: string;
-      provider: string | null;
-    }) => Promise<string | null>)
-  | null = null;
 
 const processes = prepareProcesses(stateBackend);
 
@@ -253,6 +419,20 @@ const {
           ),
         }),
         sessionModel: sessionModelOf(manifest),
+        ...(manifest.modelRouter?.sessionModel && {
+          sessionModelFrame: {
+            configOption: manifest.modelRouter.sessionModel.configOption,
+            render: (model: string) =>
+              (manifest.modelRouter?.sessionModel?.valuePrefix ?? "") +
+              renderSessionModel(model, manifest.modelRouter),
+          },
+        }),
+        ...(manifest.initializeCapabilities && {
+          initialize: manifest.initializeCapabilities as Record<
+            string,
+            unknown
+          >,
+        }),
         sessionSettings: harnessConfigBindingOf(manifest)?.sessionSettings,
         catalog: harnessConfigBindingOf(manifest)?.catalog,
       },
@@ -266,15 +446,19 @@ const {
   sessionRepositories: changes.repositoriesOf,
   onPrompt: startDisplay,
   beforeSpawn: () => {
-    if (seedHarnessModel) return seedHarnessModel();
-    process.stderr.write(
-      "[acp] first spawn reached before the runtime channel was composed — no model seeded\n",
-    );
     return Promise.resolve();
   },
-  leaseModel: (lease) => leaseModel?.(lease) ?? Promise.resolve(null),
+  providerAliases: grantedAliases,
+  aliasOfConnection,
+  unroutedProviderEnv,
+  routerEnv: routerEnvOf,
+  nativeConnectionOf,
+  nativeEnv,
+  leaseIdleMs: config.LEASE_IDLE_MS,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
 });
+
+sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
 
 const { service: processesService, keepMarks } = processes.start({
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
@@ -323,12 +507,15 @@ const runtimeChannel = await composeRuntimeChannel({
       sessionMetadata.isTombstoned(sessionId),
     ),
   envReader: envStore,
+  catalog: modelCatalog,
+  modelRouter: true,
   plugins: [
     createEnvPlugin({
       store: envStore,
       onChange: (change) => {
         acpRuntime.applyEnvChange(change);
-        podService?.refreshEnv();
+        refreshPodEnv();
+        void modelCatalog.refresh();
         scheduleRecovery();
       },
     }),
@@ -343,11 +530,6 @@ const runtimeChannel = await composeRuntimeChannel({
     setupGitCredentialHelper(contributions);
   },
 });
-
-seedHarnessModel = async () => {
-  await runtimeChannel.seedHarnessModel();
-};
-leaseModel = (lease) => runtimeChannel.leaseModel(lease);
 
 const sshLog = (msg: string) => process.stderr.write(`[ssh] ${msg}\n`);
 let preparedSshd: Promise<PreparedSshd | null> | undefined;
@@ -457,32 +639,35 @@ function markTerminalSeen(sessionId: string): void {
   else sessionMetadata.set(sessionId, { mode: "terminal" });
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a model whose provider the agent no longer holds
+ * refuses the terminal with the provider-removed reason, as a chat prompt
+ * would be refused.
+ */
 function terminalLease(
   sessionId: string,
-  requested: Partial<LeasePair>,
-): LeasePair | string {
+  requested: { harness?: string; model?: string },
+): { harness: string; model: string | null } | string {
   const meta = sessionMetadata.get(sessionId)?.meta;
   const harness = meta?.harness ?? requested.harness ?? defaultHarness;
   if (!Object.hasOwn(harnessManifests, harness))
     return `this agent does not carry the ${harness} harness`;
-  const provider =
+  const chosen =
     meta?.harness !== undefined
-      ? (meta.provider ?? null)
-      : (requested.provider ?? envStore.providers()[0] ?? null);
-  const model =
-    meta?.harness !== undefined
-      ? (meta.model ?? null)
-      : (requested.model ?? null);
-  if (provider !== null && !envStore.providers().includes(provider))
+      ? acpRuntime.sessionChoice(sessionId).model
+      : requested.model !== undefined
+        ? canonicalModel(requested.model)
+        : null;
+  const alias = chosen ? parseQualifiedModel(chosen)?.alias : undefined;
+  if (alias && !grantedAliases().includes(alias))
     return PROVIDER_REMOVED_REASON;
   sessionMetadata.set(sessionId, {
     ...meta,
     mode: "terminal",
     harness,
-    ...(provider !== null && { provider }),
-    ...(model !== null && { model }),
+    ...(chosen !== null && { model: chosen }),
   });
-  return { harness, provider, model };
+  return { harness, model: chosen };
 }
 
 /**
@@ -530,7 +715,7 @@ function reapPtySlotIfIdle(sessionId: string): void {
 function attachPty(
   sessionId: string,
   ws: WsWebSocket,
-  opts: { reset: boolean; lease: Partial<LeasePair> },
+  opts: { reset: boolean; lease: { harness?: string; model?: string } },
 ): void {
   if (opts.reset) killPtySlot(sessionId);
   let initialized = false;
@@ -614,13 +799,20 @@ function attachPty(
         cwd: workDir,
         env: {
           ...(Object.fromEntries(
-            Object.entries(leaseSpawnEnv(envStore, lease)).filter(
+            Object.entries(
+              leaseSpawnEnv(envStore, {
+                harness: lease.harness,
+                provider: null,
+                model: null,
+              }),
+            ).filter(
               ([k, v]) =>
                 v !== undefined &&
                 !k.startsWith("npm_config_") &&
                 !k.startsWith("npm_lifecycle_"),
             ),
           ) as Record<string, string>),
+          ...terminalModelEnv(lease),
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
           HARNESS_SESSION_ID: sessionId,
@@ -972,7 +1164,7 @@ server.headersTimeout = 60_000;
 server.listen(config.PORT, () => {
   process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);
 
-  if (envStore.ready()) podService?.refreshEnv();
+  if (envStore.ready()) refreshPodEnv();
 
   acpRuntime.prestart();
 
@@ -1073,6 +1265,7 @@ function gracefulShutdown(signal: string): void {
   browserDisplay?.stop();
   activeTurns.markStopped();
   acpRuntime.shutdown();
+  void modelCallExporter.stop();
   setTimeout(() => process.exit(0), 3_000).unref();
 }
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));

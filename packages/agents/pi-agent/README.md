@@ -49,6 +49,14 @@ Pi names them `mcp__<server>__<tool>` with `-` replaced by `_`, e.g. `mcp__platf
 
 ## Providers and models
 
+### The Model Router
+
+On the platform every model call Pi makes goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router) on the pod's loopback.
+When `PLATFORM_MODEL_ROUTER_URL` is set, [`pi-dynamic-providers`](rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts) registers one provider, `platform`, from the router's `/v1/models`: every granted provider's models under qualified names (`ibm/gpt-5.5`, `cb/rits/zai-org/glm-5-3`), each on the API it speaks best among its provider's dialects (Responses for OpenAI-family ids, Messages for Claude ids, chat completions otherwise), with limits, reasoning, cache marks and thinking format from the catalog's metadata and prices as Pi's per-million costs.
+The router owns the credential, so the provider's key is a placeholder for pi-acp's auth gate, and Pi's built-in `openai` and `anthropic` providers are turned off.
+`pi-platform` starts Pi on `--provider platform --model <session model>` with one shared config directory; a session switching among a GPT, a GLM and a Claude model sends each call on its own API to the router.
+The sections below describe Pi's native providers, which a routed runtime does not use (Bedrock included).
+
 Pi natively supports a long list of API-key providers (OpenAI, Mistral, Groq, DeepSeek, Cerebras, xAI, OpenRouter, Gemini, Fireworks, Hugging Face, ZAI, MiniMax, …) plus any OpenAI-Completions / OpenAI-Responses / Anthropic-Messages / Google-Generative-AI compatible endpoint via [`models.json`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md) or [extensions](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md).
 Authoritative reference: [pi providers](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md) for env-var names, auth-file shape, and resolution order; [pi models](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md) for the `models.json` schema and `compat` flags.
 

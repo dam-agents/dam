@@ -9,10 +9,10 @@ How an owner's mode and config-defaults choices for each harness an agent carrie
 The choices travel as a `harness-config` Event over the [runtime channel](runtime-delivery.md) — that page owns delivery and capability gating; this one owns what the event means and everything built on it.
 
 These are each harness's defaults: writing them recycles only the [Harness Leases](sessions.md#session-inside-the-pod) of that harness.
-The model is not among them: each session picks its harness, provider and model, so the Config panel shows the settings of every carried harness and no model setting.
-Every harness gets its model as a lease's environment, which its scripts honour over the config file and a provider pin; a session's model is never switched inside a live harness, because a resumed session would fall back to the file's default.
+The model is not among them: each session picks its harness and, per turn, its model, so the Config panel shows the settings of every carried harness and no model setting.
+The runtime applies a session's model inside the live harness through its own per-session call before each prompt and after every cold load ([agent-lifecycle](sessions.md#session-inside-the-pod)), and the [Model Router](#the-model-router) routes every call by that name.
 The runtime advertises its default harness and, per carried harness, the catalog.
-The model list a session or a [schedule](schedules.md#session-model) picks from is asked per harness and provider over the runtime's tRPC, without spawning anything — the discovered one where the provider lists its own.
+The model list a session or a [schedule](schedules.md#session-choices) picks from is asked per harness and provider over the runtime's tRPC, without spawning anything: the discovered one where the provider lists its own.
 The session picker offers named models, not a generic default-model choice.
 It shows loading, unavailable and empty listings explicitly, with a retry for failed discovery; a failed listing never falls back to the harness's static catalog.
 The catalog remains usable where discovery is not configured.
@@ -26,7 +26,7 @@ Opened then, it shows a loader until the list arrives, and a session started mea
 Until the harness catalog arrives, the picker label is a loader, never a raw harness name.
 A session the UI starts holds the pair it sent as its own view until the agent lists the session, so the composer names that pair from the first moment.
 While a sleeping agent wakes, the picker shows each provider's models as loading rather than asking for a start.
-In an existing session, the picker shows its harness and only its active provider's models: another harness or provider needs a new session, which the picker links to, and context moves over only through a file the agent saves.
+In an existing session, the picker keeps its harness and, on a routed runtime, offers every granted provider's models: another harness needs a new session, which the picker links to, and context moves over only through a file the agent saves.
 
 ## Session settings
 
@@ -34,6 +34,8 @@ A session may also pick the settings its harness manifest lists under `sessionSe
 The choice belongs to that session alone and starts with its next turn; it is kept in the runtime's session metadata beside the [Session Pair](../ubiquitous-language.md), and `_platform/session/configure` changes it.
 Only **Set as default** on a running session, or the default harness, provider and model picker on the agent's Providers page, saves the pair as the agent's remembered pair, which preselects the next session and is what schedules and channel turns run on; starting a session saves nothing.
 With none saved, the remembered pair is the agent's own harness on the first granted provider it accepts: the default harness its runtime reports, or, before the agent's first `hello`, the Agent's own harness, and the catalog's default only when the Agent names none.
+On a routed runtime (`modelRouter` on hello) the saved model is a qualified name and its provider follows from it; a bare name, a provider the agent does not hold, or a model missing from the harness's last reported list is refused.
+A run nobody picks for stays on the harness asked for, on the saved pair's provider for that harness, else the first granted provider the harness accepts in alias order (its home provider first); its model is the saved one when it belongs to that provider, else that provider's first listed model; no fitting provider fails the run rather than moving it to another harness.
 Each binding says how the harness takes the value.
 A session-scoped one (`mode`, `configOption`) is sent as ACP `session/set_mode` or `session/set_config_option` to that session only, never by recycling a harness other sessions share.
 The runtime sends it again whenever the session is loaded or resumed into a harness process.
@@ -51,6 +53,11 @@ An unreadable setting is unavailable, not an unset default.
 Pi receives its selected provider and model as command-line options, because its extension loads after startup settings have been read; updating the saved defaults alone would leave the first turn on an earlier provider.
 A runtime with a harness that has a harness config but no `sessionSettings` predates per-session routing: its harnesses ignore a lease's model, and Pi then falls back to its built-in Anthropic default.
 For such an agent the chat shows an update notice instead of the picker, and new sessions, schedule fires and channel turns name no Session Pair, so they run on the agent's defaults.
+
+The ETE LiteLLM proxy cannot carry Claude Code's auto-mode permission classifier reliably: its failed classifier requests deny tool calls that are safe.
+So when an agent holds that provider, every Claude Code start changes an agent mode of `auto`, or no mode, to `bypassPermissions`.
+Other modes stay, and so does a mode that one session picks for itself.
+The pod's isolation is the boundary then, also for what channel members ask a bound agent to do.
 
 ## Provider compatibility
 
@@ -89,54 +96,56 @@ When the provider refuses a name it does not list, and its refusal names that mo
 An existing session's label marks a model its provider no longer lists, so a turn that runs on another model than the pick never does so unseen.
 Which choices a harness offers is its catalog's to say: Codex's offers no mode, because its image runs it never asking for approval, so there is no permission mode to pick and nothing for a [channel turn](channel-turns.md) to refuse.
 
-## Model discovery and the seeded model
+## The model catalog
 
-A discovery source is also what lets a **seeded model** exist, and it is the one write to that file no user action is behind.
-A harness pointed at somebody else's provider cannot rely on its own built-in default: the model it would name need not exist upstream, and a listing that does not know it refuses the turn outright rather than substituting anything — so an agent nobody has configured yet fails its very first prompt.
-The seed closes that: with nothing set and nothing pinned on the provider, agent-runtime writes the first of the discovered names — the list is ordered, so the pick is stable rather than whatever the provider happened to return first — before the default lease's harness spawns: at boot, and again before the spawn that follows an env change, since a provider switch reaches the pod as one.
-The boot gate holds early callers until it lands under a ceiling of its own, five seconds, well short of the env's, because the caller held is usually a person opening a chat; a listing that cannot be reached is asked again for a while first, because the gateway fronting a newly granted provider is still rolling when its env lands.
-Only a spawn with no model to stand on waits for it.
-When the file names a model, or the provider pins one, and the provider has not changed since that model was last checked, the harness starts on it at once and the listing runs after the spawn, so a wake and a past session's history never wait for a listing through a gateway pod that has only just started.
-That check corrects the file the same way the seed would, and the write recycles the harness like any other config write: at once when idle, after the work drains otherwise; a turn sent in between runs on the old model and gets the provider's own refusal.
-A boot counts as checked against the provider the agent had before it slept; a provider switch while running is not, so the spawn that follows it waits for the new provider's listing.
-It never speaks over a value somebody chose that the provider lists: a hand-edit the listing knows stays, and a session that picks its model never needs the seed, and with nothing in the file a provider pin the listing knows is the default.
-A model the listing does not know — in the file, or pinned by a connection whose catalogue has moved on — is not left to fail every turn: a file model is cleared when the provider lists the pin, and otherwise the first listed name takes its place, which is how a model chosen on one provider does not outlive a switch to another and a retired pin does not stop an agent.
-Between a pin and the file, the file wins: a connection's model pin is only a default, checked against the live listing each time it would apply, and a model in the file that the provider offers outranks it, so a choice is never silently overridden by the connection it rides on.
-Whether a source justifies it follows from *which* variable supplied the URL, which is why the manifest marks the redirecting ones apart from those that merely carry the harness's own endpoint: on its own provider the harness's default is the better answer and stays untouched.
-An unavailable listing seeds nothing, so a harness whose provider cannot be reached keeps the behavior it had — the seed can pick a model, not invent one.
-Only harnesses whose manifest declares the `harness-config` driver honor the event and advertise the capability that gates the UI section; a spawn that names choices for a child without it, or names a setting the child's catalog does not offer, fails rather than letting the child run on its default.
+agent-runtime keeps one **Model Catalog** per pod: every granted provider Connection's models, listed from that Connection's env layer (the api-server tags each provider layer with its Connection and template), under the **qualified name** `<alias>/<upstream id>`, the alias fixed per preset ([connections](connections.md)).
+Each preset lists the way its key allows: `/v1/models` for the LiteLLM proxies (IBM's virtual keys get 403 on every model-info route), Anthropic's and OpenAI's model lists, Bob's gateway model-info.
+Metadata is layered per model, first answer wins: the listing itself (Bob's model-info carries limits and prices), then the vendored LiteLLM price table (`model_prices_and_context_window.json`, re-vendored by `//packages/agent-runtime:update:model-prices`), then the preset's per-endpoint constants in the layer (`OPENAI_PROXY_CONTEXT_WINDOW` and kin); each value records its layer, and cache marks and the thinking format are family rules by id.
+An Anthropic subscription (OAuth token) Connection is listed from Anthropic's model list like the key Connection and offered to Claude Code alone, since Anthropic accepts the token only from Claude Code; the router refuses it to any other harness by name.
+Bedrock is the one **native Connection**: its SigV4 signing is no header swap, so the router never lists or routes it, and every harness but Claude Code sees it as unsupported.
+Claude Code's view lists it under its alias with Claude Code's own tier names (`bedrock/sonnet`); a session on one runs in a Claude Code process of its own, started with the Connection's env instead of the router's, and switching between it and a routed model moves the session between processes once the running turn ends.
 
-Bedrock is the third dialect, after the OpenAI model list and LiteLLM's model info.
+Each harness's manifest declares in its `modelRouter` section the dialects it speaks (Claude Code: Messages; Codex: Responses; Bob: chat; Pi: all three) and its name spelling (Claude Code's gateway discovery keeps only ids containing `claude`, lowercased, so it sees `claude/<alias>/<id>`); a harness's view of the catalog is the entries whose provider serves one of its dialects.
+The catalog is built when the env rail materialises, rebuilt on every env change and on a timer; a failed listing keeps that Connection's last good list, marked unavailable, and never empties another's.
+A routed harness answers its model list from the catalog; `harnessConfig.catalog` on the runtime's tRPC returns the same view grouped by provider with the metadata.
+
+## The Model Router
+
+agent-runtime runs one **Model Router** per pod, a loopback HTTP listener (`127.0.0.1:24180`, `PLATFORM_MODEL_ROUTER_PORT`) every harness process points its one base URL at, with `X-Platform-Harness` naming the caller.
+It passes through and never translates: the path classifies the dialect (`/v1/messages` and `count_tokens`: Messages; `/v1/chat/completions`: chat; `/v1/responses`: Responses; doubled slashes, pi-ai's `/v1/v1/` and Bob's `/inference` prefix folded first), the `model` resolves to a catalog entry, and the call leaves for that entry's Connection only when it serves the dialect, else it is refused with the reason.
+A qualified name resolves outright, case-insensitively on the upstream id; a bare name is looked for on the session's provider, then the harness's default provider, then the single provider listing it, and refused naming the candidates when several do.
+The session is read from what each harness stamps: Bob's `X-Task-Id` (the root task id is the ACP session id; `X-Parent-Task-Id` marks a subagent's calls), Codex's `session-id` header (its thread id, the ACP session id; a subagent's own `thread-id` beside it), Claude Code's request metadata `user_id` ending in `_session_<uuid>`.
+
+The router **owns upstream auth**: the client's credential headers are dropped and the target Connection's placeholder is set in the header it claims at the [credential gateway](credential-gateway.md) (`Authorization: Bearer` for the LiteLLM proxies, OpenAI and the Anthropic subscription, `x-api-key` for the Anthropic key, `Authorization: Apikey` for Bob's gateway); the router never holds a secret.
+It adds Anthropic's OAuth beta flag to a call bound for the subscription Connection, removes it from every other call, and passes the other `anthropic-beta` flags as sent, so one Claude Code process mixes the subscription with any routed provider.
+The body goes out with `model` rewritten to the upstream id; the response comes back with only its model field rewritten to the name the harness asked for, so transcripts record the provider.
+No retries: a second model call is a second bill.
+Each call is reported once with its Connection, upstream model, dialect, harness and session, the source of [spend](metrics.md).
+
+**Replay rules** apply by target, since the router cannot know which model wrote a history: for a Claude model, every assistant message but the last has its thinking blocks turned into `<thinking>…</thinking>` text; for a Responses target other than OpenAI, reasoning items and `client_metadata` are dropped and a tool-less request's tool items become text; for OpenAI only reasoning items with a non-empty `content` array are dropped; chat completions replay unchanged.
+The router also fits the output budget to the catalog's limit, drops a reasoning effort sent to a model that does not reason, and adds `include_usage` to a streamed chat completion so its final chunk carries the usage.
+
+Beyond the model routes the router serves each harness's **catalog endpoint** from its view: `/v1/models` in the OpenAI list shape (`display_name` and `description` for Claude Code's picker, a `metadata` extension Pi registers its provider from), `/codex/models` in Codex's `ModelInfo` shape (a missing field makes Codex drop the catalog silently), `/inference/v1/model/info` in LiteLLM's shape for Bob, `HEAD /api/hello` for Claude Code's probe; Bob's `/admin/v1/*` calls get a JSON 404.
+A catalog request waits up to ten seconds for the pod's first listing and answers 503 while a provider has not listed, which a harness retries rather than caches.
+A harness whose manifest says `modelFromSession` (Bob, one settings-file model per process) gets the session's model on every call; a tier alias its subagents ask for (`premium-ide`, `explorer`), and on Codex (`bareNamesFromSession`) any bare name, is mapped the same way.
+A session's **subagent model** is one setting delivered three ways: Claude Code reads `CLAUDE_CODE_SUBAGENT_MODEL` at process start, forced (`CLAUDE_CODE_SUBAGENT_MODEL_FORCE`) over the Agent tool's model argument and an agent definition's model, so the session runs in a process of its own; Bob's and Codex's subagent calls carry a parent marker (`X-Parent-Task-Id`, a child `thread-id`) and the router sends them to the session's choice, nothing written to the harness (manifest binding `router: true`); a platform sub-agent spawned from the session runs on it, whatever model the spawn names.
+Pi's calls carry no session marker and its image has no subagents, so Pi has no such setting.
+
+## Model discovery and the agent's default model
+
+A harness without a `modelRouter` section (a custom template's own harness) lists its models from the `modelDiscovery` source its manifest declares: the first source whose variable is set answers, through the OpenAI model list, LiteLLM's model info or Bedrock's inference-profile listing, under the manifest's prefix and case.
+Routed harnesses answer from the [model catalog](#the-model-catalog) instead.
+Nothing is seeded into a harness's config file; a run with no choice gets the agent's default ([session settings](#session-settings)).
+A model the provider does not list fails the turn with the router's reason rather than being replaced.
+
+Bedrock stays native: Claude Code runs on it outside the router, and a routed Pi does not reach it.
 The [AWS Bedrock](connections.md#app-preset-aws-bedrock) Connection names the region's control-plane endpoint, and Pi's manifest declares it as a source ahead of its OpenAI one, speaking Bedrock's inference-profile listing — the profiles that can be invoked from that region, each carrying a region prefix a bare model ID lacks, which is why a typed ID is the wrong unit to offer.
 Models Bedrock also serves on demand under their bare ID are not in that listing, so they are not offered either; the Anthropic models a coding harness runs on are reachable only through a profile.
-A manifest lists its sources in priority order and the first whose variable is set answers, so one harness fronts several providers' dialects without a static catalog.
-The seed and the provider pin behave exactly as for an OpenAI-shaped provider.
 What no listing can say is whether the account has been granted a model: that is learned at the first call, as an error the turn reports.
-Claude Code's catalog is model tiers, which Claude Code itself resolves to the region's Bedrock profiles ([connections](connections.md#app-preset-aws-bedrock)), so its source asks only the LiteLLM-shaped endpoint a connection points it at, and extends the tiers rather than replacing them.
-There its in-pod model gateway defaults every tier to the newest model the provider has for it, which on a provider that serves no Claude model is one model for all of them unless the Connection pins the slots; the provider's other models are reachable only by name, so the panel lists them after the tiers, under the lowercased, `claude/`-prefixed names the gateway publishes to Claude Code itself, so a choice made in the panel and one made in Claude Code's own model picker are the same value.
-Nothing is seeded: the tiers already resolve on any provider.
-Claude Code reads its tier models only at start, from the gateway, so the gateway keeps the last list each provider gave it on the agent's home volume and answers from that list at once on the next start, refreshing it from the provider afterwards.
-A name it gave Claude Code for a tier that the provider has since retired goes to that tier's current model, so a kept list that is out of date costs nothing.
-With no kept list, on the agent's first start or a new provider, the gateway does not wait for the listing: it listens at once and gives Claude Code its own tier names, `claude/opus` and the like, which each request maps to that tier's model once the listing is in, the request waiting for it.
-Claude Code knows those names no better than a provider's own, so it sizes the request as for any model it does not know; the next start gets the listed names.
-When the listing failed, the request goes upstream on the bare tier name, and a provider refuses it.
-On that refusal the gateway lists once more and, when the list is in, resends the turn on the tier's model: a provider attached moments ago can fail the first listings while its egress opens, and still answer by the time it refuses.
-A provider that never lists keeps refusing the turn.
+Claude Code's catalog is model tiers, which Claude Code itself resolves to the region's Bedrock profiles ([connections](connections.md#app-preset-aws-bedrock)); on the router the runtime fills each tier slot with the agent's default provider's newest model of that tier.
 
-CurveBender pins Claude Code's Sonnet slot to its non-reasoning Nemotron model for the auto-permission classifier, and every work slot and the default conversation to GLM.
-It also turns off the server-side auto-mode check: GLM cannot answer the classifier's non-thinking request within its deadline, so the model pin and that flag are needed together.
-The Connection disables unsupported tool search and declares the deployment's supported context window.
-These are provider-scoped defaults, not a change of permission mode; a session's model and explicit agent settings still take precedence.
-Its model listing remains the upstream catalog, so Nemotron can still be selected explicitly but is not a work-model default.
-
-The ETE LiteLLM proxy cannot carry the classifier reliably: its failed classifier requests deny tool calls that are safe.
-So when an agent holds that provider, every Claude Code start changes an agent mode of `auto`, or no mode, to `bypassPermissions`.
-Other modes stay, and so does a mode that one session picks for itself.
-The pod's isolation is the boundary then, also for what channel members ask a bound agent to do.
-
-The runtime also reports the harness's **default**, what a session runs on when the config file names no model: a model the provider pins through its environment, otherwise a manifest-declared value that selects the harness's built-in default for one session.
+The runtime also reports the harness's **default**, what a session runs on when the config file names no model: a manifest-declared value that selects the harness's built-in default for one session.
 Only a harness that can switch a session's model reports one.
-A [schedule](schedules.md#session-model) with no model runs on it on a runtime with one harness process; where each session picks its harness, it runs on the pair a person last picked.
 
 ## Snapshots
 

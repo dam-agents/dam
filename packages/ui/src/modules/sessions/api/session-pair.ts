@@ -22,6 +22,7 @@ import {
 import { useAppConnections } from "../../connections/api/queries.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
+import { catalogSettled } from "../lib/catalog-groups.js";
 import {
   fittingProviders,
   grantedProviderRefs,
@@ -46,6 +47,10 @@ export function useRememberedPair(agentId: string | null) {
   });
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Old runtime path: remove when agents.runtimeFleet.outdated is empty on prod.
+ * The models one provider lists for a harness, asked per provider.
+ */
 export function useProviderModels(
   agentId: string | null,
   harness: string | null,
@@ -74,6 +79,42 @@ export function useProviderModels(
     retryDelay: 2_000,
   });
   return { ...query, operable, answerable };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: keyed by the agent's granted providers, so a
+ * grant or revoke asks again at once, and polled until the catalog has caught
+ * up with them, since a grant reaches the pod a few seconds after it is
+ * saved. A provider still unavailable after a minute, or a failing read,
+ * stops the poll.
+ */
+const CATALOG_POLL_MS = 5_000;
+const CATALOG_POLL_LIMIT = 12;
+export function useHarnessCatalogModels(
+  agentId: string | null,
+  harness: string | null,
+) {
+  const operable = useIsAgentOperable(agentId);
+  const grantedIds = useProviderConnections(agentId)
+    .granted.map((p) => p.id)
+    .sort();
+  const query = useQuery({
+    queryKey: ["harness-catalog-models", agentId, harness, grantedIds],
+    queryFn:
+      agentId && harness && operable
+        ? () => agentTrpc(agentId).harnessConfig.catalog.query({ harness })
+        : skipToken,
+    staleTime: 60_000,
+    refetchInterval: (q) =>
+      q.state.status === "error" ||
+      q.state.dataUpdateCount >= CATALOG_POLL_LIMIT ||
+      catalogSettled(q.state.data, grantedIds)
+        ? false
+        : CATALOG_POLL_MS,
+    retry: 5,
+    retryDelay: 2_000,
+  });
+  return { ...query, operable };
 }
 
 export function useHarnessConfigured(agentId: string, harness: string) {

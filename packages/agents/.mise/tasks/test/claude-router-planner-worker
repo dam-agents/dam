@@ -1,0 +1,79 @@
+#!/usr/bin/env node
+//MISE description="Test (with a real claude-agent-acp, when CLAUDE_AGENT_ACP names it) that one Claude process runs its conversation on one provider and its subagents on another through the router"
+//MISE sources=["test-lib/acp-client.mjs", ".mise/tasks/test/claude-router-planner-worker"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { acpClient, allowPermission, conversationCalls, mockRouter, modelOption } from "../../../test-lib/acp-client.mjs";
+
+const adapter = process.env.CLAUDE_AGENT_ACP;
+if (!adapter) {
+  console.log("skipped: set CLAUDE_AGENT_ACP=<path to claude-agent-acp dist/index.js> to run against the real adapter");
+  process.exit(0);
+}
+const home = mkdtempSync(join(tmpdir(), "claude-router-planner-worker-"));
+const work = join(home, "work");
+mkdirSync(work);
+
+const SONNET = "claude/ibm/aws/claude-sonnet-4-6";
+const GLM = "claude/cb/rits/zai-org/glm-5-3";
+const catalog = [
+  { alias: "ibm", id: "aws/claude-sonnet-4-6" },
+  { alias: "cb", id: "rits/zai-org/glm-5-3" },
+];
+const router = await mockRouter({
+  catalog,
+  answer: ({ body }) => {
+    const messages = body?.messages ?? [];
+    const last = messages.at(-1);
+    const hasToolResult = Array.isArray(last?.content) && last.content.some((b) => b?.type === "tool_result");
+    const askedToDelegate = messages.some((m) => typeof m?.content === "string" ? m.content.includes("DELEGATE") : Array.isArray(m?.content) && m.content.some((b) => b?.type === "text" && b.text?.includes("DELEGATE")));
+    const hasAgentTool = (body?.tools ?? []).some((t) => t?.name === "Agent" || t?.name === "Task");
+    if (askedToDelegate && hasAgentTool && !hasToolResult) {
+      const tool = (body.tools ?? []).find((t) => t?.name === "Agent" || t?.name === "Task");
+      return { tool: { name: tool.name, input: { description: "multiply", prompt: "Compute 17 times 23 and reply with only the number.", subagent_type: "general-purpose" } } };
+    }
+    return { text: hasToolResult ? "The subagent said 391." : "391" };
+  },
+});
+const env = {
+  PATH: process.env.PATH, HOME: home,
+  ANTHROPIC_BASE_URL: router.base, ANTHROPIC_AUTH_TOKEN: "sk-platform:conn:test",
+  ANTHROPIC_CUSTOM_HEADERS: "X-Platform-Harness: claude-code",
+  CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: "1", CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+  DISABLE_TELEMETRY: "1", DISABLE_ERROR_REPORTING: "1", DISABLE_AUTOUPDATER: "1", CLAUDE_CODE_HARBOR_KITE: "0",
+  NO_PROXY: "127.0.0.1,localhost,::1",
+  ANTHROPIC_DEFAULT_OPUS_MODEL: SONNET, ANTHROPIC_DEFAULT_SONNET_MODEL: SONNET, ANTHROPIC_DEFAULT_HAIKU_MODEL: SONNET,
+  CLAUDE_CODE_SUBAGENT_MODEL: GLM,
+};
+try {
+  const c = acpClient("node", [adapter], { env, cwd: work, name: "claude", onRequest: allowPermission });
+  await c.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } }, clientInfo: { name: "dam-test", version: "0" } });
+  await c.request("session/new", { cwd: work, mcpServers: [] }, 180_000);
+  const s = await c.request("session/new", { cwd: work, mcpServers: [] }, 180_000);
+  const set = await c.request("session/set_config_option", { sessionId: s.sessionId, configId: "model", value: SONNET });
+  assert.ok([SONNET, "opus", "sonnet", "fable", "haiku"].includes(modelOption(set.configOptions)?.currentValue), modelOption(set.configOptions)?.currentValue);
+
+  // TEST_SCENARIO: A plain turn runs on the conversation model only.
+  let before = router.seen.length;
+  const plain = "Reply with the single word: ok";
+  let r = await c.request("session/prompt", { sessionId: s.sessionId, prompt: [{ type: "text", text: plain }] }, 300_000);
+  assert.equal(r.stopReason, "end_turn");
+  assert.deepEqual([...new Set(conversationCalls(router.seen.slice(before), plain).map((x) => x.body?.model))], [SONNET]);
+
+  // TEST_SCENARIO: A turn that spawns a subagent produces calls on both providers in one process: the conversation on IBM's Sonnet, the subagent on Curve Bender's GLM, each routed by its own name.
+  before = router.seen.length;
+  r = await c.request("session/prompt", { sessionId: s.sessionId, prompt: [{ type: "text", text: "DELEGATE: use the Agent tool to launch one subagent whose only job is to compute 17 times 23. Do not compute it yourself. Report its answer." }] }, 300_000);
+  assert.equal(r.stopReason, "end_turn");
+  const models = new Set(router.seen.slice(before).filter((x) => !x.bare).map((x) => x.body?.model));
+  assert.ok(models.has(SONNET), `no conversation call on ${SONNET}: ${[...models].join(", ")}`);
+  assert.ok(models.has(GLM), `no subagent call on ${GLM}: ${[...models].join(", ")}`);
+  await c.close();
+  console.log("one Claude process ran its conversation on IBM and its subagent on Curve Bender");
+} finally {
+  router.close();
+  await new Promise((r) => setTimeout(r, 500));
+  rmSync(home, { recursive: true, force: true });
+}

@@ -23,6 +23,7 @@ import {
   type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
   type AgentBackgroundWork,
+  type RuntimeFleetAgent,
   type TemplateUpdate,
   type UpgradeAgentError,
   ChannelType,
@@ -543,6 +544,7 @@ export function createAgentsService(deps: {
   agentIdleTimeoutMinutes: IdleTimeoutMinutes;
   owner: string | undefined;
   readTemplateSpec: ReadTemplateSpec;
+  lastHelloAt?: (agentId: string) => Promise<Date | null>;
   presetSeeder?: PresetSeeder;
   cleanupHooks: readonly AgentCleanupHook[];
   registrySecretPort: AgentRegistrySecretPort;
@@ -984,6 +986,48 @@ export function createAgentsService(deps: {
           checklistMap.get(infra.id),
         );
       });
+    },
+
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: read from the Agent resources' image pins,
+     * since a hibernated agent has said no hello since it slept. The count
+     * the old runtime path waits on.
+     */
+    async runtimeFleet() {
+      const infraAgents = await deps.repo.list(deps.owner);
+      const templateIds = [
+        ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
+      ];
+      const templateImages = new Map<string, string>();
+      await Promise.all(
+        templateIds.map(async (tid) => {
+          const tmpl = await deps.readTemplateSpec(tid);
+          if (tmpl) templateImages.set(tid, tmpl.spec.image);
+        }),
+      );
+      const outdated: RuntimeFleetAgent[] = [];
+      let onCurrent = 0;
+      for (const infra of infraAgents) {
+        const templateImage = infra.templateId
+          ? templateImages.get(infra.templateId)
+          : undefined;
+        const update = templateImage
+          ? templateImageUpdate(infra.spec.image, templateImage)
+          : undefined;
+        if (!update) {
+          onCurrent += 1;
+          continue;
+        }
+        const hello = await deps.lastHelloAt?.(infra.id);
+        outdated.push({
+          agentId: infra.id,
+          name: infra.name,
+          image: update.fromImage,
+          templateImage: update.toImage,
+          lastHello: hello ? hello.toISOString() : null,
+        });
+      }
+      return { onCurrent, outdated };
     },
 
     async get(id) {

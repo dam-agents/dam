@@ -1,4 +1,4 @@
-import type { ProviderPresetType } from "api-server-api";
+import { orderByAlias, type ProviderPresetType } from "api-server-api";
 
 export interface DriverProvider {
   id: string;
@@ -15,9 +15,9 @@ export function inheritProvider(
   targetRunsOn: readonly ProviderPresetType[] | undefined,
 ): InheritedProvider {
   if (driverProviders.length === 0) return { kind: "none" };
-  if (!targetRunsOn || targetRunsOn.length === 0)
-    return { kind: "inherited", id: driverProviders[0]!.id };
-  const match = driverProviders.find((p) => targetRunsOn.includes(p.type));
+  const accepts = (p: DriverProvider): boolean =>
+    !targetRunsOn || targetRunsOn.length === 0 || targetRunsOn.includes(p.type);
+  const match = orderByAlias(driverProviders).find(accepts);
   if (match) return { kind: "inherited", id: match.id };
   return {
     kind: "incompatible",

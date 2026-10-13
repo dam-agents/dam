@@ -1,0 +1,125 @@
+#!/usr/bin/env node
+//MISE description="Test (with a real Bob, when BOB_CLI names it) that Bob's calls carry the session as X-Task-Id, run on the model the runtime set for the session, and its subagents on the session's subagent model"
+//MISE sources=["bob/rootfs/app/bob-settings.mjs", "test-lib/acp-client.mjs", ".mise/tasks/test/bob-router-rewrite"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { acpClient, allowPermission, chatStream } from "../../../test-lib/acp-client.mjs";
+
+const bob = process.env.BOB_CLI;
+if (!bob) {
+  console.log("skipped: set BOB_CLI=<path to Bob's dist/bob.js> to run against the real Bob");
+  process.exit(0);
+}
+const home = mkdtempSync(join(tmpdir(), "bob-router-rewrite-"));
+const work = join(home, "work");
+mkdirSync(work);
+
+const SONNET = "ibm/aws/claude-sonnet-4-6";
+const GLM = "cb/rits/zai-org/glm-5-3";
+const TIERS = new Set(["premium-ide", "explorer", "fast", "premium", "ultra"]);
+const catalog = [
+  { name: SONNET, alias: "ibm", upstream: "aws/claude-sonnet-4-6", prices: [3e-6, 15e-6] },
+  { name: GLM, alias: "cb", upstream: "rits/zai-org/glm-5-3", prices: [0, 0] },
+];
+const sessionChoice = new Map();
+const seen = [];
+const router = createServer(async (req, res) => {
+  const url = new URL(req.url, "http://127.0.0.1");
+  const path = url.pathname.replace(/^\/inference/, "");
+  if (req.method === "GET" && path === "/v1/model/info") {
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ data: catalog.map((m) => ({ model_name: m.name, litellm_params: { model: m.name }, model_info: { id: m.name, mode: "chat", exposed: true, max_input_tokens: 200000, max_tokens: 8192, input_cost_per_token: m.prices[0], output_cost_per_token: m.prices[1], supports_prompt_caching: true } })) }));
+  }
+  if (path.startsWith("/admin/")) {
+    res.writeHead(404, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ error: "not served by the model router" }));
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  const body = JSON.parse(Buffer.concat(chunks).toString());
+  if (path !== "/v1/chat/completions") {
+    res.writeHead(404, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ error: { message: `no route ${path}` } }));
+  }
+  const task = req.headers["x-task-id"];
+  const parent = req.headers["x-parent-task-id"];
+  const choice = sessionChoice.get(parent ?? task);
+  const requested = body.model;
+  const model = choice ? (parent && choice.subagentModel) || choice.model : requested;
+  const entry = catalog.find((m) => m.name === model) ?? (TIERS.has(model) ? null : catalog.find((m) => m.upstream === model));
+  seen.push({ task, parent, mode: req.headers["x-mode"], requested, model, alias: entry?.alias ?? null, stream_options: body.stream_options, authorization: req.headers.authorization });
+  if (!entry) {
+    res.writeHead(404, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ error: { message: `model-router: no granted provider lists model '${model}'`, type: "invalid_request_error" } }));
+  }
+  const messages = body.messages ?? [];
+  const text = (m) => (typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? ""));
+  const delegate = messages.some((m) => m?.role === "user" && text(m).includes("DELEGATE"));
+  const answered = messages.some((m) => m?.role === "tool");
+  const tool = (body.tools ?? []).find((t) => t?.function?.name === "spawn_subagent");
+  const reply = delegate && tool && !answered && !parent
+    ? chatStream(model, { tool: { name: "spawn_subagent", arguments: { description: "Compute 17 times 23 and reply with only the number." } } })
+    : chatStream(model, { text: answered ? "The subagent said 391." : parent ? "391" : "ok" });
+  res.writeHead(200, { "content-type": reply.contentType });
+  res.end(reply.body);
+});
+router.listen(0, "127.0.0.1");
+await once(router, "listening");
+const base = `http://127.0.0.1:${router.address().port}`;
+
+mkdirSync(join(home, ".bob/settings"), { recursive: true });
+writeFileSync(
+  join(home, ".bob/settings/settings.json"),
+  JSON.stringify({ session: { model: SONNET, defaultMode: "agent" }, approval: { outsideWorkspaceAllowed: true }, bobShell: { autoUpdate: false }, telemetry: { enabled: false, excludePayload: true } }, null, 2),
+);
+const env = { PATH: process.env.PATH, HOME: home, BOB_GATEWAY_URL: base, BOB_API_KEY: "platform:conn:router", BOBSHELL_API_KEY: "platform:conn:router", BOB_LOG_LEVEL: "warn", NO_PROXY: "127.0.0.1,localhost" };
+const turn = async (c, sessionId, text) => {
+  const before = seen.length;
+  const r = await c.request("session/prompt", { sessionId, prompt: [{ type: "text", text }] }, 240_000);
+  return { stop: r.stopReason, calls: seen.slice(before) };
+};
+
+try {
+  const c = acpClient("node", [bob, "acp", "--trust", "--accept-license", "--auto-approve", "--disable-mcp"], { env, cwd: work, name: "bob", onRequest: allowPermission });
+  await c.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } }, clientInfo: { name: "dam-test", version: "0" } }, 120_000);
+  const s = await c.request("session/new", { cwd: work, mcpServers: [] }, 120_000);
+
+  // TEST_SCENARIO: Before the runtime set anything for the session, Bob runs on its settings-file model, and its root task's X-Task-Id is the ACP session id.
+  const t1 = await turn(c, s.sessionId, "Reply with the single word: ok");
+  assert.equal(t1.stop, "end_turn");
+  const main1 = t1.calls.filter((x) => x.task === s.sessionId && !x.parent);
+  assert.ok(main1.length > 0, `no call carried the session as X-Task-Id: ${JSON.stringify(t1.calls)}`);
+  assert.deepEqual([...new Set(main1.map((x) => x.alias))], ["ibm"]);
+
+  // TEST_SCENARIO: The runtime sets the session's model to Curve Bender's GLM; Bob still asks for its settings-file model, the router sends the turn to Curve Bender, and Bob accepts the reply naming the other model.
+  sessionChoice.set(s.sessionId, { model: GLM, subagentModel: SONNET });
+  const t2 = await turn(c, s.sessionId, "Reply with the single word: ok");
+  assert.equal(t2.stop, "end_turn");
+  const main2 = t2.calls.filter((x) => x.task === s.sessionId && !x.parent);
+  assert.ok(main2.length > 0, JSON.stringify(t2.calls));
+  assert.deepEqual([...new Set(main2.map((x) => x.alias))], ["cb"]);
+  assert.deepEqual([...new Set(main2.map((x) => x.requested))], [SONNET]);
+
+  // TEST_SCENARIO: A turn that spawns a Bob subagent: the subagent's calls carry X-Parent-Task-Id naming the session and ask for a tier alias of Bob's own gateway, which the router maps to the session's subagent model; the conversation stays on the session's model and the turn ends.
+  const t3 = await turn(c, s.sessionId, "DELEGATE: spawn one subagent whose only job is to compute 17 times 23 and report the number. Do not compute it yourself.");
+  assert.equal(t3.stop, "end_turn");
+  const sub = t3.calls.filter((x) => x.parent === s.sessionId);
+  assert.ok(sub.length > 0, `no subagent call: ${JSON.stringify(t3.calls)}`);
+  assert.ok(sub.every((x) => TIERS.has(x.requested)), `subagent asked for ${sub.map((x) => x.requested).join(", ")}`);
+  assert.deepEqual([...new Set(sub.map((x) => x.alias))], ["ibm"]);
+  assert.deepEqual([...new Set(t3.calls.filter((x) => x.task === s.sessionId && !x.parent).map((x) => x.alias))], ["cb"]);
+  assert.ok(t2.calls.every((x) => x.stream_options?.include_usage === true), "Bob did not ask for the usage chunk");
+  await c.close();
+  console.log("bob runs each session on the model the runtime set and its subagents on the session's subagent model");
+} finally {
+  router.close();
+  await new Promise((r) => setTimeout(r, 1500));
+  try {
+    rmSync(home, { recursive: true, force: true });
+  } catch {}
+}

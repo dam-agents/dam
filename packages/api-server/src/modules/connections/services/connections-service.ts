@@ -20,6 +20,8 @@ import {
   preferenceGroupOf,
   signingTargetOf,
   unaddressableRivalHost,
+  orderByAlias,
+  providerAliasConflict,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
@@ -107,6 +109,13 @@ function assertNoUnaddressableRival(
   desired: readonly Connection[],
 ): void {
   for (const connection of added) {
+    const conflict = providerAliasConflict(desired, connection);
+    if (conflict) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `this agent already has a ${conflict.displayName} provider ('${conflict.held.name}'); an agent holds one '${conflict.alias}' provider, so remove it before granting '${connection.name}'`,
+      });
+    }
     for (const other of desired) {
       const host = unaddressableRivalHost(connection, other);
       if (host === undefined) continue;
@@ -827,18 +836,15 @@ export function createConnectionsService(deps: {
     async defaultProviderConnection(fits) {
       const usable = (
         await deps.repo.listByOwnerOldestFirst(deps.ownerId)
-      ).filter((c) => {
+      ).flatMap((c) => {
         const type = providerTypeForTemplateId(c.templateId);
-        return (
-          type !== null &&
+        return type !== null &&
           fits(type, c.templateId) &&
           PROVIDER_IS_ACTIVE[deriveStatus(c)]
-        );
+          ? [{ id: c.id, type }]
+          : [];
       });
-      return (
-        (usable.find((c) => c.templateId === "ibm-litellm") ?? usable[0])?.id ??
-        null
-      );
+      return orderByAlias(usable)[0]?.id ?? null;
     },
 
     async getProviderBalance(id: string): Promise<ProviderBalance | null> {

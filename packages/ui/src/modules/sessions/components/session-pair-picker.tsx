@@ -26,21 +26,27 @@ import {
   rememberSessionPair,
   useGrantProvider,
   useHarnessCatalog,
+  useHarnessCatalogModels,
   useHarnessConfigured,
   useProviderConnections,
   useProviderModels,
   useRememberedPair,
 } from "../api/session-pair.js";
 import {
+  addableProviders,
+  modelGroups,
+  modelIndicatorLabel,
+} from "../lib/catalog-groups.js";
+import {
   fittingProviders,
   harnessDisplayName,
   harnessOptions,
   nextPair,
-  pairLabel,
   type ProviderConnectionRef,
   providerOptions,
 } from "../lib/session-pair-options.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
+import { SessionModelList } from "./session-model-list.js";
 import {
   SessionSettingsControls,
   settingDefaults,
@@ -50,6 +56,7 @@ interface Props {
   agentId: string;
   carried: readonly HarnessCapability[];
   defaultHarness: string;
+  routed?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onConnectProviders: () => void;
@@ -59,6 +66,7 @@ export function SessionPairPicker({
   agentId,
   carried,
   defaultHarness,
+  routed = false,
   open,
   onOpenChange,
   onConnectProviders,
@@ -73,6 +81,7 @@ export function SessionPairPicker({
   const { grant, revoke, pending } = useGrantProvider(agentId);
 
   const views = catalog?.harnesses ?? [];
+  const harnessName = (name: string) => harnessDisplayName(name, views);
   const names = carried.map((h) => h.name);
   const harnesses = harnessOptions(names, views);
   const pair = nextPair(
@@ -114,19 +123,47 @@ export function SessionPairPicker({
   const choose = (next: SessionPair) => setPair(agentId, next);
   const withSettings = (next: SessionPair): SessionPair =>
     Object.keys(settings).length > 0 ? { ...next, settings } : next;
-  const label =
-    catalog &&
-    (pair
-      ? pairLabel(pair, catalog.harnesses, providers.granted)
-      : "Choose a harness and model");
+  const catalogModels = useHarnessCatalogModels(
+    routed ? agentId : null,
+    harness,
+  );
+  const groups = routed ? modelGroups(catalogModels.data) : [];
+  const addable = routed
+    ? addableProviders(providers.granted, providers.owned, (c) =>
+        offered.addable.some((p) => p.id === c.id),
+      )
+    : [];
+  const confirmDisconnect = (name: string, id: string) =>
+    void showConfirm(
+      <p>
+        Sessions running on <strong>{name}</strong> stop until it is attached
+        again. Schedules and channels that use it move to another provider.
+      </p>,
+      `Disconnect ${name} from this agent?`,
+      { kind: "destructive", confirmLabel: "Disconnect" },
+    ).then((ok) => ok && revoke(id));
 
-  if (providers.loaded && providers.granted.length === 0)
+  if (providers.loaded && providers.owned.length === 0)
     return <ConnectProvidersPrompt onClick={onConnectProviders} />;
+
+  const provider = providers.granted.find((p) => p.id === pair?.provider);
+  const label = pair
+    ? routed
+      ? [modelIndicatorLabel(groups, pair.model), harnessName(pair.harness)]
+      : [pair.model, harnessName(pair.harness), provider?.name]
+    : [];
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <SessionPairTrigger label={label} />
+        <SessionPairTrigger
+          label={
+            catalog &&
+            (pair
+              ? label.filter(Boolean).join(" · ")
+              : "Choose a harness and model")
+          }
+        />
       </PopoverTrigger>
       <PopoverContent
         side="top"
@@ -179,66 +216,108 @@ export function SessionPairPicker({
             </ul>
           )}
           <hr className="border-border" />
-          {sections.map((p) =>
-            attached(p.id) ? (
-              <ProviderModels
-                key={p.id}
-                agentId={agentId}
-                harness={harness}
-                provider={p}
-                current={pair?.provider === p.id ? pair.model : undefined}
-                fallback={catalogModels(carried, harness)}
+          {routed ? (
+            <>
+              <SessionModelList
+                groups={groups}
+                harnessName={harnessName(harness)}
+                current={pair?.model ?? null}
+                loading={catalogModels.isLoading}
+                failed={catalogModels.isError}
+                operable={catalogModels.operable}
+                onRetry={() => void catalogModels.refetch()}
+                onChoose={(model, group) =>
+                  choose(
+                    withSettings({
+                      harness,
+                      provider: group.connectionId,
+                      model,
+                    }),
+                  )
+                }
+                onDisconnect={(group) =>
+                  confirmDisconnect(group.displayName, group.connectionId)
+                }
                 disconnecting={pending}
-                onDisconnect={() =>
-                  void showConfirm(
-                    <p>
-                      Sessions running on <strong>{p.name}</strong> stop until
-                      it is attached again. Schedules and channels that use it
-                      move to another provider.
-                    </p>,
-                    `Disconnect ${p.name} from this agent?`,
-                    { kind: "destructive", confirmLabel: "Disconnect" },
-                  ).then((ok) => ok && revoke(p.id))
-                }
-                onChoose={(model) =>
-                  choose(withSettings({ harness, provider: p.id, model }))
-                }
               />
-            ) : (
-              <section
-                key={p.id}
-                aria-label={p.name}
-                className="flex flex-col px-1"
-              >
-                <ProviderHeading name={p.name} />
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() =>
-                    void grant(p.id).then(
-                      (ok) =>
-                        ok &&
-                        choose(
-                          withSettings({
-                            harness,
-                            provider: p.id,
-                            model: null,
-                          }),
-                        ),
-                    )
-                  }
-                  className="inline-flex items-center gap-1.5 self-start py-1 text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50"
+              {addable.map(({ connection, conflict }) => (
+                <section
+                  key={connection.id}
+                  aria-label={connection.name}
+                  className="flex flex-col px-1"
                 >
-                  <Add size={16} /> Attach this provider
-                </button>
-              </section>
-            ),
-          )}
-          {sections.length === 0 && (
-            <p className="px-1 text-muted-foreground">
-              No connected model provider runs{" "}
-              {harnessDisplayName(harness, views)}. Connect one first.
-            </p>
+                  <ProviderHeading name={connection.name} />
+                  <span className="inline-flex items-center gap-1 self-start">
+                    <button
+                      type="button"
+                      disabled={pending || conflict !== null}
+                      onClick={() =>
+                        void grant(connection.id).then(
+                          (ok) =>
+                            ok &&
+                            choose(
+                              withSettings({
+                                harness,
+                                provider: connection.id,
+                                model: null,
+                              }),
+                            ),
+                        )
+                      }
+                      className="inline-flex items-center gap-1.5 py-1 text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50 disabled:hover:no-underline"
+                    >
+                      <Add size={16} /> Attach this provider
+                    </button>
+                    {conflict && (
+                      <Tooltip
+                        content={`An agent holds one ${conflict.displayName} connection at a time; this agent already uses ${conflict.held.name}.`}
+                      >
+                        <span
+                          tabIndex={0}
+                          aria-label={`Why ${connection.name} cannot be attached`}
+                          className="px-1 text-muted-foreground"
+                        >
+                          <Information size={14} />
+                        </span>
+                      </Tooltip>
+                    )}
+                  </span>
+                </section>
+              ))}
+              {groups.length === 0 &&
+                addable.length === 0 &&
+                !catalogModels.isLoading &&
+                catalogModels.operable && (
+                  <p className="px-1 text-muted-foreground">
+                    No connected model provider runs {harnessName(harness)}.
+                    Connect one first.
+                  </p>
+                )}
+            </>
+          ) : (
+            <OldRuntimeProviderSections
+              agentId={agentId}
+              harness={harness}
+              carried={carried}
+              sections={sections}
+              attached={attached}
+              pair={pair}
+              pending={pending}
+              harnessName={harnessName(harness)}
+              onDisconnect={confirmDisconnect}
+              onAttach={(id) =>
+                void grant(id).then(
+                  (ok) =>
+                    ok &&
+                    choose(
+                      withSettings({ harness, provider: id, model: null }),
+                    ),
+                )
+              }
+              onChoose={(id, model) =>
+                choose(withSettings({ harness, provider: id, model }))
+              }
+            />
           )}
         </div>
         {pair && (
@@ -248,6 +327,12 @@ export function SessionPairPicker({
               model={pair.model}
               settings={settings}
               defaults={defaults}
+              modelChoices={groups.flatMap((g) =>
+                g.models.map((m) => ({
+                  value: m.name,
+                  name: `${m.upstreamId} · ${g.displayName}`,
+                })),
+              )}
               onChange={(id, value) =>
                 choose({ ...pair, settings: { ...settings, [id]: value } })
               }
@@ -347,6 +432,78 @@ function ProviderHeading({
         </Tooltip>
       )}
     </div>
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Old runtime path: remove when
+ * agents.runtimeFleet.outdated is empty on prod. Each attached provider's
+ * models under its own heading, asked per provider.
+ */
+function OldRuntimeProviderSections({
+  agentId,
+  harness,
+  carried,
+  sections,
+  attached,
+  pair,
+  pending,
+  harnessName,
+  onDisconnect,
+  onAttach,
+  onChoose,
+}: {
+  agentId: string;
+  harness: string;
+  carried: readonly HarnessCapability[];
+  sections: readonly ProviderConnectionRef[];
+  attached: (id: string) => boolean;
+  pair: SessionPair | null;
+  pending: boolean;
+  harnessName: string | undefined;
+  onDisconnect: (name: string, id: string) => void;
+  onAttach: (id: string) => void;
+  onChoose: (id: string, model: string) => void;
+}) {
+  return (
+    <>
+      {sections.map((p) =>
+        attached(p.id) ? (
+          <ProviderModels
+            key={p.id}
+            agentId={agentId}
+            harness={harness}
+            provider={p}
+            current={pair?.provider === p.id ? pair.model : undefined}
+            fallback={catalogModels(carried, harness)}
+            disconnecting={pending}
+            onDisconnect={() => onDisconnect(p.name, p.id)}
+            onChoose={(model) => onChoose(p.id, model)}
+          />
+        ) : (
+          <section
+            key={p.id}
+            aria-label={p.name}
+            className="flex flex-col px-1"
+          >
+            <ProviderHeading name={p.name} />
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => onAttach(p.id)}
+              className="inline-flex items-center gap-1.5 self-start py-1 text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50"
+            >
+              <Add size={16} /> Attach this provider
+            </button>
+          </section>
+        ),
+      )}
+      {sections.length === 0 && (
+        <p className="px-1 text-muted-foreground">
+          No connected model provider runs {harnessName}. Connect one first.
+        </p>
+      )}
+    </>
   );
 }
 

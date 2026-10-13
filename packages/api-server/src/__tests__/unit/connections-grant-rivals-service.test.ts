@@ -8,7 +8,9 @@
  * created with its first grants. An agent that already holds such a pair can
  * still change its other grants, so the refusal never locks a user out of
  * fixing it. Among several GitHub accounts, the user marks the one the agent
- * acts as by default.
+ * acts as by default. Provider Connections are also held one per alias: a
+ * second IBM LiteLLM key is refused naming the one held, while IBM and Curve
+ * Bender (two aliases) are granted together.
  */
 import { describe, expect, it, vi } from "vitest";
 import type { Connection, Contribution } from "api-server-api";
@@ -64,12 +66,25 @@ const billingA = billingKey("billing-a");
 const billingB = billingKey("billing-b");
 const slackA = connection("slack-a", "slack");
 const slackB = connection("slack-b", "slack");
+const ibmA = connection("ibm-a", "ibm-litellm");
+const ibmB = connection("ibm-b", "ibm-litellm");
+const curveBender = connection("cb", "curve-bender");
 
 function setup(
   initialGrants: string[] = [],
   connectionLock: ConnectionsDeps["connectionLock"] = (_key, fn) => fn(),
 ) {
-  const rows = [githubOAuth, githubToken, billingA, billingB, slackA, slackB];
+  const rows = [
+    githubOAuth,
+    githubToken,
+    billingA,
+    billingB,
+    slackA,
+    slackB,
+    ibmA,
+    ibmB,
+    curveBender,
+  ];
   const byId = new Map(rows.map((c) => [c.id, c]));
   const grants = new Set(initialGrants);
   const grant = vi.fn(async (connectionId: string) => {
@@ -159,6 +174,25 @@ describe("granting Connections the gateway cannot tell apart", () => {
     expect(grants.has(slackA.id)).toBe(true);
     await service.setAgentConnections(AGENT, [billingA.id, slackA.id]);
     expect(grants.has(billingB.id)).toBe(false);
+  });
+
+  /** TEST_SCENARIO: Two provider Connections behind one alias would leave a
+   * qualified model name (`ibm/...`) pointing at either, so a second IBM key
+   * is refused naming the held one; two aliases are granted together. */
+  it("holds one provider Connection per alias", async () => {
+    const { service, grants, grant } = setup([ibmA.id]);
+    await expect(
+      service.setAgentConnections(AGENT, [ibmA.id, ibmB.id]),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringMatching(/already has a.*'ibm-a'/),
+    });
+    expect(grant).not.toHaveBeenCalled();
+    await service.setAgentConnections(AGENT, [ibmA.id, curveBender.id]);
+    expect([...grants].sort()).toEqual([curveBender.id, ibmA.id]);
+    await expect(
+      service.validateGrantSet([ibmA.id, ibmB.id]),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
   });
 
   /** TEST_SCENARIO: Agent creation checks its first grants before the agent is

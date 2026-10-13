@@ -37,7 +37,7 @@ The tools are the way to delegate: for one hand-off, for a fan-out, and for any 
 
 1. **Choose what it runs on — do not guess.** Call `list_harnesses` and `list_connections` and show the human what is available.
    If it is not obvious which to use, **ask them**.
-   The model needs nothing: the sub-agent runs on *your* model provider.
+   The model needs nothing: the sub-agent runs on the subagent model the user set for this session (a `model` you pass is then ignored), else on *your* model provider.
 2. **Spawn.** Call `spawn_subagent` with `needs` (from step 1), `prompt`, `schema` (JSON Schema, e.g. `{"type": "integer"}`) and `harness`, plus any setup option from the table below and, to pick the model, `model`, `mode` and `configOptions` as in "Choose the model per spawn".
    Never pick a model through `env`: the platform then records no harness config and runs none of its checks.
    It returns the sub-agent id at once.

@@ -13,12 +13,14 @@ import {
   rememberSessionPair,
   useGrantProvider,
   useHarnessCatalog,
+  useHarnessCatalogModels,
   useProviderConnections,
   useProviderModels,
   useRememberedPair,
 } from "../../sessions/api/session-pair.js";
 import { OptionPicker } from "../../sessions/components/model-settings-panel.js";
 import { OptionField } from "../../sessions/components/option-field.js";
+import { modelGroups, sameModel } from "../../sessions/lib/catalog-groups.js";
 import {
   fittingProviders,
   harnessOptions,
@@ -98,12 +100,18 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
     fitting,
     status?.defaultHarness,
   );
+  const routed = status?.modelRouter ?? false;
   const { data: models } = useProviderModels(
-    agentId,
+    routed ? null : agentId,
     pair?.harness ?? null,
     pair?.provider ?? null,
   );
+  const { data: catalogModels } = useHarnessCatalogModels(
+    routed ? agentId : null,
+    pair?.harness ?? null,
+  );
   if (!pair || !routesSessionPairs(carried)) return null;
+  const groups = modelGroups(catalogModels);
 
   const save = (next: SessionPair) =>
     rememberSessionPair(
@@ -112,13 +120,22 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
         ? { ...next, settings: remembered.settings }
         : next,
     );
-  const modelChoices =
-    (models?.availableModels === null
-      ? carried
-          .find((h) => h.name === pair.harness)
-          ?.harnessConfigCatalog?.options.find((o) => o.category === "model")
-          ?.choices
-      : models?.availableModels) ?? [];
+  const modelChoices = routed
+    ? groups.flatMap((g) =>
+        g.models.map((m) => ({
+          value: m.name,
+          name: `${m.upstreamId} · ${g.displayName}`,
+        })),
+      )
+    : ((models?.availableModels === null
+        ? carried
+            .find((h) => h.name === pair.harness)
+            ?.harnessConfigCatalog?.options.find((o) => o.category === "model")
+            ?.choices
+        : models?.availableModels) ?? []);
+  const providerOfModel = (model: string | null): string | null =>
+    groups.find((g) => g.models.some((m) => sameModel(m.name, model)))
+      ?.connectionId ?? pair.provider;
 
   return (
     <section className="mt-6">
@@ -134,25 +151,29 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
           }
         />
       </OptionField>
-      <OptionField title="Provider">
-        <OptionPicker
-          title="Provider"
-          choices={granted
-            .filter((p) => fitting(pair.harness).includes(p.id))
-            .map((p) => ({ id: p.id, name: p.name }))}
-          value={pair.provider}
-          onSelect={(provider) =>
-            provider && save({ harness: pair.harness, provider, model: null })
-          }
-        />
-      </OptionField>
+      {!routed && (
+        <OptionField title="Provider">
+          <OptionPicker
+            title="Provider"
+            choices={granted
+              .filter((p) => fitting(pair.harness).includes(p.id))
+              .map((p) => ({ id: p.id, name: p.name }))}
+            value={pair.provider}
+            onSelect={(provider) =>
+              provider && save({ harness: pair.harness, provider, model: null })
+            }
+          />
+        </OptionField>
+      )}
       <OptionField title="Model">
         <OptionPicker
           title="Model"
           choices={modelChoices.map((m) => ({ id: m.value, name: m.name }))}
           value={pair.model}
           clearable
-          onSelect={(model) => save({ ...pair, model })}
+          onSelect={(model) =>
+            save({ ...pair, provider: providerOfModel(model), model })
+          }
         />
       </OptionField>
     </section>

@@ -190,7 +190,13 @@ The reader itself still receives ids alone; liveness never reaches the store and
 The reader is the only component in this subsystem that speaks to the telemetry store.
 It holds a process-wide read connection and translates each contract read into an aggregate query against the store, always gated on the owner allowlist plus the request's window filters.
 
-Its **spend** reads — every tRPC rollup and the agent-facing cost reads — take the per-LLM-call log records Claude Code exports, one record per API call, and the records of the same shape Pi's image exports ([observability](observability.md#agent-export)).
+Its **spend** reads (every tRPC rollup and the agent-facing cost reads) take one log record per LLM call.
+On a runtime with the Model Router ([harness configuration](harness-config.md#the-model-router)) the router writes that record for every call on every harness: the token counts read off the response, the cost from the catalog's price in integer micro-dollars, the provider Connection and alias, the upstream model id and the harness; Claude Code keeps writing its own record beside it.
+The reader sums an agent from the router's records when it has any in the window, else from the harness's own (Claude Code's, and Pi's of the same shape), so a router export that never reached the store leaves the harness's count and no call is summed twice.
+A Claude Code call on a native Connection (Bedrock) has no router record; Claude Code's own record names the model without the `claude/` prefix and is always counted, with no provider.
+A call the router could not price is still a record: cut before its usage arrived, answered without usage, or on a model the catalog has no price for.
+Each per-model and per-provider row carries its **uncounted** count beside its total, and the Usage surfaces say so, so a total reads as a floor.
+The **per-provider** rollup groups rows by the alias and Connection the router recorded, labelled with the Connection's live display name (a deleted Connection keeps its alias), with the harness's own records, which name no provider, in a row of their own.
 Two agent-facing reads deliberately sit outside that shape: the emitted-record read drops the body predicate so an agent sees everything it emitted rather than only its LLM calls, and the span read goes to the **trace** store instead, which is why it is the one read that answers for a harness exporting traces alone.
 Neither widens the ownership gate, which is the same attribute in both stores.
 Where the reader does read the call records, it depends on a small, stable slice of their shape: the trusted **owner attribution** attribute (every query's ownership gate), the **session** and **trace** identifiers (session grouping and the trace-aware fold), the **model** name, the **timestamp** (windowing and first/last bounds), and the per-call counters it sums — the **token counters** (input, output, cache-read, cache-creation), the **cost counter**, which is carried in integer micro-dollars and scaled to dollars at read time, and the per-call **request latency**, whose sum is reported as model time.
@@ -216,8 +222,7 @@ Both variants are chosen once at composition time from the same configuration, s
 Attribution is trustworthy; the numbers are self-reported.
 The two guarantees are different and this subsystem inherits both from the export path — see [observability — trusted attribution](observability.md#trusted-attribution) for the mechanism.
 
-- **Counters are agent-reported.** Token and cost figures come from the agent's own telemetry.
-  An agent runs untrusted code and can misreport its own numbers — inflate a token count, understate a cost.
+- **Counters are agent-reported.** Token and cost figures come from the agent's own telemetry: the Model Router's records are computed by platform code inside the agent's pod, and an agent runs untrusted code that can misreport them (inflate a token count, understate a cost, post records of its own to the rail).
   The read path does not attempt to independently verify them; it reports what was exported.
 - **Attribution is gateway-stamped and unforgeable.** The owner attribution attribute every query filters on is stamped by the agent's paired gateway, overwriting anything the agent set, and the collector drops any owner attribution the gateway did not stamp.
   So an agent can only ever pollute *its own* spend — never make its telemetry appear under another user, and never read another user's.

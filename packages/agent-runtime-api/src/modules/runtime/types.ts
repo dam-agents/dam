@@ -53,6 +53,7 @@ export const envContribution = z.object({
   name: z.string().min(1),
   placeholder: z.string(),
   provider: z.string().min(1).optional(),
+  providerTemplate: z.string().min(1).optional(),
   harness: z.string().min(1).optional(),
 });
 
@@ -375,6 +376,18 @@ export function routesSessionPairs(
   return !carried.some((h) => h.harnessConfig && !h.sessionSettings);
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: whether the runtime's hello claims an in-pod
+ * Model Router, which makes a session's model a provider-qualified name
+ * chosen per turn; readers keep the pre-router behaviour for an agent that
+ * does not claim it.
+ */
+export function routesByModelName(capabilities: unknown): boolean {
+  return (
+    (capabilities as { modelRouter?: unknown } | null)?.modelRouter === true
+  );
+}
+
 function advertisedKinds<T extends string>(known: readonly T[]) {
   const recognised = new Set<string>(known);
   return z
@@ -394,6 +407,7 @@ export const capabilities = z.object({
   harnesses: z.array(harnessCapability).optional(),
   kbPublish: z.number().int().optional(),
   liveUpdates: z.boolean().optional(),
+  modelRouter: z.boolean().optional(),
 });
 export type Capabilities = z.infer<typeof capabilities>;
 

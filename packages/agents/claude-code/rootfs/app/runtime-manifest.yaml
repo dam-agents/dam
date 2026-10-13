@@ -4,6 +4,31 @@
 # never Claude's `default` alias — that resolves to a model the account can't reach.
 manifestVersion: 1
 
+# Claude Code's gateway model discovery keeps ids containing "claude",
+# lowercased, so every catalog name reaches it as claude/<alias>/<id>.
+# claudeTiers: the runtime fills the ANTHROPIC_DEFAULT_*_MODEL tier variables
+# and caps CLAUDE_CODE_MAX_CONTEXT_TOKENS, since Claude Code reads no
+# per-model window from /v1/models.
+modelRouter:
+  dialects: [anthropic-messages]
+  sessionModel: { configOption: model }
+  namePrefix: "claude/"
+  lowercaseNames: true
+  claudeTiers: true
+  # Bedrock runs outside the router (its SigV4 signing is no header swap), so
+  # its Connection lists Claude Code's own tier names and a session on one
+  # runs in its own Claude process.
+  native:
+    templates: [bedrock]
+    models: [fable, opus, sonnet, haiku]
+
+# Declared so the runtime answers initialize before any harness process runs.
+# Re-captured from the image pin by test:harness-initialize-capabilities.
+initializeCapabilities:
+  agentCapabilities: {"_meta": {"claudeCode": {"promptQueueing": true}, "authStatus": {}}, "promptCapabilities": {"image": true, "embeddedContext": true}, "mcpCapabilities": {"http": true, "sse": true}, "auth": {"logout": {}}, "providers": {}, "loadSession": true, "sessionCapabilities": {"additionalDirectories": {}, "close": {}, "delete": {}, "fork": {}, "list": {}, "resume": {}, "subagents": {}}}
+  authMethods: []
+  agentInfo: {"name": "@agentclientprotocol/claude-agent-acp", "title": "Claude Agent"}
+
 # Cold session/load fills the runtime's transcript from Claude Code's on-disk
 # session store without spawning the claude subprocess; the harness itself is
 # loaded lazily on the first prompt. The module is hosted in a persistent
@@ -23,15 +48,18 @@ agentProcesses: ["claude"]
 drivers:
   harness-config:
     file: "$HOME/.claude/settings.json"
-    # Schedules may name a model for this harness; it reaches the harness as PLATFORM_MODEL.
     sessionModel: true
     # What one session can pick for itself. Mode and effort change inside the
     # live session; the cache TTL is read from the env at start, so a session
     # that picks one runs in a Claude process of its own.
+    # claude-agent-acp has no config option for the subagent model, so it is
+    # read from the env at start and a session that picks one runs in a Claude
+    # process of its own.
     sessionSettings:
       mode: { mode: true }
       effort: { configOption: effort }
       cacheTtl: { env: [CLAUDE_CODE_PROMPT_CACHE_TTL, CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL] }
+      subagentModel: { env: [CLAUDE_CODE_SUBAGENT_MODEL] }
     keys:
       model: "model"
       mode: "permissions.defaultMode"
@@ -61,6 +89,12 @@ drivers:
             - value: haiku
               name: "Haiku"
               description: "Haiku 4.5 · Fastest for quick answers"
+        # No fixed choices: the picker offers the catalog.
+        - id: subagentModel
+          name: Subagent model
+          description: Model Claude Code's subagents run on
+          category: model
+          choices: []
         - id: mode
           name: Mode
           description: Session permission mode
@@ -126,7 +160,7 @@ drivers:
           effort: []
     # On a LiteLLM provider the tiers above all resolve to the gateway's
     # "latest" model, so the provider's other models are listed after them.
-    # Names match what model-gateway.mjs publishes (and /model writes):
+    # Names match what the router publishes (and /model writes):
     # lowercased, claude/-prefixed. No redirectEnv: the gateway maps the tiers,
     # so nothing is seeded.
     modelDiscovery:

@@ -52,6 +52,16 @@ export const agentsRouter = t.router({
     );
   }),
 
+  runtimeFleet: readAgentProcedure.query(async ({ ctx }) => {
+    const fleet = await ctx.agents.runtimeFleet();
+    if (ctx.user.agentIds === "*") return fleet;
+    const bound = new Set(ctx.user.agentIds);
+    return {
+      ...fleet,
+      outdated: fleet.outdated.filter((a) => bound.has(a.agentId)),
+    };
+  }),
+
   get: readAgentProcedure
     .input(agentGetInputSchema)
     .query(async ({ ctx, input }) => {

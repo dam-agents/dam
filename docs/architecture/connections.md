@@ -74,11 +74,11 @@ The `auth` field carries credential-acquisition state in one of six modes: **OAu
 Token references point at the per-Connection K8s Secret — never inline secret material.
 Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
-An Agent may hold several **provider Connections**, and each session picks the one it runs on.
-Creation grants the one it names, else a default one its harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), validating ownership, provider type, and active status; agent-management permission suffices to use a known provider id.
-The session picker offers the rest as "+ <Provider>".
-The agent's Providers section does the same outside a session: it lists every provider Connection the owner holds, each with a toggle that grants or revokes it, links to Settings to connect new ones, and picks the default pair for new sessions ([harness-config](harness-config.md)).
-A provider Connection's env is tagged with the Connection and lands in a per-provider layer rather than the agent-wide env, so only the [Harness Leases](sessions.md#session-inside-the-pod) on that provider read it, and granting or revoking one recycles only those.
+An Agent may hold several **provider Connections**, at most one per **provider alias**: the alias names the provider in every qualified model name, so a second Connection behind one alias is refused.
+A session picks its model per turn, and the provider follows from the name.
+Creation grants the one it names, else the first provider Connection the owner holds in alias order that the harness runs on ([agent-lifecycle](agent-lifecycle.md#create)).
+The agent's Providers section lists every provider Connection the owner holds with a grant toggle and picks the default pair for new sessions ([harness-config](harness-config.md)).
+A provider Connection's env lands in a per-provider layer the Model Router reads; granting or revoking one recycles the [Harness Leases](sessions.md#session-inside-the-pod).
 
 Credentials carry their own lifecycle.
 A stored one can be **updated in place** — the injected value, the client secret, the GitHub App private key, or the storage key pair, whichever the auth mode holds.
@@ -275,9 +275,9 @@ Which model provider an agent runs against follows from the Connection it is gra
 Bob is the case that needs more than a base URL.
 It prefixes every gateway call with its own service path, and that prefix is not configurable, so the Connection also declares the prefix rewrite the gateway applies; the auth scheme needs no such treatment, because the gateway overwrites the credential header outright.
 What the endpoint has to offer for this to work is the OpenAI-shaped chat-completion route, a model-information route reporting a non-empty model list (Bob treats an empty list as an error), and no region hint of its own — a gateway answering the profile route with one would redirect Bob's inference calls off the configured host.
-Bob's built-in default resolves to a model only its own gateway serves, so the Connection pins Bob's model as it pins Codex's and Pi's; a per-agent override or a session's pick that the endpoint lists outranks the pin, and a pin the endpoint no longer lists is passed over.
-A redirecting Connection that pins nothing leaves the choice to the seed, which takes the first of the names the endpoint lists once they are ordered — from the OpenAI model list when the key is refused the model-information route ([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
-Claude Code reaches custom upstreams through its in-pod model gateway, which fronts each granted provider apart.
+Bob's built-in default resolves to a model only its own gateway serves, so the Connection pins Bob's model as it pins Codex's and Pi's; on a routed runtime the pin never reaches a harness process, since a session's model is a qualified name the router routes.
+The [model catalog](harness-config.md#the-model-catalog) lists the endpoint's models under the Connection's alias, through the OpenAI model list since the key is refused the model-information route, and a session picks one per turn.
+Every harness reaches the endpoint through the [Model Router](harness-config.md#the-model-router), which sends the Connection's placeholder.
 The endpoint caches a Claude prompt only when the request marks it: Claude Code marks its own, and the image's Pi extension marks Pi's.
 GPT models cache on their own.
 

@@ -336,6 +336,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           reader: metricsReader,
           listOwnedAgents,
           isInvocationTargetName,
+          connectionNames: async () =>
+            new Map(
+              (await connections.listConnections()).map((c) => [c.id, c.name]),
+            ),
           sessionTypeSpend: createSessionTypeSpend({
             readSpend: (agentIds, window) =>
               metricsReader.spendBySession(agentIds, window),

@@ -15,7 +15,9 @@ export const onceFormSchema = z
     date: z.string(),
     time: z.string(),
     timezone: z.string().trim().min(1, "Required"),
+    harness: z.string(),
     model: z.string(),
+    settings: z.record(z.string(), z.string()),
     sessionTitle: z
       .string()
       .trim()
@@ -47,7 +49,9 @@ export function onceFormDefaults(existing?: Schedule): OnceFormValues {
     date,
     time,
     timezone,
+    harness: existing?.harness ?? "",
     model: existing?.model ?? "",
+    settings: existing?.settings ?? {},
     sessionTitle: existing?.sessionTitle ?? "",
   };
 }

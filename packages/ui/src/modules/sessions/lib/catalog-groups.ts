@@ -1,0 +1,134 @@
+import type {
+  CatalogModelView,
+  CatalogProviderView,
+  HarnessCatalogView,
+} from "agent-runtime-api";
+import {
+  type AliasedConnection,
+  aliasForProviderType,
+  type ProviderAliasConflict,
+  providerAliasConflict,
+  templateIdsForAlias,
+} from "api-server-api";
+
+import type { ProviderConnectionRef } from "./session-pair-options.js";
+
+export interface ModelGroup {
+  connectionId: string;
+  alias: string;
+  displayName: string;
+  status: CatalogProviderView["status"];
+  models: CatalogModelView[];
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: every provider the harness accepts, in the
+ * catalog's order, each with its listing state, so a provider that failed to
+ * list shows as such rather than vanishing.
+ */
+export function modelGroups(
+  catalog: HarnessCatalogView | undefined,
+): ModelGroup[] {
+  return (catalog?.providers ?? []).map((p) => ({
+    connectionId: p.connectionId,
+    alias: p.alias,
+    displayName: p.displayName,
+    status: p.status,
+    models: p.models,
+  }));
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a granted provider missing from the catalog has
+ * not reached the pod yet, and an unavailable one has not listed yet; either
+ * way the UI asks again.
+ */
+export function catalogSettled(
+  catalog: HarnessCatalogView | undefined,
+  grantedIds: readonly string[],
+): boolean {
+  if (!catalog) return false;
+  const held = new Set(catalog.providers.map((p) => p.connectionId));
+  return (
+    grantedIds.every((id) => held.has(id)) &&
+    catalog.providers.every((p) => p.status !== "unavailable")
+  );
+}
+
+export function modelLabel(model: CatalogModelView): string {
+  return model.upstreamId;
+}
+
+export function contextLabel(model: CatalogModelView): string | null {
+  if (model.contextWindow === null) return null;
+  const k = Math.round(model.contextWindow / 1000);
+  return k >= 1000 ? `${(k / 1000).toFixed(k % 1000 === 0 ? 0 : 1)}M` : `${k}K`;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the catalog names a model the way its harness
+ * sees it (Claude Code's lowercased `claude/…`) while a session stores the
+ * plain name, so names compare without that prefix and case.
+ */
+export function sameModel(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return false;
+  const plain = (n: string) => n.toLowerCase().replace(/^claude\//, "");
+  return plain(a) === plain(b);
+}
+
+export function findModel(
+  groups: readonly ModelGroup[],
+  name: string | null,
+): { group: ModelGroup; model: CatalogModelView } | null {
+  if (name === null) return null;
+  for (const group of groups) {
+    const model = group.models.find((m) => sameModel(m.name, name));
+    if (model) return { group, model };
+  }
+  return null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the upstream id and the Connection's name, so a
+ * reader sees where the next turn goes.
+ */
+export function modelIndicatorLabel(
+  groups: readonly ModelGroup[],
+  name: string | null,
+): string | null {
+  const hit = findModel(groups, name);
+  if (hit) return `${modelLabel(hit.model)} · ${hit.group.displayName}`;
+  return name;
+}
+
+export interface AddableProvider {
+  connection: ProviderConnectionRef;
+  conflict: ProviderAliasConflict | null;
+}
+
+const aliased = (p: ProviderConnectionRef): AliasedConnection => ({
+  id: p.id,
+  name: p.name,
+  templateId:
+    p.templateId ?? templateIdsForAlias(aliasForProviderType(p.type))[0]!,
+});
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: each addable provider carries the alias conflict
+ * that would refuse attaching it, so the picker shows the reason instead of
+ * an attach that fails.
+ */
+export function addableProviders(
+  granted: readonly ProviderConnectionRef[],
+  owned: readonly ProviderConnectionRef[],
+  fits: (connection: ProviderConnectionRef) => boolean,
+): AddableProvider[] {
+  const held = new Set(granted.map((c) => c.id));
+  const grantedAliased = granted.map(aliased);
+  return owned
+    .filter((c) => !held.has(c.id) && fits(c))
+    .map((connection) => ({
+      connection,
+      conflict: providerAliasConflict(grantedAliased, aliased(connection)),
+    }));
+}

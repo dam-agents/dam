@@ -11,8 +11,7 @@ export function sessionSettingOptions(
 ) {
   return (
     capability?.harnessConfigCatalog?.options.filter(
-      (o) =>
-        o.category !== "model" && capability.sessionSettings?.includes(o.id),
+      (o) => o.id !== "model" && capability.sessionSettings?.includes(o.id),
     ) ?? []
   );
 }
@@ -27,18 +26,23 @@ export function settingDefaults(
         (o.id === "mode"
           ? configured?.mode
           : configured?.configOptions[o.id]) ?? o.default;
-      return value && o.choices.some((c) => c.value === value)
+      return value &&
+        (o.choices.some((c) => c.value === value) || isModelOption(o))
         ? [[o.id, value]]
         : [];
     }),
   );
 }
 
+const isModelOption = (o: { category: string; choices: readonly unknown[] }) =>
+  o.category === "model" && o.choices.length === 0;
+
 export function SessionSettingsControls({
   capability,
   model,
   settings,
   defaults,
+  modelChoices = [],
   disabled = false,
   onChange,
 }: {
@@ -46,11 +50,14 @@ export function SessionSettingsControls({
   model: string | null;
   settings: Readonly<Record<string, string>>;
   defaults: Readonly<Record<string, string>>;
+  modelChoices?: readonly { value: string; name: string }[];
   disabled?: boolean;
   onChange: (id: string, value: string) => void;
 }) {
   const id = useId();
-  const options = sessionSettingOptions(capability);
+  const options = sessionSettingOptions(capability).filter(
+    (o) => !isModelOption(o) || modelChoices.length > 0,
+  );
   if (options.length === 0) return null;
   return (
     <div
@@ -62,10 +69,16 @@ export function SessionSettingsControls({
         const allowed = model
           ? capability?.harnessConfigCatalog?.modelConstraints?.[model]?.[o.id]
           : undefined;
-        const value = settings[o.id] ?? defaults[o.id] ?? o.choices[0]?.value;
-        const choices = o.choices.filter(
-          (c) => !allowed || allowed.includes(c.value) || c.value === value,
-        );
+        const modelValued = isModelOption(o);
+        const value =
+          settings[o.id] ??
+          defaults[o.id] ??
+          (modelValued ? "" : o.choices[0]?.value);
+        const choices = modelValued
+          ? [{ value: "", name: "Same as session" }, ...modelChoices]
+          : o.choices.filter(
+              (c) => !allowed || allowed.includes(c.value) || c.value === value,
+            );
         return (
           <Fragment key={o.id}>
             <label htmlFor={`${id}-${o.id}`} className="text-muted-foreground">

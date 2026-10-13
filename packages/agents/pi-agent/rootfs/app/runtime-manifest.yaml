@@ -3,6 +3,18 @@
 # defaults of the base manifest.
 manifestVersion: 1
 
+# Pi picks the API per model, so it reaches every provider the router serves.
+modelRouter:
+  dialects: [openai-responses, openai-chat, anthropic-messages]
+  sessionModel: { configOption: model, valuePrefix: "platform/" }
+
+# Declared so the runtime answers initialize before any harness process runs.
+# Re-captured from the image pin by test:harness-initialize-capabilities.
+initializeCapabilities:
+  agentCapabilities: {"loadSession": true, "mcpCapabilities": {"http": false, "sse": false}, "promptCapabilities": {"image": true, "audio": false, "embeddedContext": false}, "sessionCapabilities": {"list": {}, "delete": {}}}
+  authMethods: [{"id": "pi_terminal_login", "name": "Launch pi in the terminal", "description": "Start pi in an interactive terminal to configure API keys or login", "type": "terminal", "args": ["--terminal-login"], "env": {}}]
+  agentInfo: {"name": "pi-acp", "title": "pi ACP adapter"}
+
 drivers:
   # Pi reads MCP servers only from its own ~/.pi/agent/mcp.json, never from the
   # $HOME/.mcp.json the built-in binding writes. The default `type` / `url` /

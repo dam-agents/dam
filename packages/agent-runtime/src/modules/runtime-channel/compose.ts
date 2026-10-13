@@ -43,11 +43,12 @@ import { loadExtensions } from "./infrastructure/extension-loader.js";
 import type { HarnessClient } from "./harness-client.js";
 import { createRuntimeChannelService } from "./service.js";
 import {
-  SEED_LISTING_RETRY,
   createHarnessConfigPlugin,
   type HarnessConfigPlugin,
 } from "./drivers/harness-config-plugin.js";
 import { createModelDiscovery } from "./infrastructure/model-discovery.js";
+import { catalogChoices } from "./domain/catalog-choices.js";
+import type { ModelCatalog } from "../model-catalog/index.js";
 import {
   createSessionDirectoryReporter,
   type SessionDirectoryReporter,
@@ -66,11 +67,6 @@ export function pluginStateRoot(agentHome: string): string {
 export interface RuntimeChannelComposition {
   service: RuntimeChannelService;
   harnessConfig: HarnessConfigService;
-  seedHarnessModel(): Promise<boolean>;
-  leaseModel(lease: {
-    harness: string;
-    provider: string | null;
-  }): Promise<string | null>;
   sessionDirectory: SessionDirectoryReporter;
   helloOnBoot(opts: { agentRuntimeVersion: string }): Promise<void>;
 }
@@ -89,6 +85,8 @@ export interface ComposeRuntimeChannelOpts {
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
   envReader: LeaseEnvReader;
+  catalog?: ModelCatalog;
+  modelRouter?: boolean;
   onSnapshotProcessed?: ApplyStateDeps["onSnapshotProcessed"];
 }
 
@@ -152,16 +150,10 @@ export async function composeRuntimeChannel(
   };
   const registry = createPluginRegistry();
   for (const plugin of opts.plugins) registry.register(plugin);
-  const harnessDefault = async (): Promise<string | null> =>
-    harnessConfigPlugin?.supported
-      ? ((await harnessConfigPlugin.readCurrent({ discover: false }))
-          .defaultModel ?? null)
-      : null;
   registry.register(
     createTriggerPlugin({
       driver: opts.triggerDriver,
       stateStore: triggerStateStore,
-      harnessDefault,
       runPrecheck: createPrecheckRunner({
         workDir: opts.workDir,
         envReader: opts.envReader,
@@ -171,6 +163,7 @@ export async function composeRuntimeChannel(
       ...(opts.findSessionByRef
         ? { findSessionByRef: opts.findSessionByRef }
         : {}),
+      ...(opts.catalog ? { catalogListed: () => opts.catalog!.listed() } : {}),
     }),
   );
   registry.register(createWorkspaceSeedPlugin({ workDir: opts.workDir, log }));
@@ -206,7 +199,10 @@ export async function composeRuntimeChannel(
         agentHome: opts.agentHome,
         envReader: opts.envReader,
         discoverModels,
-        seedListingRetry: SEED_LISTING_RETRY,
+        ...(opts.catalog &&
+          opts.manifests[harness]?.modelRouter && {
+            catalogModels: () => catalogChoices(opts.catalog!.view(harness)),
+          }),
         log,
       }),
     );
@@ -309,11 +305,13 @@ export async function composeRuntimeChannel(
           },
           signal,
         ),
+      catalog: async ({ harness }) =>
+        opts.catalog?.view(harness) ?? {
+          harness,
+          routed: false,
+          providers: [],
+        },
     },
-    seedHarnessModel: async () =>
-      (await harnessConfigPlugin?.seedModel()) ?? false,
-    leaseModel: async ({ harness, provider }) =>
-      (await harnessConfigs.get(harness)?.leaseModel(provider)) ?? null,
     sessionDirectory,
     async helloOnBoot({ agentRuntimeVersion }) {
       const capabilities = {
@@ -337,6 +335,7 @@ export async function composeRuntimeChannel(
         }),
         kbPublish: 2,
         liveUpdates: true,
+        modelRouter: opts.modelRouter === true,
       };
       for (let delay = 1_000; ; delay = Math.min(delay * 2, 30_000)) {
         const harnessConfigCurrent = await harnessConfigPlugin?.readCurrent({

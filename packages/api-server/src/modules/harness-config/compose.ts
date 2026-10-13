@@ -8,9 +8,12 @@ import {
   createHarnessConfigService,
   resolveFirePair,
   harnessesOf,
-  sessionModelChoices,
 } from "./services/harness-config-service.js";
 import { createSessionPairRepo } from "./infrastructure/session-pair-repo.js";
+import {
+  createSessionChoicesValidator,
+  type SessionChoicesValidator,
+} from "./services/session-choices.js";
 import { createHarnessConfigSnapshotRepo } from "./infrastructure/snapshot-repo.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 
@@ -35,19 +38,17 @@ export function composeHarnessConfigModule(deps: {
   };
 }
 
-export function composeSessionModelChoices(deps: {
+export function composeSessionChoicesValidator(deps: {
   db: Db;
+  catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
-}): (agentId: string) => Promise<string[] | null> {
-  const snapshotRepo = createHarnessConfigSnapshotRepo(deps.db);
-  return async (agentId) => {
-    const capabilities = await deps.getCapabilities(agentId);
-    if (harnessesOf(capabilities)) return [];
-    return sessionModelChoices(
-      capabilities,
-      (await snapshotRepo.read(agentId))?.availableModels ?? null,
-    );
-  };
+}): SessionChoicesValidator {
+  return createSessionChoicesValidator({
+    catalog: deps.catalog,
+    pairRepo: createSessionPairRepo(deps.db),
+    snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
+    getCapabilities: deps.getCapabilities,
+  });
 }
 
 export type FirePair = (
@@ -61,6 +62,14 @@ export function composeFirePair(deps: {
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
 }): FirePair {
-  const resolver = { ...deps, pairRepo: createSessionPairRepo(deps.db) };
+  const snapshotRepo = createHarnessConfigSnapshotRepo(deps.db);
+  const resolver = {
+    ...deps,
+    pairRepo: createSessionPairRepo(deps.db),
+    availableModels: async (agentId: string, harness: string) =>
+      (await snapshotRepo.read(agentId, harness))?.availableModels?.map(
+        (m) => m.value,
+      ) ?? null,
+  };
   return (agentId, preferred) => resolveFirePair(resolver, agentId, preferred);
 }

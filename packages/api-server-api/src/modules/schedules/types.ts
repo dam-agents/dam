@@ -20,7 +20,10 @@ export interface ScheduleSpecCron {
   cron: string;
   task?: string;
   precheck?: string;
+  harness?: string;
   model?: string;
+  settings?: Record<string, string>;
+  migrationNote?: string;
   sessionTitle?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
@@ -35,7 +38,10 @@ export interface ScheduleSpecRRule {
   quietHours?: QuietWindow[];
   task?: string;
   precheck?: string;
+  harness?: string;
   model?: string;
+  settings?: Record<string, string>;
+  migrationNote?: string;
   sessionTitle?: string;
   enabled: boolean;
   sessionMode?: "continuous" | "fresh";
@@ -55,7 +61,10 @@ export interface ScheduleSpecOnce {
   at: string;
   timezone: string;
   origin?: ScheduleOnceOrigin;
+  harness?: string;
   model?: string;
+  settings?: Record<string, string>;
+  migrationNote?: string;
   sessionTitle?: string;
   task?: string;
   precheck?: undefined;

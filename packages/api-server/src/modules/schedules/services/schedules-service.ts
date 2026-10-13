@@ -73,6 +73,33 @@ function asBadRequest(fn: () => void): void {
   }
 }
 
+function choicesOf(input: {
+  harness?: string | null;
+  model?: string | null;
+  settings?: Record<string, string> | null;
+}): { harness?: string; model?: string; settings?: Record<string, string> } {
+  return {
+    ...(input.harness ? { harness: input.harness } : {}),
+    ...(input.model ? { model: input.model } : {}),
+    ...(input.settings ? { settings: input.settings } : {}),
+  };
+}
+
+function choicesChanged(
+  input: {
+    harness?: string | null;
+    model?: string | null;
+    settings?: Record<string, string> | null;
+  },
+  spec: {
+    harness?: string;
+    model?: string;
+    settings?: Record<string, string>;
+  },
+): boolean {
+  return JSON.stringify(choicesOf(input)) !== JSON.stringify(choicesOf(spec));
+}
+
 export function createSchedulesService(deps: {
   repo: SchedulesRepository;
   runner: SchedulerRunner;
@@ -80,7 +107,14 @@ export function createSchedulesService(deps: {
   agentBinding: readonly string[] | "*";
   agentExists?: (agentId: string) => Promise<boolean>;
   agentOnceLimits?: AgentOnceLimits;
-  sessionModelChoices?: (agentId: string) => Promise<string[] | null>;
+  validateSessionChoices?: (
+    agentId: string,
+    choices: {
+      harness?: string;
+      model?: string;
+      settings?: Record<string, string>;
+    },
+  ) => Promise<string | undefined>;
   now?: () => Date;
 }): SchedulesService {
   const now = deps.now ?? (() => new Date());
@@ -92,25 +126,29 @@ export function createSchedulesService(deps: {
       throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
   }
 
-  async function ensureSessionModel(
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: checked at save with the one validator the
+   * fire re-runs, so a schedule is refused naming the reason rather than
+   * saved to fail later. A task that continues its session keeps that
+   * session's choices.
+   */
+  async function ensureSessionChoices(
     agentId: string,
-    model: string | undefined,
+    choices: {
+      harness?: string;
+      model?: string;
+      settings?: Record<string, string>;
+    },
     origin: ScheduleOnceOrigin | undefined,
   ): Promise<void> {
-    if (model === undefined) return;
+    const named = Object.values(choices).some((v) => v !== undefined);
+    if (!named) return;
     if (origin?.mode === "continue")
       throw badRequest(
-        "a task that continues its session keeps that session's model; drop the model or run it fresh",
+        "a task that continues its session keeps that session's harness, model and settings; drop them or run it fresh",
       );
-    const choices = (await deps.sessionModelChoices?.(agentId)) ?? null;
-    if (choices === null)
-      throw badRequest(
-        "this agent's harness cannot run a session on a chosen model; leave the model unset",
-      );
-    if (choices.length > 0 && !choices.includes(model))
-      throw badRequest(
-        `unknown model "${model}"; choose one of: ${choices.join(", ")}`,
-      );
+    const refusal = await deps.validateSessionChoices?.(agentId, choices);
+    if (refusal) throw badRequest(refusal);
   }
 
   async function ensureAgentWithinLimits(agentId: string): Promise<void> {
@@ -151,7 +189,7 @@ export function createSchedulesService(deps: {
     async createCron(input: ScheduleCreateCronInput, createdBy = "user") {
       asBadRequest(() => validateCron(input.cron));
       await ensureAgent(input.agentId);
-      await ensureSessionModel(input.agentId, input.model, undefined);
+      await ensureSessionChoices(input.agentId, choicesOf(input), undefined);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
         type: "cron",
@@ -161,7 +199,7 @@ export function createSchedulesService(deps: {
         createdBy,
         ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         ...(input.precheck ? { precheck: input.precheck } : {}),
-        ...(input.model ? { model: input.model } : {}),
+        ...choicesOf(input),
         ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
       const schedule = await deps.repo.create({
@@ -202,7 +240,7 @@ export function createSchedulesService(deps: {
         validateRRule(input.rrule, input.timezone, input.quietHours ?? []),
       );
       await ensureAgent(input.agentId);
-      await ensureSessionModel(input.agentId, input.model, undefined);
+      await ensureSessionChoices(input.agentId, choicesOf(input), undefined);
       const spec: ScheduleSpec = {
         version: SPEC_VERSION,
         type: "rrule",
@@ -216,7 +254,7 @@ export function createSchedulesService(deps: {
           : {}),
         ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
         ...(input.precheck ? { precheck: input.precheck } : {}),
-        ...(input.model ? { model: input.model } : {}),
+        ...choicesOf(input),
         ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
       const schedule = await deps.repo.create({
@@ -258,7 +296,7 @@ export function createSchedulesService(deps: {
       asBadRequest(() => validateTimezone(input.timezone));
       const at = resolveMoment(input.at, input.timezone, now());
       await ensureAgent(input.agentId);
-      await ensureSessionModel(input.agentId, input.model, origin);
+      await ensureSessionChoices(input.agentId, choicesOf(input), origin);
       if (input.sessionTitle && origin?.mode === "continue")
         throw badRequest(
           "a task that continues its session keeps that session's title; drop the session title or run it fresh",
@@ -273,7 +311,7 @@ export function createSchedulesService(deps: {
         enabled: true,
         createdBy,
         ...(origin ? { origin } : {}),
-        ...(input.model ? { model: input.model } : {}),
+        ...choicesOf(input),
         ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
       const schedule = await deps.repo.create({
@@ -315,10 +353,10 @@ export function createSchedulesService(deps: {
       if (current.status?.lastRun)
         throw badRequest("a one-time schedule cannot be edited once it fired");
       const at = resolveMoment(input.at, input.timezone, now());
-      if (input.model !== current.spec.model)
-        await ensureSessionModel(
+      if (choicesChanged(input, current.spec))
+        await ensureSessionChoices(
           current.agentId,
-          input.model,
+          choicesOf(input),
           current.spec.origin,
         );
       if (input.sessionTitle && current.spec.origin?.mode === "continue")
@@ -326,7 +364,10 @@ export function createSchedulesService(deps: {
           "a task that continues its session keeps that session's title; drop the session title",
         );
       const {
+        harness: _previousHarness,
         model: _previous,
+        settings: _previousSettings,
+        migrationNote: _previousNote,
         sessionTitle: _previousTitle,
         ...unchanged
       } = current.spec;
@@ -335,7 +376,7 @@ export function createSchedulesService(deps: {
         at: at.toISOString(),
         timezone: input.timezone,
         task: input.task,
-        ...(input.model ? { model: input.model } : {}),
+        ...choicesOf(input),
         ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
       };
       await deps.repo.updateName(input.id, deps.owner, input.name);
@@ -395,8 +436,12 @@ export function createSchedulesService(deps: {
       );
       const current = await deps.repo.get(input.id, deps.owner);
       if (!current) return null;
-      if (input.model && input.model !== current.spec.model)
-        await ensureSessionModel(current.agentId, input.model, undefined);
+      if (choicesChanged(input, current.spec))
+        await ensureSessionChoices(
+          current.agentId,
+          choicesOf(input),
+          undefined,
+        );
       if (current.spec.type === "once")
         throw badRequest("a one-time schedule is edited with updateOnce");
       const { cron: _cron, ...unchanged } =
@@ -417,6 +462,12 @@ export function createSchedulesService(deps: {
       else if (input.precheck !== undefined) delete spec.precheck;
       if (input.model) spec.model = input.model;
       else if (input.model !== undefined) delete spec.model;
+      if (input.harness) spec.harness = input.harness;
+      else if (input.harness !== undefined) delete spec.harness;
+      if (input.settings) spec.settings = input.settings;
+      else if (input.settings !== undefined) delete spec.settings;
+      if (input.model !== undefined || input.harness !== undefined)
+        delete spec.migrationNote;
       if (input.sessionTitle) spec.sessionTitle = input.sessionTitle;
       else if (input.sessionTitle !== undefined) delete spec.sessionTitle;
       await deps.repo.updateName(input.id, deps.owner, input.name);

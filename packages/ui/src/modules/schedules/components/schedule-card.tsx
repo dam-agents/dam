@@ -117,6 +117,11 @@ export function ScheduleCard({
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 text-md font-medium text-foreground">
             <span className="truncate">{name}</span>
+            {schedule.migrationNote && (
+              <WarningAlt size={16} className="shrink-0 text-warning">
+                <title>{schedule.migrationNote}</title>
+              </WarningAlt>
+            )}
             {alert && (
               <WarningAlt
                 size={16}
@@ -139,6 +144,16 @@ export function ScheduleCard({
               </>
             )}
             {cadence && <span className="truncate">{cadence}</span>}
+            {(schedule.harness || schedule.model) && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="truncate">
+                  {[schedule.harness, schedule.model]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </>
+            )}
             {onceOutcome && (
               <>
                 <span aria-hidden>·</span>
@@ -225,7 +240,14 @@ export function ScheduleCard({
         )}
       </button>
 
-      {isExpanded && <ScheduleDetails schedule={schedule} />}
+      {isExpanded && (
+        <ScheduleDetails
+          schedule={schedule}
+          {...(onceState === null || onceState === "pending"
+            ? { onPickModel: handleEdit }
+            : {})}
+        />
+      )}
     </div>
   );
 }

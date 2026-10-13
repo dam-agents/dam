@@ -13,6 +13,7 @@ import {
   type ProviderPresetType,
   type SkillSetApplyResult,
   type SkillsService,
+  parseQualifiedModel,
 } from "api-server-api";
 import {
   type RuntimeMutator,
@@ -170,6 +171,11 @@ export function createInvocationsService(deps: {
 
       compileSchema(input.schema);
 
+      const requestedModel = input.harnessConfig?.model;
+      if (requestedModel && !parseQualifiedModel(requestedModel))
+        throw new Error(
+          `name the target's model with its provider, as <provider>/${requestedModel}`,
+        );
       const provider = inheritProvider(
         input.driverProviders,
         input.target.runsOn,

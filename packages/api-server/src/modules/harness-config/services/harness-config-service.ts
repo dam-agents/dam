@@ -3,21 +3,27 @@ import { emit, EventType } from "../../../events.js";
 import {
   harnessCapability,
   harnessConfigCatalog,
+  routesByModelName,
   routesSessionPairs,
   sessionSettingsError,
   type HarnessCapability,
   type HarnessConfigCatalog,
 } from "agent-runtime-api";
+import { aliasForProviderType } from "api-server-api";
 import type {
   HarnessCatalog,
   HarnessConfigChange,
   HarnessConfigService,
   HarnessConfigSnapshotPatch,
+  ProviderPresetType,
   SessionPair,
 } from "api-server-api";
 import { z } from "zod";
 import type { SessionPairRepo } from "../infrastructure/session-pair-repo.js";
-import { resolveSessionPair } from "../domain/session-pair.js";
+import {
+  qualifiedPairModel,
+  resolveSessionPair,
+} from "../domain/session-pair.js";
 import { harnessFits } from "../../templates/index.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
@@ -55,6 +61,7 @@ export function createHarnessConfigService(deps: {
         supported: harnessConfigSupported(capabilities),
         catalog: harnessConfigCatalogOf(capabilities),
         sessionModel: sessionModelSupported(capabilities),
+        modelRouter: routesByModelName(capabilities),
         defaultHarness: defaultHarnessOf(capabilities),
         harnesses: harnessesOf(capabilities),
       };
@@ -118,6 +125,26 @@ export function createHarnessConfigService(deps: {
       return resolveRememberedPair(deps, agentId);
     },
 
+    async defaultFor(agentId, harness) {
+      await requireOwned(agentId);
+      const pair = await resolveFirePair(
+        {
+          pairRepo: deps.pairRepo,
+          catalog: deps.catalog,
+          getCapabilities: deps.getCapabilities,
+          specHarness: deps.specHarness,
+          availableModels: async (id, h) =>
+            (await deps.snapshotRepo.read(id, h))?.availableModels?.map(
+              (m) => m.value,
+            ) ?? null,
+        },
+        agentId,
+        harness ? { harness } : {},
+        false,
+      );
+      return pair ?? null;
+    },
+
     async rememberSessionPair(agentId, pair) {
       await requireOwned(agentId);
       const carried = harnessesOf(await deps.getCapabilities(agentId));
@@ -130,6 +157,8 @@ export function createHarnessConfigService(deps: {
           message: `this agent does not carry the ${pair.harness} harness`,
         });
       const granted = await deps.pairRepo.grantedProviders(agentId);
+      const routed = routesByModelName(await deps.getCapabilities(agentId));
+      if (routed) pair = await routedPair(agentId, pair, granted);
       const provider = granted.find((p) => p.id === pair.provider);
       if (
         pair.provider !== null &&
@@ -162,6 +191,43 @@ export function createHarnessConfigService(deps: {
       await deps.pairRepo.write(agentId, pair);
     },
   };
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a bare name is refused, since the runtime
+   * would resolve it on whatever provider comes first; a model the harness's
+   * last reported list does not carry is refused too, so a default never
+   * points at a model the provider stopped serving.
+   */
+  async function routedPair(
+    agentId: string,
+    pair: SessionPair,
+    granted: readonly { id: string; type: ProviderPresetType }[],
+  ): Promise<SessionPair> {
+    if (pair.model === null) return pair;
+    const model = qualifiedPairModel(pair.model);
+    if (model === null)
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `name the model with its provider, as <provider>/${pair.model}`,
+      });
+    const alias = model.slice(0, model.indexOf("/"));
+    const provider = granted.find(
+      (p) => aliasForProviderType(p.type) === alias,
+    );
+    if (!provider)
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `this agent holds no ${alias} provider`,
+      });
+    const listed = (await deps.snapshotRepo.read(agentId, pair.harness))
+      ?.availableModels;
+    if (listed && !listed.some((m) => qualifiedPairModel(m.value) === model))
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `the ${pair.harness} harness does not list ${model} on this agent`,
+      });
+    return { ...pair, provider: provider.id, model };
+  }
 
   async function declaredBy(
     agentId: string,
@@ -249,6 +315,10 @@ export interface PairResolverDeps {
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
+  availableModels?: (
+    agentId: string,
+    harness: string,
+  ) => Promise<readonly string[] | null>;
 }
 
 export async function resolveRememberedPair(
@@ -285,8 +355,26 @@ export async function resolveFirePair(
     deps.catalog.default;
   if (!deps.catalog.harnesses.some((h) => h.name === agentHarness))
     return undefined;
-  const remembered: SessionPair | null =
-    preferred.harness !== undefined
+  const routed = routesByModelName(capabilities);
+  const listedFor = async (
+    harness: string,
+  ): Promise<readonly string[] | null> =>
+    (await deps.availableModels?.(agentId, harness)) ?? null;
+  const listed = routed
+    ? await listedFor(preferred.harness ?? stored?.harness ?? agentHarness)
+    : null;
+  const requestedHarness = preferred.harness ?? stored?.harness ?? agentHarness;
+  const savedForHarness = stored?.harness === requestedHarness ? stored : null;
+  const remembered: SessionPair | null = routed
+    ? {
+        harness: requestedHarness,
+        provider: preferred.provider ?? savedForHarness?.provider ?? null,
+        model: preferred.model ?? savedForHarness?.model ?? null,
+        ...(savedForHarness?.settings && {
+          settings: savedForHarness.settings,
+        }),
+      }
+    : preferred.harness !== undefined
       ? {
           harness: preferred.harness,
           provider: preferred.provider ?? null,
@@ -306,5 +394,7 @@ export async function resolveFirePair(
     granted,
     fits: (harness, type, templateId) =>
       harnessFits(deps.catalog, harness, type, templateId),
+    routed,
+    availableModels: () => listed,
   });
 }

@@ -122,6 +122,114 @@ describe("resolveSessionPair", () => {
   });
 });
 
+describe("resolveSessionPair on a runtime that routes by model name", () => {
+  const routed = (over: Partial<SessionPairInputs>) =>
+    resolveSessionPair(inputs({ routed: true, ...over }));
+
+  /** TEST_SCENARIO: The saved pair is for this harness and its provider is
+   * still granted, so the run keeps its qualified model and settings. */
+  it("keeps the saved qualified model and settings for its own harness", () => {
+    const remembered = {
+      harness: "codex",
+      provider: "oai",
+      model: "openai/gpt-5.5",
+      settings: { effort: "high" },
+    };
+    expect(
+      routed({
+        remembered,
+        granted: [
+          { id: "lite", type: "ibm-litellm" },
+          { id: "oai", type: "openai" },
+        ],
+      }),
+    ).toEqual(remembered);
+  });
+
+  /** TEST_SCENARIO: The saved provider is gone. The run stays on the saved
+   * harness, on its default provider (Codex's own OpenAI, held here), and
+   * takes that provider's first listed model rather than the old one. */
+  it("stays on the harness and takes the default provider's first model", () => {
+    expect(
+      routed({
+        remembered: { harness: "codex", provider: "gone", model: "cb/glm" },
+        granted: [
+          { id: "oai", type: "openai" },
+          { id: "lite", type: "ibm-litellm" },
+        ],
+        availableModels: () => [
+          "openai/gpt-5.5",
+          "ibm/gpt-5.5",
+          "ibm/aws/opus",
+        ],
+      }),
+    ).toEqual({ harness: "codex", provider: "oai", model: "openai/gpt-5.5" });
+  });
+
+  /** TEST_SCENARIO: A schedule names a model on a provider other than the
+   * agent's default for the harness. The run goes to the provider the model
+   * names, since the agent holds it and the harness accepts it. */
+  it("takes the provider the remembered model names over the default", () => {
+    expect(
+      routed({
+        remembered: {
+          harness: "codex",
+          provider: null,
+          model: "openai/gpt-5.5",
+        },
+        granted: [
+          { id: "lite", type: "ibm-litellm" },
+          { id: "oai", type: "openai" },
+        ],
+      }),
+    ).toEqual({ harness: "codex", provider: "oai", model: "openai/gpt-5.5" });
+  });
+
+  /** TEST_SCENARIO: No granted provider fits the saved harness, so the run
+   * fails rather than jumping to the platform default harness. */
+  it("fails on the saved harness instead of moving to the default one", () => {
+    expect(
+      routed({
+        remembered: { harness: "codex", provider: null, model: null },
+        granted: [{ id: "claude", type: "anthropic" }],
+      }),
+    ).toBeNull();
+  });
+
+  /** TEST_SCENARIO: A run asked for on a harness with no pair saved for it
+   * (the fire resolver passes an empty pair for the requested harness) takes
+   * the default provider; with nothing listed yet the model is left to the
+   * harness. */
+  it("takes the default provider for a harness with nothing saved", () => {
+    expect(
+      routed({
+        remembered: { harness: "codex", provider: null, model: null },
+        agentHarness: "claude-code",
+        granted: [{ id: "lite", type: "ibm-litellm" }],
+      }),
+    ).toEqual({ harness: "codex", provider: "lite", model: null });
+  });
+
+  /** TEST_SCENARIO: Claude Code's own spelling of a saved model folds into
+   * the canonical name; a bare saved name is no model on this runtime. */
+  it("canonicalises Claude Code's spelling and drops bare names", () => {
+    expect(
+      routed({
+        remembered: {
+          harness: "claude-code",
+          provider: "lite",
+          model: "claude/ibm/aws/claude-opus-4-8",
+        },
+      })?.model,
+    ).toBe("ibm/aws/claude-opus-4-8");
+    expect(
+      routed({
+        remembered: { harness: "claude-code", provider: "lite", model: "opus" },
+      })?.model,
+    ).toBeNull();
+  });
+});
+
 describe("resolveFirePair", () => {
   /** TEST_SCENARIO: A schedule saved with only a model was set up against the
    * provider the person last picked for this harness, so it fires there, not

@@ -23,15 +23,37 @@ describe("ownedApiRequests", () => {
     const gates = sql.match(
       /ResourceAttributes\['platform\.agent\.id'\] IN \{agentIds:Array\(String\)\}/g,
     );
-    expect(gates).toHaveLength(3);
+    expect(gates).toHaveLength(6);
   });
 
-  it("scopes to the harnesses' call records by Body, not template ServiceName", () => {
+  it("scopes to call records by Body, not template ServiceName", () => {
     const sql = ownedApiRequests({ hours: 24 });
     expect(sql).toContain(
       "Body IN ('claude_code.api_request', 'pi.api_request')",
     );
+    expect(sql).toContain("Body = 'platform.model_call'");
     expect(sql).not.toContain("ServiceName");
+  });
+
+  /**
+   * TEST_SCENARIO: An agent on the Model Router exports one record per call
+   * from the router and, on Claude Code, a second from the harness. The read
+   * sums the router's records for every agent that has any in the window and
+   * the harness's (Claude Code's, Pi's) for the rest, decided from the data. Claude Code on a
+   * subscription token or Bedrock runs outside the router, so its own record,
+   * which names the model without the `claude/` prefix, still counts.
+   */
+  it("prefers the router's records per agent and keeps the harness's records of calls the router never saw", () => {
+    const sql = ownedApiRequests({ hours: 24 });
+    expect(sql).toContain(
+      "OR ResourceAttributes['platform.agent.id'] NOT IN (",
+    );
+    expect(sql).toContain(
+      "SELECT DISTINCT ResourceAttributes['platform.agent.id'] FROM otel_logs",
+    );
+    expect(sql).toContain(
+      "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%') OR ResourceAttributes",
+    );
   });
 
   it("bounds by the absolute range as half-open [from, to)", () => {
@@ -51,6 +73,7 @@ describe("ownedApiRequests", () => {
     const sql = ownedApiRequests({ hours: 24 });
     expect(sql).not.toContain("sessionId");
     expect(sql).not.toContain("TraceId");
+    expect(sql).not.toContain("session.id");
     expect(sql).toContain("toIntervalHour({hours:UInt32})");
   });
 });

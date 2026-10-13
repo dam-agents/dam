@@ -358,6 +358,7 @@ export function ChatView() {
           agentId: newSessionAgent,
           carried,
           defaultHarness: harnessStatus?.defaultHarness ?? carried[0]!.name,
+          routed: harnessStatus?.modelRouter ?? false,
         }
       : null;
   const providerConnections = useProviderConnections(newSessionAgent);
@@ -1139,6 +1140,8 @@ export function ChatView() {
                             model={currentSession.model ?? null}
                             settings={currentSession.settings}
                             carried={harnessStatus?.harnesses ?? []}
+                            routed={harnessStatus?.modelRouter ?? false}
+                            turnRunning={busy}
                             onChoose={(value) => void chooseSessionModel(value)}
                             onConfigure={(change) =>
                               void configureSession(change)
