@@ -55,7 +55,7 @@ export function useAgentRows() {
       pausingIds,
       slowStartIds,
     ),
-    subtitle: sandboxSubtitle(agent, slotUnit),
+    subtitle: sandboxSubtitle(agent, slotUnit, budget?.vm),
     deletePending:
       deleteAgent.isPending && deleteAgent.variables?.id === agent.id,
     updatePending: update.updatingId === agent.id,

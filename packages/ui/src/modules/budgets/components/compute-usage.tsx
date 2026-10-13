@@ -2,15 +2,12 @@ import { Help } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
-import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
-import { COMPUTE_REQUEST_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
-import { useLinks } from "../../links/api/queries.js";
 import { useBudgetReserved } from "../api/queries.js";
 import { formatCores, formatGi } from "../lib/format.js";
 import {
@@ -22,6 +19,7 @@ import {
   type SlotUnit,
   slotUnitOf,
 } from "../lib/slots.js";
+import { RequestMoreLink } from "./request-more-link.js";
 import { SEGMENT_FILL, SlotBar } from "./slot-bar.js";
 
 type HeldState = Exclude<ComputeCellState, "available">;
@@ -86,7 +84,6 @@ interface Props {
 
 export function ComputeUsage({ agents, workingAgentIds }: Props) {
   const { data: budget } = useBudgetReserved();
-  const { data: links } = useLinks();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   if (!budget) return null;
 
@@ -97,7 +94,7 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
     <>
       <div className="mb-3 flex items-center justify-between text-sm">
         <span className="flex items-center gap-1.5 text-foreground">
-          Compute allocated
+          Container agents
           <Tooltip
             content="What your running agents reserve, not what they are using. Stop or pause an agent to free up compute."
             side="bottom"
@@ -105,13 +102,7 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
             <Help size={14} className="cursor-help text-muted-foreground/60" />
           </Tooltip>
         </span>
-        <a
-          href={links?.computeRequest ?? COMPUTE_REQUEST_URL}
-          {...externalLinkProps}
-          className="shrink-0 text-muted-foreground/60 hover:underline"
-        >
-          Request more
-        </a>
+        <RequestMoreLink />
       </div>
       <div className="mb-3">
         <p className="text-2xl font-semibold tabular-nums text-foreground">

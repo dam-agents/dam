@@ -87,6 +87,22 @@ test("grows its machine past the boot RAM", async () => {
     .toBe(true);
 });
 
+// TEST_SCENARIO: on the vm Backend the home dashboard shows the owner's memory and storage pools as meters read from the owner's runner, with this agent's own share in each.
+test("shows its owner's pools on the home dashboard", async ({ page }) => {
+  test.skip(laneBackend !== "vm", "only vm agents draw on a per-user pool");
+  test.setTimeout(120_000);
+  await page.goto("/");
+  for (const pool of ["Memory", "Storage"])
+    await expect(page.getByRole("meter", { name: pool })).toBeVisible({
+      timeout: 60_000,
+    });
+  await expect(
+    page
+      .getByRole("meter", { name: "Memory" })
+      .getByRole("button", { name: new RegExp(`^${agentName} · `) }),
+  ).toBeVisible({ timeout: 60_000 });
+});
+
 // TEST_SCENARIO: the files API writes into the agent's HOME and reads the same bytes back. Every later scenario reads this file again, so it is the evidence that HOME survived.
 test("keeps a file written to HOME", async () => {
   test.setTimeout(300_000);

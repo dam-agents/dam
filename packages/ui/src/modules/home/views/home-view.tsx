@@ -8,6 +8,7 @@ import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { useSandboxRowActions } from "../../agents/hooks/use-sandbox-row-actions.js";
 import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
 import { ComputeUsage } from "../../budgets/components/compute-usage.js";
+import { PoolUsage } from "../../budgets/components/pool-usage.js";
 import { useFeed } from "../api/queries.js";
 import { ApprovalsBanner } from "../components/approvals-banner.js";
 import { WidgetSkeleton } from "../components/home-skeletons.js";
@@ -22,9 +23,8 @@ export function HomeView() {
     suspend,
   });
 
-  const { visible, drawByDriver } = splitTemporarySandboxes(
-    agentsData?.list ?? [],
-  );
+  const allAgents = agentsData?.list ?? [];
+  const { visible, drawByDriver } = splitTemporarySandboxes(allAgents);
 
   if (!initialLoaded) {
     return (
@@ -53,11 +53,16 @@ export function HomeView() {
       <PageHeader title="Home" actions={<EntryPointButtons />} />
       <ApprovalsBanner />
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-border bg-card p-6">
-          <ComputeUsage
-            agents={agentsData?.list ?? []}
-            workingAgentIds={workingAgentIds}
-          />
+        <div className="flex flex-col gap-6 rounded-lg border border-border bg-card p-6">
+          {allAgents.some((agent) => agent.vm) && (
+            <PoolUsage agents={allAgents} />
+          )}
+          {allAgents.some((agent) => !agent.vm) && (
+            <ComputeUsage
+              agents={allAgents}
+              workingAgentIds={workingAgentIds}
+            />
+          )}
         </div>
         <SpendWidget />
       </div>

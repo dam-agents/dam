@@ -53,8 +53,25 @@ describe("agent card subtitle", () => {
     expect(sandboxSubtitle(sized, slotUnit)).toBeTruthy();
   });
 
-  it("is empty for a vm agent", () => {
-    expect(sandboxSubtitle({ ...sized, vm: true }, slotUnit)).toBeNull();
+  it("shows a vm agent's own share of its pools, and nothing it has not measured", () => {
+    const vmAgent = { ...sized, vm: true, state: "running" as const };
+    const usage = {
+      memory: { usedBytes: 0, limitBytes: 0, level: "ok" as const },
+      storage: { usedBytes: 0, usableBytes: 0, level: "ok" as const },
+      agents: [
+        {
+          id: "agent",
+          memoryUsedBytes: 1.5 * 1024 ** 3,
+          storageUsedBytes: 8 * 1024 ** 3,
+          cpuMilli: 0,
+        },
+      ],
+      observedAt: "",
+    };
+    expect(sandboxSubtitle(vmAgent, slotUnit, usage)).toBe(
+      "1.5 GiB memory · 8.0 GiB storage",
+    );
+    expect(sandboxSubtitle(vmAgent, slotUnit)).toBeNull();
   });
 });
 
