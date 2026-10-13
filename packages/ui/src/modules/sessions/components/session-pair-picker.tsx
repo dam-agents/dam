@@ -115,21 +115,7 @@ export function SessionPairPicker({
     Object.keys(settings).length > 0 ? { ...next, settings } : next;
 
   if (providers.loaded && providers.owned.length === 0)
-    return (
-      <button
-        type="button"
-        onClick={onConnectProviders}
-        className="flex items-center gap-1.5 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <WarningAltFilled size={14} className="shrink-0 text-warning" />
-        <span>
-          <span className="underline underline-offset-2">
-            Connect an LLM provider
-          </span>{" "}
-          first.
-        </span>
-      </button>
-    );
+    return <ConnectProvidersPrompt onClick={onConnectProviders} />;
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -288,6 +274,24 @@ export function SessionPairPicker({
   );
 }
 
+export function ConnectProvidersPrompt({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-1.5 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <WarningAltFilled size={14} className="shrink-0 text-warning" />
+      <span>
+        <span className="underline underline-offset-2">
+          Connect an LLM provider
+        </span>{" "}
+        first.
+      </span>
+    </button>
+  );
+}
+
 export function SetAsDefault({
   agentId,
   pair,
@@ -381,11 +385,8 @@ function ProviderModels({
   onDisconnect: () => void;
   onChoose: (model: string) => void;
 }) {
-  const { data, isLoading, isError, operable, refetch } = useProviderModels(
-    agentId,
-    harness,
-    provider.id,
-  );
+  const { data, isLoading, isError, operable, answerable, refetch } =
+    useProviderModels(agentId, harness, provider.id);
   const [retrying, setRetrying] = useState(false);
   const models =
     data?.availableModels === null ? fallback : (data?.availableModels ?? []);
@@ -409,9 +410,9 @@ function ProviderModels({
         ))}
         {models.length === 0 && (
           <li className="px-1 py-1 text-muted-foreground">
-            {!operable ? (
+            {!answerable ? (
               "Start the agent to list this provider's models."
-            ) : isLoading || retrying ? (
+            ) : !operable || isLoading || retrying ? (
               <span className="inline-flex items-center gap-1.5">
                 <Spinner size={12} className="text-muted-foreground" />
                 Loading models…

@@ -115,6 +115,7 @@ import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-notice.js";
 import { SessionPairPicker } from "../components/session-pair-picker.js";
+import { SessionPairPlaceholder } from "../components/session-pair-placeholder.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
@@ -304,14 +305,22 @@ export function ChatView() {
 
   const { openFileHandler } = useFileTree(selectedAgent);
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
-  const { data: harnessStatus } = useHarnessConfigStatus(selectedAgent);
+  const harnessStatusQuery = useHarnessConfigStatus(selectedAgent);
+  const harnessStatus = harnessStatusQuery.data;
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
   const carried = (selectedAgent && harnessStatus?.harnesses) || [];
   const pairOutdated = carried.length > 0 && !routesSessionPairs(carried);
+  const harnessesPending =
+    !harnessStatus?.harnesses &&
+    !harnessStatus?.catalog &&
+    (harnessStatusQuery.isPending || !agentOperable);
   const newSessionAgent =
-    !sessionId && carried.length > 0 ? selectedAgent : null;
+    !sessionId && (carried.length > 0 || harnessesPending)
+      ? selectedAgent
+      : null;
+  const pendingPairAgent = harnessesPending ? newSessionAgent : null;
   const pickable =
-    newSessionAgent && !pairOutdated
+    newSessionAgent && carried.length > 0 && !pairOutdated
       ? {
           agentId: newSessionAgent,
           carried,
@@ -964,7 +973,20 @@ export function ChatView() {
                     </ChatColumn>
                   </div>
                 )}
-                {!hasPendingPermission && !pickable && (
+                {!hasPendingPermission && pendingPairAgent && (
+                  <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+                    <ChatColumn>
+                      <SessionPairPlaceholder
+                        agentId={pendingPairAgent}
+                        agentHarness={agentView?.harness}
+                        open={pairPickerOpen}
+                        onOpenChange={setPairPickerOpen}
+                        onConnectProviders={() => setProvidersModal(true)}
+                      />
+                    </ChatColumn>
+                  </div>
+                )}
+                {!hasPendingPermission && !pickable && !pendingPairAgent && (
                   <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
                     <ChatColumn>
                       {selectedAgent && pairOutdated ? (

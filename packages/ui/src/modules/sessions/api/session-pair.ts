@@ -16,6 +16,7 @@ import { trpc } from "../../../trpc.js";
 import { agentTrpc } from "../../agents/agent-trpc.js";
 import {
   useAgentConnections,
+  useIsAgentAnswerableSoon,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
 import { useAppConnections } from "../../connections/api/queries.js";
@@ -51,6 +52,7 @@ export function useProviderModels(
   provider: string | null,
 ) {
   const operable = useIsAgentOperable(agentId);
+  const answerable = useIsAgentAnswerableSoon(agentId);
   const query = useQuery({
     queryKey: ["provider-models", agentId, harness, provider],
     queryFn:
@@ -71,7 +73,7 @@ export function useProviderModels(
     retry: 5,
     retryDelay: 2_000,
   });
-  return { ...query, operable };
+  return { ...query, operable, answerable };
 }
 
 export function useHarnessConfigured(agentId: string, harness: string) {
@@ -170,6 +172,19 @@ export function readNextSessionPair(
     fittingProviders(catalog, granted),
   );
   return pair ? { pair } : null;
+}
+
+export async function settledNextSessionPair(
+  agentId: string,
+): Promise<{ pair: SessionPair } | null> {
+  const status = trpc.harnessConfig.status.queryKey({ agentId });
+  if (!queryClient.getQueryData<HarnessConfigStatus>(status)?.harnesses)
+    await Promise.all(
+      [status, trpc.harnessConfig.sessionPair.queryKey({ agentId })].map(
+        (queryKey) => queryClient.refetchQueries({ queryKey }),
+      ),
+    );
+  return readNextSessionPair(agentId);
 }
 
 export function rememberSessionPair(agentId: string, pair: SessionPair): void {
