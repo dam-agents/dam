@@ -1,10 +1,13 @@
 import { expect, test } from "@playwright/test";
+import { connectionEgressPlaceholder } from "api-server-api";
 
 import { waitForAgentRunning } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
+import { getConnectionId } from "../../lib/connections.js";
 import {
   agentName,
+  connectionName,
   echoUrl,
   mockDefaultReply,
   sentinel,
@@ -83,6 +86,11 @@ test("shared turns run under the OWNER's credentials whoever asked", async () =>
   const token = await getAccessToken();
   const api = createApiClient(token);
   await waitForAgentRunning(api, agentName);
+  // The agent requires named connections, so the fetch names the Connection
+  // by its placeholder for the gateway to inject the owner's credential.
+  const placeholder = connectionEgressPlaceholder(
+    await getConnectionId(api, connectionName),
+  );
 
   await test.step("a stranger's fetch turn carries the owner's credential", async () => {
     await api.e2e.slackResetOutbound.mutate();
@@ -90,7 +98,7 @@ test("shared turns run under the OWNER's credentials whoever asked", async () =>
       user: strangerSlackUserId,
       channel: sharedChannelId,
       ts: "1700000004.000100",
-      text: `__FETCH__ ${echoUrl}`,
+      text: `__FETCH__ ${echoUrl} x-api-key:${placeholder}`,
     });
 
     let replyText = "";
