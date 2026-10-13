@@ -1,49 +1,24 @@
-import type { BudgetVmUsage, PoolLevel } from "api-server-api";
+import type { BudgetVmUsage } from "api-server-api";
 
 import type { AgentView } from "../../../types.js";
-import { formatCores } from "../lib/format.js";
-import { cpuPressureBar, topCpuAgents } from "../lib/pools.js";
+import { cpuBar, topCpuAgents } from "../lib/pools.js";
 import { PoolBar } from "./pool-bar.js";
 
-const SLOWED_TEXT: Record<PoolLevel, string | null> = {
-  ok: null,
-  warning: "Slowing down",
-  critical: "Slowed down",
-};
-
 interface Props {
+  cpu: NonNullable<BudgetVmUsage["cpu"]>;
   usage: BudgetVmUsage;
   agents: readonly AgentView[];
 }
 
-export function CpuRow({ usage, agents }: Props) {
-  const { cpu } = usage;
-  const top = topCpuAgents(usage, agents);
+export function CpuRow({ cpu, usage, agents }: Props) {
+  const top = topCpuAgents(usage, agents).map((agent) => agent.name);
   return (
-    <div className="flex flex-col gap-1.5 text-sm">
-      {cpu ? (
-        <PoolBar
-          title="CPU"
-          bar={cpuPressureBar(cpu)}
-          levelText={SLOWED_TEXT}
-          detail={`CPU pressure · ${Math.round(cpu.pressurePercent)}%`}
-        />
-      ) : (
-        <span className="text-foreground">CPU</span>
-      )}
-      <p className="text-muted-foreground">
-        {cpu?.slowed
-          ? `${SLOWED_TEXT[cpu.level]}: your agents waited for a CPU ${Math.round(cpu.pressurePercent)}% of the last minute.${
-              top.length > 0
-                ? ` Using the most: ${top
-                    .map(
-                      (t) => `${t.agent.name} (${formatCores(t.cpuMilli)} CPU)`,
-                    )
-                    .join(", ")}.`
-                : ""
-            }`
-          : "Not slowed down"}
-      </p>
-    </div>
+    <PoolBar
+      title="CPU"
+      value={cpu.congestion}
+      bar={cpuBar(cpu)}
+      percent={Math.round(cpu.fill * 100)}
+      warning={`Your agents may be slowed down by waiting for CPU.${top.length > 0 ? ` Heaviest users: ${top.join(", ")}.` : ""}`}
+    />
   );
 }

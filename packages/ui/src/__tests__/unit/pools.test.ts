@@ -2,9 +2,7 @@ import type { BudgetVmUsage } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
-  cpuPressureBar,
-  idleVmAgents,
-  largestVmAgents,
+  cpuBar,
   memoryBar,
   storageBar,
   topCpuAgents,
@@ -60,24 +58,27 @@ const agents = [
   agent("tiny"),
   agent("asleep", "hibernated"),
 ];
+const names = (bar: { segments: { label: string }[] }) =>
+  bar.segments.map((s) => s.label.split(" · ")[0]);
 
 describe("pool bars", () => {
-  it("lists memory by running agents largest first, then headroom", () => {
+  it("lists memory by running agents largest first, then headroom, adding up to the use", () => {
     const bar = memoryBar(usage, agents);
-    expect(bar.percent).toBe(60);
-    expect(bar.segments.map((s) => s.label)).toEqual([
+    expect(names(bar)).toEqual([
       "b",
       "a",
       "1 more",
       "Headroom for your agents",
     ]);
-    expect(bar.segments.reduce((sum, s) => sum + s.bytes, 0)).toBe(6 * GiB);
+    expect(bar.segments.reduce((sum, s) => sum + s.fraction, 0)).toBeCloseTo(
+      0.6,
+    );
   });
 
   it("counts hibernated agents' storage, and keeps the server's level", () => {
     const bar = storageBar(usage, agents);
     expect(bar.level).toBe("critical");
-    expect(bar.segments.map((s) => s.label)).toEqual([
+    expect(names(bar)).toEqual([
       "b",
       "asleep",
       "a",
@@ -86,36 +87,23 @@ describe("pool bars", () => {
     ]);
   });
 
-  it("fills the CPU bar with the pressure, in one segment at the server's level", () => {
-    const bar = cpuPressureBar({
+  it("fills the CPU bar with the server's congestion fill", () => {
+    const bar = cpuBar({
       limitMilli: 4000,
       usedMilli: 4000,
       throttledPercent: 10,
-      pressurePercent: 62.4,
+      pressurePercent: 50,
+      congestion: "high",
       level: "critical",
-      slowed: true,
+      fill: 0.5,
     });
-    expect(bar).toMatchObject({ percent: 62, level: "critical" });
-    expect(bar.segments).toEqual([
-      { agentId: null, label: "CPU pressure · 62%", bytes: 62, filled: true },
-    ]);
+    expect(bar).toEqual({
+      level: "critical",
+      segments: [{ agentId: null, label: "high", fraction: 0.5, filled: true }],
+    });
   });
 
   it("names the agents using the most CPU", () => {
-    expect(topCpuAgents(usage, agents).map((t) => t.agent.id)).toEqual([
-      "b",
-      "a",
-    ]);
-  });
-
-  it("offers the idle running agents largest first, and the largest disks, hibernated ones included", () => {
-    expect(
-      idleVmAgents(usage, agents, new Set(["a"])).map((s) => s.agent.id),
-    ).toEqual(["b", "tiny"]);
-    expect(largestVmAgents(usage, agents).map((s) => s.agent.id)).toEqual([
-      "b",
-      "asleep",
-      "a",
-    ]);
+    expect(topCpuAgents(usage, agents).map((a) => a.id)).toEqual(["b", "a"]);
   });
 });

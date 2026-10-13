@@ -30,11 +30,20 @@ describe("pool levels", () => {
     expect(poolLevel(90)).toBe("critical");
   });
 
-  it("sets CPU pressure's levels lower, at 20% and 50%", () => {
-    expect(cpuLevel(19)).toBe("ok");
-    expect(cpuLevel(20)).toBe("warning");
-    expect(cpuLevel(49)).toBe("warning");
-    expect(cpuLevel(50)).toBe("critical");
+  it("names CPU congestion by pressure and fills the bar by log slowdown, full at 4×", () => {
+    const at = (p: number) => cpuLevel(p);
+    expect(at(19)).toMatchObject({ congestion: "low", level: "ok" });
+    expect(at(20)).toMatchObject({ congestion: "moderate", level: "warning" });
+    expect(at(50)).toMatchObject({ congestion: "high", level: "critical" });
+    expect(at(75)).toMatchObject({
+      congestion: "severe",
+      level: "critical",
+      fill: 1,
+    });
+    expect(at(100).fill).toBe(1);
+    expect(at(0).fill).toBe(0);
+    expect(at(20).fill).toBeCloseTo(0.161, 3);
+    expect(at(50).fill).toBeCloseTo(0.5, 6);
   });
 
   it("refuses a new vm agent exactly when storage is critical", () => {
@@ -92,8 +101,9 @@ describe("the budgets read's vm figures", () => {
       usedMilli: 3900,
       throttledPercent: 20,
       pressurePercent: 55,
+      congestion: "high",
       level: "critical",
-      slowed: true,
+      fill: expect.closeTo(0.576, 3),
     });
     expect(
       vmUsageView(
@@ -110,6 +120,6 @@ describe("the budgets read's vm figures", () => {
         }),
         new Set(),
       ).cpu,
-    ).toMatchObject({ pressurePercent: 25, level: "warning", slowed: true });
+    ).toMatchObject({ pressurePercent: 25, congestion: "moderate" });
   });
 });

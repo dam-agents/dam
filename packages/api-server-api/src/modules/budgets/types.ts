@@ -1,6 +1,7 @@
 export type PoolLevel = "ok" | "warning" | "critical";
+export type CpuCongestion = "low" | "moderate" | "high" | "severe";
 
-// UNIT_BOUNDARY_DESCRIPTION: what the caller's vm agents use of their pools, read from their runner on demand. A level is "warning" from 75% of a pool and "critical" from 90%. `cpu` is absent when the runner reports neither a CPU limit nor a CPU pressure; its pressure is the share of the last minute the agents waited for a CPU, and its level is warning from 20% and critical (shown as slowed down) from 50%, since CPU is never refused on. An agent's storage is the blocks its disk takes, and its CPU the average over the runner's last probe of it; either is 0 when unmeasured.
+// UNIT_BOUNDARY_DESCRIPTION: what the caller's vm agents use of their pools, read from their runner on demand. A level is "warning" from 75% of a pool and "critical" from 90%. `cpu` is absent when the runner reports neither a CPU limit nor a CPU pressure; its pressure is the share of the last minute the agents waited for a CPU, shown as a congestion word and a 0–1 fill of the bar. An agent's storage is the blocks its disk takes, and its CPU the average over the runner's last probe of it; either is 0 when unmeasured.
 export interface BudgetVmUsage {
   memory: { usedBytes: number; limitBytes: number; level: PoolLevel };
   storage: { usedBytes: number; usableBytes: number; level: PoolLevel };
@@ -9,8 +10,9 @@ export interface BudgetVmUsage {
     usedMilli: number;
     throttledPercent: number;
     pressurePercent: number;
+    congestion: CpuCongestion;
     level: PoolLevel;
-    slowed: boolean;
+    fill: number;
   };
   agents: {
     id: string;

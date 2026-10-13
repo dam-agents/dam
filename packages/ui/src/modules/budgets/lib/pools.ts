@@ -5,19 +5,16 @@ import type { AgentView } from "../../../types.js";
 export interface PoolSegment {
   agentId: string | null;
   label: string;
-  bytes: number;
+  fraction: number;
   filled: boolean;
 }
 
 export interface PoolBarView {
-  percent: number;
   level: PoolLevel;
-  usedBytes: number;
-  limitBytes: number;
   segments: PoolSegment[];
 }
 
-const MIN_SEGMENT_PERCENT = 2;
+const MIN_SEGMENT_FRACTION = 0.02;
 
 // UNIT_BOUNDARY_DESCRIPTION: one pool as a bar: each agent's share largest first, the shares too thin to see folded into one "N more" segment, and what the pool counts beyond the agents' own shares as one last segment named `rest`.
 function poolBar(
@@ -27,46 +24,36 @@ function poolBar(
   level: PoolLevel,
   rest: string,
 ): PoolBarView {
+  const of = (bytes: number) => (limitBytes > 0 ? bytes / limitBytes : 0);
   const sorted = shares
     .filter((s) => s.bytes > 0)
     .sort((a, b) => b.bytes - a.bytes);
-  const visible = (bytes: number) =>
-    limitBytes > 0 && (bytes * 100) / limitBytes >= MIN_SEGMENT_PERCENT;
-  const shown = sorted.filter((s) => visible(s.bytes));
-  const folded = sorted.filter((s) => !visible(s.bytes));
+  const shown = sorted.filter((s) => of(s.bytes) >= MIN_SEGMENT_FRACTION);
+  const folded = sorted.filter((s) => of(s.bytes) < MIN_SEGMENT_FRACTION);
   const segments: PoolSegment[] = shown.map((s) => ({
     agentId: s.agent.id,
-    label: s.agent.name,
-    bytes: s.bytes,
+    label: `${s.agent.name} · ${formatBytes(s.bytes)}`,
+    fraction: of(s.bytes),
     filled: true,
   }));
   const foldedBytes = folded.reduce((sum, s) => sum + s.bytes, 0);
   if (folded.length > 0)
     segments.push({
       agentId: null,
-      label: `${folded.length} more`,
-      bytes: foldedBytes,
+      label: `${folded.length} more · ${formatBytes(foldedBytes)}`,
+      fraction: of(foldedBytes),
       filled: false,
     });
   const restBytes =
-    usedBytes - segments.reduce((sum, segment) => sum + segment.bytes, 0);
+    usedBytes - shown.reduce((sum, s) => sum + s.bytes, 0) - foldedBytes;
   if (restBytes > 0)
     segments.push({
       agentId: null,
-      label: rest,
-      bytes: restBytes,
+      label: `${rest} · ${formatBytes(restBytes)}`,
+      fraction: of(restBytes),
       filled: false,
     });
-  return {
-    percent:
-      limitBytes > 0
-        ? Math.min(100, Math.floor((usedBytes * 100) / limitBytes))
-        : 0,
-    level,
-    usedBytes,
-    limitBytes,
-    segments,
-  };
+  return { level, segments };
 }
 
 function vmShares<K extends "memoryUsedBytes" | "storageUsedBytes">(
@@ -108,20 +95,14 @@ export function storageBar(
   );
 }
 
-export function cpuPressureBar(
-  cpu: NonNullable<BudgetVmUsage["cpu"]>,
-): PoolBarView {
-  const percent = Math.min(100, Math.round(cpu.pressurePercent));
+export function cpuBar(cpu: NonNullable<BudgetVmUsage["cpu"]>): PoolBarView {
   return {
-    percent,
     level: cpu.level,
-    usedBytes: percent,
-    limitBytes: 100,
     segments: [
       {
         agentId: null,
-        label: `CPU pressure · ${percent}%`,
-        bytes: percent,
+        label: cpu.congestion,
+        fraction: Math.min(1, Math.max(0, cpu.fill)),
         filled: true,
       },
     ],
@@ -132,7 +113,7 @@ export function topCpuAgents(
   usage: BudgetVmUsage,
   agents: readonly AgentView[],
   limit = 3,
-): { agent: AgentView; cpuMilli: number }[] {
+): AgentView[] {
   const byId = new Map(agents.map((agent) => [agent.id, agent]));
   return usage.agents
     .flatMap((share) => {
@@ -142,40 +123,12 @@ export function topCpuAgents(
         : [];
     })
     .sort((a, b) => b.cpuMilli - a.cpuMilli)
-    .slice(0, limit);
+    .slice(0, limit)
+    .map((t) => t.agent);
 }
 
 export function formatBytes(bytes: number): string {
   const gib = bytes / 1024 ** 3;
   if (gib >= 1) return `${gib.toFixed(1)} GiB`;
   return `${Math.round(bytes / 1024 ** 2)} MiB`;
-}
-
-export interface AgentShare {
-  agent: AgentView;
-  bytes: number;
-}
-
-export function idleVmAgents(
-  usage: BudgetVmUsage,
-  agents: readonly AgentView[],
-  busyIds: ReadonlySet<string>,
-): AgentShare[] {
-  return vmShares(
-    usage,
-    agents,
-    "memoryUsedBytes",
-    (a) => a.state === "running" && !a.stopRequested && !busyIds.has(a.id),
-  ).sort((a, b) => b.bytes - a.bytes);
-}
-
-export function largestVmAgents(
-  usage: BudgetVmUsage,
-  agents: readonly AgentView[],
-  limit = 3,
-): AgentShare[] {
-  return vmShares(usage, agents, "storageUsedBytes", (a) => !a.stopRequested)
-    .filter((s) => s.bytes > 0)
-    .sort((a, b) => b.bytes - a.bytes)
-    .slice(0, limit);
 }

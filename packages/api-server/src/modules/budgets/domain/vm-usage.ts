@@ -1,7 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import type { BudgetVmUsage, PoolLevel } from "api-server-api";
-
-export type { PoolLevel };
+import type { BudgetVmUsage, CpuCongestion, PoolLevel } from "api-server-api";
 
 export interface RunnerUsage {
   storage: { usedBytes: number; usableBytes: number };
@@ -34,13 +32,24 @@ export function poolLevel(percent: number): PoolLevel {
   return "ok";
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: CPU pressure — the share of the last minute the agents waited for a CPU — is never refused on, since a CPU that is short only slows agents down, so its levels sit lower than the other pools': warning from CPU_WARNING_PERCENT, critical (shown as slowed down) from CPU_CRITICAL_PERCENT. A runner too old to report pressure is judged by its throttling.
-export const CPU_WARNING_PERCENT = 20;
-export const CPU_CRITICAL_PERCENT = 50;
+const CONGESTION: [CpuCongestion, number, PoolLevel][] = [
+  ["severe", 75, "critical"],
+  ["high", 50, "critical"],
+  ["moderate", 20, "warning"],
+];
 
-export function cpuLevel(pressurePercent: number): PoolLevel {
-  if (pressurePercent < CPU_WARNING_PERCENT) return "ok";
-  return pressurePercent < CPU_CRITICAL_PERCENT ? "warning" : "critical";
+// UNIT_BOUNDARY_DESCRIPTION: CPU pressure p (the share of the last minute the agents waited for a CPU) slows them by 1/(1−p), so the bar is log-scaled slowdown: full at 4× slower (p = 75%, "severe"). CPU is never refused on, so its levels sit lower than the other pools'. A runner too old to report pressure is judged by its throttling.
+export function cpuLevel(pressurePercent: number): {
+  congestion: CpuCongestion;
+  level: PoolLevel;
+  fill: number;
+} {
+  const p = Math.min(Math.max(pressurePercent, 0), 100) / 100;
+  const fill = p >= 0.75 ? 1 : Math.log(1 / (1 - p)) / Math.log(4);
+  const [congestion, , level] = CONGESTION.find(
+    ([, from]) => pressurePercent >= from,
+  ) ?? ["low", 0, "ok"];
+  return { congestion, level, fill };
 }
 
 const levelOf = (used: number, limit: number): PoolLevel =>
@@ -82,14 +91,12 @@ function cpuView(
   cpu: NonNullable<RunnerUsage["cpu"]>,
 ): NonNullable<BudgetVmUsage["cpu"]> {
   const pressurePercent = cpu.pressurePercent ?? cpu.throttledPercent;
-  const level = cpuLevel(pressurePercent);
   return {
     limitMilli: cpu.limitMilli,
     usedMilli: cpu.usedMilli,
     throttledPercent: cpu.throttledPercent,
     pressurePercent,
-    level,
-    slowed: level !== "ok",
+    ...cpuLevel(pressurePercent),
   };
 }
 
