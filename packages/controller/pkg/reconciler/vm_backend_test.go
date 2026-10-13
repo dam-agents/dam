@@ -55,6 +55,7 @@ type fakeNode struct {
 	version  uint64
 	waits    int
 	release  vmrunner.RunnerRelease
+	usage    vmrunner.RunnerUsage
 	onPut    func(vmrunner.MachineSpec)
 }
 
@@ -72,6 +73,10 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 		defer n.mu.Unlock()
 		if r.URL.Path == "/release" {
 			require.NoError(t, json.NewEncoder(w).Encode(n.release))
+			return
+		}
+		if r.URL.Path == "/usage" {
+			require.NoError(t, json.NewEncoder(w).Encode(n.usage))
 			return
 		}
 		if r.URL.Path == "/machines" {

@@ -107,6 +107,16 @@ func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 	})
 }
 
+// TEST_SCENARIO: the controller reads only the claim and the memory of the usage read, so the read's fixture decodes into those and the per-machine list the api-server reads is left aside rather than refused.
+func TestTheUsageReadDecodesTheClaimAndTheMemory(t *testing.T) {
+	var usage RunnerUsage
+	require.NoError(t, json.Unmarshal(contractFixture(t, "runner-usage.json"), &usage))
+	assert.Equal(t, int64(32212254720), usage.Storage.UsedBytes)
+	assert.Equal(t, int64(107374182400), usage.Storage.UsableBytes)
+	assert.Equal(t, int64(12288), usage.Memory.LimitMiB)
+	assert.Equal(t, int64(3072), usage.Memory.CommittedMiB)
+}
+
 // TEST_SCENARIO: the states and reasons are the vocabulary the controller matches on. A value that differs by a character is not a compile error on either side — it is a controller that never recognises the state its runner is reporting, so the Agent sits in a condition nothing clears.
 func TestTheStatesAndReasonsAreTheOnesTheRunnerReports(t *testing.T) {
 	vocabulary := decodeStrictly[struct {

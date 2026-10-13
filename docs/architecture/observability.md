@@ -23,6 +23,7 @@ flowchart LR
   end
   exporters -->|OTLP| collector
   collector -->|scrape| runners[VM runners]
+  prometheus[cluster Prometheus] -.->|scrape, optional| collector
   collector -->|write| store
   ui -->|read| store
   ui --> appstate
@@ -31,6 +32,7 @@ flowchart LR
 - **Collector** — an OpenTelemetry collector that receives OTLP and writes the signals into the telemetry store.
   It is platform-owned (deliberately not the collector ClickStack bundles — see *Access control*) and holds no upstream credentials.
   Its one pull path is the [VM runners](#vm-runner), which it scrapes because they cannot push; finding them is its only Kubernetes access, read-only pods in the agent namespace.
+  With `monitoring.enabled` it is also scraped: it exports the VM pool series for the cluster's Prometheus to read ([alerts](#alerts)).
 - **Telemetry store** — a columnar analytical database built for high-volume, high-cardinality, time-series telemetry.
   It is the only place telemetry lives.
   Retention is bounded: when the collector first creates the telemetry tables it stamps them with a TTL — 30 days by default, overridable per install through the chart — so signals age out instead of accumulating until the volume fills.
@@ -51,6 +53,7 @@ The chart ships only the custom resources and the platform-owned collector, whic
 ClickStack's default posture secures the collector with an ingestion key the UI issues and manages — application-layer, token-based access control.
 The platform deliberately does **not** rely on that.
 The collector is gated the same way as the rest of the platform: by the **service mesh**, through an authorization policy that admits only the platform's own namespaces — the release namespace and the agent namespace — and denies everything else.
+The one exception is the [alerts](#alerts) export: with `monitoring.enabled` the policy also admits any source to that one port, because the cluster's Prometheus has no mesh identity, and the port serves only the VM pool series of the runners and the controller.
 This keeps telemetry access on the same SPIFFE-principal model as the rest of the system (see [security-and-credentials](security-and-credentials.md)) rather than introducing a parallel token scheme.
 
 Making the mesh the sole gate is why the collector is platform-owned.
@@ -111,6 +114,8 @@ Enabling the backend sets the standard OTLP endpoint environment on each deploym
 Unlike agent telemetry, this export does not ride a gateway: it arrives without the trusted attribution header, so it carries no `platform.agent.id` and is never attributed to a user — which is exactly how the read path distinguishes platform telemetry from agent telemetry.
 
 - The **controller** emits one trace per reconcile pass and background sweep (with spans for each Kubernetes API call), reconcile and workqueue metrics, and its structured logs with trace correlation.
+  Its leader also exports the users' **VM pools** for operators, every half minute: what the runners' limits and claims commit against what the scheduler reserves for them and what the nodes able to run a runner hold (storage only where the storage driver publishes its capacity), how many runners sit at each level of their pool (ok, warning from 75%, critical from 90%), and how many runner pods wait on a resize the node deferred or refused.
+  The identity rule below holds: none of these names a user, so a user whose pool goes critical, or whose runner the node cannot fit, is named by a Warning Event on their vm Agents, and the second also by their `RunnerCapacity` condition.
 - The **api-server** emits one trace per incoming request with a child span per tRPC procedure (and spans for outbound calls: agents, Keycloak, channels, Redis, the ext-authz gRPC checks), per-procedure duration/outcome metrics plus Node runtime health (event loop, GC, heap), the **usage counters** and **state gauges** below, and its structured logs with trace correlation.
   Health-probe requests are not traced.
   Background work gets [traces of its own](#background-traces).
@@ -212,7 +217,8 @@ What a runner measures is what judging the vm backend against the container one 
 - **Machine operations** — each create, wake, restart and stop as a duration by outcome; the runtime's own start call inside it; and **ready latency**, from asking a machine to start to the first health check its guest answers, once per boot.
 - **Unhealthy restarts** — the ones the runner made on its own because a guest that had answered went quiet, apart from those a changed spec causes.
 - **Failures** by operation and by the reason the Agent is told, and **admission refusals** — machines whose memory did not fit.
-- **Memory** committed to machines, counted the way admission counts it, beside the runner's limit and its own reserve.
+- **Memory** committed to machines, counted the way admission counts it, beside the runner's limit and its own reserve; and the working set its cgroup charges, with whether it is past the [pressure](vm-memory.md) threshold.
+- **CPU** the runner's cgroup used, its limit, and the scheduler periods the limit throttled it in: every machine's vCPUs share that limit, so throttled periods over periods is how far the owner's machines are slowed down.
 - **The image cache** — creates that found a bootable tree and creates that did not, fetch durations by outcome, evictions and the bytes they freed, and the bytes held against the budget.
 - **Storage** — the bytes in use on the owner's claim and the bytes the runner may use there, which the claim's guard judges ([persistence](persistence.md#per-agent-pvcs)).
 
@@ -231,6 +237,14 @@ The guest agent's line for each connection it accepts is left out first, because
 Every start empties both of the console's sources first — the runner does so itself rather than trusting the runtime's own removal of its log — because the file outlives the runner and a restarted runner knows only the current spec: what a tail quotes is then a boot this runner started, with values it holds.
 A console the runner cannot redact, holding no spec for the machine, is not shown.
 The runner's health prober writes the note for a quiet guest and refreshes it about once a minute, not on every probe, so a stuck machine does not rewrite its Agent's condition on each one.
+
+### Alerts
+
+The chart ships alert rules for the VM pools only, for a cluster that runs prometheus-operator (or OpenShift's user-workload monitoring), because the backend's own alerts are not something a chart can declare.
+With `monitoring.enabled` the collector exports the pool series — the runners' and the controller's, and nothing else — in Prometheus form on a port of its own, and a ServiceMonitor and a PrometheusRule render where the cluster serves their API; elsewhere nothing renders.
+That port is admitted from any source, since the cluster's Prometheus has no mesh identity to match, which is why it carries no series but these.
+The rules fire on a user's pool at 75% and 90% of its memory or storage, a runner throttled in a fifth of its CPU periods or past its memory pressure, refusals that last, a resize a node deferred or refused, the users' pools committing more than one and a half times what the nodes or the storage driver hold, and runners reserving nine tenths of the nodes.
+No alert names a user; each critical one says how to find the user's agents from their Warning Events.
 
 ### Runtime migration
 
