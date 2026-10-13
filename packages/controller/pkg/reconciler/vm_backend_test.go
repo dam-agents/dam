@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -1803,4 +1804,52 @@ func TestMachineTrustedCAsAppendsTheExtraCAs(t *testing.T) {
 	cfg.ExtraTrustedCAs = "-----BEGIN CERTIFICATE-----\nextra\n-----END CERTIFICATE-----\n"
 	assert.Equal(t, "-----BEGIN CERTIFICATE-----\nmitm\n-----END CERTIFICATE-----\n"+cfg.ExtraTrustedCAs,
 		machineTrustedCAs("-----BEGIN CERTIFICATE-----\nmitm\n-----END CERTIFICATE-----", &cfg))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a clientset whose Secret reads each take `delay`, outside the fake's own lock, which serialises every call it answers. The time a reconcile takes then counts the Secret reads it makes one after another.
+type slowSecretsClient struct {
+	*fake.Clientset
+	delay time.Duration
+}
+
+func (c slowSecretsClient) CoreV1() corev1client.CoreV1Interface {
+	return slowSecretsCore{c.Clientset.CoreV1(), c.delay}
+}
+
+type slowSecretsCore struct {
+	corev1client.CoreV1Interface
+	delay time.Duration
+}
+
+func (c slowSecretsCore) Secrets(namespace string) corev1client.SecretInterface {
+	return slowSecrets{c.CoreV1Interface.Secrets(namespace), c.delay}
+}
+
+type slowSecrets struct {
+	corev1client.SecretInterface
+	delay time.Duration
+}
+
+func (s slowSecrets) Get(ctx context.Context, name string, opts metav1.GetOptions) (*corev1.Secret, error) {
+	time.Sleep(s.delay)
+	return s.SecretInterface.Get(ctx, name, opts)
+}
+
+// TEST_SCENARIO: every reconcile of a waking vm agent prepares its owner's runner before it sends the machine spec, and both read Secrets: the runner's token and certificate, and the agent's leaf. Read one after another they were four serial reads; the token and certificate are read side by side, and the leaf beside the runner, so the API server's latency is paid twice.
+func TestAMachinesSecretsAreReadInTwoRounds(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	require.NoError(t, r.Reconcile(ctx, agent))
+	const delay = 200 * time.Millisecond
+	r.client = slowSecretsClient{r.client.(*fake.Clientset), delay}
+
+	started := time.Now()
+	_, reached, err := r.reconcileVMAgent(ctx, agent, agentOwnerRef(agent), "10.96.42.42", true, true)
+	elapsed := time.Since(started)
+
+	require.NoError(t, err)
+	assert.True(t, reached)
+	assert.Equal(t, "MITM-CA", node.spec("my-agent").CACert)
+	assert.Less(t, elapsed, 3*delay, "the Secrets were read in more than two rounds")
 }

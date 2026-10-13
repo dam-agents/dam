@@ -159,16 +159,26 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	if err := r.applyRunnerDeployment(ctx, owner, refs, true); err != nil {
 		return nil, false, err
 	}
-	client, err := r.runnerFor(ctx, owner)
-	if err != nil {
-		return nil, false, err
-	}
-	for _, ref := range refs {
-		if err := r.ensureSecretOwnerReference(ctx, r.runnerTLSName(owner), ref); err != nil {
-			slog.Warn("vm runner: owning the issued TLS Secret; will retry on next reconcile", "owner", owner, "error", err)
-		}
-	}
-	dep, err := r.client.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
+	var client *vmrunner.Client
+	var dep *appsv1.Deployment
+	err := concurrently(
+		func() (err error) {
+			client, err = r.runnerFor(ctx, owner)
+			return err
+		},
+		func() (err error) {
+			dep, err = r.client.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
+			return err
+		},
+		func() error {
+			for _, ref := range refs {
+				if err := r.ensureSecretOwnerReference(ctx, r.runnerTLSName(owner), ref); err != nil {
+					slog.Warn("vm runner: owning the issued TLS Secret; will retry on next reconcile", "owner", owner, "error", err)
+				}
+			}
+			return nil
+		},
+	)
 	if err != nil {
 		return client, false, err
 	}
@@ -203,16 +213,20 @@ func (r *AgentReconciler) buildRunnerCertificate(owner string, ownerRefs []metav
 // UNIT_BOUNDARY_DESCRIPTION: every caller reaches an owner's runner the same way — read its token and the CA that issued its certificate, then dial it — so the credential is never handled anywhere but here. A runner whose certificate cert-manager has not issued yet cannot be dialled, and its pod cannot start either, so the caller requeues as it does for a gateway's leaf.
 func (r *AgentReconciler) runnerFor(ctx context.Context, owner string) (*vmrunner.Client, error) {
 	secrets := r.client.CoreV1().Secrets(r.config.Namespace)
-	token, err := secrets.Get(ctx, r.runnerName(owner), metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("reading the runner's token: %w", err)
+	var token, tls *corev1.Secret
+	var tokenErr, tlsErr error
+	_ = concurrently(
+		func() error { token, tokenErr = secrets.Get(ctx, r.runnerName(owner), metav1.GetOptions{}); return nil },
+		func() error { tls, tlsErr = secrets.Get(ctx, r.runnerTLSName(owner), metav1.GetOptions{}); return nil },
+	)
+	if tokenErr != nil {
+		return nil, fmt.Errorf("reading the runner's token: %w", tokenErr)
 	}
-	tls, err := secrets.Get(ctx, r.runnerTLSName(owner), metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
+	if k8serrors.IsNotFound(tlsErr) {
 		return nil, errRunnerTLSPending
 	}
-	if err != nil {
-		return nil, fmt.Errorf("reading the runner's TLS Secret: %w", err)
+	if tlsErr != nil {
+		return nil, fmt.Errorf("reading the runner's TLS Secret: %w", tlsErr)
 	}
 	return r.runnerClient(owner, string(token.Data["token"]), string(tls.Data["ca.crt"]))
 }

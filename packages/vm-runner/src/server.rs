@@ -428,7 +428,7 @@ impl Server {
             }
         }
         loop {
-            if !self.converging(id) {
+            if !self.converging(id) && !self.seen_lately(id) {
                 self.observe(id, true);
             }
             let (state, mut status) = self.report(id);
@@ -1322,6 +1322,16 @@ impl Server {
                 error: Some(format!("{e:#}")),
             },
         }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether what was last recorded about the machine is as current as the prober keeps it: no older than its probe cadence, or about a stopped or absent machine, which only an action changes. A PUT then plans from that record rather than looking again: a look at a running machine pings its guest agent and asks the guest's health endpoint, which costs a wake's PUT about 100 ms right after the start that already looked, and a quiet guest three seconds. A record that holds a runtime error, or one about a machine being deleted, is looked at again.
+    fn seen_lately(&self, id: &str) -> bool {
+        locked(&self.machines).entries.get(id).is_some_and(|e| {
+            !e.deleting
+                && e.seen.as_ref().is_some_and(|seen| seen.error.is_none())
+                && probe_every(e)
+                    .is_none_or(|every| e.probed.is_some_and(|at| at.elapsed() < every))
+        })
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: looks at the machine now and records it. A machine's own worker records what it saw unconditionally; anyone else passes `guarded`, and what they saw is dropped if something newer was recorded while they looked.

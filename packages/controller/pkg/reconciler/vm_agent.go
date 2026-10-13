@@ -53,7 +53,7 @@ var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
 
 // UNIT_BOUNDARY_DESCRIPTION: ensures the Agent's machine on its owner's runner. `publish` points the agent Service at the machine; a machine a runtime migration builds beside a container that still serves leaves the Service to the container.
 func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running, publish bool) (vmrunner.MachineStatus, bool, error) {
-	name := agent.Name
+	name, spec := agent.Name, &agent.Spec
 	owner := agent.Labels[envoyOwnerLabel]
 	if owner == "" {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("agent %s has no owner label, so it has no VM runner", name)
@@ -66,7 +66,27 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("sizing the owner's VM runner: %w", err)
 	}
-	runner, ready, err := r.ensureRunner(ctx, owner, demand)
+	var (
+		runner                   *vmrunner.Client
+		ready                    bool
+		sec, leaf                *corev1.Secret
+		pullAuths                []string
+		secErr, leafErr, pullErr error
+	)
+	// UNIT_BOUNDARY_DESCRIPTION: what the machine spec reads from the cluster does not depend on the runner, so it is read beside the runner's preparation rather than after it: each is a few serial API reads on every reconcile of a waking machine. A runner that is not ready or not reached still wins over a missing leaf, as it did when these came after it.
+	_ = concurrently(
+		func() error { runner, ready, err = r.ensureRunner(ctx, owner, demand); return nil },
+		func() error { sec, secErr = r.ownedSecretRef(ctx, agent); return nil },
+		func() error {
+			leaf, leafErr = r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
+			return nil
+		},
+		func() error {
+			pullAuths, pullErr = pullauth.Resolve(ctx, r.client.CoreV1().Secrets(r.config.Namespace),
+				append([]string{spec.ImagePullSecretRef}, r.config.AgentBase.ImagePullSecrets...))
+			return nil
+		},
+	)
 	if errors.Is(err, errRunnerTerminating) {
 		return vmrunner.MachineStatus{Message: "the owner's previous VM runner is still being removed; a new one is created once it is gone"}, false, nil
 	}
@@ -80,7 +100,6 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		}
 		return vmrunner.MachineStatus{Reason: reason, Message: msg}, false, nil
 	}
-	spec := &agent.Spec
 	defaults := r.config.AgentTemplateDefaults
 
 	proxy, allow, gatewayHostPort, resolver := agentProxyAddr(r.config, gatewayIP), []string{gatewayIP + "/32"}, 0, gatewayIP
@@ -100,13 +119,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if spec.Harness != "" {
 		env["PLATFORM_HARNESS"] = spec.Harness
 	}
-	sec, err := r.ownedSecretRef(ctx, agent)
 	var refused secretRefRefused
-	if errors.As(err, &refused) {
-		sec, err = nil, nil
-	}
-	if err != nil {
-		return vmrunner.MachineStatus{}, false, err
+	if errors.As(secErr, &refused) {
+		sec = nil
+	} else if secErr != nil {
+		return vmrunner.MachineStatus{}, false, secErr
 	}
 	if sec != nil {
 		for k, v := range sec.Data {
@@ -124,18 +141,14 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, false, err
 	}
 
-	leaf, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
-	if k8serrors.IsNotFound(err) {
+	if k8serrors.IsNotFound(leafErr) {
 		return vmrunner.MachineStatus{}, false, errLeafSecretPending
 	}
-	if err != nil {
-		return vmrunner.MachineStatus{}, false, fmt.Errorf("reading envoy leaf Secret: %w", err)
+	if leafErr != nil {
+		return vmrunner.MachineStatus{}, false, fmt.Errorf("reading envoy leaf Secret: %w", leafErr)
 	}
-
-	pullAuths, err := pullauth.Resolve(ctx, r.client.CoreV1().Secrets(r.config.Namespace),
-		append([]string{spec.ImagePullSecretRef}, r.config.AgentBase.ImagePullSecrets...))
-	if err != nil {
-		return vmrunner.MachineStatus{}, false, err
+	if pullErr != nil {
+		return vmrunner.MachineStatus{}, false, pullErr
 	}
 
 	machine := vmrunner.MachineSpec{
