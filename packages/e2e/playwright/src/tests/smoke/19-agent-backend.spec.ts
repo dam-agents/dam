@@ -98,7 +98,7 @@ test("shows its owner's pools on the home dashboard", async ({ page }) => {
     });
   await expect(
     page
-      .getByRole("meter", { name: "Memory" })
+      .getByRole("group", { name: "Memory by agent" })
       .getByRole("button", { name: new RegExp(`^${agentName} · `) }),
   ).toBeVisible({ timeout: 60_000 });
 });

@@ -47,13 +47,18 @@ export function PoolBar({ title, bar, levelText = FULL_TEXT, detail }: Props) {
             `${formatBytes(bar.usedBytes)} of ${formatBytes(bar.limitBytes)} · ${bar.percent}%`}
         </span>
       </div>
-      <div
+      <span
         role="meter"
         aria-label={title}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={bar.percent}
         aria-valuetext={`${bar.percent}%${text ? `, ${text}` : ""}`}
+        className="sr-only"
+      />
+      <div
+        role="group"
+        aria-label={`${title} by agent`}
         className="flex h-3 w-full gap-px overflow-hidden rounded-sm bg-muted"
       >
         {bar.segments.map((segment) => (

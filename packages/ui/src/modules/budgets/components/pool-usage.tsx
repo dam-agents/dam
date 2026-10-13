@@ -53,12 +53,11 @@ export function PoolUsage({
     );
   const memory = memoryBar(usage, vmAgents);
   const storage = storageBar(usage, vmAgents);
-  const slowed = usage.cpu?.slowed ?? false;
   return (
     <div className="flex flex-col gap-4">
       <Header />
       <PoolBar title="Memory" bar={memory} />
-      {(memory.level !== "ok" || slowed) && (
+      {memory.level !== "ok" && (
         <MemoryFixes
           idle={idleVmAgents(usage, vmAgents, busyIds)}
           critical={memory.level === "critical"}

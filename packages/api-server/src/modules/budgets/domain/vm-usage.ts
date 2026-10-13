@@ -21,7 +21,7 @@ export interface RunnerUsage {
   observedAt: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the levels every pool is shown and acted on at, defined once so the home dashboard, the create refusal and the Slack alerts agree. Critical is the same threshold the runner refuses a new disk at and the controller starts reclaiming memory at, so the api-server's refusal is the runner's, said before an Agent is written rather than after its machine is refused.
+// UNIT_BOUNDARY_DESCRIPTION: the levels every pool is shown and acted on at, defined once so the home dashboard and the create refusal agree. Critical is the same threshold the runner refuses a new disk at and the controller starts reclaiming memory at, so the api-server's refusal is the runner's, said before an Agent is written rather than after its machine is refused.
 export const POOL_WARNING_PERCENT = 75;
 export const POOL_CRITICAL_PERCENT = 90;
 

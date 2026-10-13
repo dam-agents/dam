@@ -33,7 +33,7 @@ export function CpuRow({ usage, agents }: Props) {
       )}
       <p className="text-muted-foreground">
         {cpu?.slowed
-          ? `Slowed down: your agents waited for a CPU ${Math.round(cpu.pressurePercent)}% of the last minute.${
+          ? `${SLOWED_TEXT[cpu.level]}: your agents waited for a CPU ${Math.round(cpu.pressurePercent)}% of the last minute.${
               top.length > 0
                 ? ` Using the most: ${top
                     .map(
