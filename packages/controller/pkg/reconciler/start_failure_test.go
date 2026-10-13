@@ -132,12 +132,12 @@ func TestVMStartFailure(t *testing.T) {
 	assert.True(t, clock.notReadySince.IsZero(), "a restart in flight, its pull included, is not counted")
 
 	clock, _ = vmStartFailure(clock, 3, running, startNow)
-	_, f = vmStartFailure(clock, 3, running, startNow.Add(9*time.Minute))
+	_, f = vmStartFailure(clock, 3, running, startNow.Add(119*time.Second))
 	assert.Empty(t, f.reason, "within the bound")
-	_, f = vmStartFailure(clock, 3, running, startNow.Add(10*time.Minute))
-	assert.Equal(t, apiv1.ReasonNeverReady, f.reason)
+	_, f = vmStartFailure(clock, 3, running, startNow.Add(2*time.Minute))
+	assert.Equal(t, apiv1.ReasonNeverReady, f.reason, "reported before the five-minute vm idle timeout hibernates the agent")
 
-	answered, _ := vmStartFailure(clock, 3, vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true}, startNow.Add(5*time.Minute))
+	answered, _ := vmStartFailure(clock, 3, vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true}, startNow.Add(time.Minute))
 	_, f = vmStartFailure(answered, 3, running, startNow.Add(11*time.Minute))
 	assert.Empty(t, f.reason, "an answer stops the clock")
 

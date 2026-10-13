@@ -141,7 +141,9 @@ On the container backend that is a pod of the agent StatefulSet's update revisio
 On the vm backend the runner's status names no spec, but a restart in flight reads not ready, so the controller counts from the first read at the current generation.
 The controller sets `StartFailed` for one of two reasons.
 Either the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now.
-Or it ran for ten minutes on this spec and never became ready, not counting the time an image pull takes.
+Or it ran on this spec and never became ready, not counting the time an image pull takes: for ten minutes in a container, or for two minutes in a vm machine.
+The vm bound is short because a moved vm Agent takes the new image when it wakes, and the vm idle timeout hibernates it again five minutes later.
+At ten minutes, the runner's own restart of the quiet guest would also stop the clock first.
 An exit from out of memory or a full home volume does not count, since any image meets it.
 A harness that crash-loops on any image, from something in the Agent's home, also moves the Agent back, and the new image is then refused for this Agent although it is not at fault.
 The owner's Update stays available, to move a running Agent now, and says so when the Agent failed to start on that image.
