@@ -3,12 +3,18 @@
 Last verified: 2026-10-13
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
-That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md).
+That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
+The pool is the install's runner memory limit (`virtualization.runner.resources.limits.memory`) unless the owner's [UserBudget](budgets.md#the-ceiling) sets `memory`; `cpu` there caps the runner's CPU limit the same way.
+
+**A pool changes in place.** The controller reads each owner's UserBudget again at every memory pass, every 30 seconds, and resizes the running runner pod's memory limit and CPU limit through its resize subresource, so a raised or lowered pool restarts no machine; the pod's roll leaves its memory limit and request out of what it compares, and a pod created later starts at the pool rendered then.
+A pool that rises is the limit at once.
+One that falls is the target of admission and reclaim at once, but the limit itself stops at what the running machines are counted at plus the reserve, in 512 MiB steps, and comes down as they stop, since a limit under them would have the kernel kill the runner with every machine.
+A machine's new size reaches it at its next start.
 
 **Every machine may grow to half the pool.** A machine's size is half of what its runner hands out — the runner's memory limit less its reserve — whatever its Agent's spec names, so one agent can use most of the pool while a runaway guest meets its own OOM killer before it takes the runner, and every sibling, over the limit.
 Every machine gets the install's vCPUs (`virtualization.runner.machineCPUs`); they are threads of the runner, so an idle machine costs nothing.
-The controller keeps the runner pod's CPU limit, resized in place, at the vCPUs of the machines that should be running plus one machine's worth for the runner itself and the VMMs' own threads, never above a CPU limit the install sets.
-Unless the install caps it lower, a guest is never throttled below its vCPUs, and one runaway VMM cannot take the whole node.
+The controller keeps the runner pod's CPU limit, resized in place, at the vCPUs of the machines that should be running plus one machine's worth for the runner itself and the VMMs' own threads, never above the owner's CPU pool: their UserBudget's `cpu`, else a CPU limit the install sets.
+Unless the pool caps it lower, a guest is never throttled below its vCPUs, and one runaway VMM cannot take the whole node.
 A cluster without in-place resize sets no CPU limit.
 The [host runner](vm-host-runner.md) admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the Agent's spec still sets its machine's memory; its vCPUs still come from the install.
 A new size reaches a running machine at its next start, not by rebooting it ([vm-runner](vm-runner.md)); until then the controller counts it at the larger of the two sizes, in memory and in vCPUs.
@@ -33,6 +39,11 @@ The guest writes the page descriptors of added RAM into that RAM itself, so huge
 **The runner measures every running machine.** Its health prober reads the resident memory of each running machine's VMM at every probe and reports it in the machine's status.
 The figure is kept out of what moves the status version, so it never wakes a waiting status read on its own.
 
+**The runner watches its own memory.** Every second it reads its working set off its cgroup — what the cgroup charges less the file cache the kernel can drop, the figure the kubelet reads — against its limit.
+At 95% the runner is under pressure, and it stays so until the working set falls below 90%.
+A pressure read waits on a version of its own, which moves when pressure starts or ends and every ten seconds while it lasts; before it moves, the runner measures every running machine again, so the statuses read on it are current.
+A runner with no cgroup v2 to read — the host runner, a cgroup v1 node — never reports pressure.
+
 **A running machine is counted at its use plus headroom.** That is its measured use plus a per-machine headroom (`virtualization.runner.headroomMiB`), never more than its size.
 A machine not yet measured, and every machine an action is bringing up, counts at a boot estimate (`virtualization.runner.bootMiB`), or its size when that is smaller, until the runner first measures it.
 That is about 100 ms after its start returns, before the agent's harness has started; only a guest whose harness answered during the start waits for the steady probe, about ten seconds on.
@@ -41,6 +52,7 @@ Counting a boot at half the pool would let only two machines boot at once, so a 
 Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below.
 
 **Admission is against use, so an owner may run more machines than their sizes add up to.** A machine starts while every machine's count, the start's own count and the runner's reserve fit under the runner's limit; otherwise the runner refuses it with the shortfall named, and the Agent is parked as [budgets](budgets.md) describes.
+That limit is the one the kernel holds the runner to, read off its cgroup's `memory.max` at every admission and pressure sample, so a limit resized in place counts at once; a runner with no cgroup v2 limit to read uses the limit it was started with.
 
 **The scheduler reserves what the machines use.** The controller keeps the runner pod's memory request, resized in place, at the machines' counts plus the reserve, in 512 MiB steps so a guest that drifts at every probe does not resize the pod, within the install's request and the limit.
 The request rises a step as soon as the counts need it, but falls only once they are a quarter step below the step under it, so use that sits on a step boundary does not resize the pod at every pass; admission and the metric stay exact.
@@ -51,10 +63,16 @@ A refused start is retried once their machines have stopped.
 No other owner's agent is touched.
 Because a running machine's use reaches the controller only when its agent reconciles, the controller also asks each owner's runner about its running machines every 30 seconds, which is what pressure is judged from and what moves the request between reconciles.
 That pass reconciles one of the owner's agents only when the request their counts call for differs from the runner pod's, so a count held within its step wakes nothing.
+The runner's own pressure signal runs the same pass for that owner at once, without waiting for the counted threshold, since the kernel's view is the one that kills the runner.
+Its need is the larger of the counted and the measured overshoot of the 80% target, and it may hibernate fewer agents than cover it: near an OOM kill, freeing some memory beats freeing none.
+The controller holds one watch on each owner's pressure, and a pass on it hibernates nothing more for fifteen seconds after one that did, because the machines it hibernated still count until they have stopped.
+The two passes never run together for one owner.
 
 **Guests give back cold page cache.** A guest keeps the files it read cached until something needs the memory, and the host counts that cache as the machine's.
 Every minute platform-init hands the cache on the kernel's inactive list to cgroup v2 proactive reclaim, and the freed pages return to the host within seconds.
 Guests have no swap, so only file pages go.
 
-**What can still go wrong.** Guests that grow together past their headroom between two passes can take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
-Headroom and the pressure threshold make that rarer; they cannot rule it out.
+**What can still go wrong.** Guests that grow faster than a second's sample and the seconds a hibernation takes can still take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
+The pressure signal makes that rarer; it cannot rule it out.
+When it happens, each agent that was ready before the kill says that its owner's memory ran out, read off the runner pod's last termination, through the runner's restart and its machine's boot, until it is ready again or a more specific reason, such as a failed boot, replaces it; the owner sees it as a crash notice that asks them to stop agents they are not using.
+An agent woken after the kill carries nothing, and nothing records the kill once its agents are ready.

@@ -349,7 +349,7 @@ func (r *AgentReconciler) prepareRuntimeMigration(ctx context.Context, agent *ap
 const runtimeMigrationPoll = 5 * time.Second
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine a container Agent's migration builds beside it, in the shape the request recorded. A wait on the runner or its certificate, or a refusal, is returned for the migration to show rather than failing the reconcile of a container that is still serving.
-func (r *AgentReconciler) reconcileMigrationMachine(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running bool) (vmrunner.MachineStatus, bool, error) {
+func (r *AgentReconciler) reconcileMigrationMachine(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running, publish bool) (vmrunner.MachineStatus, bool, error) {
 	if !r.config.VM.Enabled {
 		return vmrunner.MachineStatus{}, false, errors.New("virtualization is disabled in this install (virtualization.enabled)")
 	}
@@ -362,7 +362,7 @@ func (r *AgentReconciler) reconcileMigrationMachine(ctx context.Context, agent *
 			return vmrunner.MachineStatus{}, false, err
 		}
 	}
-	return r.reconcileVMAgent(ctx, target, ownerRef, gatewayIP, running, false)
+	return r.reconcileVMAgent(ctx, target, ownerRef, gatewayIP, running, publish)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a home volume never shrinks when the Agent's storageSize is lowered, and a pool can hand out a larger one, so the volume the copy reads can be larger than the disk the request asked for. Before the machine and its disk are made, the target is raised to the volume's capacity and recorded, so the disk holds what the volume could and the switch keeps that size. Only until the source is recorded: the machine exists by then, and a retry clears the source and starts with a fresh one.

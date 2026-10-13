@@ -44,6 +44,7 @@ struct Fake {
     panic_on_state: AtomicBool,
     nests: AtomicBool,
     state_fails_until_start: Mutex<HashSet<String>>,
+    resident: Mutex<Option<i32>>,
     state_reads: AtomicUsize,
 }
 
@@ -62,6 +63,10 @@ impl Fake {
 }
 
 impl Runtime for Fake {
+    fn resident_mib(&self, _id: &str) -> Option<i32> {
+        *locked(&self.resident)
+    }
+
     fn nests(&self) -> bool {
         self.nests.load(Ordering::SeqCst)
     }
@@ -213,6 +218,7 @@ impl Harness {
                 None => TcpListener::bind(("127.0.0.1", port)),
             })),
             runtime: None,
+            cgroup_dir: None,
             measure_storage: Arc::new(|| None),
         };
         tune(&mut config);
@@ -1252,6 +1258,7 @@ async fn a_restarted_runner_republishes_its_ports() {
             boot_mib: 0,
             listen: Some(listen),
             runtime: None,
+            cgroup_dir: None,
             measure_storage: Arc::new(|| None),
         },
         h.fake.clone(),
@@ -2246,6 +2253,7 @@ async fn a_hand_off_leaves_every_machine_running_for_the_next_runner() {
             boot_mib: 0,
             listen: Some(retrying_listen()),
             runtime: None,
+            cgroup_dir: None,
             measure_storage: Arc::new(|| None),
         },
         h.fake.clone(),
@@ -2310,6 +2318,83 @@ async fn closing_the_runner_waits_for_a_slow_stop_only_within_its_window() {
         started.elapsed() < Duration::from_secs(2),
         "the close waited out the slow stop"
     );
+}
+
+// TEST_SCENARIO: guests that grow together can take the runner over its limit between two of the controller's passes, so the runner's own working set is what tells the controller to reclaim at once. The signal comes with every running machine measured again, because the controller decides whom to hibernate from what the statuses say each machine holds.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_working_set_past_ninety_five_percent_answers_a_pressure_wait_with_fresh_measurements() {
+    let cgroup = crate::testdir::TempDir::new("pressure-cgroup");
+    let charge = |mib: u64| {
+        fs::write(
+            cgroup.path().join("memory.current"),
+            (mib << 20).to_string(),
+        )
+        .unwrap();
+        fs::write(cgroup.path().join("memory.stat"), "inactive_file 0\n").unwrap();
+    };
+    charge(100);
+    let dir = cgroup.path().to_path_buf();
+    let h = Harness::with("pressure", move |c| {
+        c.memory_mib = 4000;
+        c.cgroup_dir = Some(dir);
+    });
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let before = h.server.pressure();
+    assert!(!before.pressured);
+
+    *locked(&h.fake.resident) = Some(777);
+    charge(3840);
+    let server = h.server.clone();
+    let since = before.version;
+    let read =
+        tokio::task::spawn_blocking(move || server.wait_pressure(since, Duration::from_secs(5)))
+            .await
+            .unwrap();
+    assert!(read.pressured && read.version != since, "{read:?}");
+    assert_eq!((read.limit_mib, read.working_set_mib), (4000, 3840));
+    assert_eq!(h.server.status("m1").used_mib, 777);
+
+    charge(3680);
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(
+        h.server.pressure().pressured,
+        "pressure ended above ninety percent"
+    );
+    charge(3200);
+    let server = h.server.clone();
+    let since = read.version;
+    let ended =
+        tokio::task::spawn_blocking(move || server.wait_pressure(since, Duration::from_secs(5)))
+            .await
+            .unwrap();
+    assert!(!ended.pressured, "{ended:?}");
+}
+
+// TEST_SCENARIO: the controller resizes the runner pod's memory limit in place when the owner's pool changes, and the runner keeps the limit it was started with in its arguments. So admission reads the limit the kernel holds: a start refused under the old limit is admitted once the cgroup's memory.max is raised, with no restart of the runner.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_memory_limit_raised_in_place_admits_what_the_old_one_refused() {
+    let cgroup = crate::testdir::TempDir::new("live-limit-cgroup");
+    let limit =
+        |mib: u64| fs::write(cgroup.path().join("memory.max"), (mib << 20).to_string()).unwrap();
+    limit(1000);
+    let dir = cgroup.path().to_path_buf();
+    let h = Harness::with("live-limit", move |c| {
+        c.memory_mib = 8000;
+        c.boot_mib = 1024;
+        c.cgroup_dir = Some(dir);
+    });
+    let refused = h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+    assert_eq!(h.server.pressure().limit_mib, 1000);
+
+    limit(4000);
+    assert_eq!(
+        h.server.put("m1", spec(true)).unwrap().state,
+        STATE_CREATING
+    );
+    assert_eq!(h.server.pressure().limit_mib, 4000);
+    h.settle("m1").await;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner over a claim whose use the test sets, starting at nothing measured.

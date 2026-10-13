@@ -3,6 +3,7 @@ package reconciler
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -86,4 +87,20 @@ func classifyWaiting(w *corev1.ContainerStateWaiting) (reason, message string, o
 		return "InvalidImageName", "invalid image name", true
 	}
 	return "", "", false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: when the runner container of a runner pod was last OOM-killed: its current state while it has not restarted yet, else its last termination.
+func runnerOOMKilledAt(pod *corev1.Pod) time.Time {
+	var at time.Time
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Name != vmRunnerComponent {
+			continue
+		}
+		for _, t := range []*corev1.ContainerStateTerminated{cs.State.Terminated, cs.LastTerminationState.Terminated} {
+			if t != nil && t.Reason == "OOMKilled" && t.FinishedAt.After(at) {
+				at = t.FinishedAt.Time
+			}
+		}
+	}
+	return at
 }

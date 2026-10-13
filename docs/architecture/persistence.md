@@ -250,9 +250,9 @@ The record is learned from the answer rather than read off the disk, because the
 The storage template every new disk is copied from carries a journal; a disk smolvm formats itself has none, so an unclean stop — a killed runner — is what brings that repair on there.
 The loss is refused, not prevented.
 
-**The claim those disks sit on is sized from demand.** One claim per owner holds every machine disk they have, so it is sized from those disks, some headroom beside each, the image cache budget when the cache lives there, and, while a [runtime migration](vm-runtime-migration.md) is in flight, the capacity of the home volume its seed was copied from, since the seed waits there beside the disk it is restored into; the install's value is the ceiling, not the size.
+**The claim those disks sit on is sized from demand.** One claim per owner holds every machine disk they have, so it is sized from those disks, some headroom beside each, the image cache budget when the cache lives there, and, while a [runtime migration](vm-runtime-migration.md) is in flight, the capacity of the home volume its seed was copied from, since the seed waits there beside the disk it is restored into; the owner's storage pool — their [UserBudget](budgets.md#the-ceiling)'s `storage`, else the install's value — is the ceiling, not the size.
 The runtime's disk templates live there too, sparse enough to need no share of it.
-It grows in place as agents are added, up to that ceiling, and is never shrunk.
+It grows in place as agents are added, up to that ceiling, and is never shrunk, so a lowered ceiling only stops its growth.
 On a storage class that cannot expand, or one the controller cannot read, it is created at the ceiling, since it could not grow later.
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
 

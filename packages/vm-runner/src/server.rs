@@ -10,8 +10,8 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::api::{
-    MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerUsage, SeedResult, State,
-    StorageUsage, REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_OUT_OF_CAPACITY,
+    MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage, SeedResult,
+    State, StorageUsage, REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_OUT_OF_CAPACITY,
     REASON_STORAGE_FULL,
 };
 use crate::cache::{self, pinned_digest};
@@ -84,6 +84,8 @@ pub struct Config {
     pub listen: Option<Arc<Listen>>,
     // UNIT_BOUNDARY_DESCRIPTION: the VM runtime this runner's release was built against, which every machine it starts boots. None where the runner's release names none, which makes no machine foreign.
     pub runtime: Option<String>,
+    // UNIT_BOUNDARY_DESCRIPTION: the runner's own cgroup v2 directory, read for memory pressure. None where there is none to read — a runner outside the cluster, or a cgroup v1 node — and then the runner never reports pressure.
+    pub cgroup_dir: Option<PathBuf>,
     // UNIT_BOUNDARY_DESCRIPTION: how full the owner's claim is now (see storage::StorageUse), or nothing when it cannot be told, which guards nothing. A function rather than a path, so a test can stand a full claim in for a real one.
     pub measure_storage: Arc<dyn Fn() -> Option<StorageUse> + Send + Sync>,
 }
@@ -158,10 +160,20 @@ fn probe_every(entry: &MachineEntry) -> Option<Duration> {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner's memory pressure as its sampler last read it. `signalled` is when its version last moved while pressure lasted.
+#[derive(Default)]
+struct Pressure {
+    version: u64,
+    pressured: bool,
+    working_set_mib: i32,
+    signalled: Option<Instant>,
+}
+
 #[derive(Default)]
 struct Machines {
     closed: bool,
     entries: HashMap<String, MachineEntry>,
+    pressure: Pressure,
 }
 
 pub struct Server {
@@ -342,7 +354,103 @@ impl Server {
                 std::thread::sleep(PROBE_TICK);
             }
         });
+        locked(&server.machines).pressure.version =
+            server.versions.fetch_add(1, Ordering::Relaxed) + 1;
+        if let Some(cgroup) = server.config.cgroup_dir.clone() {
+            let sampler = Arc::downgrade(&server);
+            server.background(move |lifetime| {
+                if let Err(e) = crate::pressure::working_set_mib(&cgroup) {
+                    tracing::warn!(error = %format!("{e:#}"), "vm runner: cannot read the runner's cgroup, so it reports no memory pressure");
+                    return;
+                }
+                while !lifetime.is_cancelled() {
+                    let Some(server) = sampler.upgrade() else {
+                        return;
+                    };
+                    match crate::pressure::working_set_mib(&cgroup) {
+                        Ok(mib) => server.sample_pressure(i32::try_from(mib).unwrap_or(i32::MAX)),
+                        Err(e) => {
+                            tracing::warn!(error = %format!("{e:#}"), "vm runner: reading the runner's cgroup")
+                        }
+                    }
+                    drop(server);
+                    std::thread::sleep(crate::pressure::SAMPLE_EVERY);
+                }
+            });
+        }
         Ok(server)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: records one sample of the runner's working set. The version moves when pressure starts or ends, and every SIGNAL_EVERY while it lasts. Before it moves, every running machine is measured again, so the statuses the controller reads on the signal say what each machine holds now rather than at its last steady probe.
+    fn sample_pressure(&self, working_set_mib: i32) {
+        let (was, signalled) = {
+            let machines = locked(&self.machines);
+            (machines.pressure.pressured, machines.pressure.signalled)
+        };
+        let now = crate::pressure::pressured(
+            i64::from(working_set_mib),
+            i64::from(self.memory_limit_mib()),
+            was,
+        );
+        let signal = now != was
+            || (now && signalled.is_none_or(|at| at.elapsed() >= crate::pressure::SIGNAL_EVERY));
+        if signal && now {
+            self.measure_running();
+        }
+        let mut machines = locked(&self.machines);
+        let pressure = &mut machines.pressure;
+        pressure.working_set_mib = working_set_mib;
+        if signal {
+            pressure.pressured = now;
+            pressure.signalled = now.then(Instant::now);
+            pressure.version = self.versions.fetch_add(1, Ordering::Relaxed) + 1;
+            self.changed.notify_all();
+        }
+    }
+
+    fn measure_running(&self) {
+        let running: Vec<String> = locked(&self.machines)
+            .entries
+            .iter()
+            .filter(|(_, e)| e.seen.as_ref().is_some_and(|s| s.state == State::Running))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in running {
+            let resident = self.runtime.resident_mib(&id);
+            if let Some(entry) = locked(&self.machines).entries.get_mut(&id) {
+                if resident.is_some() {
+                    entry.resident_mib = resident;
+                }
+            }
+        }
+    }
+
+    pub fn pressure(&self) -> RunnerPressure {
+        let machines = locked(&self.machines);
+        RunnerPressure {
+            version: machines.pressure.version,
+            pressured: machines.pressure.pressured,
+            limit_mib: self.memory_limit_mib(),
+            working_set_mib: machines.pressure.working_set_mib,
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the long-poll behind a pressure read, as `wait` is for a machine's status: it answers once the pressure version is no longer `since`, or once `timeout`, capped at STATUS_WAIT_CAP, passes.
+    pub fn wait_pressure(&self, since: u64, timeout: Duration) -> RunnerPressure {
+        let deadline = Instant::now() + timeout.min(STATUS_WAIT_CAP);
+        let mut machines = locked(&self.machines);
+        while !machines.closed && machines.pressure.version == since {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            machines = match self.changed.wait_timeout(machines, left) {
+                Ok((guard, _)) => guard,
+                Err(e) => e.into_inner().0,
+            };
+        }
+        drop(machines);
+        self.pressure()
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: stops taking work, cancels what is running, waits up to CLOSE_GRACE for it, and then stops every machine still running within STOP_ON_CLOSE. Cancelling first is what makes the wait short: a fetch allowed twenty minutes ends now and removes its own scratch tree. The machines are stopped as the controller's stop does it, so a runner going away quiesces each guest's disk instead of leaving the pod's kill to cut its power. Ports are dropped last, so an action that finished inside the wait does not leave one bound.
@@ -1225,7 +1333,7 @@ impl Server {
             .ok();
         self.metrics.render(&Gauges {
             budget_bytes: self.config.image_budget,
-            limit_mib: self.config.memory_mib,
+            limit_mib: self.memory_limit_mib(),
             reserve_mib: self.config.reserve_mib,
             committed_mib: committed,
             storage: (self.config.measure_storage)(),
@@ -1260,7 +1368,7 @@ impl Server {
                 usable_bytes: storage.usable,
             },
             memory: MemoryUsage {
-                limit_mib: self.config.memory_mib,
+                limit_mib: self.memory_limit_mib(),
                 committed_mib: committed,
             },
             machines,
@@ -1384,10 +1492,19 @@ impl Server {
         }
     }
 
+    fn memory_limit_mib(&self) -> i32 {
+        self.config
+            .cgroup_dir
+            .as_deref()
+            .and_then(crate::pressure::limit_mib)
+            .and_then(|mib| i32::try_from(mib).ok())
+            .unwrap_or(self.config.memory_mib)
+    }
+
     fn capacity(&self) -> Capacity<'_> {
         Capacity {
             state_dir: &self.config.state_dir,
-            limit_mib: self.config.memory_mib,
+            limit_mib: self.memory_limit_mib(),
             reserve_mib: self.config.reserve_mib,
             headroom_mib: self.config.headroom_mib,
             boot_mib: self.config.boot_mib,

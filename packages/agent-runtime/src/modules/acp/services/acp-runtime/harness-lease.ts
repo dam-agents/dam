@@ -41,6 +41,8 @@ export interface HarnessLeaseDeps {
   beforeSpawn?: () => Promise<void>;
   envForceRecycleMs: number;
   keptTasks: () => number;
+  callsInFlight: () => number;
+  callDrainMs: number;
   onPendingChange: () => void;
   log: (msg: string) => void;
 }
@@ -54,7 +56,9 @@ export interface HarnessLeaseDeps {
  * shorter, because a caller waiting on it is a person opening a chat), and takes the process back when the env or the
  * harness's own config changes, or when a caller reports the process
  * unresponsive: right away when idle, after work drains when busy, or after a
- * grace period when forced. An env change may have moved the agent to another
+ * grace period when forced. Idle still waits, for a bound shorter than that
+ * grace period, for the calls a client sent that the harness has not
+ * answered yet, such as ACP initialize, because the recycle fails them. An env change may have moved the agent to another
  * provider, so the spawn work runs again, under the same ceiling, before the
  * process that follows it. A caller that hears from the process again calls
  * its own request off, and a recycle owed for env or config still stands. Every way the process goes down runs the same
@@ -87,6 +91,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   let owedSince: number | null = null;
   let forceTimer: ReturnType<typeof setTimeout> | null = null;
   let forceHeld = false;
+  let callTimer: ReturnType<typeof setTimeout> | null = null;
   let supersededRecycle: {
     reason: DeferrableRecycle | null;
     forced: boolean;
@@ -164,6 +169,10 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
       clearTimeout(forceTimer);
       forceTimer = null;
     }
+    if (callTimer) {
+      clearTimeout(callTimer);
+      callTimer = null;
+    }
     if (hadPending) deps.onPendingChange();
   }
 
@@ -193,6 +202,26 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   function armForce(): void {
     if (!forceTimer)
       forceTimer = setTimeout(forceRecycle, deps.envForceRecycleMs);
+  }
+
+  function recycleWhenSettled(): boolean {
+    if (deps.busy()) return false;
+    const calls = deps.callsInFlight();
+    if (pendingRecycle === "harness-unresponsive" || calls === 0) {
+      recycle();
+      return true;
+    }
+    if (!callTimer) {
+      deps.log(
+        `${pendingRecycle ?? "recycle"} waits for ${calls} call(s) in flight — ` +
+          `forcing in ${deps.callDrainMs}ms`,
+      );
+      callTimer = setTimeout(() => {
+        callTimer = null;
+        if (!deps.busy()) recycle();
+      }, deps.callDrainMs);
+    }
+    return false;
   }
 
   function clearWarmGate(): void {
@@ -276,10 +305,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
       }
       if (!agent) return;
       oweRecycle("env-recycle", opts.force);
-      if (!deps.busy()) {
-        recycle();
-        return;
-      }
+      if (recycleWhenSettled()) return;
       deps.log(
         `env recycle deferred: ${deps.describeBusy()}` +
           (opts.force ? ` — forcing in ${deps.envForceRecycleMs}ms` : ""),
@@ -290,10 +316,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
     recycleForConfig() {
       if (!agent) return;
       oweRecycle("config-recycle", true);
-      if (!deps.busy()) {
-        recycle();
-        return;
-      }
+      if (recycleWhenSettled()) return;
       deps.log(
         `config recycle deferred: ${deps.describeBusy()} — forcing in ` +
           `${deps.envForceRecycleMs}ms`,
@@ -343,10 +366,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
 
     maybeRecycle() {
       if (pendingRecycle === null) return;
-      if (!deps.busy()) {
-        recycle();
-        return;
-      }
+      if (recycleWhenSettled()) return;
       if (forceHeld && deps.keptTasks() === 0) {
         forceHeld = false;
         deps.log(

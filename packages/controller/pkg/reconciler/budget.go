@@ -228,7 +228,14 @@ func (r *AgentReconciler) ceilingFor(ctx context.Context, owner string) (resourc
 	if err != nil {
 		return resource.Quantity{}, resource.Quantity{}, fmt.Errorf("decoding userbudget %s: %w", obj.GetName(), err)
 	}
-	return b.Spec.CPU, b.Spec.Memory, nil
+	cpu, mem := r.config.DefaultUserCPUBudget, r.config.DefaultUserMemoryBudget
+	if b.Spec.CPU != nil {
+		cpu = *b.Spec.CPU
+	}
+	if b.Spec.Memory != nil {
+		mem = *b.Spec.Memory
+	}
+	return cpu, mem, nil
 }
 
 func (r *AgentReconciler) wakeAlreadyDenied(name, lastActivity string) bool {

@@ -32,7 +32,10 @@ export function buildRestartCommand(deps: {
       "--server <url>",
       "override the configured server URL for this call",
     )
-    .option("--wait", "poll until state == `running` (or terminal error)")
+    .option(
+      "--wait",
+      "poll until state == `running`; stops early on error or a refused start (pool full)",
+    )
     .option(
       "--timeout <seconds>",
       `--wait timeout in seconds (default ${DEFAULT_TIMEOUT_SECONDS})`,

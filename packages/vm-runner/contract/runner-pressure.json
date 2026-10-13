@@ -1,0 +1,6 @@
+{
+  "version": 7,
+  "pressured": true,
+  "limitMiB": 12288,
+  "workingSetMiB": 11800
+}

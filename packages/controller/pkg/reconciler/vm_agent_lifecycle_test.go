@@ -215,7 +215,7 @@ func TestACappedClaimIsReportedOncePerOwner(t *testing.T) {
 	r, _, _ := setupVMReconciler(t, agent)
 	big := runnerDemand{diskGiB: 500, machines: 5}
 	for range 3 {
-		size, ceiling, err := r.runnerClaimSize(testOwner, big)
+		size, ceiling, err := r.runnerClaimSize(context.Background(), testOwner, big)
 		require.NoError(t, err)
 		assert.Equal(t, 0, size.Cmp(ceiling))
 	}

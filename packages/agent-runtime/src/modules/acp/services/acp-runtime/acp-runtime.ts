@@ -93,6 +93,7 @@ import { MAX_RESUME_ATTEMPTS } from "../interrupted-turn-recovery.js";
 const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
 
 const DEFAULT_ENV_FORCE_RECYCLE_MS = 60 * 1000;
+const CALL_DRAIN_MS = 10 * 1000;
 
 const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
 const DEFAULT_SPAWN_WORK_TIMEOUT_MS = 5 * 1000;
@@ -646,9 +647,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     shuttingDown = reason === "shutdown";
     const close = teardownCloseByReason[reason];
     const unanswered = [
-      ...[...outboundIdToClient.values()]
-        .filter((m) => m.promptSessionId === null && m.originalId !== null)
-        .map((m) => ({ channel: m.channel, id: m.originalId })),
+      ...unansweredCalls().map((m) => ({
+        channel: m.channel,
+        id: m.originalId,
+      })),
       ...(initializeWaiters ?? []),
     ];
     for (const { channel, id } of unanswered) {
@@ -699,10 +701,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (reason === "agent-exited") deps.onHarnessExited?.();
   }
 
+  function unansweredCalls(): OutboundMapping[] {
+    return [...outboundIdToClient.values()].filter(
+      (m) => m.promptSessionId === null && m.originalId !== null,
+    );
+  }
+
   function describeBusy(): string {
     return (
       `${promptScheduler.activeTurnCount()} turn(s), ` +
       `${pendingRequests.size()} pending request(s), ` +
+      `${unansweredCalls().length} call(s) in flight, ` +
       `${deps.backgroundWork.held().length} background hold(s)`
     );
   }
@@ -764,6 +773,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.spawnWorkTimeoutMs ?? DEFAULT_SPAWN_WORK_TIMEOUT_MS,
     envForceRecycleMs,
     keptTasks: keptTaskCount,
+    callsInFlight: () => unansweredCalls().length,
+    callDrainMs: CALL_DRAIN_MS,
     onPendingChange: () => checkPendingRestart(),
     ...(deps.beforeSpawn ? { beforeSpawn: deps.beforeSpawn } : {}),
     log(msg) {
@@ -1249,6 +1260,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         maybeCloseIdleSession(sid);
       }
     }
+    lease.maybeRecycle();
   }
 
   function tearDownSession(sessionId: string): void {
