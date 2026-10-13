@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const liveEventSchema = z.discriminatedUnion("topic", [
   z.object({ topic: z.literal("sync") }),
+  z.object({ topic: z.literal("gettingStarted") }),
 
   z.object({ topic: z.literal("approvals"), agentId: z.string().min(1) }),
   z.object({ topic: z.literal("agents"), agentId: z.string().min(1) }),

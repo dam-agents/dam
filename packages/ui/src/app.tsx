@@ -7,6 +7,7 @@ import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { GettingStartedDock } from "./modules/getting-started/components/getting-started-dock.js";
 import {
   ActivityButton,
   NotificationsPanel,
@@ -153,6 +154,7 @@ function MainApp() {
       {kitBrowserOpen && <BrowseKitsModal />}
       <DialogOverlay />
       <ConnectionBanner />
+      <GettingStartedDock placement="page" />
     </div>
   );
 }

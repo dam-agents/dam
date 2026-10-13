@@ -286,6 +286,14 @@ It lets an Agent call tools on a host it has no other access to — Architecture
 | Acceptance Gate | The api-server middleware on the public port that refuses every request from a sub whose latest Acceptance row doesn't match the current Terms Version, returning 412 with `{ currentVersion, currentHash }` |
 | Stale Acceptance | The state of a sub whose latest Acceptance is for an older Terms Version than the current one; the gate refuses them until they accept again |
 
+## Getting Started (bounded context)
+
+| Term | Definition |
+|------|-----------|
+| Getting Started Checklist | The per-user list of eight tasks that introduces the platform's features to a new user, shown in the UI as **Get started**. Done tasks are read from domain events, never from UI clicks. A user who owned an Agent before the checklist first met them gets every Avatar Unlock at once and no checklist. Dismissing it hides it until the next Avatar Unlock |
+| Getting Started Task | One checklist item: create an Agent, send it a message, create a connection, add a skill, try a starter kit, create a schedule, create an artifact, connect an Agent to Slack |
+| Avatar Unlock | The avatar character a user earns for one done Getting Started Task, kept for good. The first Agent's task unlocks that Agent's own character; any other task a random locked one. An unlock is celebrated once in the UI and then marked seen, and stays marked new in the avatar picker until the user picks it |
+
 ## Usage Tracking (bounded context)
 
 | Term | Definition |

@@ -220,11 +220,19 @@ export function avatarCharacter(
 
 export function leastUsedCharacter(
   used: readonly AvatarCharacter[],
+  among: readonly AvatarCharacter[] = AVATAR_CHARACTERS,
 ): AvatarCharacter {
   const count = (c: AvatarCharacter) => used.filter((u) => u === c).length;
-  return AVATAR_CHARACTERS.reduce((best, c) =>
+  return (among.length > 0 ? among : AVATAR_CHARACTERS).reduce((best, c) =>
     count(c) < count(best) ? c : best,
   );
+}
+
+export function avatarColors(
+  character: AvatarCharacter,
+): readonly [eyes: string, body: string, wings: string] {
+  const { eyes, body, wings } = CHARACTERS[character].colors;
+  return [eyes, body, wings];
 }
 
 /**
