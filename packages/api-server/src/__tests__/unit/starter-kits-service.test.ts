@@ -1149,7 +1149,6 @@ describe("starter kits: connection addressing", () => {
 
   // TEST_SCENARIO: a kit that does not name the field leaves it out of the create, so the create's default decides.
   it("leaves the create untouched when the kit says nothing", async () => {
-
     const plain = makeHarness(LOADED);
     await plain.service.apply(APPLY);
     expect(plain.calls.created[0]).not.toHaveProperty(
