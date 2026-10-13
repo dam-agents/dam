@@ -33,7 +33,7 @@ The owner's **Slack Account Connection** is a separate thing: it gives the Agent
 On a bound Agent, channel members get that access too unless the harness refuses the calls (§3 safety gates).
 
 `/dam login` links a Slack user to a platform user.
-It authorizes `/dam bind|unbind|ambient|ignore|unignore|default|delete`, never who may talk to the Agent.
+It authorizes `/dam bind|unbind|ambient|ignore|unignore|default|delete` and `/dam whisper <agent> on|off`, never who may talk to the Agent.
 
 ### How the agent reaches Slack
 
@@ -153,6 +153,19 @@ Every Slack turn carries: how to respond (tools, the thread to reply into, "plai
 | Reminder after a silent turn (the *nudge*)   | None                                                                                                                                                 | "Your previous turn ended without a reply being posted. Post it now, as the answer, not as a correction; or call `no_reply_needed`". After an out-of-memory restart during the turn: "it was cut short because the agent ran out of memory; tell the person, and that the owner can give it more memory"                                                             |
 | Continued from the UI                        | None                                                                                                                                                 | None; a message without the frame "didn't come from Slack"                                                                                                                                                                                                                                                                                                           |
 
+### 1.8 Whispers
+
+A whisper reaches one Agent privately: Slack never shows the conversation the command or its answer.
+
+| Situation                              | What happens                                                                                                                                         | Drawback                                                                                                |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `/dam whisper [agent] "message"`       | One turn on a fresh session; the answer is an ephemeral only the whisperer sees                                                                      | The agent can't react, attach a file, post to the channel or hand off                                   |
+| `/dam whisper [agent]` with no message | Opens a thread in the whisperer's DM with the bot; replies there go to that Agent, whatever the DM is bound to                                       | Ends when the Agent is disconnected there, the whisperer leaves the channel, or whispers are turned off |
+| Who may whisper                        | Anyone in the conversation, with no `/dam login`                                                                                                     | none                                                                                                    |
+| What the agent is told                 | Who whispered and from where; keep it out of what others can read; no more authority than the same message sent openly; never hide it from the owner | Prompt only                                                                                             |
+| Whispers are off for that Agent here   | Refused before anything reaches the Agent; the sender is told why                                                                                    | Other Agents in the conversation still take whispers                                                    |
+| The owner                              | Every whisper is an ordinary session the owner can open                                                                                              | The owner is not told that a whisper happened                                                           |
+
 ---
 
 ## 2. Reach: bot vs. owner's account
@@ -223,6 +236,7 @@ flowchart TD
 | **Permission prompts.** A harness that pauses to ask "may I run this tool?" gets *no*: nobody in Slack can answer. The platform's own Slack tools are approved automatically | Platform, if the harness asks (**Setup**) | Codex never asks: every tool runs. Claude Code asks only in an asking mode. The sender is never told |
 | A host outside the owner's egress rules: refused at once, shown as a pending approval on Home; approving writes a rule                                                       | Platform                                  | The turn goes on with a 403; only the agent can explain                                              |
 | `/dam delete`: owner only, Slack identity linked                                                                                                                             | Platform                                  |                                                                                                      |
+| Whispers: on per binding by default; `/dam whisper <agent> on\|off` (binder or the Agent's owner) or the binding's settings in the UI turn them off                          | Platform, the switch is **Setup**         | The binder can turn whispers back on after the owner turned them off                                 |
 | All bindings released when the Agent is deleted                                                                                                                              | Platform                                  |                                                                                                      |
 | Terms of Use re-versioned and not re-accepted: the owner's Agents go quiet in Slack                                                                                          | Platform                                  | Addressed: a notice. Ambient: nothing                                                                |
 
@@ -266,10 +280,14 @@ Ambient turns get none.
 
 ## 5. Reach the owner may not expect
 
-One case: an Agent with both the owner's Slack Account Connection and a channel binding lets channel members act through the owner's Slack account.
+First, an Agent with both the owner's Slack Account Connection and a channel binding lets channel members act through the owner's Slack account.
 The UI warns the owner when the two meet (see [Shared access](channels.md#shared-access--the-one-model)) but does not block it.
 Open on Codex.
 On Claude Code: open in `auto` (the classifier approves most calls), in `bypassPermissions`, or with an allow rule for the Connection's tools; `default` and `dontAsk` refuse those calls on a channel turn.
+
+Second, a whisper lets anyone in a bound conversation ask the Agent, out of the conversation's sight, to change its instructions, memory or settings; the change then holds for everyone there.
+The owner can open every whisper session but is not told that one happened.
+Turning whispers off for the binding closes this path (§1.8); the bind flow warns about it while whispers are on.
 
 Everything else (DM people, attach files, look people up, react) is within the owner's own reach.
 
@@ -284,6 +302,7 @@ Everything else (DM people, attach files, look people up, react) is within the o
 | **Egress rules**                       | Allow-all: nothing refused. Restricted: unmatched hosts refused on unattended turns, held for the owner when a UI/CLI session is open                                                                                                                                                                    |
 | **Connection grants**                  | A Slack Account Connection adds the owner's Slack MCP server with no channel awareness; only the harness's asking stands between the channel and it                                                                                                                                                      |
 | **Owner's Slack identity linked**      | Unlinked: the Agent posts into no channel beyond its bound ones; DMs and group DMs still work                                                                                                                                                                                                            |
+| **Whispers** (per binding)             | On: anyone there can reach the Agent privately (§1.8). Off: everything said to it there is seen by the conversation                                                                                                                                                                                      |
 | **Ambient** (per binding)              | §1.2                                                                                                                                                                                                                                                                                                     |
 | **Owner stopped the Agent**            | Slack can't wake it. Hibernated Agents wake normally                                                                                                                                                                                                                                                     |
 
