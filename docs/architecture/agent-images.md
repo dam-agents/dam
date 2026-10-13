@@ -133,7 +133,9 @@ The failures are: the image cannot be pulled or unpacked, the machine cannot boo
 The controller sets `StartFailed` only from the pod or machine that runs the current spec, never from the pod a roll replaces, which exits too.
 On the container backend that is a pod of the agent StatefulSet's update revision, once the StatefulSet has observed its generation.
 On the vm backend the runner's status names no spec, but a restart in flight reads not ready, so the controller counts from the first read at the current generation.
-`StartFailed` has two reasons: `CrashLoop` (the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now) and `NeverReady` (running for ten minutes on this spec without becoming ready, an image pull not counted).
+The controller sets `StartFailed` for one of two reasons.
+Either the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now.
+Or it ran for ten minutes on this spec and never became ready, not counting the time an image pull takes.
 An exit from out of memory or a full home volume does not count, since any image meets it.
 A harness that crash-loops on any image, from something in the Agent's home, also moves the Agent back, and the new image is then refused for this Agent although it is not at fault.
 The owner's Update stays available, to move a running Agent now, and says so when the Agent failed to start on that image.
