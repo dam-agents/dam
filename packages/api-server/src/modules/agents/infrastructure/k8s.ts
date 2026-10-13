@@ -36,6 +36,7 @@ export interface KubeObject {
     name?: string;
     uid?: string;
     resourceVersion?: string;
+    generation?: number;
     labels?: Record<string, string>;
     annotations?: Record<string, string>;
   };

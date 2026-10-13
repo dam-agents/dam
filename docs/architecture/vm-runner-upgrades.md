@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none.
 
@@ -30,7 +30,8 @@ Each release also records the **runtime** it was built against: the smolvm relea
 The runner is itself the VMM of every machine it starts, and loads its runtime's libraries and guest agent, so the runtime travels with the release.
 Its guest kernel is not the smolvm release's own but an older release's, Linux 6.12, which the same pin names.
 From 6.15 on, FUSE DAX corrupts a mapped file that another process opens, and a guest of 6 GiB or more dies of SIGBUS ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)).
-The vm e2e lane boots such a guest to hold the kernel to that.
+Linux 6.18 also stalls a guest whose mapped working set outgrows the DAX window, until [smol-machines/libkrunfw#31](https://github.com/smol-machines/libkrunfw/pull/31).
+The vm e2e lane boots a 6 GiB guest with the runner's kernel and checks both, so a kernel that passes them can replace the pinned one with no change to the lane.
 The Mac's host runner keeps the release's own kernel, and its guests have no FUSE DAX.
 The pod's libc does not: a release whose runner does not load in the pod can take it over only as a new pod.
 

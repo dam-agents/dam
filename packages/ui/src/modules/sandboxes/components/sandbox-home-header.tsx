@@ -71,7 +71,7 @@ export function SandboxHomeHeader({
   const deleteAgent = useDeleteAgent();
   const suspend = useSuspendAgent();
   const confirmStop = useConfirmStopAgent();
-  const { updateOne, updatingId, updatingAll } = useUpdateSandbox();
+  const { updateOne, updatingId } = useUpdateSandbox();
 
   const openChat = () => selectAgent(agent.id);
 
@@ -99,7 +99,7 @@ export function SandboxHomeHeader({
           <UpdateAvailableAction
             agent={agent}
             pending={updatingId === agent.id}
-            busy={updatingId !== null || updatingAll}
+            busy={updatingId !== null}
             onUpdate={() => void updateOne(agent)}
           />
           <Button variant="outline" onClick={openChat}>

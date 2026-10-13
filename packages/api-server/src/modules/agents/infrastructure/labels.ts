@@ -47,6 +47,9 @@ export const ANN_KIT_UPDATE_PENDING = "agent-platform.ai/kit-update-pending";
 export const ANN_KIT_UPDATE_SKIPPED = "agent-platform.ai/kit-update-skipped";
 
 export const ANN_ROLL_REV = "agent-platform.ai/roll-rev";
+export const ANN_IMAGE_UPDATE_FROM = "agent-platform.ai/image-update-from";
+export const ANN_IMAGE_UPDATE_REFUSED =
+  "agent-platform.ai/image-update-refused";
 
 export const READY_REASON_HIBERNATED = "Hibernated";
 export const READY_REASON_OVER_BUDGET = "OverBudget";

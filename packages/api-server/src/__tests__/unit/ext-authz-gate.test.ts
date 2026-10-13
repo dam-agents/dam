@@ -3,6 +3,12 @@ import { createExtAuthzGate } from "../../modules/approvals/services/ext-authz-g
 import type { ApprovalsRepository } from "../../modules/approvals/infrastructure/approvals-repository.js";
 import type { RedisBus, BusListener } from "../../core/redis-bus.js";
 import type { PendingApprovalRow } from "../../modules/approvals/domain/types.js";
+import {
+  events$,
+  ofType,
+  EventType,
+  type ApprovalResolved,
+} from "../../events.js";
 
 interface FakeRepo {
   repo: ApprovalsRepository;
@@ -67,6 +73,10 @@ function makeFakeRepo(): FakeRepo {
     listResolvedUndelivered: async () => [],
     expirePending: async (id) => {
       expirePendingCalls.push(id);
+      const row = rows.find((r) => r.id === id && r.status === "pending");
+      if (!row) return false;
+      row.status = "expired";
+      return true;
     },
     expireOverdue: async () => [],
     deleteForAgent: async () => {},
@@ -266,6 +276,41 @@ describe("ext-authz gate", () => {
 
     expect(await inflight).toBe("deny");
     expect(repo.expirePendingCalls).toEqual([repo.rows[0].id]);
+  });
+
+  it("announces the expiry only when the hold timeout itself expired the row", async () => {
+    const resolutions: ApprovalResolved[] = [];
+    const sub = events$()
+      .pipe(ofType<ApprovalResolved>(EventType.ApprovalResolved))
+      .subscribe((e) => resolutions.push(e));
+
+    for (const decidedMeanwhile of [false, true]) {
+      const repo = makeFakeRepo();
+      if (decidedMeanwhile) repo.repo.expirePending = async () => false;
+      const gate = createExtAuthzGate({
+        repo: repo.repo,
+        bus: makeFakeBus().bus,
+        attendance: attended,
+        identityResolver,
+        ruleMatcher: noMatchRules,
+        holdSeconds: 30,
+        platformAllowedAuthorities: [],
+      });
+      const inflight = gate.gateRequest({
+        agentId: "inst-1",
+        host: "h",
+        port: 443,
+        tls: true,
+        method: "GET",
+        path: "/p",
+      });
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await inflight).toBe("deny");
+    }
+    sub.unsubscribe();
+
+    expect(resolutions.map((e) => e.resolution)).toEqual(["expired"]);
   });
 
   it("dedupes retries against an existing pending row of the same shape (#4)", async () => {

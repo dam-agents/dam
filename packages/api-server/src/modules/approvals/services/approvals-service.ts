@@ -16,12 +16,13 @@ import {
 import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
 
-function emitResolved(row: PendingApprovalRow): void {
+function emitResolved(row: PendingApprovalRow, verdict: ApprovalVerdict): void {
   emit({
     type: EventType.ApprovalResolved,
     approvalId: row.id,
     agentId: row.agentId,
     ownerSub: row.ownerSub,
+    resolution: verdict,
   });
 }
 
@@ -282,7 +283,7 @@ async function resolveOnce(
   decision: "allow" | "deny",
 ): Promise<ApprovalActionOutcome> {
   const casWon = await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
-  if (casWon) emitResolved(row);
+  if (casWon) emitResolved(row, verdict);
   auditVerdict(deps, row, decision, { verdict, ruleWritten: false });
   return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
 }
@@ -323,7 +324,7 @@ async function writeRuleAndResolve(
   const expiredFlipped = casWon
     ? false
     : await deps.repo.resolveExpired(row.id, rule.verdict, deps.ownerSub);
-  if (casWon || expiredFlipped) emitResolved(row);
+  if (casWon || expiredFlipped) emitResolved(row, rule.verdict);
   auditVerdict(deps, row, rule.verdict, {
     verdict: rule.verdict,
     ...auditRuleFields(written),
@@ -339,7 +340,7 @@ async function resolveAndDeliverAcpNative(
 ): Promise<ApprovalActionOutcome> {
   if (row.payload.kind !== "acp_native") return NOT_ACTIONABLE;
   const casWon = await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
-  if (casWon) emitResolved(row);
+  if (casWon) emitResolved(row, verdict);
   auditVerdict(deps, row, verdict.startsWith("allow") ? "allow" : "deny", {
     verdict,
     native: true,
