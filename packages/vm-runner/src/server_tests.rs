@@ -1827,7 +1827,7 @@ async fn the_prober_reports_a_guest_that_comes_up_to_a_waiting_read() {
     assert_ne!(ready.version, booted.version);
 }
 
-// TEST_SCENARIO: the probe cadence is what the user waits on between the guest answering and the controller hearing of it, so a fresh boot is asked every FRESH_BOOT_PROBE. Each probe is also a console line, so a boot still quiet after SLOW_BOOT_AFTER falls back to BOOT_PROBE, and a guest that has answered is asked only at the steady cadence.
+// TEST_SCENARIO: the probe cadence is what the user waits on between the guest answering and the controller hearing of it, so a fresh boot is asked every FRESH_BOOT_PROBE. A probe still costs a connect, so a boot still quiet after SLOW_BOOT_AFTER falls back to BOOT_PROBE, and a guest that has answered is asked only at the steady cadence.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_fresh_boot_is_probed_tightly_and_an_old_or_answered_one_is_not() {
     let h = Harness::new("probe-cadence");
