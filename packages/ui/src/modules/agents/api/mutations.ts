@@ -18,6 +18,7 @@ import {
 } from "../../files/api/import-bundle.js";
 import { trackImport } from "../../files/track-import.js";
 import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
+import { seedEmptySessionList } from "../../sessions/api/queries.js";
 import { agentsKeys } from "./queries.js";
 
 const invalidatesAgentsList = {
@@ -88,6 +89,8 @@ export function useCreateAgent() {
             agentId: agent.id,
             entries: importEntries,
           });
+      } else {
+        seedEmptySessionList(agent.id, useStore.getState().sessionFilter);
       }
 
       if (runImport) {
