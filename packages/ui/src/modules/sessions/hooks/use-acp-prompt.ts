@@ -17,6 +17,7 @@ import {
   fileChipOf,
   finalizeRunningReply,
   hasAgentContent,
+  sendWaits,
 } from "../../acp/session-projection.js";
 import { buildPromptBlocks } from "../../acp/utils.js";
 import { untilAgentOperable } from "../../agents/api/queries.js";
@@ -214,13 +215,17 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         );
       let delivered = false;
 
+      const waits = sendWaits(
+        useStore.getState().messages,
+        useStore.getState().queuedPrompts,
+      );
       const uMsg: Message = {
         id: uId,
         role: "user",
         parts: userParts,
         streaming: false,
         at: new Date().toISOString(),
-        queued: true,
+        ...(waits && { queued: true }),
       };
       const aMsg: Message = {
         id: aId,
@@ -228,7 +233,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         parts: [],
         streaming: true,
         promptId,
-        queued: true,
+        ...(waits && { queued: true }),
         ...(hidden ? {} : { retryWith: retryPayload }),
       };
       if (retryOf !== undefined) {

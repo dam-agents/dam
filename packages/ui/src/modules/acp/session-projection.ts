@@ -288,6 +288,25 @@ export function isQueuedSend(m: Message): boolean {
   return m.role === "user" || (m.streaming && m.parts.length === 0);
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether a message sent now must wait in the
+ * queue. Only when the chat is sure the session is idle — no reply streaming,
+ * nothing in the runtime's queue, no earlier send still waiting — does a sent
+ * message show as sent at once; otherwise it joins the queue first and moves
+ * into the conversation when the runtime starts or steers it.
+ */
+export function sendWaits(
+  messages: Message[],
+  queue: readonly QueuedPrompt[],
+): boolean {
+  return (
+    queue.length > 0 ||
+    messages.some(
+      (m) => isQueuedSend(m) || (m.role === "assistant" && m.streaming),
+    )
+  );
+}
+
 export function withoutQueuedSends(
   messages: Message[],
   items: QueuedPrompt[],

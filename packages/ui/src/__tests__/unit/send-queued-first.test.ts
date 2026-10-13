@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   applyUpdate,
   isQueuedSend,
+  sendWaits,
 } from "../../modules/acp/session-projection.js";
 import type { AcpUpdate } from "../../modules/acp/types.js";
 import type { Message } from "../../types.js";
@@ -10,9 +11,10 @@ import type { Message } from "../../types.js";
 /**
  * TEST_OVERVIEW: What happens to a message the user sends.
  *
- * Two steps: every message is queued, then sent when the runtime can take
- * it. The chat cannot tell reliably whether the agent is busy, so it never
- * guesses: a sent message joins the queue below the conversation at once,
+ * Two steps: a message is queued, then sent when the runtime can take it.
+ * When the chat is sure the session is idle — no reply streaming, nothing in
+ * the runtime's queue, no earlier send still waiting — the message shows as
+ * sent at once. Otherwise it joins the queue below the conversation at once,
  * and moves into the conversation only when the runtime starts it or steers
  * it into the running turn. While it waits, the running reply stays the last
  * message and keeps the working indicator.
@@ -105,5 +107,37 @@ describe("a sent message: queued, then sent", () => {
     const shown = sentWhileBusy().filter((m) => !isQueuedSend(m));
 
     expect(shown.map((m) => m.id)).toEqual(["a1"]);
+  });
+
+  /**
+   * TEST_SCENARIO: Nothing runs and nothing waits, so the message is sent
+   * at once and shows in the conversation right away, with no queued step.
+   */
+  test("shows as sent at once when the session is idle", () => {
+    const idle: Message[] = [
+      {
+        id: "a0",
+        role: "assistant",
+        parts: [{ kind: "text", text: "done" }],
+        streaming: false,
+      },
+    ];
+
+    expect(sendWaits(idle, [])).toBe(false);
+  });
+
+  /**
+   * TEST_SCENARIO: A reply streams, the runtime holds a queue, or an earlier
+   * send still waits: any of them means the new message must queue behind.
+   */
+  test("waits behind a running reply, a queue, or an earlier send", () => {
+    const queued = [
+      { promptId: "p0", blocks: [], queuedAt: "", editable: true },
+    ];
+    const pendingOnly = sentWhileBusy().filter((m) => m.id !== "a1");
+
+    expect(sendWaits(sentWhileBusy().slice(0, 1), [])).toBe(true);
+    expect(sendWaits([], queued)).toBe(true);
+    expect(sendWaits(pendingOnly, [])).toBe(true);
   });
 });
