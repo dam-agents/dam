@@ -1,9 +1,14 @@
-import type { ProcessRow as ProcessRowData } from "agent-runtime-api";
+import { ContainerEngine, ContainerSoftware } from "@carbon/icons-react";
+import type {
+  ProcessContainer,
+  ProcessRow as ProcessRowData,
+} from "agent-runtime-api";
+import { match } from "ts-pattern";
 
 import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
-import { BACKGROUND_KIND_LABEL } from "../lib/process-copy.js";
+import { processKindLabel, processTitle } from "../lib/process-copy.js";
 import { ProcessActionsMenu } from "./process-actions-menu.js";
 import { ProcessCommand } from "./process-command.js";
 import { ProcessStats } from "./process-stats.js";
@@ -27,6 +32,7 @@ export function ProcessRow({
 }: Props) {
   const hasOutput = row.outputPath !== null;
   const toggleOutput = () => onOpenOutput(row.key);
+  const kindLabel = processKindLabel(row);
 
   return (
     <li
@@ -45,10 +51,11 @@ export function ProcessRow({
             aria-hidden
             className="size-1.5 shrink-0 rounded-full bg-success motion-safe:animate-pulse"
           />
-          <ProcessCommand command={row.command} />
+          {row.container && <ContainerIcon container={row.container} />}
+          <ProcessCommand command={row.command} title={processTitle(row)} />
         </div>
         <span className="truncate text-2xs text-muted-foreground">
-          {row.kind !== "turn" && `${BACKGROUND_KIND_LABEL[row.kind]} · `}
+          {kindLabel !== null && `${kindLabel} · `}
           <ProcessStats row={row} now={now} />
         </span>
       </div>
@@ -60,5 +67,16 @@ export function ProcessRow({
         onToggleOutput={toggleOutput}
       />
     </li>
+  );
+}
+
+function ContainerIcon({ container }: { container: ProcessContainer }) {
+  return (
+    <span aria-hidden className="flex shrink-0 text-muted-foreground">
+      {match(container.role)
+        .with("container", () => <ContainerSoftware size={14} />)
+        .with("runtime", () => <ContainerEngine size={14} />)
+        .exhaustive()}
+    </span>
   );
 }

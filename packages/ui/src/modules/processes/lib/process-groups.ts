@@ -1,4 +1,10 @@
-import type { ProcessKind, ProcessRow } from "agent-runtime-api";
+import type {
+  ProcessContainer,
+  ProcessKind,
+  ProcessRow,
+} from "agent-runtime-api";
+
+type ContainerRole = ProcessContainer["role"];
 
 export type ProcessGroupId = "turn" | "awake" | "hibernates" | "always-on";
 
@@ -13,9 +19,20 @@ const PROCESS_KIND_ORDER: readonly ProcessKind[] = [
   "detached",
 ];
 
+const CONTAINER_ROLE_ORDER: readonly (ContainerRole | null)[] = [
+  null,
+  "runtime",
+  "container",
+];
+
+function containerRank(row: ProcessRow): number {
+  return CONTAINER_ROLE_ORDER.indexOf(row.container?.role ?? null);
+}
+
 function byKindThenStart(a: ProcessRow, b: ProcessRow): number {
   return (
     PROCESS_KIND_ORDER.indexOf(a.kind) - PROCESS_KIND_ORDER.indexOf(b.kind) ||
+    containerRank(a) - containerRank(b) ||
     Date.parse(a.startedAt) - Date.parse(b.startedAt)
   );
 }

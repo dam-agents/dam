@@ -106,11 +106,13 @@ export type {
 export type { SshService } from "./modules/ssh/types.js";
 export type { HarnessConfigService } from "./modules/harness-config/types.js";
 export type {
+  ContainerEngine,
   FinishedRow,
   KeepMarkRequest,
   KeepSource,
   NothingPending,
   PendingRestart,
+  ProcessContainer,
   ProcessesDomainError,
   ProcessesService,
   ProcessKind,

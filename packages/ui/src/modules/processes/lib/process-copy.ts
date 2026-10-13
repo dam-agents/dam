@@ -1,4 +1,5 @@
 import type {
+  ContainerEngine,
   FinishedRow,
   PendingRestart,
   ProcessKind,
@@ -15,6 +16,31 @@ export const BACKGROUND_KIND_LABEL: Record<
   "harness-task": "Background task",
   detached: "Detached",
 };
+
+const CONTAINER_ENGINE_LABEL: Record<ContainerEngine, string> = {
+  docker: "Docker",
+  k3s: "k3s",
+  containerd: "containerd",
+};
+
+export function processKindLabel(
+  row: Pick<ProcessRow, "kind" | "container">,
+): string | null {
+  if (row.container) {
+    const engine = CONTAINER_ENGINE_LABEL[row.container.engine];
+    return match(row.container.role)
+      .with("container", () => `${engine} container`)
+      .with("runtime", () => `${engine} runtime`)
+      .exhaustive();
+  }
+  return row.kind === "turn" ? null : BACKGROUND_KIND_LABEL[row.kind];
+}
+
+export function processTitle(
+  row: Pick<ProcessRow, "command" | "container">,
+): string {
+  return row.container?.role === "container" ? row.container.id : row.command;
+}
 
 export const PROCESS_GROUP_LABEL: Record<ProcessGroupId, string> = {
   turn: "In active turns",

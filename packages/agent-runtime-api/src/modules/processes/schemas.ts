@@ -6,6 +6,20 @@ export const processKindSchema = z.enum(["turn", "harness-task", "detached"]);
 
 export const keepSourceSchema = z.enum(["default", "agent", "user"]);
 
+export const containerEngineSchema = z.enum(["docker", "k3s", "containerd"]);
+
+export const processContainerSchema = z.discriminatedUnion("role", [
+  z.object({
+    role: z.literal("container"),
+    engine: containerEngineSchema,
+    id: z.string(),
+  }),
+  z.object({
+    role: z.literal("runtime"),
+    engine: containerEngineSchema,
+  }),
+]);
+
 export const processRowSchema = z.object({
   key: z.string(),
   kind: processKindSchema,
@@ -17,6 +31,7 @@ export const processRowSchema = z.object({
   outputPath: z.string().nullable(),
   keepsAwake: z.boolean(),
   keepSource: keepSourceSchema,
+  container: processContainerSchema.nullable(),
 });
 
 export const finishedRowSchema = z.object({
