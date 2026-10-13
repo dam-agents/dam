@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md).
@@ -21,12 +21,13 @@ Every boot does this again, since each boots from the estimate.
 Readiness does not wait for the grow, which runs while the workload starts, because waiting would put the same page work back on the path; a guest that allocates past the estimate before the grow ends meets its own OOM killer.
 A machine that cannot grow is stopped and booted again whole within the same start, so no running machine stays small.
 smolvm's own resize is not used: it refuses a VMM without a cgroup of its own, which no VMM in a runner pod has, and admits growth against the host's free memory rather than by use.
-The added RAM is a file the VMM owns, so free-page reporting returns its freed pages as it does the boot RAM's.
+Free-page reporting returns the added RAM's freed pages as it does the boot RAM's.
 
-**Boot RAM and the guest kernel are mapped for huge pages.** KVM maps guest memory in 2 MiB pages only where the host address agrees with the guest address modulo 2 MiB, and an ordinary allocation almost never does.
+**Guest RAM and the guest kernel are mapped for huge pages.** KVM maps guest memory in 2 MiB pages only where the host address agrees with the guest address modulo 2 MiB, and an ordinary allocation almost never does.
 Under nested virtualization each guest page the guest touches first then costs a fault through both hypervisors, about 20 µs for each 4 KiB.
-The platform's libkrun patch therefore places the boot RAM, and a copy of the guest kernel, at host addresses that agree, and asks the host for transparent huge pages there.
-The added RAM is a shared-memory file, which a host whose shared-memory huge pages are off (as on RHEL by default) backs with 4 KiB pages whatever its placement.
+On a Linux runner the platform's libkrun patch therefore places the boot RAM, the RAM a grow adds, and a copy of the guest kernel at host addresses that agree, and asks the host for transparent huge pages there.
+The added RAM is anonymous memory rather than libkrun's shared-memory file, which a host whose shared-memory huge pages are off (as on RHEL by default) backs with 4 KiB pages whatever its placement; only a branchable machine, which no runner starts, keeps the file.
+The guest writes the page descriptors of added RAM into that RAM itself, so huge pages also make the grow about five times faster.
 
 **The runner measures every running machine.** Its health prober reads the resident memory of each machine's VMM at the steady probe cadence and reports it in the machine's status.
 The figure is kept out of what moves the status version, so it never wakes a waiting status read on its own.
