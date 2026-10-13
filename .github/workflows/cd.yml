@@ -523,13 +523,36 @@ jobs:
       - name: Build
         run: .mise/tasks/image/ci-build amd64 mock:source
 
+  docs-only:
+    name: detect docs-only change
+    # A PR that changes only docs/ and Markdown outside packages/ skips both
+    # e2e lanes. Markdown under packages/ ships in agent images, so it counts
+    # as code. The lanes run when it fails, so a broken detection never skips
+    # them.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs: ${{ steps.d.outputs.docs }}
+    steps:
+      - if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - id: d
+        if: github.event_name == 'pull_request'
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- . ':!docs' ':!*.md' && git diff --quiet HEAD^1 HEAD -- 'packages/*.md'; then
+            echo "docs=true" >> "$GITHUB_OUTPUT"
+          fi
+
   e2e:
     name: mise e2e (container)
     # The container lane: the smoke suite on an install without
     # virtualization, so every agent is a pod. e2e-vm is the vm lane, the same
     # suite with every agent on the vm Backend; the two run side by side on
-    # every run but a tag, each on its own runner, and the Playwright config
-    # picks each lane's specs from E2E_VIRTUALIZATION (see
+    # every run but a tag and a docs-only PR, each on its own runner, and the
+    # Playwright config picks each lane's specs from E2E_VIRTUALIZATION (see
     # packages/e2e/playwright/src/lib/lane.ts).
     # No `needs` on the builds: bringing the cluster up takes minutes and needs
     # no image, so it runs while they build. e2e:ci-images builds them here on
@@ -538,7 +561,8 @@ jobs:
     # fails this job, there.
     # The steps e2e-vm shares are anchored here (&e2e-*), so the two lanes
     # bring their clusters up the same way.
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    needs: [docs-only]
+    if: ${{ !cancelled() && !startsWith(github.ref, 'refs/tags/v') && needs.docs-only.outputs.docs != 'true' }}
     runs-on: ubuntu-latest
     # The builds' own time now counts against this budget.
     timeout-minutes: 45
@@ -708,7 +732,8 @@ jobs:
     #
     # The job summary carries the lane's per-phase timings (e2e:timings), from
     # the marks E2E_TIMINGS collects and the Playwright JSON report.
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    needs: [docs-only]
+    if: ${{ !cancelled() && !startsWith(github.ref, 'refs/tags/v') && needs.docs-only.outputs.docs != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
