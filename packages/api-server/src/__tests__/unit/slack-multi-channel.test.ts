@@ -67,6 +67,11 @@ function harness(opts?: {
     },
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    ignoredApps: {
+      list: async () => [],
+      ignore: async () => true,
+      unignore: async () => true,
+    },
     setSlackDefault: async () => true,
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
@@ -181,7 +186,11 @@ describe("slack multi-channel bindings (#3086) — session isolation", () => {
       ok: true,
     });
     expect(h.messages()).toMatchObject([
-      { channel: C_TWO, threadTs: "4.4", text: "answering" },
+      {
+        channel: C_TWO,
+        threadTs: "4.4",
+        text: ":robot_face: *agent-1*\n\nanswering",
+      },
     ]);
     h.finishTurns();
   });

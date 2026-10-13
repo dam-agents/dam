@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
-	cmmetav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -175,7 +173,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	}
 	ready := dep.Status.ReadyReplicas > 0
 	if ready {
-		r.resizeRunnerPod(ctx, owner, demand.memoryMiB)
+		r.resizeRunnerPod(ctx, owner, demand)
 	}
 	return client, ready, nil
 }
@@ -185,22 +183,22 @@ func (r *AgentReconciler) runnerTLSName(owner string) string {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner's serving certificate comes from the runners' own CA issuer, so cert-manager holds the only CA key and renews what it issued. It is not the gateways' MITM CA: that one signs leaves for hostnames taken from users' credential hosts, and one naming a runner's Service host would pass for the runner, since the controller trusts whatever that CA signed. It names only the Service host the controller dials, and is good for serving alone. The Secret carries the runner's labels so the sweep's one List of runner Secrets finds it too.
-func (r *AgentReconciler) buildRunnerCertificate(owner string, ownerRefs []metav1.OwnerReference) *cmv1.Certificate {
+func (r *AgentReconciler) buildRunnerCertificate(owner string, ownerRefs []metav1.OwnerReference) *Certificate {
 	name := r.runnerTLSName(owner)
 	labels := vmRunnerLabels(owner, r.config.ReleaseName)
-	return &cmv1.Certificate{
+	return &Certificate{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.config.Namespace, Labels: labels, OwnerReferences: ownerRefs},
-		Spec: cmv1.CertificateSpec{
+		Spec: CertificateSpec{
 			SecretName:     name,
-			SecretTemplate: &cmv1.CertificateSecretTemplate{Labels: labels},
+			SecretTemplate: &CertificateSecretTemplate{Labels: labels},
 			DNSNames:       []string{r.runnerHost(owner)},
-			Usages:         []cmv1.KeyUsage{cmv1.UsageDigitalSignature, cmv1.UsageServerAuth},
-			IssuerRef: cmmetav1.IssuerReference{
+			Usages:         []string{"digital signature", "server auth"},
+			IssuerRef: IssuerReference{
 				Name:  r.config.VMRunnerCAIssuer,
 				Kind:  "ClusterIssuer",
 				Group: "cert-manager.io",
 			},
-			PrivateKey: &cmv1.CertificatePrivateKey{Algorithm: cmv1.ECDSAKeyAlgorithm, Size: 256},
+			PrivateKey: &CertificatePrivateKey{Algorithm: "ECDSA", Size: 256},
 		},
 	}
 }
@@ -729,6 +727,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							"--memory-mib=$(RUNNER_MEMORY_MIB)",
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
 							fmt.Sprintf("--headroom-mib=%d", spec.HeadroomMiB),
+							fmt.Sprintf("--boot-mib=%d", spec.BootMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",
 							"--tls-key=/etc/vm-runner/tls.key",
 						}, nestedRunnerArgs(spec)...),

@@ -12,11 +12,10 @@ export function useApplyStarterKit() {
     meta: {
       invalidates: [
         agentsKeys.listWithChannels(),
-        trpc.agents.list.queryKey(),
         trpc.budgets.reserved.queryKey(),
         trpc.schedules.listForOwner.queryKey(),
       ],
-      errorToast: "Failed to create the agent from the starter kit",
+      errorToast: "Couldn't create the agent from the starter kit",
     },
   });
 }
@@ -28,9 +27,9 @@ export function useStartKitUpdate() {
     meta: {
       invalidates: [
         trpc.starterKits.updates.queryKey(),
-        trpc.agents.list.queryKey(),
+        agentsKeys.listWithChannels(),
       ],
-      errorToast: "Failed to start the kit update",
+      errorToast: "Couldn't start the kit update",
     },
   });
 }
@@ -41,7 +40,7 @@ export function useSkipKitUpdate() {
       api.starterKits.skipUpdate.mutate({ agentId }),
     meta: {
       invalidates: [trpc.starterKits.updates.queryKey()],
-      errorToast: "Failed to skip the kit update",
+      errorToast: "Couldn't skip the kit update",
     },
   });
 }

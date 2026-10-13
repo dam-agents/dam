@@ -7,7 +7,6 @@ export function useStarterKits(enabled = true) {
   return useQuery({
     ...trpc.starterKits.list.queryOptions(),
     enabled,
-    meta: { errorToast: "Couldn't load starter kits" },
   });
 }
 
@@ -18,7 +17,6 @@ export function useStarterKit(catalog: string | null, id: string | null) {
       id: id ?? "",
     }),
     enabled: catalog !== null && id !== null,
-    meta: { errorToast: "Couldn't load the starter kit" },
   });
 }
 

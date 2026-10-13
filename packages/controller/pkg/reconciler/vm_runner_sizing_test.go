@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a runner is sized from what its owner's vm agents ask of it. Its pod's memory request follows the memory of the machines that should be running plus the runner's reserve, between the install's request and the limit, and is changed in place on the running pod — never on the Deployment, which would restart every machine — or left alone, with one warning, on a cluster that cannot resize pods. Its claim is sized from the owner's machine disks, the headroom beside each, and the image cache when it lives on the claim; it grows as agents are added, never shrinks, and is created at `runner.storage` — the ceiling — wherever it could not grow later.
+// TEST_OVERVIEW: a runner is sized from what its owner's vm agents ask of it. Its pod's memory request follows the memory of the machines that should be running plus the runner's reserve, between the install's request and the limit; its CPU limit follows the vCPUs of those machines plus one machine's worth for the runner, so one owner's runaway VMM cannot take the node; both are changed in place on the running pod — never on the Deployment, which would restart every machine — or left alone, with one warning, on a cluster that cannot resize pods. Its claim is sized from the owner's machine disks, the headroom beside each, and the image cache when it lives on the claim; it grows as agents are added, never shrinks, and is created at `runner.storage` — the ceiling — wherever it could not grow later.
 package reconciler
 
 import (
@@ -43,10 +43,15 @@ func runnerPod(t *testing.T, r *AgentReconciler, request, limit string) {
 
 func runnerPodRequest(t *testing.T, r *AgentReconciler) string {
 	t.Helper()
+	q := runnerPodResources(t, r).Requests[corev1.ResourceMemory]
+	return q.String()
+}
+
+func runnerPodResources(t *testing.T, r *AgentReconciler) corev1.ResourceRequirements {
+	t.Helper()
 	pod, err := r.client.CoreV1().Pods("test-agents").Get(context.Background(), r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
 	require.NoError(t, err)
-	q := pod.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory]
-	return q.String()
+	return pod.Spec.Containers[0].Resources
 }
 
 func clusterResizesPods(r *AgentReconciler, yes bool) {
@@ -123,7 +128,7 @@ func TestTheRunnerRequestFollowsTheMachinesThatShouldRun(t *testing.T) {
 	ctx := context.Background()
 
 	require.NoError(t, r.Reconcile(ctx, agent))
-	assert.Equal(t, "3584Mi", runnerPodRequest(t, r), "the running 3Gi machine plus the 512Mi reserve")
+	assert.Equal(t, "8704Mi", runnerPodRequest(t, r), "the unmeasured machine at half the runner's 15.5Gi plus the 512Mi reserve, in 512Mi steps")
 	assert.Equal(t, 1, resizeCalls(r), "changed through the pod's resize subresource")
 
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
@@ -148,7 +153,7 @@ func TestPeersCountByWhetherTheyShouldRun(t *testing.T) {
 
 	d, err := r.ownerRunnerDemand(context.Background(), testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, runnerDemand{memoryMiB: 3072 + 2048, diskGiB: 10 + 20 + 30, machines: 3}, d)
+	assert.Equal(t, runnerDemand{memoryMiB: 3072 + 2048, diskGiB: 10 + 20 + 30, machines: 3, vCPUs: 2 * max(r.config.VM.Runner.MachineCPUs, 1)}, d)
 
 	d, err = r.ownerRunnerDemand(context.Background(), testOwner, agent, false)
 	require.NoError(t, err)
@@ -158,12 +163,24 @@ func TestPeersCountByWhetherTheyShouldRun(t *testing.T) {
 // TEST_SCENARIO: the request is held between two bounds. It never falls below the request the install set, and never rises above the limit, which the API refuses and which the runner would refuse to admit past anyway.
 func TestTheRunnerRequestStaysBetweenTheInstallsRequestAndTheLimit(t *testing.T) {
 	floor, limit := resource.MustParse("2Gi"), resource.MustParse("8Gi")
-	low := runnerMemoryRequest(0, 512, floor, limit)
+	low := runnerMemoryRequest(0, 512, resource.Quantity{}, floor, limit)
 	assert.Equal(t, "2Gi", low.String())
-	mid := runnerMemoryRequest(4096, 512, floor, limit)
+	mid := runnerMemoryRequest(4096, 512, resource.Quantity{}, floor, limit)
 	assert.Equal(t, "4608Mi", mid.String())
-	high := runnerMemoryRequest(16384, 512, floor, limit)
+	high := runnerMemoryRequest(16384, 512, resource.Quantity{}, floor, limit)
 	assert.Equal(t, "8Gi", high.String())
+}
+
+// TEST_SCENARIO: a guest whose use sits on a 512 MiB step boundary must not flip the request between two steps at every pass. The request rises as soon as the need passes the current step, and falls only once the need is a quarter step below the step under it.
+func TestTheRunnerRequestFallsOnlyClearlyBelowTheCurrentStep(t *testing.T) {
+	floor, limit, current := resource.MustParse("1Gi"), resource.MustParse("8Gi"), resource.MustParse("2Gi")
+	up := runnerMemoryRequest(2049-512, 512, current, floor, limit)
+	assert.Equal(t, "2560Mi", up.String())
+	current = up
+	held := runnerMemoryRequest(2040-512, 512, current, floor, limit)
+	assert.Equal(t, "2560Mi", held.String())
+	down := runnerMemoryRequest(1920-512, 512, current, floor, limit)
+	assert.Equal(t, "2Gi", down.String())
 }
 
 // TEST_SCENARIO: an install that sets only the limit gets a pod whose request Kubernetes defaulted to the limit. That is already the safest request there is, so nothing is lowered.
@@ -176,7 +193,50 @@ func TestAnInstallWithoutARequestKeepsItAtTheLimit(t *testing.T) {
 
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 	assert.Equal(t, "16Gi", runnerPodRequest(t, r))
-	assert.Zero(t, resizeCalls(r))
+}
+
+// TEST_SCENARIO: on dam-dev one runaway VMM took 75 of a node's 80 cores, because the runner pod had no CPU limit. Every machine is a VMM process in its owner's runner pod, so the pod's CPU limit caps the owner's machines together. It must cover the vCPUs of every machine that should run, or guests are throttled under normal load, plus one machine's worth for the runner and the VMMs' I/O threads. It changes in place as machines start and stop; the Deployment never carries it, since changing its template would stop every machine.
+func TestTheRunnerCPULimitFollowsTheMachinesThatShouldRun(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	peerVMAgent(t, r, "peer-up", "2Gi", "20Gi", true)
+	peerVMAgent(t, r, "peer-down", "2Gi", "20Gi", false)
+	ctx := context.Background()
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	res := runnerPodResources(t, r)
+	assert.Equal(t, "12", res.Limits.Cpu().String(), "two running machines of 4 vCPUs, plus 4 for the runner")
+	assert.True(t, res.Requests.Cpu().IsZero(), "a pod with no CPU request keeps none, rather than the API defaulting it to the limit")
+	assert.Contains(t, res.Requests, corev1.ResourceCPU, "the zero request is explicit, or the API would default it to the limit")
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotContains(t, dep.Spec.Template.Spec.Containers[0].Resources.Limits, corev1.ResourceCPU)
+
+	agent.Annotations[annStopRequested] = time.Now().UTC().Format(time.RFC3339)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	res = runnerPodResources(t, r)
+	assert.Equal(t, "8", res.Limits.Cpu().String(), "a stopped machine gives its vCPUs back")
+}
+
+// TEST_SCENARIO: the CPU limit is held between two bounds. It never falls below the pod's CPU request, which the API refuses, and never rises above a CPU limit the install set itself. With no machine running it keeps one machine's worth, so the next start is not throttled before its resize lands.
+func TestTheRunnerCPULimitStaysBetweenTheRequestAndTheInstallsLimit(t *testing.T) {
+	none := resource.Quantity{}
+	idle := runnerCPULimit(0, 4, none, nil)
+	assert.Equal(t, "4", idle.String())
+	busy := runnerCPULimit(20, 4, none, nil)
+	assert.Equal(t, "24", busy.String())
+	ceiling := resource.MustParse("16")
+	capped := runnerCPULimit(20, 4, none, &ceiling)
+	assert.Equal(t, "16", capped.String())
+	floored := runnerCPULimit(0, 4, resource.MustParse("6"), nil)
+	assert.Equal(t, "6", floored.String())
 }
 
 // TEST_SCENARIO: a cluster whose API server has no pods/resize subresource keeps the behaviour it had. The agent still reconciles, the pod is not touched, and the controller asks discovery once rather than on every reconcile.

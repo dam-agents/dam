@@ -1,7 +1,6 @@
-import { Close } from "@carbon/icons-react";
 import type { FormEventHandler, ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
+import { DialogBody, DialogHeader } from "@/components/modal";
 
 import type { ProviderPresetType } from "../../../types.js";
 import { CardIcon } from "./card-icon.js";
@@ -22,29 +21,14 @@ export function ProviderFormShell({
   children: ReactNode;
 }) {
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-6 p-6">
-      <div className="flex items-start gap-3">
-        <CardIcon provider={provider} size="lg" />
-        <div className="min-w-0 flex-1">
-          <div className="text-lg font-bold text-foreground">{title}</div>
-          <div className="mt-1 text-sm text-muted-foreground">
-            {description}
-          </div>
-        </div>
-        {onCancel && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={onCancel}
-            aria-label="Cancel"
-            className="-mt-2 -mr-2 h-7 w-7 shrink-0"
-          >
-            <Close size={16} />
-          </Button>
-        )}
-      </div>
-      {children}
+    <form onSubmit={onSubmit} className="contents">
+      <DialogHeader
+        icon={<CardIcon provider={provider} />}
+        title={title}
+        subtitle={description}
+        onClose={onCancel}
+      />
+      <DialogBody className="flex flex-col gap-6">{children}</DialogBody>
     </form>
   );
 }

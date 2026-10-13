@@ -40,7 +40,7 @@ type AgentSpec struct {
 	// +optional
 	Resources ResourceSpec `json:"resources,omitempty"`
 
-	// HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
+	// HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. A vm Agent ignores it and always takes the chart-wide vm idle timeout. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
 	// +optional
 	HibernationTimeout *metav1.Duration `json:"hibernationTimeout,omitempty"`
 
@@ -259,6 +259,12 @@ const ReasonStuckOnSupersededRevision = "StuckOnSupersededRevision"
 // it is not part of the machine API's vocabulary. The message carries the
 // scheduler's own account.
 const ReasonMachineRunnerUnschedulable = "MachineRunnerUnschedulable"
+
+// ReasonHomeVolumeFull is stamped on AgentPodReady when the agent container
+// exited because its home volume ran out of space. agent-runtime reports it as
+// the container's termination message, since the exit code alone cannot tell
+// it apart from any other crash.
+const ReasonHomeVolumeFull = "HomeVolumeFull"
 
 // AgentStatus is the observed state of an Agent. The controller is the sole
 // writer, via the status subresource.

@@ -9,6 +9,7 @@ import type {
   ReposService,
   TermsService,
 } from "api-server-api";
+import type { FirePair } from "../../modules/harness-config/index.js";
 import type { RedisBus } from "../../core/redis-bus.js";
 import type { TtlStore } from "../../core/ttl-store.js";
 import type {
@@ -59,6 +60,7 @@ import type { startJwksWarmup } from "./admission/jwks-warmup.js";
 import type { SessionPresence } from "./agent-proxies/session-presence.js";
 
 import type { ApiVariables } from "../../core/http-context.js";
+import type { GettingStartedModule } from "../../modules/getting-started/index.js";
 export type { ApiVariables };
 
 export interface ApiServerDeps {
@@ -115,6 +117,7 @@ export interface ApiServerDeps {
   connectionsBoot: ConnectionsBootCompose;
   templatesRepo: TemplatesRepository;
   harnessCatalog: HarnessCatalog;
+  firePair: FirePair;
   starterKitsRepo: StarterKitsRepository;
   kitUpstream: KitUpstream;
   reposService: ReposService;
@@ -126,6 +129,7 @@ export interface ApiServerDeps {
   slackOauthCallbackUrl: string;
   shareHostGate: MiddlewareHandler;
   publicAgentPageService: PublicAgentPageService;
+  gettingStarted: GettingStartedModule;
   sessionPresence: SessionPresence;
   wakeAgent: (agentId: string) => Promise<void>;
   artifactLibraryFor: ArtifactLibraryFor;

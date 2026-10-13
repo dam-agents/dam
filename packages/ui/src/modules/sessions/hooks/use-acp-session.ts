@@ -1,4 +1,4 @@
-import { PIN_MODEL_METHOD } from "agent-runtime-api";
+import { CONFIGURE_SESSION_METHOD, PIN_MODEL_METHOD } from "agent-runtime-api";
 import { SessionMode } from "api-server-api";
 import {
   useCallback,
@@ -19,18 +19,25 @@ import {
   type SessionFailureKind,
   type SessionListing,
 } from "../../acp/errors.js";
+import { framesToMessages } from "../../acp/frames-to-messages.js";
 import {
   appendUndelivered,
   finalizeAllStreaming,
   hasStreamingAssistant,
 } from "../../acp/session-projection.js";
 import {
+  untilAgentOperable,
   useAgentRunState,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
 import { findAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys } from "../api/keys.js";
-import { setSessionRunning } from "../api/queries.js";
+import {
+  fetchSessionHistory,
+  listedSessionRunning,
+  SESSION_HISTORY_TAIL,
+  setSessionRunning,
+} from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
@@ -151,8 +158,27 @@ export function useAcpSession(
       useStore.getState().setSessionError(null);
       setSessionId(sid);
 
+      let loaded = false;
+      const operable = agentOperable
+        ? Promise.resolve()
+        : untilAgentOperable(selectedAgent);
+      operable
+        ?.then(() => (loaded ? null : fetchSessionHistory(selectedAgent, sid)))
+        .then((frames) => {
+          if (!frames || loaded || useStore.getState().sessionId !== sid)
+            return;
+          const preview = framesToMessages(frames, {
+            tail: SESSION_HISTORY_TAIL,
+            turnInFlight: listedSessionRunning(selectedAgent, sid),
+          });
+          if (preview.length > 0) setMessages(preview);
+        })
+        .catch(() => {});
+
       try {
-        const fresh = await loadSessionHistory(sid);
+        const fresh = await loadSessionHistory(sid).finally(() => {
+          loaded = true;
+        });
         if (useStore.getState().sessionId !== sid) return;
         setMessages(fresh);
 
@@ -164,6 +190,7 @@ export function useAcpSession(
         } catch {}
       } catch (e) {
         if (useStore.getState().sessionId !== sid) return;
+        setMessages([]);
         const kind = await classifyResumeFailure(selectedAgent, sid, e);
         if (useStore.getState().sessionId !== sid) return;
         useStore.getState().setSessionError({ sessionId: sid, kind });
@@ -173,6 +200,7 @@ export function useAcpSession(
     },
     [
       selectedAgent,
+      agentOperable,
       loadSessionHistory,
       resetConnection,
       setMessages,
@@ -241,6 +269,30 @@ export function useAcpSession(
     [connectionRef, ensureLive, selectedAgent],
   );
 
+  const configureSession = useCallback(
+    async (settings: Record<string, string>) => {
+      const sid = useStore.getState().sessionId;
+      if (!sid || !selectedAgent) return;
+      try {
+        const live = connectionRef.current ?? (await ensureLive());
+        if (!live) throw new Error("the agent is not connected");
+        await live.connection.agent.request(CONFIGURE_SESSION_METHOD, {
+          sessionId: sid,
+          settings,
+        });
+        await queryClient.invalidateQueries({
+          queryKey: acpSessionsKeys.agent(selectedAgent),
+        });
+      } catch (err) {
+        emitToast({
+          kind: "error",
+          message: `Couldn't change this session's settings: ${extractErrorMessage(err)}`,
+        });
+      }
+    },
+    [connectionRef, ensureLive, selectedAgent],
+  );
+
   const sendPrompt = useCallback(
     (
       text: string,
@@ -260,6 +312,7 @@ export function useAcpSession(
     sendPrompt,
     stopAgent,
     chooseSessionModel,
+    configureSession,
     busy,
     loadingSession,
     connectionState,

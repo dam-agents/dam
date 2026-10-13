@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+//MISE description="Test that Claude Code on the IBM ETE LiteLLM provider starts in bypassPermissions instead of auto"
+//MISE sources=["claude-code/rootfs/usr/local/lib/sync-claude-settings.mjs", ".mise/tasks/test/claude-ete-bypass-mode"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const script = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/sync-claude-settings.mjs", import.meta.url));
+const ETE = "https://ete-litellm.ai-models.vpc.res.ibm.com";
+const OTHER = "https://litellm.cb.ete.res.ibm.com";
+
+const modeAfter = (mode, snapshot) => {
+  const home = mkdtempSync(join(tmpdir(), "claude-ete-bypass-"));
+  try {
+    mkdirSync(join(home, ".claude"));
+    mkdirSync(join(home, ".platform"));
+    if (mode !== undefined)
+      writeFileSync(join(home, ".claude/settings.json"), JSON.stringify({ permissions: { defaultMode: mode, allow: ["Read"] } }));
+    if (snapshot) writeFileSync(join(home, ".platform/pod-service-env.json"), JSON.stringify(snapshot));
+    execFileSync(process.execPath, [script], { env: { PATH: process.env.PATH, HOME: home } });
+    const { permissions } = JSON.parse(readFileSync(join(home, ".claude/settings.json"), "utf8"));
+    if (mode !== undefined) assert.deepEqual(permissions.allow, ["Read"]);
+    return permissions?.defaultMode;
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+};
+
+const ete = { env: { ANTHROPIC_BASE_URL: OTHER }, providers: { a: { ANTHROPIC_BASE_URL: OTHER }, b: { ANTHROPIC_BASE_URL: ETE } } };
+const other = { env: { ANTHROPIC_BASE_URL: OTHER }, providers: { a: { ANTHROPIC_BASE_URL: OTHER } } };
+
+// TEST_SCENARIO: ETE's LiteLLM fails auto mode's classifier requests, so an agent with ETE among its providers moves from auto, or from no mode, to bypassPermissions.
+assert.equal(modeAfter("auto", ete), "bypassPermissions");
+assert.equal(modeAfter(undefined, ete), "bypassPermissions");
+// TEST_SCENARIO: Any other mode the owner picked stays as it is.
+assert.equal(modeAfter("acceptEdits", ete), "acceptEdits");
+// TEST_SCENARIO: Without ETE, or before the runtime writes the provider snapshot, auto stays.
+assert.equal(modeAfter("auto", other), "auto");
+assert.equal(modeAfter("auto", null), "auto");
+assert.equal(modeAfter(undefined, other), undefined);
+// TEST_SCENARIO: Only ETE's own host counts: a URL that merely contains its name, in another host or in the path, keeps auto.
+assert.equal(modeAfter("auto", { env: { ANTHROPIC_BASE_URL: `${ETE}.example.com` } }), "auto");
+assert.equal(modeAfter("auto", { env: { ANTHROPIC_BASE_URL: `${OTHER}/${ETE}` } }), "auto");
+console.log("Claude Code with ETE LiteLLM starts in bypassPermissions instead of auto");

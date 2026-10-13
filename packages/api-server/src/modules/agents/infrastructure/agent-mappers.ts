@@ -37,6 +37,8 @@ import {
   KIND_AGENT,
   LABEL_OWNER,
   LABEL_TEMPLATE_REF,
+  ACTIVE_SESSION_KEY,
+  INVOCATIONS_ACTIVE_KEY,
   LAST_ACTIVITY_KEY,
   READY_REASON_HIBERNATED,
   READY_REASON_OVER_BUDGET,
@@ -54,8 +56,13 @@ import {
   ANN_STARTER_KIT_SEED,
   ANN_KIT_UPDATE_PENDING,
   ANN_KIT_UPDATE_SKIPPED,
+  ANN_IMAGE_UPDATE_FROM,
+  ANN_IMAGE_UPDATE_REFUSED,
 } from "./labels.js";
-import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
+import {
+  type IdleTimeoutMinutes,
+  resolveEffectiveHibernationTimeoutMin,
+} from "../domain/spec-assembly.js";
 import {
   runtimeMigrationHold,
   runtimeMigrationOf,
@@ -91,6 +98,7 @@ interface AgentStatusObject {
     reason?: string;
     message?: string;
     lastTransitionTime?: string;
+    observedGeneration?: number;
   }>;
   agentPodRestarts?: number;
   agentPodRestartReason?: string;
@@ -115,7 +123,12 @@ export interface InfraAgent {
   starterKitSeed?: SeedStamp;
   kitUpdatePending?: KitUpdatePending;
   kitUpdateSkipped?: string;
+  imageUpdateFrom?: string;
+  imageUpdateRefused?: string;
+  specStart?: "ready" | "failed";
   hibernatedSince?: Date;
+  wakeRequested?: boolean;
+  quietSince?: Date;
   ready: boolean;
   hibernated: boolean;
   stopRequested: boolean;
@@ -138,6 +151,14 @@ export interface InfraAgent {
   gatewayPodNotReadyReason?: string;
   gatewayFailure?: string;
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: the start failures only a new image causes: it cannot be pulled or unpacked, or the machine cannot boot it. A full home volume, memory and runner placement fail on any image. A container exit is left out too: the condition does not say which pod exited, and the pod a roll replaces exits on SIGTERM at the new generation.
+const IMAGE_START_FAILURES = new Set([
+  "ImagePullFailure",
+  "InvalidImageName",
+  "MachineBootFailed",
+  "MachineImageUnavailable",
+]);
 
 const TERMINAL_MACHINE_REASONS = new Set(
   [...POD_FAILURE_REASONS].filter((r) => r.startsWith("Machine")),
@@ -194,6 +215,11 @@ function createdAtOf(obj: KubeObject): string | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
 
+function validDate(raw: string | undefined): Date | undefined {
+  const d = raw ? new Date(raw) : undefined;
+  return d && !Number.isNaN(d.getTime()) ? d : undefined;
+}
+
 export function parseInfraAgent(obj: KubeObject): InfraAgent {
   const id = obj.metadata?.name ?? "";
   const crSpec = (obj.spec ?? {}) as AgentSpecCR;
@@ -235,6 +261,22 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     vm: crSpec.backend?.type === "vm",
   });
   const resourceVersion = obj.metadata?.resourceVersion;
+  const generation = obj.metadata?.generation;
+  const specStart =
+    generation === undefined
+      ? undefined
+      : ready?.status === "True" && ready.observedGeneration === generation
+        ? "ready"
+        : agentPod?.status === "False" &&
+            agentPod.observedGeneration === generation &&
+            IMAGE_START_FAILURES.has(agentPod.reason ?? "")
+          ? "failed"
+          : undefined;
+  const quietSince =
+    annotations[ACTIVE_SESSION_KEY] === "true" ||
+    annotations[INVOCATIONS_ACTIVE_KEY] === "true"
+      ? undefined
+      : validDate(annotations[LAST_ACTIVITY_KEY]);
   return {
     id,
     name: spec.name,
@@ -269,7 +311,18 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ...(annotations[ANN_KIT_UPDATE_SKIPPED]
       ? { kitUpdateSkipped: annotations[ANN_KIT_UPDATE_SKIPPED] }
       : {}),
+    ...(annotations[ANN_IMAGE_UPDATE_FROM]
+      ? { imageUpdateFrom: annotations[ANN_IMAGE_UPDATE_FROM] }
+      : {}),
+    ...(annotations[ANN_IMAGE_UPDATE_REFUSED]
+      ? { imageUpdateRefused: annotations[ANN_IMAGE_UPDATE_REFUSED] }
+      : {}),
+    ...(specStart ? { specStart } : {}),
     ...(hibernatedSince ? { hibernatedSince } : {}),
+    ...(hibernatedSince &&
+      (validDate(annotations[LAST_ACTIVITY_KEY])?.getTime() ?? 0) >
+        hibernatedSince.getTime() && { wakeRequested: true }),
+    ...(quietSince ? { quietSince } : {}),
     ready: ready?.status === "True",
     hibernated,
     stopRequested: !!annotations[STOP_REQUESTED_KEY],
@@ -334,7 +387,7 @@ export function assembleAgent(
   infra: InfraAgent,
   channels: ChannelConfig[],
   contributionFailures: DriverFailure[],
-  globalIdleTimeoutMin: number,
+  idleTimeoutMinutes: IdleTimeoutMinutes,
   preparingWorkspace: boolean,
   templateUpdate: TemplateUpdate | undefined,
   features: RuntimeFeatures,
@@ -358,7 +411,8 @@ export function assembleAgent(
     state: computeAgentState(infra, preparingWorkspace),
     effectiveHibernationTimeoutMin: resolveEffectiveHibernationTimeoutMin(
       infra.spec.hibernationTimeout,
-      globalIdleTimeoutMin,
+      infra.spec.backend?.type === "vm",
+      idleTimeoutMinutes,
     ),
     error: infra.error,
     stopRequested: infra.stopRequested,

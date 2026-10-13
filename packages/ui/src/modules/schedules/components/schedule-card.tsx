@@ -2,19 +2,13 @@ import {
   ChevronDown,
   ChevronUp,
   Launch,
-  OverflowMenuVertical,
   Time,
   WarningAlt,
 } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Switch } from "@/components/ui/switch";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
 import { emitToast } from "@/lib/toast";
@@ -80,9 +74,9 @@ export function ScheduleCard({
   const handleDelete = async () => {
     if (
       await showConfirm(
-        "Are you sure you want to delete this schedule?",
+        "It stops running and cannot be recovered.",
         `Delete ${name}?`,
-        { kind: "destructive", confirmLabel: "Delete Schedule" },
+        { kind: "destructive", confirmLabel: "Delete schedule" },
       )
     )
       deleteSchedule.mutate({ id });
@@ -90,7 +84,7 @@ export function ScheduleCard({
 
   const handleRunNow = async () => {
     if (
-      await showConfirm(runNowConfirmText(schedule), "Run now", {
+      await showConfirm(runNowConfirmText(schedule), "Run now?", {
         confirmLabel: "Run now",
       })
     )
@@ -110,7 +104,7 @@ export function ScheduleCard({
     if (
       await showConfirm(
         `Reset the session for "${name}"? The next run starts a fresh conversation.`,
-        "Reset session",
+        "Reset session?",
         { confirmLabel: "Reset session" },
       )
     )
@@ -118,17 +112,17 @@ export function ScheduleCard({
   };
 
   return (
-    <Card>
-      <div className="flex items-center gap-3 p-4">
+    <div>
+      <div className="flex items-center gap-3 px-4 py-3">
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 text-[15px] font-semibold text-foreground">
+          <p className="flex items-center gap-1.5 text-md font-medium text-foreground">
             <span className="truncate">{name}</span>
             {alert && (
               <WarningAlt
                 size={16}
                 className={cn(
                   "shrink-0",
-                  alert.urgent ? "text-destructive" : "text-muted-foreground",
+                  alert.urgent ? "text-danger" : "text-muted-foreground",
                 )}
               >
                 <title>{`${alert.text}: ${alert.reason}`}</title>
@@ -138,9 +132,7 @@ export function ScheduleCard({
           <div className="mt-0.5 flex items-center gap-2 text-sm text-muted-foreground">
             {alert && (
               <>
-                <span
-                  className={cn("truncate", alert.urgent && "text-destructive")}
-                >
+                <span className={cn("truncate", alert.urgent && "text-danger")}>
                   {alert.text}
                 </span>
                 <span aria-hidden>·</span>
@@ -173,7 +165,7 @@ export function ScheduleCard({
               <>
                 <span aria-hidden>·</span>
                 <span
-                  className="inline-flex items-center gap-1 whitespace-nowrap text-destructive"
+                  className="inline-flex items-center gap-1 whitespace-nowrap text-danger"
                   title={stopReason}
                 >
                   <WarningAlt size={12} /> Stopped
@@ -197,38 +189,24 @@ export function ScheduleCard({
           />
         )}
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground"
-              aria-label="Schedule actions"
-            >
-              <OverflowMenuVertical size={16} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            {onceState === null && (
-              <DropdownMenuItem onSelect={handleRunNow}>
-                Run now
-              </DropdownMenuItem>
-            )}
-            {(onceState === null || onceState === "pending") && (
-              <DropdownMenuItem onSelect={handleEdit}>
-                Edit schedule
-              </DropdownMenuItem>
-            )}
-            {sessionMode === "continuous" && (
-              <DropdownMenuItem onSelect={handleReset}>
-                Reset session
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem tone="danger" onSelect={handleDelete}>
-              Delete schedule
+        <RowActionsMenu label="Schedule actions">
+          {onceState === null && (
+            <DropdownMenuItem onSelect={handleRunNow}>Run now</DropdownMenuItem>
+          )}
+          {(onceState === null || onceState === "pending") && (
+            <DropdownMenuItem onSelect={handleEdit}>
+              Edit schedule
             </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          )}
+          {sessionMode === "continuous" && (
+            <DropdownMenuItem onSelect={handleReset}>
+              Reset session
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem tone="danger" onSelect={handleDelete}>
+            Delete schedule
+          </DropdownMenuItem>
+        </RowActionsMenu>
       </div>
 
       <button
@@ -248,6 +226,6 @@ export function ScheduleCard({
       </button>
 
       {isExpanded && <ScheduleDetails schedule={schedule} />}
-    </Card>
+    </div>
   );
 }

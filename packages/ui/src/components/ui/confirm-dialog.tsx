@@ -58,8 +58,7 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const destructive = kind === "destructive";
   const Icon = icon ?? KIND_ICON[kind];
-  const resolvedConfirmLabel =
-    confirmLabel ?? (showCancel ? (destructive ? "Remove" : "Confirm") : "OK");
+  const resolvedConfirmLabel = confirmLabel ?? (showCancel ? "Confirm" : "OK");
 
   function handleAnimationEnd(event: AnimationEvent<HTMLDivElement>) {
     if (!open && event.currentTarget === event.target) onCloseAnimationEnd?.();
@@ -73,19 +72,25 @@ export function ConfirmDialog({
         onOpenChange(o);
       }}
     >
-      <AlertDialogContent onAnimationEnd={handleAnimationEnd}>
+      <AlertDialogContent
+        onAnimationEnd={handleAnimationEnd}
+        onBackdropClick={() => {
+          onCancel?.();
+          onOpenChange(false);
+        }}
+      >
         <AlertDialogHeader>
           <div className="flex items-center gap-3">
             <div
               className={cn(
                 "h-8 w-8 rounded-md flex items-center justify-center shrink-0",
-                destructive ? "bg-destructive/10" : "bg-primary/10",
+                destructive ? "bg-danger-light" : "bg-primary/10",
               )}
             >
               <Icon
                 className={cn(
                   "h-4 w-4",
-                  destructive ? "text-destructive" : "text-primary",
+                  destructive ? "text-danger" : "text-primary",
                 )}
               />
             </div>
@@ -112,7 +117,9 @@ export function ConfirmDialog({
               destructive && buttonVariants({ variant: "destructive" }),
             )}
           >
-            {destructive && <TrashCan size={16} />}
+            {destructive && /^(Delete|Remove)\b/.test(resolvedConfirmLabel) && (
+              <TrashCan size={16} />
+            )}
             {resolvedConfirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>

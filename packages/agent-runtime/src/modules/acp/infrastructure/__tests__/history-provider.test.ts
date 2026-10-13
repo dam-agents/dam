@@ -60,6 +60,39 @@ describe("worker history provider", () => {
   });
 
   /**
+   * TEST_SCENARIO: Warming imports the module before any fetch, so the first
+   * load after boot does not pay the import.
+   */
+  it("should import the module on warm, ahead of the first fetch", async () => {
+    const source = `
+      const importedAt = Date.now();
+      new BroadcastChannel("history-warm").postMessage("imported");
+      export function loadHistory(sessionId) {
+        return [${JSON.stringify(frameLine("SID", "T"))}.replace('"SID"', JSON.stringify(sessionId)).replace('"T"', JSON.stringify(String(importedAt)))];
+      }
+    `;
+    const provider = createWorkerHistoryProvider({
+      modulePath: dataModule(source),
+      log: () => {},
+    });
+    const warmed = new BroadcastChannel("history-warm");
+    const imported = new Promise((resolve) => (warmed.onmessage = resolve));
+    provider.warm?.();
+    await imported;
+    warmed.close();
+    const fetchedAt = Date.now();
+    const lines = await provider.fetch("sess-a");
+    const importedAt = Number(
+      (
+        JSON.parse(lines![0]!) as {
+          params: { update: { content: { text: string } } };
+        }
+      ).params.update.content.text,
+    );
+    expect(importedAt).toBeLessThanOrEqual(fetchedAt);
+  });
+
+  /**
    * TEST_SCENARIO: A module that throws for one session must fail only that
    * fetch — the next fetch on the same worker succeeds.
    */

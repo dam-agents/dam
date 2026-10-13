@@ -33,5 +33,6 @@ export interface AttentionDismissal {
 
 export interface AttentionService {
   listForOwner(): Promise<AttentionList>;
+  sessionsForAgent(agentId: string): Promise<AttentionItem[]>;
   dismiss(input: { items: readonly AttentionDismissal[] }): Promise<void>;
 }

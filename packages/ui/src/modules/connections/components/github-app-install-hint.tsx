@@ -27,7 +27,7 @@ export function GithubAppInstallButton({
   const url = activeInstallUrl(connection);
   if (!url) return null;
   return (
-    <Button asChild className="h-8 shrink-0 px-3 text-sm">
+    <Button asChild size="sm" className="shrink-0">
       <a href={url} {...externalLinkProps}>
         Install {getBrand().name} app <Launch size={13} aria-hidden />
       </a>

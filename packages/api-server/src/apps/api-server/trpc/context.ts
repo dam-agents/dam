@@ -67,6 +67,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     runtimeMutator,
     contributionsProgress,
     onboardingChecklists,
+    gettingStarted,
     getAgentCapabilities,
     schedulesBoot,
     listRegisteredAgentIds,
@@ -83,6 +84,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     harnessCatalog: harnesses,
     starterKitsRepo,
     kitUpstream,
+    firePair,
     reposService,
     connectionsBoot,
     apiKeysModule,
@@ -241,11 +243,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       markAgentOnboarded: (agentId, at) =>
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
+      sessionPair: (agentId) => firePair(agentId, {}),
       egressRules: createKitRulesSeederAdapter(db, l7Hosts),
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       virtualizationEnabled: config.virtualizationEnabled,
-      pinnedKit: config.starterKitsPinned,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agentExists(agentId)) && ownerSub === user.sub;
@@ -272,6 +274,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ownsApproval: async (approvalId) =>
         (await createApprovalsRepository(db).getPending(approvalId))
           ?.ownerSub === user.sub,
+      ownsAgent: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
     });
     const files = composeFilesModule(
       agentsRepo,
@@ -359,6 +362,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       artifactLibrary,
       caseStudies,
       features,
+      gettingStarted: gettingStarted.forOwner(user.sub),
       files,
       harnessConfig,
       links: config.links,

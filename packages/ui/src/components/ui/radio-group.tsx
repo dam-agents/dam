@@ -97,9 +97,7 @@ function RadioGroupCard({
         {...props}
       >
         <span className="flex flex-1 flex-col gap-0.5">
-          <span className="text-[15px] font-medium text-foreground">
-            {label}
-          </span>
+          <span className="text-md font-medium text-foreground">{label}</span>
           {description && (
             <span id={descriptionId} className="text-sm text-muted-foreground">
               {description}

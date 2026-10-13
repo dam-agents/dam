@@ -74,7 +74,7 @@ export function SkillMarkdownModal({
     : { frontmatter: null, body: "" };
 
   return (
-    <Modal onClose={onClose} widthClass="w-[860px]">
+    <Modal onClose={onClose} size="lg">
       <DialogHeader
         title={title}
         truncateTitle

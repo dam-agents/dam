@@ -1,14 +1,12 @@
-import { Checkmark, Copy } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
-import { useCopy } from "@/hooks/use-copy";
 
-import { useTestAnthropic } from "../../../connections/api/mutations.js";
 import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
 import {
   anthropicCredentialSchema,
@@ -34,64 +32,26 @@ export function AnthropicForm({
   onSave: (input: { mode: Mode; value: string }) => Promise<void>;
   onCancel?: () => void;
 }) {
-  const {
-    register,
-    handleSubmit,
-    control,
-    watch,
-    getValues,
-    trigger,
-    formState,
-  } = useForm<AnthropicCredentialValues>({
-    resolver: zodResolver(anthropicCredentialSchema),
-    mode: "onChange",
-    defaultValues: { mode: initialMode, value: "" },
-  });
+  const { register, handleSubmit, control, watch, trigger, formState } =
+    useForm<AnthropicCredentialValues>({
+      resolver: zodResolver(anthropicCredentialSchema),
+      mode: "onChange",
+      defaultValues: { mode: initialMode, value: "" },
+    });
   const { errors, isSubmitting, isValid } = formState;
-
-  const [testResult, setTestResult] = useState<
-    { ok: true } | { ok: false; message: string } | null
-  >(null);
-  const testTokenRef = useRef(0);
-  const testAnthropic = useTestAnthropic();
-  const testing = testAnthropic.isPending;
 
   const mode = watch("mode");
   const value = watch("value");
   useEffect(() => {
-    testTokenRef.current++;
-    setTestResult(null);
     trigger("value");
   }, [mode, value, trigger]);
 
   const isEdit = variant === "edit";
-  const submitDisabled = isSubmitting || testing || !isValid;
+  const submitDisabled = isSubmitting || !isValid;
 
   const onSubmit = handleSubmit(async (values) => {
     await onSave({ mode: values.mode, value: stripWhitespace(values.value) });
   });
-
-  const test = async () => {
-    if (submitDisabled) return;
-    const { mode, value } = getValues();
-    const sanitized = stripWhitespace(value);
-    const token = ++testTokenRef.current;
-    setTestResult(null);
-    try {
-      const result = await testAnthropic.mutateAsync({
-        value: sanitized,
-        envName:
-          mode === "api-key" ? "ANTHROPIC_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN",
-      });
-      if (token !== testTokenRef.current) return;
-      setTestResult(
-        result.ok ? { ok: true } : { ok: false, message: result.message },
-      );
-    } catch {
-      if (token !== testTokenRef.current) return;
-      setTestResult({ ok: false, message: "Could not verify credential." });
-    }
-  };
 
   return (
     <ProviderFormShell
@@ -135,18 +95,8 @@ export function AnthropicForm({
           placeholder={MODES[mode].placeholder}
           {...register("value")}
         />
-        <Button
-          type="button"
-          variant="outline"
-          onClick={test}
-          disabled={submitDisabled}
-          tooltip="Verify the credential with Anthropic"
-          className="shrink-0"
-        >
-          {testing ? "..." : "Test"}
-        </Button>
         <Button type="submit" disabled={submitDisabled} className="shrink-0">
-          {isSubmitting ? "..." : isEdit ? "Replace" : "Save"}
+          {isSubmitting ? "Saving…" : isEdit ? "Replace" : "Save"}
         </Button>
       </div>
 
@@ -154,27 +104,15 @@ export function AnthropicForm({
       {errors.value &&
         value.length > 0 &&
         errors.value.message !== "Required" && (
-          <div className="text-xs font-medium text-destructive">
+          <div className="text-xs font-medium text-danger">
             {errors.value.message}
           </div>
         )}
-      {!errors.value && testResult?.ok && (
-        <div className="text-xs font-medium text-success flex items-center gap-1.5">
-          <Checkmark size={13} /> Credential is valid.
-        </div>
-      )}
-      {!errors.value && testResult && !testResult.ok && (
-        <div className="text-xs font-medium text-destructive">
-          {testResult.message}
-        </div>
-      )}
     </ProviderFormShell>
   );
 }
 
 function QuickSetupHint() {
-  const { copy: copyText, copied } = useCopy();
-  const copy = () => void copyText("claude setup-token");
   return (
     <div className="text-sm text-foreground/80">
       Run{" "}
@@ -182,20 +120,7 @@ function QuickSetupHint() {
         <code className="font-mono font-semibold text-primary">
           claude setup-token
         </code>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          onClick={copy}
-          aria-label="Copy command"
-          tooltip="Copy command"
-        >
-          {copied ? (
-            <Checkmark size={12} className="text-success" />
-          ) : (
-            <Copy size={12} />
-          )}
-        </Button>
+        <CopyButton value="claude setup-token" label="Copy command" />
       </span>{" "}
       on your own machine (with Claude Code installed) to generate a token.
     </div>

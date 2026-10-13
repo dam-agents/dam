@@ -30,7 +30,7 @@ function latestPublish(
 }
 
 export type SkillsModal =
-  | { kind: "add-source"; tab: "github" | "upload"; files: File[] }
+  | { kind: "add-source"; mode: "github" | "upload"; files: File[] }
   | { kind: "publish"; skill: LocalSkill }
   | { kind: "render"; source: SkillSource; skill: Skill }
   | { kind: "render-local"; skill: LocalSkill }
@@ -64,7 +64,7 @@ export function SkillsModals({
           onClose={onClose}
           onCreate={surface.createSource}
           onCreateSkills={surface.createLocalSkills}
-          initialTab={open.tab}
+          mode={open.mode}
           initialFiles={open.files}
         />
       );
@@ -164,7 +164,7 @@ export function SkillsModals({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-danger hover:bg-danger-light hover:text-danger"
+                  tone="danger"
                   onClick={() => {
                     onClose();
                     onDeleteLocal(skill, publish);

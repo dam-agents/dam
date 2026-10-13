@@ -1,4 +1,5 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
+import { routesSessionPairs } from "agent-runtime-api";
 import type {
   ConnectionView,
   HarnessConfigStatus,
@@ -54,15 +55,35 @@ export function useProviderModels(
     queryKey: ["provider-models", agentId, harness, provider],
     queryFn:
       agentId && harness && operable
-        ? () =>
-            agentTrpc(agentId).harnessConfig.models.query({ harness, provider })
+        ? async () => {
+            const result = await agentTrpc(agentId).harnessConfig.models.query({
+              harness,
+              provider,
+            });
+            if (result.availableModels === undefined)
+              throw new Error("Model discovery failed");
+            return result;
+          }
         : skipToken,
     staleTime: 60_000,
     refetchInterval: (q) =>
       q.state.data?.availableModels?.length ? false : 5_000,
-    retry: false,
+    retry: 5,
+    retryDelay: 2_000,
   });
   return { ...query, operable };
+}
+
+export function useHarnessConfigured(agentId: string, harness: string) {
+  const operable = useIsAgentOperable(agentId);
+  return useQuery({
+    queryKey: ["harness-config-current", agentId, harness],
+    queryFn: operable
+      ? () => agentTrpc(agentId).harnessConfig.current.query({ harness })
+      : skipToken,
+    staleTime: 60_000,
+    retry: false,
+  }).data;
 }
 
 export function useProviderConnections(agentId: string | null): {
@@ -98,7 +119,7 @@ export function useGrantProvider(agentId: string | null) {
         trpc.harnessConfig.sessionPair.queryKey(),
         egressRulesKeys.all,
       ],
-      errorToast: "Failed to update model providers",
+      errorToast: "Couldn't update model providers",
     },
   });
   const settle = (change: { grant?: string[]; revoke?: string[] }) =>
@@ -115,11 +136,13 @@ export function useGrantProvider(agentId: string | null) {
 
 export function readNextSessionPair(
   agentId: string,
-): { pair: SessionPair; chosen: boolean } | null {
+): { pair: SessionPair } | null {
   const status = queryClient.getQueryData<HarnessConfigStatus>(
     trpc.harnessConfig.status.queryKey({ agentId }),
   );
-  const carried = status?.harnesses?.map((h) => h.name) ?? [];
+  const carried = routesSessionPairs(status?.harnesses ?? [])
+    ? (status?.harnesses?.map((h) => h.name) ?? [])
+    : [];
   const chosen = useStore.getState().nextSessionPair[agentId] ?? null;
   const remembered =
     queryClient.getQueryData<SessionPair | null>(
@@ -146,7 +169,7 @@ export function readNextSessionPair(
     carried,
     fittingProviders(catalog, granted),
   );
-  return pair ? { pair, chosen: chosen !== null } : null;
+  return pair ? { pair } : null;
 }
 
 export function rememberSessionPair(agentId: string, pair: SessionPair): void {
@@ -160,7 +183,7 @@ export function rememberSessionPair(agentId: string, pair: SessionPair): void {
     .catch((err: unknown) =>
       emitToast({
         kind: "error",
-        message: `Couldn't remember this session's harness and model: ${err instanceof Error ? err.message : String(err)}`,
+        message: `Couldn't save the default harness and model: ${err instanceof Error ? err.message : String(err)}`,
       }),
     );
 }

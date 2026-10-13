@@ -3,15 +3,30 @@
 # --trust: every session/new carries the pod workspace, which Bob would
 # otherwise refuse as untrusted.
 #
+# The platform runs one Bob process per provider, model and approval posture.
+# Bob reads and watches one fixed settings file, so each process gets its own
+# copy, written from the shared file plus that process's own pins.
+if [ -n "$PLATFORM_PROVIDER$PLATFORM_MODEL$BOB_SESSION_APPROVALS" ]; then
+  key=$(printf '%s\n' "$PLATFORM_PROVIDER" "$PLATFORM_MODEL" "$BOB_SESSION_APPROVALS" | sha256sum | cut -c1-16)
+  BOB_SETTINGS_FILE="$HOME/.bob/platform-processes/$key/settings.json"
+  export BOB_SETTINGS_FILE
+  preload="--import=/usr/local/lib/bob-settings-file.mjs"
+fi
+
 # The bootstrap resolves the settings posture and prints the approval mode it
-# settled on (Config panel over provider pin). Without the posture Bob refuses
-# every tool that touches $HOME, so a failed write must fail the harness rather
-# than leave a healthy-looking pod whose every session dies at its first tool
-# call.
+# settled on (session pick over Config panel over provider pin). Without the
+# posture Bob refuses every tool that touches $HOME, so a failed write must fail
+# the harness rather than leave a healthy-looking pod whose every session dies
+# at its first tool call. It runs without the preload: it reads the shared file
+# and writes the process's own copy.
 approvals=$(node /app/bob-settings.mjs) || exit 1
 
 # Bob's ACP asks about every non-read tool or nothing at all — its own
 # allowlist of safe commands is reachable from the TUI only.
 set --
 [ "$approvals" = "ask" ] || set -- "$@" --auto-approve
+if [ -n "$preload" ]; then
+  NODE_OPTIONS="$preload${NODE_OPTIONS:+ $NODE_OPTIONS}"
+  export NODE_OPTIONS
+fi
 exec bob acp --trust --accept-license "$@"

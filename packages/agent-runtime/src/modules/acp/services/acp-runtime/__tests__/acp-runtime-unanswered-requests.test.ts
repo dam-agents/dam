@@ -52,10 +52,11 @@ describe("acp-runtime: unanswered requests", () => {
   /**
    * TEST_SCENARIO: The agent asked while nobody was connected. A user comes
    * back before the deadline and opens the session. They must see the
-   * permission prompt right away, without asking for it — the question
-   * followed them back in.
+   * permission prompt right away, without asking for it, and from then on the
+   * question must not expire however long they think: a late answer must
+   * still reach the agent.
    */
-  it("should ask the question again when the user comes back", () => {
+  it("should ask the question again when the user comes back, and stop the clock", () => {
     vi.useFakeTimers();
     const world = createWorld({ orphanTtlMs: ORPHAN_TTL_MS });
 
@@ -69,30 +70,7 @@ describe("acp-runtime: unanswered requests", () => {
     vi.advanceTimersByTime(ORPHAN_TTL_MS / 2);
     const bob = world.connect();
     bob.send(frames.loadSession(1, SESSION));
-
     expect(bob.saw("session/request_permission")).toHaveLength(1);
-  });
-
-  /**
-   * TEST_SCENARIO: A user came back in time. From then on the question must
-   * not expire, however long they think — someone is there now, and people
-   * are allowed to take their time. A late answer must still reach the
-   * agent.
-   */
-  it("should stop the clock once someone is back", () => {
-    vi.useFakeTimers();
-    const world = createWorld({ orphanTtlMs: ORPHAN_TTL_MS });
-
-    const alice = world.connect();
-    alice.send(frames.newSession(1));
-    world.harness().replyTo("session/new", { sessionId: SESSION });
-    alice.send(frames.prompt(2, SESSION, "install the linter"));
-    alice.disconnect();
-    world.harness().emit(frames.requestPermission(51, SESSION));
-
-    vi.advanceTimersByTime(ORPHAN_TTL_MS / 2);
-    const bob = world.connect();
-    bob.send(frames.loadSession(1, SESSION));
 
     vi.advanceTimersByTime(ORPHAN_TTL_MS * 10);
     expect(world.harness().answersTo(51)).toEqual([]);
@@ -131,12 +109,14 @@ describe("acp-runtime: unanswered requests", () => {
   });
 
   /**
-   * TEST_SCENARIO: A permission prompt is still open when the user resets the
-   * session. The reset must end it: the agent gets the abort error, and the
-   * runtime reports itself idle again so the idle checker can hibernate the
-   * Agent. One abandoned prompt must not keep a pod running for good.
+   * TEST_SCENARIO: A permission prompt is still open, its TTL clock ticking,
+   * when the user resets the session. The reset must end it: the agent gets
+   * the abort error once, and the runtime reports itself idle so the pod can
+   * hibernate. The clock must go with it, or a late second answer could reach
+   * a request id that by then belongs to another tool call. The session id
+   * survives a reset, so whoever opens it next must not see the old question.
    */
-  it("should end an open question when the session is reset", () => {
+  it("should end an open question and its clock when the session is reset", () => {
     vi.useFakeTimers();
     const world = createWorld({ orphanTtlMs: ORPHAN_TTL_MS });
 
@@ -148,72 +128,31 @@ describe("acp-runtime: unanswered requests", () => {
     alice.disconnect();
 
     world.runtime.resetSession(SESSION);
-
-    expect(world.harness().answersTo(60)[0]).toMatchObject({
-      error: {
-        code: -32000,
-        message: "Permission request cancelled: session reset",
-      },
-    });
     expect(world.runtime.status().idle).toBe(true);
-  });
 
-  /**
-   * TEST_SCENARIO: A question was open when the session was reset. The session
-   * id survives a reset and gets used again, so whoever opens it next must
-   * find it clean. A prompt about a tool call from before the reset must not
-   * pop up in the new conversation.
-   */
-  it("should not ask an old question again after a reset", () => {
-    vi.useFakeTimers();
-    const world = createWorld({ orphanTtlMs: ORPHAN_TTL_MS });
-
-    const alice = world.connect();
-    alice.send(frames.newSession(1));
-    world.harness().replyTo("session/new", { sessionId: SESSION });
-    world.harness().emit(frames.requestPermission(61, SESSION));
-    alice.disconnect();
-
-    world.runtime.resetSession(SESSION);
+    vi.advanceTimersByTime(ORPHAN_TTL_MS * 10);
+    expect(world.harness().answersTo(60)).toEqual([
+      expect.objectContaining({
+        error: {
+          code: -32000,
+          message: "Permission request cancelled: session reset",
+        },
+      }),
+    ]);
 
     const bob = world.connect();
     bob.send(frames.loadSession(1, SESSION));
-
     expect(bob.saw("session/request_permission")).toEqual([]);
   });
 
   /**
-   * TEST_SCENARIO: The TTL clock was already ticking when the session was
-   * reset. It must go with the session. If it still fired, the agent would
-   * get a second, late answer for a question that was already cancelled —
-   * and by then that request id may belong to a different tool call.
+   * TEST_SCENARIO: The agent asks something tied to no session, or with an
+   * empty-string session id, which is not a real session either. Nobody is
+   * connected and far more than the TTL passes. Neither question may expire
+   * and the runtime must stay busy. This pins today's behaviour on purpose:
+   * if we ever change it, this test should say so out loud.
    */
-  it("should stop the clock when the session is reset", () => {
-    vi.useFakeTimers();
-    const world = createWorld({ orphanTtlMs: ORPHAN_TTL_MS });
-
-    const alice = world.connect();
-    alice.send(frames.newSession(1));
-    world.harness().replyTo("session/new", { sessionId: SESSION });
-    world.harness().emit(frames.requestPermission(62, SESSION));
-    alice.disconnect();
-
-    world.runtime.resetSession(SESSION);
-    vi.advanceTimersByTime(ORPHAN_TTL_MS * 10);
-
-    expect(world.harness().answersTo(62)).toHaveLength(1);
-    expect(world.harness().answersTo(62)[0]).toMatchObject({
-      error: { message: "Permission request cancelled: session reset" },
-    });
-  });
-
-  /**
-   * TEST_SCENARIO: The agent asks something tied to no session. Nobody is
-   * connected and far more than the TTL passes. The question must not
-   * expire and the runtime must stay busy. This pins today's behaviour on
-   * purpose: if we ever change it, this test should say so out loud.
-   */
-  it("should keep a question with no session waiting forever", () => {
+  it("should keep a question with no or an empty session waiting forever", () => {
     vi.useFakeTimers();
     const world = createWorld({ orphanTtlMs: ORPHAN_TTL_MS });
 
@@ -228,30 +167,10 @@ describe("acp-runtime: unanswered requests", () => {
       method: "fs/read_text_file",
       params: { path: "/workspace/README.md" },
     });
-
-    vi.advanceTimersByTime(ORPHAN_TTL_MS * 10);
-    expect(world.harness().answersTo(77)).toEqual([]);
-    expect(world.runtime.status().idle).toBe(false);
-  });
-
-  /**
-   * TEST_SCENARIO: The agent asks with an empty-string session id. That is
-   * not a real session, so it must behave exactly like a question with no
-   * session at all: broadcast, wait forever, never expire. Pins the rule
-   * that "" is session-less for Pending Agent Requests.
-   */
-  it("should treat an empty-string session id as no session", () => {
-    vi.useFakeTimers();
-    const world = createWorld({ orphanTtlMs: ORPHAN_TTL_MS });
-
-    const alice = world.connect();
-    alice.send(frames.newSession(1));
-    world.harness().replyTo("session/new", { sessionId: SESSION });
-    alice.disconnect();
-
     world.harness().emit(frames.requestPermission(53, ""));
 
     vi.advanceTimersByTime(ORPHAN_TTL_MS * 10);
+    expect(world.harness().answersTo(77)).toEqual([]);
     expect(world.harness().answersTo(53)).toEqual([]);
     expect(world.runtime.status().idle).toBe(false);
   });

@@ -17,7 +17,8 @@ dam --help
 dam --version
 ```
 
-Configuration lives at `$XDG_CONFIG_HOME/dam/config.toml` (default `~/.config/dam/config.toml`). State and credentials live separately under `$XDG_STATE_HOME/dam/` (default `~/.local/state/dam/`).
+Configuration lives at `$XDG_CONFIG_HOME/dam/config.toml` (default `~/.config/dam/config.toml`).
+State and credentials live separately under `$XDG_STATE_HOME/dam/` (default `~/.local/state/dam/`).
 
 ## Links
 

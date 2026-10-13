@@ -1,20 +1,12 @@
-import {
-  Book,
-  Box,
-  Chemistry,
-  OverflowMenuVertical,
-} from "@carbon/icons-react";
+import { Box, Chemistry } from "@carbon/icons-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { clickableProps } from "@/lib/clickable";
 
 import {
@@ -27,11 +19,7 @@ import { AgentChannelChips } from "../../sandboxes/components/channels/agent-cha
 import { useKeptWorkCount } from "../../sessions/api/background-work.js";
 import { KitUpdateTag } from "../../starter-kits/components/kit-update-tag.js";
 import { OnboardingTag } from "../../starter-kits/components/onboarding-tag.js";
-import {
-  agentKindBadge,
-  knowledgeBadge,
-  starterKitBadge,
-} from "../utils/agent-kind.js";
+import { agentKindBadge, starterKitBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
 import {
   formatTemporaryDraw,
@@ -67,7 +55,6 @@ interface Props {
   onRetryMigration: () => void;
   onConfigure: () => void;
   configureLabel: string;
-  onShare?: () => void;
   onWake: () => void;
   onRestart: () => void;
   onPause: () => void;
@@ -95,7 +82,6 @@ export function AgentRow({
   onRetryMigration,
   onConfigure,
   configureLabel,
-  onShare,
   onWake,
   onRestart,
   onPause,
@@ -106,9 +92,7 @@ export function AgentRow({
 }: Props) {
   const kindBadge = agentKindBadge(agent);
   const kitBadge = starterKitBadge(agent);
-  const knowledge = knowledgeBadge(agent);
   const keptWork = useKeptWorkCount(agent.id);
-  const onShareKnowledge = knowledge ? onShare : undefined;
   return (
     <Card
       data-testid="agent-row"
@@ -144,18 +128,6 @@ export function AgentRow({
               <span className="flex items-center gap-1.5">
                 <Box size={12} aria-hidden />
                 {kitBadge.label}
-              </span>
-            </Badge>
-          )}
-          {knowledge && (
-            <Badge
-              variant={knowledge.variant}
-              className="shrink-0"
-              title={knowledge.title}
-            >
-              <span className="flex items-center gap-1.5">
-                <Book size={12} aria-hidden />
-                {knowledge.label}
               </span>
             </Badge>
           )}
@@ -219,71 +191,57 @@ export function AgentRow({
         </span>
         {}
         <span onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Agent actions">
-                <OverflowMenuVertical />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onSelect={onConfigure}>
-                {configureLabel}
+          <RowActionsMenu label="Agent actions">
+            <DropdownMenuItem onSelect={onConfigure}>
+              {configureLabel}
+            </DropdownMenuItem>
+            {onAddToChannel && (messengers.slack || messengers.telegram) && (
+              <>
+                <DropdownMenuSeparator />
+                {messengers.slack && (
+                  <DropdownMenuItem onSelect={() => onAddToChannel("slack")}>
+                    <ConnectionIcon iconSlug="slack" alt="" size={16} />
+                    Add to Slack channel
+                  </DropdownMenuItem>
+                )}
+                {messengers.telegram && (
+                  <DropdownMenuItem onSelect={() => onAddToChannel("telegram")}>
+                    <ConnectionIcon iconSlug="telegram" alt="" size={16} />
+                    Add to Telegram chat
+                  </DropdownMenuItem>
+                )}
+              </>
+            )}
+            <DropdownMenuSeparator />
+            {display.state === "running" && (
+              <FreeUpComputeItems
+                agent={agent}
+                onPause={onPause}
+                onStop={onStop}
+              />
+            )}
+            {display.powerAction === "start" ? (
+              <DropdownMenuItem onSelect={onWake}>
+                {}
+                {display.state === "over_budget" ? "Start" : "Wake"}
               </DropdownMenuItem>
-              {onShareKnowledge && (
-                <DropdownMenuItem onSelect={onShareKnowledge}>
-                  Share knowledge base
-                </DropdownMenuItem>
-              )}
-              {onAddToChannel && (messengers.slack || messengers.telegram) && (
-                <>
-                  <DropdownMenuSeparator />
-                  {messengers.slack && (
-                    <DropdownMenuItem onSelect={() => onAddToChannel("slack")}>
-                      <ConnectionIcon iconSlug="slack" alt="" size={16} />
-                      Add to Slack channel
-                    </DropdownMenuItem>
-                  )}
-                  {messengers.telegram && (
-                    <DropdownMenuItem
-                      onSelect={() => onAddToChannel("telegram")}
-                    >
-                      <ConnectionIcon iconSlug="telegram" alt="" size={16} />
-                      Add to Telegram chat
-                    </DropdownMenuItem>
-                  )}
-                </>
-              )}
-              <DropdownMenuSeparator />
-              {display.state === "running" && (
-                <FreeUpComputeItems
-                  agent={agent}
-                  onPause={onPause}
-                  onStop={onStop}
-                />
-              )}
-              {display.powerAction === "start" ? (
-                <DropdownMenuItem onSelect={onWake}>
-                  {}
-                  {display.state === "over_budget" ? "Start" : "Wake"}
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem
-                  disabled={display.powerAction === null}
-                  onSelect={onRestart}
-                >
-                  Restart
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
+            ) : (
               <DropdownMenuItem
-                tone="danger"
-                disabled={deletePending}
-                onSelect={onDelete}
+                disabled={display.powerAction === null}
+                onSelect={onRestart}
               >
-                Delete agent
+                Restart
               </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              tone="danger"
+              disabled={deletePending}
+              onSelect={onDelete}
+            >
+              Delete agent
+            </DropdownMenuItem>
+          </RowActionsMenu>
         </span>
       </div>
     </Card>

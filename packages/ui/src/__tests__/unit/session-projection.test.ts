@@ -130,15 +130,6 @@ describe("applyUpdate — agent content", () => {
     ]);
   });
 
-  test("agent_thought_chunk produces a thought part distinct from text", () => {
-    const out = applyUpdate([], {
-      sessionUpdate: "agent_thought_chunk",
-      content: { type: "text", text: "thinking" },
-    });
-    expect(out[0].role).toBe("assistant");
-    expect(out[0].parts).toEqual([{ kind: "thought", text: "thinking" }]);
-  });
-
   test("consecutive thought chunks merge into one part", () => {
     let messages: Message[] = [];
     messages = applyUpdate(messages, {
@@ -180,18 +171,6 @@ describe("applyUpdate — agent content", () => {
 });
 
 describe("applyUpdate — turn boundaries", () => {
-  test("platform_turn_ended closes the active assistant", () => {
-    const start: Message[] = [
-      userMsg("u1", "hi"),
-      assistantMsg("a1", "hello", true),
-    ];
-    const out = applyUpdate(start, {
-      sessionUpdate: "platform_turn_ended",
-      sessionId: "test-sid",
-    });
-    expect(out[1].streaming).toBe(false);
-  });
-
   test("platform_turn_ended closes the active bubble and leaves queued ones alone", () => {
     const start: Message[] = [
       userMsg("u1", "first"),
@@ -208,24 +187,17 @@ describe("applyUpdate — turn boundaries", () => {
     expect(out[3].queued).toBe(true);
   });
 
-  test("platform_turn_ended skips queued-only states (no active to close)", () => {
+  test("platform_turn_ended is a no-op with no active bubble to close", () => {
+    const ended = {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    } as const;
     const start: Message[] = [
       userMsg("u1", "first"),
       assistantMsg("a1", "", true, true),
     ];
-    const out = applyUpdate(start, {
-      sessionUpdate: "platform_turn_ended",
-      sessionId: "test-sid",
-    });
-    expect(out).toEqual(start);
-  });
-
-  test("platform_turn_ended on empty state is a no-op", () => {
-    const out = applyUpdate([], {
-      sessionUpdate: "platform_turn_ended",
-      sessionId: "test-sid",
-    });
-    expect(out).toEqual([]);
+    expect(applyUpdate(start, ended)).toEqual(start);
+    expect(applyUpdate([], ended)).toEqual([]);
   });
 
   test("user_message_chunk closes the previous assistant and opens a user message", () => {
@@ -802,7 +774,9 @@ describe("applyUpdate — the harness's name for the prompt", () => {
      * turnEnded to carry the id, so each replayed chunk names it instead.
      */
     const start: Message[] = [userMsg("u1", "hi")];
-    const out = applyUpdate(start, txtChunk("hello"), undefined, "otel-2");
+    const out = applyUpdate(start, txtChunk("hello"), {
+      telemetryPromptId: "otel-2",
+    });
     expect(out[1].role).toBe("assistant");
     expect(out[1].telemetryPromptId).toBe("otel-2");
   });

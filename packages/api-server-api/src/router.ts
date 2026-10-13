@@ -17,6 +17,7 @@ import { satellitesRouter } from "./modules/satellites/router.js";
 import { linksRouter } from "./modules/links/router.js";
 import { featuresRouter } from "./modules/features/router.js";
 import { filesRouter } from "./modules/files/router.js";
+import { gettingStartedRouter } from "./modules/getting-started/router.js";
 import { harnessConfigRouter } from "./modules/harness-config/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
 import { skillsRouter } from "./modules/skills/router.js";
@@ -46,6 +47,7 @@ export const appRouter = t.router({
   caseStudies: caseStudiesRouter,
   features: featuresRouter,
   files: filesRouter,
+  gettingStarted: gettingStartedRouter,
   links: linksRouter,
   metrics: metricsRouter,
   telemetry: telemetryRouter,

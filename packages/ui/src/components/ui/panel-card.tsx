@@ -26,7 +26,7 @@ export function PanelCard({
     <section data-testid={testId} className={cn(CARD_SURFACE, className)}>
       <header className="flex h-[52px] items-center gap-2.5 border-b border-border px-4">
         {icon}
-        <h3 className="min-w-0 truncate text-[15px] font-semibold text-foreground">
+        <h3 className="min-w-0 truncate text-md font-semibold text-foreground">
           {title}
         </h3>
         {titleAccessory}

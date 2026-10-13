@@ -42,7 +42,12 @@ import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills, resolveGitHubToken } from "./modules/skills/index.js";
 import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.js";
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
-import { createSshService, prepareSshd, spawnSshd } from "./modules/ssh.js";
+import {
+  createSshService,
+  prepareSshd,
+  spawnSshd,
+  type PreparedSshd,
+} from "./modules/ssh.js";
 import { moveTerminalSlot } from "./modules/terminal-slots.js";
 import {
   agentBrowserCommand,
@@ -51,7 +56,10 @@ import {
   displayAvailable,
   fileLog,
 } from "./modules/browser-preview.js";
-import { startDisplaySupervisor } from "./modules/browser-display.js";
+import {
+  startDisplaySupervisor,
+  type DisplaySupervisor,
+} from "./modules/browser-display.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { prepareProcesses } from "./modules/processes/index.js";
@@ -71,10 +79,12 @@ import {
   pluginStateRoot,
   readSkillInstallBootState,
   resolveDrivers,
+  harnessConfigBindingOf,
   sessionModelOf,
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
 import { leaseSpawnEnv } from "./core/runtime-env.js";
+import { reportHomeVolumeFullOnCrash } from "./core/home-volume-full.js";
 import {
   PROVIDER_REMOVED_REASON,
   type LeasePair,
@@ -87,6 +97,8 @@ const homeDir = config.PLATFORM_DEV
 const workDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
   : AGENT_WORK_DIR;
+
+reportHomeVolumeFullOnCrash(homeDir);
 
 try {
   mkdirSync(workDir, { recursive: true });
@@ -195,8 +207,6 @@ const podService = existsSync(podServicePath)
     })
   : null;
 
-if (envStore.ready()) podService?.refreshEnv();
-
 process.env.PLATFORM_RUNTIME_URL = `http://127.0.0.1:${config.PORT}`;
 
 let seedHarnessModel: (() => Promise<void>) | null = null;
@@ -220,6 +230,7 @@ const {
   activeTurns,
   subAgentSessions,
   platformMcpEntry,
+  warmHistory,
 } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
@@ -242,6 +253,8 @@ const {
           ),
         }),
         sessionModel: sessionModelOf(manifest),
+        sessionSettings: harnessConfigBindingOf(manifest)?.sessionSettings,
+        catalog: harnessConfigBindingOf(manifest)?.catalog,
       },
     ]),
   ),
@@ -250,6 +263,7 @@ const {
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
   beforeSpawn: () => {
+    startDisplay();
     if (seedHarnessModel) return seedHarnessModel();
     process.stderr.write(
       "[acp] first spawn reached before the runtime channel was composed — no model seeded\n",
@@ -333,22 +347,8 @@ seedHarnessModel = async () => {
 };
 leaseModel = (lease) => runtimeChannel.leaseModel(lease);
 
-if (imageSkillReconciler) {
-  const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));
-  if (bootState.kind === "corrupt") {
-    skillsLog(
-      "skipping boot image-skill reconcile: skill-install state unreadable",
-    );
-  } else {
-    void imageSkillReconciler.run(
-      new Set(bootState.kind === "ok" ? bootState.installed : []),
-    );
-  }
-}
-
-const preparedSshd = await prepareSshd(homeDir, (msg) =>
-  process.stderr.write(`[ssh] ${msg}\n`),
-);
+const sshLog = (msg: string) => process.stderr.write(`[ssh] ${msg}\n`);
+let preparedSshd: Promise<PreparedSshd | null> | undefined;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -603,6 +603,7 @@ function attachPty(
       const serialize = new SerializeAddon();
       headless.loadAddon(serialize);
       const terminalId = randomUUID();
+      startDisplay();
       const pty = nodePty.spawn("/usr/local/bin/harness-terminal", [], {
         name: "xterm-256color",
         cols,
@@ -870,15 +871,23 @@ const browserLog = (source: string) => (msg: string) => {
   process.stderr.write(`[${source}] ${msg}\n`);
   browserLogFile(`${source}: ${msg}`);
 };
-const browserDisplay = displayAvailable()
-  ? startDisplaySupervisor({
-      command: DISPLAY_COMMAND,
-      envReader: envStore,
-      log: browserLog("browser-display"),
-    })
-  : null;
+const DISPLAY_IDLE_START_MS = 10_000;
+const hasDisplayStack = displayAvailable();
+let browserDisplay: DisplaySupervisor | null = null;
+function startDisplay(): void {
+  if (browserDisplay || !hasDisplayStack) return;
+  browserDisplay = startDisplaySupervisor({
+    command: DISPLAY_COMMAND,
+    envReader: envStore,
+    log: browserLog("browser-display"),
+  });
+}
+const runAgentBrowser = agentBrowserCommand(envStore);
 const browserPreview = createBrowserPreview({
-  run: agentBrowserCommand(envStore),
+  run: (args) => {
+    startDisplay();
+    return runAgentBrowser(args);
+  },
   profileDir:
     process.env.AGENT_BROWSER_PROFILE ??
     join(homeDir, ".local/share/platform/browser"),
@@ -924,6 +933,7 @@ server.on("upgrade", (req, socket, head) => {
       attachPty(sessionId, ws, { reset, lease }),
     );
   } else if (url.pathname === "/api/browser/display") {
+    startDisplay();
     browserWss.handleUpgrade(req, socket, head, (ws) =>
       browserPreview.attachDisplay(ws),
     );
@@ -932,15 +942,22 @@ server.on("upgrade", (req, socket, head) => {
       trpcWss.emit("connection", ws, req),
     );
   } else if (url.pathname === "/api/ssh") {
-    if (!preparedSshd) {
-      socket.destroy();
-      return;
-    }
-    sshWss.handleUpgrade(req, socket, head, (ws) =>
-      spawnSshd(ws, preparedSshd, envStore, (msg) =>
-        process.stderr.write(`[ssh] ${msg}\n`),
-      ),
-    );
+    startDisplay();
+    preparedSshd ??= prepareSshd(homeDir, sshLog).catch((err: Error) => {
+      sshLog(`could not prepare sshd: ${err.message}`);
+      preparedSshd = undefined;
+      return null;
+    });
+    socket.on("error", () => socket.destroy());
+    void preparedSshd.then((prepared) => {
+      if (!prepared) {
+        socket.destroy();
+        return;
+      }
+      sshWss.handleUpgrade(req, socket, head, (ws) =>
+        spawnSshd(ws, prepared, envStore, sshLog),
+      );
+    });
   } else {
     socket.destroy();
   }
@@ -951,6 +968,27 @@ server.headersTimeout = 60_000;
 
 server.listen(config.PORT, () => {
   process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);
+
+  if (envStore.ready()) podService?.refreshEnv();
+
+  acpRuntime.prestart();
+
+  if (imageSkillReconciler) {
+    const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));
+    if (bootState.kind === "corrupt") {
+      skillsLog(
+        "skipping boot image-skill reconcile: skill-install state unreadable",
+      );
+    } else {
+      void imageSkillReconciler.run(
+        new Set(bootState.kind === "ok" ? bootState.installed : []),
+      );
+    }
+  }
+
+  setTimeout(startDisplay, DISPLAY_IDLE_START_MS).unref();
+
+  warmHistory();
 
   void sweepStaging(homeDir, (msg) =>
     process.stderr.write(`[import] ${msg}\n`),

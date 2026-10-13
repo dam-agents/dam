@@ -5,7 +5,7 @@ export default defineConfig({
   format: "esm",
   target: "node26",
   platform: "node",
-  noExternal: ["mock-agent-api"],
+  noExternal: [/.*/],
   outDir: "dist/js",
   splitting: false,
   clean: true,

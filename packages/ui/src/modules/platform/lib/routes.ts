@@ -1,4 +1,3 @@
-import { starterKitCategorySchema } from "api-server-api";
 import { z } from "zod";
 
 const settingsTabSchema = z.enum([
@@ -12,21 +11,22 @@ const settingsTabSchema = z.enum([
   "slack-workspaces",
   "analytics",
   "features",
+  "about",
 ]);
 export type SettingsTab = z.infer<typeof settingsTabSchema>;
 
 const sandboxSectionSchema = z.enum([
   "setup",
+  "providers",
   "connections",
+  "network",
+  "environment",
   "channels",
   "skills",
   "schedules",
-  "artifacts",
   "usage",
 ]);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
-
-export type StarterKitCategory = z.infer<typeof starterKitCategorySchema>;
 
 export type Route =
   | { view: "home" }
@@ -36,11 +36,9 @@ export type Route =
   | { view: "telegram-bind" }
   | { view: "slack-bind" }
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
-  | { view: "agent-new" }
-  | { view: "starter-kits"; category?: StarterKitCategory }
   | { view: "starter-kit"; catalog: string; kit: string }
-  | { view: "starter-kit-new"; catalog: string; kit: string }
   | { view: "artifacts" }
+  | { view: "analytics" }
   | { view: "not-found"; path: string };
 
 export type View = Route["view"];
@@ -72,6 +70,8 @@ export const RETIRED_PATHS = new Set([
   "/experiments",
   "/experiments/",
   "/experiments/new",
+  "/agents/new",
+  "/starter-kits",
 ]);
 
 const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
@@ -100,6 +100,7 @@ export function parseRoute(path: string): Route {
   if (path === "/slack/bind") return { view: "slack-bind" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
   if (path === "/artifacts") return { view: "artifacts" };
+  if (path === "/analytics") return { view: "analytics" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
@@ -109,27 +110,10 @@ export function parseRoute(path: string): Route {
       sandboxSection: section.success ? section.data : "setup",
     };
   }
-  if (path === "/agents/new") return { view: "agent-new" };
-  if (path === "/starter-kits") return { view: "starter-kits" };
-  const starterKitsCategoryMatch = path.match(/^\/starter-kits\/([^/]+)$/);
-  if (starterKitsCategoryMatch) {
-    const category = starterKitCategorySchema.safeParse(
-      decodeSegment(starterKitsCategoryMatch[1]!),
-    );
-    return category.success
-      ? { view: "starter-kits", category: category.data }
-      : { view: "starter-kits" };
-  }
-  const starterKitNewMatch = path.match(
-    /^\/starter-kits\/([^/]+)\/([^/]+)\/new$/,
+  if (/^\/starter-kits\/[^/]+$/.test(path)) return { view: "home" };
+  const starterKitMatch = path.match(
+    /^\/starter-kits\/([^/]+)\/([^/]+)(?:\/new)?$/,
   );
-  if (starterKitNewMatch)
-    return {
-      view: "starter-kit-new",
-      catalog: decodeSegment(starterKitNewMatch[1]!),
-      kit: decodeSegment(starterKitNewMatch[2]!),
-    };
-  const starterKitMatch = path.match(/^\/starter-kits\/([^/]+)\/([^/]+)$/);
   if (starterKitMatch)
     return {
       view: "starter-kit",
@@ -165,18 +149,12 @@ export function routeToPath(route: Route): string {
         ? base
         : `${base}/${route.sandboxSection}`;
     }
-    case "agent-new":
-      return "/agents/new";
-    case "starter-kits":
-      return route.category
-        ? `/starter-kits/${route.category}`
-        : "/starter-kits";
     case "starter-kit":
       return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}`;
-    case "starter-kit-new":
-      return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}/new`;
     case "artifacts":
       return "/artifacts";
+    case "analytics":
+      return "/analytics";
     case "not-found":
       return route.path;
     default: {
@@ -193,21 +171,12 @@ export function routeToNavigationState(route: Route): {
   sandboxSection: SandboxSection;
   starterKitCatalog: string | null;
   starterKitId: string | null;
-  starterKitCategory: StarterKitCategory | null;
 } {
   return {
     view: route.view,
-    starterKitCategory:
-      route.view === "starter-kits" ? (route.category ?? null) : null,
     agentId: route.view === "sandbox-home" ? route.agentId : null,
-    starterKitCatalog:
-      route.view === "starter-kit-new" || route.view === "starter-kit"
-        ? route.catalog
-        : null,
-    starterKitId:
-      route.view === "starter-kit-new" || route.view === "starter-kit"
-        ? route.kit
-        : null,
+    starterKitCatalog: route.view === "starter-kit" ? route.catalog : null,
+    starterKitId: route.view === "starter-kit" ? route.kit : null,
     settingsTab: route.view === "settings" ? route.settingsTab : "account",
     sandboxSection:
       route.view === "sandbox-home" ? route.sandboxSection : "setup",

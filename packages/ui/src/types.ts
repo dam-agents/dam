@@ -96,6 +96,7 @@ export interface Message {
   telemetryPromptId?: string;
   model?: string;
   stopped?: boolean;
+  stoppedAtOutputLimit?: boolean;
   turnId?: string;
   error?: {
     message: string;
@@ -143,7 +144,11 @@ export interface AgentView {
   name: string;
   createdAt?: string;
   templateId: string | null;
-  templateUpdate: { fromImage: string; toImage: string } | null;
+  templateUpdate: {
+    fromImage: string;
+    toImage: string;
+    startFailed?: boolean;
+  } | null;
   features: { liveUpdates: boolean | null };
   image: string;
   description?: string;

@@ -5,6 +5,7 @@ import { DialogHeader, Modal } from "@/components/modal";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { emitToast } from "@/lib/toast";
 
+import type { SharedChannel } from "../../sandboxes/lib/shared-channels.js";
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { CatalogSatellitesPane } from "../../satellites/components/catalog-satellites-pane.js";
 import { fetchConnection, useAppConnections } from "../api/queries.js";
@@ -32,6 +33,8 @@ import {
   type SandboxGrantControls,
 } from "./catalog-provider-card.js";
 import { ConnectionMaintenanceDialog } from "./connection-update-credential-dialog.js";
+import { SharedChannelsNotice } from "./shared-channels-notice.js";
+import { SharedChannelsPhrase } from "./shared-channels-phrase.js";
 
 const NO_CONNECTIONS: ConnectionView[] = [];
 const MCP_PROVIDER_ID = "mcp-server";
@@ -41,9 +44,16 @@ type Pane =
   | { kind: "create"; providerId: string }
   | { kind: "create-mcp" };
 
+export interface ChannelSharing {
+  channels: readonly SharedChannel[] | null;
+  confirm: () => Promise<boolean>;
+  dismissed: boolean;
+}
+
 interface Props {
   onClose: () => void;
   sandbox?: SandboxGrantControls;
+  sharing?: ChannelSharing;
   satelliteGrant?: (satellite: SatelliteView) => RowGrantControls;
   oauthReturnView?: string;
   onGoToChannels?: () => void;
@@ -57,6 +67,7 @@ interface Props {
 export function ConnectionCatalogModal({
   onClose,
   sandbox,
+  sharing,
   satelliteGrant,
   oauthReturnView,
   onGoToChannels,
@@ -74,6 +85,7 @@ export function ConnectionCatalogModal({
   const showSatellites =
     satellites.length > 0 && (!sandbox || satelliteGrant !== undefined);
   const [pane, setPane] = useState<Pane>({ kind: "browse" });
+  const createShareConfirmed = useRef(false);
 
   const {
     byTab,
@@ -139,14 +151,46 @@ export function ConnectionCatalogModal({
       sandbox.onToggleGrant(id, false);
   };
 
-  const openNew = (group: CatalogProviderGroup) => {
+  const confirmShare = async () => !sharing || (await sharing.confirm());
+
+  const openNew = async (group: CatalogProviderGroup) => {
     const providerId = group.provider.id;
-    if (providerId === MCP_PROVIDER_ID) setPane({ kind: "create-mcp" });
-    else if (group.templates.length > 0)
-      setPane({ kind: "create", providerId });
+    const isMcp = providerId === MCP_PROVIDER_ID;
+    if (!isMcp && group.templates.length === 0) return;
+    if (!(await confirmShare())) return;
+    createShareConfirmed.current = true;
+    setPane(isMcp ? { kind: "create-mcp" } : { kind: "create", providerId });
   };
 
+  const grantSandbox = sandbox && {
+    ...sandbox,
+    onToggleGrant: (id: string, on: boolean) =>
+      void (async () => {
+        if (on && !(await confirmShare())) return;
+        sandbox.onToggleGrant(id, on);
+      })(),
+  };
+
+  const grantSatellite =
+    satelliteGrant &&
+    ((satellite: SatelliteView): RowGrantControls => {
+      const controls = satelliteGrant(satellite);
+      return {
+        ...controls,
+        onToggle: (on) =>
+          void (async () => {
+            if (on && !(await confirmShare())) return;
+            controls.onToggle(on);
+          })(),
+      };
+    });
+
   const grantCreated = async (id: string) => {
+    if (sandbox && !createShareConfirmed.current && !(await confirmShare())) {
+      emitToast({ kind: "success", message: "Connection created." });
+      onClose();
+      return;
+    }
     if (sandbox) {
       const created = await fetchConnection(id).catch(() => null);
       const rivalry = created && grantRivalry(created, grantedConnections);
@@ -175,13 +219,9 @@ export function ConnectionCatalogModal({
   }
 
   return (
-    <Modal
-      onClose={onClose}
-      widthClass="w-[860px] max-w-full"
-      heightClass="h-[85vh]"
-    >
+    <Modal onClose={onClose} size="lg" heightClass="h-[85vh]">
       <DialogHeader
-        title={title ?? "Connection catalogue"}
+        title={title ?? "Connection catalog"}
         subtitle={
           subtitle ?? "Manage and create new connections your agents can use"
         }
@@ -206,6 +246,13 @@ export function ConnectionCatalogModal({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {pane.kind === "browse" && (
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
+              {sharing?.dismissed && !!sharing.channels?.length && (
+                <SharedChannelsNotice>
+                  This agent is bound to{" "}
+                  <SharedChannelsPhrase channels={sharing.channels} />. Anyone
+                  there can use the connections you add here, with your access.
+                </SharedChannelsNotice>
+              )}
               {narrowed?.length === 0 && !loadingCatalog && (
                 <p className="text-sm text-muted-foreground">
                   Nothing this install offers satisfies this requirement.
@@ -216,9 +263,9 @@ export function ConnectionCatalogModal({
                   key={group.provider.id}
                   group={group}
                   templateById={templateById}
-                  sandbox={sandbox}
+                  sandbox={grantSandbox}
                   grantBlockedReason={blockedReasonOf}
-                  onNew={() => openNew(group)}
+                  onNew={() => void openNew(group)}
                   onDelete={(id, name) => void handleDelete(id, name)}
                   deletingId={deletingId}
                   maintenance={maintenance.rowActions}
@@ -228,7 +275,7 @@ export function ConnectionCatalogModal({
               {activeTab === "mcp" && showSatellites && !narrowed && (
                 <CatalogSatellitesPane
                   satellites={satellites}
-                  grant={satelliteGrant}
+                  grant={grantSatellite}
                 />
               )}
             </div>

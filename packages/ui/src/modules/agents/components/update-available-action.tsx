@@ -15,7 +15,7 @@ interface Props {
   agent: AgentView;
   onUpdate: () => void;
   pending: boolean;
-  busy: boolean;
+  busy?: boolean;
 }
 
 export function UpdateAvailableAction({
@@ -36,7 +36,8 @@ export function UpdateAvailableAction({
             variant="ghost"
             size="sm"
             disabled={pending || busy}
-            className="shrink-0 font-medium text-accent hover:bg-accent-light hover:text-accent-hover"
+            tone="accent"
+            className="shrink-0"
             onClick={onUpdate}
           >
             <Renew size={16} />
@@ -54,6 +55,11 @@ export function UpdateAvailableAction({
             <span className="break-all font-mono text-xs text-foreground">
               {update.toImage}
             </span>
+          </p>
+          <p className="text-muted-foreground">
+            {update.startFailed
+              ? "The agent could not start on it, so it stays on its current image."
+              : "The agent moves to it by itself once it is idle."}
           </p>
           <ReleaseNotesLink href={whatsNew} className="self-start" />
         </HoverCardContent>

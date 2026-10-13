@@ -33,6 +33,7 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
         }
       });
     },
+    prestart() {},
     isSessionRunning: () => false,
     sessionFrames: () => ({ frames: [], truncated: false }),
     status: () => ({
@@ -40,6 +41,7 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
       backgroundWork: [],
     }),
     resetSession: () => {},
+    syncSessionSettings: () => {},
     markSessionCold: () => {},
     releaseSession: () => {},
     holdsSessions: () => false,

@@ -19,7 +19,7 @@ const buttonVariants = cva(
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-muted hover:text-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+        link: "text-accent underline-offset-2 hover:underline",
       },
       size: {
         default: "h-10 px-4 py-2 text-sm font-medium",
@@ -34,6 +34,8 @@ const buttonVariants = cva(
       tone: {
         default: "",
         danger: "",
+        accent: "",
+        muted: "",
       },
     },
     compoundVariants: [
@@ -52,6 +54,17 @@ const buttonVariants = cva(
         variant: "link",
         tone: "danger",
         className: "text-danger",
+      },
+      {
+        variant: "ghost",
+        tone: "accent",
+        className:
+          "font-medium text-accent hover:bg-accent-light hover:text-accent-hover",
+      },
+      {
+        variant: "link",
+        tone: "muted",
+        className: "text-muted-foreground hover:text-foreground",
       },
     ],
     defaultVariants: {

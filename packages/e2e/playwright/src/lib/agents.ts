@@ -115,7 +115,7 @@ export async function expectAgentEnv(
 }
 
 export function chatInput(page: Page): Locator {
-  return page.getByPlaceholder(/^(queue a )?message\.\.\./i);
+  return page.getByPlaceholder(/^(queue a )?message(…|\.\.\.)/i);
 }
 
 export async function gotoAgentChat(

@@ -86,6 +86,20 @@ export const slackInstalls = pgTable("slack_installs", {
     .notNull(),
 });
 
+export const slackIgnoredApps = pgTable(
+  "slack_ignored_apps",
+  {
+    channelId: text("channel_id").notNull(),
+    botId: text("bot_id").notNull(),
+    name: text("name").notNull(),
+    ignoredBy: text("ignored_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.channelId, table.botId] })],
+);
+
 export const telegramConversations = pgTable(
   "telegram_conversations",
   {
@@ -663,6 +677,39 @@ export const userFeatures = pgTable(
       .notNull(),
   },
   (table) => [primaryKey({ columns: [table.owner, table.feature] })],
+);
+
+export const gettingStartedChecklists = pgTable("getting_started_checklists", {
+  owner: text("owner").primaryKey(),
+  dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const avatarUnlocks = pgTable(
+  "avatar_unlocks",
+  {
+    owner: text("owner")
+      .notNull()
+      .references(() => gettingStartedChecklists.owner, {
+        onDelete: "cascade",
+      }),
+    task: text("task").notNull(),
+    character: text("character").notNull(),
+    unlockedAt: timestamp("unlocked_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    seenAt: timestamp("seen_at", { withTimezone: true }),
+    pickedAt: timestamp("picked_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.owner, table.task] }),
+    uniqueIndex("avatar_unlocks_owner_character_idx").on(
+      table.owner,
+      table.character,
+    ),
+  ],
 );
 
 export const artifactFolders = pgTable(

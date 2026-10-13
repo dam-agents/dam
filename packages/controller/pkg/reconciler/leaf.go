@@ -3,8 +3,6 @@ package reconciler
 import (
 	"slices"
 
-	cmv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
-	cmmetav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -15,11 +13,41 @@ const (
 	envoyLeafSecretSuffix = "-envoy-tls"
 )
 
+type Certificate struct {
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              CertificateSpec `json:"spec"`
+	Status            struct{}        `json:"status"`
+}
+
+type CertificateSpec struct {
+	DNSNames       []string                   `json:"dnsNames,omitempty"`
+	SecretName     string                     `json:"secretName"`
+	SecretTemplate *CertificateSecretTemplate `json:"secretTemplate,omitempty"`
+	IssuerRef      IssuerReference            `json:"issuerRef"`
+	Usages         []string                   `json:"usages,omitempty"`
+	PrivateKey     *CertificatePrivateKey     `json:"privateKey,omitempty"`
+}
+
+type CertificateSecretTemplate struct {
+	Labels map[string]string `json:"labels,omitempty"`
+}
+
+type IssuerReference struct {
+	Name  string `json:"name"`
+	Kind  string `json:"kind,omitempty"`
+	Group string `json:"group,omitempty"`
+}
+
+type CertificatePrivateKey struct {
+	Algorithm string `json:"algorithm,omitempty"`
+	Size      int    `json:"size,omitempty"`
+}
+
 func EnvoyLeafSecretName(instanceName string) string {
 	return instanceName + envoyLeafSecretSuffix
 }
 
-func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string) *cmv1.Certificate {
+func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerRef metav1.OwnerReference, secrets []corev1.Secret, l7Hosts []string) *Certificate {
 	var hosts []string
 	for _, c := range chainsFromSecrets(secrets, l7Hosts) {
 		hosts = append(hosts, c.Host)
@@ -31,23 +59,23 @@ func BuildEnvoyLeafCertificate(instanceName string, cfg *config.Config, ownerRef
 	if len(hosts) == 0 {
 		hosts = []string{instanceName + ".mitm-placeholder.invalid"}
 	}
-	cert := &cmv1.Certificate{
+	cert := &Certificate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            EnvoyLeafSecretName(instanceName),
 			Namespace:       cfg.Namespace,
 			Labels:          map[string]string{LabelAgent: instanceName},
 			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
-		Spec: cmv1.CertificateSpec{
+		Spec: CertificateSpec{
 			SecretName: EnvoyLeafSecretName(instanceName),
 			DNSNames:   hosts,
-			IssuerRef: cmmetav1.IssuerReference{
+			IssuerRef: IssuerReference{
 				Name:  cfg.EnvoyMitmCAIssuer,
 				Kind:  "ClusterIssuer",
 				Group: "cert-manager.io",
 			},
-			PrivateKey: &cmv1.CertificatePrivateKey{
-				Algorithm: cmv1.ECDSAKeyAlgorithm,
+			PrivateKey: &CertificatePrivateKey{
+				Algorithm: "ECDSA",
 				Size:      256,
 			},
 		},

@@ -9,7 +9,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
-import type { EgressPreset, EnvVar } from "../../../types.js";
+import type { AgentView, EgressPreset, EnvVar } from "../../../types.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import {
   type BundleEntry,
@@ -18,10 +18,11 @@ import {
 } from "../../files/api/import-bundle.js";
 import { trackImport } from "../../files/track-import.js";
 import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
+import { seedEmptySessionList } from "../../sessions/api/queries.js";
 import { agentsKeys } from "./queries.js";
 
 const invalidatesAgentsList = {
-  invalidates: [agentsKeys.listWithChannels(), trpc.agents.list.queryKey()],
+  invalidates: [agentsKeys.listWithChannels()],
 };
 
 const invalidatesAgentsAndBudget = {
@@ -47,6 +48,7 @@ export interface CreateAgentInput {
   importEntries?: BundleEntry[];
   importRawBundle?: File;
   size?: { cpu?: string; memory?: string };
+  vm?: boolean;
 }
 
 export function useCreateAgent() {
@@ -63,12 +65,15 @@ export function useCreateAgent() {
         egressPreset,
         connectionIds: appConnectionIds,
       });
-      void queryClient.invalidateQueries({
-        queryKey: trpc.agents.list.queryKey(),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: agentsKeys.listWithChannels(),
-      });
+      queryClient.setQueryData<{ list: readonly AgentView[] }>(
+        agentsKeys.listWithChannels(),
+        (prev) =>
+          prev && !prev.list.some((a) => a.id === agent.id)
+            ? { ...prev, list: [...prev.list, agent] }
+            : prev,
+      );
+      for (const queryKey of invalidatesAgentsAndBudget.invalidates)
+        void queryClient.invalidateQueries({ queryKey });
 
       let runImport: (() => Promise<unknown>) | undefined;
       let importLabel = "";
@@ -87,6 +92,8 @@ export function useCreateAgent() {
             agentId: agent.id,
             entries: importEntries,
           });
+      } else {
+        seedEmptySessionList(agent.id, useStore.getState().sessionFilter);
       }
 
       if (runImport) {
@@ -106,10 +113,8 @@ export function useCreateAgent() {
 
       return agent;
     },
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to create agent",
-    },
+    // UNIT_BOUNDARY_DESCRIPTION: no `invalidates` meta: the global onSuccess would hold the result until the agent list refetched, so the new agent is seeded into the list and the refetches run without being awaited.
+    meta: { errorToast: "Couldn't create agent" },
   });
 }
 
@@ -124,7 +129,7 @@ export function useDeleteAgent() {
     },
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to delete agent",
+      errorToast: "Couldn't delete agent",
     },
   });
 }
@@ -138,7 +143,7 @@ export function useUpdateAgent() {
     },
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to update agent",
+      errorToast: "Couldn't update agent",
     },
   });
 }
@@ -148,7 +153,7 @@ export function useWakeAgentMutation() {
     ...trpc.agents.wake.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to start agent",
+      errorToast: "Couldn't start agent",
     },
   });
 }
@@ -158,7 +163,7 @@ export function usePauseAgent() {
     ...trpc.agents.pause.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to pause agent",
+      errorToast: "Couldn't pause agent",
     },
   });
 }
@@ -168,7 +173,7 @@ export function useRetryWorkspace() {
     ...trpc.agents.retryWorkspace.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to retry the workspace step",
+      errorToast: "Couldn't retry the workspace step",
     },
   });
 }
@@ -178,7 +183,7 @@ export function useStopAgent() {
     ...trpc.agents.stop.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to stop agent",
+      errorToast: "Couldn't stop agent",
     },
   });
 }
@@ -188,19 +193,17 @@ export function useRestartAgentMutation() {
     ...trpc.agents.restart.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to restart agent",
+      errorToast: "Couldn't restart agent",
     },
   });
 }
 
-export function useUpgradeAgentMutation(opts?: { silent?: boolean }) {
+export function useUpgradeAgentMutation() {
   return useMutation({
     ...trpc.agents.upgrade.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      ...(opts?.silent
-        ? { suppressErrorToast: true }
-        : { errorToast: "Failed to update agent" }),
+      errorToast: "Couldn't update agent",
     },
   });
 }
@@ -210,7 +213,7 @@ export function useMigrateRuntimeMutation() {
     ...trpc.agents.migrateRuntime.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to move the agent to the new runtime",
+      errorToast: "Couldn't move the agent to the new runtime",
     },
   });
 }
@@ -220,7 +223,7 @@ export function useAbortRuntimeMigrationMutation() {
     ...trpc.agents.abortRuntimeMigration.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to undo the move to the new runtime",
+      errorToast: "Couldn't undo the move to the new runtime",
     },
   });
 }
@@ -230,7 +233,7 @@ export function useRetryRuntimeMigrationMutation() {
     ...trpc.agents.retryRuntimeMigration.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Failed to retry the move to the new runtime",
+      errorToast: "Couldn't retry the move to the new runtime",
     },
   });
 }
@@ -240,7 +243,7 @@ export function useConnectSlack() {
     ...trpc.agents.connectSlack.mutationOptions(),
     meta: {
       ...invalidatesAgentsList,
-      errorToast: "Failed to connect Slack",
+      errorToast: "Couldn't connect Slack",
     },
   });
 }
@@ -260,7 +263,7 @@ export function useDisconnectSlack() {
     ...trpc.agents.disconnectSlack.mutationOptions(),
     meta: {
       ...invalidatesAgentsList,
-      errorToast: "Failed to disconnect Slack",
+      errorToast: "Couldn't disconnect Slack",
     },
   });
 }
@@ -305,7 +308,7 @@ export function useSetAgentConnections() {
         trpc.connections.getAgentConnections.queryKey(),
         egressRulesKeys.all,
       ],
-      errorToast: "Failed to update app connections",
+      errorToast: "Couldn't update app connections",
     },
   });
 }

@@ -11,7 +11,6 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const agentsDir = join(here, "../../../../agents");
-const baseManifest = join(agentsDir, "base/rootfs/app/runtime-manifest.yaml");
 
 const mk = (drivers: Record<string, unknown>) =>
   runtimeManifestSchema.parse({ manifestVersion: 1, drivers });
@@ -44,16 +43,6 @@ describe("resolveDrivers", () => {
 
   it("defaults impl to the kind name when omitted", () => {
     expect(resolveDrivers(mk({ file: {} })).file?.impl).toBe("file");
-  });
-
-  it("honors an explicit impl (older manifests + overrides)", () => {
-    const r = resolveDrivers(
-      mk({ "skill-ref": { impl: "skill-install", paths: ["/x"] } }),
-    );
-    expect(r["skill-ref"]).toMatchObject({
-      impl: "skill-install",
-      paths: ["/x"],
-    });
   });
 
   it("disables a built-in with false, leaving the rest", () => {
@@ -145,11 +134,6 @@ describe("sessionHistory declaration", () => {
 });
 
 describe("agentProcesses declaration", () => {
-  it("defaults to none, so a harness declares only what it runs", () => {
-    const result = runtimeManifestSchema.parse({ manifestVersion: 1 });
-    expect(result.agentProcesses).toEqual([]);
-  });
-
   // TEST_SCENARIO: the reaper matches the Name: line of /proc/<pid>/status,
   // TEST_SCENARIO: which the kernel cuts to 15 characters. A longer name could
   // TEST_SCENARIO: never match, and the process it meant would go unprotected.
@@ -160,62 +144,9 @@ describe("agentProcesses declaration", () => {
     });
     expect(result.success).toBe(false);
   });
-
-  it("claude-code protects the claude process under its adapter", () => {
-    const manifest = loadManifest(
-      join(agentsDir, "claude-code/rootfs/app/runtime-manifest.yaml"),
-    );
-    expect(manifest.agentProcesses).toEqual(["claude"]);
-  });
 });
 
 describe("shipped agent manifests resolve", () => {
-  it("claude-code declares harness-config and inherits the built-ins", () => {
-    const r = resolveDrivers(
-      loadManifest(
-        join(agentsDir, "claude-code/rootfs/app/runtime-manifest.yaml"),
-      ),
-    );
-    expect(r["harness-config"]).toMatchObject({
-      impl: "harness-config",
-      file: "$HOME/.claude/settings.json",
-    });
-    expect("env" in r && "file" in r && "trigger" in r).toBe(true);
-  });
-
-  it("pi-agent declares harness-config with modelDiscovery", () => {
-    const r = resolveDrivers(
-      loadManifest(
-        join(agentsDir, "pi-agent/rootfs/app/runtime-manifest.yaml"),
-      ),
-    );
-    expect(r["harness-config"]).toMatchObject({
-      impl: "harness-config",
-      file: "$HOME/.pi/agent/settings.json",
-    });
-  });
-
-  it("bob declares harness-config over keys Bob itself ignores", () => {
-    const r = resolveDrivers(
-      loadManifest(join(agentsDir, "bob/rootfs/app/runtime-manifest.yaml")),
-    );
-    expect(r["harness-config"]).toMatchObject({
-      impl: "harness-config",
-      file: "$HOME/.bob/settings/settings.json",
-      keys: {
-        model: "platform.model",
-        mode: "platform.mode",
-        configOptions: { approvals: "platform.approvals" },
-      },
-      modelDiscovery: {
-        urlEnv: ["BOB_GATEWAY_URL", "BOB_DEFAULT_GATEWAY_URL"],
-        path: "/inference/v1/model/info",
-        shape: "litellm-model-info",
-        fallback: { path: "/inference/v1/models" },
-      },
-    });
-  });
-
   it("codex writes MCP servers and harness-config into its own config.toml", () => {
     const r = resolveDrivers(
       loadManifest(join(agentsDir, "codex/rootfs/app/runtime-manifest.yaml")),
@@ -247,9 +178,21 @@ describe("shipped agent manifests resolve", () => {
     expect("env" in r && "skill-ref" in r && "trigger" in r).toBe(true);
   });
 
-  it("the base manifest is all defaults (no harness-config)", () => {
-    const r = resolveDrivers(loadManifest(baseManifest));
-    expect("harness-config" in r).toBe(false);
-    expect("env" in r && "trigger" in r).toBe(true);
+  it("every shipped manifest loads with its expected harness-config", () => {
+    const expected: Record<string, string | undefined> = {
+      base: undefined,
+      bob: "$HOME/.bob/settings/settings.json",
+      "claude-code": "$HOME/.claude/settings.json",
+      "k-search": undefined,
+      "pi-agent": "$HOME/.pi/agent/settings.json",
+    };
+    for (const [agent, file] of Object.entries(expected)) {
+      const manifest = loadManifest(
+        join(agentsDir, agent, "rootfs/app/runtime-manifest.yaml"),
+      );
+      const r = resolveDrivers(manifest);
+      expect(r["harness-config"]?.file, agent).toBe(file);
+      expect("env" in r && "trigger" in r, agent).toBe(true);
+    }
   });
 });

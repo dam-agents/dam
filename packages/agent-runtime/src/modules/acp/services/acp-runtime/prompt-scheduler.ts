@@ -32,6 +32,7 @@ export interface PromptSubmission {
 export interface PromptScheduler {
   submit(submission: PromptSubmission): PromptFate;
   submitSetting(submission: PromptSubmission): PromptFate;
+  onSettingResponse(sessionId: string, outboundId: number): void;
   onPromptResponse(
     sessionId: string,
     outboundId: number,
@@ -104,11 +105,13 @@ export interface PromptSchedulerDeps {
  * exception and answers each sender with an error instead, so the loss is
  * reported to the client that is still there to hear it rather than recorded.
  * A setting change for a session (its model or mode) waits in the same place
- * but is not a turn: it waits only for the session to be loaded back into
- * the harness, never for a turn in flight or an engaged reader, goes out
- * ahead of the queued prompts once it can, is dropped unsent once its sender
- * has gone, and on every route a queue leaves by is answered with an error
- * rather than written down, since nothing replays a setting.
+ * but is not a turn: it applies to the session's next turn, so it waits for
+ * the turn in flight to end and for the session to be loaded back into the
+ * harness, never for an engaged reader. It goes out ahead of the queued
+ * prompts, and the next prompt waits for the harness to answer it. It is
+ * dropped unsent once its sender has gone, and on every route a queue leaves
+ * by is answered with an error rather than written down, since nothing
+ * replays a setting.
  */
 export function createPromptScheduler(
   deps: PromptSchedulerDeps,
@@ -125,6 +128,7 @@ export function createPromptScheduler(
   >();
   const queues = new Map<string, PromptSubmission[]>();
   const pendingSettings = new Map<string, PromptSubmission[]>();
+  const settingsInFlight = new Map<string, Set<number>>();
   const parkTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const queueParkMs = deps.queueParkMs ?? DEFAULT_QUEUE_PARK_MS;
 
@@ -158,12 +162,20 @@ export function createPromptScheduler(
     const settings = pendingSettings.get(sessionId);
     const head = settings?.[0];
     if (settings === undefined || head === undefined) return;
-    if (!sessionLoaded(head)) return;
+    if (activeTurns.has(sessionId) || !sessionLoaded(head)) return;
     for (const entry of [...settings]) {
-      if (!deps.sendToAgent(entry.frame)) break;
+      if (!sendSetting(entry)) break;
       settings.shift();
     }
     if (settings.length === 0) pendingSettings.delete(sessionId);
+  }
+
+  function sendSetting(entry: PromptSubmission): boolean {
+    if (!deps.sendToAgent(entry.frame)) return false;
+    const inFlight = settingsInFlight.get(entry.sessionId) ?? new Set();
+    inFlight.add(entry.outboundId);
+    settingsInFlight.set(entry.sessionId, inFlight);
+    return true;
   }
 
   function dropQueue(sessionId: string, cause: QueueDropCause): void {
@@ -224,6 +236,7 @@ export function createPromptScheduler(
   function maybeStartNext(sessionId: string): void {
     flushSettings(sessionId);
     if (pendingSettings.has(sessionId)) return;
+    if (settingsInFlight.has(sessionId)) return;
     if (activeTurns.has(sessionId)) return;
     const queue = queues.get(sessionId);
     const next = queue?.[0];
@@ -255,7 +268,12 @@ export function createPromptScheduler(
   return {
     submit(submission) {
       const sessionId = submission.sessionId;
-      if (activeTurns.has(sessionId) || !deps.canStart(submission)) {
+      if (
+        activeTurns.has(sessionId) ||
+        pendingSettings.has(sessionId) ||
+        settingsInFlight.has(sessionId) ||
+        !deps.canStart(submission)
+      ) {
         const queue = queues.get(sessionId) ?? [];
         if (queue.length >= PROMPT_QUEUE_CAP) {
           refuse(submission);
@@ -276,8 +294,9 @@ export function createPromptScheduler(
       const sessionId = submission.sessionId;
       if (
         !pendingSettings.has(sessionId) &&
+        !activeTurns.has(sessionId) &&
         sessionLoaded(submission) &&
-        deps.sendToAgent(submission.frame)
+        sendSetting(submission)
       )
         return "started";
       pendingSettings.set(sessionId, [
@@ -285,6 +304,13 @@ export function createPromptScheduler(
         submission,
       ]);
       return "queued";
+    },
+
+    onSettingResponse(sessionId, outboundId) {
+      const inFlight = settingsInFlight.get(sessionId);
+      if (!inFlight?.delete(outboundId)) return;
+      if (inFlight.size === 0) settingsInFlight.delete(sessionId);
+      maybeStartNext(sessionId);
     },
 
     onPromptResponse(sessionId, outboundId) {
@@ -299,7 +325,8 @@ export function createPromptScheduler(
       }
       activeTurns.delete(sessionId);
       deps.onTurnEnded?.(sessionId);
-      if (queues.get(sessionId)?.length) maybeStartNext(sessionId);
+      if (queues.get(sessionId)?.length || pendingSettings.has(sessionId))
+        maybeStartNext(sessionId);
       else queues.delete(sessionId);
       return {
         turnEnded: true,
@@ -325,13 +352,17 @@ export function createPromptScheduler(
       return (
         activeTurns.has(sessionId) ||
         queues.has(sessionId) ||
-        pendingSettings.has(sessionId)
+        pendingSettings.has(sessionId) ||
+        settingsInFlight.has(sessionId)
       );
     },
 
     anyWork() {
       return (
-        activeTurns.size > 0 || queues.size > 0 || pendingSettings.size > 0
+        activeTurns.size > 0 ||
+        queues.size > 0 ||
+        pendingSettings.size > 0 ||
+        settingsInFlight.size > 0
       );
     },
 
@@ -383,6 +414,7 @@ export function createPromptScheduler(
     forget(sessionId) {
       const active = activeTurns.get(sessionId);
       activeTurns.delete(sessionId);
+      settingsInFlight.delete(sessionId);
       dropQueue(sessionId, "session-forgotten");
       if (active !== undefined) {
         deps.onTurnInterrupted?.(sessionId, active);
@@ -393,6 +425,7 @@ export function createPromptScheduler(
     clear() {
       for (const timer of parkTimers.values()) clearTimeout(timer);
       parkTimers.clear();
+      settingsInFlight.clear();
       for (const sessionId of [...pendingSettings.keys()])
         refuseSettings(
           sessionId,

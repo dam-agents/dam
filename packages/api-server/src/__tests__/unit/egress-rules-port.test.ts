@@ -3,6 +3,7 @@ import { createEgressRulesService } from "../../modules/egress-rules/services/eg
 import { createEgressRuleWriter } from "../../modules/egress-rules/services/egress-rule-writer.js";
 import { createConnectionRulesSync } from "../../modules/egress-rules/services/connection-rules-sync.js";
 import { createKitRulesSeeder } from "../../modules/egress-rules/services/kit-rules-seeder.js";
+import { createPresetSeeder } from "../../modules/egress-rules/services/preset-seeder.js";
 import type { EgressRulesRepository } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import type { NewEgressRule } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../../modules/egress-rules/domain/types.js";
@@ -39,6 +40,9 @@ function fakeRepo(
       const r = rowFrom(row);
       rows.push(r);
       return r;
+    },
+    insertAll: async (all) => {
+      rows.push(...all.map(rowFrom));
     },
     listConnectionDerivedForAgent: async () => [],
     hasUserOwnedRuleForHost: async () => false,
@@ -329,5 +333,35 @@ describe("kit-rules-seeder: a kit rule never silently loses to a preset row", ()
         "sub-1",
       ),
     ).rejects.toThrow(/clashes/);
+  });
+});
+
+describe("preset-seeder: the trusted preset is one write", () => {
+  // TEST_SCENARIO: an agent create seeds every trusted host; one round trip per host put ~0.5 s on the create, so the hosts go in as one batch after the old preset rows are revoked.
+  it("revokes the old preset rows, then inserts every trusted host in one call", async () => {
+    const calls: string[] = [];
+    const { repo, rows } = fakeRepo([], {
+      revokePresetRowsForAgent: async () => {
+        calls.push("revoke");
+      },
+      insert: async () => {
+        throw new Error("per-host insert");
+      },
+    });
+    const batch = repo.insertAll;
+    repo.insertAll = async (all) => {
+      calls.push(`insertAll:${all.length}`);
+      await batch(all);
+    };
+    const hosts = ["a.example", "b.example", "c.example"];
+    await createPresetSeeder({ repo, trustedHosts: hosts }).seed(
+      "agent-1",
+      "trusted",
+      "owner-1",
+    );
+    expect(calls).toEqual(["revoke", "insertAll:3"]);
+    expect(rows.map((r) => [r.host, r.source])).toEqual(
+      hosts.map((h) => [h, "preset:trusted"]),
+    );
   });
 });

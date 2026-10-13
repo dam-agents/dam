@@ -2,9 +2,10 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 
 import { api } from "../../../api.js";
 import { queryClient } from "../../../query-client.js";
-import { useStore } from "../../../store.js";
+import { type PlatformStore, useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import type { AgentState, AgentView } from "../../../types.js";
+import { agentReadiness, untilAgentReady } from "../lib/agent-start.js";
 import { vanishedAgentIds } from "../lib/deleted-agent.js";
 
 export const agentsKeys = {
@@ -73,18 +74,62 @@ export function useAgentDisplayName(agentId: string | null): string | null {
   return agents.find((a) => a.id === agentId)?.name ?? agentId;
 }
 
+function operableIn(
+  s: PlatformStore,
+  agentId: string | null,
+  runState: AgentState | undefined,
+): boolean {
+  return (
+    agentId !== null &&
+    runState === "running" &&
+    !s.restartingAgents.has(agentId) &&
+    !s.pausingAgents.has(agentId) &&
+    !s.unreachableAgents.has(agentId)
+  );
+}
+
 export function useIsAgentOperable(agentId: string | null): boolean {
   const runState = useAgentRunState(agentId);
-  const restarting = useStore((s) =>
-    agentId ? s.restartingAgents.has(agentId) : false,
-  );
-  const pausing = useStore((s) =>
-    agentId ? s.pausingAgents.has(agentId) : false,
-  );
+  return useStore((s) => operableIn(s, agentId, runState));
+}
+
+export function useIsAgentAnswerableSoon(agentId: string | null): boolean {
+  const operable = useIsAgentOperable(agentId);
+  const runState = useAgentRunState(agentId);
+  const compat = useAgentLacksLiveUpdates(agentId);
   const unreachable = useStore((s) =>
     agentId ? s.unreachableAgents.has(agentId) : false,
   );
-  return runState === "running" && !restarting && !pausing && !unreachable;
+  return (
+    operable ||
+    (!compat &&
+      !unreachable &&
+      (runState === "starting" || runState === "preparing_workspace"))
+  );
+}
+
+export function untilAgentOperable(agentId: string): Promise<void> | null {
+  const read = () => {
+    const agent = queryClient
+      .getQueryData<{ list: readonly AgentView[] }>(
+        agentsKeys.listWithChannels(),
+      )
+      ?.list.find((a) => a.id === agentId);
+    const store = useStore.getState();
+    return agentReadiness(
+      agent,
+      operableIn(store, agentId, agent?.state),
+      store.restartingAgents.has(agentId),
+    );
+  };
+  return untilAgentReady(read, (onChange) => {
+    const offQueries = queryClient.getQueryCache().subscribe(onChange);
+    const offStore = useStore.subscribe(onChange);
+    return () => {
+      offQueries();
+      offStore();
+    };
+  });
 }
 
 function isDeniedAgentRead(error: unknown): boolean {

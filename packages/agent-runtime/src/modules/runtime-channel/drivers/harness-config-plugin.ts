@@ -42,6 +42,7 @@ export interface HarnessConfigPlugin extends Plugin {
   readonly supported: boolean;
   readonly catalog: HarnessConfigBinding["catalog"];
   readonly sessionModel: boolean;
+  readonly sessionSettings: string[] | undefined;
   readCurrent(opts?: { discover?: boolean }): Promise<HarnessConfigCurrent>;
   models(
     provider: string | null,
@@ -205,6 +206,7 @@ export function createHarnessConfigPlugin(deps: {
     }
   };
 
+  let checkedProvider: string | undefined;
   const seedModel = async (): Promise<boolean> => {
     if (!binding?.modelDiscovery || !binding.keys.model) return false;
     const env = defaultEnv();
@@ -217,35 +219,50 @@ export function createHarnessConfigPlugin(deps: {
       return false;
     }
     const pinned = source.spec.pinEnv?.find((name) => !!env[name]?.trim());
-    const current = readCurrentValues(binding, agentHome, log).model;
-    const standing = current ?? (pinned ? env[pinned]?.trim() : undefined);
+    const standingModel = (): string | undefined =>
+      readCurrentValues(binding, agentHome, log).model ??
+      (pinned ? env[pinned]?.trim() : undefined);
+    const provider = `${source.via}=${env[source.via] ?? ""}`;
 
-    const outcome = await listUntilAnswered(env);
-    if (outcome.status !== "observed" || outcome.via !== source.via)
-      return false;
-    const listed = (model: string | undefined): boolean =>
-      outcome.models.some((m) => m.value === model);
-    if (standing && listed(standing)) {
-      if (!current)
-        log(`[harness-config] no model seeded: ${pinned} pins one already`);
-      return false;
-    }
-    if (current && pinned && listed(env[pinned]?.trim())) {
+    const reseed = async (): Promise<boolean> => {
+      const outcome = await listUntilAnswered(env);
+      if (outcome.status !== "observed" || outcome.via !== source.via)
+        return false;
+      checkedProvider = provider;
+      const current = readCurrentValues(binding, agentHome, log).model;
+      const standing = standingModel();
+      const listed = (model: string | undefined): boolean =>
+        outcome.models.some((m) => m.value === model);
+      if (standing && listed(standing)) {
+        if (!current)
+          log(`[harness-config] no model seeded: ${pinned} pins one already`);
+        return false;
+      }
+      if (current && pinned && listed(env[pinned]?.trim())) {
+        log(
+          `[harness-config] ${current} is not served via ${outcome.via}; leaving the model to ${pinned}`,
+        );
+        await apply({ unset: ["model"] });
+        return true;
+      }
+      const model = outcome.models[0]?.value;
+      if (!model) return false;
       log(
-        `[harness-config] ${current} is not served via ${outcome.via}; leaving the model to ${pinned}`,
+        standing
+          ? `[harness-config] ${standing} is not served via ${outcome.via}; seeding model ${model}`
+          : `[harness-config] seeding model ${model} (via ${outcome.via})`,
       );
-      await apply({ unset: ["model"] });
+      await apply({ model });
       return true;
+    };
+
+    if (standingModel() && (checkedProvider ??= provider) === provider) {
+      void reseed().catch((err: unknown) => {
+        log(`[harness-config] model check failed: ${(err as Error).message}`);
+      });
+      return false;
     }
-    const model = outcome.models[0]?.value;
-    if (!model) return false;
-    log(
-      standing
-        ? `[harness-config] ${standing} is not served via ${outcome.via}; seeding model ${model}`
-        : `[harness-config] seeding model ${model} (via ${outcome.via})`,
-    );
-    await apply({ model });
-    return true;
+    return reseed();
   };
 
   const leaseModel = async (
@@ -269,6 +286,9 @@ export function createHarnessConfigPlugin(deps: {
     supported: binding !== undefined,
     catalog: binding?.catalog,
     sessionModel: binding?.sessionModel === true,
+    sessionSettings: binding?.sessionSettings
+      ? Object.keys(binding.sessionSettings)
+      : undefined,
     readCurrent,
     models: (provider) => listModels(envOf(provider)),
     apply,

@@ -74,9 +74,9 @@ export function OnceScheduleForm({
   const handleDelete = async () => {
     if (!existing) return;
     const confirmed = await showConfirm(
-      "Are you sure you want to cancel this one-time task?",
-      `Cancel ${existing.name}?`,
-      { kind: "destructive", confirmLabel: "Cancel task" },
+      "It will not run.",
+      `Delete ${existing.name}?`,
+      { kind: "destructive", confirmLabel: "Delete task" },
     );
     if (!confirmed) return;
     deleteSchedule.mutate({ id: existing.id });
@@ -119,17 +119,16 @@ export function OnceScheduleForm({
   return (
     <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
       <DialogHeader
-        title={existing ? "Edit one-time task" : "Create a new Schedule"}
+        title={existing ? "Edit one-time task" : "New schedule"}
         onClose={onClose}
       />
 
       <DialogBody className="flex flex-col gap-4">
         {leadingFields}
-        <FormField label="Name" error={errors.name?.message} disableInset>
+        <FormField label="Name" error={errors.name?.message}>
           <Input
-            className="h-10"
             variant={errors.name ? "invalid" : undefined}
-            placeholder={`eg. "Release notes"`}
+            placeholder="e.g. Release notes"
             {...register("name")}
           />
         </FormField>
@@ -157,18 +156,16 @@ export function OnceScheduleForm({
 
         {when === "at" && (
           <div className="grid grid-cols-2 gap-3">
-            <FormField label="Date" error={errors.date?.message} disableInset>
+            <FormField label="Date" error={errors.date?.message}>
               <Input
                 type="date"
-                className="h-10"
                 variant={errors.date ? "invalid" : undefined}
                 {...register("date")}
               />
             </FormField>
-            <FormField label="Time" error={errors.time?.message} disableInset>
+            <FormField label="Time" error={errors.time?.message}>
               <Input
                 type="time"
-                className="h-10"
                 variant={errors.time ? "invalid" : undefined}
                 {...register("time")}
               />
@@ -177,11 +174,7 @@ export function OnceScheduleForm({
         )}
 
         {when === "at" && (
-          <FormField
-            label="Timezone"
-            error={errors.timezone?.message}
-            disableInset
-          >
+          <FormField label="Timezone" error={errors.timezone?.message}>
             <Controller
               control={control}
               name="timezone"
@@ -198,7 +191,7 @@ export function OnceScheduleForm({
           </FormField>
         )}
 
-        <FormField label="Prompt" error={errors.task?.message} disableInset>
+        <FormField label="Prompt" error={errors.task?.message}>
           <Textarea
             className="min-h-[80px] resize-y"
             variant={errors.task ? "invalid" : undefined}
@@ -237,11 +230,10 @@ export function OnceScheduleForm({
               type="button"
               variant="ghost"
               tone="danger"
-              className="text-danger"
               disabled={deleteSchedule.isPending}
               onClick={() => void handleDelete()}
             >
-              Cancel task
+              Delete task
             </Button>
           ) : undefined
         }

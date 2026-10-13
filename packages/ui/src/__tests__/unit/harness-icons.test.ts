@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 
 import { type HarnessFamily, PROVIDER_PRESET_TYPES } from "api-server-api";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import { createElement, type ReactElement } from "react";
+import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -12,6 +12,7 @@ import {
   OpenAIIcon,
 } from "../../components/brand-icons.js";
 import { HarnessIcons } from "../../components/harness-icons.js";
+import { TooltipProvider } from "../../components/ui/tooltip.js";
 import { CardIcon } from "../../modules/providers/components/card-icon.js";
 import { ProviderBalance } from "../../modules/providers/components/provider-balance.js";
 import { ProviderRow } from "../../modules/providers/components/provider-row.js";
@@ -26,25 +27,33 @@ vi.mock("../../modules/providers/api/queries.js", () => ({
 
 const ALL: HarnessFamily[] = ["bob", "claude-code", "codex", "pi"];
 
+function renderToStaticMarkup(element: ReactElement) {
+  return renderMarkup(createElement(TooltipProvider, null, element));
+}
+
+function luminance(rgb: number[]) {
+  return [0.2126, 0.7152, 0.0722].reduce((sum, weight, i) => {
+    const channel = rgb[i]! / 255;
+    return (
+      sum +
+      weight *
+        (channel <= 0.04045
+          ? channel / 12.92
+          : ((channel + 0.055) / 1.055) ** 2.4)
+    );
+  }, 0);
+}
+
 describe("harness icons on provider and preset cards", () => {
-  it("keeps white marks legible on the muted tile palette", () => {
+  it("keeps white marks legible on the lighter solid tile palette", () => {
     const css = readFileSync(new URL("../../App.css", import.meta.url), "utf8");
     const colors = [...css.matchAll(/--color-icon-[a-z]+: #([0-9a-f]{6});/g)];
     expect(colors.length).toBeGreaterThan(0);
     for (const [, hex] of colors) {
-      const luminance = [0.2126, 0.7152, 0.0722].reduce(
-        (sum, weight, index) => {
-          const channel =
-            Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16) / 255;
-          const linear =
-            channel <= 0.04045
-              ? channel / 12.92
-              : ((channel + 0.055) / 1.055) ** 2.4;
-          return sum + weight * linear;
-        },
-        0,
+      const rgb = [0, 2, 4].map((i) =>
+        Number.parseInt(hex!.slice(i, i + 2), 16),
       );
-      expect(1.05 / (luminance + 0.05)).toBeGreaterThanOrEqual(4.5);
+      expect(1.05 / (luminance(rgb) + 0.05)).toBeGreaterThanOrEqual(4.5);
     }
   });
 
@@ -109,12 +118,13 @@ describe("harness icons on provider and preset cards", () => {
     );
   });
 
-  it("uses white harness marks on colored tiles for preset cards", () => {
+  it("uses white harness marks on solid colored preset tiles", () => {
     const html = renderToStaticMarkup(createElement(HarnessIcons));
     expect(html).toContain("size-5 scale-110");
     expect(html).toContain("size-5 scale-90");
     expect(html.match(/text-white/g)).toHaveLength(4);
-    expect(html.match(/bg-/g)).toHaveLength(4);
+    expect(html.match(/bg-icon-[a-z]+/g)).toHaveLength(4);
+    expect(html).not.toMatch(/bg-icon-[a-z]+\//);
     expect(html.match(/fill="currentColor"/g)).toHaveLength(4);
   });
 
@@ -131,6 +141,8 @@ describe("harness icons on provider and preset cards", () => {
         else {
           expect(html).toContain("bg-");
           expect(html).toContain("text-white");
+          expect(html).toMatch(/bg-icon-[a-z]+/);
+          expect(html).not.toMatch(/bg-icon-[a-z]+\//);
         }
       }
     },
@@ -147,20 +159,21 @@ describe("harness icons on provider and preset cards", () => {
           balance: connected
             ? createElement(ProviderBalance, { connectionId: "proxy" })
             : undefined,
-          onConnect() {},
-          onEditKey() {},
-          onRemoveKey() {},
+          onOpen() {},
         }),
       );
       expect(html).toContain("supports:");
       expect(html).toContain("size-5");
       expect(html).not.toContain("Chat and Responses APIs");
-      if (connected) expect(html).toContain("$12.00 of $100.00 used");
-      else expect(html).toContain('aria-label="Connect IBM ETE LiteLLM Proxy"');
+      if (connected) {
+        expect(html).toContain("$12.00 of $100.00 used");
+        expect(html).toContain(">Connected<");
+      } else {
+        expect(html).toContain('aria-label="Connect IBM ETE LiteLLM Proxy"');
+        expect(html).toContain(">Not connected<");
+      }
       for (const name of ["Bob", "Claude", "Codex", "Pi"])
-        expect(html).toContain(
-          `role="img" aria-label="${name}" title="${name}"`,
-        );
+        expect(html).toContain(`role="img" aria-label="${name}" tabindex="0"`);
     },
   );
 
@@ -172,9 +185,7 @@ describe("harness icons on provider and preset cards", () => {
           type: "anthropic",
           connected: false,
           harnesses,
-          onConnect() {},
-          onEditKey() {},
-          onRemoveKey() {},
+          onOpen() {},
         }),
       );
       expect(html).toContain(harnesses ? "None" : "Compatibility unavailable");
@@ -189,9 +200,7 @@ describe("harness icons on provider and preset cards", () => {
         type: "anthropic",
         connected: true,
         harnesses: ["claude-code"],
-        onConnect() {},
-        onEditKey() {},
-        onRemoveKey() {},
+        onOpen() {},
       }),
     );
     expect(html).toContain('aria-label="Claude"');

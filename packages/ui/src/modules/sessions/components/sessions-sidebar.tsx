@@ -19,14 +19,22 @@ import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
-import { useIsAgentOperable } from "../../agents/api/queries.js";
+import {
+  useIsAgentAnswerableSoon,
+  useIsAgentOperable,
+} from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { isUnreadSession } from "../../home/lib/unread.js";
 import { useSessionCosts } from "../../metrics/api/queries.js";
 import { downloadTelemetryExport } from "../../telemetry/api/download-export.js";
 import { useAgentBackgroundWork } from "../api/background-work.js";
-import { setSessionSeen, useSessionPages } from "../api/queries.js";
+import {
+  prefetchSessionHistory,
+  setSessionSeen,
+  useProvisionalSessions,
+  useSessionPages,
+} from "../api/queries.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
 import { SESSION_CATEGORY_LABELS } from "../lib/session-category.js";
 import { useSessionConversations } from "../lib/use-session-conversations.js";
@@ -66,6 +74,7 @@ export function SessionsSidebar({
   const [renaming, setRenaming] = useState<SessionView | null>(null);
 
   const agentOperable = useIsAgentOperable(selectedAgent);
+  const agentAnswerableSoon = useIsAgentAnswerableSoon(selectedAgent);
   const conversationOf = useSessionConversations(selectedAgent);
   const {
     sessions: listed,
@@ -74,11 +83,15 @@ export function SessionsSidebar({
     isFetchingNextPage,
     fetchNextPage,
   } = useSessionPages(selectedAgent, sessionFilter, {
-    enabled: agentOperable,
+    enabled: agentAnswerableSoon,
     activeSessionId: sessionId,
   });
-  const sessions: SessionView[] = listed ?? EMPTY;
-  const loading = listed === undefined && isFetching;
+  const lastKnown = useProvisionalSessions(selectedAgent, listed === undefined);
+  const provisional = listed === undefined && !!lastKnown?.length;
+  const sessions: SessionView[] =
+    listed ?? (provisional ? lastKnown : undefined) ?? EMPTY;
+  const loading =
+    listed === undefined && !provisional && (isFetching || !agentOperable);
   const filtered = sessionFilter.length < SESSION_CATEGORIES.length;
 
   const visibleSessions = useMemo(
@@ -112,7 +125,13 @@ export function SessionsSidebar({
     title: string | null | undefined,
   ) => {
     const label = title || sid.slice(0, 12);
-    if (await showConfirm(`Delete session "${label}"?`, "Delete Session")) {
+    if (
+      await showConfirm(
+        "Its transcript is deleted and cannot be recovered.",
+        `Delete session “${label}”?`,
+        { kind: "destructive", confirmLabel: "Delete session" },
+      )
+    ) {
       deleteSession(sid);
     }
   };
@@ -142,6 +161,7 @@ export function SessionsSidebar({
         needsApproval={needsApproval}
         unread={unread}
         draft={draft}
+        provisional={provisional}
         backgroundWork={backgroundWorkBySession.get(s.sessionId)}
         cost={sessionCosts.get(s.sessionId)}
         conversation={conversationOf(s)}
@@ -149,6 +169,12 @@ export function SessionsSidebar({
           if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);
           onResumeSession(s.sessionId, s.mode);
         }}
+        {...(agentOperable &&
+          selectedAgent &&
+          s.mode !== SessionMode.Terminal && {
+            onPrefetch: () =>
+              prefetchSessionHistory(selectedAgent, s.sessionId),
+          })}
         onRename={() => setRenaming(s)}
         onDelete={() => confirmDelete(s.sessionId, s.title)}
         {...(telemetryEnabled && selectedAgent
@@ -173,7 +199,7 @@ export function SessionsSidebar({
           <Button
             variant="ghost"
             size="xs"
-            className="min-w-0 text-sm font-normal text-muted-foreground"
+            className="shrink-0 text-sm font-normal text-muted-foreground"
           >
             <Filter size={14} />
             <span className="truncate">
@@ -200,9 +226,9 @@ export function SessionsSidebar({
         variant="outline"
         size="xs"
         className="text-sm max-md:mr-10"
-        onClick={onNewSession}
+        onClick={() => onNewSession()}
       >
-        <Add size={12} /> New
+        <Add size={14} /> New
       </Button>
     </>
   );
@@ -229,11 +255,15 @@ export function SessionsSidebar({
       style={style}
       ref={ref}
     >
-      <div className="flex-1 overflow-y-auto">
+      <div
+        className="flex-1 overflow-y-auto"
+        data-provisional={provisional ? "true" : undefined}
+        aria-busy={provisional || loading}
+      >
         {loading && <SessionListSkeleton />}
         {!loading && visibleSessions.length === 0 && (
           <p className="px-4 py-5 text-xs text-muted-foreground">
-            {filtered ? "No sessions match the filter" : "No sessions yet"}
+            {filtered ? "No sessions match the filter." : "No sessions yet."}
           </p>
         )}
         {visibleSessions.map(renderRow)}

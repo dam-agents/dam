@@ -1,5 +1,6 @@
 import type { SlackOutboundRecord } from "api-server-api";
 import { FileTooLargeError } from "./slack-gateway.js";
+import type { SlackSender } from "./slack-sender.js";
 import type {
   SlackViewSubmission,
   SlackBotJoinedChannelEvent,
@@ -9,6 +10,7 @@ import type {
   SlackMentionEvent,
   SlackMessage,
   SlackMessageReaction,
+  SlackFileInfo,
   SlackSlashCommand,
   SlackUserInfo,
   SlackWorkspace,
@@ -23,9 +25,18 @@ export interface FakeSlackChannel {
   members?: string[];
 }
 
-export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId"> & {
+export type FiredSlackEvent = Omit<SlackMentionEvent, "teamId" | "sender"> & {
   teamId?: string;
+  sender?: SlackSender;
 };
+
+function firedEvent(input: FiredSlackEvent): SlackMentionEvent | null {
+  const sender =
+    input.sender ??
+    (input.user ? ({ kind: "person", user: input.user } as const) : null);
+  if (!sender) return null;
+  return { ...input, sender, teamId: input.teamId ?? FAKE_WORKSPACE };
+}
 export type FiredSlackCommand = Omit<
   SlackSlashCommand,
   "teamId" | "triggerId"
@@ -55,6 +66,7 @@ export interface FakeSlackGateway extends SlackGateway {
   setGrantedScopes(scopes: string[] | null): void;
   setBotUserId(id: string | null): void;
   setFileBytes(urlPrivate: string, bytes: Buffer): void;
+  setFileInfo(info: SlackFileInfo): void;
   setMessageReactions(
     channel: string,
     ts: string,
@@ -172,6 +184,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   const messageReactions = new Map<string, SlackMessageReaction[]>();
   const messagesByRef = new Map<string, SlackMessage & { ts: string }>();
   const fileBytes = new Map<string, Buffer>();
+  const fileInfos = new Map<string, SlackFileInfo>();
 
   function requireHandlers(): SlackGatewayHandlers {
     if (!handlers) {
@@ -232,6 +245,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     async openModal() {},
 
     async postEphemeral(args) {
+      if (!args.user) return;
       outbound.push({
         kind: "ephemeral",
         teamId: args.teamId,
@@ -365,6 +379,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
       fileBytes.set(urlPrivate, bytes);
     },
 
+    async getFileInfo(fileId) {
+      return fileInfos.get(fileId) ?? null;
+    },
+
+    setFileInfo(info) {
+      fileInfos.set(info.file.id, info);
+    },
+
     async listBotChannels(teamId) {
       return (channelsByWorkspace.get(teamId) ?? [])
         .filter((c) => c.botIsMember)
@@ -411,19 +433,13 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async fireMention(input) {
-      const event: SlackMentionEvent = {
-        ...input,
-        teamId: input.teamId ?? FAKE_WORKSPACE,
-      };
-      await requireHandlers().onMention(event);
+      const event = firedEvent(input);
+      if (event) await requireHandlers().onMention(event);
     },
 
     async fireMessage(input) {
-      const event: SlackMentionEvent = {
-        ...input,
-        teamId: input.teamId ?? FAKE_WORKSPACE,
-      };
-      await requireHandlers().onMessage(event);
+      const event = firedEvent(input);
+      if (event) await requireHandlers().onMessage(event);
     },
 
     async fireViewSubmission(event) {
@@ -438,11 +454,8 @@ export function createFakeSlackGateway(): FakeSlackGateway {
     },
 
     async fireDirectMessage(input) {
-      const event: SlackMentionEvent = {
-        ...input,
-        teamId: input.teamId ?? FAKE_WORKSPACE,
-      };
-      await requireHandlers().onDirectMessage(event);
+      const event = firedEvent(input);
+      if (event) await requireHandlers().onDirectMessage(event);
     },
 
     async fireCommand(input) {

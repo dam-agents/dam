@@ -8,7 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SectionLabel } from "@/components/ui/section-label";
+import { SectionHeader } from "@/components/ui/list-section";
 
 import {
   useHarnessConfigStatus,
@@ -82,7 +82,7 @@ export function ModelSettingsPanel({
         name: c.name,
         description: c.description,
       }));
-    const cur = valueOf(group.id);
+    const cur = valueOf(group.id) ?? group.default ?? null;
     if (cur && !choices.some((c) => c.id === cur)) {
       choices.push({
         id: cur,
@@ -99,6 +99,7 @@ export function ModelSettingsPanel({
         title={group.name}
         choices={choices}
         value={cur}
+        clearable={group.id === "model"}
         disabled={disabled}
         onSelect={(id) => change(group.id, id)}
       />
@@ -106,7 +107,7 @@ export function ModelSettingsPanel({
   });
 
   const note = (
-    <p className="pt-3 text-[11px] leading-snug text-muted-foreground">
+    <p className="pt-3 text-2xs leading-snug text-muted-foreground">
       Applies to new sessions. A session that's already running keeps the
       settings it started with — start a new session to use these.
     </p>
@@ -118,11 +119,8 @@ export function ModelSettingsPanel({
   return (
     <section className="mb-8">
       {staleModel && <StaleModelCallout model={staleModel} />}
-      <div className="mb-3 flex min-h-8 items-center justify-between gap-3">
-        <SectionLabel>Model settings</SectionLabel>
-        {headerAction}
-      </div>
-      <Callout inset>
+      <SectionHeader label="Model settings">{headerAction}</SectionHeader>
+      <Callout>
         {fromSnapshot && capturedAt && <SnapshotNote capturedAt={capturedAt} />}
         {groups}
         {note}
@@ -131,19 +129,21 @@ export function ModelSettingsPanel({
   );
 }
 
-const CLEARED_LABEL = "Default";
-const CLEARED_DESCRIPTION = "Determined by harness settings";
+const CLEARED_LABEL = "Agent default";
+const CLEARED_DESCRIPTION = "The model the agent's harness starts on";
 
 function OptionGroup({
   title,
   choices,
   value,
+  clearable,
   disabled = false,
   onSelect,
 }: {
   title: string;
   choices: Choice[];
   value: string | null;
+  clearable: boolean;
   disabled?: boolean;
   onSelect: (id: string | null) => void;
 }) {
@@ -152,7 +152,7 @@ function OptionGroup({
       value === null ? null : choices.find((c) => c.id === value);
     return (
       <OptionField title={title}>
-        <ReadOnlyOptionFace label={selected?.name ?? CLEARED_LABEL} />
+        <ReadOnlyOptionFace label={selected?.name ?? value ?? CLEARED_LABEL} />
       </OptionField>
     );
   }
@@ -162,6 +162,7 @@ function OptionGroup({
         title={title}
         choices={choices}
         value={value}
+        clearable={clearable}
         onSelect={onSelect}
       />
     </OptionField>
@@ -172,7 +173,7 @@ export function OptionPicker({
   title,
   choices,
   value,
-  clearable = true,
+  clearable = false,
   placeholder = CLEARED_LABEL,
   clearedLabel = CLEARED_LABEL,
   clearedDescription = CLEARED_DESCRIPTION,
@@ -196,7 +197,9 @@ export function OptionPicker({
           aria-label={title}
           className="flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-4 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <span className="truncate">{selected?.name ?? placeholder}</span>
+          <span className="truncate">
+            {selected?.name ?? value ?? placeholder}
+          </span>
           <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
@@ -250,12 +253,12 @@ function OptionItem({
         <span className={active ? "" : "pl-[18px]"}>{label}</span>
       </span>
       {detail && (
-        <span className="pl-[18px] font-mono text-[11px] text-muted-foreground">
+        <span className="pl-[18px] font-mono text-2xs text-muted-foreground">
           {detail}
         </span>
       )}
       {description && (
-        <span className="pl-[18px] text-[11px] text-muted-foreground">
+        <span className="pl-[18px] text-2xs text-muted-foreground">
           {description}
         </span>
       )}

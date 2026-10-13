@@ -39,6 +39,8 @@ import {
   setSlackChannelDefault,
   createAgentSweep,
   createRuntimeMigrationSwitch,
+  createImageUpdate,
+  podIsIdle,
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
@@ -67,6 +69,7 @@ import { createImgbbAgentIcons } from "./modules/channels/infrastructure/agent-a
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
 import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
+import { createSlackIgnoredAppsRepository } from "./modules/channels/infrastructure/slack-ignored-apps-repository.js";
 import {
   createFakeSlackGateway,
   FAKE_WORKSPACE,
@@ -136,6 +139,7 @@ import {
 } from "./modules/attention/index.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
+import { composeGettingStartedModule } from "./modules/getting-started/index.js";
 import {
   createUsageAgentsCleanupHook,
   listUsageAgentIds,
@@ -402,7 +406,6 @@ export async function bootstrap() {
     sourceForEntry: (gitUrl, ref) =>
       createGitCatalogSource(kitGitHosts, gitUrl, ref),
     appVersion: config.appVersion,
-    pinnedKit: config.starterKitsPinned,
     scanSkills: async (gitUrl, ref, subPath) =>
       (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({
         name: skill.name,
@@ -799,7 +802,7 @@ export async function bootstrap() {
         memory: config.agentDefaultMemoryLimit,
       },
       defaultStorage: config.agentDefaultStorageSize,
-      idleTimeoutMin: config.agentIdleTimeoutMinutes,
+      idleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     },
   });
   usage.start();
@@ -813,6 +816,13 @@ export async function bootstrap() {
 
   const audit = composeAuditModule();
   audit.start();
+
+  const gettingStarted = composeGettingStartedModule({
+    db,
+    ownedAgentIds: async (owner) =>
+      (await agentsRepo.list(owner)).map((a) => a.id),
+  });
+  gettingStarted.start();
 
   const caseStudies = composeCaseStudiesModule({
     db,
@@ -1003,6 +1013,7 @@ export async function bootstrap() {
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
         setSlackChannelAmbient: setSlackChannelAmbient(db),
+        ignoredApps: createSlackIgnoredAppsRepository(db),
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
@@ -1017,6 +1028,12 @@ export async function bootstrap() {
         agentIcon: config.imgbbApiKey
           ? createImgbbAgentIcons(config.imgbbApiKey)
           : null,
+        readPodRestarts: async (agentId) => {
+          const agent = await agentsRepo.get(agentId);
+          return agent
+            ? { restarts: agent.podRestarts, reason: agent.podRestartReason }
+            : null;
+        },
       })
     : undefined;
 
@@ -1513,6 +1530,18 @@ export async function bootstrap() {
     runtimeMigrationSwitch.tick(),
   );
 
+  const imageUpdate = createImageUpdate({
+    listAgents: () => agentsRepo.list(),
+    getAgent: (id) => liveAgentsRepo.getLive(id, undefined),
+    readTemplateSpec: templatesRepo.readSpec,
+    writeSpec: (id, write) =>
+      liveAgentsRepo.writeRuntimeMigration(id, undefined, write),
+    podIsIdle: (id) => podIsIdle(id, config.namespace),
+    idleTimeoutMinutes: config.agentIdleTimeoutMinutes,
+    log: (message) => process.stderr.write(`${message}\n`),
+  });
+  await periodicJobs.register("image-update", 60_000, () => imageUpdate.tick());
+
   const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
     composeSessionDirectory(db);
   await periodicJobs.register(
@@ -1585,6 +1614,7 @@ export async function bootstrap() {
     harnessCatalog,
     starterKitsRepo: resolvedCatalog,
     kitUpstream,
+    firePair,
     reposService,
     apiKeysModule,
     satellitesBoot,
@@ -1594,6 +1624,7 @@ export async function bootstrap() {
     slackOauthCallbackUrl,
     shareHostGate,
     publicAgentPageService,
+    gettingStarted,
     sessionPresence,
     wakeAgent: wakeAgentFor,
     artifactLibraryFor,
@@ -1672,6 +1703,7 @@ export async function bootstrap() {
     approvalsWakeSaga.unsubscribe();
     usage.stop();
     audit.stop();
+    gettingStarted.stop();
     await agentStateCache.stop();
     await leaderLease.stop();
     liveEventsModule.stop();

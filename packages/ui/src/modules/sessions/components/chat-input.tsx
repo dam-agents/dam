@@ -32,6 +32,7 @@ export interface ChatInputProps {
   loadingSession: boolean;
   onSend: (text: string, attachments?: Attachment[]) => void;
   onStop: () => void;
+  blockedReason?: string | null;
 }
 
 export function ChatInput({
@@ -40,6 +41,7 @@ export function ChatInput({
   loadingSession,
   onSend,
   onStop,
+  blockedReason,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
@@ -56,6 +58,10 @@ export function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useAutoResize(textareaRef, input);
+  useEffect(() => {
+    // UNIT_BOUNDARY_DESCRIPTION: skipped on mobile, where focusing pops the keyboard over the transcript.
+    if (key && !blockedReason && !isMobile()) textareaRef.current?.focus();
+  }, [key, blockedReason, textareaRef]);
 
   const consumeDroppedAttachments = useStore(
     (s) => s.consumeDroppedAttachments,
@@ -175,7 +181,7 @@ export function ChatInput({
   const promptHistory = usePromptHistory(recallPrompt);
 
   const send = useCallback(() => {
-    if (!key) return;
+    if (!key || loadingSession) return;
     const current = useStore.getState().drafts[key] ?? EMPTY_DRAFT;
     const text = current.text.trim();
     const files =
@@ -184,7 +190,7 @@ export function ChatInput({
     promptHistory.reset();
     clearDraft(key);
     onSend(text, files);
-  }, [key, clearDraft, onSend, promptHistory]);
+  }, [key, loadingSession, clearDraft, onSend, promptHistory]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!isMobile() && promptHistory.navigate(e)) {
@@ -197,7 +203,8 @@ export function ChatInput({
     else send();
   };
 
-  const placeholder = isComputing ? "Queue a message..." : "Message...";
+  const placeholder =
+    blockedReason ?? (isComputing ? "Queue a message…" : "Message…");
 
   return (
     <div
@@ -235,10 +242,10 @@ export function ChatInput({
           <div className="flex items-end gap-1 px-2 min-h-[56px]">
             <Button
               variant="ghost"
-              size="icon-sm"
-              className="shrink-0 mb-[9px] h-10 w-10 text-muted-foreground hover:text-primary disabled:opacity-40"
+              size="icon"
+              className="shrink-0 mb-[9px] text-muted-foreground hover:text-primary disabled:opacity-40"
               onClick={() => fileInputRef.current?.click()}
-              disabled={loadingSession || !key}
+              disabled={loadingSession || !key || !!blockedReason}
               aria-label="Attach file"
               tooltip="Attach file"
             >
@@ -256,14 +263,14 @@ export function ChatInput({
               onPaste={onPaste}
               placeholder={placeholder}
               rows={1}
-              disabled={loadingSession || !key}
+              disabled={!key || !!blockedReason}
             />
             {showStop && (
               <Button
                 variant="ghost"
                 tone="danger"
-                size="icon-sm"
-                className="shrink-0 mb-[9px] h-10 w-10"
+                size="icon"
+                className="shrink-0 mb-[9px]"
                 onClick={onStop}
                 aria-label="Stop"
                 tooltip="Stop"
@@ -274,10 +281,12 @@ export function ChatInput({
             {showSend && (
               <Button
                 variant="ghost"
-                size="icon-sm"
-                className={`shrink-0 mb-[9px] h-10 w-10 ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
+                size="icon"
+                className={`shrink-0 mb-[9px] ${hasContent ? "text-foreground" : "text-muted-foreground"} disabled:opacity-40`}
                 onClick={send}
-                disabled={sendDisabled || loadingSession || !key}
+                disabled={
+                  sendDisabled || loadingSession || !key || !!blockedReason
+                }
                 aria-label={isComputing ? "Queue" : "Send"}
                 tooltip={isComputing ? "Queue" : "Send"}
               >
@@ -310,7 +319,7 @@ function AttachmentChip({
       ) : (
         <div className="h-14 px-3 rounded-md border border-border bg-muted flex items-center gap-2">
           <Document size={14} className="text-muted-foreground shrink-0" />
-          <span className="text-[11px] text-foreground/80 truncate max-w-[120px]">
+          <span className="text-2xs text-foreground/80 truncate max-w-[120px]">
             {name}
           </span>
         </div>

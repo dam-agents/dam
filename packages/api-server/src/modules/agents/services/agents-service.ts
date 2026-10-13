@@ -1,3 +1,4 @@
+import { avatarCharacter } from "api-server-api/avatar/svg";
 import {
   DEFAULT_TEMPLATE_ID,
   RETIRED_TEMPLATE_HARNESS,
@@ -40,6 +41,7 @@ import {
   assembleSpecFromImage,
   resolveEffectiveHibernationTimeoutMin,
   type DefaultResourceLimits,
+  type IdleTimeoutMinutes,
 } from "../domain/spec-assembly.js";
 import {
   ANN_AGENT_KIND,
@@ -56,15 +58,17 @@ import {
   executeRuntimeMigration,
   type RuntimeMigrationWrite,
 } from "./runtime-migration.js";
-import type {
-  AgentMount,
-  RuntimeMigrationContext,
+import {
+  type AgentMount,
+  isVmBackend,
+  type RuntimeMigrationContext,
 } from "../domain/runtime-migration.js";
 import { runtimeMigrationPlan } from "../domain/runtime-migration-plan.js";
 import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
 } from "../domain/telemetry-env.js";
+import { isTelegramDirectConversation } from "../domain/telegram-conversation.js";
 import { templateImageUpdate } from "../domain/template-update.js";
 import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
@@ -459,6 +463,7 @@ export function executeSlackBind(deps: {
 
 export function executeTemplateUpgrade(deps: {
   owner: string | undefined;
+  actorKind?: "user" | "system";
   getAgent: (id: string) => Promise<InfraAgent | null>;
   readTemplateSpec: ReadTemplateSpec;
   patchSpec: (
@@ -497,7 +502,7 @@ export function executeTemplateUpgrade(deps: {
     securityLog("info", "agent.upgrade", {
       category: "resource",
       actor: deps.owner ?? null,
-      actorKind: "user",
+      actorKind: deps.actorKind ?? "user",
       agentId: id,
       result: "success",
       detail: {
@@ -530,7 +535,7 @@ export interface ResizeGatePort {
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   agentEnvRepo: AgentEnvRepository;
-  agentIdleTimeoutMinutes: number;
+  agentIdleTimeoutMinutes: IdleTimeoutMinutes;
   owner: string | undefined;
   readTemplateSpec: ReadTemplateSpec;
   presetSeeder?: PresetSeeder;
@@ -718,7 +723,11 @@ export function createAgentsService(deps: {
     if (!infra.templateId) return undefined;
     const tmpl = await deps.readTemplateSpec(infra.templateId);
     if (!tmpl) return undefined;
-    return templateImageUpdate(infra.spec.image, tmpl.spec.image);
+    return templateImageUpdate(
+      infra.spec.image,
+      tmpl.spec.image,
+      infra.imageUpdateRefused,
+    );
   }
 
   async function project(
@@ -791,6 +800,7 @@ export function createAgentsService(deps: {
     slackChannelId: string,
     ambient?: boolean,
     knownWorkspace?: string,
+    customEmoji?: string[] | null,
   ): Promise<ConnectSlackResult> => {
     const infra = await deps.repo.get(id, deps.owner);
     if (!infra) return err({ type: "AgentNotFound" });
@@ -823,6 +833,7 @@ export function createAgentsService(deps: {
           slackChannelId,
           ...(workspace.teamId ? { teamId: workspace.teamId } : {}),
           ...(requestedAmbient ? { ambient: true } : {}),
+          ...(customEmoji !== undefined ? { customEmoji } : {}),
         });
       } catch (e) {
         if (isSlackChannelUniqueViolation(e)) {
@@ -953,7 +964,11 @@ export function createAgentsService(deps: {
           deps.agentIdleTimeoutMinutes,
           status?.preparingWorkspace ?? false,
           templateImage
-            ? templateImageUpdate(infra.spec.image, templateImage)
+            ? templateImageUpdate(
+                infra.spec.image,
+                templateImage,
+                infra.imageUpdateRefused,
+              )
             : undefined,
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],
@@ -1212,6 +1227,7 @@ export function createAgentsService(deps: {
         type: EventType.AgentCreated,
         agentId: agent.id,
         ownerSub: owner,
+        character: avatarCharacter(agent.spec.avatar, owner, agent.name),
       });
       return agent;
     },
@@ -1247,6 +1263,13 @@ export function createAgentsService(deps: {
           deps.resizeLock(`resize:${deps.owner ?? ""}`, async () => {
             const current = await deps.repo.get(input.id, deps.owner);
             if (!current) return null;
+            if (isVmBackend(current.spec)) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message:
+                  "A VM agent has no size: it shares its owner's VM runner.",
+              });
+            }
             if (!current.hibernated && !current.overBudget) {
               const gate = deps.resizeGate;
               if (!gate) {
@@ -1422,6 +1445,7 @@ export function createAgentsService(deps: {
       if (!current) return null;
       const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
         current.spec.hibernationTimeout,
+        current.spec.backend?.type === "vm",
         deps.agentIdleTimeoutMinutes,
       );
       const infra =
@@ -1501,8 +1525,14 @@ export function createAgentsService(deps: {
       await deps.repo.ensureReady(id, opts);
     },
 
-    async connectSlack(id, slackChannelId, ambient) {
-      return connectSlackImpl(id, slackChannelId, ambient);
+    async connectSlack(id, slackChannelId, ambient, customEmoji) {
+      return connectSlackImpl(
+        id,
+        slackChannelId,
+        ambient,
+        undefined,
+        customEmoji,
+      );
     },
 
     async disconnectSlack(id, slackChannelId) {
@@ -1533,7 +1563,11 @@ export function createAgentsService(deps: {
       if (!infra) return err({ type: "AgentNotFound" as const });
       const chats = await binding.listConversations(infra.id);
       return ok({
-        chats: chats.map((c) => ({ conversationId: c.id, title: c.title })),
+        chats: chats.map((c) => ({
+          conversationId: c.id,
+          title: c.title,
+          direct: isTelegramDirectConversation(c.id),
+        })),
       });
     },
 
@@ -1593,7 +1627,10 @@ export function createAgentsService(deps: {
       const flow = await binding.peekFlow(flowId);
       if (!flow) return null;
       if (!deps.owner || flow.keycloakSub !== deps.owner) return null;
-      return { chatTitle: flow.chatTitle ?? null };
+      return {
+        chatTitle: flow.chatTitle ?? null,
+        direct: isTelegramDirectConversation(flow.conversationId),
+      };
     },
 
     async bindSlackChannel(agentId, flowId) {

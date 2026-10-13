@@ -15,22 +15,32 @@ interface Props {
   pendingRestart: PendingRestart;
 }
 
-export function PendingRestartBanner({ agentId, pendingRestart }: Props) {
+export function useApplyPendingRestartWithConfirm(
+  agentId: string,
+  pendingRestart: PendingRestart,
+) {
   const showConfirm = useStore((s) => s.showConfirm);
   const apply = useApplyPendingRestart(agentId);
+  const one = pendingRestart.blockingTasks === 1;
+  return {
+    pending: apply.isPending,
+    apply: async () => {
+      const confirmed = await showConfirm(
+        `The agent reloads its settings, and this stops ${describeRestartStops(pendingRestart.stops)} now. Stopping ${one ? "the task" : "the tasks"} it waits for yourself, or letting ${one ? "it" : "them"} stop at hibernation, also lets the change apply.`,
+        "Apply the settings change now?",
+        {
+          confirmLabel: `Apply now (stops ${countRestartStops(pendingRestart.stops)})`,
+        },
+      );
+      if (confirmed) apply.mutate();
+    },
+  };
+}
+
+export function PendingRestartBanner({ agentId, pendingRestart }: Props) {
+  const restart = useApplyPendingRestartWithConfirm(agentId, pendingRestart);
   const count = pendingRestart.blockingTasks;
   const one = count === 1;
-
-  async function handleApply() {
-    const confirmed = await showConfirm(
-      `The agent reloads its settings, and this stops ${describeRestartStops(pendingRestart.stops)} now. Stopping ${one ? "the task" : "the tasks"} it waits for yourself, or letting ${one ? "it" : "them"} stop at hibernation, also lets the change apply.`,
-      "Apply the settings change now?",
-      {
-        confirmLabel: `Apply now (stops ${countRestartStops(pendingRestart.stops)})`,
-      },
-    );
-    if (confirmed) apply.mutate();
-  }
 
   return (
     <Callout
@@ -46,8 +56,8 @@ export function PendingRestartBanner({ agentId, pendingRestart }: Props) {
         variant="outline"
         size="xs"
         className="shrink-0"
-        disabled={apply.isPending}
-        onClick={() => void handleApply()}
+        disabled={restart.pending}
+        onClick={() => void restart.apply()}
       >
         Apply now
       </Button>

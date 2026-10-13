@@ -113,6 +113,18 @@ export interface ThreadResult {
   cursor?: string;
 }
 
+export interface AttachmentQuery {
+  fileId: string;
+}
+
+export interface AttachmentResult {
+  path: string;
+  name: string;
+  size: number;
+  contentType?: string;
+  conversationId: string;
+}
+
 interface Worker {
   type: ChannelType;
   stopAll(): Promise<void>;
@@ -155,6 +167,10 @@ interface Worker {
     instanceName: string,
     query: ThreadQuery,
   ): Promise<ThreadResult | { error: string }>;
+  fetchAttachment?(
+    instanceName: string,
+    query: AttachmentQuery,
+  ): Promise<AttachmentResult | { error: string }>;
 }
 
 export interface ChannelManager {
@@ -218,6 +234,11 @@ export interface ChannelManager {
     channelType: ChannelType,
     query: ThreadQuery,
   ): Promise<ThreadResult | { error: string }>;
+  fetchAttachment(
+    instanceName: string,
+    channelType: ChannelType,
+    query: AttachmentQuery,
+  ): Promise<AttachmentResult | { error: string }>;
 }
 
 export const channelRpcRequestSchema = z.object({
@@ -233,6 +254,7 @@ export const channelRpcRequestSchema = z.object({
     "resolveConversationLabels",
     "slackConversationStanding",
     "readThread",
+    "fetchAttachment",
   ]),
   args: z.array(z.unknown()),
 });
@@ -264,6 +286,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   resolveConversationLabels: z.tuple([z.array(slackConversationRefSchema)]),
   slackConversationStanding: z.tuple([z.string(), z.string()]),
   readThread: forInstance.rest(z.unknown()),
+  fetchAttachment: forInstance.rest(z.unknown()),
 };
 
 const TRANSPORT_RETRY_MS = 60_000;
@@ -329,6 +352,16 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
       threadTs: z.string(),
       hasMore: z.boolean(),
       cursor: z.string().optional(),
+    }),
+    z.object({ error: z.string() }),
+  ]),
+  fetchAttachment: z.union([
+    z.object({
+      path: z.string(),
+      name: z.string(),
+      size: z.number(),
+      contentType: z.string().optional(),
+      conversationId: z.string(),
     }),
     z.object({ error: z.string() }),
   ]),
@@ -573,6 +606,18 @@ export function createChannelManager(deps: {
         });
       return worker.readThread(instanceName, query);
     },
+    fetchAttachment: (
+      instanceName: string,
+      channelType: ChannelType,
+      query: AttachmentQuery,
+    ) => {
+      const worker = workers.find((w) => w.type === channelType);
+      if (!worker?.fetchAttachment)
+        return Promise.resolve({
+          error: `attachment fetches are not supported on ${channelType}`,
+        });
+      return worker.fetchAttachment(instanceName, query);
+    },
   } as const;
 
   subscriptions.push(
@@ -756,6 +801,14 @@ export function createChannelManager(deps: {
         "readThread",
         [instanceName, channelType, query],
         () => localHandlers.readThread(instanceName, channelType, query),
+      );
+    },
+
+    fetchAttachment(instanceName, channelType, query) {
+      return dispatchResult(
+        "fetchAttachment",
+        [instanceName, channelType, query],
+        () => localHandlers.fetchAttachment(instanceName, channelType, query),
       );
     },
   };

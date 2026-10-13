@@ -1,11 +1,9 @@
-import { Checkmark, Copy } from "@carbon/icons-react";
+import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { useCopy } from "@/hooks/use-copy";
+import { CopyButton } from "@/components/ui/copy-button";
 
 export function CopyableCommand({ command }: { command: string }) {
-  const { copy, state: copyState } = useCopy();
-
+  const [failed, setFailed] = useState(false);
   return (
     <div>
       <div className="flex items-center gap-2 rounded-lg border border-border bg-muted p-2">
@@ -13,25 +11,15 @@ export function CopyableCommand({ command }: { command: string }) {
           <span className="select-none text-muted-foreground">$ </span>
           {command}
         </code>
-        <Button
-          type="button"
+        <CopyButton
+          value={command}
+          label="Copy command"
           variant="outline"
-          size="sm"
-          onClick={() => void copy(command)}
-          className="shrink-0"
-        >
-          {copyState === "copied" ? (
-            <>
-              <Checkmark size={14} /> Copied
-            </>
-          ) : (
-            <>
-              <Copy size={14} /> Copy
-            </>
-          )}
-        </Button>
+          size="icon-sm"
+          onResult={(state) => setFailed(state === "failed")}
+        />
       </div>
-      {copyState === "failed" && (
+      {failed && (
         <p className="mt-1.5 text-xs text-danger">
           Couldn't copy automatically — select the command and copy it manually.
         </p>

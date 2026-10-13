@@ -27,8 +27,8 @@ export function createPresetSeeder(deps: {
         });
         return;
       }
-      for (const host of deps.trustedHosts) {
-        await deps.repo.insert({
+      await deps.repo.insertAll(
+        deps.trustedHosts.map((host) => ({
           id: randomUUID(),
           agentId,
           host,
@@ -37,8 +37,8 @@ export function createPresetSeeder(deps: {
           verdict: "allow",
           decidedBy,
           source: "preset:trusted",
-        });
-      }
+        })),
+      );
     },
   };
 }

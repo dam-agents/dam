@@ -22,6 +22,8 @@ export { createKeycloakUserDirectory } from "./infrastructure/keycloak-user-dire
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
 export { createAgentSweep } from "./services/agent-sweep.js";
 export { createRuntimeMigrationSwitch } from "./services/runtime-migration.js";
+export { createImageUpdate } from "./services/image-update.js";
+export { podIsIdle } from "./infrastructure/pod-status-client.js";
 export {
   AgentWakeTimeoutError,
   isAgentWakeTimeoutError,
@@ -30,8 +32,11 @@ export {
   type WakeFailureCause,
 } from "./domain/wake-failure.js";
 export { isAgentStoppedError } from "./domain/agent-stopped.js";
+export {
+  isNewOutOfMemoryRestart,
+  type PodRestartState,
+} from "./domain/out-of-memory.js";
 export type { AgentsInstallSettings } from "./compose.js";
-export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
 export { createInputFromSetup } from "./domain/agent-setup.js";
 export { agentStreamable } from "./domain/streamable.js";
 export { type PublicAgentPageService } from "./services/public-agent-page-service.js";

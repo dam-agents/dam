@@ -12,7 +12,8 @@ Merge a single campaign's extracted knowledge into the cross-campaign registry.
 
 ## Steps
 
-1. **Resolve campaign**: Use `$ARGUMENTS` as the campaign name. Verify `~/.nous/wiki/campaigns/<campaign-name>/concepts.json` exists.
+1. **Resolve campaign**: Use `$ARGUMENTS` as the campaign name.
+   Verify `~/.nous/wiki/campaigns/<campaign-name>/concepts.json` exists.
 
 2. **Read per-campaign files**: From `~/.nous/wiki/campaigns/<campaign-name>/`:
    - `concepts.json` — contains `repo_path`, `system_name`, `research_question`, `campaign_name`, `date`, plus `entities`, `concepts`, `parameters`
@@ -21,14 +22,17 @@ Merge a single campaign's extracted knowledge into the cross-campaign registry.
    - `frontiers.json` — boundary conditions
    - `interactions.json` — untested combinations
 
-3. **Load existing registry**: Read `~/.nous/wiki/registry.json`. If it doesn't exist, initialize:
+3. **Load existing registry**: Read `~/.nous/wiki/registry.json`.
+   If it doesn't exist, initialize:
    ```json
    {"version": 1, "projects": {}}
    ```
 
-4. **Idempotency check**: Look for this campaign in `projects[repo_path].campaigns[]` by name. If already present, report "Campaign already in registry — skipping" and stop.
+4. **Idempotency check**: Look for this campaign in `projects[repo_path].campaigns[]` by name.
+   If already present, report "Campaign already in registry — skipping" and stop.
 
-5. **Find or create project**: Look up `projects[repo_path]`. If not present, create:
+5. **Find or create project**: Look up `projects[repo_path]`.
+   If not present, create:
    ```json
    {
      "name": "<system_name from concepts.json>",
@@ -41,6 +45,7 @@ Merge a single campaign's extracted knowledge into the cross-campaign registry.
    - Normalize the name (lowercase, strip content in parentheses) for matching
    - Check if an entity with the same normalized name exists in `projects[repo_path].entities[]`
      - If yes: add this campaign name to its `campaigns[]` array (if not already there)
+
      - If no: assign new ID `E-{max_entity_id + 1}`, create entry:
        ```json
        {"id": "E-N", "name": "<entity name>", "aliases": [], "campaigns": ["<campaign-name>"]}
@@ -73,20 +78,27 @@ Merge a single campaign's extracted knowledge into the cross-campaign registry.
 
 9. **Recompute entity clusters**: Using ALL entities in `projects[repo_path].entities[]` and their definitions from per-campaign `concepts.json` files:
 
-   a. For each entity, gather its definition from the campaign(s) that define it (read `~/.nous/wiki/campaigns/<campaign>/concepts.json` → `entities[]` → match by name). If an entity appears in multiple campaigns, concatenate definitions with ` | `.
+   a.
+   For each entity, gather its definition from the campaign(s) that define it (read `~/.nous/wiki/campaigns/<campaign>/concepts.json` → `entities[]` → match by name).
+   If an entity appears in multiple campaigns, concatenate definitions with ` | `.
 
-   b. Semantically group entities by functional role/purpose into clusters. Rules:
-      - Min 2 entities per cluster, max 10
-      - Max 20 clusters total per project — if grouping would exceed 20, merge the smallest/most-similar clusters
-      - Each entity belongs to at most one cluster (singletons are valid — omit them)
-      - Labels: 2-4 words, Title Case, describe the functional group
+   b.
+   Semantically group entities by functional role/purpose into clusters.
+   Rules:
+   - Min 2 entities per cluster, max 10
+   - Max 20 clusters total per project — if grouping would exceed 20, merge the smallest/most-similar clusters
+   - Each entity belongs to at most one cluster (singletons are valid — omit them)
+   - Labels: 2-4 words, Title Case, describe the functional group
 
-   c. Assign sequential IDs `EC-1`, `EC-2`, etc. Set `projects[repo_path].entity_clusters` to:
-      ```json
-      [{"id": "EC-1", "label": "...", "entities": ["E-4", "E-5", "E-6"]}, ...]
-      ```
+   c.
+   Assign sequential IDs `EC-1`, `EC-2`, etc. Set `projects[repo_path].entity_clusters` to:
+   ```json
+   [{"id": "EC-1", "label": "...", "entities": ["E-4", "E-5", "E-6"]}, ...]
+   ```
 
-   d. **CRITICAL**: This step ONLY writes the `entity_clusters` field. Do NOT modify `name`, `campaigns`, `entities`, or any other field on the project or registry.
+   d.
+   **CRITICAL**: This step ONLY writes the `entity_clusters` field.
+   Do NOT modify `name`, `campaigns`, `entities`, or any other field on the project or registry.
 
 10. **Write registry.json**: Write the updated registry to `~/.nous/wiki/registry.json` with 2-space indentation.
 
@@ -101,7 +113,9 @@ Merge a single campaign's extracted knowledge into the cross-campaign registry.
 
 ## Deduplication Rules
 
-- **Everything except entities** (concepts, parameters, dead-ends, frontiers, interactions): Always create new entries. Different campaigns may have similar-sounding entries that are contextually distinct. Never deduplicate these across campaigns.
+- **Everything except entities** (concepts, parameters, dead-ends, frontiers, interactions): Always create new entries.
+  Different campaigns may have similar-sounding entries that are contextually distinct.
+  Never deduplicate these across campaigns.
 
 ## Important Rules
 
@@ -109,4 +123,6 @@ Merge a single campaign's extracted knowledge into the cross-campaign registry.
 - This is the ONLY skill that writes to `registry.json`
 - All metadata (`repo_path`, `system_name`, `research_question`) comes from the per-campaign `concepts.json`, which was populated by `/post-campaign` from the source `campaign.yaml`
 - Process one campaign at a time (read registry → modify → write) to prevent conflicts
-- `entity_clusters` is the ONLY registry field that is recomputed (not appended). It is fully replaced each time a new campaign is indexed. All other data is strictly append-only.
+- `entity_clusters` is the ONLY registry field that is recomputed (not appended).
+  It is fully replaced each time a new campaign is indexed.
+  All other data is strictly append-only.

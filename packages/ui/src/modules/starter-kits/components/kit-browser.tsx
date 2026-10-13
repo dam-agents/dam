@@ -17,9 +17,9 @@ import {
 } from "../lib/catalog-cards.js";
 import { KitCategoryTag } from "./kit-category-tag.js";
 
-export type Filter = StarterKitView["category"] | "all";
+type Filter = StarterKitView["category"] | "all";
 
-export function KitBadges({
+function KitBadges({
   kit,
   templates,
   templateById,
@@ -60,7 +60,7 @@ export function KitCard({
       type="button"
       onClick={onOpen}
       data-testid={`starter-kit-card-${kit.id}`}
-      className="flex flex-col overflow-hidden rounded-xl border border-border bg-card text-left transition-colors hover:border-foreground/20"
+      className="flex flex-col overflow-hidden rounded-lg border border-border bg-card text-left transition-colors hover:border-foreground/20"
     >
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -82,15 +82,9 @@ export function KitCard({
   );
 }
 
-export function useKitFilter(
-  kits: readonly StarterKitView[],
-  initial: Filter = "all",
-  onFilterChange?: (filter: Filter) => void,
-) {
+export function useKitFilter(kits: readonly StarterKitView[]) {
   const [query, setQuery] = useState("");
-  const [localFilter, setLocalFilter] = useState<Filter>(initial);
-  const filter = onFilterChange ? initial : localFilter;
-  const setFilter = onFilterChange ?? setLocalFilter;
+  const [filter, setFilter] = useState<Filter>("all");
 
   const shown = useMemo(
     () =>

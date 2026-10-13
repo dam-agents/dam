@@ -91,6 +91,11 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    ignoredApps: {
+      list: async () => [],
+      ignore: async () => true,
+      unignore: async () => true,
+    },
     setSlackDefault: async () => true,
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
@@ -140,7 +145,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
       });
     },
     async waitFor(done: () => boolean) {
-      for (let i = 0; i < 400 && !done(); i++) await tick();
+      for (let i = 0; i < 40 && !done(); i++) await tick();
     },
   };
 }

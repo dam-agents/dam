@@ -2,7 +2,7 @@
 //MISE description="Architecture pages a branch changes stay within their character budget"
 /* UNIT_BOUNDARY_DESCRIPTION: The cap is a forcing function (consolidate prose, push rationale into an
 ADR), not a byte limit. Only a page this working tree changed against main
-can fail it: two branches can each add prose to a different part of one
+can fail it, and only by growing: two branches can each add prose to a different part of one
 page, each measure green against the base it branched from, and merge over
 the cap, and an over-cap page is wordy, not broken; reding main and every
 branch rebased on it costs more than it is worth. On main nothing differs
@@ -19,8 +19,11 @@ const CAPS = { page: 40000, index: 8000 };
 const ARCH_DIR = join(REPO_ROOT, "docs", "architecture");
 const INDEX_PATH = join(REPO_ROOT, "docs", "architecture.md");
 
+/* UNIT_BOUNDARY_DESCRIPTION: Only letters and digits count. Whitespace, punctuation and
+Markdown syntax do not, so how fix:markdown breaks sentences, indents list items or pads a
+table's columns never changes a page's size. */
 function measure(content) {
-  return content.length;
+  return content.match(/[\p{L}\p{N}]/gu)?.length ?? 0;
 }
 
 function capFor(filePath) {
@@ -35,7 +38,7 @@ function overageReport({ path, size, cap, kind }) {
   const over = size - cap;
   const label = kind === "index" ? "index (always loaded, hardest cap)" : "page";
   return (
-    `${path} is ${size} chars — ${over} over the ${cap}-char ${label} cap.\n` +
+    `${path} is ${size} letters and digits — ${over} over the ${cap} ${label} cap.\n` +
     `Over the cap means the page carries too much, not that it is worded verbosely. It is a signal to re-think what belongs here — do not reword or trim meaning to fit. Diagnose the overflow, then reconcile:\n` +
     `  - most often the page has dropped to the level of the code (field names, mechanics, how-it-works detail). Raise the level or cut it — that content is volatile and belongs nowhere durable;\n` +
     `  - if the page has grown to cover more than one subsystem, split it and reconsider the boundaries;\n` +
@@ -89,6 +92,14 @@ function pagesChangedFromMain() {
   return new Set(`${tracked}\n${untracked}`.split("\n").filter(Boolean));
 }
 
+function sizeOn(ref, path) {
+  try {
+    return measure(execFileSync("git", ["show", `${ref}:${path}`], { cwd: REPO_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }));
+  } catch {
+    return 0;
+  }
+}
+
 function check() {
   const overBudget = [INDEX_PATH, ...listPages()].map(checkFile).filter(Boolean);
   if (!overBudget.length) {
@@ -97,13 +108,14 @@ function check() {
   }
 
   const changed = pagesChangedFromMain();
-  const yours = changed ? overBudget.filter((v) => changed.has(v.path)) : [];
+  const ref = mainRef();
+  const yours = changed ? overBudget.filter((v) => changed.has(v.path) && v.size > sizeOn(ref, v.path)) : [];
   const inherited = overBudget.filter((v) => !yours.includes(v));
 
   for (const v of inherited) {
     process.stdout.write(
-      `⚠️  check:doc-size: ${v.path} is ${v.size} chars, ${v.size - v.cap} over its ` +
-        `${v.cap}-char cap — unchanged here, so not this branch's to fix.\n`
+      `⚠️  check:doc-size: ${v.path} is ${v.size} letters and digits, ${v.size - v.cap} over its ` +
+        `${v.cap} cap — not grown here, so not this branch's to fix.\n`
     );
   }
   if (!yours.length) {

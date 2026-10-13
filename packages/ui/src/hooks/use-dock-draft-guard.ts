@@ -16,6 +16,10 @@ export function useDockDraftGuard() {
 
   return useCallback(async () => {
     if (!openArtifactDirty && !openFileDirty) return true;
-    return showConfirm("Discard unsaved changes?", "Unsaved changes");
+    return showConfirm("Your edits are lost.", "Discard unsaved changes?", {
+      kind: "destructive",
+      confirmLabel: "Discard",
+      cancelLabel: "Keep editing",
+    });
   }, [openArtifactDirty, openFileDirty, showConfirm]);
 }

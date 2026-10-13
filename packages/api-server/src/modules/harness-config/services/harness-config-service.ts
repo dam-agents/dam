@@ -3,6 +3,8 @@ import { emit, EventType } from "../../../events.js";
 import {
   harnessCapability,
   harnessConfigCatalog,
+  routesSessionPairs,
+  sessionSettingsError,
   type HarnessCapability,
   type HarnessConfigCatalog,
 } from "agent-runtime-api";
@@ -142,6 +144,20 @@ export function createHarnessConfigService(deps: {
           code: "BAD_REQUEST",
           message: `the ${pair.harness} harness cannot run on that provider`,
         });
+      const harness = carried.find((h) => h.name === pair.harness);
+      const unsupported = Object.keys(pair.settings ?? {}).find(
+        (id) => !harness?.sessionSettings?.includes(id),
+      );
+      const invalid = unsupported
+        ? `the ${pair.harness} harness cannot keep ${unsupported} as a default`
+        : pair.settings &&
+          sessionSettingsError(
+            harness?.harnessConfigCatalog,
+            pair.settings,
+            pair.model,
+          );
+      if (invalid)
+        throw new TRPCError({ code: "BAD_REQUEST", message: invalid });
       await deps.pairRepo.write(agentId, pair);
     },
   };
@@ -258,7 +274,9 @@ export async function resolveFirePair(
     deps.pairRepo.grantedProviders(agentId),
     deps.getCapabilities(agentId),
   ]);
-  if (requireLeases && !harnessesOf(capabilities)) return undefined;
+  const harnesses = harnessesOf(capabilities);
+  if (requireLeases && !(harnesses && routesSessionPairs(harnesses)))
+    return undefined;
   const agentHarness = defaultHarnessOf(capabilities) ?? deps.catalog.default;
   if (!deps.catalog.harnesses.some((h) => h.name === agentHarness))
     return undefined;

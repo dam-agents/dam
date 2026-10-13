@@ -4,30 +4,30 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@lydell/node-pty": "1.1.0",
+    "@lydell/node-pty": "1.1.0"
+  },
+  "devDependencies": {
     "@trpc/client": "^11.19.0",
     "@trpc/server": "^11.19.0",
+    "@types/busboy": "^1.5.4",
+    "@types/node": "^26.6.4",
+    "@types/ws": "^8.18.2",
     "@xterm/addon-serialize": "0.14.0",
     "@xterm/headless": "6.0.0",
+    "agent-runtime-api": "workspace:*",
+    "api-server-api": "workspace:*",
     "busboy": "^1.6.0",
+    "dev-config": "workspace:*",
     "file-type": "^22.1.1",
     "js-yaml": "^5.4.2",
     "smol-toml": "^1.9.0",
     "tar": "^7.5.22",
     "ts-pattern": "^5.9.0",
-    "ws": "^8.22.0",
-    "zod": "^4.6.5"
-  },
-  "devDependencies": {
-    "@types/busboy": "^1.5.4",
-    "@types/node": "^26.6.3",
-    "@types/ws": "^8.18.1",
-    "agent-runtime-api": "workspace:*",
-    "api-server-api": "workspace:*",
-    "dev-config": "workspace:*",
     "tsup": "^8.5.1",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.3",
+    "ws": "^8.22.0",
+    "zod": "^4.6.6"
   }
 }

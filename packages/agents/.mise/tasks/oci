@@ -7,8 +7,9 @@
 #USAGE flag "--bump" help="With --lock, re-resolve `latest` pins"
 #USAGE flag "--warm" help="Install every image's tools for CI's cache; builds nothing"
 #USAGE arg "[agent]..." var=#true
-# All of packages/agents, or the ones named (the e2e mock too), each named
-# platform-<agent>:latest. The default image is packed onto the shared apt
+# All of packages/agents but the harnesses, or the ones named (the e2e mock
+# too), each named platform-<agent>:latest. A harness is no image of its own:
+# the default image carries every one. The default image is packed onto the shared apt
 # base with image:pack, and every workload and the mock onto the default
 # image; the apt base is the Debian base with its own apt-get run in it under
 # chroot. Off Linux the build runs in the dev cluster's Lima VM
@@ -32,12 +33,15 @@ eval "named=(${usage_agent:-})"
 
 dir_of() { local d; for d in "$agents/$1" "packages/e2e/agents/$1"; do [ -d "$d" ] && { echo "$d"; return; }; done; return 1; }
 tar_of() { $resolve tar-path "$1"; }
+bare_harnesses="$($resolve list-harnesses)"
 if [ ${#named[@]} -eq 0 ]; then
   for d in "$agents"/*/; do
-    [ -f "$d/image.toml" ] && named+=("$(basename "$d")")
+    a="$(basename "$d")"
+    [ -f "$d/image.toml" ] && [[ " $bare_harnesses " != *" $a "* ]] && named+=("$a")
   done
 fi
 for a in "${named[@]}"; do
+  [[ " $bare_harnesses " != *" $a "* ]] || { echo "$a is a harness, not an image: build default" >&2; exit 2; }
   d="$(dir_of "$a")" || { echo "no such agent: $a" >&2; exit 2; }
   [ -f "$d/image.toml" ] || { echo "$a has no image.toml" >&2; exit 2; }
 done
@@ -68,12 +72,10 @@ build_runtime() {
   npm_config_inject_workspace_packages=true \
     pnpm --filter agent-runtime deploy --frozen-lockfile --prod --node-linker=hoisted "$runtime"
   # What pnpm writes for itself, which nothing reads at run time, varies every
-  # build or names the build's directory: its records, pnpm 12's leftover
-  # staging files under random names, and the target each .bin shim notes in a
-  # comment (a shim finds its target by its own path).
+  # build or names the build's directory: its records, and pnpm 12's leftover
+  # staging files under random names.
   rm -f "$runtime"/node_modules/.{modules.yaml,pnpm-workspace-state-v1.json,pnpm/lock.yaml}
   find "$runtime/node_modules" -name '*_pacquet-stage_*' -delete
-  find "$runtime/node_modules/.bin" -type f -exec sed -i '/^# cmd-shim-target=/d' {} +
   cp packages/agent-runtime/package.json "$runtime/package.json"
   (cd "$runtime" && pnpm pkg delete devDependencies)
 }
@@ -161,13 +163,6 @@ warm_mise() (
   PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "$envs" exec -- playwright install chromium
 )
 
-# The default image: base's files and every harness's, with none of their tools,
-# which each node installs into the directory the image names as mise's system
-# data dir, from the tool configs and lockfile it ships in /etc/mise. Each
-# harness's entry points and manifest move under its name, where the image's
-# dispatchers and the agent-runtime find the one PLATFORM_HARNESS names.
-bare_harnesses="claude-code codex pi-agent bob"
-
 # The tables of a mise config that hold tools.
 tools_tables() { awk '/^\[/ { tools = /^\[tools[].]/ } tools'; }
 
@@ -207,6 +202,11 @@ pack_image() {
   echo "OCI layout: $oci_out/$agent"
 }
 
+# The default image: base's files and every harness's, with none of their tools,
+# which each node installs into the directory the image names as mise's system
+# data dir, from the tool configs and lockfile it ships in /etc/mise. Each
+# harness's entry points and manifest move under its name, where the image's
+# dispatchers and the agent-runtime find the one PLATFORM_HARNESS names.
 # Subshell: it leaves the repo's mise context and directory.
 build_default() (
   envs="${bare_harnesses// /,},default"
@@ -229,7 +229,7 @@ build_default() (
   cp -a packages/agent-runtime/dist/js "$b/app/dist"
   install -m 644 packages/driver-sdk/dist/js/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
   install -m 644 packages/driver-sdk-py/src/driver_sdk.py "$b/usr/local/lib/platform-python/driver_sdk.py"
-  install -m 755 "$(command -v mise)" "$b/usr/local/bin/mise"
+  install -D -m 755 "$(command -v mise)" "$stage/build-mise/usr/local/bin/mise"
   for f in "$stage/mise/conf.d/base.toml" "$stage"/mise/conf.d/harness.*.toml; do
     a="$(basename "$f" .toml)"
     [ "$a" != harness.default ] || continue
@@ -258,7 +258,7 @@ build_default() (
   ln -s "${1#"$work"/ms-playwright/}" build/opt/ms-playwright/chromium
   # The browser panel's stream server, Selkies, with its Python packages
   # installed for the image's Python.
-  PLATFORM_SELKIES_PYTHON="$(mise -E "$envs" which python3)" "$root/$agents/base/selkies/build.sh" build
+  PLATFORM_SELKIES_PYTHON="$(mise -E "$envs" which python3)" "$root/$agents/base/selkies/build.sh" build-selkies
   # docker finds a CLI plugin in its plugin directory, not on PATH.
   for p in buildx compose; do
     ln -s "$(realpath -m --relative-to=/usr/local/lib/docker/cli-plugins "$tools_root/$(realpath --relative-to="$MISE_DATA_DIR" "$(mise -E "$envs" where "github:docker/$p")")")/docker-$p" \
@@ -269,7 +269,11 @@ build_default() (
   # Each tool's bin directory where the node installs it, ahead of base's PATH.
   path="$(mise -E "$envs" bin-paths | sed "s|^$MISE_DATA_DIR/|$tools_root/|" | paste -sd: -)"
   base_path="$(printf '%s\n' "${flags[@]}" | sed -n 's/^--env=PATH=//p')"
-  pack_image default "$apt_base" build "${flags[@]}" "--env=PATH=$path:$base_path" \
+  # Selkies and mise, which change only with their pins, are layers of their
+  # own under the rest, which every agent-runtime change rewrites: a deploy
+  # pulls that top layer alone.
+  pack_image default "$apt_base" build --root-layer=build-selkies --root-layer=build-mise \
+    "${flags[@]}" "--env=PATH=$path:$base_path" \
     --env=MISE_DATA_DIR=/usr/local/share/mise --env=MISE_CONFIG_DIR=/etc/mise
 )
 
@@ -354,9 +358,15 @@ sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
 # and once a day for updates. The base's root is exported, and its own apt-get
 # runs in it under chroot, in a mount namespace of its own, as a Dockerfile's
 # RUN would; the root is then one layer, with the owners its packages gave it.
-# Root, and the host's architecture.
+# The layer follows the packages alone, so a rebuild with no package update
+# keeps its digest and a deploy pulls none of it: what the install stamps with
+# its own time is set to the base's creation time (shadow's password dates
+# read it as SOURCE_DATE_EPOCH, every path the install touched gets it as its
+# mtime), and its logs and caches go. A package's own files keep the mtimes
+# it shipped, which its Python bytecode records. Root, and the host's
+# architecture.
 build_apt_base() {
-  local key from r packages layer d config manifest
+  local key from r packages layer d config manifest platform epoch
   apt_base="$state/apt-base"
   from="$(mise config get -f .mise/config.toml vars.base_image_debian)"
   key="$({ cat "$agents/base/apt.txt"; echo "$from"; } | sha256sum | cut -c1-16)-$(date -u +%F)"
@@ -364,25 +374,35 @@ build_apt_base() {
   r="$work/apt-root"
   ${sudo[@]+"${sudo[@]}"} rm -rf "$r" "$apt_base"
   mkdir -p "$r" "$apt_base/blobs/sha256"
-  crane export --platform "linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')" "$from" - |
+  platform="linux/$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')"
+  epoch="$(date -u -d "$(crane config --platform "$platform" "$from" | jq -r .created)" +%s)"
+  crane export --platform "$platform" "$from" - |
     ${sudo[@]+"${sudo[@]}"} tar -xf - -C "$r"
   packages="$(grep -v '^#' "$agents/base/apt.txt" | xargs)"
   # policy-rc.d keeps a package's postinst from starting its service here. The
   # trust store is the agent's, which the entrypoint fills; the host keys
-  # openssh-server's postinst generated would be every image's.
+  # openssh-server's postinst generated would be every image's. Every image
+  # already shares one machine id, so it is one that follows the package list.
   ${sudo[@]+"${sudo[@]}"} unshare --mount --propagation private sh -euc '
-    r=$1 packages=$2
+    r=$1 packages=$2 epoch=$3 machine_id=$4
+    touch -d "@$(($(date +%s) - 1))" "$r/.apt-start"
     mount --rbind /dev "$r/dev"
     mount -t proc proc "$r/proc"
     mount -t sysfs sys "$r/sys"
     cp -L /etc/resolv.conf "$r/etc/resolv.conf"
     printf "#!/bin/sh\nexit 101\n" > "$r/usr/sbin/policy-rc.d"
     chmod 755 "$r/usr/sbin/policy-rc.d"
-    chroot "$r" sh -euc "apt-get update -q && apt-get install -qy --no-install-recommends $packages && apt-get clean" </dev/null
-    rm -rf "$r"/var/lib/apt/lists/* "$r/usr/sbin/policy-rc.d" "$r"/etc/ssh/ssh_host_*
+    chroot "$r" env SOURCE_DATE_EPOCH="$epoch" sh -euc "apt-get update -q && apt-get install -qy --no-install-recommends $packages && apt-get clean" </dev/null
+    umount -R "$r/dev" "$r/proc" "$r/sys"
+    rm -rf "$r"/var/lib/apt/lists/* "$r/usr/sbin/policy-rc.d" "$r"/etc/ssh/ssh_host_* \
+      "$r"/var/log/*.log "$r"/var/log/apt/* "$r"/var/cache/ldconfig/aux-cache "$r"/var/cache/debconf/*-old
+    for f in etc/machine-id var/lib/dbus/machine-id; do [ ! -e "$r/$f" ] || echo "$machine_id" > "$r/$f"; done
     chown -R 65532:0 "$r/etc/ssl/certs" "$r/usr/local/share/ca-certificates"
     : > "$r/etc/resolv.conf"
-  ' _ "$r" "$packages"
+    find "$r" -xdev -newer "$r/.apt-start" -exec touch -h -d "@$epoch" {} +
+    rm "$r/.apt-start"
+    touch -h -d "@$epoch" "$r"
+  ' _ "$r" "$packages" "$epoch" "$(echo "${key%%-*}" | md5sum | cut -c1-32)"
   layer="$work/apt-layer.tar"
   ${sudo[@]+"${sudo[@]}"} tar --sort=name --numeric-owner --format=gnu -C "$r" -cf "$layer" $(ls -A "$r")
   ${sudo[@]+"${sudo[@]}"} rm -rf "$r"

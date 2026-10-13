@@ -2,7 +2,6 @@ import {
   ChevronDown,
   ChevronUp,
   Launch,
-  OverflowMenuHorizontal,
   Renew,
   Time,
   TrashCan,
@@ -13,17 +12,11 @@ import { useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
-import { cn } from "@/lib/utils";
 
 import { isDrifted } from "./skill-drift.js";
 import { SkillRow } from "./skill-row.js";
@@ -47,7 +40,7 @@ function ScanFreshness({
   return (
     <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
       {rescanning ? (
-        <Spinner size={13} label="Re-scanning this source" />
+        <Spinner size={14} label="Re-scanning this source" />
       ) : (
         <Time size={13} />
       )}
@@ -153,11 +146,11 @@ export function SkillSourceCard({
   const canRemove = !source.system && !source.fromTemplate;
 
   return (
-    <Card className={cn(readOnly && "bg-muted")}>
+    <div>
       <div className="flex items-center gap-3 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className="truncate text-[15px] font-semibold text-foreground">
+            <p className="truncate text-md font-medium text-foreground">
               {source.name}
             </p>
             {loaded && (
@@ -168,7 +161,7 @@ export function SkillSourceCard({
             {}
             {visibility === "private" && (
               <Badge
-                variant="template"
+                variant="muted"
                 className="shrink-0"
                 title="Only readable through this agent's GitHub connection"
               >
@@ -190,7 +183,7 @@ export function SkillSourceCard({
             />
           )}
           {!scannedAt && loading && (
-            <Spinner size={15} label="Scanning this source" />
+            <Spinner size={14} label="Scanning this source" />
           )}
           {}
           {onToggleAll && !readOnly && loaded && (
@@ -202,7 +195,7 @@ export function SkillSourceCard({
                 onToggleAll(!bulkAllOn, filtering ? visible : undefined)
               }
             >
-              {bulkBusy && <Spinner size={13} />}
+              {bulkBusy && <Spinner size={14} />}
               {filtering
                 ? `${bulkAllOn ? "Disable" : "Enable"} ${bulkList.length} matching`
                 : bulkAllOn
@@ -211,40 +204,28 @@ export function SkillSourceCard({
             </Button>
           )}
           {}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Source actions"
-                className="shrink-0 text-muted-foreground"
-              >
-                <OverflowMenuHorizontal size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem
-                disabled={loading || revalidating}
-                onSelect={onRescan}
-              >
-                Re-scan
+          <RowActionsMenu label="Source actions">
+            <DropdownMenuItem
+              disabled={loading || revalidating}
+              onSelect={onRescan}
+            >
+              Re-scan
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() =>
+                window.open(source.gitUrl, "_blank", "noopener,noreferrer")
+              }
+            >
+              <span className="flex-1">View repo</span>
+              <Launch size={14} />
+            </DropdownMenuItem>
+            {canRemove && (
+              <DropdownMenuItem tone="danger" onSelect={onRemove}>
+                <TrashCan size={14} />
+                <span className="flex-1">Remove source</span>
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() =>
-                  window.open(source.gitUrl, "_blank", "noopener,noreferrer")
-                }
-              >
-                <span className="flex-1">View repo</span>
-                <Launch size={14} />
-              </DropdownMenuItem>
-              {canRemove && (
-                <DropdownMenuItem tone="danger" onSelect={onRemove}>
-                  <TrashCan size={14} />
-                  <span className="flex-1">Remove source</span>
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            )}
+          </RowActionsMenu>
         </div>
       </div>
 
@@ -296,6 +277,6 @@ export function SkillSourceCard({
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
       )}
-    </Card>
+    </div>
   );
 }

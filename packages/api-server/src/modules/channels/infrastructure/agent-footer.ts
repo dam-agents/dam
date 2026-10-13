@@ -1,6 +1,11 @@
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
+import { promptSafeName } from "../inbound-file.js";
 
-import type { SlackBlock, SlackMessage } from "./slack-gateway.js";
+import type {
+  SlackBlock,
+  SlackImageFile,
+  SlackMessage,
+} from "./slack-gateway.js";
 
 const PUBLIC_AGENT_PATH = "/a/";
 
@@ -13,7 +18,10 @@ export interface AgentFooter {
   agentId: string;
   label: string;
   sessionId?: string;
+  ambientRound?: boolean;
 }
+
+const AMBIENT_ROUND_PARAM = "via=ambient";
 
 function escapeLinkLabel(name: string): string {
   return name
@@ -36,10 +44,12 @@ export function agentFooterLabel(
 
 export function agentFooterMrkdwn(footer: AgentFooter): string {
   const label = escapeLinkLabel(footer.label);
-  const session = footer.sessionId
-    ? `?s=${encodeURIComponent(footer.sessionId)}`
-    : "";
-  return `<${footer.uiBaseUrl}${PUBLIC_AGENT_PATH}${footer.agentId}${session}|${label || footer.agentId}>`;
+  const params = [
+    ...(footer.sessionId ? [`s=${encodeURIComponent(footer.sessionId)}`] : []),
+    ...(footer.ambientRound ? [AMBIENT_ROUND_PARAM] : []),
+  ];
+  const query = params.length > 0 ? `?${params.join("&")}` : "";
+  return `<${footer.uiBaseUrl}${PUBLIC_AGENT_PATH}${footer.agentId}${query}|${label || footer.agentId}>`;
 }
 
 export function agentContextBlock(footer: AgentFooter): SlackBlock {
@@ -51,6 +61,10 @@ export function agentContextBlock(footer: AgentFooter): SlackBlock {
 
 const FOOTER_RE = new RegExp(
   `<[^>|]*(?:${PUBLIC_AGENT_PATH}|${CHAT_PATH}|${LEGACY_AGENT_PATH})(agent-[A-Za-z0-9]+)(?:[/?][^>|]*)?\\|[^>]*>`,
+);
+
+const FOOTER_AMBIENT_ROUND_RE = new RegExp(
+  `${PUBLIC_AGENT_PATH}agent-[A-Za-z0-9]+\\?(?:[^|>]*&)?${AMBIENT_ROUND_PARAM}(?:[&|>])`,
 );
 
 const FOOTER_SESSION_RE = new RegExp(
@@ -78,6 +92,12 @@ export function parseAgentFooter(
   return null;
 }
 
+export function footerMarksAmbientRound(message: SlackMessage): boolean {
+  return footerTexts(message).some((text) =>
+    FOOTER_AMBIENT_ROUND_RE.test(text),
+  );
+}
+
 export function footerSessionId(message: SlackMessage): string | null {
   for (const text of footerTexts(message)) {
     const match = text.match(FOOTER_SESSION_RE);
@@ -93,6 +113,12 @@ const THREAD_MARKER_NOTE =
   `${OUTBOUND_TOOL_PREFIX}read_thread, passing that ts as threadTs, ` +
   "before treating the line as unanswered.";
 
+const ATTACHMENT_MARKER_NOTE =
+  "A line with an [attachment: ...] tag had that file or image attached, " +
+  "and its contents are not shown here. When what you are asked depends on " +
+  `it, fetch it with ${OUTBOUND_TOOL_PREFIX}fetch_message_attachment, ` +
+  "passing the tag's fileId — do not guess at what it contains.";
+
 export type HistoryShape = "thread" | "direct-message" | "channel";
 
 const THREAD_WINDOW_NOTE =
@@ -101,13 +127,21 @@ const THREAD_WINDOW_NOTE =
 
 export function historyPreamble(
   shape: HistoryShape,
-  opts: { hasThreadMarker?: boolean; windowed?: boolean } = {},
+  opts: {
+    hasThreadMarker?: boolean;
+    hasAttachmentMarker?: boolean;
+    windowed?: boolean;
+  } = {},
 ): string {
+  const attachments = opts.hasAttachmentMarker
+    ? `${ATTACHMENT_MARKER_NOTE} `
+    : "";
   if (shape === "thread") {
     return (
       "The conversation history below is the thread this turn was posted " +
       "into: one conversation, and the context for answering it. " +
       (opts.windowed ? `${THREAD_WINDOW_NOTE} ` : "") +
+      attachments +
       "Answer what follows the history, not the history itself."
     );
   }
@@ -117,6 +151,7 @@ export function historyPreamble(
       "person: one conversation, and the context for answering what " +
       "follows. " +
       (opts.hasThreadMarker ? `${THREAD_MARKER_NOTE} ` : "") +
+      attachments +
       "Answer what follows the history, not the history itself."
     );
   }
@@ -127,6 +162,7 @@ export function historyPreamble(
     "be interleaved here, and the time on each line is the cue for where " +
     "one ends and the next begins. " +
     (opts.hasThreadMarker ? `${THREAD_MARKER_NOTE} ` : "") +
+    attachments +
     "It is background — it tells you what has been going on here. Answer " +
     "what follows the history, not the history itself, and leave an older " +
     "topic alone unless what follows asks about it."
@@ -185,6 +221,7 @@ export function catchUpLegend(
     botLabel: string | null;
     someOmitted?: boolean;
     hasThreadMarker?: boolean;
+    hasAttachmentMarker?: boolean;
   },
 ): string {
   const omitted = opts.someOmitted
@@ -201,6 +238,7 @@ export function catchUpLegend(
     "on it is the right outcome, not a failure. Don't repeat or contradict " +
     "what another agent already said. " +
     (opts.hasThreadMarker === true ? `${THREAD_MARKER_NOTE} ` : "") +
+    (opts.hasAttachmentMarker === true ? `${ATTACHMENT_MARKER_NOTE} ` : "") +
     historyLegend(canLookupUsers, opts)
   );
 }
@@ -238,7 +276,15 @@ export function labelHistoryMessage(
   const when = message.ts ? ` [${formatSlackTs(message.ts)}]` : "";
   const edited = message.edited ? " (edited)" : "";
   const marker = opts.showThreadMarkers ? threadMarker(message) : "";
-  return `${label}${when}: ${message.text ?? ""}${edited}${marker}`;
+  const attached = (message.attachments ?? []).map(attachmentMarker).join("");
+  return `${label}${when}: ${message.text ?? ""}${edited}${attached}${marker}`;
+}
+
+function attachmentMarker(file: SlackImageFile): string {
+  const name = promptSafeName(file.name.replace(/[[\]"]/g, " "));
+  const type = file.mimetype ? `, ${file.mimetype}` : "";
+  const size = file.size ? `, ${(file.size / 1_000_000).toFixed(1)} MB` : "";
+  return ` [attachment: "${name}"${type}${size}, fileId ${file.id}]`;
 }
 
 function threadMarker(message: SlackMessage): string {

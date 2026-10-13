@@ -24,7 +24,6 @@ export function useArtifact(id: string | null) {
   return useQuery({
     ...trpc.artifactLibrary.get.queryOptions(id ? { id } : skipToken),
     retry: false,
-    meta: { errorToast: "Couldn't load artifact" },
   });
 }
 

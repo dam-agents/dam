@@ -4,6 +4,8 @@ import {
   FolderAdd,
   Folders,
   Upload,
+  View,
+  ViewOff,
 } from "@carbon/icons-react";
 import type { CSSProperties, Ref } from "react";
 
@@ -15,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { useStore } from "../../../store.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { DirContents } from "./dir-contents.js";
 import {
@@ -38,36 +41,53 @@ export function FilesPanel({
   ref?: Ref<HTMLDivElement>;
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
 }) {
-  const controller = useFilesPanelController({ onOpenFile });
+  const controller = useFilesPanelController({ open, onOpenFile });
+  const showHiddenFiles = useStore((s) => s.showHiddenFiles);
+  const setShowHiddenFiles = useStore((s) => s.setShowHiddenFiles);
+  const hiddenFilesLabel = showHiddenFiles
+    ? "Hide hidden files"
+    : "Show hidden files";
 
-  const addMenu = (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="xs"
-          className="text-sm"
-          disabled={controller.isUploading}
-          tooltip={controller.isUploading ? "Upload in progress…" : undefined}
-        >
-          <Add size={12} /> Add
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => controller.openFilePickerFor("")}>
-          <Upload size={13} /> Upload file
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={controller.openFolderPicker}>
-          <Folders size={13} /> Upload folder
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => controller.startNewIn("file", "")}>
-          <DocumentAdd size={13} /> New file
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => controller.startNewIn("dir", "")}>
-          <FolderAdd size={13} /> New folder
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+  const headerActions = (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        aria-label={hiddenFilesLabel}
+        aria-pressed={showHiddenFiles}
+        tooltip={hiddenFilesLabel}
+        onClick={() => setShowHiddenFiles(!showHiddenFiles)}
+      >
+        {showHiddenFiles ? <View size={14} /> : <ViewOff size={14} />}
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="xs"
+            className="text-sm"
+            disabled={controller.isUploading}
+            tooltip={controller.isUploading ? "Upload in progress…" : undefined}
+          >
+            <Add size={14} /> Add
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => controller.openFilePickerFor("")}>
+            <Upload size={14} /> Upload file
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={controller.openFolderPicker}>
+            <Folders size={14} /> Upload folder
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => controller.startNewIn("file", "")}>
+            <DocumentAdd size={14} /> New file
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => controller.startNewIn("dir", "")}>
+            <FolderAdd size={14} /> New folder
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 
   return (
@@ -75,7 +95,7 @@ export function FilesPanel({
       title="Files"
       open={open}
       onToggle={onToggle}
-      headerRight={addMenu}
+      headerRight={headerActions}
       className={className}
       headerClassName="border-t border-border"
       style={style}
@@ -105,7 +125,7 @@ export function FilesPanel({
         onDragLeave={controller.handlePanelDragLeave}
         onDrop={controller.handlePanelDrop}
       >
-        {controller.ctxValue && (
+        {open && controller.ctxValue && (
           <FilesPanelContext.Provider value={controller.ctxValue}>
             {controller.pendingNew && controller.pendingNew.dir === "" && (
               <InlineNameRow
@@ -120,6 +140,7 @@ export function FilesPanel({
                 onCancel={controller.handleCancelNew}
               />
             )}
+            {controller.rootLoading && <FileListSkeleton />}
             {controller.rootIsLoadedEmpty && (
               <p className="px-4 py-5 text-xs text-muted-foreground">
                 No files yet
@@ -137,5 +158,19 @@ export function FilesPanel({
         )}
       </div>
     </SidebarSection>
+  );
+}
+
+function FileListSkeleton() {
+  return (
+    <div aria-hidden className="animate-pulse">
+      {["w-1/3", "w-1/2", "w-2/5"].map((width) => (
+        <div key={width} className="px-4 py-1.5 text-sm">
+          <span
+            className={`inline-block h-[0.7em] ${width} rounded bg-muted align-middle`}
+          />
+        </div>
+      ))}
+    </div>
   );
 }

@@ -76,6 +76,26 @@ describe("k8s agent watch", () => {
     expect(hints).toHaveLength(3);
   });
 
+  // TEST_SCENARIO: a booting agent's ready write often lands inside the window its last progress write opened, and the loading screen waits on that hint. A change of the Ready condition goes out at once, inside the window or not, and leaves no trailing hint behind it, since it already carried the latest state.
+  it("hints a Ready change at once, even inside the window", async () => {
+    const { hints, conns } = harness();
+    const conn = conns[0]!;
+    const withReady = (status: string, message: string) => ({
+      ...agent("a"),
+      status: { conditions: [{ type: "Ready", status, message }] },
+    });
+
+    conn.onEvent("ADDED", withReady("False", "booting"));
+    conn.onEvent("MODIFIED", withReady("False", "guest starting"));
+    expect(hints).toHaveLength(1);
+
+    conn.onEvent("MODIFIED", withReady("True", ""));
+    expect(hints).toHaveLength(2);
+
+    await vi.advanceTimersByTimeAsync(2);
+    expect(hints).toHaveLength(2);
+  });
+
   // TEST_SCENARIO: a watch replay carries no synthetic DELETED — an agent deleted during a reconnect gap must still get a hint once the replay settles, or open tabs show it forever.
   it("hints an agent missing from the reconnect replay", async () => {
     const { hints, conns, watch } = harness();
@@ -124,6 +144,15 @@ describe("k8s agent watch", () => {
     watch.stop();
   });
 
+  // TEST_SCENARIO: client-node ends every watch after 30 s with a TimeoutError. That is the normal end of a watch, so the watch opens again at once: a 5 s retry wait every 30 s would hold back the hints of one change in seven.
+  it("reconnects at once when the watch ends on its timeout", async () => {
+    const { conns, watch } = harness();
+
+    conns[0]!.onEnd(new DOMException("timed out", "TimeoutError"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(conns).toHaveLength(2);
+    watch.stop();
+  });
   // TEST_SCENARIO: after a reconnect, stop() must reach the connection that is live now, not the one that ended.
   it("stop() closes the reconnected connection", async () => {
     const { conns, watch } = harness();

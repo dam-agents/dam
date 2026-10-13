@@ -70,6 +70,7 @@ const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_ENV_FORCE_RECYCLE_MS = 60 * 1000;
 
 const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
+const DEFAULT_SPAWN_WORK_TIMEOUT_MS = 5 * 1000;
 
 const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
 
@@ -96,12 +97,14 @@ export interface AcpRuntimeStatus {
 
 export interface AcpRuntime {
   attach(channel: ClientChannel, opts?: { viewer?: boolean }): void;
+  prestart(): void;
   status(): AcpRuntimeStatus;
   isSessionRunning(sessionId: string): boolean;
   sessionFrames(sessionId: string): { frames: string[]; truncated: boolean };
   resetSession(sessionId: string): void;
   markSessionCold(sessionId: string): void;
   releaseSession(sessionId: string): void;
+  syncSessionSettings(sessionId: string): void;
   holdsSessions(): boolean;
   refreshEnv(opts: { force: boolean }): void;
   recycleForConfig(): void;
@@ -126,6 +129,7 @@ export interface AcpRuntimeDeps {
   idleReapDelayMs?: number;
   envReadyAtBoot?: boolean;
   warmStartTimeoutMs?: number;
+  spawnWorkTimeoutMs?: number;
   beforeSpawn?: () => Promise<void>;
   logBytesCap?: number;
   replayTailEvents?: number;
@@ -145,6 +149,13 @@ export interface AcpRuntimeDeps {
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
   onHarnessExited?: () => void;
+  sessionSettingFrames?: (sessionId: string) => SessionSettingFrame[];
+  modeSettingId?: string;
+}
+
+export interface SessionSettingFrame {
+  method: string;
+  params: Record<string, unknown>;
 }
 
 export const SCHEDULE_SURFACE = "schedule";
@@ -165,6 +176,7 @@ interface OutboundMapping {
   attachSessionId: string | null;
   platformMeta: PlatformSessionMeta | null;
   rehydrate?: boolean;
+  settingSessionId?: string;
 }
 
 export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
@@ -266,7 +278,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.log?.(
         `${String(dropped.length)} queued prompt(s) for ${sessionId} undelivered: ${cause}`,
       );
-      if (cause === "park-expired") maybeCloseIdleSession(sessionId);
+      if (cause !== "park-expired") return;
+      maybeCloseIdleSession(sessionId);
+      lease.maybeRecycle();
     },
     ...(deps.queueParkMs !== undefined
       ? { queueParkMs: deps.queueParkMs }
@@ -357,6 +371,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const harnessColdSessions = new Set<string>();
+  const appliedSettings = new Map<string, Map<string, string>>();
+  const settingsChannel: ClientChannel = {
+    send() {},
+    close() {},
+    isOpen: () => true,
+    onMessage() {},
+    onClose() {},
+  };
   const turnModels = new Map<string, string>();
   const runTextBuffers = new Map<
     string,
@@ -495,10 +517,44 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const error = (frame as { error?: unknown }).error;
     if (error === undefined) {
       harnessColdSessions.delete(sessionId);
+      appliedSettings.delete(sessionId);
+      syncSettings(sessionId);
       promptScheduler.onSessionReady(sessionId);
       return;
     }
     promptScheduler.refuseQueue(sessionId, rehydrateFailureMessage(error));
+  }
+
+  function syncSettings(sessionId: string): void {
+    if (harnessColdSessions.has(sessionId)) return;
+    const applied = appliedSettings.get(sessionId) ?? new Map<string, string>();
+    appliedSettings.set(sessionId, applied);
+    for (const frame of deps.sessionSettingFrames?.(sessionId) ?? []) {
+      const { method, params } = frame;
+      const key = settingKeyOf(frame);
+      const value = JSON.stringify(params);
+      if (applied.get(key) === value) continue;
+      applied.set(key, value);
+      const outboundId = nextOutboundId++;
+      outboundIdToClient.set(outboundId, {
+        channel: settingsChannel,
+        originalId: null,
+        method,
+        promptSessionId: null,
+        attachSessionId: null,
+        platformMeta: null,
+        settingSessionId: sessionId,
+      });
+      promptScheduler.submitSetting({
+        sessionId,
+        channel: settingsChannel,
+        outboundId,
+        originalId: outboundId,
+        frame: { jsonrpc: "2.0", id: outboundId, method, params },
+        promptId: null,
+        unattended: true,
+      });
+    }
   }
 
   const teardownCloseByReason: Record<
@@ -521,6 +577,24 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function teardownRuntime(reason: HarnessTeardownReason): void {
     shuttingDown = reason === "shutdown";
     const close = teardownCloseByReason[reason];
+    const unanswered = [
+      ...[...outboundIdToClient.values()]
+        .filter((m) => m.promptSessionId === null && m.originalId !== null)
+        .map((m) => ({ channel: m.channel, id: m.originalId })),
+      ...(initializeWaiters ?? []),
+    ];
+    for (const { channel, id } of unanswered) {
+      if (!channel) continue;
+      sendToChannel(
+        channel,
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32000, message: close.message },
+        }),
+      );
+    }
+    outboundIdToClient.clear();
     for (const channel of engagedSessions.keys()) {
       channel.close(close.code, close.message);
     }
@@ -539,6 +613,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     runTextBuffers.clear();
     turnModels.clear();
     harnessColdSessions.clear();
+    appliedSettings.clear();
     rehydratingSessions.clear();
     sessionCloseSupported = true;
     sessionResumeSupported = false;
@@ -609,6 +684,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     describeBusy,
     envReadyAtBoot: deps.envReadyAtBoot ?? true,
     warmStartTimeoutMs,
+    spawnWorkTimeoutMs:
+      deps.spawnWorkTimeoutMs ?? DEFAULT_SPAWN_WORK_TIMEOUT_MS,
     envForceRecycleMs,
     keptTasks: keptTaskCount,
     onPendingChange: () => checkPendingRestart(),
@@ -737,6 +814,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       });
     }
     harnessColdSessions.delete(sessionId);
+    appliedSettings.delete(sessionId);
     rehydratingSessions.delete(sessionId);
     const rehydrateTimer = rehydrateTimers.get(sessionId);
     if (rehydrateTimer) clearTimeout(rehydrateTimer);
@@ -847,7 +925,20 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             deps.sessionMetadata
           ) {
             deps.sessionMetadata.set(sidFromResult, mapping.platformMeta ?? {});
+            syncSettings(sidFromResult);
           }
+        }
+
+        if (mapping.settingSessionId !== undefined) {
+          const error = (frame as { error?: { message?: unknown } }).error;
+          if (error !== undefined && mapping.channel === settingsChannel)
+            deps.log?.(
+              `session setting ${mapping.method} for ${mapping.settingSessionId} refused: ${String(error.message)}`,
+            );
+          promptScheduler.onSettingResponse(
+            mapping.settingSessionId,
+            outboundId,
+          );
         }
 
         if (mapping.attachSessionId) {
@@ -856,9 +947,22 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           } else if (mapping.method === "session/load") {
             bootstrap.onLoadResponse(mapping.attachSessionId, frame);
           }
+          if (
+            !mapping.rehydrate &&
+            (mapping.method === "session/load" ||
+              mapping.method === "session/resume") &&
+            (frame as { error?: unknown }).error === undefined
+          ) {
+            appliedSettings.delete(mapping.attachSessionId);
+            syncSettings(mapping.attachSessionId);
+          }
         }
 
-        if (mapping.channel && mapping.originalId !== null) {
+        if (
+          mapping.channel &&
+          mapping.channel !== settingsChannel &&
+          mapping.originalId !== null
+        ) {
           const responseFrame =
             mapping.method === "session/list" && deps.sessionMetadata
               ? injectPlatformMetaIntoList(
@@ -925,8 +1029,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             reportTurnEnd(sid, buffer);
           }
           maybeCloseIdleSession(sid);
-          if (turnEnded) lease.maybeRecycle();
         }
+        lease.maybeRecycle();
       }
       return;
     }
@@ -950,6 +1054,22 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       } else {
         const reportedModel = extractReportedModel(frame);
         if (reportedModel !== null) turnModels.set(sessionId, reportedModel);
+        const reportedMode = extractReportedMode(frame);
+        if (reportedMode !== null) {
+          appliedSettings
+            .get(sessionId)
+            ?.set(
+              MODE_SETTING_KEY,
+              JSON.stringify({ sessionId, modeId: reportedMode }),
+            );
+          const entry = deps.sessionMetadata?.get(sessionId);
+          const id = deps.modeSettingId;
+          if (id && entry && entry.meta.settings?.[id] !== reportedMode)
+            deps.sessionMetadata?.set(sessionId, {
+              ...entry.meta,
+              settings: { ...entry.meta.settings, [id]: reportedMode },
+            });
+        }
         const text = extractAgentTextChunk(frame);
         if (
           text !== null &&
@@ -978,7 +1098,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
 
     if (isResponse(frame)) {
-      pendingRequests.answer(frame);
+      if (pendingRequests.answer(frame)) lease.maybeRecycle();
       return;
     }
 
@@ -1182,6 +1302,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         promptSessionId,
         attachSessionId: null,
         platformMeta,
+        ...(settingSessionId !== null && { settingSessionId }),
       });
 
       if (promptSessionId !== null) {
@@ -1298,6 +1419,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       cancelReady = lease.whenReady(release);
     },
 
+    prestart() {
+      lease.whenReady(() => lease.ensure());
+    },
+
     status() {
       return {
         idle: !runtimeBusy(),
@@ -1320,6 +1445,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     markSessionCold(sessionId) {
       harnessColdSessions.add(sessionId);
+      appliedSettings.delete(sessionId);
+    },
+
+    syncSessionSettings(sessionId) {
+      syncSettings(sessionId);
     },
 
     releaseSession(sessionId) {
@@ -1579,6 +1709,24 @@ function extractReportedModel(frame: unknown): string | null {
   const model = update._meta[REPORTED_MODEL_META_KEY];
   return typeof model === "string" && model !== "" && model !== "<synthetic>"
     ? model
+    : null;
+}
+
+const MODE_SETTING_KEY = "session/set_mode:";
+
+function settingKeyOf({ method, params }: SessionSettingFrame): string {
+  return `${method}:${String(params.configId ?? "")}`;
+}
+
+function extractReportedMode(frame: unknown): string | null {
+  if (!isNonNullObject(frame) || frame.method !== "session/update") return null;
+  const params = frame.params;
+  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return null;
+  const { sessionUpdate, currentModeId } = params.update;
+  return sessionUpdate === "current_mode_update" &&
+    typeof currentModeId === "string" &&
+    currentModeId !== ""
+    ? currentModeId
     : null;
 }
 

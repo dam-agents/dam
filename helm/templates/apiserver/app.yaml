@@ -336,6 +336,8 @@ spec:
               value: "/home/agent/work"
             - name: AGENT_IDLE_TIMEOUT
               value: {{ .Values.controller.agent.base.idleTimeout | quote }}
+            - name: AGENT_VM_IDLE_TIMEOUT
+              value: {{ .Values.controller.agent.base.vmIdleTimeout | quote }}
             # Same Helm value the controller's AGENT_TEMPLATE_DEFAULTS carries,
             # so create-time resource stamping (#1900) cannot drift from the
             # controller's render-time defaults.
@@ -375,10 +377,6 @@ spec:
             {{- if $catalogs }}
             - name: STARTER_KITS_CATALOGS
               value: {{ $catalogs | toJson | quote }}
-            {{- end }}
-            {{- with .Values.starterKits.pinned }}
-            - name: STARTER_KITS_PINNED
-              value: {{ . | quote }}
             {{- end }}
             {{- $ghe := dig "enterprise" dict (.Values.github | default dict) }}
             {{- $gheHost := $ghe.host | default (dig "oauthAppDefaults" "githubEnterprise" "host" "" .Values.apiServer) }}

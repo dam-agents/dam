@@ -13,6 +13,8 @@ pub struct Capacity<'a> {
     pub reserve_mib: i32,
     // UNIT_BOUNDARY_DESCRIPTION: what a measured machine is counted at beyond its measurement, for the guest to grow into between two probes and before the controller acts on pressure.
     pub headroom_mib: i32,
+    // UNIT_BOUNDARY_DESCRIPTION: what a machine not yet measured is counted at when that is less than its size; zero counts it at its size. A machine may be sized to half the runner, so counting every boot at its size would let only two boot at once, and a runner roll or a few wakes together would refuse the rest. The first measurement usually comes about 100 ms after the start returns, before the agent's harness has started, so a harness that is still starting is under-counted until later probes see it grow.
+    pub boot_mib: i32,
 }
 
 impl Capacity<'_> {
@@ -28,7 +30,9 @@ impl Capacity<'_> {
             return Ok(());
         }
         let used = self.committed(Some(id), committing, running, resident)?;
-        if used + i64::from(want_mib) + i64::from(self.reserve_mib) > i64::from(self.limit_mib) {
+        if used + self.unmeasured(want_mib) + i64::from(self.reserve_mib)
+            > i64::from(self.limit_mib)
+        {
             anyhow::bail!(
                 "this machine's {want_mib} MiB does not fit: the VM runner has {} MiB for machines and {used} MiB is already committed; stop another agent or give the runner more memory",
                 self.limit_mib - self.reserve_mib
@@ -50,7 +54,7 @@ impl Capacity<'_> {
         let mut used: i64 = 0;
         for other in ids.iter().filter(|other| Some(other.as_str()) != except) {
             if let Some(mib) = committing.get(other) {
-                used += i64::from(*mib);
+                used += self.unmeasured(*mib);
                 continue;
             }
             if !running(other) {
@@ -58,13 +62,20 @@ impl Capacity<'_> {
             }
             if let Some(applied) = read_spec(self.state_dir, other) {
                 let size = applied.memory_mib;
-                used += i64::from(
-                    resident(other)
-                        .map_or(size, |mib| size.min(mib.saturating_add(self.headroom_mib))),
-                );
+                used += resident(other).map_or(self.unmeasured(size), |mib| {
+                    i64::from(size.min(mib.saturating_add(self.headroom_mib)))
+                });
             }
         }
         Ok(used)
+    }
+
+    fn unmeasured(&self, size_mib: i32) -> i64 {
+        i64::from(if self.boot_mib > 0 {
+            size_mib.min(self.boot_mib)
+        } else {
+            size_mib
+        })
     }
 }
 
@@ -87,6 +98,7 @@ mod tests {
             limit_mib: 8192,
             reserve_mib: 1024,
             headroom_mib: 0,
+            boot_mib: 0,
         }
         .room_for(
             "agent-a",
@@ -113,6 +125,7 @@ mod tests {
             limit_mib: 0,
             reserve_mib: 512,
             headroom_mib: 0,
+            boot_mib: 0,
         }
         .room_for("agent-a", 64_000, &BTreeMap::new(), &never, &unmeasured)
         .is_ok());
@@ -131,6 +144,7 @@ mod tests {
             limit_mib: 8192,
             reserve_mib: 0,
             headroom_mib: 0,
+            boot_mib: 0,
         };
         let running_b = |id: &str| id == "agent-b";
 
@@ -166,6 +180,7 @@ mod tests {
             limit_mib: 8192,
             reserve_mib: 0,
             headroom_mib: 256,
+            boot_mib: 0,
         };
         let all = |_: &str| true;
         let used = |mib: i32| move |id: &str| (id == "agent-b").then_some(mib);
@@ -219,6 +234,7 @@ mod tests {
             limit_mib: 8192,
             reserve_mib: 0,
             headroom_mib: 0,
+            boot_mib: 0,
         };
         assert!(
             capacity
@@ -259,6 +275,7 @@ mod tests {
                 limit_mib: 8192,
                 reserve_mib: 0,
                 headroom_mib: 0,
+                boot_mib: 0,
             }
             .room_for(
                 "agent-a",
@@ -285,6 +302,7 @@ mod tests {
                 limit_mib: 8192,
                 reserve_mib: 0,
                 headroom_mib: 0,
+                boot_mib: 0,
             }
             .room_for(
                 "agent-a",
@@ -307,6 +325,7 @@ mod tests {
             limit_mib: 8192,
             reserve_mib: 1024,
             headroom_mib: 0,
+            boot_mib: 0,
         };
 
         assert!(
@@ -332,6 +351,59 @@ mod tests {
                 )
                 .is_err(),
             "a machine was given a byte of the runner's own memory"
+        );
+    }
+
+    // TEST_SCENARIO: machines sized to half the runner must still boot several at once — after a runner roll every machine of the owner boots together. An unmeasured machine, booting or in flight, counts at the boot estimate rather than its size, and a measured one at its use, so only the boot estimate decides how many boot at a time.
+    #[test]
+    fn half_runner_machines_boot_together_at_the_boot_estimate() {
+        let dir = TempDir::new("boot");
+        let state = dir.path();
+        created(state, "agent-b", 4096);
+        let capacity = Capacity {
+            state_dir: state,
+            limit_mib: 8192,
+            reserve_mib: 0,
+            headroom_mib: 0,
+            boot_mib: 2048,
+        };
+        let all = |_: &str| true;
+
+        assert!(
+            capacity
+                .room_for(
+                    "agent-a",
+                    4096,
+                    &committing(&[("agent-c", 4096)]),
+                    &all,
+                    &unmeasured
+                )
+                .is_ok(),
+            "three half-runner machines booting together did not fit at 2 GiB each"
+        );
+        assert!(
+            capacity
+                .room_for(
+                    "agent-a",
+                    4096,
+                    &committing(&[("agent-c", 4096), ("agent-d", 4096), ("agent-e", 4096)]),
+                    &all,
+                    &unmeasured
+                )
+                .is_err(),
+            "a fifth 2 GiB boot estimate fit into 8 GiB"
+        );
+        assert!(
+            capacity
+                .room_for(
+                    "agent-a",
+                    4096,
+                    &committing(&[("agent-c", 4096), ("agent-d", 4096)]),
+                    &all,
+                    &|id: &str| (id == "agent-b").then_some(4000)
+                )
+                .is_err(),
+            "a measured machine was counted at the boot estimate rather than its use"
         );
     }
 

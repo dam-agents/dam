@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { cn } from "@/lib/utils";
 
@@ -10,7 +11,7 @@ export function VmRuntimeNotice({ className }: { className?: string }) {
   if (vmRuntime.unknown)
     return (
       <p className={cn("text-sm text-muted-foreground", className)}>
-        Could not read the sandbox runtime for this install, so this agent runs
+        Couldn't read the sandbox runtime for this install, so this agent runs
         as a container.
       </p>
     );
@@ -18,17 +19,18 @@ export function VmRuntimeNotice({ className }: { className?: string }) {
   return (
     <Callout
       tone="info"
-      inset
+
       className={cn("text-sm text-foreground", className)}
     >
       This agent runs as a microVM on the new sandbox runtime, enabled in{" "}
-      <button
-        type="button"
-        className="font-medium underline"
+      <Button
+        variant="link"
+        size="inline"
+        className="font-medium"
         onClick={() => navigateToSettings("features")}
       >
         Experimental features
-      </button>
+      </Button>
       .
     </Callout>
   );

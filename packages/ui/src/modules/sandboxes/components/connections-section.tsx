@@ -7,8 +7,10 @@ import { useSetPreferredConnection } from "../../connections/api/mutations.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js";
-import { SatellitesGroupCard } from "../../satellites/components/satellites-group-card.js";
+import { useConfirmSharedConnection } from "../../connections/hooks/use-confirm-shared-connection.js";
+import { SatellitesGroup } from "../../satellites/components/satellites-group.js";
 import { useAgentSatellites } from "../../satellites/hooks/use-agent-satellites.js";
+import { useSharedChannels } from "../hooks/use-shared-channels.js";
 import { excludeProviderConnections } from "../lib/provider-connections.js";
 import { GrantedConnectionsPanel } from "./granted-connections-panel.js";
 
@@ -25,6 +27,8 @@ export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
   const [catalogOpen, setCatalogOpen] = useState(false);
   const navigateToSandboxHome = useStore((st) => st.navigateToSandboxHome);
   const satellites = useAgentSatellites(agentId);
+  const sharedChannels = useSharedChannels(agentId);
+  const shareConfirm = useConfirmSharedConnection(sharedChannels);
 
   const grantedIds = useMemo(
     () =>
@@ -60,7 +64,7 @@ export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
   const { populated: groups, templateById } = useCatalogGroups(listed);
 
   return (
-    <section>
+    <>
       <GrantedConnectionsPanel
         groups={groups}
         granted={granted}
@@ -72,9 +76,9 @@ export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
           setPreferred.mutate({ agentId, connectionId })
         }
         preferPending={setPreferred.isPending}
-        leading={
+        extraGroups={
           satellites.granted.length > 0 && (
-            <SatellitesGroupCard
+            <SatellitesGroup
               satellites={satellites.granted}
               showCount
               grant={(s) => ({
@@ -93,10 +97,15 @@ export function ConnectionsSection({ agentId, oauthReturnView }: Props) {
           }}
           onClose={() => setCatalogOpen(false)}
           sandbox={{ grantedIds, onToggleGrant: toggleGrant }}
+          sharing={{
+            channels: sharedChannels,
+            confirm: shareConfirm.confirm,
+            dismissed: shareConfirm.dismissed,
+          }}
           satelliteGrant={satellites.grantControls}
           oauthReturnView={oauthReturnView}
         />
       )}
-    </section>
+    </>
   );
 }

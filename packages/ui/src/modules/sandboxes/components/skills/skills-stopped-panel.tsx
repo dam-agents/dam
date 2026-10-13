@@ -2,7 +2,7 @@ import type { ScanFailure, SkillSource } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
-import { SectionLabel } from "@/components/ui/section-label";
+import { SectionHeader } from "@/components/ui/list-section";
 import { timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -94,9 +94,7 @@ export function SkillsStoppedPanel({
       </AgentStoppedCallout>
 
       <section>
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <SectionLabel>Skills at next start</SectionLabel>
-        </div>
+        <SectionHeader label="Skills at next start" />
         <Card>
           <SnapshotRow label="On" divided={false}>
             <span className="text-sm text-muted-foreground">
@@ -130,10 +128,9 @@ export function SkillsStoppedPanel({
       </section>
 
       <section>
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <SectionLabel>Connected sources</SectionLabel>
+        <SectionHeader label="Connected sources">
           {addSourceButton}
-        </div>
+        </SectionHeader>
         <SkillSourceList
           sources={sources}
           loaded={sourcesLoaded}

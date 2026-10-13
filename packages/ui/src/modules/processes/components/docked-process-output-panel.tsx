@@ -39,7 +39,7 @@ export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
           </TruncateStart>
           {listed?.outputPath && (
             <TruncateStart
-              className="font-mono text-[11px] text-muted-foreground"
+              className="font-mono text-2xs text-muted-foreground"
               title={listed.outputPath}
             >
               {listed.outputPath}
@@ -56,6 +56,7 @@ export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
           size="icon-sm"
           className="shrink-0"
           aria-label="Close"
+          tooltip="Close"
           onClick={() => close(null)}
         >
           <Close size={16} />
@@ -121,7 +122,7 @@ function OutputBody({
 function CenteredSpinner() {
   return (
     <div className="flex flex-1 items-center justify-center">
-      <Spinner size={16} />
+      <Spinner size={18} />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { SlackConversationLabel } from "api-server-api";
+import type { SlackSender } from "./slack-sender.js";
 
 export interface SlackImageFile {
   id: string;
@@ -6,6 +7,12 @@ export interface SlackImageFile {
   mimetype: string;
   url_private: string;
   size: number;
+}
+
+export interface SlackFileInfo {
+  file: SlackImageFile;
+  uploader: string | null;
+  sharedIn: string[];
 }
 
 export class FileTooLargeError extends Error {
@@ -25,6 +32,7 @@ export type SlackWorkspace = string;
 
 export interface SlackMentionEvent {
   user?: string;
+  sender: SlackSender;
   channel: string;
   ts: string;
   threadTs?: string;
@@ -119,8 +127,11 @@ export interface SlackMessage {
   replyCount?: number;
   latestReplyTs?: string;
   subtype?: string;
+  botId?: string;
+  botName?: string;
   metadata?: SlackMessageMetadata;
   fileIds?: string[];
+  attachments?: SlackImageFile[];
 }
 
 export type SlackBlock = Record<string, unknown>;
@@ -334,6 +345,10 @@ export interface SlackGateway {
     ts: string,
     teamId: SlackWorkspace,
   ): Promise<SlackMessageReaction[] | null>;
+  getFileInfo(
+    fileId: string,
+    teamId: SlackWorkspace,
+  ): Promise<SlackFileInfo | null>;
   openDirectMessage(userId: string, teamId: SlackWorkspace): Promise<string>;
   getPermalink(
     channel: string,

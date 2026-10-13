@@ -2,6 +2,11 @@ import { config } from "../config.js";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import type { ArtifactTouch } from "./infrastructure/artifact-touch.js";
 import { leaseSpawnEnv, type LeaseEnvReader } from "../../core/runtime-env.js";
+import {
+  sessionSettingsError,
+  type HarnessConfigCatalog,
+} from "agent-runtime-api";
+import type { SessionSettingBinding } from "../runtime-channel/manifest.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
 import {
   createExecHistoryProvider,
@@ -26,6 +31,7 @@ import {
 import {
   createAcpRuntime,
   type ReportableTurn,
+  type SessionSettingFrame,
 } from "./services/acp-runtime/acp-runtime.js";
 import { createOnceReporter } from "./services/once-reporter.js";
 import {
@@ -92,6 +98,21 @@ export interface HarnessRuntime {
   terminalSessionPins?: string;
   sessionModel: boolean;
   sessionSpend?: { command: string[]; unit: string };
+  sessionSettings?: Record<string, SessionSettingBinding>;
+  catalog?: HarnessConfigCatalog;
+}
+
+function processEnvOf(
+  harness: HarnessRuntime | undefined,
+  settings: Record<string, string> | undefined,
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [id, value] of Object.entries(settings ?? {})) {
+    const binding = harness?.sessionSettings?.[id];
+    if (binding && "env" in binding)
+      for (const name of binding.env) env[name] = value;
+  }
+  return env;
 }
 
 function historyProviderOf(
@@ -127,6 +148,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   activeTurns: ActiveTurnStore;
   subAgentSessions: SubAgentSessionStore;
   platformMcpEntry: PlatformMcpEntryStore;
+  warmHistory: () => void;
 } {
   const sessionChanges = createSessionChanges();
   const platformMcpEntry = createPlatformMcpEntryStore(opts.stateBackend);
@@ -178,6 +200,23 @@ export function composeAcp(opts: ComposeAcpOptions): {
     defaultHarness: opts.defaultHarness,
     harnessKnown: (harness) => Object.hasOwn(opts.harnesses, harness),
     providers: () => opts.envReader.providers(),
+    settingScope: (harness, id) => {
+      const binding = opts.harnesses[harness]?.sessionSettings?.[id];
+      return binding === undefined
+        ? null
+        : "env" in binding
+          ? "process"
+          : "session";
+    },
+    settingsError: (harness, settings, model) => {
+      const runtime = opts.harnesses[harness];
+      const unbound = Object.keys(settings).find(
+        (id) => runtime?.sessionSettings?.[id] === undefined,
+      );
+      return unbound
+        ? `The ${harness} harness cannot set ${unbound} for one session`
+        : sessionSettingsError(runtime?.catalog, settings, model);
+    },
     sessionMetadata,
     backgroundWork,
     keepPolicy: opts.keepPolicy,
@@ -208,14 +247,41 @@ export function composeAcp(opts: ComposeAcpOptions): {
           return createChildAgentProcess({
             command: opts.command,
             workingDir: opts.workingDir,
-            env: leaseSpawnEnv(opts.envReader, {
-              ...scoped.pair(),
-              model: scoped.pair().model ?? seeded,
-            }),
+            env: {
+              ...leaseSpawnEnv(opts.envReader, {
+                ...scoped.pair(),
+                model: scoped.pair().model ?? seeded,
+              }),
+              ...processEnvOf(harness, scoped.pair().settings),
+            },
           });
         },
         backgroundWork: scoped.backgroundWork,
         onHarnessExited: scoped.onHarnessExited,
+        sessionSettingFrames: (sessionId) =>
+          Object.entries(
+            sessionMetadata.get(sessionId)?.meta.settings ?? {},
+          ).flatMap(([id, value]): SessionSettingFrame[] => {
+            const binding = harness?.sessionSettings?.[id];
+            if (binding && "mode" in binding)
+              return [
+                {
+                  method: "session/set_mode",
+                  params: { sessionId, modeId: value },
+                },
+              ];
+            if (binding && "configOption" in binding)
+              return [
+                {
+                  method: "session/set_config_option",
+                  params: { sessionId, configId: binding.configOption, value },
+                },
+              ];
+            return [];
+          }),
+        modeSettingId: Object.entries(harness?.sessionSettings ?? {}).find(
+          ([, binding]) => "mode" in binding,
+        )?.[0],
         workingDir: opts.workingDir,
         sessionMetadata,
         isTerminalSessionActive: opts.isTerminalSessionActive,
@@ -288,5 +354,8 @@ export function composeAcp(opts: ComposeAcpOptions): {
     activeTurns,
     subAgentSessions,
     platformMcpEntry,
+    warmHistory: () => {
+      for (const provider of historyProviders.values()) provider?.warm?.();
+    },
   };
 }

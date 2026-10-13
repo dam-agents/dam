@@ -178,7 +178,7 @@ export function createMcpSession(
     deps.kbShares
       ? {
           instructions:
-            "This agent is a knowledge base. You can publish it as a read-only endpoint teammates query without copying it: call share_knowledge_base to start sharing (idempotent), refresh_knowledge_base_share after substantial edits, and get_share_status to check. Sharing is read-only — curation stays with you — and the share link itself is only revealed to the owner in the UI, never to you.",
+            "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.",
         }
       : undefined,
   );
@@ -513,6 +513,48 @@ export function createMcpSession(
           messages: result.messages.length,
           hasMore: result.hasMore,
           ...(cursor !== undefined ? { cursor } : {}),
+        },
+      });
+      return textResult(JSON.stringify(result));
+    },
+  );
+
+  server.tool(
+    "fetch_message_attachment",
+    "Fetch a file or image attached to an earlier message. Attachments on the message you are answering are handed to you with it, but those on earlier messages are not: in your conversation history, and in what read_thread returns, such a message carries an [attachment: ...] tag naming the file, its type and size, and its fileId. Pass that fileId and the file is written into your workspace. Returns { path, name, size, contentType, conversationId }; open the file at path with your own tools — an image too, so read it to see it. A file is fetched only while it is shared in a conversation connected to this agent; any other id is refused. Fetch an attachment when the request depends on it, rather than guessing at what it shows. Slack only.",
+    {
+      channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+      fileId: z
+        .string()
+        .min(1)
+        .describe(
+          "File to fetch: the fileId from an [attachment: ...] tag in your conversation history.",
+        ),
+    },
+    async ({ channel, fileId }) => {
+      const result = await deps.channelManager.fetchAttachment(
+        agentId,
+        channel,
+        { fileId },
+      );
+      const audit = channelAudit(channel);
+      if ("error" in result) {
+        securityLog("warn", "channel.attachment_fetch", {
+          ...audit,
+          result: "failure",
+          reason: result.error,
+          detail: { fileId },
+        });
+        return errorResult(result.error);
+      }
+      securityLog("info", "channel.attachment_fetch", {
+        ...audit,
+        result: "success",
+        target: result.path,
+        detail: {
+          conversationId: result.conversationId,
+          fileId,
+          bytes: result.size,
         },
       });
       return textResult(JSON.stringify(result));

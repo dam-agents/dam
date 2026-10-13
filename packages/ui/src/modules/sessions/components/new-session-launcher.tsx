@@ -32,13 +32,13 @@ export function NewSessionLauncher({
       <div className="mt-5 grid w-full max-w-[640px] grid-cols-1 gap-3 @md/chat:grid-cols-2">
         <LauncherTile
           icon={<Terminal size={18} />}
-          title="Browser Terminal"
+          title="Browser terminal"
           description="Interactive session in this tab"
           onClick={onNewTerminal}
         />
         <LauncherTile
           icon={<Terminal size={18} />}
-          title="Local Terminal"
+          title="Local terminal"
           description="SSH into the agent from your machine"
           onClick={() => setDialog("terminal")}
         />
@@ -51,7 +51,7 @@ export function NewSessionLauncher({
         {available.slack && (
           <LauncherTile
             icon={<ConnectionIcon iconSlug="slack" alt="" size={18} />}
-            title="Slack Channel"
+            title="Slack channel"
             description="Mention the agent in a connected channel"
             onClick={() => setMessenger("slack")}
           />

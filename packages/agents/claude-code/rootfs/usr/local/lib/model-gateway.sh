@@ -12,10 +12,10 @@ else
 		_i=0
 		_gateway_env=""
 		_gateway_up=false
-		while [ "$_i" -lt 30 ]; do
+		while [ "$_i" -lt 120 ]; do
 			_gateway_env=$(curl --noproxy '*' -fsS --max-time 2 \
 				"$_GATEWAY_BASE/env.sh" 2>/dev/null) && _gateway_up=true && break
-			sleep 1
+			sleep 0.25
 			_i=$((_i + 1))
 		done
 		if [ "$_gateway_up" = true ]; then

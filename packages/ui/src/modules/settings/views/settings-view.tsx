@@ -4,11 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CardButton } from "@/components/ui/card-button";
 import { PageHeader } from "@/components/ui/page-header";
-import { SectionLabel } from "@/components/ui/section-label";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 import { getUser, logout } from "../../../auth.js";
+import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
 import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
@@ -22,7 +22,7 @@ import { useSlackInstallAvailability } from "../../slack/api/queries.js";
 import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js";
 import { useUsageInspectAvailability } from "../../usage/api/queries.js";
 import { UsageAnalyticsView } from "../../usage/views/usage-analytics-view.js";
-import { AppVersionRow } from "../components/app-version-row.js";
+import { AboutTab } from "../components/about-tab.js";
 
 const baseTabs: readonly TabDef<SettingsTab>[] = [
   { value: "account", label: "Account" },
@@ -33,6 +33,8 @@ const baseTabs: readonly TabDef<SettingsTab>[] = [
   { value: "usage", label: "Usage" },
   { value: "schedules", label: "Schedules" },
 ];
+
+const WIDE_TABS = new Set<SettingsTab>(["usage", "analytics"]);
 
 const themeOptions = [
   {
@@ -75,6 +77,7 @@ export function SettingsView() {
     ...(showFeatures
       ? [{ value: "features" as const, label: "Experimental features" }]
       : []),
+    { value: "about" as const, label: `About ${getBrand().name}` },
   ];
   const rawTab = useStore((s) => s.settingsTab);
   const hiddenTab =
@@ -85,7 +88,6 @@ export function SettingsView() {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
-  const setView = useStore((s) => s.setView);
   const user = getUser();
 
   return (
@@ -101,17 +103,21 @@ export function SettingsView() {
         className="flex-row overflow-x-auto px-1.5 py-1 [&>button]:shrink-0 md:flex-col md:overflow-x-visible md:px-0 md:py-0 md:w-[180px] shrink-0"
       />
 
-      <div className="flex-1 min-w-0">
+      <div
+        key={activeTab}
+        className={cn(
+          "anim-in min-w-0 flex-1",
+          !WIDE_TABS.has(activeTab) && "max-w-2xl",
+        )}
+      >
         {activeTab === "appearance" && (
-          <div className="anim-in">
+          <div>
             <PageHeader
               title="Appearance"
               description="Customize the look and feel of the interface."
             />
 
-            {}
             <div className="mb-8">
-              <SectionLabel spaced>Theme</SectionLabel>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {themeOptions.map(
                   ({ value, icon: Icon, label, description }) => (
@@ -149,13 +155,12 @@ export function SettingsView() {
         {activeTab === "api-keys" && <ApiKeysList />}
 
         {activeTab === "account" && (
-          <div className="anim-in">
+          <div>
             <PageHeader
               title="Account"
               description="Manage your account and session."
             />
 
-            <SectionLabel spaced>Profile</SectionLabel>
             <Card className="flex items-center gap-4 p-4">
               <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-base">
                 {(user?.profile.preferred_username ??
@@ -170,32 +175,20 @@ export function SettingsView() {
                 </div>
                 <div className="text-xs text-muted-foreground">Signed in</div>
               </div>
-              <Button
-                variant="ghost"
-                onClick={() => logout()}
-                className="text-foreground/80 hover:text-destructive hover:bg-destructive/10"
-              >
+              <Button variant="ghost" onClick={() => logout()} tone="danger">
                 <Logout size={14} />
                 Log out
               </Button>
             </Card>
-
-            <div className="mt-6">
-              <Button variant="link" onClick={() => setView("terms")}>
-                View Terms of Use
-              </Button>
-            </div>
-
-            <AppVersionRow />
           </div>
         )}
 
         {activeTab === "providers" && (
-          <div className="anim-in">
-            <div className="w-full max-w-2xl">
+          <div>
+            <div>
               <PageHeader
                 title="Providers"
-                description="Connect a provider to give agents access to its models. Icons show compatible harnesses."
+                description="Connect an LLM provider to give agents access to its models."
               />
 
               <section className="mb-8">
@@ -206,13 +199,13 @@ export function SettingsView() {
         )}
 
         {activeTab === "connections" && (
-          <div className="anim-in">
+          <div>
             <ConnectionsView />
           </div>
         )}
 
         {activeTab === "usage" && (
-          <div className="anim-in">
+          <div>
             <UsageView />
           </div>
         )}
@@ -224,6 +217,8 @@ export function SettingsView() {
         {activeTab === "analytics" && <UsageAnalyticsView />}
 
         {activeTab === "features" && <FeaturesTab />}
+
+        {activeTab === "about" && <AboutTab />}
       </div>
     </div>
   );

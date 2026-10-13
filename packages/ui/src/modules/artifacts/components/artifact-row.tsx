@@ -1,14 +1,9 @@
-import { Box, OverflowMenuVertical, View } from "@carbon/icons-react";
+import { Box, View } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 import { useCallback, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { clickableProps } from "@/lib/clickable";
 import { timeAgo } from "@/lib/format-time";
@@ -87,7 +82,7 @@ export function ArtifactRow({
       onMouseEnter={warmPreview}
       onFocus={warmPreview}
       className={cn(
-        "group flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-2.5 text-left transition-colors hover:bg-muted/60",
+        "group flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-3 text-left transition-colors hover:bg-muted/60",
         deletion.state === "expired" && "opacity-55",
         dragging && "opacity-50",
       )}
@@ -95,7 +90,7 @@ export function ArtifactRow({
     >
       <ArtifactKindBadge kind={artifact.kind} />
       <div className="min-w-0 flex flex-col gap-0.5">
-        <span className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
+        <span className="flex items-center gap-1.5 truncate text-md font-medium text-foreground">
           {artifact.title}
         </span>
         <span className="flex min-w-0 items-center gap-2.5 overflow-hidden text-xs text-muted-foreground">
@@ -129,23 +124,16 @@ export function ArtifactRow({
           />
         )}
         <ArtifactStatusBadge artifact={artifact} onShare={onShare} />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="More actions">
-              <OverflowMenuVertical size={16} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <ArtifactRowMenuItems
-              artifact={artifact}
-              onEdit={onEdit}
-              onRename={onRename}
-              onMove={onMove}
-              onShare={onShare}
-              onSetRetention={onSetRetention}
-            />
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <RowActionsMenu label="More actions">
+          <ArtifactRowMenuItems
+            artifact={artifact}
+            onEdit={onEdit}
+            onRename={onRename}
+            onMove={onMove}
+            onShare={onShare}
+            onSetRetention={onSetRetention}
+          />
+        </RowActionsMenu>
       </div>
     </div>
   );
@@ -159,15 +147,15 @@ function CreatorChip({ agentId }: { agentId: string | null }) {
 }
 
 function AgentCreatorChip({ agentId }: { agentId: string }) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const selectAgent = useStore((s) => s.selectAgent);
   const agentName = useAgentDisplayName(agentId);
   return (
-    <Tooltip content={`Open ${agentName}'s artifacts`}>
+    <Tooltip content={`Open ${agentName}`}>
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          navigateToSandboxHome(agentId, "artifacts");
+          selectAgent(agentId);
         }}
         className="inline-flex max-w-24 items-center gap-1 rounded-full bg-muted px-2 py-px transition-colors hover:bg-accent-light hover:text-accent sm:max-w-40"
       >

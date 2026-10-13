@@ -2,6 +2,7 @@ import { SESSION_TITLE_MAX_LENGTH } from "agent-runtime-api";
 import type { SessionView } from "api-server-api";
 import { useState } from "react";
 
+import { FormField } from "@/components/form-field";
 import {
   DialogActions,
   DialogBody,
@@ -48,11 +49,11 @@ export function RenameSessionDialog({ agentId, session, onClose }: Props) {
         title="Rename session"
       />
       <DialogBody>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">Title</span>
+        <FormField
+          label="Title"
+          hint="Leave empty to show the title the agent gave it."
+        >
           <Input
-            size="sm"
-            aria-label="Title"
             data-testid="session-rename-input"
             value={title}
             autoFocus
@@ -62,10 +63,7 @@ export function RenameSessionDialog({ agentId, session, onClose }: Props) {
               if (e.key === "Enter" && !e.nativeEvent.isComposing) save();
             }}
           />
-          <span className="text-xs text-muted-foreground">
-            Leave empty to show the title the agent gave it.
-          </span>
-        </div>
+        </FormField>
       </DialogBody>
       <DialogActions
         onCancel={onClose}

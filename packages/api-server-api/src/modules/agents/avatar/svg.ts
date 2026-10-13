@@ -11,6 +11,17 @@ export const AVATAR_CHARACTERS = [
 
 export type AvatarCharacter = (typeof AVATAR_CHARACTERS)[number];
 
+export const SLACK_EMOJI_INDEX: Record<AvatarCharacter, number> = {
+  compass: 0,
+  lens: 1,
+  roller: 2,
+  shield: 3,
+  spark: 4,
+  stack: 5,
+  tower: 6,
+  wave: 7,
+};
+
 export type AvatarMood = "working" | "idle" | "asleep";
 
 export const ASLEEP_FILL = "#a2a9b0";
@@ -209,11 +220,19 @@ export function avatarCharacter(
 
 export function leastUsedCharacter(
   used: readonly AvatarCharacter[],
+  among: readonly AvatarCharacter[] = AVATAR_CHARACTERS,
 ): AvatarCharacter {
   const count = (c: AvatarCharacter) => used.filter((u) => u === c).length;
-  return AVATAR_CHARACTERS.reduce((best, c) =>
+  return (among.length > 0 ? among : AVATAR_CHARACTERS).reduce((best, c) =>
     count(c) < count(best) ? c : best,
   );
+}
+
+export function avatarColors(
+  character: AvatarCharacter,
+): readonly [eyes: string, body: string, wings: string] {
+  const { eyes, body, wings } = CHARACTERS[character].colors;
+  return [eyes, body, wings];
 }
 
 /**

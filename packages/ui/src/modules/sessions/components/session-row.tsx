@@ -1,11 +1,4 @@
-import {
-  Code,
-  Download,
-  Edit,
-  OverflowMenuVertical,
-  Time,
-  TrashCan,
-} from "@carbon/icons-react";
+import { Download, Edit, Terminal, Time, TrashCan } from "@carbon/icons-react";
 import {
   type BackgroundWorkItemView,
   ChannelType,
@@ -16,19 +9,16 @@ import {
 } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
   HOVER_ACTION,
   HOVER_ROOM,
   HOVER_YIELD,
 } from "@/components/ui/hover-action";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
@@ -46,6 +36,8 @@ import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
 
 const LONG_PRESS_MS = 400;
+// UNIT_BOUNDARY_DESCRIPTION: a pointer resting this long on a row reads its history ahead of the click; a pointer sweeping across the list reads nothing.
+const PREFETCH_DWELL_MS = 100;
 
 const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
 
@@ -56,10 +48,12 @@ interface Props {
   needsApproval: boolean;
   unread?: boolean;
   draft?: boolean;
+  provisional?: boolean;
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
   conversation?: string;
   onResume: () => void;
+  onPrefetch?: () => void;
   onRename: () => void;
   onDelete: () => void;
   onExportTimeline?: () => void;
@@ -72,10 +66,12 @@ export function SessionRow({
   needsApproval,
   unread = false,
   draft = false,
+  provisional = false,
   backgroundWork = NO_WORK,
   cost,
   conversation,
   onResume,
+  onPrefetch,
   onRename,
   onDelete,
   onExportTimeline,
@@ -87,11 +83,23 @@ export function SessionRow({
 
   const startPress = useCallback(() => {
     didLongPress.current = false;
+    if (provisional) return;
     timerRef.current = setTimeout(() => {
       didLongPress.current = true;
       setMenuOpen(true);
     }, LONG_PRESS_MS);
+  }, [provisional]);
+
+  const dwellRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startDwell = useCallback(() => {
+    if (!onPrefetch || dwellRef.current) return;
+    dwellRef.current = setTimeout(onPrefetch, PREFETCH_DWELL_MS);
+  }, [onPrefetch]);
+  const endDwell = useCallback(() => {
+    if (dwellRef.current) clearTimeout(dwellRef.current);
+    dwellRef.current = null;
   }, []);
+  useEffect(() => endDwell, [endDwell]);
 
   const endPress = useCallback(() => {
     if (timerRef.current) {
@@ -164,10 +172,14 @@ export function SessionRow({
         active ? "bg-muted" : "hover:bg-muted/60",
       )}
       {...clickableProps(handleClick)}
+      onPointerEnter={startDwell}
+      onPointerLeave={endDwell}
+      onFocus={onPrefetch}
       onTouchStart={startPress}
       onTouchEnd={endPress}
       onTouchCancel={endPress}
       onContextMenu={(e) => {
+        if (provisional) return;
         e.preventDefault();
         setMenuOpen(true);
       }}
@@ -176,11 +188,10 @@ export function SessionRow({
         <div
           className={cn(
             "relative flex items-center gap-1.5",
-            onboarding && !hasIndicators && HOVER_ROOM,
+            onboarding && !hasIndicators && !s.harness && HOVER_ROOM,
           )}
         >
-          {}
-          <span className={`text-[13px] min-w-0 truncate ${titleClass}`}>
+          <span className={`text-sm min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
           {onboarding && (
@@ -196,50 +207,46 @@ export function SessionRow({
             working={working}
             draft={draft}
             backgroundWork={backgroundWork}
+            harness={s.harness ?? null}
           />
           {}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                data-testid="session-menu-button"
-                variant="ghost"
-                size="icon-xs"
-                className={cn(
-                  "absolute top-1/2 -right-1 -translate-y-1/2",
-                  HOVER_ACTION,
-                )}
-                onClick={(e) => e.stopPropagation()}
-                aria-label="More actions"
-              >
-                <OverflowMenuVertical size={16} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent onClick={(event) => event.stopPropagation()}>
-              {onExportTimeline && (
-                <DropdownMenuItem
-                  data-testid="session-export-timeline-button"
-                  onSelect={onExportTimeline}
-                >
-                  <Download size={13} /> Export telemetry
-                </DropdownMenuItem>
-              )}
+          <RowActionsMenu
+            label="More actions"
+            testId="session-menu-button"
+            dense
+            className={cn(
+              "absolute top-1/2 -right-1 -translate-y-1/2",
+              HOVER_ACTION,
+            )}
+            stopPropagation
+            contentProps={{ onClick: (event) => event.stopPropagation() }}
+          >
+            {onExportTimeline && (
               <DropdownMenuItem
-                data-testid="session-rename-button"
-                onSelect={onRename}
+                data-testid="session-export-timeline-button"
+                onSelect={onExportTimeline}
               >
-                <Edit size={13} /> Rename session
+                <Download size={14} /> Export telemetry
               </DropdownMenuItem>
-              <DropdownMenuItem
-                data-testid="session-delete-button"
-                tone="danger"
-                onSelect={onDelete}
-              >
-                <TrashCan size={13} /> Delete session
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            )}
+            <DropdownMenuItem
+              data-testid="session-rename-button"
+              disabled={provisional}
+              onSelect={onRename}
+            >
+              <Edit size={14} /> Rename session
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-testid="session-delete-button"
+              disabled={provisional}
+              tone="danger"
+              onSelect={onDelete}
+            >
+              <TrashCan size={14} /> Delete session
+            </DropdownMenuItem>
+          </RowActionsMenu>
         </div>
-        <span className="text-[11px] text-muted-foreground truncate">
+        <span className="text-2xs text-muted-foreground truncate">
           {conversation ? `${conversation} · ` : ""}
           <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
             {timeAgo(s.updatedAt ?? s.createdAt)}
@@ -283,7 +290,7 @@ export function SessionRow({
               onRename();
             }}
           >
-            <Edit size={13} /> Rename session
+            <Edit size={14} /> Rename session
           </Button>
           <Button
             variant="ghost"
@@ -296,7 +303,7 @@ export function SessionRow({
               onDelete();
             }}
           >
-            <TrashCan size={13} /> Delete session
+            <TrashCan size={14} /> Delete session
           </Button>
         </div>
       )}
@@ -312,6 +319,7 @@ function SessionIndicators({
   working,
   draft,
   backgroundWork,
+  harness,
 }: {
   scheduled: boolean;
   terminal: boolean;
@@ -320,6 +328,7 @@ function SessionIndicators({
   working: boolean;
   draft: boolean;
   backgroundWork: readonly BackgroundWorkItemView[];
+  harness: string | null;
 }) {
   const hasBackgroundWork = backgroundWork.length > 0;
   if (
@@ -329,7 +338,8 @@ function SessionIndicators({
     !needsApproval &&
     !working &&
     !hasBackgroundWork &&
-    !draft
+    !draft &&
+    !harness
   )
     return null;
   return (
@@ -340,7 +350,7 @@ function SessionIndicators({
       )}
     >
       {terminal && (
-        <Code size={16} className="text-foreground" aria-label="Terminal" />
+        <Terminal size={16} className="text-foreground" aria-label="Terminal" />
       )}
       {scheduled && (
         <Time size={16} className="text-foreground" aria-label="Scheduled" />
@@ -351,7 +361,7 @@ function SessionIndicators({
             data-testid="session-approval-dot"
             role="img"
             aria-label="Needs your approval"
-            className="w-2 h-2 rounded-full bg-accent"
+            className="w-2 h-2 rounded-full bg-warning"
           />
         </IndicatorBox>
       ) : working ? (
@@ -374,6 +384,13 @@ function SessionIndicators({
           className="inline-flex text-muted-foreground shrink-0"
         >
           <Edit size={16} />
+        </span>
+      ) : harness ? (
+        <span
+          data-testid="session-harness"
+          className="inline-flex shrink-0 text-muted-foreground"
+        >
+          <HarnessIcons harnesses={[harness]} size="xs" />
         </span>
       ) : null}
       {messenger && !working && (

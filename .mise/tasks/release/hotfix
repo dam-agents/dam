@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+#MISE description="Open a hotfix release by creating a release branch from the release that is in production"
+#USAGE arg "[base]" help="Tag to fix (default: tag of the latest published GitHub Release)"
+set -euo pipefail
+
+. "$MISE_CONFIG_ROOT/.mise/lib/release.sh"
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "ERROR: Working directory not clean"
+  exit 1
+fi
+
+set -x
+git fetch origin --tags --prune --quiet
+set +x
+
+base_tag="${usage_base:-}"
+base_note=""
+if [[ -z "$base_tag" ]]; then
+  base_note=" (the release in production)"
+  base_tag=$(gh api 'repos/{owner}/{repo}/releases?per_page=100' \
+    --jq '[.[] | select((.draft | not) and (.prerelease | not))] | max_by(.published_at) | .tag_name // empty')
+fi
+if [[ -z "$base_tag" ]]; then
+  echo "ERROR: No published GitHub Release found"
+  exit 1
+fi
+if ! git rev-parse --verify --quiet "refs/tags/$base_tag" >/dev/null; then
+  echo "ERROR: Tag $base_tag not found"
+  exit 1
+fi
+base_version="${base_tag#v}"
+base_version="${base_version%-rc*}"
+
+highest_version=$(
+  {
+    git tag -l 'v*' | sed 's|^v||; s|-rc[0-9]*$||'
+    git branch -r --format '%(refname:short)' | grep '^origin/release-v' | sed 's|^origin/release-v||'
+  } | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1
+)
+[[ "$highest_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]
+hotfix_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((${BASH_REMATCH[3]} + 1))"
+release_branch="release-v$hotfix_version"
+
+main_version=$(git show origin/main:helm/Chart.yaml | yq -r '.version')
+[[ "$hotfix_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]
+next_main_version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((${BASH_REMATCH[3]} + 1))"
+bump_main=false
+if [[ "$(printf '%s\n%s\n' "$main_version" "$hotfix_version" | sort -V | tail -n1)" == "$hotfix_version" ]]; then
+  bump_main=true
+fi
+
+echo ""
+echo "What will happen:"
+echo -e "  - Nothing will be published yet."
+echo -e "  - Hotfix $hotfix_version will be prepared in \x1b[36m$release_branch\x1b[0m branch, starting from \x1b[36m$base_tag\x1b[0m$base_note."
+if [[ "$highest_version" != "$base_version" ]]; then
+  echo -e "  - \x1b[33m$highest_version is the highest version already tagged or branched, so the hotfix is $hotfix_version.\x1b[0m"
+  echo -e "    \x1b[33mThe hotfix does not contain the versions tagged after $base_version.\x1b[0m"
+fi
+echo -e "  - Pending version in \x1b[36m$release_branch\x1b[0m will be set to ${hotfix_version}-rc1."
+if $bump_main; then
+  echo -e "  - \x1b[36mmain\x1b[0m is at $main_version, so a PR bumping it to $next_main_version will be opened. It needs one approval, then merge it."
+fi
+gum confirm "Proceed?"
+
+set -x
+git checkout -B "$release_branch" "$base_tag"
+mise run release:set-version "${hotfix_version}-rc1"
+git push --set-upstream origin "$release_branch"
+set +x
+echo -e "\x1b[36m$release_branch\x1b[0m branch with pending version ${hotfix_version}-rc1 created."
+
+if $bump_main; then
+  open_main_bump_pr "$next_main_version" "after opening hotfix \`$release_branch\`"
+  git checkout "$release_branch"
+fi
+
+echo -e "Now cherry-pick the fix from \x1b[36mmain\x1b[0m (\x1b[36mgit cherry-pick -x <sha>\x1b[0m), push, then use \x1b[36mmise run release:publish-rc\x1b[0m or \x1b[36mmise run release:publish-stable\x1b[0m."

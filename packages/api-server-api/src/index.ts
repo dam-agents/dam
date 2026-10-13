@@ -256,6 +256,16 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
+export type {
+  AvatarUnlock,
+  GettingStartedProgress,
+  GettingStartedService,
+  GettingStartedTask,
+} from "./modules/getting-started/types.js";
+export {
+  GETTING_STARTED_TASKS,
+  gettingStartedTaskSchema,
+} from "./modules/getting-started/schemas.js";
 export { quietWindowSchema } from "./modules/schedules/schemas.js";
 export {
   ONCE_DELIVERY_WINDOW_MS,
@@ -602,6 +612,10 @@ export { termsDocumentSchema } from "./modules/terms/schemas.js";
 export { PRE_TERMS_PROCEDURES } from "./modules/terms/types.js";
 
 export type { EntryPointChoice, UsageService } from "./modules/usage/types.js";
+export {
+  USAGE_REPORT_FRAME,
+  usageReportFrameReadySchema,
+} from "./modules/usage/schemas.js";
 
 export { authConfigSchema } from "./modules/auth/types.js";
 export type { AuthConfig } from "./modules/auth/types.js";

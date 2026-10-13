@@ -23,6 +23,8 @@ drivers:
   # discovered at runtime (modelDiscovery) rather than listed statically.
   harness-config:
     file: "$HOME/.pi/agent/settings.json"
+    sessionSettings:
+      mode: { mode: true }
     keys:
       model: "defaultModel"
       mode: "defaultThinkingLevel"
@@ -37,6 +39,7 @@ drivers:
           name: Thinking
           description: Reasoning effort level
           category: thought_level
+          default: "medium"
           choices:
             - value: "off"
               name: "Off"

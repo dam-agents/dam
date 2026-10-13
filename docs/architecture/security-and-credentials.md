@@ -1,41 +1,22 @@
 # Security and credentials
 
-Last verified: 2026-10-09
+Last verified: 2026-10-13
 
 ## Overview
 
 Three rules carry the security model:
 
-1. **Agents never hold upstream credentials.** Real upstream tokens (GitHub,
-   Anthropic, Slack, internal gateways) live in K8s Secrets labelled with the
-   owner's `sub`. The Envoy proxy in the paired gateway pod injects them
-   into outbound traffic on the wire — the agent pod never mounts Secret
-   bytes.
-2. **Identity flows from Keycloak.** Browser users authenticate against
-   Keycloak; the api-server validates the JWT and stamps `agent-platform.ai/owner` on
-   every resource the user creates. Per-user credential isolation is the
-   `agent-platform.ai/owner` label on the K8s Secret — the controller's selector
-   refuses to mount any other owner's Secret into a given owner's gateway pod.
-   An Agent's `secretRef`, whose keys become its environment, is honoured
-   only for a Secret with its owner's label that the platform does not manage.
-3. **Two boundaries, layered.** The agent → gateway hop is gated at the
-   *kernel* by per-pair NetworkPolicies at both ends;
-   the gateway → api-server hops (harness and ext-authz) are gated at
-   the *mesh* by per-Agent Istio AuthorizationPolicies on the
-   gateway pod's SPIFFE principal (not on no-mesh dev clusters).
-   The agent pod opts out of ambient mesh (`istio.io/dataplane-mode:
-   none`) so the kernel sees real destinations rather than HBONE
-   tunnelled to ztunnel; its only admitted intra-cluster destination
-   is the paired gateway pod on the Envoy proxy port. The gateway pod
-   stays in ambient; istiod stamps it with a SPIFFE workload cert whose
-   SA name equals the Agent name. Two per-Agent
-   AuthorizationPolicies enforce the gateway-originated boundary
-   cryptographically: the api-server's harness waypoint ALLOWs the
-   gateway principal to `/api/agents/<id>/*`; the per-Agent
-   ext-authz Service ALLOWs only the matching SA.
+1. **Agents never hold upstream credentials.** Real upstream tokens (GitHub, Anthropic, Slack, internal gateways) live in K8s Secrets labelled with the owner's `sub`.
+   The Envoy proxy in the paired gateway pod injects them into outbound traffic on the wire — the agent pod never mounts Secret bytes.
+2. **Identity flows from Keycloak.** Browser users authenticate against Keycloak; the api-server validates the JWT and stamps `agent-platform.ai/owner` on every resource the user creates.
+   Per-user credential isolation is the `agent-platform.ai/owner` label on the K8s Secret — the controller's selector refuses to mount any other owner's Secret into a given owner's gateway pod.
+   An Agent's `secretRef`, whose keys become its environment, is honoured only for a Secret with its owner's label that the platform does not manage.
+3. **Two boundaries, layered.** The agent → gateway hop is gated at the *kernel* by per-pair NetworkPolicies at both ends; the gateway → api-server hops (harness and ext-authz) are gated at the *mesh* by per-Agent Istio AuthorizationPolicies on the gateway pod's SPIFFE principal (not on no-mesh dev clusters).
+   The agent pod opts out of ambient mesh (`istio.io/dataplane-mode:    none`) so the kernel sees real destinations rather than HBONE tunnelled to ztunnel; its only admitted intra-cluster destination is the paired gateway pod on the Envoy proxy port.
+   The gateway pod stays in ambient; istiod stamps it with a SPIFFE workload cert whose SA name equals the Agent name.
+   Two per-Agent AuthorizationPolicies enforce the gateway-originated boundary cryptographically: the api-server's harness waypoint ALLOWs the gateway principal to `/api/agents/<id>/*`; the per-Agent ext-authz Service ALLOWs only the matching SA.
 
-Workspace contents are explicitly outside the trust boundary — see the
-security note on [persistence](persistence.md).
+Workspace contents are explicitly outside the trust boundary — see the security note on [persistence](persistence.md).
 
 ## Diagram
 
@@ -71,575 +52,273 @@ flowchart LR
   envoy -->|inject credentials| external
 ```
 
-The credential boundary is the pod: K8s Secrets are mounted into the
-gateway pod only, and the agent pod has no admitted route to TCP 80/443
-other than its paired gateway. Enforcement is layered:
+The credential boundary is the pod: K8s Secrets are mounted into the gateway pod only, and the agent pod has no admitted route to TCP 80/443 other than its paired gateway.
+Enforcement is layered:
 
-- **Per-pair NetworkPolicies** gate the agent → paired gateway hop
-  at both ends.
+- **Per-pair NetworkPolicies** gate the agent → paired gateway hop at both ends.
 - **vm Backend.** Its gates live with the per-owner [VM runner](vm-runner.md).
-- **Agent ingress NetworkPolicy** admits ingress to the agent port only
-  from the api-server (ACP/tRPC relay) and the controller (idle-checker
-  busy-probe). agent-runtime serves unauthenticated on the assumption
-  that this kernel gate is the auth boundary; kubelet probes are
-  node-originated and unaffected.
-- **Gateway Envoy ext_authz** gates everything the gateway
-  forwards on behalf of the agent — external upstreams via the HITL
-  rule model, while platform-internal upstreams pass without a
-  per-request human decision: the harness path (control-plane traffic
-  to the api-server) and the artifact object store, where each
-  request already carries a platform-minted authorization — a
-  short-lived link scoped to a single object and operation, issued by
-  the api-server after ownership checks and validated by the store
-  itself ([artifact-library](artifact-library.md)). This is
-  the destination-side egress gate; no NetworkPolicies on Postgres /
-  Redis / Keycloak / the harness or ext-authz Services are needed
-  because the agent has no admitted route to any of them.
-- **Mesh AuthorizationPolicy** gates the gateway-originated
-  hops by the gateway pod's SPIFFE principal: harness via the
-  api-server's waypoint, ext-authz on the per-Agent Service. The
-  agent has no SPIFFE identity in this model.
+- **Agent ingress NetworkPolicy** admits ingress to the agent port only from the api-server (ACP/tRPC relay) and the controller (idle-checker busy-probe).
+  agent-runtime serves unauthenticated on the assumption that this kernel gate is the auth boundary; kubelet probes are node-originated and unaffected.
+- **Gateway Envoy ext_authz** gates everything the gateway forwards on behalf of the agent — external upstreams via the HITL rule model, while platform-internal upstreams pass without a per-request human decision: the harness path (control-plane traffic to the api-server) and the artifact object store, where each request already carries a platform-minted authorization — a short-lived link scoped to a single object and operation, issued by the api-server after ownership checks and validated by the store itself ([artifact-library](artifact-library.md)).
+  This is the destination-side egress gate; no NetworkPolicies on Postgres / Redis / Keycloak / the harness or ext-authz Services are needed because the agent has no admitted route to any of them.
+- **Mesh AuthorizationPolicy** gates the gateway-originated hops by the gateway pod's SPIFFE principal: harness via the api-server's waypoint, ext-authz on the per-Agent Service.
+  The agent has no SPIFFE identity in this model.
 
-The agent pod has no service account token
-(`automountServiceAccountToken: false`), and there is no co-located
-sidecar to share a network or PID namespace with.
+The agent pod has no service account token (`automountServiceAccountToken: false`), and there is no co-located sidecar to share a network or PID namespace with.
 
 ## Identity
 
-**Keycloak** is the only identity authority. It runs in-cluster as a Helm
-subchart and is the OIDC provider for every authenticated surface.
+**Keycloak** is the only identity authority.
+It runs in-cluster as a Helm subchart and is the OIDC provider for every authenticated surface.
 
-Keycloak's branded login page ships two presentation variants selected
-per deployment: password-first (the default — username/password form,
-with any identity-provider buttons offered below it) and SSO-first
-(identity-provider CTAs only, for deployments where corporate SSO is the
-expected sign-in path; the page falls back to the password form when the
-realm has no identity provider configured). The chart's `keycloak.login`
-values ([`helm/values.yaml`](../../helm/values.yaml))
-select the variant and an optional "Request access" link; they reach the
-theme as container environment variables resolved through the theme's
-`theme.properties` placeholders, so switching variants is a values change
-and a pod roll — no theme rebuild, no realm change. The same page also
-knows which client started the sign-in: when it is the artifact share
-host's client, the heading and lead paragraph
-tell the visitor they need to sign in to view a shared artifact instead
-of the general product pitch. Upstream identity
-providers themselves (e.g. w3id) are realm configuration managed outside
-the chart.
+Keycloak's branded login page ships two presentation variants selected per deployment: password-first (the default — username/password form, with any identity-provider buttons offered below it) and SSO-first (identity-provider CTAs only, for deployments where corporate SSO is the expected sign-in path; the page falls back to the password form when the realm has no identity provider configured).
+The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml)) select the variant and an optional "Request access" link; they reach the theme as container environment variables resolved through the theme's `theme.properties` placeholders, so switching variants is a values change and a pod roll — no theme rebuild, no realm change.
+The same page also knows which client started the sign-in: when it is the artifact share host's client, the heading and lead paragraph tell the visitor they need to sign in to view a shared artifact instead of the general product pitch.
+Upstream identity providers themselves (e.g. w3id) are realm configuration managed outside the chart.
 
 The user agent flow:
 
-1. Browser authenticates against Keycloak and obtains a JWT with audience
-   `platform-api`.
-2. UI sends the JWT to the api-server on every tRPC and ACP call. The
-   api-server validates it against Keycloak's JWKS.
-3. The api-server's `sub` claim becomes `agent-platform.ai/owner=<sub>` on every
-   resource the user creates (Agent CR, K8s credential Secret,
-   etc.).
+1. Browser authenticates against Keycloak and obtains a JWT with audience `platform-api`.
+2. UI sends the JWT to the api-server on every tRPC and ACP call.
+   The api-server validates it against Keycloak's JWKS.
+3. The api-server's `sub` claim becomes `agent-platform.ai/owner=<sub>` on every resource the user creates (Agent CR, K8s credential Secret, etc.).
 
-The realm holds a **dedicated public client** for the artifact share host
-([artifact-library](artifact-library.md#the-share-host--trust-boundary)):
-PKCE-only, redirect pinned to that host's sign-in callback, and no
-`platform-api` audience, so its tokens are rejected by the api-server. A
-restricted-link viewer thus gets an identity on the share origin without
-the app's tokens ever being valid there.
+The realm holds a **dedicated public client** for the artifact share host ([artifact-library](artifact-library.md#the-share-host--trust-boundary)): PKCE-only, redirect pinned to that host's sign-in callback, and no `platform-api` audience, so its tokens are rejected by the api-server.
+A restricted-link viewer thus gets an identity on the share origin without the app's tokens ever being valid there.
 
-Two interstitials can take the browser off the page the user asked for:
-the login redirect above, and the Terms-of-Use gate. Both park that
-destination and resume it once cleared, so a deep link survives them —
-an in-chat bind link ([channels](channels.md)) is single-use, so losing
-its target would cost the user a fresh bind command rather than a retry.
+Two interstitials can take the browser off the page the user asked for: the login redirect above, and the Terms-of-Use gate.
+Both park that destination and resume it once cleared, so a deep link survives them — an in-chat bind link ([channels](channels.md)) is single-use, so losing its target would cost the user a fresh bind command rather than a retry.
 
-If the key set itself cannot be retrieved (Keycloak unreachable, fetch
-timeout, non-200 response), verification fails closed with **503** and
-reason `jwks-unavailable` — never 401: a transient infrastructure failure
-is signalled as retryable, not as a credential rejection. Every
-token-validity failure (expired, bad signature, unknown `kid`, wrong
-audience) remains 401. The api-server also warms the JWKS at boot and
-gates its readiness probe on the first successful fetch, so a rolling
-update keeps the previous pod serving until the new pod can verify
-tokens. The warm-up gives up after a bounded window (so a prolonged
-Keycloak outage cannot wedge a rollout indefinitely): past that, the pod
-reports ready and serves 503s on authenticated routes until Keycloak is
-reachable again.
+If the key set itself cannot be retrieved (Keycloak unreachable, fetch timeout, non-200 response), verification fails closed with **503** and reason `jwks-unavailable` — never 401: a transient infrastructure failure is signalled as retryable, not as a credential rejection.
+Every token-validity failure (expired, bad signature, unknown `kid`, wrong audience) remains 401.
+The api-server also warms the JWKS at boot and gates its readiness probe on the first successful fetch, so a rolling update keeps the previous pod serving until the new pod can verify tokens.
+The warm-up gives up after a bounded window (so a prolonged Keycloak outage cannot wedge a rollout indefinitely): past that, the pod reports ready and serves 503s on authenticated routes until Keycloak is reachable again.
 
-There is no token exchange — credential storage is K8s-native and label-
-scoped, so the api-server enforces ownership directly when reading and
-writing.
+There is no token exchange — credential storage is K8s-native and label- scoped, so the api-server enforces ownership directly when reading and writing.
 
-Headless / CI use: the CLI accepts a long-lived **API key** in the same
-`Authorization: Bearer` slot, marked by a `pk_` prefix. A key carries the
-owner's `sub`, a subset of permission scopes, and an optional agent
-allowlist; deleting an Agent drops it from every key, so a later
-same-named Agent is not covered. The bearer middleware dispatches by
-prefix and yields the same principal shape — sub, scopes, agent binding,
-optional key id. Keys cannot mint or revoke other keys: the management
-surface rejects any request authenticated via a key, so a leaked key
-cannot escalate.
+Headless / CI use: the CLI accepts a long-lived **API key** in the same `Authorization: Bearer` slot, marked by a `pk_` prefix.
+A key carries the owner's `sub`, a subset of permission scopes, and an optional agent allowlist; deleting an Agent drops it from every key, so a later same-named Agent is not covered.
+The bearer middleware dispatches by prefix and yields the same principal shape — sub, scopes, agent binding, optional key id.
+Keys cannot mint or revoke other keys: the management surface rejects any request authenticated via a key, so a leaked key cannot escalate.
 
-A key is checked when a request or connection opens, so every long-lived
-stream it opens — an HTTP subscription, the tRPC WebSocket, an agent
-relay — re-checks the key every few seconds and ends once the key is
-revoked or expired. The re-check is a poll rather than a reaction to the
-revoke, because revoke can land on another replica; the poll interval is
-the bound on how long a revoked key keeps a stream.
+A key is checked when a request or connection opens, so every long-lived stream it opens — an HTTP subscription, the tRPC WebSocket, an agent relay — re-checks the key every few seconds and ends once the key is revoked or expired.
+The re-check is a poll rather than a reaction to the revoke, because revoke can land on another replica; the poll interval is the bound on how long a revoked key keeps a stream.
 
 ## Keycloak event logging
 
-Keycloak is also an audit event source. It emits login and admin events
-to pod stdout via its built-in `jboss-logging` event listener, so they
-ride the same cluster log pipeline as every other pod log out to the
-external log service. Successes surface at `info`, errors at `warn`, as
-structured JSON in production.
+Keycloak is also an audit event source.
+It emits login and admin events to pod stdout via its built-in `jboss-logging` event listener, so they ride the same cluster log pipeline as every other pod log out to the external log service.
+Successes surface at `info`, errors at `warn`, as structured JSON in production.
 
 Persistence is split by event class:
 
-- **Login events** (LOGIN, LOGOUT, LOGIN_ERROR, token refresh, account
-  changes, …) are *not* written to the Keycloak database. The listener
-  fires independently of DB-store gating, so the events still reach
-  stdout; the external log service is the source of truth for the
-  authentication audit trail, and Postgres is spared the high-volume
-  write.
-- **Admin events** (any change made through the admin REST API or
-  console) fire on the same listener, so their metadata — who acted, on
-  which resource, from where — reaches stdout and the external log
-  service alongside login events. That metadata is also recorded to
-  Postgres (low volume), but the full request body is *not*
-  (`adminEventsDetailsEnabled` is off): stored bodies would otherwise
-  capture sensitive payloads — plaintext credentials on user-create /
-  user-update flows — and Keycloak retains admin events indefinitely with
-  no built-in expiration. The log line never carries the request body, so
-  the external log pipeline, not the Keycloak database, is the audit
-  source of truth.
+- **Login events** (LOGIN, LOGOUT, LOGIN_ERROR, token refresh, account changes, …) are *not* written to the Keycloak database.
+  The listener fires independently of DB-store gating, so the events still reach stdout; the external log service is the source of truth for the authentication audit trail, and Postgres is spared the high-volume write.
+- **Admin events** (any change made through the admin REST API or console) fire on the same listener, so their metadata — who acted, on which resource, from where — reaches stdout and the external log service alongside login events.
+  That metadata is also recorded to Postgres (low volume), but the full request body is *not* (`adminEventsDetailsEnabled` is off): stored bodies would otherwise capture sensitive payloads — plaintext credentials on user-create / user-update flows — and Keycloak retains admin events indefinitely with no built-in expiration.
+  The log line never carries the request body, so the external log pipeline, not the Keycloak database, is the audit source of truth.
 
-The event knobs, log format, and realm import live in the Keycloak Helm
-values under [`helm/`](../../helm/).
+The event knobs, log format, and realm import live in the Keycloak Helm values under [`helm/`](../../helm/).
 
 ## Resource ownership
 
-Multi-tenancy is **soft** — a single Kubernetes namespace, with a
-`agent-platform.ai/owner` label on every owned resource carrying the authenticated
-user's `sub`. The api-server is the sole writer of resource spec and stamps
-the label on create; every list and get filters by it. There is no
-namespace-per-user.
+Multi-tenancy is **soft** — a single Kubernetes namespace, with a `agent-platform.ai/owner` label on every owned resource carrying the authenticated user's `sub`.
+The api-server is the sole writer of resource spec and stamps the label on create; every list and get filters by it.
+There is no namespace-per-user.
 
-The controller picks credentials per-Agent by listing K8s Secrets
-labelled `agent-platform.ai/owner=<sub>,agent-platform.ai/managed-by=api-server` in the agent
-namespace, then mounting the matching set into the paired gateway pod. Cross-
-owner leakage is structurally prevented by the label selector — a missing
-`agent-platform.ai/owner` label is treated as no owner and never mounted.
+The controller picks credentials per-Agent by listing K8s Secrets labelled `agent-platform.ai/owner=<sub>,agent-platform.ai/managed-by=api-server` in the agent namespace, then mounting the matching set into the paired gateway pod.
+Cross- owner leakage is structurally prevented by the label selector — a missing `agent-platform.ai/owner` label is treated as no owner and never mounted.
 
 ## Credential storage
 
 Each connected service produces one K8s Secret per `(owner, connection)`:
 
-- **OAuth-issued tokens** (GitHub, MCP servers, Generic OAuth apps) — the
-  api-server's `/api/oauth/callback` writes the access + refresh token
-  pair plus a structured **host list** describing every wire position
-  the token should be injected on. The refresh-token loop re-mints
-  access tokens before expiry; the agent never sees the refresh token. A
-  narrowed GitHub sign-in keeps this pair at rest and injects a scoped token
-  made from it ([connections](connections.md)).
-  Re-running login and consent against an existing connection replaces its
-  tokens in place, keeping the connection's identity and grants. When the
-  connection stores the OAuth app's *client* secret itself (rather than
-  inheriting the deployment's), that secret is replaceable in place too — the
-  api-server immediately tries the stored refresh token with it, so a rotation
-  upstream usually revives the connection with no user consent at all, and where
-  it can't, re-authentication is unblocked by it. A client secret supplied by the
-  operator is deploy config and is rotated there.
-- **User-supplied secrets** (Anthropic API keys, generic API tokens) —
-  the Connections subsystem writes them as a **header Connection** per
-  credential, built from its template and stored with the same labels and
-  annotations: one per-Connection Secret carrying the credential value plus
-  the placeholder SDS the gateway reads.
-- **Client-credentials grants** (machine-to-machine OAuth) — the
-  per-Connection Secret stores the long-lived client secret, and the
-  api-server exchanges it at the provider's token endpoint (discovered from
-  the issuer's OAuth metadata at connect time) for short-lived access
-  tokens: once synchronously at connect time (bad credentials fail the
-  create), then again before each expiry via the same refresh loop that
-  renews OAuth tokens. Only the minted access token reaches the gateway's
-  injection path; the client secret stays at rest and is never sent to the
-  connection's hosts. The stored client secret is replaceable in place when it
-  rotates upstream — the api-server mints with the new one before writing it, so
-  a wrong secret is rejected rather than stored.
-- **GitHub personal access tokens** — a PAT is one **`github-pat`
-  Connection** whose template re-bakes, from the bare PAT, every GitHub
-  host injection it needs into a single per-Connection Secret — `Bearer`
-  on the API and raw-content hosts, `Basic`-encoded on the git host for
-  `git clone` over HTTPS — plus a `GH_TOKEN` env contribution for the
-  `gh` CLI. (This is the multi-host-injection shape described next, with
-  the `Basic`-encoded half generated by the template rather than typed by
-  the user.) The `github-enterprise-pat` variant bakes the same shape from
-  the user's enterprise host, plus a `GH_HOST` env contribution.
-- **GitHub App installation tokens** — a `github-app` Connection stores the
-  app's PEM private key and mints short-lived installation tokens (`ghs_…`)
-  from it, the JWT-signed counterpart of the client-credentials grant above:
-  the api-server signs a short-lived app JWT, exchanges it at GitHub's
-  installation-token endpoint (once at connect, then before each expiry via
-  the same refresh loop), and re-bakes the same three GitHub host injections
-  as the PAT template. The private key stays at rest and is never sent to any
-  host; only the installation token reaches the gateway's injection path. Like
-  the client secret above, a rotated private key is pasted in place and proven by
-  minting before it is stored.
+- **OAuth-issued tokens** (GitHub, MCP servers, Generic OAuth apps) — the api-server's `/api/oauth/callback` writes the access + refresh token pair plus a structured **host list** describing every wire position the token should be injected on.
+  The refresh-token loop re-mints access tokens before expiry; the agent never sees the refresh token.
+  A narrowed GitHub sign-in keeps this pair at rest and injects a scoped token made from it ([connections](connections.md)).
+  Re-running login and consent against an existing connection replaces its tokens in place, keeping the connection's identity and grants.
+  When the connection stores the OAuth app's *client* secret itself (rather than inheriting the deployment's), that secret is replaceable in place too — the api-server immediately tries the stored refresh token with it, so a rotation upstream usually revives the connection with no user consent at all, and where it can't, re-authentication is unblocked by it.
+  A client secret supplied by the operator is deploy config and is rotated there.
 
-  A Connection may additionally **narrow the authority of the token it mints**,
-  below what the app installation itself holds — to a chosen set of repositories,
-  to a chosen set of permissions, or both. An installation is an
-  organization-wide grant, and narrowing is how one broadly-installed app backs many least-privilege
-  Connections without a second app per task. GitHub is the arbiter: it refuses
-  any request exceeding the installation, so the narrowing can only ever reduce
-  authority, never claim it. The chosen subset is **part of the credential's
-  stored identity, not a one-time argument** — every renewal and every key
-  rotation re-mints against the same subset, so a Connection cannot silently
-  widen back to the whole installation between renewals. Narrowing is opt-in:
-  a Connection that names no subset carries the installation's full authority. Once
-  a subset stops being covered — the organization drops a repository from the
-  installation, or revokes a permission — renewal is *rejected* rather than
-  merely failing, so the Connection reads expired and waits for someone to
-  widen the installation or narrow the Connection, instead of retrying a
-  request that cannot succeed.
+- **User-supplied secrets** (Anthropic API keys, generic API tokens) — the Connections subsystem writes them as a **header Connection** per credential, built from its template and stored with the same labels and annotations: one per-Connection Secret carrying the credential value plus the placeholder SDS the gateway reads.
 
-  The subset is chosen against **what the installation actually grants, read
-  back from GitHub** before the Connection is created, so narrowing is a
-  selection rather than a guess — and a permission can be taken at a *lower*
-  level than the installation holds it, which is what the read-only agent on a
-  read-write installation needs. Repositories are remembered by GitHub's
-  identifier, so renaming one does not turn a working Connection into a
-  rejected renewal.
+- **Client-credentials grants** (machine-to-machine OAuth) — the per-Connection Secret stores the long-lived client secret, and the api-server exchanges it at the provider's token endpoint (discovered from the issuer's OAuth metadata at connect time) for short-lived access tokens: once synchronously at connect time (bad credentials fail the create), then again before each expiry via the same refresh loop that renews OAuth tokens.
+  Only the minted access token reaches the gateway's injection path; the client secret stays at rest and is never sent to the connection's hosts.
+  The stored client secret is replaceable in place when it rotates upstream — the api-server mints with the new one before writing it, so a wrong secret is rejected rather than stored.
 
-  The subset is **editable in place**, the one part of a Connection's
-  configuration that is: what an agent should be allowed to do changes as its
-  work does, and rebuilding the Connection would mean re-pasting the key and
-  re-granting it to every agent. Editing re-reads the installation with the
-  Connection's own stored key and re-mints at once, so the narrower token
-  replaces the live one; a subset the installation cannot cover fails the edit
-  rather than parking the Connection at its next renewal. Nothing else moves,
-  and because the token is read gateway-side the change needs no pod roll.
-- **HMAC key pairs** (S3-compatible storage) — the per-Connection Secret
-  stores the access key ID and secret access key, plus a credentials file
-  baked from them that the gateway's signing step reads. S3 authenticates
-  by signing each request with the secret key, so there is no value to
-  inject: the agent holds a placeholder key ID that names the Connection,
-  and the gateway re-signs its requests with the real pair
-  ([credential-gateway](credential-gateway.md#request-signing)). The pair
-  is proven against the endpoint before it is stored and again at every
-  rotation, and never reaches the agent pod: only the api-server, which
-  proves it, and the gateway, which signs with it, ever hold it.
+- **GitHub personal access tokens** — a PAT is one **`github-pat` Connection** whose template re-bakes, from the bare PAT, every GitHub host injection it needs into a single per-Connection Secret — `Bearer` on the API and raw-content hosts, `Basic`-encoded on the git host for `git clone` over HTTPS — plus a `GH_TOKEN` env contribution for the `gh` CLI.
+  (This is the multi-host-injection shape described next, with the `Basic`-encoded half generated by the template rather than typed by the user.)
+  The `github-enterprise-pat` variant bakes the same shape from the user's enterprise host, plus a `GH_HOST` env contribution.
 
-**Multi-host connections.** A single OAuth connection can inject the
-same token on more than one host with **different auth schemes per
-host**, all from one K8s Secret. The Secret carries an annotated list of
-per-host injection descriptors; the controller fans it into one Envoy
-filter chain per host, stacking entries that share a host, and mounts
-the Secret once. The same list drives the egress allowlist, one rule per
-host and connection, so there is no second source of truth.
+- **GitHub App installation tokens** — a `github-app` Connection stores the app's PEM private key and mints short-lived installation tokens (`ghs_…`) from it, the JWT-signed counterpart of the client-credentials grant above: the api-server signs a short-lived app JWT, exchanges it at GitHub's installation-token endpoint (once at connect, then before each expiry via the same refresh loop), and re-bakes the same three GitHub host injections as the PAT template.
+  The private key stays at rest and is never sent to any host; only the installation token reaches the gateway's injection path.
+  Like the client secret above, a rotated private key is pasted in place and proven by minting before it is stored.
 
-GitHub.com is the motivating case:
-the same OAuth token must reach the API host as a bearer token, the git
-host as basic auth carrying the token as a password (so `git clone` of
-private repos works without a credential helper), and the raw-content
-host as a bearer token again.
+  A Connection may additionally **narrow the authority of the token it mints**, below what the app installation itself holds — to a chosen set of repositories, to a chosen set of permissions, or both.
+  An installation is an organization-wide grant, and narrowing is how one broadly-installed app backs many least-privilege Connections without a second app per task.
+  GitHub is the arbiter: it refuses any request exceeding the installation, so the narrowing can only ever reduce authority, never claim it.
+  The chosen subset is **part of the credential's stored identity, not a one-time argument** — every renewal and every key rotation re-mints against the same subset, so a Connection cannot silently widen back to the whole installation between renewals.
+  Narrowing is opt-in: a Connection that names no subset carries the installation's full authority.
+  Once a subset stops being covered — the organization drops a repository from the installation, or revokes a permission — renewal is *rejected* rather than merely failing, so the Connection reads expired and waits for someone to widen the installation or narrow the Connection, instead of retrying a request that cannot succeed.
 
-The Secret also carries the SDS documents Envoy reads, one per injection
-step — or, for a storage Connection, the credentials file its signing
-step reads.
+  The subset is chosen against **what the installation actually grants, read back from GitHub** before the Connection is created, so narrowing is a selection rather than a guess — and a permission can be taken at a *lower* level than the installation holds it, which is what the read-only agent on a read-write installation needs.
+  Repositories are remembered by GitHub's identifier, so renaming one does not turn a working Connection into a rejected renewal.
+
+  The subset is **editable in place**, the one part of a Connection's configuration that is: what an agent should be allowed to do changes as its work does, and rebuilding the Connection would mean re-pasting the key and re-granting it to every agent.
+  Editing re-reads the installation with the Connection's own stored key and re-mints at once, so the narrower token replaces the live one; a subset the installation cannot cover fails the edit rather than parking the Connection at its next renewal.
+  Nothing else moves, and because the token is read gateway-side the change needs no pod roll.
+
+- **HMAC key pairs** (S3-compatible storage) — the per-Connection Secret stores the access key ID and secret access key, plus a credentials file baked from them that the gateway's signing step reads.
+  S3 authenticates by signing each request with the secret key, so there is no value to inject: the agent holds a placeholder key ID that names the Connection, and the gateway re-signs its requests with the real pair ([credential-gateway](credential-gateway.md#request-signing)).
+  The pair is proven against the endpoint before it is stored and again at every rotation, and never reaches the agent pod: only the api-server, which proves it, and the gateway, which signs with it, ever hold it.
+
+**Multi-host connections.** A single OAuth connection can inject the same token on more than one host with **different auth schemes per host**, all from one K8s Secret.
+The Secret carries an annotated list of per-host injection descriptors; the controller fans it into one Envoy filter chain per host, stacking entries that share a host, and mounts the Secret once.
+The same list drives the egress allowlist, one rule per host and connection, so there is no second source of truth.
+
+GitHub.com is the motivating case: the same OAuth token must reach the API host as a bearer token, the git host as basic auth carrying the token as a password (so `git clone` of private repos works without a credential helper), and the raw-content host as a bearer token again.
+
+The Secret also carries the SDS documents Envoy reads, one per injection step — or, for a storage Connection, the credentials file its signing step reads.
 
 ## Image pull credentials
 
-Pulling the agent's container image from a private registry uses a
-**structurally separate** credential class from the egress credentials
-above. It does not ride the Envoy path at all:
+Pulling the agent's container image from a private registry uses a **structurally separate** credential class from the egress credentials above.
+It does not ride the Envoy path at all:
 
 - **The kubelet consumes it, not Envoy** — on the vm Backend, the runner.
-  It is a `kubernetes.io/dockerconfigjson` Secret listed in the pod's
-  `imagePullSecrets`. A vm Agent has no pod, so its runner hands those
-  Secrets, in order, to the cache, for that fetch alone, never
-  storing them; a shared cache checks a private entry per boot, not
-  per read ([persistence](vm-image-cache.md)).
-  Either way the
-  agent never holds the bytes — because of *where the Secret is
-  consumed*, not Envoy injection.
-- **Scope is the Agent, not the owner.** Egress credentials are
-  owner-scoped and reusable across every Agent that owner runs; a pull
-  credential is agent-scoped — one Secret per Agent (still carrying the
-  creator's `agent-platform.ai/owner` for tenancy), created with the Agent and
-  torn down with it.
-- **Per-agent precedence over the install-wide default.** An operator may
-  configure a default pull secret for every agent. An Agent's own
-  pull-secret ref is listed *first*, ahead of that default, which is kept
-  as a fallback — override, not replace.
+  It is a `kubernetes.io/dockerconfigjson` Secret listed in the pod's `imagePullSecrets`.
+  A vm Agent has no pod, so its runner hands those Secrets, in order, to the cache, for that fetch alone, never storing them; a shared cache checks a private entry per boot, not per read ([persistence](vm-image-cache.md)).
+  Either way the agent never holds the bytes — because of *where the Secret is consumed*, not Envoy injection.
+- **Scope is the Agent, not the owner.** Egress credentials are owner-scoped and reusable across every Agent that owner runs; a pull credential is agent-scoped — one Secret per Agent (still carrying the creator's `agent-platform.ai/owner` for tenancy), created with the Agent and torn down with it.
+- **Per-agent precedence over the install-wide default.** An operator may configure a default pull secret for every agent.
+  An Agent's own pull-secret ref is listed *first*, ahead of that default, which is kept as a fallback — override, not replace.
 
-The api-server builds the Secret from structured registry input and
-writes it before the Agent record, rolling it back if that create fails; its teardown lives on
-[persistence](persistence.md). The credential is validated only at pull
-time — a bad credential surfaces as an image-pull failure (a vm Agent's
-image reads unavailable), not a create-time error.
+The api-server builds the Secret from structured registry input and writes it before the Agent record, rolling it back if that create fails; its teardown lives on [persistence](persistence.md).
+The credential is validated only at pull time — a bad credential surfaces as an image-pull failure (a vm Agent's image reads unavailable), not a create-time error.
 
-Scope is long-lived static credentials (registry PAT, robot account, basic
-auth, a GCP Artifact Registry JSON key as the password). Short-lived or
-dynamically-minted registry tokens (e.g. ECR) are out of scope.
+Scope is long-lived static credentials (registry PAT, robot account, basic auth, a GCP Artifact Registry JSON key as the password).
+Short-lived or dynamically-minted registry tokens (e.g. ECR) are out of scope.
 
 ## Platform database roles
 
-The credentials above are *upstream* secrets the platform injects on behalf of
-agents. The platform's own backing store has a separate credential boundary: the
-bundled Postgres splits application connection identities from DBA authority.
+The credentials above are *upstream* secrets the platform injects on behalf of agents.
+The platform's own backing store has a separate credential boundary: the bundled Postgres splits application connection identities from DBA authority.
 Three login roles, not one:
 
-- **`platform_apiserver`** / **`platform_keycloak`** — `NOSUPERUSER` owners of
-  the `platform` and `keycloak` databases respectively, each the only role its
-  service connects as. `CONNECT` is revoked from `PUBLIC` and granted back only
-  to that owner, plus the credential-less `usage_readers` group on `platform`
-  ([usage-tracking](usage-tracking.md#source-passthrough-views)), so a leaked
-  api-server credential can neither read Keycloak's
-  database nor escalate (no `CREATE ROLE`, no `ALTER SYSTEM`, no RLS bypass) —
-  it can only do DDL/DML within the `platform` database it already owns.
-- **`platform`** — the lone `SUPERUSER`, used only for DBA work. It is the
-  image's bootstrap superuser, because Postgres forbids demoting that role and
-  so it must be the role that is *allowed* to keep SUPERUSER, not an app role.
-  An existing single-role cluster already bootstrapped under this name, so it is
-  kept in place rather than renamed — Postgres forbids renaming the role you
-  are connected as. A per-role `log_statement` default puts every
-  admin-session statement into the audit trail, and every role and grant
-  change is audited whoever issues it ([persistence](persistence.md)).
+- **`platform_apiserver`** / **`platform_keycloak`** — `NOSUPERUSER` owners of the `platform` and `keycloak` databases respectively, each the only role its service connects as.
+  `CONNECT` is revoked from `PUBLIC` and granted back only to that owner, plus the credential-less `usage_readers` group on `platform` ([usage-tracking](usage-tracking.md#source-passthrough-views)), so a leaked api-server credential can neither read Keycloak's database nor escalate (no `CREATE ROLE`, no `ALTER SYSTEM`, no RLS bypass) — it can only do DDL/DML within the `platform` database it already owns.
+- **`platform`** — the lone `SUPERUSER`, used only for DBA work.
+  It is the image's bootstrap superuser, because Postgres forbids demoting that role and so it must be the role that is *allowed* to keep SUPERUSER, not an app role.
+  An existing single-role cluster already bootstrapped under this name, so it is kept in place rather than renamed — Postgres forbids renaming the role you are connected as.
+  A per-role `log_statement` default puts every admin-session statement into the audit trail, and every role and grant change is audited whoever issues it ([persistence](persistence.md)).
 
-The admin credential lives in the same `platform-postgres-secrets` Secret and
-must be treated as high-value. The statement audit is best-effort, not enforced
-— a superuser session can `SET log_statement` mid-session. Operational details are in the
-[runbook](../notes/postgres-role-operations.md).
+The admin credential lives in the same `platform-postgres-secrets` Secret and must be treated as high-value.
+The statement audit is best-effort, not enforced — a superuser session can `SET log_statement` mid-session.
+Operational details are in the [runbook](../notes/postgres-role-operations.md).
 
 ## Envoy credential injection
 
-Upstream credentials exist only gateway-side: the controller mounts the
-owner's Secrets into the paired gateway pod, and Envoy there adds each
-credential to the agent's outbound requests on the wire — injected into a
-header or query parameter, or, for S3-compatible storage, by re-signing
-the request with keys the agent never holds — so the agent pod holds
-placeholders and never Secret bytes. A credentialed host is pinned
-to its upstream, so a request cannot carry a credential to a destination
-of the agent's choosing — the route-confusion exfiltration path is
-structurally closed. The mechanics — L7 promotion, per-host chains,
-injection steps, request signing, path rewriting, addressing between
-Connections, and how a bad Secret degrades rather than wedges the
-gateway — live on [credential-gateway](credential-gateway.md).
+Upstream credentials exist only gateway-side: the controller mounts the owner's Secrets into the paired gateway pod, and Envoy there adds each credential to the agent's outbound requests on the wire — injected into a header or query parameter, or, for S3-compatible storage, by re-signing the request with keys the agent never holds — so the agent pod holds placeholders and never Secret bytes.
+A credentialed host is pinned to its upstream, so a request cannot carry a credential to a destination of the agent's choosing — the route-confusion exfiltration path is structurally closed.
+The mechanics — L7 promotion, per-host chains, injection steps, request signing, path rewriting, addressing between Connections, and how a bad Secret degrades rather than wedges the gateway — live on [credential-gateway](credential-gateway.md).
 
 ## HITL ext_authz
 
-Each credentialed request goes through an ext_authz Check call against
-the api-server. Identity is the **per-Agent ext-authz
-Service** the gateway pod's Envoy was configured to dial
-(`<release>-extauthz-<id>`); the AuthorizationPolicy on each Service
-ALLOWs only the matching SA principal, so by the time a Check arrives
-the calling Agent is already proven cryptographically. The handler
-parses the Agent ID from the gRPC `:authority`, looks up the matching
-egress rule, and either allows the request, denies it, or holds it open
-while the user makes a verdict on Home.
+Each credentialed request goes through an ext_authz Check call against the api-server.
+Identity is the **per-Agent ext-authz Service** the gateway pod's Envoy was configured to dial (`<release>-extauthz-<id>`); the AuthorizationPolicy on each Service ALLOWs only the matching SA principal, so by the time a Check arrives the calling Agent is already proven cryptographically.
+The handler parses the Agent ID from the gRPC `:authority`, looks up the matching egress rule, and either allows the request, denies it, or holds it open while the user makes a verdict on Home.
 
-A held request is one pending approval, and identical requests — same
-host, port, method and path, as a retrying client sends — join it rather than
-filing their own. Each one that joins raises the approval's in-session
-prompt again, to every session attached at that moment, and records its
-own hold in the security log: the session that saw the first prompt may be long gone,
-and a request waiting on a prompt nobody can see would stall the agent
-silently for the whole hold window.
+A held request is one pending approval, and identical requests — same host, port, method and path, as a retrying client sends — join it rather than filing their own.
+Each one that joins raises the approval's in-session prompt again, to every session attached at that moment, and records its own hold in the security log: the session that saw the first prompt may be long gone, and a request waiting on a prompt nobody can see would stall the agent silently for the whole hold window.
 
 That re-published prompt is for attached ACP clients such as the CLI.
-The web chat does not read it: a held request belongs to the agent, not
-to a session, so every open conversation of the agent shows the agent's
-waiting network approvals from the approvals list, with their verdict
-controls. The list is the api-server's own state, refreshed by the
-approvals live hint, so a conversation opened after the hold — or a
-retry that joined it — still shows the prompt, and a verdict given in
-one place clears it from every conversation, from Home and from its
-toast.
+The web chat does not read it: a held request belongs to the agent, not to a session, so every open conversation of the agent shows the agent's waiting network approvals from the approvals list, with their verdict controls.
+The list is the api-server's own state, refreshed by the approvals live hint, so a conversation opened after the hold — or a retry that joined it — still shows the prompt, and a verdict given in one place clears it from every conversation, from Home and from its toast.
 
-At most three rules speak for a host — itself, its `*.parent` wildcard,
-and the bare `*` — most specific first; a wildcard covers the one label
-its SNI chain and SAN do.
-`failure_mode_allow: false` — a blocked Check fails closed: agent gets
-403, no approval prompt.
+At most three rules speak for a host — itself, its `*.parent` wildcard, and the bare `*` — most specific first; a wildcard covers the one label its SNI chain and SAN do.
+`failure_mode_allow: false` — a blocked Check fails closed: agent gets 403, no approval prompt.
 
-The HTTP filter on TLS-terminated chains sees method/path; the network
-filter on the catch-all chain sees SNI only.
+The HTTP filter on TLS-terminated chains sees method/path; the network filter on the catch-all chain sees SNI only.
 
-**Ports.** The gateway dials whatever port a request names, so the Check
-carries the requested port and whether the request is TLS (a CONNECT or
-SNI) or plain HTTP. The port comes from the Host or CONNECT authority, or
-is the scheme's default when absent; the SNI-only catch-all always dials
-443. A rule with a port speaks only for that port; a rule without one
-speaks only for the default port — 443 over TLS, 80 over plain HTTP — so
-a host-wide allow never opens the host's other services. A hold on a
-non-default port records it, and the rule a verdict writes carries it.
+**Ports.** The gateway dials whatever port a request names, so the Check carries the requested port and whether the request is TLS (a CONNECT or SNI) or plain HTTP.
+The port comes from the Host or CONNECT authority, or is the scheme's default when absent; the SNI-only catch-all always dials 443.
+A rule with a port speaks only for that port; a rule without one speaks only for the default port — 443 over TLS, 80 over plain HTTP — so a host-wide allow never opens the host's other services.
+A hold on a non-default port records it, and the rule a verdict writes carries it.
 The platform's object store passes on its own authority, port included.
 
-**Gateway egress NetworkPolicy.** ext_authz decides on the name; Envoy
-then resolves it and dials the answer, so an approved name resolving to
-a private address (an owner's DNS record, or rebinding after approval)
-would otherwise reach the cluster, the node or the cloud metadata
-endpoint. A controller-rendered per-pair egress policy closes that at
-the kernel, whatever a name resolves to: the gateway reaches the public
-internet minus the private, loopback, link-local, CGNAT and this-network
-ranges; inside the network only the cluster DNS pods and the platform
-pods its own clusters dial (api-server ext-authz and harness, the harness
-waypoint, object store, telemetry collector), each on its port and on
-HBONE. An install may open further private ranges for enterprise
-services (`controller.gatewayEgress` in [`helm/values.yaml`](../../helm/values.yaml));
-the metadata endpoints stay excepted inside them. A
-connection to a private upstream (an in-house API, a cluster's API
-server) needs its range listed there.
+**Gateway egress NetworkPolicy.** ext_authz decides on the name; Envoy then resolves it and dials the answer, so an approved name resolving to a private address (an owner's DNS record, or rebinding after approval) would otherwise reach the cluster, the node or the cloud metadata endpoint.
+A controller-rendered per-pair egress policy closes that at the kernel, whatever a name resolves to: the gateway reaches the public internet minus the private, loopback, link-local, CGNAT and this-network ranges; inside the network only the cluster DNS pods and the platform pods its own clusters dial (api-server ext-authz and harness, the harness waypoint, object store, telemetry collector), each on its port and on HBONE.
+An install may open further private ranges for enterprise services (`controller.gatewayEgress` in [`helm/values.yaml`](../../helm/values.yaml)); the metadata endpoints stay excepted inside them.
+A connection to a private upstream (an in-house API, a cluster's API server) needs its range listed there.
 
-**Unattended requests are refused, not held.** Holding is only worth
-doing where a verdict can be made. A turn driven from a messenger
-([channels](channels.md)) cannot produce one — the owner is not
-necessarily present, and the conversation's other members are not the
-owner — so a hold raised by such a turn would occupy the entire window
-and deny anyway, with the turn silent throughout. So when the gate sees
-a channel turn open on the agent and no interactive session attached to
-answer for it, it records the request and denies at once. The record is
-the point: it stays actionable on Home, a permanent verdict there
-writes the rule the agent's next attempt consumes, and retries reuse
-that one row instead of filing a copy each time. No in-session prompt
-is published on this path — the only consumers are the relay clients
-whose absence defines it. Both signals are read across api-server
-replicas (the replica relaying a turn is rarely the one a Check lands
-on) and fail toward *attended*, so losing them degrades to the ordinary
-hold rather than to silent denial. An attached browser or CLI session
-means someone can decide, so a channel turn running alongside one holds
-as usual; and an agent whose rules allow everything never reaches this
-path, because nothing it requests is unmatched.
+**Unattended requests are refused, not held.** Holding is only worth doing where a verdict can be made.
+A turn driven from a messenger ([channels](channels.md)) cannot produce one — the owner is not necessarily present, and the conversation's other members are not the owner — so a hold raised by such a turn would occupy the entire window and deny anyway, with the turn silent throughout.
+So when the gate sees a channel turn open on the agent and no interactive session attached to answer for it, it records the request and denies at once.
+The record is the point: it stays actionable on Home, a permanent verdict there writes the rule the agent's next attempt consumes, and retries reuse that one row instead of filing a copy each time.
+No in-session prompt is published on this path — the only consumers are the relay clients whose absence defines it.
+Both signals are read across api-server replicas (the replica relaying a turn is rarely the one a Check lands on) and fail toward *attended*, so losing them degrades to the ordinary hold rather than to silent denial.
+An attached browser or CLI session means someone can decide, so a channel turn running alongside one holds as usual; and an agent whose rules allow everything never reaches this path, because nothing it requests is unmatched.
 
-**Egress Aliasing.** An Invocation target has no egress identity of its
-own: before any decision, the gate resolves the calling agent to its
-driver — recursively for chained Invocations, up to the root non-target
-agent — and runs rule match, hold, and approval against the driver. The
-link is live: rules are matched per request, so tightening or loosening
-the driver applies to its running targets immediately. Approval prompts
-raised by target traffic surface as the driver's, stamped with the
-originating target, and approving permanently updates the driver's
-rules. The aliasing is application-layer only — the target's gateway
-still mounts and injects credentials for the target's own (attenuated)
-connection grants, so the target gains the driver's network *reach*,
-never its credential set. Deleting a driver cascades: its running
-Invocations are failed and their targets eagerly reaped (transitively
-for chains), and a target that slips past the cascade fails closed at
-the gate because its driver no longer resolves.
+**Egress Aliasing.** An Invocation target has no egress identity of its own: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
+The link is live: rules are matched per request, so tightening or loosening the driver applies to its running targets immediately.
+Approval prompts raised by target traffic surface as the driver's, stamped with the originating target, and approving permanently updates the driver's rules.
+The aliasing is application-layer only — the target's gateway still mounts and injects credentials for the target's own (attenuated) connection grants, so the target gains the driver's network *reach*, never its credential set.
+Deleting a driver cascades: its running Invocations are failed and their targets eagerly reaped (transitively for chains), and a target that slips past the cascade fails closed at the gate because its driver no longer resolves.
 
 ## Channel turns
 
-Binding a conversation surface — a Slack channel/DM or a Telegram
-chat — lends the Agent, credentials included, to everyone the
-messenger admits there ([channels](channels.md)). Every channel turn
-relays to the main agent pod ([channel-turns](channel-turns.md)) and runs under the Agent's own
-credential set, gated by the owner's egress rules like any
-other turn; no per-speaker credential selection happens. Such a turn can also place a file in the
-Agent's workspace: an attachment sent in the conversation is written
-there for the agent to open, so a speaker with no platform
-identity is a writer to persistent state ([persistence](persistence.md)).
-What such a turn cannot do is raise a *hold* — the decision has nowhere
-to be made from a messenger, so an unmatched request is refused rather
-than waited on (above). The binding owner's Terms-of-Use acceptance gates each turn
-— the terms bind the party whose credentials run it — and the
-security log attributes the allow to the messenger-native sender id
-with basis *place*.
+Binding a conversation surface — a Slack channel/DM or a Telegram chat — lends the Agent, credentials included, to everyone the messenger admits there ([channels](channels.md)).
+Every channel turn relays to the main agent pod ([channel-turns](channel-turns.md)) and runs under the Agent's own credential set, gated by the owner's egress rules like any other turn; no per-speaker credential selection happens.
+Such a turn can also place a file in the Agent's workspace: an attachment sent in the conversation is written there for the agent to open, so a speaker with no platform identity is a writer to persistent state ([persistence](persistence.md)).
+What such a turn cannot do is raise a *hold* — the decision has nowhere to be made from a messenger, so an unmatched request is refused rather than waited on (above).
+The binding owner's Terms-of-Use acceptance gates each turn — the terms bind the party whose credentials run it — and the security log attributes the allow to the messenger-native sender id with basis *place*.
 
 ## `dam-run`
 
-The in-pod `dam-run` CLI is a compatibility shim that runs its command
-as a regular local process in the same pod (see
-[agent-lifecycle](agent-lifecycle.md#dam-run--local-exec-shim)). It adds
-no privilege: the command runs inside the agent's existing sandbox, with
-the agent's existing egress boundary.
+The in-pod `dam-run` CLI is a compatibility shim that runs its command as a regular local process in the same pod (see [agent-lifecycle](agent-lifecycle.md#dam-run--local-exec-shim)).
+It adds no privilege: the command runs inside the agent's existing sandbox, with the agent's existing egress boundary.
 
 ## Intra-cluster identity and admission
 
-The agent and the gateway are gated by different mechanisms — they live
-on opposite sides of the credential boundary, so the threat models
-differ:
+The agent and the gateway are gated by different mechanisms — they live on opposite sides of the credential boundary, so the threat models differ:
 
-- **`platform-migration` ServiceAccount** in the agent namespace — the
-  identity of the controller's copy Jobs, run as **uid 0** like
-  the VM runner. The storage-migration Job
-  needs root only for the target side of the copy (owning a freshly
-  provisioned volume root, restoring exact file ownership); every read of
-  the agent's data drops to the agent's own uid, so a root-squashing
-  source share never sees uid 0. The
-  [runtime-migration](vm-runner.md#runtime-migration) Job reads the
-  home read-only, as root on block storage, sending it with a one-use seed capability. The SA has no API roles and no mounted token, so it
-  cannot act against the API; it exists only to scope
-  OpenShift SCCs: `anyuid` and a chart SCC (uid 0, DAC_READ_SEARCH)
-  for it. Neither pod joins the mesh.
-- **Image cache ServiceAccount** — no token, no Role: it mounts the
-  default pull secrets it preloads with
-  ([persistence](vm-image-cache.md)).
-- **Per-Agent ServiceAccount** in the agent namespace, name ==
-  Agent ID. Both pods of the long-lived pair run as this SA, but
-  only the *gateway* pod is a mesh participant — istiod stamps it with
-  a SPIFFE workload cert. The agent pod opts out of ambient
-  (`istio.io/dataplane-mode: none`) and carries no SPIFFE identity.
-  `automountServiceAccountToken`
-  stays false on both pods; the gateway's SPIFFE cert is independent
-  of SA-token mounts.
+- **`platform-migration` ServiceAccount** in the agent namespace — the identity of the controller's copy Jobs, run as **uid 0** like the VM runner.
+  The storage-migration Job needs root only for the target side of the copy (owning a freshly provisioned volume root, restoring exact file ownership); every read of the agent's data drops to the agent's own uid, so a root-squashing source share never sees uid 0.
+  The [runtime-migration](vm-runtime-migration.md) Job reads the home read-only, as root on block storage, sending it with a one-use seed capability.
+  The SA has no API roles and no mounted token, so it cannot act against the API; it exists only to scope OpenShift SCCs: `anyuid` and a chart SCC (uid 0, DAC_READ_SEARCH) for it.
+  Neither pod joins the mesh.
+- **Image cache ServiceAccount** — no token, no Role: it mounts the default pull secrets it preloads with ([persistence](vm-image-cache.md)).
+- **Per-Agent ServiceAccount** in the agent namespace, name == Agent ID.
+  Both pods of the long-lived pair run as this SA, but only the *gateway* pod is a mesh participant — istiod stamps it with a SPIFFE workload cert.
+  The agent pod opts out of ambient (`istio.io/dataplane-mode: none`) and carries no SPIFFE identity.
+  `automountServiceAccountToken` stays false on both pods; the gateway's SPIFFE cert is independent of SA-token mounts.
 - **Agent → paired gateway** is gated at the kernel at both ends.
-  The per-pair `<id>-agent-egress` NetworkPolicy has one egress rule:
-  the paired gateway pod (`pair=<id>, role=gateway`) on the Envoy
-  proxy port. The gateway injects credentials for any caller, so
-  `<id>-gateway-ingress` admits that port only from the paired agent
-  pod and, for a machine, the owner's VM runner.
-  DNS is not admitted — the agent addresses its gateway by ClusterIP,
-  and name resolution for external hosts happens in the gateway, so
-  anything in the pod that tries to resolve names directly fails
-  closed. HBONE
-  15008 is not admitted; the agent has no ztunnel and never speaks
-  HBONE. Pair pinning is structural — the policy's pod-selector is
-  the gateway pod itself, so a compromised agent has no admitted
-  IP-and-port combination to reach anything else in the cluster.
-- **api-server / controller → agent** is gated at the kernel by the
-  chart-rendered `agent-ingress-platform-only` NetworkPolicy. The agent
-  port admits ingress only from api-server pods (ACP/tRPC relay — the
-  api-server has verified the user JWT and agent ownership before
-  forwarding) and controller pods (idle-checker busy-probe). Everything
-  else, gateway pods included, is dropped; the policy selects
-  `role=agent`, so ephemeral executor pods are covered too.
-- **Gateway → api-server harness.** All agent egress (including the
-  harness call) flows through the paired gateway pod's Envoy, so what
-  reaches the mesh is gateway → harness. The harness Service is
-  `<rel>-apiserver-harness`, carrying `istio.io/use-waypoint`; Istio
-  synthesises a waypoint Gateway pod in front of it. A per-Agent
-  AuthorizationPolicy on the waypoint ALLOWs the gateway's SA
-  principal to `/api/agents/<id>/*`; handlers can treat URL `:id`
-  as authenticated.
-- **Gateway → api-server ext-authz** routes through a per-Agent
-  Service `<rel>-extauthz-<id>` rendered by the controller alongside
-  each Agent. The AuthorizationPolicy on each Service ALLOWs only
-  the matching SA principal. The destination Service is
-  cryptographically pinned to
-  the calling Agent; the api-server derives Agent ID from the
-  gRPC `:authority`.
-- **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects
-  anything that isn't either the waypoint's SA (harness) or a
-  per-Agent SA from the agent namespace (ext-authz), closing the
-  direct pod-IP bypass.
+  The per-pair `<id>-agent-egress` NetworkPolicy has one egress rule: the paired gateway pod (`pair=<id>, role=gateway`) on the Envoy proxy port.
+  The gateway injects credentials for any caller, so `<id>-gateway-ingress` admits that port only from the paired agent pod and, for a machine, the owner's VM runner.
+  DNS is not admitted — the agent addresses its gateway by ClusterIP, and name resolution for external hosts happens in the gateway, so anything in the pod that tries to resolve names directly fails closed.
+  HBONE 15008 is not admitted; the agent has no ztunnel and never speaks HBONE.
+  Pair pinning is structural — the policy's pod-selector is the gateway pod itself, so a compromised agent has no admitted IP-and-port combination to reach anything else in the cluster.
+- **api-server / controller → agent** is gated at the kernel by the chart-rendered `agent-ingress-platform-only` NetworkPolicy.
+  The agent port admits ingress only from api-server pods (ACP/tRPC relay — the api-server has verified the user JWT and agent ownership before forwarding) and controller pods (idle-checker busy-probe).
+  Everything else, gateway pods included, is dropped; the policy selects `role=agent`, so ephemeral executor pods are covered too.
+- **Gateway → api-server harness.** All agent egress (including the harness call) flows through the paired gateway pod's Envoy, so what reaches the mesh is gateway → harness.
+  The harness Service is `<rel>-apiserver-harness`, carrying `istio.io/use-waypoint`; Istio synthesises a waypoint Gateway pod in front of it.
+  A per-Agent AuthorizationPolicy on the waypoint ALLOWs the gateway's SA principal to `/api/agents/<id>/*`; handlers can treat URL `:id` as authenticated.
+- **Gateway → api-server ext-authz** routes through a per-Agent Service `<rel>-extauthz-<id>` rendered by the controller alongside each Agent.
+  The AuthorizationPolicy on each Service ALLOWs only the matching SA principal.
+  The destination Service is cryptographically pinned to the calling Agent; the api-server derives Agent ID from the gRPC `:authority`.
+- **Pod-level DENY AuthorizationPolicy** on the api-server pod rejects anything that isn't either the waypoint's SA (harness) or a per-Agent SA from the agent namespace (ext-authz), closing the direct pod-IP bypass.
 
-NetworkPolicy is the security boundary for the agent's egress; mesh
-AuthorizationPolicy is the security boundary for the gateway's egress
-to api-server endpoints. Each pod's gate matches its threat model:
-the agent runs untrusted code and is held at the kernel layer; the
-gateway is platform-controlled and its identity flows through the
-mesh.
+NetworkPolicy is the security boundary for the agent's egress; mesh AuthorizationPolicy is the security boundary for the gateway's egress to api-server endpoints.
+Each pod's gate matches its threat model: the agent runs untrusted code and is held at the kernel layer; the gateway is platform-controlled and its identity flows through the mesh.
 
 ## Dev cluster
 
-Dev-cluster constraints, not architectural properties; production gets none of
-these knobs. Recovery lives in the
-[`cluster-ops`](../../.agents/skills/cluster-ops/SKILL.md) skill.
+Dev-cluster constraints, not architectural properties; production gets none of these knobs.
+Recovery lives in the [`cluster-ops`](../../.agents/skills/cluster-ops/SKILL.md) skill.
 
-- **SVID rotation.** A lima VM sleeping with its host can outlast the mesh's
-  certificate rotation and stall every mesh hop. The local install lengthens
-  workload certificates and runs a watchdog that rolls stalled workloads.
-- **No mesh, local only.** A kernel without conntrack marks and zones cannot
-  run the ambient dataplane. The local install's no-mesh mode installs Istio's
-  CRDs but no dataplane: every AuthorizationPolicy exists, none is enforced,
-  and any pod can call the harness as any agent. The chart refuses this unless
-  the cluster carries a marker only that mode writes, and the mode refuses CI.
+- **SVID rotation.** A lima VM sleeping with its host can outlast the mesh's certificate rotation and stall every mesh hop.
+  The local install lengthens workload certificates and runs a watchdog that rolls stalled workloads.
+- **No mesh, local only.** A kernel without conntrack marks and zones cannot run the ambient dataplane.
+  The local install's no-mesh mode installs Istio's CRDs but no dataplane: every AuthorizationPolicy exists, none is enforced, and any pod can call the harness as any agent.
+  The chart refuses this unless the cluster carries a marker only that mode writes, and the mode refuses CI.

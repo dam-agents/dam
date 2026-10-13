@@ -103,14 +103,13 @@ func (c *IdleChecker) check(ctx context.Context) {
 	}
 
 	now := time.Now().UTC()
-	timeout := c.config.AgentBase.IdleTimeout.AsDuration()
 	atZero := c.agentsAtZero(ctx)
 	hibernated := 0
 	shortest := time.Duration(0)
 	for i := range agents.Items {
 		agent := &agents.Items[i]
 		name := agent.GetName()
-		effective := effectiveIdleTimeout(hibernationOverride(agent), timeout)
+		effective := effectiveIdleTimeout(hibernationOverride(agent), isVMObject(agent), c.config.AgentBase)
 		if effective > 0 && (shortest == 0 || effective < shortest) {
 			shortest = effective
 		}
@@ -182,6 +181,11 @@ func (c *IdleChecker) agentsAtZero(ctx context.Context) map[string]bool {
 		atZero[name] = !scaledUp[name]
 	}
 	return atZero
+}
+
+func isVMObject(agent *unstructured.Unstructured) bool {
+	backend, _, _ := unstructured.NestedString(agent.Object, "spec", "backend", "type")
+	return backend == "vm"
 }
 
 func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {

@@ -102,7 +102,7 @@ function KitUpdateBarContent({
                   variant="ghost"
                   size="sm"
                   disabled={start.isPending || skip.isPending}
-                  className="font-medium text-accent hover:bg-accent-light hover:text-accent-hover"
+                  tone="accent"
                   onClick={startUpdate}
                 >
                   <Renew size={16} />

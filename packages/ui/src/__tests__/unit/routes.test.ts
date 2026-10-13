@@ -14,8 +14,9 @@ const canonicalPaths = [
   "/slack/bind",
   "/sandboxes/sb-1",
   "/sandboxes/sb-1/connections",
-  "/agents/new",
+  "/starter-kits/platform/code-reviewer",
   "/artifacts",
+  "/analytics",
   "/nonexistent",
 ];
 
@@ -31,8 +32,19 @@ describe("route round-trip", () => {
     "/inbox",
     "/experiments",
     "/experiments/new",
+    "/agents/new",
+    "/starter-kits",
+    "/starter-kits/software",
   ])("sends the retired %s to Home", (path) => {
     expect(parseRoute(path).view).toBe("home");
+  });
+
+  it("opens the kit modal for a retired kit setup link", () => {
+    expect(parseRoute("/starter-kits/platform/code-reviewer/new")).toEqual({
+      view: "starter-kit",
+      catalog: "platform",
+      kit: "code-reviewer",
+    });
   });
 
   // TEST_SCENARIO: an unknown path is Not found and keeps its URL, rather than rendering Home or a default tab under the bad address.

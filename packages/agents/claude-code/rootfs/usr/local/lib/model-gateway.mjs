@@ -1,13 +1,37 @@
 import http from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { Readable } from "node:stream";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const HOST = "127.0.0.1";
-const PORT = 24180;
+// UNIT_BOUNDARY_DESCRIPTION: the gateway listens on 24180, the port the image ABI fixes (ADR 067). MODEL_GATEWAY_PORT overrides it for tests, 0 meaning any free port, and the listening line names the port bound.
+const PORT = Number(process.env.MODEL_GATEWAY_PORT ?? 24180);
 const SNAPSHOT_FILE = `${process.env.HOME}/.platform/pod-service-env.json`;
+const CATALOG_FILE = `${process.env.HOME}/.platform/model-gateway-catalog.json`;
+const FIRST_LISTING_WAIT_MS = 3_000;
 const PREFIX = "claude/";
 
 const log = (msg) => process.stderr.write(`model-gateway: ${msg}\n`);
+
+const catalogs = (() => {
+  try {
+    return JSON.parse(readFileSync(CATALOG_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+})();
+
+function saveCatalog(upstream, ids) {
+  const entry = { base: upstream.base, ids };
+  if (JSON.stringify(catalogs[upstream.key]) === JSON.stringify(entry)) return;
+  catalogs[upstream.key] = entry;
+  try {
+    writeFileSync(`${CATALOG_FILE}.tmp`, JSON.stringify(catalogs));
+    renameSync(`${CATALOG_FILE}.tmp`, CATALOG_FILE);
+  } catch (err) {
+    log(`model list not kept for the next start (${err.message})`);
+  }
+}
 
 function customUpstream(raw) {
   const base = (raw ?? "").replace(/\/+$/, "");
@@ -24,7 +48,16 @@ function front(key, env) {
   const current = upstreams.get(key);
   if (!base) return upstreams.delete(key);
   if (current?.base === base && current.token === token) return false;
-  const next = { key, base, token, knownModels: new Map() };
+  const kept = catalogs[key];
+  const cached =
+    kept?.base === base && Array.isArray(kept.ids) ? kept.ids.map(String) : [];
+  const next = {
+    key,
+    base,
+    token,
+    knownModels: new Map(cached.map((id) => [publicName(id), id])),
+    publishedTiers: new Map(),
+  };
   upstreams.set(key, next);
   log(`fronting ${base}${key ? ` for provider ${key}` : ""}`);
   next.ready = refreshCatalog(next);
@@ -54,14 +87,26 @@ if (upstreams.size === 0) {
   process.exit(0);
 }
 
-const publicName = (id) => {
+function publicName(id) {
   const name = id.toLowerCase();
   return name.startsWith(PREFIX) ? name : PREFIX + name;
-};
+}
 
-const resolveModel = (upstream, name) =>
-  upstream.knownModels.get(name) ??
-  (name.toLowerCase().startsWith(PREFIX) ? name.slice(PREFIX.length) : name);
+const TIERS = ["fable", "opus", "sonnet", "haiku"];
+
+const resolveModel = (upstream, name) => {
+  const known = upstream.knownModels.get(name);
+  if (known) return known;
+  const bare = name.toLowerCase().startsWith(PREFIX)
+    ? name.slice(PREFIX.length)
+    : name;
+  const models = [...upstream.knownModels.values()];
+  if (!models.length || models.includes(bare)) return bare;
+  const tier =
+    upstream.publishedTiers.get(name) ??
+    TIERS.find((t) => bare.toLowerCase().includes(t));
+  return tier ? tierModels(models)[tier] : bare;
+};
 
 const isEmbedding = (m) =>
   ["id", "mode", "type"].some((f) =>
@@ -102,6 +147,7 @@ async function refreshCatalog(upstream) {
     if (ids.join("\n") !== [...upstream.knownModels.values()].join("\n"))
       log(`serving ${ids.length} model(s)${upstream.key ? ` for provider ${upstream.key}` : ""}`);
     upstream.knownModels = new Map(ids.map((id) => [publicName(id), id]));
+    saveCatalog(upstream, ids);
   }
   return ids;
 }
@@ -133,19 +179,25 @@ const latest = (models, tier) => {
 
 const shQuote = (v) => `'${v.replaceAll("'", "'\\''")}'`;
 
+function tierModels(models) {
+  const [fable, opus, sonnet, haiku] = TIERS.map((t) => latest(models, t));
+  const fallback = opus ?? sonnet ?? haiku ?? models.toSorted(byVersion).at(-1);
+  return {
+    fable: fable ?? fallback,
+    opus: fallback,
+    sonnet: sonnet ?? fallback,
+    haiku: haiku ?? sonnet ?? fallback,
+  };
+}
+
 function envLines(upstream) {
   const models = [...upstream.knownModels.values()];
   if (!models.length) return "";
-  const [fable, opus, sonnet, haiku] = ["fable", "opus", "sonnet", "haiku"].map(
-    (t) => latest(models, t),
-  );
-  const fallback = opus ?? sonnet ?? haiku ?? models.toSorted(byVersion).at(-1);
-  return Object.entries({
-    ANTHROPIC_DEFAULT_FABLE_MODEL: publicName(fable ?? fallback),
-    ANTHROPIC_DEFAULT_OPUS_MODEL: publicName(fallback),
-    ANTHROPIC_DEFAULT_SONNET_MODEL: publicName(sonnet ?? fallback),
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: publicName(haiku ?? sonnet ?? fallback),
-  })
+  const tiers = Object.entries(tierModels(models));
+  for (const [tier, model] of tiers)
+    upstream.publishedTiers.set(publicName(model), tier);
+  return tiers
+    .map(([tier, model]) => [`ANTHROPIC_DEFAULT_${tier.toUpperCase()}_MODEL`, publicName(model)])
     .map(([k, v]) => `[ -n "\${${k}:-}" ] || export ${k}=${shQuote(v)}\n`)
     .join("");
 }
@@ -190,6 +242,7 @@ const keepHeaders = (entries, drop) =>
   );
 
 async function proxy(upstream, path, req, res) {
+  if (!upstream.knownModels.size) await refreshCatalog(upstream);
   const body = rewriteModel(
     upstream,
     Buffer.concat(await Array.fromAsync(req)),
@@ -297,12 +350,16 @@ process.on("SIGHUP", () => {
 });
 
 const discovered = await Promise.all(
-  [...upstreams.values()].map((u) => u.ready),
+  [...upstreams.values()].map((u) =>
+    u.knownModels.size
+      ? true
+      : Promise.race([u.ready, sleep(FIRST_LISTING_WAIT_MS, null)]),
+  ),
 );
 if (!discovered.some(Boolean))
   log(
     "no models discovered yet; passthrough only (built-in names still route)",
   );
 server.listen(PORT, HOST, () =>
-  log(`listening on ${HOST}:${PORT}, fronting ${upstreams.size} upstream(s)`),
+  log(`listening on ${HOST}:${server.address().port}, fronting ${upstreams.size} upstream(s)`),
 );

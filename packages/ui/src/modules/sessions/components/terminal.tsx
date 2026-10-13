@@ -18,10 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
 import { getAccessToken } from "../../../auth.js";
-import {
-  readNextSessionPair,
-  rememberSessionPair,
-} from "../api/session-pair.js";
+import { readNextSessionPair } from "../api/session-pair.js";
 import { pairMeta } from "../lib/session-pair-options.js";
 
 type ConnectionState = "connecting" | "live" | "disconnected" | "exited";
@@ -123,7 +120,6 @@ export function Terminal({
 
       ws.onopen = () => {
         if (cancelled || !ws || !term) return;
-        if (lease?.chosen) rememberSessionPair(agentId, lease.pair);
         setState("live");
         ws.send(encodeResize(term.cols, term.rows).buffer);
         term.focus();
@@ -205,7 +201,7 @@ export function Terminal({
         <div className="absolute inset-0 z-content flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <Spinner size={18} />
-            Connecting terminal...
+            Connecting terminal…
           </div>
         </div>
       )}

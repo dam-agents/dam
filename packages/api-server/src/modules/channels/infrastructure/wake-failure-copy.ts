@@ -32,6 +32,11 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
             "This agent failed to start: it ran out of memory. " +
             "Check the agent's page or contact its owner."
           );
+        case "HomeVolumeFull":
+          return (
+            "This agent failed to start: its home volume is full. " +
+            "Contact its owner — the volume needs more space or files removed."
+          );
         case "MachineImageUnavailable":
           return (
             "This agent failed to start: its image isn't available to the " +

@@ -177,7 +177,7 @@ func (m runtimeMigration) machineMayRun() bool {
 	return !m.active() || m.vmSideRuns()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the shape the machine takes, recorded by the api-server with the request: the disk's size when HOME asked for more than the Agent does. The rest of the spec is the Agent's own, so an image changed meanwhile is the image the machine runs.
+// UNIT_BOUNDARY_DESCRIPTION: the shape the machine takes, recorded by the api-server with the request: the disk's size when HOME asked for more than the Agent does, raised by the preflight to the home volume's capacity when that is larger. The rest of the spec is the Agent's own, so an image changed meanwhile is the image the machine runs.
 type runtimeMigrationTarget struct {
 	StorageSize string `json:"storageSize,omitempty"`
 }
@@ -357,7 +357,48 @@ func (r *AgentReconciler) reconcileMigrationMachine(ctx context.Context, agent *
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, err
 	}
+	if agent.Annotations[annRuntimeMigrationSource] == "" {
+		if err := r.raiseRuntimeMigrationDisk(ctx, agent, target); err != nil {
+			return vmrunner.MachineStatus{}, false, err
+		}
+	}
 	return r.reconcileVMAgent(ctx, target, ownerRef, gatewayIP, running, false)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a home volume never shrinks when the Agent's storageSize is lowered, and a pool can hand out a larger one, so the volume the copy reads can be larger than the disk the request asked for. Before the machine and its disk are made, the target is raised to the volume's capacity and recorded, so the disk holds what the volume could and the switch keeps that size. Only until the source is recorded: the machine exists by then, and a retry clears the source and starts with a fresh one.
+func (r *AgentReconciler) raiseRuntimeMigrationDisk(ctx context.Context, agent, target *apiv1.Agent) error {
+	source, err := r.runtimeMigrationVolume(ctx, agent, agentHomeDir)
+	if err != nil || source == "" {
+		return err
+	}
+	pvc, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Get(ctx, source, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("reading the home volume %s to size the disk: %w", source, err)
+	}
+	disk, err := resolveVMDiskGiB(&target.Spec, r.config.AgentTemplateDefaults)
+	if err != nil {
+		return err
+	}
+	size := pvcSize(pvc)
+	if size.Cmp(resource.MustParse(fmt.Sprintf("%dGi", disk))) <= 0 {
+		return nil
+	}
+	target.Spec.StorageSize = size.String()
+	raw, err := json.Marshal(runtimeMigrationTarget{StorageSize: target.Spec.StorageSize})
+	if err != nil {
+		return err
+	}
+	slog.Info("runtime migration: raising the disk to the home volume's size", "agent", agent.Name, "pvc", source, "size", target.Spec.StorageSize)
+	return patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, agent.Name, map[string]*string{annRuntimeMigrationTarget: new(string(raw))})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a volume can hold: its capacity when the backend gave it more than it asked for.
+func pvcSize(pvc *corev1.PersistentVolumeClaim) resource.Quantity {
+	size := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	if capacity, ok := pvc.Status.Capacity[corev1.ResourceStorage]; ok && capacity.Cmp(size) > 0 {
+		return capacity
+	}
+	return size
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: advances the migration by at most one phase, from what the runner said about the machine this reconcile. `vmErr` is why the vm side could not be ensured, shown on the phase that waits for it rather than failing the container's reconcile.
@@ -804,10 +845,7 @@ func (r *AgentReconciler) runtimeMigrationCopySource(ctx context.Context, agent 
 	if pv.Spec.CSI == nil {
 		return source, nil
 	}
-	size := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
-	if capacity, ok := pvc.Status.Capacity[corev1.ResourceStorage]; ok && capacity.Cmp(size) > 0 {
-		size = capacity
-	}
+	size := pvcSize(pvc)
 	clone := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            runtimeMigrationCloneName(agent.Name, attempt),
@@ -1121,7 +1159,7 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old home volume read-only, as the identity the volume calls for. It runs confined: the runtime's default seccomp profile, no capability beyond the one reading may need, no privilege escalation and a read-only root, under the agent pods' own RuntimeClass, since it only reads. It reaches only the owner's runner, pinned by the runner pod's address in its hosts file so it needs no DNS, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volume attaches.
+// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old home volume read-only, as the identity the volume calls for. It runs confined: the runtime's default seccomp profile, no capability beyond the one reading may need, no privilege escalation and a read-only root. It runs under the cluster's default runtime, not the agent pods' RuntimeClass: a Kata pod's memory cgroup holds the whole VM but is sized from the container's limit plus a fixed overhead, far below the guest's RAM, so reading a home of a few hundred MiB fills the guest page cache, the kernel kills the VMM, and the pod is left running with nothing able to stop it. The pod runs only platform tooling over the agent's data, never agent code, as the storage migration's copy does. It reaches only the owner's runner, pinned by the runner pod's address in its hosts file so it needs no DNS, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volume attaches.
 func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, source, runnerIP string, reader runtimeMigrationIdentity) (*batchv1.Job, error) {
 	name := agent.Name
 	cfg := r.config
@@ -1234,9 +1272,7 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 		},
 	}
 	applyAgentBaseScheduling(&job.Spec.Template.Spec, cfg.AgentBase)
-	if rc := agent.Spec.RuntimeClassName; rc != "" {
-		job.Spec.Template.Spec.RuntimeClassName = &rc
-	}
+	job.Spec.Template.Spec.RuntimeClassName = nil
 	return job, nil
 }
 
@@ -1592,7 +1628,7 @@ func migrationAgentIdentity(cfg *config.Config) (int64, int64) {
 	return uid, gid
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the seed sits on the owner's runner claim from the moment the copy starts until the guest has booted from it, beside the disk it is restored into, so the claim needs room for both at once. The seed is never larger than the home volume it was read from, so that volume's requested size bounds it.
+// UNIT_BOUNDARY_DESCRIPTION: the seed sits on the owner's runner claim from the moment the copy starts until the guest has booted from it, beside the disk it is restored into, so the claim needs room for both at once. The seed is never larger than the home volume it was read from, so that volume's capacity bounds it.
 func (r *AgentReconciler) runtimeMigrationSeedBytes(ctx context.Context, agent *apiv1.Agent) int64 {
 	switch runtimeMigrationOf(agent.Annotations, agent.Status).phase {
 	case apiv1.ReasonRuntimeMigrationCopying, apiv1.ReasonRuntimeMigrationBooting:
@@ -1607,6 +1643,6 @@ func (r *AgentReconciler) runtimeMigrationSeedBytes(ctx context.Context, agent *
 	if err != nil {
 		return 0
 	}
-	size := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	size := pvcSize(pvc)
 	return size.Value()
 }

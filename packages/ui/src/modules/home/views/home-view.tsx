@@ -2,7 +2,6 @@ import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { EntryPointButtons } from "../../agents/components/entry-point-buttons.js";
-import { OutdatedTemplatesBanner } from "../../agents/components/outdated-templates-banner.js";
 import { SandboxList } from "../../agents/components/sandbox-list.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
@@ -51,14 +50,10 @@ export function HomeView() {
 
   return (
     <div>
-      <PageHeader
-        title="Home"
-        actions={<EntryPointButtons surface="home" primary="agent" />}
-      />
-      <OutdatedTemplatesBanner agents={visible} />
+      <PageHeader title="Home" actions={<EntryPointButtons />} />
       <ApprovalsBanner />
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-card p-6">
+        <div className="rounded-lg border border-border bg-card p-6">
           <ComputeUsage
             agents={agentsData?.list ?? []}
             workingAgentIds={workingAgentIds}

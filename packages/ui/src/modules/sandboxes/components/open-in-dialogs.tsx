@@ -31,9 +31,9 @@ function CliQuickstartNote() {
 export function OpenInTerminalDialog({ agentId, agentName, onClose }: Props) {
   const cli = getBrand().short;
   return (
-    <Modal onClose={onClose} widthClass="w-[480px]">
+    <Modal onClose={onClose} size="sm">
       <DialogHeader
-        title="Open in Terminal"
+        title="Open in terminal"
         onClose={onClose}
         subtitle={
           <>
@@ -57,7 +57,7 @@ export function OpenInTerminalDialog({ agentId, agentName, onClose }: Props) {
 export function OpenInIdeDialog({ agentId, agentName, onClose }: Props) {
   const cli = getBrand().short;
   return (
-    <Modal onClose={onClose} widthClass="w-[480px]">
+    <Modal onClose={onClose} size="sm">
       <DialogHeader
         title="Open in VS Code / Zed"
         onClose={onClose}

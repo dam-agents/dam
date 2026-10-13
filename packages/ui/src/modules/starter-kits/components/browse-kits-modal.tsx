@@ -1,35 +1,35 @@
 import { useMemo } from "react";
 
-import {
-  DialogBody,
-  DialogFooter,
-  DialogHeader,
-  Modal,
-} from "@/components/modal";
+import { HARNESS_ICONS } from "@/components/harness-icons";
+import { DialogBody, DialogHeader, Modal } from "@/components/modal";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
+import { useStore } from "../../../store.js";
+import { useCreateDefaultAgent } from "../../agents/hooks/use-create-default-agent.js";
 import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { useStarterKits } from "../api/queries.js";
-import {
-  type Filter,
-  KitCard,
-  KitFilterBar,
-  useKitFilter,
-} from "./kit-browser.js";
+import { KitCard, KitFilterBar, useKitFilter } from "./kit-browser.js";
 
-export function BrowseKitsModal({
-  onPick,
-  onClose,
-  onStartFromScratch,
-  initialFilter = "all",
-}: {
-  onPick: (catalog: string, kitId: string) => void;
-  onClose: () => void;
-  onStartFromScratch: () => void;
-  initialFilter?: Filter;
-}) {
+const DEFAULT_KIT = {
+  name: "Generalist",
+  text: "The vanilla option: only a harness without any preset. Use it directly, or as a foundation for a specialized agent.",
+};
+
+const HARNESS_PILLS = [
+  ["bob", "text-icon-violet"],
+  ["claude-code", "text-icon-clay"],
+  ["codex", "text-icon-green"],
+  ["pi", "text-icon-blue"],
+] as const;
+
+export function BrowseKitsModal() {
+  const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
+  const navigateToStarterKit = useStore((s) => s.navigateToStarterKit);
+  const defaultAgent = useCreateDefaultAgent();
+  const onClose = () => setKitBrowserOpen(false);
   const kits = useStarterKits();
   const templates = useConnectionTemplates();
   const templateById = useMemo(
@@ -37,16 +37,18 @@ export function BrowseKitsModal({
     [templates.data],
   );
   const all = useMemo(() => kits.data ?? [], [kits.data]);
-  const { query, setQuery, filter, setFilter, shown, tabs } = useKitFilter(
-    all,
-    initialFilter,
-  );
+  const { query, setQuery, filter, setFilter, shown, tabs } = useKitFilter(all);
+  const showDefault =
+    filter === "all" &&
+    `${DEFAULT_KIT.name} ${DEFAULT_KIT.text}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase());
 
   return (
-    <Modal widthClass="w-[800px]" onClose={onClose}>
+    <Modal size="lg" onClose={onClose}>
       <DialogHeader
         title="Browse starter kits"
-        subtitle="Pick a starter kit to pre-fill your agent setup"
+        subtitle="Pick a starter kit to create your agent from"
         onClose={onClose}
       />
       <DialogBody>
@@ -68,7 +70,7 @@ export function BrowseKitsModal({
           </Callout>
         )}
 
-        {kits.data && all.length > 0 && (
+        {kits.data && (
           <>
             <KitFilterBar
               query={query}
@@ -77,37 +79,64 @@ export function BrowseKitsModal({
               onFilterChange={setFilter}
               tabs={tabs}
             />
-            {shown.length === 0 ? (
+            {shown.length === 0 && !showDefault ? (
               <p className="py-8 text-sm text-muted-foreground">
                 No starter kits match &quot;{query}&quot;
               </p>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {showDefault && (
+                  <button
+                    type="button"
+                    onClick={() => void defaultAgent.create()}
+                    disabled={!defaultAgent.ready}
+                    data-testid="default-agent-card"
+                    className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-foreground/20 disabled:opacity-60"
+                  >
+                    <h3 className="text-base font-semibold text-foreground">
+                      {DEFAULT_KIT.name}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {DEFAULT_KIT.text}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {HARNESS_PILLS.map(([harness, color]) => {
+                        const { Icon, label } = HARNESS_ICONS[harness];
+                        return (
+                          <Badge
+                            key={harness}
+                            variant="muted"
+                            size="sm"
+                            className="gap-1.5"
+                          >
+                            <Icon
+                              aria-hidden="true"
+                              className={`size-3.5 ${color}`}
+                            />
+                            {label}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </button>
+                )}
                 {shown.map((kit) => (
                   <KitCard
                     key={`${kit.catalog}/${kit.id}`}
                     kit={kit}
                     templates={templates.data ?? []}
                     templateById={templateById}
-                    onOpen={() => onPick(kit.catalog, kit.id)}
+                    onOpen={() => {
+                      onClose();
+                      navigateToStarterKit(kit.catalog, kit.id);
+                    }}
                   />
                 ))}
               </div>
             )}
           </>
         )}
-
-        {kits.data && all.length === 0 && (
-          <p className="py-8 text-sm text-muted-foreground">
-            This install has no starter kit catalog configured.
-          </p>
-        )}
       </DialogBody>
-      <DialogFooter divided>
-        <Button variant="outline" onClick={onStartFromScratch}>
-          Start from scratch instead
-        </Button>
-      </DialogFooter>
     </Modal>
   );
 }

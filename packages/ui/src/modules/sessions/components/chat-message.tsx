@@ -1,5 +1,12 @@
 import { StopFilledAlt } from "@carbon/icons-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -11,6 +18,7 @@ import { modelDisplayName } from "../lib/model-name.js";
 import type { MessageTime } from "../lib/thread-items.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
+import { QuietNotice } from "./quiet-notice.js";
 import { SendErrorCard } from "./send-error-card.js";
 import { type OnRetry, UndeliveredNotice } from "./undelivered-notice.js";
 import { WorkingDots } from "./working-dots.js";
@@ -27,6 +35,7 @@ interface BaseProps {
   showModel?: boolean;
   isLast: boolean;
   hasPendingPermission: boolean;
+  pendingNotice?: ReactNode;
   onRetry: OnRetry;
   onFileClick: (path: string) => void;
   onDelete: (id: string) => void;
@@ -72,12 +81,12 @@ function LoadOlderMarker({
         <button
           type="button"
           onClick={fire}
-          className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60 hover:text-foreground"
+          className="text-2xs italic text-muted-foreground px-3 py-1 border-t border-b border-border/60 hover:text-foreground"
         >
           Couldn&apos;t load earlier messages — tap to retry
         </button>
       ) : (
-        <span className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
+        <span className="text-2xs italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
           Loading earlier messages…
         </span>
       )}
@@ -95,6 +104,7 @@ export const ChatMessage = memo(function ChatMessage({
   timeLabel,
   timeTitle,
   hasPendingPermission,
+  pendingNotice,
   onRetry,
   onFileClick,
   onDelete,
@@ -111,7 +121,7 @@ export const ChatMessage = memo(function ChatMessage({
     }
     return (
       <div className="flex justify-center anim-in">
-        <span className="text-[11px] italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
+        <span className="text-2xs italic text-muted-foreground px-3 py-1 border-t border-b border-border/60">
           {message.parts.find((p) => p.kind === "text")?.text ?? "…"}
         </span>
       </div>
@@ -145,12 +155,12 @@ export const ChatMessage = memo(function ChatMessage({
             size={24}
           />
         )}
-        <span className="text-[11px] font-medium text-muted-foreground">
+        <span className="text-2xs font-medium text-muted-foreground">
           {isAssistant ? (avatarAgent?.name ?? "Agent") : userLabel}
         </span>
         {timeLabel !== undefined && (
           <Tooltip side="top" content={timeTitle}>
-            <span className="text-[11px] text-muted-foreground cursor-default">
+            <span className="text-2xs text-muted-foreground cursor-default">
               {timeLabel}
             </span>
           </Tooltip>
@@ -190,6 +200,7 @@ export const ChatMessage = memo(function ChatMessage({
               <span className="sr-only">Working</span>
             </span>
           )}
+          {isAssistant && streaming && parts.length === 0 && pendingNotice}
           {isAssistant && stopped && !streaming && (
             <p
               data-testid="reply-stopped-marker"
@@ -212,11 +223,16 @@ export const ChatMessage = memo(function ChatMessage({
         <Tooltip side="top" content={message.model}>
           <span
             data-testid="reply-model"
-            className="text-[11px] text-muted-foreground cursor-default"
+            className="text-2xs text-muted-foreground cursor-default"
           >
             {modelDisplayName(message.model)}
           </span>
         </Tooltip>
+      )}
+      {isAssistant && !streaming && message.stoppedAtOutputLimit && (
+        <QuietNotice testId="reply-output-limit-notice">
+          Reply stopped at the output limit.
+        </QuietNotice>
       )}
       {error && isAssistant && (
         <SendErrorCard

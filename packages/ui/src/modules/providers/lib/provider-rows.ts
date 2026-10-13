@@ -40,16 +40,3 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
       "Models available in your AWS region for Claude and Pi, using a Bedrock API key.",
   },
 ];
-
-export function offeredProviderRows(
-  allow?: readonly ProviderPresetType[],
-  recommended?: ProviderPresetType,
-): readonly ProviderRowDef[] {
-  const offered = allow
-    ? PROVIDER_ROWS.filter((row) => allow.includes(row.type))
-    : PROVIDER_ROWS;
-  if (!recommended) return offered;
-  return [...offered].sort(
-    (a, b) => Number(b.type === recommended) - Number(a.type === recommended),
-  );
-}

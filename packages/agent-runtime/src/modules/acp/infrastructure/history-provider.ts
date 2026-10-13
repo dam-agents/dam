@@ -4,6 +4,7 @@ import { describeFailure, runOnce } from "../../../core/run-once.js";
 
 export interface HistoryProvider {
   fetch(sessionId: string): Promise<string[] | null>;
+  warm?(): void;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -130,10 +131,11 @@ interface WorkerHandle {
  * thread, so the module graph is compiled once instead of per load. The
  * module's exported function receives a session id and resolves to an array
  * of `session/update` JSON-RPC frame strings for that session. The worker is
- * spawned lazily, and any failure — spawn, import, per-request error, crash,
- * timeout, invalid frames — resolves that fetch to null so the caller falls
- * back to the harness `session/load`; a dead worker is respawned on the next
- * fetch.
+ * spawned by `warm`, which the server calls once it listens so a first load
+ * after a wake does not pay the module import, or else by the first fetch.
+ * Any failure — spawn, import, per-request error, crash, timeout, invalid
+ * frames — resolves that fetch to null so the caller falls back to the
+ * harness `session/load`; a dead worker is respawned on the next fetch.
  */
 export function createWorkerHistoryProvider(
   deps: WorkerHistoryProviderDeps,
@@ -209,6 +211,7 @@ export function createWorkerHistoryProvider(
   }
 
   return {
+    warm: () => void ensureWorker(),
     async fetch(sessionId) {
       const current = ensureWorker();
       const ok = await current.ready;

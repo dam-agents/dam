@@ -16,6 +16,14 @@ const MODELS_ENDPOINTS: Record<
     url: "https://api.anthropic.com/v1/models",
     headers: (key) => ({ "x-api-key": key, "anthropic-version": "2023-06-01" }),
   },
+  "anthropic-oauth": {
+    url: "https://api.anthropic.com/v1/models",
+    headers: (key) => ({
+      ...bearer(key),
+      "anthropic-version": "2023-06-01",
+      "anthropic-beta": "oauth-2025-04-20",
+    }),
+  },
   openai: { url: "https://api.openai.com/v1/models", headers: bearer },
   "ibm-litellm": {
     url: `https://${IBM_LITELLM_HOST}/v1/models`,
@@ -27,7 +35,7 @@ const MODELS_ENDPOINTS: Record<
   },
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: Checks a model provider key by listing the provider's models with it, before the key is stored. Only a 401 whose body names an unknown or invalid key counts as a refusal: a scoped key may get a 401 on the model list and still work for inference, and a timeout, a 5xx or a proxy's 403 says nothing about the key, so those come back unverified. Templates with no model-list check here (Anthropic OAuth, Bob, Bedrock) are accepted unchecked.
+// UNIT_BOUNDARY_DESCRIPTION: Checks a model provider key by listing the provider's models with it, before the key is stored. Only a 401 whose body names an unknown or invalid key counts as a refusal: a scoped key may get a 401 on the model list and still work for inference, and a timeout, a 5xx or a proxy's 403 says nothing about the key, so those come back unverified. Templates with no model-list check here (Bob, Bedrock) are accepted unchecked.
 export function createProviderKeyProbe(
   opts: { timeoutMs?: number } = {},
 ): ProviderKeyProbe {

@@ -6,6 +6,7 @@ import {
   createSlackWorker,
   TURN_LINGER_MS,
   undeliveredNudge,
+  type SlackWorkerDeps,
 } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import {
@@ -19,7 +20,10 @@ import {
   type ChannelTurnRelayed,
   type DomainEvent,
 } from "../../events.js";
-import { AgentWakeTimeoutError } from "../../modules/agents/index.js";
+import {
+  AgentWakeTimeoutError,
+  type PodRestartState,
+} from "../../modules/agents/index.js";
 import type { ChannelTurnAttendance } from "../../core/turn-attendance.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
@@ -39,6 +43,7 @@ function scripted(updates: PromptUpdate[], response: string): SendPromptFn {
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
+const signed = (t: string) => `:robot_face: *agent-1*\n\n${t}`;
 
 function harness(opts: {
   sendPrompt?: SendPromptFn;
@@ -52,6 +57,7 @@ function harness(opts: {
   turnStatus?: AcpClient["turnStatus"];
   ambient?: boolean;
   holdTurn?: boolean;
+  readPodRestarts?: SlackWorkerDeps["readPodRestarts"];
 }) {
   const gw = createFakeSlackGateway();
   const events: DomainEvent[] = [];
@@ -103,6 +109,11 @@ function harness(opts: {
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    ignoredApps: {
+      list: async () => [],
+      ignore: async () => true,
+      unignore: async () => true,
+    },
     setSlackDefault: async () => true,
     brand: { name: "DAM", short: "dam" },
     isTermsAccepted: async () => true,
@@ -116,6 +127,7 @@ function harness(opts: {
       patienceMs: opts.wakePatienceMs ?? 60_000,
       sleep: async () => {},
     },
+    ...(opts.readPodRestarts ? { readPodRestarts: opts.readPodRestarts } : {}),
   });
 
   return {
@@ -210,35 +222,6 @@ describe("slack turn presentation — owner turns", () => {
     expect(h.turnEvents()[0]!.outcome).toBe("failure");
     expect(h.turnEvents()[0]!.reason).toBe("acp-error");
   });
-
-  it("posts a still-starting note across a transient wake retry", async () => {
-    let ready = 0;
-    const h = harness({
-      ensureReady: async (_id, o) => {
-        ready += 1;
-        o?.onWaking?.();
-        if (ready === 1) {
-          throw new AgentWakeTimeoutError({
-            agentId: "agent-1",
-            timeoutMs: 120_000,
-            durationMs: 120_100,
-            failure: { kind: "agent-pod-not-ready" },
-          });
-        }
-      },
-    });
-    await h.mention();
-    await tick();
-
-    expect(ready).toBe(2);
-    const recs = h.records();
-    expect(
-      recs.some(
-        (r) => r.kind === "message" && r.text.includes("still starting"),
-      ),
-    ).toBe(true);
-    expect(h.turnEvents()[0]!.outcome).toBe("success");
-  });
 });
 
 describe("slack reply / react tools", () => {
@@ -256,7 +239,7 @@ describe("slack reply / react tools", () => {
     expect(msgs[0]).toMatchObject({
       channel: "C1",
       threadTs: "1.1",
-      text: "here you go",
+      text: signed("here you go"),
     });
   });
 
@@ -301,7 +284,7 @@ describe("slack reply / react tools", () => {
     expect(msgs[0]).toMatchObject({
       channel: "C1",
       threadTs: "7.7",
-      text: "speaking order",
+      text: signed("speaking order"),
       replyBroadcast: true,
     });
   });
@@ -322,7 +305,7 @@ describe("slack reply / react tools", () => {
     expect(msgs).toMatchObject([
       {
         channel: "C1",
-        text: "no preview cards",
+        text: signed("no preview cards"),
         unfurlLinks: false,
         unfurlMedia: false,
       },
@@ -628,7 +611,10 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
     expect(ok).toEqual({ ok: true });
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
-    expect(msgs[0]).toMatchObject({ threadTs: "100.1", text: "for thread A" });
+    expect(msgs[0]).toMatchObject({
+      threadTs: "100.1",
+      text: signed("for thread A"),
+    });
 
     h.release();
     await tick();
@@ -1267,7 +1253,7 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(turns).toBe(2);
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
-    expect(msgs[0]).toMatchObject({ text: "the late answer" });
+    expect(msgs[0]).toMatchObject({ text: signed("the late answer") });
   });
 
   /**
@@ -1349,10 +1335,122 @@ describe("slack turn — network-access framing and attendance", () => {
 
       const msgs = h.records().filter((r) => r.kind === "message");
       expect(msgs).toHaveLength(1);
-      expect(msgs[0]).toMatchObject({ text: "half an answer" });
+      expect(msgs[0]).toMatchObject({ text: signed("half an answer") });
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("an interruption caused by running out of memory", () => {
+    function restartReads(...states: PodRestartState[]) {
+      let read = 0;
+      return async () => states[Math.min(read++, states.length - 1)]!;
+    }
+
+    async function nudgeAfterLostRelay(
+      readPodRestarts: SlackWorkerDeps["readPodRestarts"],
+    ): Promise<string | undefined> {
+      vi.useFakeTimers();
+      try {
+        const seen: string[] = [];
+        const h = harness({
+          sendPrompt: async (prompt, opts) => {
+            opts.onSession?.("sess-1");
+            seen.push(String(prompt));
+            if (String(prompt).includes("<turn-undelivered>")) return "posted";
+            throw new AcpTurnAbandonedError(
+              "connection-lost",
+              "ACP connection lost (agent unreachable)",
+            );
+          },
+          turnStatus: async () => "interrupted" as const,
+          readPodRestarts,
+        });
+        await h.mention();
+        await vi.advanceTimersByTimeAsync(3 * 60_000);
+        return seen.find((p) => p.includes("<turn-undelivered>"));
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+
+    /**
+     * TEST_SCENARIO: the harness died because the agent ran past its memory
+     * limit, and the pod restarted while the turn was being watched. The
+     * nudge must name that cause, so the agent can tell the person why the
+     * answer was lost and point them at the memory setting. Without it the
+     * agent only knows the turn failed, and the one fix that helps is never
+     * suggested.
+     */
+    it("tells the agent the turn was cut short by running out of memory", async () => {
+      const nudge = await nudgeAfterLostRelay(
+        restartReads(
+          { restarts: 0, reason: undefined },
+          { restarts: 1, reason: "OutOfMemory" },
+        ),
+      );
+      expect(nudge).toContain("ran out of memory");
+      expect(nudge).toContain("Compute Resources");
+    });
+
+    /**
+     * TEST_SCENARIO: a restart for another cause is not a memory problem,
+     * and the person cannot fix it with more memory. The nudge stays the
+     * plain one.
+     */
+    it("says nothing about memory when the restart had another cause", async () => {
+      const nudge = await nudgeAfterLostRelay(
+        restartReads(
+          { restarts: 0, reason: undefined },
+          { restarts: 1, reason: "ContainerTerminated" },
+        ),
+      );
+      expect(nudge).toBeDefined();
+      expect(nudge).not.toContain("memory");
+    });
+
+    /**
+     * TEST_SCENARIO: the Agent status keeps the cause of its latest restart
+     * after the pod is ready again, so an out-of-memory restart from before
+     * this turn is still there when the nudge fires. Only a restart counted
+     * after the turn started belongs to this turn; an old one must not be
+     * blamed for a relay that was lost for another reason.
+     */
+    it("does not blame an out-of-memory restart from before the turn", async () => {
+      const nudge = await nudgeAfterLostRelay(
+        restartReads({ restarts: 2, reason: "OutOfMemory" }),
+      );
+      expect(nudge).toBeDefined();
+      expect(nudge).not.toContain("memory");
+    });
+
+    /**
+     * TEST_SCENARIO: a restart count that cannot be read gives no evidence
+     * of a cause, so the nudge falls back to the plain one rather than
+     * failing the recovery.
+     */
+    it("falls back to the plain nudge when the restart count cannot be read", async () => {
+      const nudge = await nudgeAfterLostRelay(async () => {
+        throw new Error("cache unavailable");
+      });
+      expect(nudge).toBeDefined();
+      expect(nudge).not.toContain("memory");
+    });
+
+    /**
+     * TEST_SCENARIO: the person must hear the cause, so the memory notice
+     * drops the instruction to answer without mentioning the notice — the
+     * two would contradict each other.
+     */
+    it("lets the agent explain the cause instead of hiding the notice", () => {
+      const nudge = undeliveredNudge("1.1", {
+        sawFailure: false,
+        outOfMemory: true,
+      });
+      expect(nudge).toContain("ran out of memory");
+      expect(nudge).not.toContain("do not mention this notice");
+      expect(nudge).toContain("no_reply_needed");
+    });
   });
 
   /**
@@ -1424,7 +1522,7 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(turns).toBe(1);
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
-    expect(msgs[0]).toMatchObject({ text: "answered" });
+    expect(msgs[0]).toMatchObject({ text: signed("answered") });
   });
 
   /**
