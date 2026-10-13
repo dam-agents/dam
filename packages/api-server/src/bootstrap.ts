@@ -1546,6 +1546,7 @@ export async function bootstrap() {
     log: (message) => process.stderr.write(`${message}\n`),
   });
   await periodicJobs.register("image-update", 60_000, () => imageUpdate.tick());
+  await periodicJobs.retire("retired-image-migration");
 
   const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
     composeSessionDirectory(db);
