@@ -11,6 +11,7 @@ import {
   pageSessions,
   type ListedHarnessSession,
 } from "../domain/session-list.js";
+import { historyTailStart } from "../domain/replay-tail.js";
 import { spendBySession, spendTotal } from "../domain/session-spend.js";
 import type { DelegationFramesStore } from "../infrastructure/delegation-frames-store.js";
 import type { HistoryProvider } from "../infrastructure/history-provider.js";
@@ -24,6 +25,17 @@ import type {
 import type { SessionChanges } from "./session-changes.js";
 
 const EMPTY_HISTORY: SessionHistory = { frames: [], truncated: false };
+
+function newestTail(
+  history: SessionHistory,
+  tail: number | undefined,
+): SessionHistory {
+  if (tail === undefined) return history;
+  const start = historyTailStart(history.frames, tail);
+  return start === 0
+    ? history
+    : { frames: history.frames.slice(start), truncated: true };
+}
 
 const HARNESS_LISTING_TTL_MS = 30_000;
 // UNIT_BOUNDARY_DESCRIPTION: how long a list read waits for a harness listing still being read. The first read after a boot starts the harness cold, which takes seconds; past this the read answers from the platform's own session records and the last listing, and announces a change once the harness answers.
@@ -202,11 +214,13 @@ export function createSessionsService(deps: {
      * an empty answer, not a failure: a harness that declares no provider, or a
      * session that produced nothing, has nothing to keep.
      */
-    async history(sessionId): Promise<SessionHistory> {
+    async history(sessionId, opts): Promise<SessionHistory> {
       const live = deps.sessionFrames(sessionId);
-      if (live.frames.length > 0) return live;
+      if (live.frames.length > 0) return newestTail(live, opts?.tail);
       const stored = await deps.historyProvider?.fetch(sessionId);
-      return stored ? { frames: stored, truncated: false } : EMPTY_HISTORY;
+      return stored
+        ? newestTail({ frames: stored, truncated: false }, opts?.tail)
+        : EMPTY_HISTORY;
     },
 
     async setTitle(input) {

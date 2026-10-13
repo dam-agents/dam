@@ -20,7 +20,12 @@ export const sessionsRouter = t.router({
 
   history: t.procedure
     .input(sessionHistoryInputSchema)
-    .query(({ ctx, input }) => ctx.sessions.history(input.sessionId)),
+    .query(({ ctx, input }) =>
+      ctx.sessions.history(
+        input.sessionId,
+        input.tail !== undefined ? { tail: input.tail } : undefined,
+      ),
+    ),
 
   setTitle: t.procedure
     .input(setSessionTitleInputSchema)

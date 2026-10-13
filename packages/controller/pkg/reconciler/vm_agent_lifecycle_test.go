@@ -4,6 +4,8 @@ package reconciler
 import (
 	"context"
 	"errors"
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -180,4 +182,24 @@ func TestACappedClaimIsReportedOncePerOwner(t *testing.T) {
 	notices := 0
 	r.claimCapNotices.Range(func(any, any) bool { notices++; return true })
 	assert.Equal(t, 1, notices)
+}
+
+// TEST_SCENARIO: an owner's first vm agent dials a runner that has just become ready, before its headless Service's name resolves. The agent waits on the runner as one still starting, with no reconcile error, so it is not shown as failed, and is looked at again after three seconds.
+func TestARunnerWhoseAddressDoesNotResolveYetIsStillStarting(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, requeued := setupVMReconciler(t, agent)
+	runner, err := r.runnerFor(ctx, testOwner)
+	require.NoError(t, err)
+	runner.HTTP.Transport = &http.Transport{DialContext: func(context.Context, string, string) (net.Conn, error) {
+		return nil, &net.DNSError{Err: "no such host", Name: r.runnerHost(testOwner), IsNotFound: true}
+	}}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	reconciled, _ := agentCondition(t, r, "my-agent", apiv1.ConditionReconciled)
+	assert.NotEqual(t, "False", reconciled)
+	_, msg := agentPodReadyMessage(t, r, "my-agent")
+	assert.Equal(t, "the owner's VM runner is still starting: its address does not resolve yet", msg)
+	assert.Equal(t, "3s", requeued.last().String())
 }

@@ -163,12 +163,24 @@ func TestPeersCountByWhetherTheyShouldRun(t *testing.T) {
 // TEST_SCENARIO: the request is held between two bounds. It never falls below the request the install set, and never rises above the limit, which the API refuses and which the runner would refuse to admit past anyway.
 func TestTheRunnerRequestStaysBetweenTheInstallsRequestAndTheLimit(t *testing.T) {
 	floor, limit := resource.MustParse("2Gi"), resource.MustParse("8Gi")
-	low := runnerMemoryRequest(0, 512, floor, limit)
+	low := runnerMemoryRequest(0, 512, resource.Quantity{}, floor, limit)
 	assert.Equal(t, "2Gi", low.String())
-	mid := runnerMemoryRequest(4096, 512, floor, limit)
+	mid := runnerMemoryRequest(4096, 512, resource.Quantity{}, floor, limit)
 	assert.Equal(t, "4608Mi", mid.String())
-	high := runnerMemoryRequest(16384, 512, floor, limit)
+	high := runnerMemoryRequest(16384, 512, resource.Quantity{}, floor, limit)
 	assert.Equal(t, "8Gi", high.String())
+}
+
+// TEST_SCENARIO: a guest whose use sits on a 512 MiB step boundary must not flip the request between two steps at every pass. The request rises as soon as the need passes the current step, and falls only once the need is a quarter step below the step under it.
+func TestTheRunnerRequestFallsOnlyClearlyBelowTheCurrentStep(t *testing.T) {
+	floor, limit, current := resource.MustParse("1Gi"), resource.MustParse("8Gi"), resource.MustParse("2Gi")
+	up := runnerMemoryRequest(2049-512, 512, current, floor, limit)
+	assert.Equal(t, "2560Mi", up.String())
+	current = up
+	held := runnerMemoryRequest(2040-512, 512, current, floor, limit)
+	assert.Equal(t, "2560Mi", held.String())
+	down := runnerMemoryRequest(1920-512, 512, current, floor, limit)
+	assert.Equal(t, "2Gi", down.String())
 }
 
 // TEST_SCENARIO: an install that sets only the limit gets a pod whose request Kubernetes defaulted to the limit. That is already the safest request there is, so nothing is lowered.

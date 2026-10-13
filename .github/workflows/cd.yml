@@ -523,13 +523,36 @@ jobs:
       - name: Build
         run: .mise/tasks/image/ci-build amd64 mock:source
 
+  docs-only:
+    name: detect docs-only change
+    # A PR that changes only docs/ and Markdown outside packages/ skips both
+    # e2e lanes. Markdown under packages/ ships in agent images, so it counts
+    # as code. The lanes run when it fails, so a broken detection never skips
+    # them.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs: ${{ steps.d.outputs.docs }}
+    steps:
+      - if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - id: d
+        if: github.event_name == 'pull_request'
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- . ':!docs' ':!*.md' && git diff --quiet HEAD^1 HEAD -- 'packages/*.md'; then
+            echo "docs=true" >> "$GITHUB_OUTPUT"
+          fi
+
   e2e:
     name: mise e2e (container)
     # The container lane: the smoke suite on an install without
     # virtualization, so every agent is a pod. e2e-vm is the vm lane, the same
     # suite with every agent on the vm Backend; the two run side by side on
-    # every run but a tag, each on its own runner, and the Playwright config
-    # picks each lane's specs from E2E_VIRTUALIZATION (see
+    # every run but a tag and a docs-only PR, each on its own runner, and the
+    # Playwright config picks each lane's specs from E2E_VIRTUALIZATION (see
     # packages/e2e/playwright/src/lib/lane.ts).
     # No `needs` on the builds: bringing the cluster up takes minutes and needs
     # no image, so it runs while they build. e2e:ci-images builds them here on
@@ -538,7 +561,8 @@ jobs:
     # fails this job, there.
     # The steps e2e-vm shares are anchored here (&e2e-*), so the two lanes
     # bring their clusters up the same way.
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    needs: [docs-only]
+    if: ${{ !cancelled() && !startsWith(github.ref, 'refs/tags/v') && needs.docs-only.outputs.docs != 'true' }}
     runs-on: ubuntu-latest
     # The builds' own time now counts against this budget.
     timeout-minutes: 45
@@ -708,7 +732,8 @@ jobs:
     #
     # The job summary carries the lane's per-phase timings (e2e:timings), from
     # the marks E2E_TIMINGS collects and the Playwright JSON report.
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+    needs: [docs-only]
+    if: ${{ !cancelled() && !startsWith(github.ref, 'refs/tags/v') && needs.docs-only.outputs.docs != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -770,6 +795,19 @@ jobs:
       - *e2e-ci-images
       - *e2e-playwright-version
       - *e2e-playwright-cache
+      # The node directory the harness tools installer fills, so on a hit it
+      # finds every version installed and reaches no download host: one host
+      # that stalled for minutes failed this lane. Keyed by what fixes the
+      # versions, the installer included. Restored as the runner's user, then
+      # given to root, who owns every install there.
+      - name: Create the node's harness tools directory
+        run: sudo install -d -o "$USER" /var/lib/platform-harness-tools
+      - id: harness-tools-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /var/lib/platform-harness-tools
+          key: &harness-tools-key harness-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/base.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/default/rootfs/usr/local/bin/install-harness-tools') }}
+      - run: sudo chown -R root:root /var/lib/platform-harness-tools
       # Twice the container lane's budget: the vm-runner build above on a PR,
       # the node staging of the mock image, every agent's boots, each a machine
       # start under nested virtualization, and the backend and runtime
@@ -777,6 +815,16 @@ jobs:
       - run: *e2e-run
         timeout-minutes: 70
         env: *e2e-run-env
+      # Only main writes it, and only once the suite passed, which waits for the
+      # installer: an entry is a whole install of one lockfile. It is about the
+      # size of the agent-tools entry, and a PR reads main's.
+      - if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
+        run: sudo chown -R "$USER" /var/lib/platform-harness-tools
+      - if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /var/lib/platform-harness-tools
+          key: *harness-tools-key
       - *e2e-image-log
       - *e2e-provision-log
       # The background provision and image fetch each end by writing their

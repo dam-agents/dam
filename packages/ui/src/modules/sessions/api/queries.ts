@@ -29,6 +29,7 @@ import { acpSessionsKeys } from "./keys.js";
 
 const SESSION_PAGE_SIZE = 50;
 const SESSION_HISTORY_STALE_MS = 5_000;
+export const SESSION_HISTORY_TAIL = 200;
 
 type SessionPages = InfiniteData<SessionViewPage, SessionListCursor | null>;
 
@@ -236,7 +237,7 @@ export function useAgentSession(
 function sessionHistoryQuery(agentId: string, sessionId: string) {
   return {
     queryKey: acpSessionsKeys.history(agentId, sessionId),
-    queryFn: () => readSessionHistory(agentId, sessionId),
+    queryFn: () => readSessionHistory(agentId, sessionId, SESSION_HISTORY_TAIL),
     staleTime: SESSION_HISTORY_STALE_MS,
     retry: false,
   };
