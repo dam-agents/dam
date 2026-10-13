@@ -16,45 +16,11 @@ const suite: NamedProject[] = [
     testMatch: /01-.*\.spec\.ts$/,
     use: { ...devices["Desktop Chrome"] },
   },
-  ...(laneBackend === "vm"
-    ? [
-        {
-          name: "harness-tools",
-          testMatch: /22-.*\.spec\.ts$/,
-          dependencies: ["auth"],
-          use: { ...devices["Desktop Chrome"] },
-        },
-      ]
-    : []),
   {
     name: "connection",
     testMatch: /02-.*\.spec\.ts$/,
     dependencies: ["auth"],
     use: { ...devices["Desktop Chrome"], storageState },
-  },
-  {
-    name: "agent",
-    testMatch: /03-.*\.spec\.ts$/,
-    dependencies: ["connection"],
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
-  {
-    name: "messages",
-    testMatch: /04-.*\.spec\.ts$/,
-    dependencies: ["agent"],
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
-  {
-    name: "injection",
-    testMatch: /05-.*\.spec\.ts$/,
-    dependencies: ["messages", "user-env"],
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
-  {
-    name: "api-keys",
-    testMatch: /06-.*\.spec\.ts$/,
-    dependencies: ["auth", "connection"],
-    use: { ...devices["Desktop Chrome"] },
   },
   {
     name: "trpc-ws-auth",
@@ -69,75 +35,34 @@ const suite: NamedProject[] = [
     use: { ...devices["Desktop Chrome"] },
   },
   {
-    name: "kb-share",
-    testMatch: /17-.*\.spec\.ts$/,
-    dependencies: ["auth"],
-    use: { ...devices["Desktop Chrome"] },
-  },
-  {
-    name: "satellites",
-    testMatch: /18-.*\.spec\.ts$/,
-    dependencies: ["auth"],
+    name: "agent",
+    testMatch: /03-.*\.spec\.ts$/,
+    dependencies: ["connection"],
     use: { ...devices["Desktop Chrome"], storageState },
   },
   {
-    name: "slack-shared",
-    testMatch: /08-slack-shared\.spec\.ts$/,
-    dependencies: ["injection"],
+    name: "api-keys",
+    testMatch: /15-.*\.spec\.ts$/,
+    dependencies: ["connection"],
     use: { ...devices["Desktop Chrome"] },
   },
   {
-    name: "slack-inchat",
-    testMatch: /09-slack-inchat-bind\.spec\.ts$/,
-    dependencies: ["slack-shared"],
-    use: { ...devices["Desktop Chrome"] },
-  },
-  {
-    name: "slack-ambient",
-    testMatch: /10-slack-ambient\.spec\.ts$/,
-    dependencies: ["slack-inchat"],
-    use: { ...devices["Desktop Chrome"] },
-  },
-  {
-    name: "session-delete",
-    testMatch: /08-session-delete\.spec\.ts$/,
-    dependencies: ["agent", "messages"],
+    name: "chain",
+    testMatch: /\/(0[4-9]|1[0-2]|21)-.*\.spec\.ts$/,
+    dependencies: ["agent"],
+    workers: 1,
     use: { ...devices["Desktop Chrome"], storageState },
   },
   {
-    name: "user-env",
-    testMatch: /09-user-env\.spec\.ts$/,
-    dependencies: ["agent", "session-delete"],
-    use: { ...devices["Desktop Chrome"] },
-  },
-  {
-    name: "egress-path-rules",
-    testMatch: /11-.*\.spec\.ts$/,
-    dependencies: ["slack-ambient"],
+    name: "own-agents",
+    testMatch:
+      laneBackend === "vm"
+        ? /\/(17|18|20|22)-.*\.spec\.ts$/
+        : /\/(17|18|19)-.*\.spec\.ts$/,
+    dependencies: ["agent"],
+    workers: 1,
     use: { ...devices["Desktop Chrome"], storageState },
   },
-  {
-    name: "connection-regrant",
-    testMatch: /10-connection-regrant\.spec\.ts$/,
-    dependencies: ["egress-path-rules"],
-    use: { ...devices["Desktop Chrome"], storageState },
-  },
-  {
-    name: "s3-signing",
-    testMatch: /21-.*\.spec\.ts$/,
-    dependencies: ["connection-regrant"],
-    use: { ...devices["Desktop Chrome"] },
-  },
-  ...(laneBackend === "vm"
-    ? [
-        {
-          name: "runtime-migration",
-          testMatch: /20-.*\.spec\.ts$/,
-          dependencies: ["connection-regrant"],
-          use: { ...devices["Desktop Chrome"], storageState },
-        },
-      ]
-    : []),
   ...(full
     ? [
         {
@@ -153,7 +78,7 @@ const suite: NamedProject[] = [
         {
           name: "slack-rotation-full",
           testMatch: /full\/slack-token-rotation\.spec\.ts$/,
-          dependencies: ["slack-ambient", "slack-full"],
+          dependencies: ["chain", "slack-full"],
           use: { ...devices["Desktop Chrome"] },
         },
         {
@@ -183,10 +108,7 @@ const suite: NamedProject[] = [
 const agentBackend: NamedProject = {
   name: "agent-backend",
   testMatch: /19-.*\.spec\.ts$/,
-  dependencies:
-    laneBackend === "vm"
-      ? suite.map(({ name }) => name)
-      : ["connection-regrant"],
+  dependencies: suite.map(({ name }) => name),
   use: { ...devices["Desktop Chrome"], storageState },
 };
 
@@ -214,5 +136,5 @@ export default defineConfig({
       ],
     },
   },
-  projects: [...suite, agentBackend],
+  projects: laneBackend === "vm" ? [...suite, agentBackend] : suite,
 });
