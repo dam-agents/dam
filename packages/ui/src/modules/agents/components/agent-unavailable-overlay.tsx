@@ -8,6 +8,7 @@ import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
+import { reclaimSentence } from "../lib/reclaim-notices.js";
 import { workspaceFailureSentence } from "../lib/workspace-failure.js";
 import type {
   AgentDisplay,
@@ -184,6 +185,8 @@ function overlayDescription(
   const budget = agent.overBudgetMessage;
   if (state === "over_budget" && budget)
     return `${budget[0].toUpperCase()}${budget.slice(1)}.`;
+  const reclaimed = reclaimSentence(agent);
+  if (state === "hibernated" && reclaimed) return reclaimed;
   if (state === "preparing_workspace") {
     const failing = agent.workspaceFailures.find((f) => !f.settled);
     if (failing) return workspaceFailureSentence(failing);

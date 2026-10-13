@@ -88,6 +88,11 @@ export interface WorkspaceFailure {
   maxAttempts: number;
 }
 
+export interface AgentReclaim {
+  at: string;
+  for: "memory" | "compute";
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -103,6 +108,7 @@ export interface Agent {
   stopRequested: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
+  reclaimed?: AgentReclaim;
   podTerminationReason?: string;
   notReadyMessage?: string;
   podRestarts: number;

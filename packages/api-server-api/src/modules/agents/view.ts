@@ -27,6 +27,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     stopRequested: agent.stopRequested,
     overBudget: agent.overBudget,
     overBudgetMessage: agent.overBudgetMessage,
+    ...(agent.reclaimed ? { reclaimed: agent.reclaimed } : {}),
     size: {
       cpu: agent.spec.resources?.limits?.cpu,
       memory: agent.spec.resources?.limits?.memory,

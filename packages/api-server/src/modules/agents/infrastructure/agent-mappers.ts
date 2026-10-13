@@ -15,6 +15,7 @@ import type {
   OnboardingStep,
   Agent,
   AgentKind,
+  AgentReclaim,
   AgentSpec,
   AgentSpecCR,
   AgentState,
@@ -40,6 +41,7 @@ import {
   ACTIVE_SESSION_KEY,
   INVOCATIONS_ACTIVE_KEY,
   LAST_ACTIVITY_KEY,
+  RECLAIMED_AT_KEY,
   READY_REASON_HIBERNATED,
   READY_REASON_OVER_BUDGET,
   RUNTIME_MIGRATING_CONDITION,
@@ -129,6 +131,7 @@ export interface InfraAgent {
   readySince?: Date;
   hibernatedSince?: Date;
   wakeRequested?: boolean;
+  reclaimed?: AgentReclaim;
   quietSince?: Date;
   ready: boolean;
   hibernated: boolean;
@@ -249,6 +252,18 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
   const hibernatedSince = hibernated
     ? validDate(ready?.lastTransitionTime)
     : undefined;
+  const reclaimedAt = hibernated
+    ? validDate(annotations[RECLAIMED_AT_KEY])
+    : undefined;
+  const reclaimed: AgentReclaim | undefined =
+    reclaimedAt &&
+    (validDate(annotations[LAST_ACTIVITY_KEY])?.getTime() ?? 0) <=
+      reclaimedAt.getTime()
+      ? {
+          at: reclaimedAt.toISOString(),
+          for: crSpec.backend?.type === "vm" ? "memory" : "compute",
+        }
+      : undefined;
   const createdAt = createdAtOf(obj);
   const migrating = status.conditions?.find(
     (c) => c.type === RUNTIME_MIGRATING_CONDITION,
@@ -329,6 +344,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       (validDate(annotations[LAST_ACTIVITY_KEY])?.getTime() ?? 0) >
         hibernatedSince.getTime() && { wakeRequested: true }),
     ...(quietSince ? { quietSince } : {}),
+    ...(reclaimed ? { reclaimed } : {}),
     ready: ready?.status === "True",
     hibernated,
     stopRequested: !!annotations[STOP_REQUESTED_KEY],
@@ -424,6 +440,7 @@ export function assembleAgent(
     stopRequested: infra.stopRequested,
     overBudget: infra.overBudget,
     overBudgetMessage: infra.overBudgetMessage,
+    ...(infra.reclaimed ? { reclaimed: infra.reclaimed } : {}),
     podTerminationReason: infra.podTerminationReason,
     notReadyMessage: infra.notReadyMessage,
     podRestarts: infra.podRestarts,

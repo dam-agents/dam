@@ -41,11 +41,11 @@ No CRD and no CRD field change.
 
 ## Sub-issues
 
-| #   | Title                                        | Scope                                                              | Depends on             |
-| --- | -------------------------------------------- | ------------------------------------------------------------------ | ---------------------- |
-| 01  | The platform can DM a person on Slack (done) | identity link workspace, `notifyPerson`, channel RPC               | —                      |
-| 02  | Unattended resource alerts                   | Postgres alert state, storage poll, OOM watch, repeat limits, copy | 01, #4757 (usage read) |
-| 03  | A reclaimed agent says why it is asleep      | api-server `reclaimed`, overlay, row tooltip, toast, ADR           | —                      |
+| #   | Title                                          | Scope                                                              | Depends on             |
+| --- | ---------------------------------------------- | ------------------------------------------------------------------ | ---------------------- |
+| 01  | The platform can DM a person on Slack (done)   | identity link workspace, `notifyPerson`, channel RPC               | —                      |
+| 02  | Unattended resource alerts                     | Postgres alert state, storage poll, OOM watch, repeat limits, copy | 01, #4757 (usage read) |
+| 03  | A reclaimed agent says why it is asleep (done) | api-server `reclaimed`, overlay, row tooltip, toast, ADR           | —                      |
 
 ## Conventions & glossary
 

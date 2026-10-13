@@ -167,6 +167,7 @@ export interface AgentView {
   stopRequested: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
+  reclaimed?: { at: string; for: "memory" | "compute" };
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
   notReadyMessage?: string;
