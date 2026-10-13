@@ -4,7 +4,7 @@ Last verified: 2026-10-13
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
-None bakes a tool: they boot on the node's **harness tools**.
+None bakes a tool but a bundle of Claude Code's ACP adapter: they boot on the node's **harness tools**.
 A workload bakes only its own Python, whole, and the mock the node it runs on.
 Nothing installs lazily, and no tool runs through a shim.
 Sources live in [`packages/agents/`](../../packages/agents/): one directory per image, and one per harness (Claude Code, Codex, pi, Bob), which is a source of the default image and no image of its own.
@@ -30,7 +30,7 @@ The default image is every harness over the base at once, with none of their too
 Each harness's entry points and runtime manifest sit under its name.
 The agent-runtime loads every manifest there and runs each harness's drivers, so one contribution kind can have several bindings, each keeping its state per harness.
 The harness is chosen per session ([agent-lifecycle](agent-lifecycle.md#session-inside-the-pod)); the Agent's own harness, seeded at create and handed to the pod or machine in its environment, is the default for a session that names none.
-The tools, the base's and every harness's, are named in the image's system mise config with the lockfile, and its `PATH` names each tool's versioned install directory under mise's system data dir, so the image fixes every version it runs without holding a byte of them.
+The tools, the base's and every harness's, are named in the image's system mise config with the lockfile, and its `PATH` names each tool's versioned install directory under mise's system data dir, so the image fixes every version it runs without holding a byte of them but that bundle.
 mise's own data dir stays the image's, writable, so `mise use -g` still installs there.
 
 They are installed by that same image, once per node: a DaemonSet on every node an agent or a VM runner may land on runs the image's installer into a node directory, and then idles, so a node that joins later gets the tools too.
@@ -48,6 +48,10 @@ On a Mac, whose [host runner](vm-host-runner.md) runs outside the cluster, the t
 
 Only the agent-runtime and the two driver SDKs (JavaScript and Python) come from the rest of the repo; the build compiles them into each image.
 
+The build also bundles Claude Code's ACP adapter with its agent SDK, from the locked install, into a few files of the default image.
+Loaded from the tools, the adapter is about 200 ES modules, each a few reads over a machine's tools mount: they cost each adapter start, and the session-history worker's import of it, about 0.3 s.
+The native CLI the adapter runs stays in the tools; the bundle cannot find it beside the SDK, so `harness-chat` names its path.
+
 ## Building
 
 One task, [`//packages/agents:oci`](../../packages/agents/.mise/tasks/oci), builds any agent image as a tar in the agent's `dist/oci/`, named `platform-<agent>:latest`, or reuses it from the registry while its source is unchanged (the same source hash [`image:resolve`](../../.mise/tasks/image/resolve) keys CI on).
@@ -61,7 +65,7 @@ CI calls it from [`image:ci-build`](../../.mise/tasks/image/ci-build) and pushes
   That layer follows the packages alone: what the install stamps with the build's time (logs, caches, password dates, the mtimes of the paths it touched) is dropped or set to the base's creation time, so a rebuild with no package update keeps its digest.
   Every image is then packed by [`image:pack`](../../.mise/tasks/image/pack), the platform images' own packer: the default image onto that base, each workload and the mock onto the default image, a sorted tree per layer so a digest follows content alone.
   The images share the base's layers, so a node stores them once.
-- **Layers by how often they change.** A node pulls only the layers it lacks, and extracting a big one stalls every pod start on it, so the default image stacks Selkies, then mise, then everything else: the agent-runtime, the harnesses' files and the shipped skills, a few megabytes and the only layer a typical deploy changes.
+- **Layers by how often they change.** A node pulls only the layers it lacks, and extracting a big one stalls every pod start on it, so the default image stacks Selkies, then mise, then Claude Code's adapter bundle, then everything else: the agent-runtime, the harnesses' files and the shipped skills, a few megabytes and the only layer a typical deploy changes.
   Selkies' Python bytecode is checked by source hash, since a packed layer's mtimes are zero.
 - **Pins live in the environment files and one lockfile.** The lockfile fixes every tool's version and checksum for both Linux architectures, and the npm tools' whole dependency trees, except the workloads' Python packages, which mise cannot lock and their files pin exactly; CI caches the tool installs under it, so they change only with it.
   k-search's GPU venv is gigabytes the repository's cache cannot hold, so each k-search build installs it afresh, which also picks up its unpinned dependencies' releases.

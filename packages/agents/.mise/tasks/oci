@@ -241,6 +241,15 @@ build_default() (
   # Not -C: mise reads .miserc.toml from the working directory only.
   cd "$stage"
   mise -E "$envs" install
+  # Claude Code's ACP adapter, bundled from the locked install with its SDK: its
+  # 200 ES modules are a few reads each over the tools a machine mounts, which
+  # cost its start about 0.3 s. Its own layer, as it changes only with its pin.
+  # The bundle cannot find the native CLI beside the SDK; harness-chat names it.
+  adapter="$(realpath "$(mise -E "$envs" where npm:@agentclientprotocol/claude-agent-acp)/node_modules/@agentclientprotocol/claude-agent-acp")"
+  bundle="$stage/build-claude-adapter/usr/local/lib/harness/claude-code/adapter"
+  (cd "$adapter" && "$root/node_modules/.bin/esbuild" dist/index.js dist/acp-agent.js @anthropic-ai/claude-agent-sdk \
+    --bundle --splitting --format=esm --platform=node --outdir="$bundle" '--entry-names=[name]' --log-level=warning)
+  [ "$(mise -E "$envs" exec -- node "$bundle/index.js" --version)" = "$(jq -r .version "$adapter/package.json")" ]
   # Playwright's browsers: the node installer puts them in the tools, beside
   # other Playwrights' own, and the image names this one's.
   PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "$envs" exec -- playwright install chromium
@@ -269,10 +278,10 @@ build_default() (
   # Each tool's bin directory where the node installs it, ahead of base's PATH.
   path="$(mise -E "$envs" bin-paths | sed "s|^$MISE_DATA_DIR/|$tools_root/|" | paste -sd: -)"
   base_path="$(printf '%s\n' "${flags[@]}" | sed -n 's/^--env=PATH=//p')"
-  # Selkies and mise, which change only with their pins, are layers of their
-  # own under the rest, which every agent-runtime change rewrites: a deploy
-  # pulls that top layer alone.
-  pack_image default "$apt_base" build --root-layer=build-selkies --root-layer=build-mise \
+  # Selkies, mise and Claude Code's adapter, which change only with their pins,
+  # are layers of their own under the rest, which every agent-runtime change
+  # rewrites: a deploy pulls that top layer alone.
+  pack_image default "$apt_base" build --root-layer=build-selkies --root-layer=build-mise --root-layer=build-claude-adapter \
     "${flags[@]}" "--env=PATH=$path:$base_path" \
     --env=MISE_DATA_DIR=/usr/local/share/mise --env=MISE_CONFIG_DIR=/etc/mise
 )

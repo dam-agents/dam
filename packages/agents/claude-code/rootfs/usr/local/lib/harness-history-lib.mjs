@@ -1,35 +1,8 @@
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { delimiter, dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-
-function adapterDir() {
-  if (process.env.CLAUDE_AGENT_ACP_DIR) return process.env.CLAUDE_AGENT_ACP_DIR;
-  const bin = (process.env.PATH ?? "")
-    .split(delimiter)
-    .map((dir) => join(dir, "claude-agent-acp"))
-    .find((candidate) => existsSync(candidate));
-  if (!bin) throw new Error("claude-agent-acp not found on PATH");
-  const shim = readFileSync(bin, "utf8").match(/^# aube-bin-shim v\d+ target=(\S+)$/m);
-  return dirname(dirname(shim ? resolve(dirname(bin), shim[1]) : realpathSync(bin)));
-}
-
-async function loadModules() {
-  const adapter = adapterDir();
-  const agent = await import(
-    pathToFileURL(`${adapter}/dist/acp-agent.js`).href
-  );
-  const sdkPath = [
-    `${adapter}/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs`,
-    `${adapter}/../../@anthropic-ai/claude-agent-sdk/sdk.mjs`,
-  ].find((candidate) => existsSync(candidate));
-  if (!sdkPath) {
-    throw new Error("claude-agent-sdk not found next to the adapter");
-  }
-  const sdk = await import(pathToFileURL(sdkPath).href);
-  return { agent, sdk };
-}
-
-const modulesPromise = loadModules();
+const adapter = "/usr/local/lib/harness/claude-code/adapter";
+const modulesPromise = Promise.all([
+  import(`${adapter}/acp-agent.js`),
+  import(`${adapter}/claude-agent-sdk.js`),
+]).then(([agent, sdk]) => ({ agent, sdk }));
 modulesPromise.catch(() => {});
 
 function parentToolUseIdOf(message) {
