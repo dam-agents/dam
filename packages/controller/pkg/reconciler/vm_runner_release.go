@@ -28,7 +28,7 @@ func (r *AgentReconciler) runnerReleaseName(owner string) string {
 // UNIT_BOUNDARY_DESCRIPTION: names the runner release an owner's runner pod should run: the runner image this controller is configured with. The pod's loader reads it from the mounted ConfigMap and hands the machines to that release once the node's stager has staged it, so a new runner image reaches every owner without a pod restart. The ConfigMap is owned by the runner's Deployment, so it goes wherever the Deployment goes.
 func (r *AgentReconciler) applyRunnerRelease(ctx context.Context, owner string) error {
 	ns, name, release := r.config.Namespace, r.runnerReleaseName(owner), r.config.VM.Runner.Image
-	dep, err := r.client.AppsV1().Deployments(ns).Get(ctx, r.runnerName(owner), metav1.GetOptions{})
+	dep, err := r.runnerDeployment(ctx, r.runnerName(owner), true)
 	if k8serrors.IsNotFound(err) {
 		return nil
 	}

@@ -20,7 +20,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -139,7 +138,8 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	ns := r.config.Namespace
 	refs := r.runnerOwnerRef(ctx)
 
-	if err := r.ensureRunnerToken(ctx, owner, refs); err != nil {
+	token, err := r.ensureRunnerToken(ctx, owner, refs)
+	if err != nil {
 		return nil, false, err
 	}
 	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.EnvoyPort, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs, runnerDNSRule(r.config.VM.Runner))
@@ -160,30 +160,42 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	if err := r.applyRunnerDeployment(ctx, owner, refs, true); err != nil {
 		return nil, false, err
 	}
-	var client *vmrunner.Client
+	var tls *corev1.Secret
+	var tlsErr error
 	var dep *appsv1.Deployment
-	err := concurrently(
-		func() (err error) {
-			client, err = r.runnerFor(ctx, owner)
-			return err
-		},
-		func() (err error) {
-			dep, err = r.client.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
-			return err
-		},
+	var depErr error
+	_ = concurrently(
 		func() error {
-			for _, ref := range refs {
-				if err := r.ensureSecretOwnerReference(ctx, r.runnerTLSName(owner), ref); err != nil {
-					slog.Warn("vm runner: owning the issued TLS Secret; will retry on next reconcile", "owner", owner, "error", err)
-				}
-			}
+			tls, tlsErr = r.client.CoreV1().Secrets(ns).Get(ctx, r.runnerTLSName(owner), metav1.GetOptions{})
 			return nil
 		},
+		func() error { dep, depErr = r.runnerDeployment(ctx, name, true); return nil },
 	)
+	if tlsErr == nil {
+		for _, ref := range refs {
+			if err := r.ensureSecretOwnerReference(ctx, r.runnerTLSName(owner), tls, ref); err != nil {
+				slog.Warn("vm runner: owning the issued TLS Secret; will retry on next reconcile", "owner", owner, "error", err)
+			}
+		}
+	}
+	client, err := r.runnerClientOf(owner, token, tls, tlsErr)
 	if err != nil {
 		return client, false, err
 	}
-	return client, dep.Status.ReadyReplicas > 0, nil
+	if depErr != nil && !k8serrors.IsNotFound(depErr) {
+		return client, false, depErr
+	}
+	return client, depErr == nil && dep.Status.ReadyReplicas > 0, nil
+}
+
+func (r *AgentReconciler) runnerDeployment(ctx context.Context, name string, fromCache bool) (*appsv1.Deployment, error) {
+	c := r.runnerDeploys
+	if !fromCache {
+		c = nil
+	}
+	return cachedGet(c, appsv1.Resource("deployments"), r.config.Namespace, name, func() (*appsv1.Deployment, error) {
+		return r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	})
 }
 
 func (r *AgentReconciler) runnerTLSName(owner string) string {
@@ -223,6 +235,10 @@ func (r *AgentReconciler) runnerFor(ctx context.Context, owner string) (*vmrunne
 	if tokenErr != nil {
 		return nil, fmt.Errorf("reading the runner's token: %w", tokenErr)
 	}
+	return r.runnerClientOf(owner, token, tls, tlsErr)
+}
+
+func (r *AgentReconciler) runnerClientOf(owner string, token, tls *corev1.Secret, tlsErr error) (*vmrunner.Client, error) {
 	if k8serrors.IsNotFound(tlsErr) {
 		return nil, errRunnerTLSPending
 	}
@@ -270,23 +286,24 @@ func newRunnerToken() string {
 	return hex.EncodeToString(b)
 }
 
-func (r *AgentReconciler) ensureRunnerToken(ctx context.Context, owner string, refs []metav1.OwnerReference) error {
+func (r *AgentReconciler) ensureRunnerToken(ctx context.Context, owner string, refs []metav1.OwnerReference) (*corev1.Secret, error) {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	existing, err := r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
 	if err == nil && existing.DeletionTimestamp != nil {
-		return errRunnerTerminating
+		return nil, errRunnerTerminating
 	}
 	if !k8serrors.IsNotFound(err) {
-		return err
+		return existing, err
 	}
 	sec := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: refs},
 		Data:       map[string][]byte{"token": []byte(newRunnerToken())},
 	}
-	if _, err := r.client.CoreV1().Secrets(ns).Create(ctx, sec, metav1.CreateOptions{}); err != nil && !k8serrors.IsAlreadyExists(err) {
-		return err
+	created, err := r.client.CoreV1().Secrets(ns).Create(ctx, sec, metav1.CreateOptions{})
+	if k8serrors.IsAlreadyExists(err) {
+		return r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
 	}
-	return nil
+	return created, err
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what the cached images may occupy. Every cache is bounded by this one number, wherever it lives: a node directory shares its filesystem with everything else the node runs, and the runner's own claim shares one with the machine disks, so neither can be given a share of the filesystem without letting the images eat something that is not theirs. A value the controller cannot read is refused rather than replaced with a guess, because the guess is a cache quietly growing until the node or the disks it shares with run out.
@@ -864,14 +881,12 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) bool {
 // UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand. An unschedulable runner gets a reason of its own, which the api-server reads as a failed start rather than one still coming up.
 func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (string, string) {
 	const starting = "the owner's VM runner is still starting"
-	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: labels.Set(vmRunnerSelector(owner)).String(),
-	})
-	if err != nil || len(pods.Items) == 0 {
+	pods, err := r.runnerPods(ctx, owner, true)
+	if err != nil || len(pods) == 0 {
 		return vmrunner.ReasonNotReady, starting
 	}
-	for i := range pods.Items {
-		pod := &pods.Items[i]
+	for i := range pods {
+		pod := &pods[i]
 		for _, c := range pod.Status.Conditions {
 			if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Message != "" {
 				return apiv1.ReasonMachineRunnerUnschedulable, "the owner's VM runner cannot be scheduled: " + c.Message
@@ -888,15 +903,13 @@ func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (str
 
 // UNIT_BOUNDARY_DESCRIPTION: when the kernel last OOM-killed the owner's runner, from its pods' container statuses; zero when it never did or the pods cannot be read. A pod keeps only its container's last termination, so a kill older than the restart after it is forgotten, which the rule that reads this allows for.
 func (r *AgentReconciler) runnerOOMKilledAt(ctx context.Context, owner string) time.Time {
-	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: labels.Set(vmRunnerSelector(owner)).String(),
-	})
+	pods, err := r.runnerPods(ctx, owner, true)
 	if err != nil {
 		return time.Time{}
 	}
 	var at time.Time
-	for i := range pods.Items {
-		if killed := runnerOOMKilledAt(&pods.Items[i]); killed.After(at) {
+	for i := range pods {
+		if killed := runnerOOMKilledAt(&pods[i]); killed.After(at) {
 			at = killed
 		}
 	}

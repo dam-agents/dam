@@ -15,6 +15,7 @@ import (
 	"time"
 
 	stderrors "errors"
+	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
@@ -58,6 +59,9 @@ type AgentReconciler struct {
 	podResize       atomic.Int32
 	agentCache      cache.GenericLister
 	podCache        corelisters.PodLister
+	statefulSets    cache.MutationCache
+	runnerDeploys   cache.MutationCache
+	runnerPodCache  corelisters.PodLister
 	vmRunning       sync.Map
 	vmLive          sync.Map
 	vmPools         sync.Map
@@ -95,6 +99,49 @@ func (r *AgentReconciler) WithAgentCache(lister cache.GenericLister) *AgentRecon
 func (r *AgentReconciler) WithPodCache(lister corelisters.PodLister) *AgentReconciler {
 	r.podCache = lister
 	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent's reconcile read its gateway StatefulSet about four times and its owner's runner Deployment twice, each a live GET, so informer caches answer instead. The cache is wrapped so a reconcile reads its own writes: right after an update the informer can still hold the version before it, and a readiness check on that version would see a pod on the old template as current. A write sent from a stale read fails on its resourceVersion, and the write is then tried again from a live read. A reconciler built without the caches — the tests — reads live.
+func (r *AgentReconciler) WithStatefulSetCache(informer cache.SharedIndexInformer) *AgentReconciler {
+	r.statefulSets = readsOwnWrites(informer)
+	return r
+}
+
+func (r *AgentReconciler) WithRunnerCaches(deployments cache.SharedIndexInformer, pods corelisters.PodLister) *AgentReconciler {
+	r.runnerDeploys = readsOwnWrites(deployments)
+	r.runnerPodCache = pods
+	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an object written here is served from the write's response until the informer holds a newer one. Adds are not served: an object the informer does not hold, because it was just created or just deleted, reads as missing, and the create that follows fails as already existing and is tried again live.
+func readsOwnWrites(informer cache.SharedIndexInformer) cache.MutationCache {
+	return cache.NewIntegerResourceVersionMutationCacheWithOptions(logr.FromSlogHandler(slog.Default().Handler()), informer.GetStore(),
+		cache.MutationCacheOptions{TTL: time.Minute, MaxCacheSize: 1000})
+}
+
+func cachedGet[T runtime.Object](c cache.MutationCache, resource schema.GroupResource, namespace, name string, live func() (T, error)) (T, error) {
+	var none T
+	if c == nil {
+		return live()
+	}
+	obj, ok, err := c.GetByKey(namespace + "/" + name)
+	if err != nil {
+		return none, err
+	}
+	if !ok {
+		return none, errors.NewNotFound(resource, name)
+	}
+	return obj.(T).DeepCopyObject().(T), nil
+}
+
+func (r *AgentReconciler) statefulSet(ctx context.Context, name string, fromCache bool) (*appsv1.StatefulSet, error) {
+	c := r.statefulSets
+	if !fromCache {
+		c = nil
+	}
+	return cachedGet(c, appsv1.Resource("statefulsets"), r.config.Namespace, name, func() (*appsv1.StatefulSet, error) {
+		return r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	})
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how work the reconciler starts outside a reconcile — a machine watch — puts an Agent back on the queue, and the lifetime that work is bound to: the leader context, so it ends with the leadership that owns the queue. A requeue with no delay says the machine moved, which a person waiting on a wake needs now; a delayed one is a poll and can wait its turn.
@@ -152,7 +199,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			if err := r.applyCertificate(ctx, cert); err != nil {
 				return fmt.Errorf("applying envoy leaf certificate: %v", err)
 			}
-			if err := r.ensureSecretOwnerReference(ctx, EnvoyLeafSecretName(name), ownerRef); err != nil {
+			if err := r.ensureSecretOwnerReference(ctx, EnvoyLeafSecretName(name), nil, ownerRef); err != nil {
 				slog.Warn("setting owner ref on envoy leaf TLS Secret; will retry on next reconcile",
 					"agent", name, "error", err)
 			}
@@ -451,7 +498,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	return err
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the idle checker has yet to hibernate the Agent, read off its gateway, which the checker scales to zero with the machine. A lapsed idle timeout alone must not stop a vm machine, as it never scales a container down: only the checker also asks agent-runtime whether it is busy. A gateway at zero whose machine did not stop, because the runner was unreachable, is stopped here on the next reconcile.
+// UNIT_BOUNDARY_DESCRIPTION: whether the idle checker has yet to hibernate the Agent, read off its gateway, which the checker scales to zero with the machine. A lapsed idle timeout alone must not stop a vm machine, as it never scales a container down: only the checker also asks agent-runtime whether it is busy. A gateway at zero whose machine did not stop, because the runner was unreachable, is stopped here on the next reconcile. It is read live: the checker scales the gateway down and then writes the status that requeues the Agent, and a cache that has not seen the scale yet would start the machine the checker just stopped.
 func (r *AgentReconciler) pairAwake(ctx context.Context, name string) (bool, error) {
 	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, GatewayName(name), metav1.GetOptions{})
 	if errors.IsNotFound(err) {
@@ -475,7 +522,7 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 		}
 	}
 	agentRestarts, agentRestartReason := podRestarts(agentPod)
-	ss, ssReadErr := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	ss, ssReadErr := r.statefulSet(ctx, name, true)
 	failure, recheck := podStartFailure(ss, agentPod, time.Now())
 	if recheck > 0 && r.requeue != nil {
 		r.requeue(name, recheck)
@@ -561,7 +608,7 @@ func (r *AgentReconciler) gatewayNotReadyCause(ctx context.Context, ssName strin
 	if reason, msg, ok := terminationReason(pod); ok {
 		return reason, msg
 	}
-	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, ssName, metav1.GetOptions{})
+	ss, err := r.statefulSet(ctx, ssName, true)
 	if err != nil || !podStuckOnSupersededRevision(ss, pod) {
 		return "PodNotReady", ""
 	}
@@ -571,7 +618,7 @@ func (r *AgentReconciler) gatewayNotReadyCause(ctx context.Context, ssName strin
 }
 
 func (r *AgentReconciler) podCurrentAndReady(ctx context.Context, ssName string) bool {
-	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, ssName, metav1.GetOptions{})
+	ss, err := r.statefulSet(ctx, ssName, true)
 	if err != nil {
 		return false
 	}
@@ -604,9 +651,14 @@ func (r *AgentReconciler) readPod(ctx context.Context, ssName string) (*corev1.P
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: cert-manager does not own the Secrets it issues, so without this an issued Secret outlives what it was issued for.
-func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secretName string, ownerRef metav1.OwnerReference) error {
+func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secretName string, known *corev1.Secret, ownerRef metav1.OwnerReference) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		sec, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, secretName, metav1.GetOptions{})
+		sec := known
+		var err error
+		if sec == nil {
+			sec, err = r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, secretName, metav1.GetOptions{})
+		}
+		known = nil
 		if errors.IsNotFound(err) {
 			return nil
 		}
@@ -912,8 +964,13 @@ func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.
 	}
 	sum := sha256.Sum256(raw)
 	hash := hex.EncodeToString(sum[:8])
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		existing, err := r.client.AppsV1().StatefulSets(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+	fromCache := r.statefulSets != nil
+	return retry.OnError(retry.DefaultRetry, func(err error) bool {
+		stale := fromCache && (errors.IsAlreadyExists(err) || errors.IsNotFound(err))
+		fromCache = false
+		return stale || errors.IsConflict(err)
+	}, func() error {
+		existing, err := r.statefulSet(ctx, desired.Name, fromCache)
 		if errors.IsNotFound(err) {
 			replicas := int32(0)
 			if running {
@@ -938,13 +995,17 @@ func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.
 		existing.Spec.Template = desired.Spec.Template
 		existing.Spec.UpdateStrategy = desired.Spec.UpdateStrategy
 		metav1.SetMetaDataAnnotation(&existing.ObjectMeta, annStatefulSetTemplate, hash)
-		_, err = r.client.AppsV1().StatefulSets(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
+		updated, err := r.client.AppsV1().StatefulSets(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
+		if err == nil && r.statefulSets != nil {
+			r.statefulSets.Mutation(updated)
+		}
 		return err
 	})
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the StatefulSet comes from the cache, and the pods from another one, so the pods can be newer: a pod the StatefulSet controller just created for a new revision looks stuck against a cached StatefulSet that has not seen that revision yet. A pod is deleted only after a live read of the StatefulSet still finds it stuck, which costs a GET only when there is a pod to delete.
 func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, statefulSetName string) error {
-	ss, err := r.client.AppsV1().StatefulSets(namespace).Get(ctx, statefulSetName, metav1.GetOptions{})
+	ss, err := r.statefulSet(ctx, statefulSetName, true)
 	if errors.IsNotFound(err) {
 		return nil
 	}
@@ -972,12 +1033,24 @@ func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, stat
 	if err != nil {
 		return fmt.Errorf("listing pods: %w", err)
 	}
+	confirmed := r.statefulSets == nil
 	for _, p := range pods {
 		if !podStuckOnSupersededRevision(ss, p) {
 			continue
 		}
 		if p.DeletionTimestamp != nil {
 			continue
+		}
+		if !confirmed {
+			if ss, err = r.statefulSet(ctx, statefulSetName, false); errors.IsNotFound(err) {
+				return nil
+			} else if err != nil {
+				return fmt.Errorf("getting statefulset: %w", err)
+			}
+			confirmed = true
+			if !podStuckOnSupersededRevision(ss, p) {
+				continue
+			}
 		}
 		slog.Info("force-rolling StatefulSet pod stuck on a superseded revision",
 			"namespace", namespace, "statefulset", statefulSetName, "pod", p.Name,

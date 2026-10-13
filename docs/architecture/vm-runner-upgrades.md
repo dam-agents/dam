@@ -28,6 +28,7 @@ Most runner changes do not need the pod restarted: what changes is the runner pr
 An install that names a node directory for runner releases ([values](../../helm/values.yaml)) therefore takes a new runner image into each pod in place, without rebooting a machine.
 An install that names none rolls the pod for every runner image.
 On OpenShift the directory the kubelet creates carries the host's own SELinux label, which a confined runner may not read, so the stager labels it, and everything it stages, for containers at the plain level every runner's own categories can read; to set that label it runs as the unconfined container type, as the [image cache](vm-image-cache.md) service does, under the SCC the install names for its runners.
+A cluster admin can instead have the nodes create and label the directory themselves, with the node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/).
 
 **A runner release** is the runner with the two guest binaries it copies into every machine's share, platform-init and platform-runc, so the side that writes a share and the side that reads it stay one version.
 Each release also records the **runtime** it was built against: the smolvm release with its guest agent, the guest kernel and the libkrun the platform patches, the image tooling, and the base image's libc.

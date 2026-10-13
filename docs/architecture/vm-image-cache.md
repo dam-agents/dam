@@ -9,6 +9,7 @@ By default each owner's runner caches on its own volume, so the same few harness
 An install that would rather pay once per node points `imageCache.hostPath` at a host directory every runner scheduled there shares — not a `ReadWriteMany` claim, the costliest class, which buys only cross-node dedup.
 On OpenShift the runners then need an SCC that admits a host directory, which the chart's own does not — and one that leaves the SELinux type to the pod: SELinux confines every container to a type that may neither write nor read a directory the kubelet creates on the host, so the image cache service runs there as the unconfined container type at the plain level and labels the directory for containers as it opens the cache.
 Every tree it unpacks inherits that label, which is what lets the runners, still confined, boot from it; the label is set from the chart's OpenShift signal, and a service that cannot set it says so and exits rather than serve trees no runner could read.
+The node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/) has the nodes create and label the directory themselves.
 
 **Every cache has exactly one writer.** On a runner's own volume that is the runner.
 On a node directory it is a per-node **image cache service**: runners mount the directory read-only and ask the service, over a socket inside it, for each image a machine boots.

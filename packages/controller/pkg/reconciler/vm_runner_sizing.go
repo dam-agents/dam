@@ -255,19 +255,41 @@ func (r *AgentReconciler) runnerPodWants(ctx context.Context, owner string, pod 
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the memory limit, the memory request and the CPU limit are changed on the running pod through its resize subresource and never on the Deployment, whose Recreate strategy would stop every machine to apply them. The limit is the owner's pool, so a UserBudget that raises or lowers it reaches the runner without restarting a machine. CPU and memory resize without a container restart by default. The kubelet applies a resize whole, so a memory request the node defers holds the new CPU limit back with it until there is room, and a limit the kubelet will not lower yet holds the request with it. A replacement pod therefore starts at the limit the Deployment last rendered and the install's request with no CPU limit, and the next reconcile sets all three again. A pod with no CPU request gets an explicit zero one, because the API defaults a missing request to the limit, which would reserve every vCPU and could change the pod's QoS class, which a resize may not do. A cluster without in-place resize, or one that refuses the controller the subresource, keeps the old behaviour — machines admitted against the limit the pod started with, which the scheduler does not see, with no CPU limit — and says so once.
+// UNIT_BOUNDARY_DESCRIPTION: the pods come from the runner pod cache, as a live List after every machine PUT cost 57 ms at p90 on dev. The resize carries the resourceVersion it was read at, so the API server refuses it against any later pod, and a refused resize is decided again from a live List.
 func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, demand runnerDemand) {
 	if !r.podResizeAvailable(ctx) {
 		return
 	}
-	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: labels.Set(vmRunnerSelector(owner)).String(),
-	})
+	if r.resizeRunnerPodFrom(ctx, owner, demand, true) && r.runnerPodCache != nil {
+		r.resizeRunnerPodFrom(ctx, owner, demand, false)
+	}
+}
+
+func (r *AgentReconciler) runnerPods(ctx context.Context, owner string, fromCache bool) ([]corev1.Pod, error) {
+	selector := labels.SelectorFromSet(vmRunnerSelector(owner))
+	if fromCache && r.runnerPodCache != nil {
+		cached, err := r.runnerPodCache.Pods(r.config.Namespace).List(selector)
+		pods := make([]corev1.Pod, len(cached))
+		for i, pod := range cached {
+			pods[i] = *pod.DeepCopy()
+		}
+		return pods, err
+	}
+	list, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector.String()})
+	if err != nil {
+		return nil, err
+	}
+	return list.Items, nil
+}
+
+func (r *AgentReconciler) resizeRunnerPodFrom(ctx context.Context, owner string, demand runnerDemand, fromCache bool) (stale bool) {
+	pods, err := r.runnerPods(ctx, owner, fromCache)
 	if err != nil {
 		slog.Warn("vm runner: listing the runner pod to resize it", "owner", owner, "error", err)
-		return
+		return false
 	}
-	for i := range pods.Items {
-		pod := &pods.Items[i]
+	for i := range pods {
+		pod := &pods[i]
 		want, ok := r.runnerPodWants(ctx, owner, pod, demand)
 		if !ok {
 			continue
@@ -290,13 +312,17 @@ func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, dem
 			if k8serrors.IsForbidden(err) || k8serrors.IsMethodNotSupported(err) {
 				r.podResize.Store(resizeUnsupported)
 				slog.Warn("vm runner: the runner pod cannot be resized in place, its memory request and limit stay where the pod started and it has no CPU limit", "error", err)
-				return
+				return false
+			}
+			if k8serrors.IsConflict(err) {
+				return true
 			}
 			slog.Warn("vm runner: resizing the runner pod", "owner", owner, "pod", pod.Name, "from", want.currentRequest.String(), "to", want.memoryRequest.String(), "limitTo", want.memoryLimit.String(), "cpuLimit", want.cpu.String(), "error", err)
-			return
+			return false
 		}
 		slog.Info("vm runner: asked the node for a new memory limit, memory request and CPU limit on the runner pod", "owner", owner, "pod", pod.Name, "limitFrom", want.currentLimit.String(), "limitTo", want.memoryLimit.String(), "from", want.currentRequest.String(), "to", want.memoryRequest.String(), "cpuLimitFrom", want.currentCPU.String(), "cpuLimitTo", want.cpu.String())
 	}
+	return false
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether a reconcile would resize the owner's runner pod: its memory limit, memory request or CPU limit differ from what the owner's pool and demand call for, so a UserBudget that changes only `cpu` reaches the pod within one memory pass. The request holds within a step, so a count that crosses a step boundary and back does not change it; a cluster without in-place resize never changes it.
@@ -304,14 +330,12 @@ func (r *AgentReconciler) runnerPodMoves(ctx context.Context, owner string, dema
 	if !r.podResizeAvailable(ctx) {
 		return false
 	}
-	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: labels.Set(vmRunnerSelector(owner)).String(),
-	})
+	pods, err := r.runnerPods(ctx, owner, true)
 	if err != nil {
 		slog.Warn("vm runner: listing the runner pod to check its resources", "owner", owner, "error", err)
 		return false
 	}
-	return slices.ContainsFunc(pods.Items, func(pod corev1.Pod) bool {
+	return slices.ContainsFunc(pods, func(pod corev1.Pod) bool {
 		want, ok := r.runnerPodWants(ctx, owner, &pod, demand)
 		return ok && want.moves()
 	})
