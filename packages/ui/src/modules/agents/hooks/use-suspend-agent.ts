@@ -13,11 +13,11 @@ export function useSuspendAgent() {
 
   const pause = (id: string) => {
     setPausing(id, { clickedAt: Date.now() });
-    pauseMutation.mutate({ id }, { onError: () => clearPausing(id) });
+    pauseMutation.mutateAsync({ id }).catch(() => clearPausing(id));
   };
   const stop = (id: string) => {
     setPausing(id, { clickedAt: Date.now() });
-    stopMutation.mutate({ id }, { onError: () => clearPausing(id) });
+    stopMutation.mutateAsync({ id }).catch(() => clearPausing(id));
   };
 
   return { pause, stop };
