@@ -32,7 +32,7 @@ Server code goes into the `spend` module (`packages/api-server/src/modules/spend
    - Register it with `server.addService` on the same `grpc.Server`, before `bindAsync`.
    - Find the agent from `call.getHost()` with the same `parseInstanceFromAuthority` as ext_authz.
      Refuse a stream whose authority does not parse.
-   - For each entry, read the `dam.spend` metadata.
+   - For each entry, read the `platform.spend` metadata.
      Skip entries that are not billable.
    - Give the spend ingest service one record: agent, call id, payer, address Connection, path, dialect, status, raw counts, model, tier, reply bytes, `complete`, the cost header, and whether the entry is periodic or final (`access_log_type`).
 3. **Ingest service** (spend module, services layer).

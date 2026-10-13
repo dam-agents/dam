@@ -345,6 +345,16 @@ See [`docs/architecture/metrics.md`](architecture/metrics.md).
 | Agent Attribution        | The binding of a telemetry record to the agent that produced it, carried by the gateway-stamped `platform.agent.id` resource attribute — trusted and unforgeable because the agent's paired gateway overwrites it and the collector drops any value not stamped there. The sole authority for whose Spend a record is; the agent-exported `platform.agent.name` is display-only and never used for scoping. An Invocation target is not a Spend principal of its own — the spend face of the rule Egress Aliasing and Driver Cascade already hold: its gateway stamps its **root Driver's** id here, decided at spawn time, so its Spend rolls up under the Driver by construction while its `platform.agent.name` stays its own |
 | `platform.invocation.id` | The trusted, gateway-stamped resource attribute carrying an Invocation target's **own** id on records whose `platform.agent.id` has been overridden to its root Driver — the one thing keeping child rows distinguishable once their attribution is deliberately merged into the Driver. Sanitized by the collector exactly like `platform.agent.id` (dropped unless gateway-stamped), and stripped for non-targets so it can never be forged. Read-path use: excluded from the per-agent Spend label so a Driver is never relabelled to a target's throwaway `invocation-<hex>` name                                                                                                                                            |
 
+## Spend Limits (bounded context)
+
+Spend that the platform measures itself, out of the agent's reach, and the limits that act on it.
+Distinct from Spend under Metrics, which the agent reports.
+See [`docs/architecture/spend-limits.md`](architecture/spend-limits.md).
+
+| Term          | Definition                                                                                                                                                                                                                                         |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Metered Spend | The spend of a model call that the agent's gateway measured from the provider's reply and the platform priced. Trusted, because the agent cannot change the gateway or the api-server. Different from Spend under Metrics, which the agent reports |
+
 ## Agent Telemetry (bounded context)
 
 The user-facing read path over the raw signals an agent produced — the structural counterpart to Metrics, which reads the same store for Spend alone.

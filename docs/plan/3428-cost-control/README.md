@@ -38,7 +38,7 @@ Read these architecture pages first: [credential-gateway](../../architecture/cre
 The meter and the limit check run only in parts that the agent cannot change: the agent's gateway (Envoy) and the api-server.
 No part of this feature runs in the agent pod.
 The spend that a harness or an in-pod component reports stays for display only.
-ADR-100 (slice 01) records this decision.
+ADR-101 (slice 01) records this decision.
 
 ```mermaid
 flowchart LR
@@ -280,15 +280,15 @@ Amounts are integers in micro-units of the unit, like the existing `cost_usd_mic
 
 ## Sub-issues
 
-| #   | Title                                                                      | Scope                                                                                                                                               | Depends on |
-| --- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | [Gateway meter and ADR-100](./01-gateway-meter.md)                         | Controller: model-provider chains, call id, Lua meter, `accept-encoding` removal, gRPC access log with periodic flush. ADR-100.                     | —          |
-| 02  | [Price table](./02-price-table.md)                                         | Pure price lookup, generator from a pinned LiteLLM commit, Helm overrides with IBM prices, IBM `/model/info` script, cost-header check function.    | —          |
-| 03  | [Receive, price and store usage](./03-receive-and-store.md)                | AccessLogService, identity, Connection, periodic-to-final deltas, pricing at ingest, `spend_daily` and Redis counters, estimates, clean shutdown.   | 01, 02     |
-| 04  | [Agent limit, refusal and "continue?"](./04-agent-limit-and-refusal.md)    | Limit tables, `spend` router, gate refusal per API path, `spend_limit` approval, continue, chat error rule, CLI `dam spend`, harness refusal tests. | 03         |
-| 05  | [Ceiling, own limit, provider limits](./05-ceiling-and-provider-limits.md) | `UserSpendLimit` CRD and Helm default, own daily limit, Connection limits in their units, ceiling refusal, CLI flags.                               | 04         |
-| 06  | [Stop unattended work, agent read](./06-unattended-work.md)                | Schedule holds, sub-agent spawn refusal, read-only MCP tool.                                                                                        | 04         |
-| 07  | [Screens](./07-screens.md)                                                 | Limit fields and meters in the agent page, Providers section, Settings and Home; approval card text.                                                | 04, 05     |
+| #   | Title                                                                      | Scope                                                                                                                                               | Depends on | Done |
+| --- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---- |
+| 01  | [Gateway meter and ADR-101](./01-gateway-meter.md)                         | Controller: model-provider chains, call id, Lua meter, `accept-encoding` removal, gRPC access log with periodic flush. ADR-101.                     | —          | ✅   |
+| 02  | [Price table](./02-price-table.md)                                         | Pure price lookup, generator from a pinned LiteLLM commit, Helm overrides with IBM prices, IBM `/model/info` script, cost-header check function.    | —          |      |
+| 03  | [Receive, price and store usage](./03-receive-and-store.md)                | AccessLogService, identity, Connection, periodic-to-final deltas, pricing at ingest, `spend_daily` and Redis counters, estimates, clean shutdown.   | 01, 02     |      |
+| 04  | [Agent limit, refusal and "continue?"](./04-agent-limit-and-refusal.md)    | Limit tables, `spend` router, gate refusal per API path, `spend_limit` approval, continue, chat error rule, CLI `dam spend`, harness refusal tests. | 03         |      |
+| 05  | [Ceiling, own limit, provider limits](./05-ceiling-and-provider-limits.md) | `UserSpendLimit` CRD and Helm default, own daily limit, Connection limits in their units, ceiling refusal, CLI flags.                               | 04         |      |
+| 06  | [Stop unattended work, agent read](./06-unattended-work.md)                | Schedule holds, sub-agent spawn refusal, read-only MCP tool.                                                                                        | 04         |      |
+| 07  | [Screens](./07-screens.md)                                                 | Limit fields and meters in the agent page, Providers section, Settings and Home; approval card text.                                                | 04, 05     |      |
 
 ```mermaid
 flowchart LR
@@ -328,7 +328,7 @@ Do not use "Usage" for money: it means activity analytics.
 
 - `/typescript-engineering` for all server-side TypeScript (api-server, contract, CLI).
 - `/react-ui-engineering` for `packages/ui` (slices 04 and 07).
-- `/adr` for ADR-100 (slice 01).
+- `/adr` for ADR-101 (slice 01).
 - `cluster-ops` for the dev cluster smoke tests.
 
 **Repo rules:**

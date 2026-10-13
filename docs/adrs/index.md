@@ -92,6 +92,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 101 | [A reclaimed agent says it was put to sleep early](101-announce-reclaim.md) | 081 | budgets | The platform keeps hibernating an owner's unattended idle agents early to admit a blocked start or relieve VM memory pressure, under ADR-081's rules, but a reclaimed agent now tells its owner why it is asleep instead of passing for a lapsed timeout. |
 | 102 | [Agent reconciles run on eight owner-sharded workers](102-owner-sharded-agent-workers.md) |  | budgets | The controller reconciles agents on a fixed eight workers, each with its own queue, and an agent's owner picks its worker, so one owner's agents still reconcile one at a time while a hung VM runner delays only the owners on its worker. |
 | 103 | [A Skill Source is a repository and a path](103-skill-source-per-path.md) |  | skills | A Skill Source is identified by its repository and its path together, so one owner may register the same repository once per path; an installed skill keeps the path of the source it came from. |
+| 104 | [Model spend is metered and limited in each agent's gateway](104-gateway-spend-meter.md) |  | spend-limits | DAM measures model spend in each agent's gateway and enforces spend limits there, with soft owner limits that refuse and ask and a hard operator ceiling per user; spend that a harness or an in-pod component reports stays display only. |
 
 ## Superseded
 

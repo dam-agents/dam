@@ -1,4 +1,4 @@
-# 01 — Gateway meter and ADR-100
+# 01 — Gateway meter and ADR-101
 
 **Part of:** Cost control — see [README](./README.md)
 
@@ -8,7 +8,7 @@ This slice puts the trusted spend meter into each agent's gateway.
 On every model-provider chain, the gateway gives each call a call id, removes `accept-encoding`, reads the usage in the reply with a Lua filter, and sends one record per call to the api-server through a gRPC access log.
 The api-server receiver comes in slice 03, so in this slice the records are refused by the api-server and are lost.
 That is expected.
-The slice also records the decision in ADR-100.
+The slice also records the decision in ADR-101.
 
 The meter design was tested on 2026-10-09 and 2026-10-13 (research page, sections "Test of the meter" and "Records lost when a gateway restarts").
 The test files of that spike are gone.
@@ -19,9 +19,9 @@ The Lua code is new, but the rules below come from the tested spike.
 Apply `/adr` for step 1.
 The controller is Go: run its tasks with `mise run //packages/controller:<task>`.
 
-1. **ADR-100.**
+1. **ADR-101.**
    Use the `/adr` skill.
-   - Number 100: 098 belongs to open PR #4620, and 099 is on main.
+   - Number 101: 098 belongs to open PR #4620, and 099 and 100 are on main.
    - Status accepted, owner `@PetrBulanek`, date 2026-10-13 (Petr approved it on that day).
    - Thesis: "DAM measures model spend in each agent's gateway and enforces spend limits there.
      The spend that a harness or an in-pod component reports stays for display only."
@@ -55,7 +55,7 @@ The controller is Go: run its tasks with `mise run //packages/controller:<task>`
        The gate reads it in slice 03.
      - Remove `accept-encoding`.
        Without this, Anthropic sends compressed streams, and the meter reads 0 tokens.
-     - Write the dynamic metadata namespace `dam.spend`: `call_id`; `conn` (the `x-platform-conn` value, if any); `payer` (the attribution id that the controller renders for this gateway, which is the root driver for an Invocation target); `path` without the query; `dialect`; `billable`.
+     - Write the dynamic metadata namespace `platform.spend`: `call_id`; `conn` (the `x-platform-conn` value, if any); `payer` (the attribution id that the controller renders for this gateway, which is the root driver for an Invocation target); `path` without the query; `dialect`; `billable`.
    - **Billable paths** (match the end of the path, so a path prefix or `/inference` for Bob does not matter):
      - `…/v1/messages`, but not `…/v1/messages/count_tokens`;
      - `…/chat/completions`;
@@ -76,7 +76,7 @@ The controller is Go: run its tasks with `mise run //packages/controller:<task>`
      - Fields: input, output, cache read, cache write total and its 5-minute and 1-hour parts (`cache_creation.ephemeral_5m_input_tokens`, `ephemeral_1h_input_tokens`), OpenAI cached tokens (`prompt_tokens_details.cached_tokens`, `input_tokens_details.cached_tokens`), `server_tool_use.web_search_requests`, the count of `"type":"web_search_call"` output items, Bob's `credits`, `service_tier`, and the reply's `model`.
      - Keep the raw numbers and the dialect.
        Do not compute "uncached input" in Lua: slice 03 does that.
-     - Update `dam.spend` after each chunk that changes a count, so that a periodic record has the current counts.
+     - Update `platform.spend` after each chunk that changes a count, so that a periodic record has the current counts.
      - At the end, write the total reply bytes and `complete`: true only when the format's end event arrived (`message_stop`, `[DONE]`, `response.completed`, or a complete JSON body).
 4. **The access log** in `buildTerminatingChain` (`envoy_bootstrap.go`), on model chains only.
    - Today `hcm["access_log"] = hcmAccessLog(...)` replaces the list.
@@ -86,7 +86,7 @@ The controller is Go: run its tasks with `mise run //packages/controller:<task>`
        This is the same cluster and authority as the ext_authz filter.
        The api-server finds the agent from the authority, and the mesh policy already lets only this gateway call it.
      - `additional_response_headers_to_log`: `x-litellm-response-cost`.
-     - A filter that keeps only entries whose `dam.spend.billable` metadata is true.
+     - A filter that keeps only entries whose `platform.spend.billable` metadata is true.
    - Set the chain HCM's `access_log_options.access_log_flush_interval: 2s`.
      Envoy then sends a periodic record every 2 seconds while a call runs.
    - Give the existing stdout and OpenTelemetry loggers on model chains a log-type filter that excludes periodic records.
@@ -112,14 +112,14 @@ The controller is Go: run its tasks with `mise run //packages/controller:<task>`
 
 ## Acceptance criteria
 
-- [ ] ADR-100 exists with the thesis above, and the ADR index is regenerated.
-- [ ] A gateway of an agent with an IBM LiteLLM Connection has, on that host's chain, the filter order `connection_address`, `spend_meter`, `ext_authz`, then the existing filters.
-- [ ] A chain of a non-provider Connection (for example GitHub) has no `spend_meter` and no gRPC logger.
-- [ ] The model chain's HCM has the gRPC logger with `buffer_size_bytes: 0`, the 2-second flush interval, and the existing loggers with the periodic filter.
-- [ ] `x-platform-call` and `accept-encoding` never reach the provider.
-- [ ] Model calls through the gateway work as before, streamed and not streamed, for Claude Code and Pi.
-- [ ] `mise run //packages/controller:check`, `mise run //packages/controller:test` and `mise run check` pass.
-- [ ] `mise run check:comment-types` passes.
+- [x] ADR-101 exists with the thesis above, and the ADR index is regenerated.
+- [x] A gateway of an agent with an IBM LiteLLM Connection has, on that host's chain, the filter order `connection_address`, `spend_meter`, `ext_authz`, then the existing filters.
+- [x] A chain of a non-provider Connection (for example GitHub) has no `spend_meter` and no gRPC logger.
+- [x] The model chain's HCM has the gRPC logger with `buffer_size_bytes: 0`, the 2-second flush interval, and the existing loggers with the periodic filter.
+- [x] `x-platform-call` and `accept-encoding` never reach the provider.
+- [x] Model calls through the gateway work as before, streamed and not streamed, for Claude Code and Pi.
+- [x] `mise run //packages/controller:check`, `mise run //packages/controller:test` and `mise run check` pass.
+- [x] `mise run check:comment-types` passes.
 
 ## Smoke test
 
