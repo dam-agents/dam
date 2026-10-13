@@ -371,14 +371,15 @@ describe("image update tick", () => {
     expect(m.writeSpec).not.toHaveBeenCalled();
   });
 
-  // TEST_SCENARIO: once the agent is ready on the new image the move is
-  // TEST_SCENARIO: proven and the image it came from is forgotten.
-  it("forgets the old image once the agent is ready on the new one", async () => {
+  // TEST_SCENARIO: once the agent has stayed ready on the new image the
+  // TEST_SCENARIO: move is proven and the image it came from is forgotten.
+  it("forgets the old image once the agent stayed ready on the new one", async () => {
     const m = update([
       agent({
         spec: { name: "a", image: DEFAULT_IMAGE },
         imageUpdateFrom: OLD_DEFAULT_IMAGE,
         specStart: "ready",
+        readySince: TWO_HOURS_AGO,
       }),
     ]);
     await m.tick();
@@ -386,6 +387,23 @@ describe("image update tick", () => {
       annotations: { [FROM]: null },
       resourceVersion: "7",
     });
+  });
+
+  // TEST_SCENARIO: a container that crashes some seconds after it becomes
+  // TEST_SCENARIO: ready is ready for a moment between its exits. That
+  // TEST_SCENARIO: moment must not prove the move, or the crash loop the
+  // TEST_SCENARIO: controller reports next has no old image to go back to.
+  it("keeps the old image while the agent has only just become ready", async () => {
+    const m = update([
+      agent({
+        spec: { name: "a", image: DEFAULT_IMAGE },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "ready",
+        readySince: new Date(Date.now() - 60_000),
+      }),
+    ]);
+    await m.tick();
+    expect(m.writeSpec).not.toHaveBeenCalled();
   });
 
   // TEST_SCENARIO: a new image that cannot be pulled, unpacked or kept
@@ -474,6 +492,42 @@ describe("parseInfraAgent", () => {
     ).toBeUndefined();
   });
 
+  // TEST_SCENARIO: the controller says StartFailed only of the pod or
+  // TEST_SCENARIO: machine that runs the spec its generation names, so a
+  // TEST_SCENARIO: crash loop or a harness that never becomes ready on the
+  // TEST_SCENARIO: new image moves the agent back, while one about an older
+  // TEST_SCENARIO: spec does not.
+  it.each(["CrashLoop", "NeverReady"])(
+    "reads StartFailed %s on the current spec as a failed start",
+    (reason) => {
+      const startFailed = (observedGeneration: number) => ({
+        conditions: [
+          agentPod("ContainerTerminated"),
+          { type: "StartFailed", status: "True", reason, observedGeneration },
+        ],
+      });
+      expect(parse({}, startFailed(3)).specStart).toBe("failed");
+      expect(parse({}, startFailed(2)).specStart).toBeUndefined();
+    },
+  );
+
+  it("reads since when the agent is ready", () => {
+    const parsed = parse(
+      {},
+      {
+        conditions: [
+          {
+            type: "Ready",
+            status: "True",
+            observedGeneration: 3,
+            lastTransitionTime: "2026-10-12T10:00:00Z",
+          },
+        ],
+      },
+    );
+    expect(parsed.readySince).toEqual(TWO_HOURS_AGO);
+  });
+
   it.each(["ImagePullFailure", "MachineImageUnavailable", "MachineBootFailed"])(
     "reads %s as a failed start",
     (reason) => {
@@ -485,7 +539,8 @@ describe("parseInfraAgent", () => {
 
   // TEST_SCENARIO: the pod a roll replaces exits on SIGTERM at the new
   // TEST_SCENARIO: generation, and memory fails on any image, so neither
-  // TEST_SCENARIO: says the new image is bad.
+  // TEST_SCENARIO: says the new image is bad without the controller's
+  // TEST_SCENARIO: StartFailed about the current pod.
   it.each(["ContainerTerminated", "OutOfMemory"])(
     "does not read %s as a failed start",
     (reason) => {

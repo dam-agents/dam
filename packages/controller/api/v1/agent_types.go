@@ -211,6 +211,24 @@ const (
 	// ConditionNestedVirtualization is present only on an Agent that asks for
 	// spec.backend.vm.nestedVirtualization, and says whether its machine got it.
 	ConditionNestedVirtualization = "NestedVirtualization"
+	// ConditionStartFailed is present only while the pod or machine that runs
+	// the spec its observedGeneration names keeps failing after it started:
+	// its container keeps exiting (ReasonCrashLoop), or it runs without
+	// becoming ready (ReasonNeverReady). AgentPodReady's termination cause can
+	// come from the pod a roll replaces; this condition never does, so the
+	// api-server can roll an image update back on it.
+	ConditionStartFailed = "StartFailed"
+)
+
+// Reasons on ConditionStartFailed.
+const (
+	// ReasonCrashLoop: the current pod's agent container, or the machine's
+	// guest, was restarted at least three times on this spec, and is not
+	// ready now.
+	ReasonCrashLoop = "CrashLoop"
+	// ReasonNeverReady: the current pod's agent container, or the machine,
+	// has run for ten minutes on this spec without becoming ready.
+	ReasonNeverReady = "NeverReady"
 )
 
 // Reasons on ConditionRuntimeMigrating. Until Verified the container spec is

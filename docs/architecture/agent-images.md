@@ -127,7 +127,13 @@ The job re-reads each Agent before deciding, probes the pod after that read, and
 A prompt arriving in the seconds between the write and the pod's restart is the one window it cannot close.
 
 A move never strands an Agent.
-It records the image the Agent came from until the controller reports the Agent ready on the new spec.
-If the controller instead reports, for that spec, a start failure the image can cause — the image cannot be pulled or unpacked, or the machine cannot boot it — the job writes the old image back and marks the new one refused for that Agent, which is not moved to it again; a later image is tried as usual.
-A container that exits is not rolled back: the controller does not say which pod exited, and the pod a roll replaces exits too.
+It records the image the Agent came from until the Agent has stayed ready on the new spec for five minutes, so a container that crashes seconds after it becomes ready does not prove the move.
+If the controller instead reports, for that spec, a failure the image can cause, the job writes the old image back and marks the new one refused for that Agent, which is not moved to it again; a later image is tried as usual.
+The failures are: the image cannot be pulled or unpacked, the machine cannot boot it, or the controller's `StartFailed` condition.
+The controller sets `StartFailed` only from the pod or machine that runs the current spec, never from the pod a roll replaces, which exits too.
+On the container backend that is a pod of the agent StatefulSet's update revision, once the StatefulSet has observed its generation.
+On the vm backend the runner's status names no spec, but a restart in flight reads not ready, so the controller counts from the first read at the current generation.
+`StartFailed` has two reasons: `CrashLoop` (the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now) and `NeverReady` (running for ten minutes on this spec without becoming ready, an image pull not counted).
+An exit from out of memory or a full home volume does not count, since any image meets it.
+A harness that crash-loops on any image, from something in the Agent's home, also moves the Agent back, and the new image is then refused for this Agent although it is not at fault.
 The owner's Update stays available, to move a running Agent now, and says so when the Agent failed to start on that image.

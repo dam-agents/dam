@@ -57,6 +57,7 @@ type AgentReconciler struct {
 	vmLive          sync.Map
 	resizeNotices   sync.Map
 	notReadyPolls   sync.Map
+	vmStartClocks   sync.Map
 	claimCapNotices sync.Map
 	ownerless       sync.Map
 	machineWatchMu  sync.Mutex
@@ -417,7 +418,13 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 		}
 	}
 	agentRestarts, agentRestartReason := podRestarts(agentPod)
-	return r.publishReadinessOf(ctx, agent, agentReady, agentFailReason, agentFailMsg, podReadErr == nil, agentRestarts, agentRestartReason)
+	ss, _ := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	failure, recheck := podStartFailure(ss, agentPod, time.Now())
+	if recheck > 0 && r.requeue != nil {
+		r.requeue(name, recheck)
+	}
+	return r.publishReadinessOf(ctx, agent, agentReady, agentFailReason, agentFailMsg, podReadErr == nil, agentRestarts, agentRestartReason,
+		func(s *apiv1.AgentStatus) { setStartFailure(s, failure, agent.Generation) })
 }
 
 func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.Agent, agentReady bool, agentFailReason, agentFailMsg string, restartsObserved bool, agentRestarts int32, agentRestartReason string, also ...func(*apiv1.AgentStatus)) error {
@@ -543,6 +550,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string) error 
 	}
 	r.vmRunning.Delete(name)
 	r.notReadyPolls.Delete(name)
+	r.vmStartClocks.Delete(name)
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)
