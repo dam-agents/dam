@@ -82,6 +82,7 @@ export interface ComposeAcpOptions {
   keepPolicy: KeepPolicy;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   beforeSpawn: () => Promise<void>;
+  onPrompt: () => void;
   leaseModel: (lease: {
     harness: string;
     provider: string | null;
@@ -286,6 +287,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
         sessionMetadata,
         isTerminalSessionActive: opts.isTerminalSessionActive,
         onArtifactTouch: opts.onArtifactTouch,
+        onPrompt: opts.onPrompt,
         onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
           subAgentSessions.record(sessionId, subAgentIds),
         ...(ownHistory ? { historyProvider: ownHistory } : {}),

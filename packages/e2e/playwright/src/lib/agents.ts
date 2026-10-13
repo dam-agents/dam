@@ -99,6 +99,7 @@ export async function expectAgentEnv(
   name: string,
   expected: string,
   message: string,
+  timeout = 120_000,
 ): Promise<void> {
   await expect
     .poll(
@@ -109,7 +110,7 @@ export async function expectAgentEnv(
           return undefined;
         }
       },
-      { timeout: 120_000, intervals: [2_000], message },
+      { timeout, intervals: [250, 500, 1_000], message },
     )
     .toBe(expected);
 }
