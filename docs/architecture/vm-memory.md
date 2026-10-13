@@ -33,8 +33,9 @@ The guest writes the page descriptors of added RAM into that RAM itself, so huge
 The figure is kept out of what moves the status version, so it never wakes a waiting status read on its own.
 
 **A running machine is counted at its use plus headroom.** That is its measured use plus a per-machine headroom (`virtualization.runner.headroomMiB`), never more than its size.
-A machine not yet measured, and every machine an action is bringing up, counts at a boot estimate (`virtualization.runner.bootMiB`), or its size when that is smaller, until the runner first measures it, about 100 ms after its start returns.
-That is before the agent's harness has started, so from then on a machine counts at little more than its booted guest until later probes see the harness grow.
+A machine not yet measured, and every machine an action is bringing up, counts at a boot estimate (`virtualization.runner.bootMiB`), or its size when that is smaller, until the runner first measures it.
+That is about 100 ms after its start returns, before the agent's harness has started; only a guest whose harness answered during the start waits for the steady probe, about ten seconds on.
+So from then on a machine counts at little more than its booted guest until later probes see the harness grow.
 Counting a boot at half the pool would let only two machines boot at once, so a runner roll or a few wakes together would refuse the rest; the cost is that machines whose harnesses start together are under-counted until the probes catch up.
 Admission, the committed-memory metric and the runner's memory request all count the same way.
 

@@ -13,7 +13,7 @@ pub struct Capacity<'a> {
     pub reserve_mib: i32,
     // UNIT_BOUNDARY_DESCRIPTION: what a measured machine is counted at beyond its measurement, for the guest to grow into between two probes and before the controller acts on pressure.
     pub headroom_mib: i32,
-    // UNIT_BOUNDARY_DESCRIPTION: what a machine not yet measured is counted at when that is less than its size; zero counts it at its size. A machine may be sized to half the runner, so counting every boot at its size would let only two boot at once, and a runner roll or a few wakes together would refuse the rest. The first measurement comes about 100 ms after the start returns, before the agent's harness has started, so a harness that is still starting is under-counted until later probes see it grow.
+    // UNIT_BOUNDARY_DESCRIPTION: what a machine not yet measured is counted at when that is less than its size; zero counts it at its size. A machine may be sized to half the runner, so counting every boot at its size would let only two boot at once, and a runner roll or a few wakes together would refuse the rest. The first measurement usually comes about 100 ms after the start returns, before the agent's harness has started, so a harness that is still starting is under-counted until later probes see it grow.
     pub boot_mib: i32,
 }
 
