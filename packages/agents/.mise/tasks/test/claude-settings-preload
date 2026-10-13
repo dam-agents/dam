@@ -4,7 +4,7 @@
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,4 +48,12 @@ assert.equal(synced.stop, 1);
 const unwritable = run((home) => writeFileSync(join(home, ".claude"), ""));
 assert.equal(unwritable.stop, 0);
 assert.match(unwritable.stderr, /sync-claude-settings: /);
+
+// TEST_SCENARIO: A settings file that parses but has the wrong shape makes the sync throw before its write; the adapter still starts, on the file as it is.
+const malformed = run((home) => {
+  mkdirSync(join(home, ".claude"));
+  writeFileSync(join(home, ".claude/settings.json"), "null");
+});
+assert.equal(malformed.stop, 0);
+assert.match(malformed.stderr, /sync-claude-settings: /);
 console.log("Claude Code's settings sync runs before the ACP adapter in its node and never stops it");
