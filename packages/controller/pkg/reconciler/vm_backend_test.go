@@ -1254,7 +1254,7 @@ func TestALapsedIdleTimeoutLeavesTheMachineToTheIdleChecker(t *testing.T) {
 	assert.True(t, node.spec("my-agent").Running, "the busy probe has not been asked yet")
 
 	unreachable := func(context.Context, string, string) error { return errors.New("the VM runner could not be reached") }
-	require.NoError(t, hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent"))
+	require.Error(t, hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent"))
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.False(t, node.spec("my-agent").Running)
 }

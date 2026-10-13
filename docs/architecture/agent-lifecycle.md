@@ -120,8 +120,8 @@ The agent relays — ACP, per-agent tRPC, terminal, browser stream and SSH — d
 `Ready` arrives only after the controller's next full reconcile, so a relay whose hold began on a hibernated Agent also asks the agent's `/healthz` through its Service at a short interval, and opens its upstream on the first answer once the cached Agent shows `GatewayPodReady`.
 That answer is weaker than `Ready`: it does not say which pod or machine revision answered.
 It is trusted only on a wake from hibernation, because hibernation stops the agent's pod or machine, so what answers came up for this wake.
+For that reason the controller publishes hibernation only once the runner has confirmed the machine stopped ([Hibernate](#hibernate)).
 A running agent that is not `Ready` can be in a restart, and a vm machine keeps answering on its port until its restart stops it, so a hold on such an agent, or one that begins after the controller has started the wake, waits for `Ready`.
-The gap: a vm machine that its runner could not stop at hibernation runs until the agent's next reconcile stops it.
 A stop or a runtime migration ends that polling, and a wake that fails still closes the socket with its cause.
 Contributions are applied out-of-band by a single background worker (a pod's `hello` is presence-only — it just signals the worker to dispatch).
 The worker dispatches **only to a Ready agent** — the same readiness gate the relay's `ensureReady` uses — so an apply never targets a pod that is down or rolling; when the agent isn't Ready the outbox row stays unsettled and the periodic sweep re-dispatches once it is.
@@ -269,7 +269,8 @@ See [agent-skills](agent-skills.md).
 Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)).
 On the `vm` Backend the gateway scales the same way and the agent side is the machine on the VM runner, which stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest.
 Only the idle checker or [reclaim](vm-memory.md) hibernates it, not a lapsed timeout.
-An unreachable runner does not hold the gateway up.
+An unreachable runner does not hold the gateway up, but the Agent is published hibernated only once its runner has confirmed the machine stopped.
+Until then its readiness is down and it reads as starting, the Agent's next reconcile stops the machine once the runner answers, and the idle checker tries the hibernation again on each sweep.
 Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
 
 **The decision.** The controller's idle checker scans Agents on a timer whose interval scales with the *shortest effective timeout it saw last sweep* — an Agent that chooses a window far below the cluster-wide default is swept inside its own window rather than at the default's pace, subject to a floor that keeps the sweep off the API server's back.
