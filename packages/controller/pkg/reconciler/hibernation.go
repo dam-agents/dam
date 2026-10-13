@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/util/retry"
 
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
@@ -109,24 +109,30 @@ func stampHibernated(ctx context.Context, dyn dynamic.Interface, namespace, name
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a wake removes the stamp it woke from, and only that one: the update carries the version it read, so a hibernation stamped while this reconcile ran, from activity it had not seen end, is read again and left in place.
+// UNIT_BOUNDARY_DESCRIPTION: a wake removes the stamp it woke from, and only that one: the patch tests the value the reconcile read, so a hibernation stamped while this reconcile ran, from activity it had not seen end, fails the test and is left in place.
 func clearHibernated(ctx context.Context, dyn dynamic.Interface, namespace, name, seen string) error {
 	cli := dyn.Resource(AgentsGVR).Namespace(namespace)
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		agent, err := cli.Get(ctx, name, metav1.GetOptions{})
-		if k8serrors.IsNotFound(err) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		ann := agent.GetAnnotations()
-		if v, ok := ann[annHibernatedAt]; !ok || v != seen {
-			return nil
-		}
-		delete(ann, annHibernatedAt)
-		agent.SetAnnotations(ann)
-		_, err = cli.Update(ctx, agent, metav1.UpdateOptions{})
+	agent, err := cli.Get(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
 		return err
+	}
+	if v, ok := agent.GetAnnotations()[annHibernatedAt]; !ok || v != seen {
+		return nil
+	}
+	path := "/metadata/annotations/" + strings.ReplaceAll(annHibernatedAt, "/", "~1")
+	raw, err := json.Marshal([]map[string]any{
+		{"op": "test", "path": path, "value": seen},
+		{"op": "remove", "path": path},
 	})
+	if err != nil {
+		return err
+	}
+	_, err = cli.Patch(ctx, name, types.JSONPatchType, raw, metav1.PatchOptions{})
+	if k8serrors.IsNotFound(err) || k8serrors.IsInvalid(err) {
+		return nil
+	}
+	return err
 }
