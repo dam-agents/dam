@@ -116,7 +116,8 @@ A vm machine keeps its root when the new image declares the same root generation
 
 It never interrupts work.
 A hibernated, stopped or over-budget Agent moves at once and takes the image on its next wake.
-That wake costs nothing extra: the harness tools' DaemonSet has already pulled the default image onto every node, and the [image cache](vm-image-cache.md) preloads every Template's image and pins it, which an older image no longer is.
+That wake costs nothing extra for the default image: the harness tools' DaemonSet has already pulled it onto every node, and the [image cache](vm-image-cache.md) preloads and pins the harness images the install ships, which an older image no longer is.
+A Template on an image the cache does not preload is fetched on its first wake, as its old image would be on a node that lacks it.
 A running Agent waits for the [idle checker](agent-lifecycle.md#hibernate) to hibernate it.
 An always-on Agent never hibernates, so it is restarted onto the new image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its pod reporting idle, which covers a running turn, an open terminal and kept background work.
 The job re-reads each Agent before deciding, probes the pod after that read, and writes against that read's version, so a connection, a wake or an activity stamp in between makes the write conflict, and the Agent is decided again later.
@@ -124,5 +125,6 @@ A prompt arriving in the seconds between the write and the pod's restart is the 
 
 A move never strands an Agent.
 It records the image the Agent came from until the controller reports the Agent ready on the new spec.
-If the controller instead reports, for that spec, a start failure the image can cause — the image cannot be pulled or unpacked, the machine cannot boot, or the container keeps exiting after two restarts — the job writes the old image back and marks the new one refused for that Agent, which is not moved to it again; a later image is tried as usual.
+If the controller instead reports, for that spec, a start failure the image can cause — the image cannot be pulled or unpacked, or the machine cannot boot it — the job writes the old image back and marks the new one refused for that Agent, which is not moved to it again; a later image is tried as usual.
+A container that exits is not rolled back: the controller does not say which pod exited, and the pod a roll replaces exits too.
 The owner's Update stays available, to move a running Agent now, and says so when the Agent failed to start on that image.

@@ -483,23 +483,18 @@ describe("parseInfraAgent", () => {
     },
   );
 
-  // TEST_SCENARIO: the pod a roll replaces exits too, and memory or a full
-  // TEST_SCENARIO: home fail on any image, so neither says the image is bad.
-  it("reads an exit as a failed start only once it repeats", () => {
-    const exited = (restarts: number) =>
-      parse(
-        {},
-        {
-          conditions: [agentPod("ContainerTerminated")],
-          agentPodRestarts: restarts,
-        },
-      ).specStart;
-    expect(exited(0)).toBeUndefined();
-    expect(exited(2)).toBe("failed");
-    expect(
-      parse({}, { conditions: [agentPod("OutOfMemory")] }).specStart,
-    ).toBeUndefined();
-  });
+  // TEST_SCENARIO: the pod a roll replaces exits on SIGTERM at the new
+  // TEST_SCENARIO: generation, and memory fails on any image, so neither
+  // TEST_SCENARIO: says the new image is bad.
+  it.each(["ContainerTerminated", "OutOfMemory"])(
+    "does not read %s as a failed start",
+    (reason) => {
+      expect(
+        parse({}, { conditions: [agentPod(reason)], agentPodRestarts: 3 })
+          .specStart,
+      ).toBeUndefined();
+    },
+  );
 });
 
 describe("templateImageUpdate", () => {

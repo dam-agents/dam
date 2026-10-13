@@ -151,16 +151,13 @@ export interface InfraAgent {
   gatewayFailure?: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the start failures a new image can cause: it cannot be pulled or unpacked, or its process keeps exiting. A full home volume, memory and runner placement fail on any image, so they say nothing about the image. An exit counts only once the container has also been restarted twice, because the pod a roll replaces exits too.
-function imageStartFailed(reason: string | undefined, restarts = 0): boolean {
-  return (
-    reason === "ImagePullFailure" ||
-    reason === "InvalidImageName" ||
-    reason === "MachineBootFailed" ||
-    reason === "MachineImageUnavailable" ||
-    (reason === "ContainerTerminated" && restarts >= 2)
-  );
-}
+// UNIT_BOUNDARY_DESCRIPTION: the start failures only a new image causes: it cannot be pulled or unpacked, or the machine cannot boot it. A full home volume, memory and runner placement fail on any image. A container exit is left out too: the condition does not say which pod exited, and the pod a roll replaces exits on SIGTERM at the new generation.
+const IMAGE_START_FAILURES = new Set([
+  "ImagePullFailure",
+  "InvalidImageName",
+  "MachineBootFailed",
+  "MachineImageUnavailable",
+]);
 
 const TERMINAL_MACHINE_REASONS = new Set(
   [...POD_FAILURE_REASONS].filter((r) => r.startsWith("Machine")),
@@ -271,7 +268,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
         ? "ready"
         : agentPod?.status === "False" &&
             agentPod.observedGeneration === generation &&
-            imageStartFailed(agentPod.reason, restarts)
+            IMAGE_START_FAILURES.has(agentPod.reason ?? "")
           ? "failed"
           : undefined;
   const quietSince =
