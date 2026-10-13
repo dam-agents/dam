@@ -30,6 +30,7 @@ import {
   useAgentRunState,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
+import { askAgainWhenReady } from "../../agents/lib/agent-start.js";
 import { findAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys } from "../api/keys.js";
 import {
@@ -159,21 +160,24 @@ export function useAcpSession(
       setSessionId(sid);
 
       let loaded = false;
-      const operable = agentOperable
-        ? Promise.resolve()
-        : untilAgentOperable(selectedAgent);
-      operable
-        ?.then(() => (loaded ? null : fetchSessionHistory(selectedAgent, sid)))
-        .then((frames) => {
-          if (!frames || loaded || useStore.getState().sessionId !== sid)
-            return;
-          const preview = framesToMessages(frames, {
-            tail: SESSION_HISTORY_TAIL,
-            turnInFlight: listedSessionRunning(selectedAgent, sid),
-          });
-          if (preview.length > 0) setMessages(preview);
-        })
-        .catch(() => {});
+      const hold = agentOperable ? null : untilAgentOperable(selectedAgent);
+      hold?.catch(() => {});
+      if (agentOperable || hold) {
+        askAgainWhenReady(
+          async () => (loaded ? null : fetchSessionHistory(selectedAgent, sid)),
+          () => hold,
+        )
+          .then((frames) => {
+            if (!frames || loaded || useStore.getState().sessionId !== sid)
+              return;
+            const preview = framesToMessages(frames, {
+              tail: SESSION_HISTORY_TAIL,
+              turnInFlight: listedSessionRunning(selectedAgent, sid),
+            });
+            if (preview.length > 0) setMessages(preview);
+          })
+          .catch(() => {});
+      }
 
       try {
         const fresh = await loadSessionHistory(sid).finally(() => {
