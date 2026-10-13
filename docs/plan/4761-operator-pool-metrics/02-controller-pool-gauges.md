@@ -22,9 +22,9 @@ Nothing tells an operator how much the users' pools promise against what the nod
 
 ## Acceptance criteria
 
-- [ ] Gauges carry only `resource`, `level` and `reason`.
-- [ ] An infeasible resize puts `RunnerCapacity=False/Infeasible` and one Warning Event on each of the owner's vm Agents, leaves Ready alone, and clears once the resize applies.
-- [ ] Only the leader exports; storage capacity is absent without `CSIStorageCapacity`.
+- [x] Gauges carry only `resource`, `level` and `reason`.
+- [x] An infeasible resize puts `RunnerCapacity=False/Infeasible` and one Warning Event on each of the owner's vm Agents, leaves Ready alone, and clears once the resize applies.
+- [x] Only the leader exports; storage capacity is absent without `CSIStorageCapacity`.
 
 ## Smoke test
 

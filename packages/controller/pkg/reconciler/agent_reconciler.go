@@ -67,6 +67,8 @@ type AgentReconciler struct {
 	vmPools         sync.Map
 	usageSecrets    sync.Map
 	resizeNotices   sync.Map
+	runnerCapacity  sync.Map
+	poolLevels      sync.Map
 	notReadyPolls   sync.Map
 	vmStartClocks   sync.Map
 	ownerless       sync.Map

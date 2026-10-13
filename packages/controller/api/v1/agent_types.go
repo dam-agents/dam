@@ -219,6 +219,19 @@ const (
 	// termination cause can come from the pod a roll replaces; this condition
 	// never does, so the api-server can roll an image update back on it.
 	ConditionStartFailed = "StartFailed"
+	// ConditionRunnerCapacity is present only on a vm agent whose owner's
+	// runner pod the node cannot give what the owner's pool asks of it: an
+	// in-place resize it deferred (ReasonRunnerResizeDeferred) or found
+	// infeasible (ReasonRunnerResizeInfeasible). Status False, the kubelet's
+	// account in the message. The machine keeps running at what the pod has,
+	// so readiness does not follow it; it is for operators.
+	ConditionRunnerCapacity = "RunnerCapacity"
+)
+
+// Reasons on ConditionRunnerCapacity.
+const (
+	ReasonRunnerResizeDeferred   = "RunnerResizeDeferred"
+	ReasonRunnerResizeInfeasible = "RunnerResizeInfeasible"
 )
 
 // Reasons on ConditionStartFailed.

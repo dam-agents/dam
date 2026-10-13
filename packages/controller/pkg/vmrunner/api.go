@@ -145,6 +145,18 @@ type RunnerPressure struct {
 	WorkingSetMiB int    `json:"workingSetMiB,omitempty"`
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner's usage read, as far as the controller reads it: the owner's claim and the memory admission counts against the limit. The read also lists each machine, which the api-server shows and the controller does not need.
+type RunnerUsage struct {
+	Storage struct {
+		UsedBytes   int64 `json:"usedBytes"`
+		UsableBytes int64 `json:"usableBytes"`
+	} `json:"storage"`
+	Memory struct {
+		LimitMiB     int64 `json:"limitMiB"`
+		CommittedMiB int64 `json:"committedMiB"`
+	} `json:"memory"`
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other two never pass in that pod, so only a new pod takes the release.
 const (
 	HeldUnstaged = "unstaged"

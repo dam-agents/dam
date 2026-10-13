@@ -343,6 +343,9 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		for _, name := range agentReconciler.MemoryPass(ctx) {
 			agentQueue.Add(name)
 		}
+		for _, name := range agentReconciler.PoolPass(ctx) {
+			agentQueue.Add(name)
+		}
 	})
 
 	runAgentWorker(ctx, agentReconciler, agentInformer.Lister().ByNamespace(cfg.Namespace), agentQueue)

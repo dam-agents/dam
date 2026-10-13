@@ -111,6 +111,8 @@ Enabling the backend sets the standard OTLP endpoint environment on each deploym
 Unlike agent telemetry, this export does not ride a gateway: it arrives without the trusted attribution header, so it carries no `platform.agent.id` and is never attributed to a user — which is exactly how the read path distinguishes platform telemetry from agent telemetry.
 
 - The **controller** emits one trace per reconcile pass and background sweep (with spans for each Kubernetes API call), reconcile and workqueue metrics, and its structured logs with trace correlation.
+  Its leader also exports the users' **VM pools** for operators, every half minute: what the runners' limits and claims commit against what the scheduler reserves for them and what the nodes able to run a runner hold (storage only where the storage driver publishes its capacity), how many runners sit at each level of their pool (ok, warning from 75%, critical from 90%), and how many runner pods wait on a resize the node deferred or refused.
+  The identity rule below holds: none of these names a user, so a user whose pool goes critical, or whose runner the node cannot fit, is named by a Warning Event on their vm Agents, and the second also by their `RunnerCapacity` condition.
 - The **api-server** emits one trace per incoming request with a child span per tRPC procedure (and spans for outbound calls: agents, Keycloak, channels, Redis, the ext-authz gRPC checks), per-procedure duration/outcome metrics plus Node runtime health (event loop, GC, heap), the **usage counters** and **state gauges** below, and its structured logs with trace correlation.
   Health-probe requests are not traced.
   Background work gets [traces of its own](#background-traces).
