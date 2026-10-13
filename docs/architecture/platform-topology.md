@@ -78,7 +78,7 @@ The per-agent MCP endpoint is **stateless** — it mints no streamable-HTTP sess
 Affinity was tried first and does not work here: a Service `sessionAffinity` is bypassed on a waypoint-fronted Service, and a consistent-hash `DestinationRule` on source IP leaves the waypoint's route without a hash policy, which degrades ring hash to per-request random.
 Since every harness call still traverses the waypoint, it is itself replicated with its own disruption budget when the api-server runs more than one replica.
 One thing is pinned rather than shared, because it is in-process by nature: the channel workers need a single holder install-wide, since their transports admit one consumer each; a Kubernetes Lease in the agent namespace elects it — the primitive the controller already elects on, so leadership survives a Redis restart — and other replicas marshal outbound channel calls to the holder over the Redis bus ([channels](channels.md)).
-That Lease is the install's only api-server election: every role that admits one holder (the channel workers, the agent watch, the attention watcher) rides it, so leadership is one answer rather than a set that can disagree.
+That Lease is the install's only api-server election: every role that admits one holder rides it, so leadership is one answer rather than a set that can disagree.
 The roles start and stop together, all or none: a replica that cannot bring up everything the Lease stands for rolls back what did start, releases the Lease and backs off, so it cannot squat on the election while unable to serve.
 The one thing that keeps a Lease is a role this replica could not prove it stopped, which must never be handed to another.
 
