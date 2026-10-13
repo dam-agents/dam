@@ -39,6 +39,7 @@ export type RelayAdmissionResult =
       ok: true;
       user: UserIdentity;
       surface: string;
+      attached: () => void;
       watchKey: (onDead: () => void) => () => void;
     }
   | { ok: false; kind: RelayAdmissionDenialKind };
@@ -59,6 +60,7 @@ export type RelayAdmission = (
 
 export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
   return async (req, url, agentId, relayKind) => {
+    const connectedAt = performance.now();
     const site: WsAuthSite = {
       edge: "ws",
       relay: relayKind,
@@ -105,7 +107,6 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
     }
 
     const surface = clientSurface(admitted.principal, deps.surfaceAttribution);
-    logWsAttach(user.sub, site);
     if (url.searchParams.get("passive") !== "1") {
       emit({
         type: EventType.AgentRelayAttached,
@@ -119,6 +120,12 @@ export function createRelayAdmission(deps: RelayAdmissionDeps): RelayAdmission {
       ok: true,
       user,
       surface,
+      attached: () =>
+        logWsAttach(
+          user.sub,
+          site,
+          Math.round(performance.now() - connectedAt),
+        ),
       watchKey: (onDead) =>
         user.keyId === undefined
           ? () => {}
@@ -133,6 +140,7 @@ interface UpgradeTarget {
 export interface RelayActor {
   sub: string;
   surface: string;
+  attached: () => void;
 }
 
 interface RelayTarget {
@@ -227,6 +235,7 @@ export function relayRoute(
     relay.handleUpgrade(req, socket, head, agentId, {
       sub: admitted.user.sub,
       surface: admitted.surface,
+      attached: admitted.attached,
     });
   };
 }
