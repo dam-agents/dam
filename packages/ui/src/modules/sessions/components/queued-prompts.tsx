@@ -141,22 +141,24 @@ function QueuedPromptItem({
           <>
             <Button
               variant="ghost"
-              size="xs"
+              size="icon-xs"
+              tooltip="Edit"
+              aria-label="Edit"
               disabled={pending}
               onClick={() => setDraft(textOf(target.blocks))}
             >
               <Edit size={14} />
-              Edit
             </Button>
             <Button
               variant="ghost"
-              size="xs"
+              size="icon-xs"
               tone="danger"
+              tooltip="Remove"
+              aria-label="Remove"
               disabled={pending}
               onClick={remove}
             >
               <TrashCan size={14} />
-              Remove
             </Button>
           </>
         )}
