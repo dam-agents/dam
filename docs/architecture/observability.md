@@ -158,6 +158,7 @@ What each measurement counts, and what it cannot answer:
   Expiry stays apart from a decision so unanswered requests are visible; only the actor that actually flipped the request announces it, so a hold timing out against a concurrent answer does not count twice.
   A rule written after expiry closes the request a second time, so this counts closings, not requests.
 - **Knowledge base share publishes** — one per publish attempt that settled, by **outcome**; the failure reason is free text and stays in the logs.
+  Most publishes are the automatic republish after a shared folder changes, so this measures publishing activity; how many knowledge bases are shared is a [state gauge](#state-gauges).
 - **Skill set changes** — one per skill set saved or deleted, by **action**.
 
 **The harness** a turn or fire ran on is the one dimension that had to be collected rather than exported.
