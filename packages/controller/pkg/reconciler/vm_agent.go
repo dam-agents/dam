@@ -460,7 +460,7 @@ func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name stri
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the vm agents of one owner, from the informer cache, for requeueing them when their runner's Deployment changes — its pod becoming ready is what they are waiting for, and nothing about the Agents themselves changes then.
-func (r *AgentReconciler) OwnerVMAgents(owner string) []string {
+func (r *AgentReconciler) OwnerAgents(owner string) []unstructured.Unstructured {
 	if r.agentCache == nil || owner == "" {
 		return nil
 	}
@@ -468,9 +468,19 @@ func (r *AgentReconciler) OwnerVMAgents(owner string) []string {
 	if err != nil {
 		return nil
 	}
-	var names []string
+	var agents []unstructured.Unstructured
 	for _, obj := range items {
-		if u, ok := obj.(*unstructured.Unstructured); ok && anyVMAgent([]unstructured.Unstructured{*u}) {
+		if u, ok := obj.(*unstructured.Unstructured); ok {
+			agents = append(agents, *u)
+		}
+	}
+	return agents
+}
+
+func (r *AgentReconciler) OwnerVMAgents(owner string) []string {
+	var names []string
+	for _, u := range r.OwnerAgents(owner) {
+		if anyVMAgent([]unstructured.Unstructured{u}) {
 			names = append(names, u.GetName())
 		}
 	}
