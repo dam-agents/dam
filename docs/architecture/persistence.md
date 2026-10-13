@@ -120,7 +120,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   What is unusual is _why_ it duplicates state the Agent custom resource already holds — that copy is authoritative but unreachable here, because serving an anonymous request from the K8s API would let unauthenticated traffic drive control-plane reads.
   Owned by [public-agent-page](public-agent-page.md).
 - **attention record** — the per-owner account of which sessions have asked for a user's attention, plus that user's own dismissal watermarks.
-  A snapshot of agent-owned state, written by a lease-elected watcher so Home can answer for an Agent that has since hibernated; like the session directory it is never read to decide which sessions exist, and unlike it, it may be discarded — a fresh capture refills it.
+  A snapshot of agent-owned state, written by a lease-elected watcher so Home, and a sleeping Agent's session list, can answer for it; it never decides which sessions exist, and unlike the session directory it may be discarded — a fresh capture refills it.
   Owned by [home-feed](home-feed.md).
 - **knowledge-base shares** — one row per shared knowledge base (`kb_shares`): the durable share secret, owner-controlled public name, the published-snapshot pointer and stats, and the publish/auto-refresh lifecycle bookkeeping.
   The snapshot bytes live in the object store; this row is the queryable index and access record, and answering a consumer's request must not require the owning agent to be running.
