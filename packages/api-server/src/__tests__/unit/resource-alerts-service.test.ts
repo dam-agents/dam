@@ -101,6 +101,29 @@ describe("resource alerts service", () => {
     expect(peak).toBe(10);
     expect(read.sort()).toEqual([...owners].sort());
   });
+  // TEST_SCENARIO: One owner's evaluation throws, as a failed database write would; the pass logs it and still alerts the other owners instead of abandoning them.
+  it("keeps evaluating other owners when one owner's evaluation fails", async () => {
+    const notify = vi.fn(async () => ({ sent: 1 }));
+    const logged: string[] = [];
+    const svc = createResourceAlertsService({
+      repo: memoryRepo(),
+      notify,
+      listStorageOwners: async () => ["kc|bad", "kc|good"],
+      readStorage: async (ownerSub) => {
+        if (ownerSub === "kc|bad") throw new Error("boom");
+        return { usedBytes: 92 * GIB, usableBytes: 100 * GIB };
+      },
+      listOwnerAgents: async () => [],
+      homeUrl: "http://ui",
+      log: (msg) => logged.push(msg),
+      collectMs: 0,
+    });
+    await svc.evaluateStorage();
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(logged.some((m) => m.includes("kc|bad") && m.includes("boom"))).toBe(
+      true,
+    );
+  });
   it("leaves an owner alone whose runner cannot be read", async () => {
     const { svc, notify } = service({ storage: null });
     await svc.evaluateStorage();

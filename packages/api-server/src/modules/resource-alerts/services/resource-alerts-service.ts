@@ -97,16 +97,20 @@ export function createResourceAlertsService(deps: {
       const owners = (await deps.listStorageOwners()).values();
       const lane = async () => {
         for (const ownerSub of owners) {
-          const usage = await deps.readStorage(ownerSub);
-          if (!usage || usage.usableBytes <= 0) continue;
-          const percent = (usage.usedBytes / usage.usableBytes) * 100;
-          const at = now();
-          await advance(
-            ownerSub,
-            "storage",
-            (prev) => nextStorage(prev, percent, at),
-            () => storageMessage(usage, percent, deps.homeUrl),
-          );
+          try {
+            const usage = await deps.readStorage(ownerSub);
+            if (!usage || usage.usableBytes <= 0) continue;
+            const percent = (usage.usedBytes / usage.usableBytes) * 100;
+            const at = now();
+            await advance(
+              ownerSub,
+              "storage",
+              (prev) => nextStorage(prev, percent, at),
+              () => storageMessage(usage, percent, deps.homeUrl),
+            );
+          } catch (err) {
+            deps.log(`storage alert for ${ownerSub} failed: ${String(err)}`);
+          }
         }
       };
       await Promise.all(Array.from({ length: STORAGE_READ_LANES }, lane));
