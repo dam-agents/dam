@@ -19,8 +19,8 @@ The platform's metrics land in ClickHouse only, and no alert ships with the char
 
 ## Acceptance criteria
 
-- [ ] `helm template` with monitoring on and the API version present renders the ServiceMonitor and PrometheusRule; without it nothing renders and nothing fails.
-- [ ] No exported series carries a pod label.
+- [x] `helm template` with monitoring on and the API version present renders the ServiceMonitor and PrometheusRule; without it nothing renders and nothing fails.
+- [x] No exported series carries a pod label.
 
 ## Smoke test
 

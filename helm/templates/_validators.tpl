@@ -24,6 +24,17 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.unenforcedMeshOnlyOnALocalCluster" . -}}
 {{- include "platform.validate.gatewayEgressCidrs" . -}}
 {{- include "platform.validate.featureModes" . -}}
+{{- include "platform.validate.monitoringNeedsTheCollector" . -}}
+{{- end -}}
+
+{{/*
+The VM pool alerts read what the platform collector exports, and the collector
+exists only with clickstack.enabled.
+*/}}
+{{- define "platform.validate.monitoringNeedsTheCollector" -}}
+{{- if and .Values.monitoring.enabled (not .Values.clickstack.enabled) -}}
+{{- fail "monitoring.enabled needs clickstack.enabled: the VM pool series are exported by the platform collector, which runs only with ClickStack." -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

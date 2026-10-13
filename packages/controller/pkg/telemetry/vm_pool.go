@@ -25,18 +25,19 @@ var (
 
 var vmPoolGauges = sync.OnceFunc(func() {
 	meter := otel.Meter(ScopeName)
-	gauge := func(name, description, unit string) metric.Int64ObservableGauge {
-		g, err := meter.Int64ObservableGauge(name, metric.WithDescription(description), metric.WithUnit(unit))
+	// UNIT_BOUNDARY_DESCRIPTION: no unit: a resource attribute picks bytes or millicores, and the Prometheus export adds a suffix for a declared unit.
+	gauge := func(name, description string) metric.Int64ObservableGauge {
+		g, err := meter.Int64ObservableGauge(name, metric.WithDescription(description))
 		if err != nil {
 			otel.Handle(err)
 		}
 		return g
 	}
-	committed := gauge("platform.vm_pool.committed", "What the users' VM pools promise, by resource: memory and storage in bytes, cpu in millicores", "1")
-	reserved := gauge("platform.vm_pool.reserved", "What the scheduler accounts for the users' VM runners, by resource", "1")
-	capacity := gauge("platform.vm_pool.capacity", "What the nodes that can run a VM runner hold, by resource; storage only where the storage driver publishes its capacity", "1")
-	runners := gauge("platform.vm_pool.runners", "Users' VM runners by resource and by the level of their pool: ok, warning (75%) or critical (90%)", "{runner}")
-	pending := gauge("platform.vm_runner.resize_pending", "VM runner pods whose in-place resize the node has deferred or found infeasible", "{pod}")
+	committed := gauge("platform.vm_pool.committed", "What the users' VM pools promise, by resource: memory and storage in bytes, cpu in millicores")
+	reserved := gauge("platform.vm_pool.reserved", "What the scheduler accounts for the users' VM runners, by resource")
+	capacity := gauge("platform.vm_pool.capacity", "What the nodes that can run a VM runner hold, by resource; storage only where the storage driver publishes its capacity")
+	runners := gauge("platform.vm_pool.runners", "Users' VM runners by resource and by the level of their pool: ok, warning (75%) or critical (90%)")
+	pending := gauge("platform.vm_runner.resize_pending", "VM runner pods whose in-place resize the node has deferred or found infeasible")
 	_, err := meter.RegisterCallback(func(_ context.Context, o metric.Observer) error {
 		vmPoolMu.Lock()
 		last := vmPoolLast
