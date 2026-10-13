@@ -81,7 +81,7 @@ test.afterAll(async () => {
   await setVmSandboxes(api, true);
 });
 
-// TEST_SCENARIO: the Agent to migrate. It is a container Agent that can be migrated, it holds a file in HOME written through the files API, and it holds a Session from one chat turn. The later scenarios check each of these again on the vm Backend. The write waits until the agent answers a read, as the UI's own retried reads do before a user can write: for about a second after the pod turns Ready, the mesh may not route to it yet, and the proxy answers 502.
+// TEST_SCENARIO: the Agent to migrate. It is a container Agent that can be migrated, it holds a file in HOME written through the files API, and it holds a Session from one chat turn. The later scenarios check each of these again on the vm Backend. The write waits until the agent answers a read, as the UI's own retried reads do before a user can write: for about a second after the pod turns Ready, the mesh may not route to it yet. The proxy retries a read then, but a write whose connection was reset may have reached the agent, so the proxy answers it 502.
 test("a container agent holds a HOME file and a session", async ({ page }) => {
   test.setTimeout(900_000);
   await waitAgentState(api, agentId, "running");
