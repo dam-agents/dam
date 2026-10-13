@@ -34,6 +34,7 @@ interface BaseProps {
   readOnly?: boolean;
   showModel?: boolean;
   continued?: boolean;
+  arriving?: boolean;
   isLast: boolean;
   hasPendingPermission: boolean;
   pendingNotice?: ReactNode;
@@ -102,6 +103,7 @@ export const ChatMessage = memo(function ChatMessage({
   readOnly = false,
   showModel = false,
   continued = false,
+  arriving = false,
   isLast,
   timeLabel,
   timeTitle,
@@ -141,7 +143,7 @@ export const ChatMessage = memo(function ChatMessage({
       data-role={role}
       className={cn(
         "flex flex-col gap-1",
-        isLast && streaming && "anim-in",
+        ((isLast && streaming) || arriving) && "anim-in",
         isAssistant ? "items-start" : "items-end",
       )}
     >

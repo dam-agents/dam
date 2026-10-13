@@ -143,6 +143,7 @@ import {
   useSidebarPanels,
 } from "../hooks/use-sidebar-panels.js";
 import { draftKey } from "../lib/draft-key.js";
+import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
 import {
   dividerLabel,
@@ -395,6 +396,10 @@ export function ChatView() {
     !sessionView.threadTs &&
     !sessionView.scheduleId &&
     !sessionView.initialization;
+  const arrivalsRef = useRef(newLiveArrivals(sessionId));
+  if (arrivalsRef.current.sessionId !== sessionId)
+    arrivalsRef.current = newLiveArrivals(sessionId);
+  const arrived = noteArrivals(arrivalsRef.current, shown, loadingSession);
   const rewritePoints = useMemo(() => rewritePointsOf(shown), [shown]);
   const rewriting = useStore((s) => s.rewriting);
   const rewriteIndex = rewriting
@@ -915,6 +920,7 @@ export function ChatView() {
                             key={m.id}
                             message={m}
                             continued={k > 0}
+                            arriving={arrived.has(m.id)}
                             avatarAgent={agentView ?? undefined}
                             isLast={item.index + k === shown.length - 1}
                             showModel={runStarts.length > 0}
