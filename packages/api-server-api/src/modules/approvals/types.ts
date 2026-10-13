@@ -56,6 +56,10 @@ export type ApprovalListOptions = z.infer<typeof approvalListOptionsSchema>;
 
 export type ApprovalActionOutcome = z.infer<typeof approvalActionOutcomeSchema>;
 
+export interface ApprovalDismissManyOutcome {
+  applied: number;
+}
+
 export interface ApprovalsService {
   listForOwner(opts?: ApprovalListOptions): Promise<ApprovalView[]>;
   listForInstance(
@@ -67,4 +71,5 @@ export interface ApprovalsService {
   approveHost(id: string): Promise<ApprovalActionOutcome>;
   denyForever(id: string): Promise<ApprovalActionOutcome>;
   dismiss(id: string): Promise<ApprovalActionOutcome>;
+  dismissMany(ids: readonly string[]): Promise<ApprovalDismissManyOutcome>;
 }
