@@ -308,6 +308,14 @@ export type PlatformRemoveQueuedParams = z.infer<
   typeof platformRemoveQueuedParamsSchema
 >;
 
+export const platformSteerQueuedParamsSchema = z.object({
+  sessionId: z.string().min(1),
+  promptId: z.string().min(1),
+});
+export type PlatformSteerQueuedParams = z.infer<
+  typeof platformSteerQueuedParamsSchema
+>;
+
 export const platformRewriteFromParamsSchema = z.object({
   sessionId: z.string().min(1),
   mode: z.enum(["rewind", "fork"]),

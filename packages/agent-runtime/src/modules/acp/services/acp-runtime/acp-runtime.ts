@@ -9,6 +9,7 @@ import {
   buildPlatformTurnEndedNotification,
   jsonRpcErrorDetails,
   platformRemoveQueuedParamsSchema,
+  platformSteerQueuedParamsSchema,
   platformRewriteFromParamsSchema,
   platformUndeliveredPromptSchema,
   platformUpdateQueuedParamsSchema,
@@ -1604,6 +1605,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             );
         }
         answerQueueEdit(channel, frame.id, removed !== null);
+        return;
+      }
+
+      if (method === "platform/steerQueued" && paramsSid) {
+        const parsed = platformSteerQueuedParamsSchema.safeParse(
+          (frame as { params?: unknown }).params,
+        );
+        answerQueueEdit(
+          channel,
+          frame.id,
+          parsed.success &&
+            promptScheduler.steerNow(paramsSid, parsed.data.promptId),
+        );
         return;
       }
 

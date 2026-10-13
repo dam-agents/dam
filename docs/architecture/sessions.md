@@ -68,6 +68,7 @@ A web UI prompt sent mid-turn is then **steered** — a fourth fate, reported in
 The harness takes a steer by aborting whatever the agent is generating, so a steer waits for a **steer point** — the agent neither writing nor running a tool, which is right after its tool calls finish — and the agent reads the prompt beside their results instead of having a reply cut off.
 Prompts waiting together go as one batch — one message carrying each of them in order — since a later one may change what an earlier one asked; separate steers sent together would be merged by the harness on its own, in no reliable order.
 A steer starts the agent generating again, so prompts sent after it wait for the next steer point.
+The user can send a queued prompt now: it is steered at once, with every prompt queued before it, accepting the cut.
 A turn that ends first starts the waiting prompts as the next turn, again as one batch; a prompt never waits longer than a minute for a steer point.
 Until then it is an ordinary queued prompt the user can still change.
 A refused steer queues again at the head, so the agent receives each prompt once and in order.

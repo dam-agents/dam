@@ -196,4 +196,25 @@ describe("acp-runtime: steer points", () => {
     const prompts = world.harness().received("session/prompt");
     expect(promptTexts(prompts[1])).toEqual(["from the cli"]);
   });
+
+  /**
+   * TEST_SCENARIO: The user asks to send a queued message now. It must be
+   * steered at once, even while the agent writes — the user accepts the cut.
+   */
+  it("steers a message the user sends now, even mid-reply", async () => {
+    const { world, bob } = await turnRunning();
+    world.harness().emit(frames.agentMessage(SESSION, "I'm here, Petr"));
+    bob.send(uiPrompt(4, "stop, do this instead"));
+    await settle();
+    expect(world.harness().received(STEER_METHOD)).toEqual([]);
+
+    bob.send({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "platform/steerQueued",
+      params: { sessionId: SESSION, promptId: "p4" },
+    });
+    await settle();
+    expect(world.harness().received(STEER_METHOD)).toHaveLength(1);
+  });
 });

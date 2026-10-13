@@ -1,4 +1,4 @@
-import { Edit, Time, TrashCan } from "@carbon/icons-react";
+import { Edit, SendAlt, Time, TrashCan } from "@carbon/icons-react";
 import type { PromptBlock, QueuedPrompt } from "api-server-api";
 import { useState } from "react";
 
@@ -11,6 +11,7 @@ import { extractErrorMessage, isNotQueuedError } from "../../acp/errors.js";
 import { partsOf } from "../../acp/session-projection.js";
 import {
   removeQueuedPrompt,
+  steerQueuedPrompt,
   updateQueuedPrompt,
 } from "../api/acp-session-ops.js";
 import { ChatMessage } from "./chat-message.js";
@@ -105,6 +106,13 @@ function QueuedPromptItem({
     );
   };
 
+  const sendNow = () => {
+    if (target === null) return;
+    void run(() =>
+      steerQueuedPrompt(target.agentId, target.sessionId, target.promptId),
+    );
+  };
+
   const remove = () => {
     if (target === null) return;
     void run(() =>
@@ -145,6 +153,16 @@ function QueuedPromptItem({
         </span>
         {target !== null && (
           <>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              tooltip="Send now — interrupts the agent"
+              aria-label="Send now"
+              disabled={pending}
+              onClick={sendNow}
+            >
+              <SendAlt size={14} />
+            </Button>
             <Button
               variant="ghost"
               size="icon-xs"

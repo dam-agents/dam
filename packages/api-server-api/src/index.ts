@@ -582,6 +582,7 @@ export {
   buildPlatformQueueChangedNotification,
   platformUpdateQueuedParamsSchema,
   platformRemoveQueuedParamsSchema,
+  platformSteerQueuedParamsSchema,
   PROMPT_NOT_QUEUED_CODE,
   PROMPT_NOT_QUEUED_MESSAGE,
   PROMPT_QUEUE_FULL_CODE,

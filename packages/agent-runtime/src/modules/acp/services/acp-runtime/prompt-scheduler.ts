@@ -37,6 +37,7 @@ export interface PromptSubmission {
   editable?: boolean;
   steerable?: boolean;
   steerRefused?: boolean;
+  steerNow?: boolean;
   queuedAt?: string;
 }
 
@@ -74,6 +75,7 @@ export interface PromptScheduler {
     ) => Pick<PromptSubmission, "source" | "frame" | "typed" | "blocks">,
   ): boolean;
   remove(sessionId: string, promptId: string): PromptSubmission | null;
+  steerNow(sessionId: string, promptId: string): boolean;
   onSteerPoint(sessionId: string): void;
   forget(sessionId: string): void;
   clear(): void;
@@ -126,7 +128,8 @@ export interface PromptSchedulerDeps {
  * is generating to take a steer, and would cut a reply off mid-sentence. Until
  * then the prompt is an ordinary queued one, editable; a turn that ends first
  * starts it as the next turn, and a prompt that has waited steerWaitMs is
- * steered regardless. The steer is a round
+ * steered regardless; so is one the user asks to send now (steerNow), with
+ * every prompt queued before it, accepting the cut. The steer is a round
  * trip: while it is out, the queue holds, so a turn ending in that window
  * cannot start a later prompt ahead of it. Injected, each prompt of the batch
  * is part of the running turn and its sender is answered when that turn ends;
@@ -302,7 +305,9 @@ export function createPromptScheduler(
     return (
       entry.steerable === true &&
       entry.steerRefused !== true &&
-      ((deps.atSteerPoint?.(sessionId) ?? true) || waitedOut(entry)) &&
+      ((deps.atSteerPoint?.(sessionId) ?? true) ||
+        waitedOut(entry) ||
+        entry.steerNow === true) &&
       deps.steer !== undefined &&
       activeTurns.has(sessionId) &&
       !steering.has(sessionId) &&
@@ -659,6 +664,18 @@ export function createPromptScheduler(
       deps.onQueueChanged?.(sessionId);
       if (index === 0) steerFromQueue(sessionId);
       return entry ?? null;
+    },
+
+    steerNow(sessionId, promptId) {
+      const queue = queues.get(sessionId);
+      const index =
+        queue?.findIndex(
+          (e) => e.editable === true && e.promptId === promptId,
+        ) ?? -1;
+      if (queue === undefined || index === -1) return false;
+      for (const entry of queue.slice(0, index + 1)) entry.steerNow = true;
+      steerFromQueue(sessionId);
+      return true;
     },
 
     onSteerPoint(sessionId) {

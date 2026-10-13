@@ -224,6 +224,16 @@ export async function updateQueuedPrompt(
   );
 }
 
+export async function steerQueuedPrompt(
+  agentId: string,
+  sessionId: string,
+  promptId: string,
+): Promise<void> {
+  await withConnection(agentId, (conn) =>
+    conn.agent.request("platform/steerQueued", { sessionId, promptId }),
+  );
+}
+
 export async function removeQueuedPrompt(
   agentId: string,
   sessionId: string,
