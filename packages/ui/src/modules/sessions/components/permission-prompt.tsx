@@ -179,6 +179,7 @@ export function PermissionPrompt({
   useEffect(() => {
     if (!current) return;
     const onKey = (e: KeyboardEvent) => {
+      if (useStore.getState().dialog?.open) return;
       const target = e.target as HTMLElement | null;
       if (
         target &&

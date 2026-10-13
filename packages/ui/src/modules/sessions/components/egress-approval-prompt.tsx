@@ -22,13 +22,16 @@ const EXPIRY_TICK_MS = 15_000;
 function EgressApprovalCard({
   approval,
   waiting,
+  denyAll,
+  denying,
 }: {
   approval: ApprovalView;
   waiting: readonly ApprovalView[];
+  denyAll: (approvals: readonly ApprovalView[]) => Promise<boolean>;
+  denying: boolean;
 }) {
   const { actions, inflight, hostLabel, openSettings } =
     useApprovalActions(approval);
-  const { denyAll, denying } = useDenyApprovals();
   const queued = waiting.length - 1;
   const allowOnce = actions.find((a) => a.id === "allow-once");
   const denyOnce = actions.find((a) => a.id === "dismiss");
@@ -125,6 +128,7 @@ export function EgressApprovalPrompt() {
   const agentId = useStore((s) => s.selectedAgent);
   const { data: approvals = [] } = useApprovalsForAgent(agentId);
   const now = useNow(EXPIRY_TICK_MS);
+  const { denyAll, denying } = useDenyApprovals();
   const waiting = agentId
     ? egressApprovalsWaiting(approvals, agentId, now)
     : [];
@@ -138,6 +142,8 @@ export function EgressApprovalPrompt() {
           key={current.id}
           approval={current}
           waiting={waiting}
+          denyAll={denyAll}
+          denying={denying}
         />
       </ChatColumn>
     </div>
