@@ -131,6 +131,7 @@ export interface AcpRuntimeDeps {
   warmStartTimeoutMs?: number;
   spawnWorkTimeoutMs?: number;
   beforeSpawn?: () => Promise<void>;
+  onPrompt?: () => void;
   logBytesCap?: number;
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
@@ -1261,6 +1262,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (paramsSid !== null) engage(channel, paramsSid);
 
       const promptSessionId = method === "session/prompt" ? paramsSid : null;
+      if (promptSessionId !== null) deps.onPrompt?.();
 
       const platformMeta =
         method === "session/new"
