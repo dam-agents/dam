@@ -26,9 +26,8 @@ export function useConfirmSharedConnection(
         title: "This connection may be shared with a Slack or Telegram chat",
         body: (
           <>
-            The agent's channels did not load. If it is bound to a Slack channel
-            or a group chat, anyone there can ask it to use the connections you
-            add, with your access.
+            If this agent is bound to a Slack channel or a group chat, anyone
+            there can ask it to use the connections you add, with your access.
           </>
         ),
         confirmLabel: "Add connection",

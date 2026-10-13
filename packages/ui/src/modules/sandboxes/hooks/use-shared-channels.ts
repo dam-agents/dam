@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { useAgents } from "../../agents/api/queries.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 import { type SharedChannel, sharedChannels } from "../lib/shared-channels.js";
-import { findSlackChannels } from "./use-slack-channel-form.js";
+import { findSlackChannels } from "../lib/slack-channels.js";
 
 export function useSharedChannels(
   agentId: string,

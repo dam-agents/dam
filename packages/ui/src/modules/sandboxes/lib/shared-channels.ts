@@ -1,6 +1,6 @@
 import type { SlackChannel } from "api-server-api";
 
-import { slackChannelLabel } from "../hooks/use-slack-channel-form.js";
+import { slackChannelLabel } from "./slack-channels.js";
 
 export interface TelegramChat {
   title: string;
@@ -10,7 +10,8 @@ export interface TelegramChat {
 export type SharedChannel =
   | { kind: "slack-channel"; name: string | null }
   | { kind: "slack-group-dm" }
-  | { kind: "telegram-chat"; name: string | null };
+  | { kind: "telegram-chat"; name: string | null }
+  | { kind: "unknown-conversation" };
 
 export const isSlackDirectMessageId = (slackChannelId: string): boolean =>
   slackChannelId.startsWith("D");
@@ -40,6 +41,7 @@ const KIND_NOUN: Record<SharedChannel["kind"], [string, string]> = {
   "slack-channel": ["Slack channel", "Slack channels"],
   "slack-group-dm": ["Slack group DM", "Slack group DMs"],
   "telegram-chat": ["Telegram chat", "Telegram chats"],
+  "unknown-conversation": ["conversation", "conversations"],
 };
 
 export function sharedChannelsTitle(
@@ -50,7 +52,9 @@ export function sharedChannelsTitle(
   if (channels.length === 1) {
     if (first.kind === "slack-group-dm") return "a Slack group DM";
     const noun = KIND_NOUN[first.kind][0];
-    return first.name ? `the ${noun} ${first.name}` : `this ${noun}`;
+    return "name" in first && first.name
+      ? `the ${noun} ${first.name}`
+      : `this ${noun}`;
   }
   const kinds = new Set(channels.map((c) => c.kind));
   if (kinds.size === 1) return `${channels.length} ${KIND_NOUN[first.kind][1]}`;

@@ -18,8 +18,8 @@ export function BindSharingText({
   if (connectionNames === null)
     return (
       <>
-        The connections of {name} could not be checked. If it has any, anyone in{" "}
-        {phrase} can ask it to use them, with your access.
+        If {name} has connections, anyone in {phrase} can ask it to use them,
+        with your access.
       </>
     );
   const one = connectionNames.length === 1;

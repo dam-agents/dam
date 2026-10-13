@@ -98,8 +98,11 @@ function pickerCopy(
     consent:
       "Everyone in the chat will be able to use the agent. Turns run under the agent's own connected accounts and API tokens, and your acceptance of the Terms of Use covers every turn.",
     action: "Add to chat",
-    audience:
-      !flow || flow.direct ? null : { kind: "telegram-chat", name: chatTitle },
+    audience: !flow
+      ? { kind: "unknown-conversation" }
+      : flow.direct
+        ? null
+        : { kind: "telegram-chat", name: chatTitle },
   };
 }
 
