@@ -51,10 +51,7 @@ export function UpdateAvailableAction({
         >
           <p className="font-bold text-foreground">Update available</p>
           <p className="text-muted-foreground">
-            Latest image version{" "}
-            <span className="break-all font-mono text-xs text-foreground">
-              {update.toImage}
-            </span>
+            A newer version of agent sandbox is available.
           </p>
           <p className="text-muted-foreground">
             {update.startFailed
