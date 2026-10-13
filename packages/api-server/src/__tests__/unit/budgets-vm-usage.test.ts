@@ -23,12 +23,11 @@ const usage = (over: Partial<RunnerUsage> = {}): RunnerUsage => ({
 });
 
 describe("pool levels", () => {
-  it("warns from 75% and is critical from 90%, on the floored percent", () => {
-    expect(poolLevel(749, 1000)).toBe("ok");
-    expect(poolLevel(750, 1000)).toBe("warning");
-    expect(poolLevel(899, 1000)).toBe("warning");
-    expect(poolLevel(900, 1000)).toBe("critical");
-    expect(poolLevel(5, 0)).toBe("ok");
+  it("warns from 75% and is critical from 90%", () => {
+    expect(poolLevel(74)).toBe("ok");
+    expect(poolLevel(75)).toBe("warning");
+    expect(poolLevel(89)).toBe("warning");
+    expect(poolLevel(90)).toBe("critical");
   });
 
   it("sets CPU pressure's levels lower, at 20% and 50%", () => {

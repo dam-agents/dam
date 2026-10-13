@@ -31,7 +31,7 @@ The api-server's role is legibility: it translates the controller's refusal into
 - **Scaled-up means desired replicas ≥ 1** on the agent StatefulSet — an agent still starting already counts, so two near-simultaneous wakes cannot both slip under the ceiling.
 - **A `vm` Agent is not counted.** It has no Size of its own: its machine draws on its owner's [VM runner](vm-memory.md), whose memory limit is that owner's pool for every vm agent, so neither its start nor a resize meets the Ceiling, and the api-server refuses to set a Size on one.
   The budget endpoint carries that pool beside the Ceiling instead: the memory the owner's runner admits against and has committed, its storage used and usable, its CPU limit, how often that limit held it back and its CPU pressure — the share of the last minute its agents waited for a CPU — over the last minute, and each of the owner's vm agents' measured memory, CPU and disk share, read from the runner on demand and never stored.
-  Each pool carries a level, warning from 75% and critical from 90%, defined once so the home dashboard and the create refusal agree; CPU is never refused on, since a short CPU only slows agents down, so its pressure is warning from 20% and critical, shown as slowed down, from 50%.
+  Each pool carries a level, warning from 75% and critical from 90%, defined once so the home dashboard, the create refusal and the resource alerts agree; CPU is never refused on, since a short CPU only slows agents down, so its pressure is warning from 20% and critical, shown as slowed down, from 50%.
 - **Deliberate exclusions:** the paired gateway pod (uniform per-agent platform overhead — operators price it into default ceilings) and per-command Run pods (a known undercount, unchanged from the original design).
 
 ## The Ceiling
@@ -136,8 +136,10 @@ Four rules bound it:
   Without that, the victim's own next reconcile would take the room straight back.
   The mark is self-clearing: a deliberate touch outdates it.
 
-Reclaiming is **silent**.
-The eligibility rules confine it to agents with no attached viewer, the victim lands in ordinary `Hibernated` state indistinguishable from a lapsed timeout, and the outcome — hibernated somewhat sooner than its own timer said — is one the agent's settings already sanction.
+Reclaiming is **announced, not asked**.
+The eligibility rules confine it to agents with no attached viewer, and the outcome — hibernated somewhat sooner than its own timer said — is one the agent's settings already sanction, so nobody is asked first.
+The victim lands in ordinary `Hibernated` state, but while its reclaim mark stands the api-server reads it off the Agent and the agent says it was put to sleep early — to make room for an agent its owner started, or, on the vm backend, to free memory for the owner's other agents ([vm-memory](vm-memory.md)) — in its unavailable view and its row, with a one-time notice in an open web app.
+A deliberate touch outdates the mark, and the message with it.
 The exposure this adds is hibernation's existing blind spot (unreported work, which no signal sees) arriving earlier than advertised; the floor bounds it and the escape is unchanged: disable hibernation on agents whose real work runs off-session.
 
 ## Failure semantics upstream
@@ -155,3 +157,22 @@ Deliberately local to the api-server: the alternative — echoing the denied act
 Users free capacity by stopping a running agent (see [agent-lifecycle](agent-lifecycle.md) for the hard-stop mechanics) or letting it hibernate — and, for a start they are blocked on, the gate frees it for them where it can ([above](#reclaiming-room-for-a-blocked-start)).
 Reserved is computed from live state and never persisted, so a hibernate, stop, or delete credits the budget back with nothing to reconcile.
 A vm pool at warning or critical offers its fix on the home dashboard itself: memory lists the idle running agents largest first, each paused in one click — an agent that never hibernates is stopped instead, after a confirmation — with one action to pause them all; storage lists the largest agents, hibernated ones included, each deleted after a confirmation, and points at the caches inside the agents.
+
+## Resource alerts
+
+A vm agent's owner hears about a severe resource problem even when nobody is looking at the web app: the platform sends them a Slack direct message ([channels](channels.md)) when their agents' shared storage passes 90% — new and stopped agents can't start — or 98% — writes are failing ([persistence](persistence.md)), and when their runner was killed for running out of memory ([vm-memory](vm-memory.md)).
+Each message gives the figures or the agents affected, and what to do.
+Lower levels show only in the web app.
+
+The api-server evaluates them unattended, on one replica at a time.
+Storage is read every five minutes from each owner's runner, through the same read-only usage read the create refusal uses; a runner it cannot read changes nothing.
+An out-of-memory kill is seen on the agents the controller marks with it, collected over a short window so one message names every affected agent.
+
+Messages are limited so an owner near a threshold is not messaged at every reading:
+
+- **Storage** sends once per rise past the level last told, at most once a day, except one escalation from 90% to 98% inside the day; the level holds between 80% and 90%, and a reading under 80% re-arms it.
+- **Out of memory** sends once per episode, which ends when no agent carries the mark, and again only six hours after the last message, so a runner killed in a loop sends one.
+
+Each alert's state is a Postgres row per owner and kind.
+A message goes out only after a compare-and-set write of the next state wins, so two evaluations racing, or a lease handover, never send it twice; a send that then fails is lost rather than repeated.
+A user who never linked Slack (`/platform login`) gets no message; there is no opt-out, and a reply to one is not handled.

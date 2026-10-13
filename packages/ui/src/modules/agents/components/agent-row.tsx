@@ -20,6 +20,7 @@ import { AgentChannelChips } from "../../sandboxes/components/channels/agent-cha
 import { useKeptWorkCount } from "../../sessions/api/background-work.js";
 import { KitUpdateTag } from "../../starter-kits/components/kit-update-tag.js";
 import { OnboardingTag } from "../../starter-kits/components/onboarding-tag.js";
+import { reclaimSentence } from "../lib/reclaim-notices.js";
 import { agentKindBadge, starterKitBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
 import {
@@ -97,6 +98,9 @@ export function AgentRow({
   const kindBadge = agentKindBadge(agent);
   const kitBadge = starterKitBadge(agent);
   const keptWork = useKeptWorkCount(agent.id);
+  const statusNote =
+    agent.overBudgetMessage ??
+    (display.state === "hibernated" ? reclaimSentence(agent) : undefined);
   return (
     <Card
       data-testid="agent-row"
@@ -141,12 +145,12 @@ export function AgentRow({
           )}
           {subtitle && <span className="truncate">{subtitle}</span>}
           <span
-            title={agent.overBudgetMessage ?? undefined}
-            {...(agent.overBudgetMessage
+            title={statusNote}
+            {...(statusNote
               ? {
                   tabIndex: 0,
                   role: "note",
-                  "aria-label": agent.overBudgetMessage,
+                  "aria-label": statusNote,
                 }
               : {})}
           >

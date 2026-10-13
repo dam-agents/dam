@@ -1,6 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import type { BudgetVmUsage, PoolLevel } from "api-server-api";
 
+export type { PoolLevel };
+
 export interface RunnerUsage {
   storage: { usedBytes: number; usableBytes: number };
   memory: { limitMiB: number; committedMiB: number };
@@ -21,9 +23,16 @@ export interface RunnerUsage {
   observedAt: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the levels every pool is shown and acted on at, defined once so the home dashboard and the create refusal agree. Critical is the same threshold the runner refuses a new disk at and the controller starts reclaiming memory at, so the api-server's refusal is the runner's, said before an Agent is written rather than after its machine is refused.
+// UNIT_BOUNDARY_DESCRIPTION: the same threshold the runner refuses a new disk at and the controller starts reclaiming memory at, so the api-server's refusal is the runner's, said before an Agent is written rather than after its machine is refused.
+export const STORAGE_FULL_PERCENT = 90;
 export const POOL_WARNING_PERCENT = 75;
-export const POOL_CRITICAL_PERCENT = 90;
+
+// UNIT_BOUNDARY_DESCRIPTION: the one definition of how full a pool is. The create refusal, the resource alerts and the usage the web app shows all read their thresholds here, so they cannot disagree about when a pool is critical.
+export function poolLevel(percent: number): PoolLevel {
+  if (percent >= STORAGE_FULL_PERCENT) return "critical";
+  if (percent >= POOL_WARNING_PERCENT) return "warning";
+  return "ok";
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: CPU pressure — the share of the last minute the agents waited for a CPU — is never refused on, since a CPU that is short only slows agents down, so its levels sit lower than the other pools': warning from CPU_WARNING_PERCENT, critical (shown as slowed down) from CPU_CRITICAL_PERCENT. A runner too old to report pressure is judged by its throttling.
 export const CPU_WARNING_PERCENT = 20;
@@ -34,15 +43,8 @@ export function cpuLevel(pressurePercent: number): PoolLevel {
   return pressurePercent < CPU_CRITICAL_PERCENT ? "warning" : "critical";
 }
 
-export function poolPercent(used: number, limit: number): number | null {
-  return limit > 0 ? Math.floor((used * 100) / limit) : null;
-}
-
-export function poolLevel(used: number, limit: number): PoolLevel {
-  const percent = poolPercent(used, limit);
-  if (percent === null || percent < POOL_WARNING_PERCENT) return "ok";
-  return percent < POOL_CRITICAL_PERCENT ? "warning" : "critical";
-}
+const levelOf = (used: number, limit: number): PoolLevel =>
+  limit > 0 ? poolLevel(Math.floor((used * 100) / limit)) : "ok";
 
 const MIB = 1024 ** 2;
 
@@ -55,11 +57,11 @@ export function vmUsageView(
   const limitBytes = usage.memory.limitMiB * MIB;
   const { storage, cpu } = usage;
   return {
-    memory: { usedBytes, limitBytes, level: poolLevel(usedBytes, limitBytes) },
+    memory: { usedBytes, limitBytes, level: levelOf(usedBytes, limitBytes) },
     storage: {
       usedBytes: storage.usedBytes,
       usableBytes: storage.usableBytes,
-      level: poolLevel(storage.usedBytes, storage.usableBytes),
+      level: levelOf(storage.usedBytes, storage.usableBytes),
     },
     ...(cpu && (cpu.limitMilli > 0 || cpu.pressurePercent !== undefined)
       ? { cpu: cpuView(cpu) }
@@ -91,13 +93,17 @@ function cpuView(
   };
 }
 
+export function storagePercent(usage: RunnerUsage): number | null {
+  const { usedBytes, usableBytes } = usage.storage;
+  return usableBytes > 0 ? Math.floor((usedBytes * 100) / usableBytes) : null;
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the refusal of a new vm agent once the owner's storage is at the critical level: the figures, why nothing waits, and the three ways out. Unknown or unmeasured usage refuses nothing.
 export function storageRefusal(usage: RunnerUsage | null): TRPCError | null {
   if (!usage) return null;
+  const percent = storagePercent(usage);
+  if (percent === null || poolLevel(percent) !== "critical") return null;
   const { usedBytes, usableBytes } = usage.storage;
-  const percent = poolPercent(usedBytes, usableBytes);
-  if (percent === null || poolLevel(usedBytes, usableBytes) !== "critical")
-    return null;
   return new TRPCError({
     code: "PRECONDITION_FAILED",
     message:

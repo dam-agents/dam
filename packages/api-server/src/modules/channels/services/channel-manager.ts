@@ -171,6 +171,7 @@ interface Worker {
     instanceName: string,
     query: AttachmentQuery,
   ): Promise<AttachmentResult | { error: string }>;
+  notifyPerson?(keycloakSub: string, text: string): Promise<{ sent: number }>;
 }
 
 export interface ChannelManager {
@@ -239,6 +240,7 @@ export interface ChannelManager {
     channelType: ChannelType,
     query: AttachmentQuery,
   ): Promise<AttachmentResult | { error: string }>;
+  notifyPerson(keycloakSub: string, text: string): Promise<{ sent: number }>;
 }
 
 export const channelRpcRequestSchema = z.object({
@@ -255,6 +257,7 @@ export const channelRpcRequestSchema = z.object({
     "slackConversationStanding",
     "readThread",
     "fetchAttachment",
+    "notifyPerson",
   ]),
   args: z.array(z.unknown()),
 });
@@ -287,6 +290,7 @@ const rpcArgSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
   slackConversationStanding: z.tuple([z.string(), z.string()]),
   readThread: forInstance.rest(z.unknown()),
   fetchAttachment: forInstance.rest(z.unknown()),
+  notifyPerson: z.tuple([z.string(), z.string()]),
 };
 
 const TRANSPORT_RETRY_MS = 60_000;
@@ -365,6 +369,7 @@ const rpcResponseSchemas: Record<ChannelRpcRequest["method"], z.ZodTypeAny> = {
     }),
     z.object({ error: z.string() }),
   ]),
+  notifyPerson: z.object({ sent: z.number() }),
 };
 
 type WireAttachment = Omit<ChannelAttachment, "data"> & { dataKey: string };
@@ -618,6 +623,9 @@ export function createChannelManager(deps: {
         });
       return worker.fetchAttachment(instanceName, query);
     },
+    notifyPerson: (keycloakSub: string, text: string) =>
+      slackWorker?.notifyPerson(keycloakSub, text) ??
+      Promise.resolve({ sent: 0 }),
   } as const;
 
   subscriptions.push(
@@ -810,6 +818,17 @@ export function createChannelManager(deps: {
         [instanceName, channelType, query],
         () => localHandlers.fetchAttachment(instanceName, channelType, query),
       );
+    },
+
+    notifyPerson(keycloakSub, text) {
+      return dispatch("notifyPerson", [keycloakSub, text], () =>
+        localHandlers.notifyPerson(keycloakSub, text),
+      ).catch((err: unknown) => {
+        process.stderr.write(
+          `[channels] could not notify ${keycloakSub}: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        return { sent: 0 };
+      });
     },
   };
 }

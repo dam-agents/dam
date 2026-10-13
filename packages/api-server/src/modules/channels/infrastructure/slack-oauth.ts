@@ -78,6 +78,7 @@ export function createSlackOAuthRoutes(deps: {
       "slack",
       pending.slackUserId,
       result.keycloakSub,
+      pending.teamId,
     );
     securityLog("info", "identity.link", {
       category: "channel",

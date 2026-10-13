@@ -88,7 +88,12 @@ describe("slack oauth callback — bind intent", () => {
       slackUserId: SLACK_USER_ID,
       keycloakSub: KEYCLOAK_SUB,
     });
-    expect(h.link).toHaveBeenCalledWith("slack", SLACK_USER_ID, KEYCLOAK_SUB);
+    expect(h.link).toHaveBeenCalledWith(
+      "slack",
+      SLACK_USER_ID,
+      KEYCLOAK_SUB,
+      "T-WORKSPACE",
+    );
     expect(h.pendingFlowsMap.has("state-1")).toBe(false);
   });
 
@@ -135,7 +140,12 @@ describe("slack oauth callback — login intent (unchanged)", () => {
 
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("Account linked");
-    expect(h.link).toHaveBeenCalledWith("slack", SLACK_USER_ID, KEYCLOAK_SUB);
+    expect(h.link).toHaveBeenCalledWith(
+      "slack",
+      SLACK_USER_ID,
+      KEYCLOAK_SUB,
+      "T-WORKSPACE",
+    );
   });
 
   it("keeps the plain-text failure for a login token-exchange failure", async () => {
