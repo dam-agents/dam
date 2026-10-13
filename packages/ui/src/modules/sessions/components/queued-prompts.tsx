@@ -50,13 +50,17 @@ function reportEditFailure(err: unknown): void {
 
 const noop = () => {};
 
+function pendingMessage({ at: _at, ...message }: Message): Message {
+  return message;
+}
+
 function QueuedPromptItem({
   item,
-  index,
+  message,
   onFileClick,
 }: {
-  item: QueuedPrompt;
-  index: number;
+  item: QueuedPrompt | null;
+  message: Message;
   onFileClick: (path: string) => void;
 }) {
   const agentId = useStore((s) => s.selectedAgent);
@@ -64,8 +68,8 @@ function QueuedPromptItem({
   const [draft, setDraft] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const target =
-    item.editable && item.promptId !== null && agentId && sessionId
-      ? { agentId, sessionId, promptId: item.promptId }
+    item?.editable && item.promptId !== null && agentId && sessionId
+      ? { agentId, sessionId, promptId: item.promptId, blocks: item.blocks }
       : null;
 
   const run = async (op: () => Promise<void>) => {
@@ -83,7 +87,7 @@ function QueuedPromptItem({
 
   const save = (text: string) => {
     if (target === null) return;
-    const blocks = withText(item.blocks, text);
+    const blocks = withText(target.blocks, text);
     if (blocks.length === 0) return;
     void run(() =>
       updateQueuedPrompt(
@@ -117,7 +121,7 @@ function QueuedPromptItem({
     <div className="group relative flex flex-col items-end gap-1">
       <div className="w-full opacity-60 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
         <ChatMessage
-          message={queuedMessage(item, index)}
+          message={message}
           isLast={false}
           hasPendingPermission={false}
           onRetry={noop}
@@ -139,7 +143,7 @@ function QueuedPromptItem({
               variant="ghost"
               size="xs"
               disabled={pending}
-              onClick={() => setDraft(textOf(item.blocks))}
+              onClick={() => setDraft(textOf(target.blocks))}
             >
               <Edit size={14} />
               Edit
@@ -167,12 +171,27 @@ export function QueuedPrompts({
   onFileClick: (path: string) => void;
 }) {
   const items = useStore((s) => s.queuedPrompts);
-  return items.map((item, i) => (
-    <QueuedPromptItem
-      key={item.promptId ?? `queued-${String(i)}`}
-      item={item}
-      index={i}
-      onFileClick={onFileClick}
-    />
-  ));
+  const messages = useStore((s) => s.messages);
+  const listed = new Set(items.flatMap((item) => item.promptId ?? []));
+  const pending = messages.filter(
+    (m) => m.role === "user" && m.queued === true && !listed.has(m.id),
+  );
+  return [
+    ...items.map((item, i) => (
+      <QueuedPromptItem
+        key={item.promptId ?? `queued-${String(i)}`}
+        item={item}
+        message={queuedMessage(item, i)}
+        onFileClick={onFileClick}
+      />
+    )),
+    ...pending.map((m) => (
+      <QueuedPromptItem
+        key={m.id}
+        item={null}
+        message={pendingMessage(m)}
+        onFileClick={onFileClick}
+      />
+    )),
+  ];
 }

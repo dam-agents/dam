@@ -278,6 +278,16 @@ function continueTurnBelow(
  * UNIT_BOUNDARY_DESCRIPTION: The sender's own bubbles for a prompt the runtime
  * queued give way to the queue, which renders it for every viewer alike.
  */
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A message sent while the agent answers is shown
+ * in the queue below the conversation, not in it, until it starts: the user
+ * message and its empty reply placeholder are queued sends.
+ */
+export function isQueuedSend(m: Message): boolean {
+  if (m.queued !== true) return false;
+  return m.role === "user" || (m.streaming && m.parts.length === 0);
+}
+
 export function withoutQueuedSends(
   messages: Message[],
   items: QueuedPrompt[],

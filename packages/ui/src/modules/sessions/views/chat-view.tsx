@@ -41,7 +41,7 @@ import {
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { rewritePointsOf } from "../../acp/session-projection.js";
+import { isQueuedSend, rewritePointsOf } from "../../acp/session-projection.js";
 import {
   useHarnessConfigCurrent,
   useHarnessConfigStatus,
@@ -216,11 +216,15 @@ export function ChatView() {
   const setSessionMode = useStore((s) => s.setSessionMode);
   const setSessionId = useStore((s) => s.setSessionId);
   const messages = useStore((s) => s.messages);
+  const shown = useMemo(
+    () => messages.filter((m) => !isQueuedSend(m)),
+    [messages],
+  );
   const now = useNow(60_000);
   const runStarts = useStore((s) => s.runStarts);
   const items = useMemo(
-    () => threadItems(messages, runStarts),
-    [messages, runStarts],
+    () => threadItems(shown, runStarts),
+    [shown, runStarts],
   );
   const deleteMessage = useDeleteUndelivered(selectedAgent, sessionId);
   const sessionError = useStore((s) => s.sessionError);
@@ -384,10 +388,10 @@ export function ChatView() {
     !sessionView.threadTs &&
     !sessionView.scheduleId &&
     !sessionView.initialization;
-  const rewritePoints = useMemo(() => rewritePointsOf(messages), [messages]);
+  const rewritePoints = useMemo(() => rewritePointsOf(shown), [shown]);
   const rewriting = useStore((s) => s.rewriting);
   const rewriteIndex = rewriting
-    ? messages.findIndex((m) => m.id === rewriting.messageId)
+    ? shown.findIndex((m) => m.id === rewriting.messageId)
     : -1;
 
   const scrollToBottom = useCallback(() => {
@@ -641,7 +645,7 @@ export function ChatView() {
     ? stateDotClass[agentDisplay.state]
     : "bg-warning";
 
-  const lastMessage = messages[messages.length - 1];
+  const lastMessage = shown[shown.length - 1];
   const statusLineInThread =
     lastMessage?.role === "assistant" && !lastMessage.notice;
 
@@ -898,12 +902,12 @@ export function ChatView() {
                           <ChatMessage
                             message={item.message}
                             avatarAgent={agentView ?? undefined}
-                            isLast={item.index === messages.length - 1}
+                            isLast={item.index === shown.length - 1}
                             showModel={runStarts.length > 0}
                             {...timeProps(item.message.at, now)}
                             hasPendingPermission={hasPendingPermission}
                             pendingNotice={
-                              item.index === messages.length - 1
+                              item.index === shown.length - 1
                                 ? startNotice
                                 : undefined
                             }
@@ -951,7 +955,7 @@ export function ChatView() {
                             {editingHere && rewriting && (
                               <RewriteMarker
                                 mode={rewriting.mode}
-                                following={messages.length - 1 - item.index}
+                                following={shown.length - 1 - item.index}
                               />
                             )}
                             {selectedAgent && sessionId && turn && (

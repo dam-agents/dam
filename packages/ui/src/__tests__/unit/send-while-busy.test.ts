@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { applyUpdate } from "../../modules/acp/session-projection.js";
+import {
+  applyUpdate,
+  isQueuedSend,
+} from "../../modules/acp/session-projection.js";
 import type { AcpUpdate } from "../../modules/acp/types.js";
 import type { Message } from "../../types.js";
 
@@ -91,5 +94,16 @@ describe("a message sent while the agent answers", () => {
     );
 
     expect(user(next)).toMatchObject({ queued: false, steered: true });
+  });
+
+  /**
+   * TEST_SCENARIO: The queue below the conversation shows the message from
+   * the start, so the conversation leaves it out. The running reply then stays
+   * the last message, keeps the working indicator, and never fades in again.
+   */
+  test("leaves the conversation to the running reply", () => {
+    const shown = sentWhileBusy().filter((m) => !isQueuedSend(m));
+
+    expect(shown.map((m) => m.id)).toEqual(["a1"]);
   });
 });

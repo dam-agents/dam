@@ -141,7 +141,6 @@ export const ChatMessage = memo(function ChatMessage({
         "flex flex-col gap-1",
         isLast && streaming && "anim-in",
         isAssistant ? "items-start" : "items-end",
-        !isAssistant && queued && "opacity-60",
       )}
     >
       <div
