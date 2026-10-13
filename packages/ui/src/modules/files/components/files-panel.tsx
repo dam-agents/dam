@@ -41,7 +41,7 @@ export function FilesPanel({
   ref?: Ref<HTMLDivElement>;
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
 }) {
-  const controller = useFilesPanelController({ onOpenFile });
+  const controller = useFilesPanelController({ open, onOpenFile });
   const showHiddenFiles = useStore((s) => s.showHiddenFiles);
   const setShowHiddenFiles = useStore((s) => s.setShowHiddenFiles);
   const hiddenFilesLabel = showHiddenFiles
@@ -125,7 +125,7 @@ export function FilesPanel({
         onDragLeave={controller.handlePanelDragLeave}
         onDrop={controller.handlePanelDrop}
       >
-        {controller.ctxValue && (
+        {open && controller.ctxValue && (
           <FilesPanelContext.Provider value={controller.ctxValue}>
             {controller.pendingNew && controller.pendingNew.dir === "" && (
               <InlineNameRow
