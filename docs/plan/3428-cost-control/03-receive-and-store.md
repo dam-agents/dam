@@ -24,7 +24,7 @@ Server code goes into the `spend` module (`packages/api-server/src/modules/spend
      - `StreamAccessLogsMessage` (`identifier`, `http_logs`);
      - `HTTPAccessLogEntry` (`common_properties`, `request`, `response`);
      - in `AccessLogCommon`: `start_time`, `metadata` (`filter_metadata` as a map to `google.protobuf.Struct`) and `access_log_type`;
-     - the request path and authority, the response code and the response headers.
+     - the request path and authority, the response code, the response flags and the response headers.
    - Copy the field numbers exactly from the Envoy 1.39.2 protos.
    - Extend `packages/api-server/.mise/tasks/fix/proto` to generate both files.
      Today it names only `external_auth.proto`.
@@ -34,6 +34,11 @@ Server code goes into the `spend` module (`packages/api-server/src/modules/spend
      Refuse a stream whose authority does not parse.
    - For each entry, read the `platform.spend` metadata.
      Skip entries that are not billable.
+   - Read the path from the metadata, not from the entry's own request path.
+     The entry's request path keeps the query, and the meter's path has no query and no Connection address prefix.
+   - A call that the gate refuses also sends a billable record, because the meter runs before the gate.
+     Envoy marks that entry with the response flag for an external-authorization refusal.
+     Do not count such a record as a call or as spend: the gate counts its own refusals (slice 04).
    - Give the spend ingest service one record: agent, call id, payer, address Connection, path, dialect, status, raw counts, model, tier, reply bytes, `complete`, the cost header, and whether the entry is periodic or final (`access_log_type`).
 3. **Ingest service** (spend module, services layer).
    - **Payer and owner:** the payer is the record's `payer` (the root driver).
