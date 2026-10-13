@@ -19,6 +19,8 @@ export interface ToolChip {
   title: string;
   status: string;
   content?: ToolContent[];
+  toolKind?: string;
+  description?: string;
 }
 
 interface TextPart {

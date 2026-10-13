@@ -4,6 +4,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -14,8 +15,11 @@ import { cn } from "@/lib/utils";
 import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
+import { useIsFanOutChip } from "../../invocations/components/delegation-owners.js";
+import { activityItems } from "../lib/activity-groups.js";
 import { modelDisplayName } from "../lib/model-name.js";
 import type { MessageTime } from "../lib/thread-items.js";
+import { ActivityGroup } from "./activity-group.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
 import { QuietNotice } from "./quiet-notice.js";
@@ -114,6 +118,14 @@ export const ChatMessage = memo(function ChatMessage({
   onDelete,
   onLoadOlder,
 }: Props) {
+  const isFanOut = useIsFanOutChip();
+  const items = useMemo(
+    () =>
+      message.role === "assistant"
+        ? activityItems(message.parts, isFanOut)
+        : activityItems(message.parts, () => true),
+    [message.role, message.parts, isFanOut],
+  );
   if (message.notice) {
     if (message.loadOlderBefore !== undefined && onLoadOlder) {
       return (
@@ -182,16 +194,24 @@ export const ChatMessage = memo(function ChatMessage({
             !isAssistant && (undelivered ? "border-danger" : "border-border"),
           )}
         >
-          {parts.map((p, i) => (
-            <ChatMessagePart
-              key={i}
-              part={p}
-              role={role}
-              streaming={streaming}
-              isLast={i === parts.length - 1}
-              onFileClick={readOnly ? undefined : onFileClick}
-            />
-          ))}
+          {items.map((item, i) =>
+            item.kind === "group" ? (
+              <ActivityGroup
+                key={item.index}
+                chips={item.chips}
+                streaming={streaming}
+              />
+            ) : (
+              <ChatMessagePart
+                key={item.index}
+                part={item.part}
+                role={role}
+                streaming={streaming}
+                isLast={i === items.length - 1}
+                onFileClick={readOnly ? undefined : onFileClick}
+              />
+            ),
+          )}
           {isAssistant && isLast && !readOnly && <PermissionStatusLine />}
           {isAssistant && (streaming || isLast) && (
             <span

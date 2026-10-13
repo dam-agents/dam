@@ -688,6 +688,8 @@ function handleToolCall(
     title: u.title,
     status: u.status ?? "pending",
     content: mapToolContent(u.content),
+    toolKind: u.kind,
+    description: toolDescription(u.rawInput),
   };
   return appendAgentParts(messages, [chip], at, turnId);
 }
@@ -718,6 +720,14 @@ function findToolIdx(
   return null;
 }
 
+function toolDescription(rawInput: unknown): string | undefined {
+  if (typeof rawInput !== "object" || rawInput === null) return undefined;
+  const description = (rawInput as { description?: unknown }).description;
+  return typeof description === "string" && description.trim()
+    ? description.trim()
+    : undefined;
+}
+
 function patchToolChip(
   messages: Message[],
   idx: number,
@@ -738,6 +748,8 @@ function patchToolChip(
                   status: u.status ?? p.status,
                   title: u.title ?? p.title,
                   content: content?.length ? content : p.content,
+                  toolKind: u.kind ?? p.toolKind,
+                  description: toolDescription(u.rawInput) ?? p.description,
                 }
               : p,
           ),
