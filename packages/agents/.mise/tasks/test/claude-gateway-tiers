@@ -35,15 +35,15 @@ await once(upstream, "listening");
 const base = `http://[::1]:${upstream.address().port}`;
 mkdirSync(join(home, ".platform"));
 writeFileSync(join(home, ".platform/pod-service-env.json"), JSON.stringify({ env: {}, providers: { cb: { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: "t" } } }));
-const child = spawn(process.execPath, [gateway], { env: { ...process.env, HOME: home }, stdio: ["ignore", "ignore", "pipe"] });
+const child = spawn(process.execPath, [gateway], { env: { ...process.env, HOME: home, MODEL_GATEWAY_PORT: "0" }, stdio: ["ignore", "ignore", "pipe"] });
 try {
   let log = "";
   child.stderr.on("data", (chunk) => { log += chunk; });
-  await new Promise((resolve, reject) => {
+  const port = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`gateway did not start:\n${log}`)), 15_000);
-    child.stderr.on("data", () => { if (log.includes("listening")) { clearTimeout(timer); resolve(); } });
+    child.stderr.on("data", () => { const m = log.match(/listening on [\d.]+:(\d+)/); if (m) { clearTimeout(timer); resolve(m[1]); } });
   });
-  const send = (model) => fetch("http://127.0.0.1:24180/p/cb/v1/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model }) });
+  const send = (model) => fetch(`http://127.0.0.1:${port}/p/cb/v1/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model }), signal: AbortSignal.timeout(5_000) });
   for (const model of ["claude-opus-5-5", "claude/rits/zai-org/glm-5-3", "claude-haiku-4-5", "custom-name"]) await send(model);
   assert.deepEqual(forwarded, ["rits/zai-org/glm-5-3", "rits/zai-org/glm-5-3", "rits/zai-org/glm-5-3", "custom-name"]);
   console.log("unserved tier names go to the provider's own tier models");
