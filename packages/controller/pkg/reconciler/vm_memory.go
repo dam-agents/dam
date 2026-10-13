@@ -128,8 +128,9 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 // UNIT_BOUNDARY_DESCRIPTION: every pass asks each owner's runner about their
 // UNIT_BOUNDARY_DESCRIPTION: running machines, hibernates idle agents of an
 // UNIT_BOUNDARY_DESCRIPTION: owner under pressure, and returns one agent of each
-// UNIT_BOUNDARY_DESCRIPTION: owner whose counted memory moved, for the caller to
-// UNIT_BOUNDARY_DESCRIPTION: reconcile so the runner's request follows it.
+// UNIT_BOUNDARY_DESCRIPTION: owner whose runner pod's request differs from what
+// UNIT_BOUNDARY_DESCRIPTION: their counts call for, for the caller to reconcile
+// UNIT_BOUNDARY_DESCRIPTION: so the request follows them.
 func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 	if r.agentCache == nil || !r.config.VM.Enabled {
 		return nil
@@ -189,8 +190,7 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 			slog.WarnContext(ctx, "vm memory: reclaiming under pressure", "owner", owner, "error", err)
 		}
 	}
-	rounded := roundedMiB(demand.memoryMiB)
-	if last, ok := r.ownerDemandMiB.Swap(owner, rounded); ok && last.(int) == rounded {
+	if !r.runnerRequestMoves(ctx, owner, demand.memoryMiB) {
 		return "", false
 	}
 	return first.Name, true

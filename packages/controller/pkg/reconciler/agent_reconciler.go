@@ -55,7 +55,6 @@ type AgentReconciler struct {
 	agentCache      cache.GenericLister
 	vmRunning       sync.Map
 	vmLive          sync.Map
-	ownerDemandMiB  sync.Map
 	resizeNotices   sync.Map
 	notReadyPolls   sync.Map
 	claimCapNotices sync.Map
