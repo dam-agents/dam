@@ -1,6 +1,6 @@
 # Agent processes
 
-Last verified: 2026-10-09
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -26,6 +26,7 @@ An unkept task runs on with its session open and dies at hibernation, and the st
 
 **Restarts wait for kept tasks.** A new connection or a config change reaches the harness only when it respawns, and the recycle closes every session, killing every Harness Task with it.
 Such a recycle waits for an idle runtime; one that may be forced (a config change, or a change to which variables are set) is forced after a grace period only while no kept Harness Task runs: while one does, the change waits as long as the task does.
+It runs the moment the runtime goes idle, whichever turn, session setting change, or agent-initiated request settles last, not when the grace period ends.
 The processes list reports a change waiting this way, with how many kept tasks it waits for and everything a restart now would stop: every Harness Task on the waiting leases, kept or not, and every running turn.
 Right after a user saves an agent setting that can reach the harness, the UI checks for such a change for a few seconds and, if one waits, asks whether to restart now or to apply it when the tasks finish.
 That question is not behind the `processes` feature, since every agent waits this way.

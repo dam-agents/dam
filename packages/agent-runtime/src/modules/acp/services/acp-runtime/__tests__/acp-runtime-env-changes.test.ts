@@ -84,6 +84,55 @@ describe("acp-runtime: env changes", () => {
   });
 
   /**
+   * TEST_SCENARIO: An env change lands while a session setting (a mode
+   * switch) waits for the harness's answer, with no turn running. The
+   * setting keeps the runtime busy for that moment only; its answer is the
+   * idle edge, and the env change must apply there rather than wait for the
+   * grace period — or, for a value-only change that is never forced, wait
+   * until some later turn happens to end.
+   */
+  it("should recycle when the last setting answer leaves the runtime idle", () => {
+    const world = createWorld();
+    const client = world.connect();
+    client.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    client.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/set_mode",
+      params: { sessionId: SESSION, modeId: "plan" },
+    });
+
+    world.runtime.refreshEnv({ force: false });
+    expect(world.harness().killed()).toBe(false);
+
+    world.harness().replyTo("session/set_mode", {});
+
+    expect(world.harness().killed()).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: An env change lands while the harness waits on a client
+   * for a request that names no session. The client's answer is the idle
+   * edge: no turn ends after it to apply the change.
+   */
+  it("should recycle when a client answers the last open agent request", () => {
+    const world = createWorld();
+    const client = world.connect();
+    client.send(frames.initialize(1));
+    world
+      .harness()
+      .emit({ jsonrpc: "2.0", id: 900, method: "x/ask", params: {} });
+
+    world.runtime.refreshEnv({ force: false });
+    expect(world.harness().killed()).toBe(false);
+
+    client.send({ jsonrpc: "2.0", id: 900, result: {} });
+
+    expect(world.harness().killed()).toBe(true);
+  });
+
+  /**
    * TEST_SCENARIO: An env change lands mid-turn and the turn never ends — a
    * stuck tool call, an endless loop. Without a bound, a revoked credential
    * would stay live for as long as the turn runs. A forced refresh waits a
