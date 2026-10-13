@@ -244,7 +244,7 @@ Both are rebuilt or resumed by the next boot rather than being state an Agent ca
 **A disk that has lost its home fails the boot.** smolvm formats a storage disk it cannot mount even after its own repair, and a formatted disk looks exactly like one never seeded.
 So the runner records in the machine's share, the first time its guest answers — which it does only once platform-init has put the home on the disk, from the image or from a migration's copy — that the disk holds a home, and keeps the record for as long as the machine exists.
 A boot that finds the record but no home stops, with the reason on the machine's console, rather than seeding a fresh home that would look healthy.
-A migrated machine is held to its copy the same way: while a seed is expected, its home comes from exactly that seed or the boot fails, never from the image, and the record names the seed ([vm-runner](vm-runtime-migration.md)).
+A migrated machine is held to its copy the same way: while a seed is expected, its home comes from exactly that seed or the boot fails, never from the image, and the record names the seed ([vm-runtime-migration](vm-runtime-migration.md)).
 The record is learned from the answer rather than read off the disk, because the host does not parse a filesystem a guest has had root on.
 The storage template every new disk is copied from carries a journal; a disk smolvm formats itself has none, so an unclean stop — a killed runner — is what brings that repair on there.
 The loss is refused, not prevented.

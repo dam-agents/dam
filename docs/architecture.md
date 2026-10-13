@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-10-07
+Last verified: 2026-10-13
 
 ## System context
 
