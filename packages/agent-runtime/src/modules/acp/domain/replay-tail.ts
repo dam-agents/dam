@@ -98,14 +98,17 @@ function opensUserTurn(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Moves a cut back to the prompt that opens its
- * turn, so a reader shown only the newest frames sees each reply under the
- * prompt it answers. A log with no prompt before the cut keeps the cut.
+ * UNIT_BOUNDARY_DESCRIPTION: Where a history read of the newest `tail` frames
+ * starts: the tail cut, moved back to the prompt that opens its turn, so a
+ * reader shown only the newest frames sees each reply under the prompt it
+ * answers. A log with no prompt before the cut keeps the cut.
  */
-export function turnStartAtOrBefore(
-  frames: readonly { line: string }[],
-  start: number,
+export function historyTailStart(
+  lines: readonly string[],
+  tail: number,
 ): number {
-  for (let i = start; i > 0; i--) if (opensUserTurn(frames, i)) return i;
+  const frames = lines.map((line) => ({ line }));
+  const start = tailStart(frames, tail);
+  for (let i = start; i >= 0; i--) if (opensUserTurn(frames, i)) return i;
   return start;
 }

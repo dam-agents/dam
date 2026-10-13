@@ -44,6 +44,19 @@ describe("sessions.history tail", () => {
     expect(history).toEqual({ frames: log.slice(2), truncated: true });
   });
 
+  it("keeps the session's first prompt above a reply longer than the tail", async () => {
+    const oneTurn = [
+      frame("user_message_chunk", "u1", "ask 1"),
+      frame("agent_message_chunk", "a1", "r1"),
+      frame("tool_call", "a1", "t"),
+      frame("agent_message_chunk", "a2", "r2"),
+    ];
+    expect(await service(oneTurn).history("s1", { tail: 1 })).toEqual({
+      frames: oneTurn,
+      truncated: false,
+    });
+  });
+
   it("cuts the provider's frames the same way", async () => {
     const history = await service([], log).history("s1", { tail: 3 });
     expect(history).toEqual({ frames: log.slice(2), truncated: true });
