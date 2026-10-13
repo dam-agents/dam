@@ -86,8 +86,6 @@ test("shared turns run under the OWNER's credentials whoever asked", async () =>
   const token = await getAccessToken();
   const api = createApiClient(token);
   await waitForAgentRunning(api, agentName);
-  // The agent requires named connections, so the fetch names the Connection
-  // by its placeholder for the gateway to inject the owner's credential.
   const placeholder = connectionEgressPlaceholder(
     await getConnectionId(api, connectionName),
   );

@@ -15,8 +15,6 @@ import type {
   WorkspaceWriter,
 } from "./ports.js";
 
-// An optional `name:value` header lets the fetch name a Connection, as an
-// agent that requires named connections must.
 const FETCH_DIRECTIVE = /__FETCH__\s+(\S+)(?:\s+([^\s:]+):(\S+))?/;
 const SLACK_THREAD_DIRECTIVE = /threadTs="([^"]+)"/;
 const PYRUN_DIRECTIVE = /__PYRUN__\s+(\S+)/;
