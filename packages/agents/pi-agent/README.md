@@ -29,6 +29,8 @@ usr/local/share/pi-platform/
   pi-acp-patch.mjs       ← temporary pi-acp fix, loaded by harness-chat (see "pi-acp patch")
   extensions/pi-dynamic-providers/
     index.ts             ← loaded with -e on every start; registers any of {rits, openai-proxy, amazon-bedrock} whose env vars are set
+  extensions/pi-platform-telemetry/
+    index.ts             ← loaded with -e on every start; exports per-call cost as OTLP log records (see "Session cost")
 app/
   runtime-manifest.yaml  ← runtime driver config; the platform writes ~/.pi/agent/mcp.json at runtime (not seeded)
   working-dir/           ← seeds /home/agent/ on first boot
@@ -244,6 +246,17 @@ Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` t
 **To remove it** once a pi-acp release fixes #152 and #72 and reports `max_tokens`: bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`.
 A release that fixes only some of the three lets you drop just their edits.
 That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
+
+## Session cost
+
+Pi prices every model call itself, at the per-token rates of the model it registered.
+A model behind an OpenAI-compatible proxy (`openai-proxy`, `rits`) comes with no rates, so `pi-dynamic-providers` gives it the list price of the same model at its vendor in Pi's built-in catalog, matched by the id without its routing prefix (`aws/claude-opus-4-8` costs what `anthropic`'s `claude-opus-4-8` costs).
+Only vendors count (Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI), not resellers such as Bedrock that list the same model at a markup; a model no vendor lists stays free.
+
+Pi has no OpenTelemetry exporter, so the `pi-platform-telemetry` extension posts one OTLP/HTTP JSON log record per model call (`pi.api_request`, with the token counters, `cost_usd_micros`, `session.id` and `prompt.id`) and one per prompt (`pi.user_prompt`) to `$OTEL_EXPORTER_OTLP_ENDPOINT/v1/logs`.
+It stays off unless `OTEL_LOGS_EXPORTER=otlp`, which the harness catalog's `pi` telemetry rail sets when the telemetry backend is on.
+The platform reads those records like Claude Code's, so the session list and Usage show a Pi session's cost (see [observability](../../../docs/architecture/observability.md#agent-export)).
+No prompt text or reply leaves the agent.
 
 ## Memory scopes
 

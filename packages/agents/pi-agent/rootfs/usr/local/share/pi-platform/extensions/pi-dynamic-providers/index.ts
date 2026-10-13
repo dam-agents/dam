@@ -31,6 +31,7 @@ const BEDROCK_API = "bedrock-converse-stream";
 const BUILTIN_PROVIDERS_MODULE: string = "@earendil-works/pi-ai/providers/all";
 const OPENAI_COMPLETIONS_MODULE: string = "@earendil-works/pi-ai/compat";
 const REASONING_FIELDS = ["reasoning_content", "reasoning", "reasoning_text"];
+const PRICE_VENDORS = ["anthropic", "openai", "google", "mistral", "deepseek", "xai"];
 
 type StreamSimple = NonNullable<ProviderConfig["streamSimple"]>;
 
@@ -83,12 +84,13 @@ async function activateSpec(pi: ExtensionAPI, spec: ProviderSpec, state: ConfigS
 	const models = discovered.length > 0 ? discovered : requestedModel ? [{ id: requestedModel }] : [];
 	if (models.length === 0) return undefined;
 
+	const builtin = await loadBuiltinProviders();
 	const provider: ProviderConfig = {
 		baseUrl,
 		api: "openai-completions",
 		apiKey,
 		authHeader: false,
-		models: models.map((m) => buildModelConfig(spec, m)),
+		models: models.map((m) => buildModelConfig(spec, m, listPrice(builtin, m.id))),
 	};
 
 	const streamSimple = await loadProviderStream(spec.compat?.supportsUsageInStreaming === true);
@@ -215,7 +217,8 @@ function clearBedrockDefaults(state: ConfigState): boolean {
 }
 
 async function activateBedrock(pi: ExtensionAPI, state: ConfigState): Promise<void> {
-	const [builtin, profiles] = await Promise.all([loadBuiltinBedrockProvider(), discoverBedrockProfiles()]);
+	const [providers, profiles] = await Promise.all([loadBuiltinProviders(), discoverBedrockProfiles()]);
+	const builtin = providers.find((p) => p.id === BEDROCK_PROVIDER);
 	const isBedrockModel = (id: string) =>
 		hasModel(builtin, id) || (profiles ?? []).some((p) => p.toLowerCase() === id.toLowerCase());
 	const current = typeof state.settings.defaultModel === "string" ? state.settings.defaultModel.trim() : "";
@@ -279,14 +282,24 @@ function narrowBedrockModels(pi: ExtensionAPI, builtin: Provider, profiles: read
 	});
 }
 
-async function loadBuiltinBedrockProvider(): Promise<Provider | undefined> {
+async function loadBuiltinProviders(): Promise<readonly Provider[]> {
 	try {
 		const mod = (await import(BUILTIN_PROVIDERS_MODULE)) as { builtinProviders?: () => readonly Provider[] };
-		return mod.builtinProviders?.().find((p) => p.id === BEDROCK_PROVIDER);
+		return mod.builtinProviders?.() ?? [];
 	} catch (err) {
 		console.warn(`[pi-dynamic-providers] built-in providers unavailable: ${err instanceof Error ? err.message : String(err)}`);
-		return undefined;
+		return [];
 	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a proxy reports no prices, so a proxy model costs what the model's own vendor lists in Pi's built-in catalog for the same id without its routing prefix (aws/claude-opus-4-8 is claude-opus-4-8). Only vendor providers count, because resellers such as Bedrock list the same model at a markup. A model no vendor lists stays at zero.
+function listPrice(providers: readonly Provider[], id: string): ProviderModelConfig["cost"] {
+	const bare = id.slice(id.lastIndexOf("/") + 1).toLowerCase();
+	for (const vendor of PRICE_VENDORS) {
+		const model = providers.find((p) => p.id === vendor)?.getModels().find((m) => m.id.toLowerCase() === bare);
+		if (model) return model.cost;
+	}
+	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 }
 
 function hasModel(provider: Provider | undefined, id: string): boolean {
@@ -319,7 +332,11 @@ function applyShadows(pi: ExtensionAPI, spec: ProviderSpec, url: string, state: 
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: OpenAI-named proxy models use Responses for tools with reasoning, and GPT-5+ and o-series models reason, so Pi keeps their thinking level. Opaque aliases stay on Chat Completions until discovery supplies API metadata. The proxy caches a Claude prompt only when the request marks it, so Claude models get Anthropic cache markers.
-function buildModelConfig({ envPrefix, compat }: ProviderSpec, model: DiscoveredModel): ProviderModelConfig {
+function buildModelConfig(
+	{ envPrefix, compat }: ProviderSpec,
+	model: DiscoveredModel,
+	cost: ProviderModelConfig["cost"],
+): ProviderModelConfig {
 	const contextWindow = model.contextWindow ?? intEnv(`${envPrefix}_CONTEXT_WINDOW`, 128000);
 	const maxTokens = Math.min(intEnv(`${envPrefix}_MAX_TOKENS`, 16384), contextWindow);
 	const responses = envPrefix === "OPENAI_PROXY" && /(^|\/)(gpt-([5-9]|\d{2,})|o[1-9](?:-|$))/i.test(model.id);
@@ -332,7 +349,7 @@ function buildModelConfig({ envPrefix, compat }: ProviderSpec, model: Discovered
 		reasoning: responses || boolEnv(`${envPrefix}_REASONING`, false),
 		contextWindow,
 		maxTokens,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		cost,
 		compat: {
 			supportsDeveloperRole: false,
 			supportsReasoningEffort: true,
