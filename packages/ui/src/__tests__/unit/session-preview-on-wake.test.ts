@@ -46,6 +46,7 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
 }));
 vi.mock("../../modules/sessions/api/queries.js", () => ({
   fetchSessionHistory: h.fetchSessionHistory,
+  SESSION_HISTORY_TAIL: 200,
   listedSessionRunning: () => false,
   setSessionRunning: () => {},
 }));
