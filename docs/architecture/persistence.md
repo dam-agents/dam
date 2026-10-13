@@ -221,9 +221,11 @@ The entrypoint discards at boot the caches no shipped tool reads — Go's module
 Toolchains the agent installed for itself are never touched; on the vm Backend only the discards apply.
 
 **The `vm` Backend has no PVCs, and one disk.** A pod attaches a volume per path, so a mount there is a size and a placement at once.
-A machine has a single disk, so its size is the Agent's own `storageSize`, stated once and rounded once, and the path it holds apart from the root is `HOME`.
+A machine has a single disk, and it has no size of its own: it is sparse and may grow to the owner's whole storage pool — their [UserBudget](budgets.md#the-ceiling)'s `storage`, else the install's value — so what the owner's disks take is what they write, and an Agent's `storageSize`, a mount's size and a starter kit's storage size only containers.
+Only a runner that has reported the machine's disk is sent the pool, since an older runner would restart a running machine to grow it; until then the machine keeps the size the Agent's spec gives, and a new machine boots once at that size.
+The path the disk holds apart from the root is `HOME`.
 That is not a field an Agent sets: `HOME` is fixed on both backends, and it is already the only path every template and starter kit in the chart persists.
-The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete.
+The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size at the machine's next start and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete.
 It is per owner rather than per Agent, so the storage-class pin and the warm pool do not apply and the storage migration never sees it.
 An Agent whose mounts ask to persist a path outside `HOME` is refused rather than reconciled, because a machine cannot keep it and silently dropping it is how an agent comes to look healthy while discarding its work.
 
@@ -250,10 +252,9 @@ The record is learned from the answer rather than read off the disk, because the
 The storage template every new disk is copied from carries a journal; a disk smolvm formats itself has none, so an unclean stop — a killed runner — is what brings that repair on there.
 The loss is refused, not prevented.
 
-**The claim those disks sit on is sized from demand.** One claim per owner holds every machine disk they have, so it is sized from those disks, some headroom beside each, the image cache budget when the cache lives there, and, while a [runtime migration](vm-runtime-migration.md) is in flight, the capacity of the home volume its seed was copied from, since the seed waits there beside the disk it is restored into; the owner's storage pool — their [UserBudget](budgets.md#the-ceiling)'s `storage`, else the install's value — is the ceiling, not the size.
+**The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and the image cache when the cache lives there, and every disk may grow to the pool, so the claim is created at the pool; the controller refuses an install whose image cache budget would take the whole of it.
 The runtime's disk templates live there too, sparse enough to need no share of it.
-It grows in place as agents are added, up to that ceiling, and is never shrunk, so a lowered ceiling only stops its growth.
-On a storage class that cannot expand, or one the controller cannot read, it is created at the ceiling, since it could not grow later.
+It grows in place when the pool rises and is never shrunk, so a lowered pool only stops its growth.
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
 
 **The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk fails and its filesystem reports the loss.
@@ -261,6 +262,8 @@ So the runner measures the claim itself: past 75% used it sheds what it can fetc
 Past 90% it creates, starts, restarts and grows no machine and takes no seed, and reports the refusal as `MachineStorageFull` with how full the storage is and how to free it; it never stops a running machine, which would free nothing and lose what the guest holds in memory.
 An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
 A storage refusal does not park the Agent the way a memory refusal does: parking would halt a machine, and nothing an idle agent holds in memory frees disk.
+The api-server says the same before an Agent is written: it reads the owner's runner through its read-only usage capability, and refuses a new vm agent — a create, a kit applied, a spawn, a move onto the vm backend — once the claim is 90% used, with the figures and the same three ways out.
+Usage it cannot read refuses nothing, since the runner refuses the machine anyway.
 
 ### The machine image cache
 

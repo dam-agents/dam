@@ -130,11 +130,10 @@ pub fn step(
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the machine must be stopped and started to become what is asked. Storage is compared as an inequality: a disk grows and cannot shrink, so a smaller request is already met. The allowlist is the paired gateway's ClusterIP, and Kubernetes reuses those, so a machine holding an old one may reach another owner's gateway and must restart onto the new one. The guest resolver is that same gateway's, so it moves with it. A guest reads its CPU's features only at boot, so nesting changes only with a restart. Size is left out: a running guest keeps the CPUs and memory it booted with, and its next start — a wake, a restart for anything else, the restart of a guest gone quiet — boots it at the new size. A change to how the chart sizes machines would otherwise reboot every running agent at once.
+// UNIT_BOUNDARY_DESCRIPTION: whether the machine must be stopped and started to become what is asked. The allowlist is the paired gateway's ClusterIP, and Kubernetes reuses those, so a machine holding an old one may reach another owner's gateway and must restart onto the new one. The guest resolver is that same gateway's, so it moves with it. A guest reads its CPU's features only at boot, so nesting changes only with a restart. Size is left out, disk included: a running guest keeps the CPUs, memory and disk it booted with, and its next start — a wake, a restart for anything else, the restart of a guest gone quiet — boots it at the new size, growing the disk first. A change to how the chart sizes machines, or to an owner's storage pool, would otherwise reboot every running agent at once.
 pub fn changed(applied: &MachineSpec, desired: &MachineSpec) -> bool {
     applied.revision != desired.revision
         || applied.ca_cert != desired.ca_cert
-        || applied.storage_gib < desired.storage_gib
         || applied.env != desired.env
         || applied.image != desired.image
         || applied.allow_cidrs != desired.allow_cidrs
@@ -360,13 +359,6 @@ mod tests {
                 },
             ),
             (
-                "storageGiB up",
-                MachineSpec {
-                    storage_gib: 20,
-                    ..running_spec()
-                },
-            ),
-            (
                 "env",
                 MachineSpec {
                     env: [("A".to_string(), "2".to_string())].into_iter().collect(),
@@ -403,13 +395,14 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: a new size alone leaves a running machine alone, so a change to how machines are sized does not reboot every agent at once. A stopped machine is still started, and a start applies the size with everything else.
+    // TEST_SCENARIO: a new size alone — CPUs, memory or a larger disk — leaves a running machine alone, so a change to how machines are sized does not reboot every agent at once. A stopped machine is still started, and a start applies the size with everything else.
     #[test]
     fn a_new_size_waits_for_the_machine_to_start_again() {
         let applied = running_spec();
         let resized = MachineSpec {
             cpus: 4,
             memory_mib: 4096,
+            storage_gib: 100,
             ..running_spec()
         };
         assert!(!changed(&applied, &resized));

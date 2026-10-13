@@ -532,6 +532,11 @@ export interface ResizeGatePort {
   ): Promise<void>;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: refuses a new vm agent, or a move onto the vm backend, when its owner's shared storage is too full to hold one; it throws the refusal the caller sees.
+export interface StorageGatePort {
+  assertCanCreateVm(): Promise<void>;
+}
+
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   agentEnvRepo: AgentEnvRepository;
@@ -555,6 +560,7 @@ export function createAgentsService(deps: {
   telemetry?: boolean;
   runtimeMigrationRetentionMs?: number | null;
   resizeGate?: ResizeGatePort;
+  storageGate?: StorageGatePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
   grantProvisioner?: {
     resolveSpecGrants(sel: {
@@ -1054,6 +1060,7 @@ export function createAgentsService(deps: {
             "this agent would run as its own microVM, which is not enabled on this install (virtualization.enabled)",
         });
       }
+      if (backend?.type === "vm") await deps.storageGate?.assertCanCreateVm();
       const templateEnv = seedTelemetryIdentity(
         (spec.env as EnvVar[] | undefined) ?? [],
         input.name,
@@ -1484,6 +1491,7 @@ export function createAgentsService(deps: {
     },
 
     async migrateRuntime(id) {
+      await deps.storageGate?.assertCanCreateVm();
       const result = await executeRuntimeMigration({
         ...runtimeMigrationWrites,
         migration: runtimeMigrationContext,
@@ -1515,7 +1523,6 @@ export function createAgentsService(deps: {
       return ok(
         runtimeMigrationPlan(infra, {
           ...runtimeMigrationContext,
-          defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
           retentionMs: deps.runtimeMigrationRetentionMs ?? null,
         }),
       );

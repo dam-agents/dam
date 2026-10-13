@@ -42,24 +42,20 @@ func applyUserBudget(t *testing.T, r *AgentReconciler, owner string, spec apiv1.
 func TestAUserBudgetStorageIsTheOwnersClaimCeiling(t *testing.T) {
 	ctx := context.Background()
 	r, _, _ := setupVMReconciler(t, vmAgentCR())
-	big := runnerDemand{diskGiB: 500, machines: 5}
-
-	_, ceiling, err := r.runnerClaimSize(ctx, testOwner, big)
+	ceiling, err := r.runnerStorageCeiling(ctx, testOwner)
 	require.NoError(t, err)
 	assert.Equal(t, "100Gi", ceiling.String())
 
 	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{Storage: new(resource.MustParse("300Gi"))})
-	_, ceiling, err = r.runnerClaimSize(ctx, testOwner, big)
+	ceiling, err = r.runnerStorageCeiling(ctx, testOwner)
 	require.NoError(t, err)
 	assert.Equal(t, "100Gi", ceiling.String(), "the pool read before the budget stays until it is read again")
 
 	r.refreshVMPool(ctx, testOwner)
-	size, ceiling, err := r.runnerClaimSize(ctx, testOwner, big)
-	require.NoError(t, err)
-	assert.Equal(t, "300Gi", ceiling.String())
-	assert.Equal(t, 0, size.Cmp(ceiling))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, nil))
+	assert.Equal(t, "300Gi", runnerClaim(t, r))
 
-	_, ceiling, err = r.runnerClaimSize(ctx, "owner-2", big)
+	ceiling, err = r.runnerStorageCeiling(ctx, "owner-2")
 	require.NoError(t, err)
 	assert.Equal(t, "100Gi", ceiling.String(), "another owner keeps the install's ceiling")
 }

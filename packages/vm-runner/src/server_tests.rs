@@ -1027,9 +1027,9 @@ async fn a_new_allowlist_is_applied_by_restarting_the_machine() {
     assert_eq!(h.fake.last_update().allow_cidrs, ["10.0.0.10/32"]);
 }
 
-// TEST_SCENARIO: a disk grows and cannot shrink, so a smaller storage request is already met and does nothing; a larger one restarts the machine and asks the runtime to grow the disk.
+// TEST_SCENARIO: a disk grows and cannot shrink, so a smaller storage request is already met and does nothing. A larger one leaves the running machine alone, as a new size does, and its next start asks the runtime to grow the disk, so a larger storage pool reboots no agent.
 #[tokio::test(flavor = "multi_thread")]
-async fn storage_is_grown_and_never_shrunk() {
+async fn storage_is_grown_at_the_next_start_and_never_shrunk() {
     let h = Harness::new("storage");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
@@ -1040,10 +1040,26 @@ async fn storage_is_grown_and_never_shrunk() {
 
     let mut larger = spec(true);
     larger.storage_gib = 50;
-    h.server.put("m1", larger).unwrap();
+    let live = h.server.put("m1", larger.clone()).unwrap();
+    assert_eq!(live.state, STATE_RUNNING);
+    assert_eq!(live.disk_gib, 5, "{live:?}");
+    assert_eq!(h.fake.calls(), ["create m1", "start m1"]);
+
+    h.server
+        .put(
+            "m1",
+            MachineSpec {
+                running: false,
+                ..larger.clone()
+            },
+        )
+        .unwrap();
     h.settle("m1").await;
+    h.server.put("m1", larger).unwrap();
+    let woken = h.settle("m1").await;
+    assert_eq!(woken.state, STATE_RUNNING, "{woken:?}");
     assert_eq!(h.fake.last_update().storage_gib, 50);
-    assert_eq!(h.fake.calls().len(), 5);
+    assert_eq!(woken.disk_gib, 50, "{woken:?}");
 }
 
 // TEST_SCENARIO: a machine that does not fit the runner's memory is refused at the door, with a message naming the shortfall, and nothing is created. Capacity counts machines still being created, which have no spec on disk yet, so two creates cannot both fit into room for one.

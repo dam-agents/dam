@@ -11,6 +11,7 @@ import {
   createLeaseApi,
   podBaseUrl,
 } from "./modules/agents/infrastructure/k8s.js";
+import { composeStorageGate } from "./modules/budgets/index.js";
 import { createKitUpdateMarks } from "./modules/agents/infrastructure/kit-update-marks.js";
 import {
   AGENTS_PLURAL,
@@ -1436,6 +1437,7 @@ export async function bootstrap() {
   const harnessAgentsServiceFor = (owner: string) =>
     composeAgentsModule({
       api,
+      storageGate: composeStorageGate({ k8s: k8sClient, owner }),
       resolveSlackWorkspace,
       agentStateCache,
       namespace: config.namespace,

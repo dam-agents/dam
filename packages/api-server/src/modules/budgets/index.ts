@@ -1,4 +1,8 @@
-export { composeBudgetsModule, composeSpawnSizeGate } from "./compose.js";
+export {
+  composeBudgetsModule,
+  composeSpawnSizeGate,
+  composeStorageGate,
+} from "./compose.js";
 export {
   SizeNeverFitsError,
   type SpawnSizeGate,

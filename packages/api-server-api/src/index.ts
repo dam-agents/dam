@@ -111,8 +111,11 @@ export {
   toAgentView,
   toRuntimeMigrationPlanView,
 } from "./modules/agents/view.js";
+export { storageFullSchema } from "./modules/budgets/schemas.js";
 export type {
   BudgetReserved,
+  BudgetStorageFull,
+  BudgetVmUsage,
   BudgetsService,
 } from "./modules/budgets/types.js";
 export type { AgentSpecCR } from "./crd-types.gen.js";

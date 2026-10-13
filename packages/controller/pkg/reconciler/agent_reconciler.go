@@ -65,10 +65,10 @@ type AgentReconciler struct {
 	vmRunning       sync.Map
 	vmLive          sync.Map
 	vmPools         sync.Map
+	usageSecrets    sync.Map
 	resizeNotices   sync.Map
 	notReadyPolls   sync.Map
 	vmStartClocks   sync.Map
-	claimCapNotices sync.Map
 	ownerless       sync.Map
 	machineWatchMu  sync.Mutex
 	machineWatches  map[string]*machineWatch
