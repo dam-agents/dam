@@ -113,7 +113,7 @@ func TestHibernatingWhileTheRunnerIsUnreachableScalesDownButDoesNotPublishHibern
 	}))
 	unreachable := func(context.Context, string, string) error { return errors.New("the VM runner could not be reached") }
 
-	require.Error(t, hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent", false))
+	require.Error(t, hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent", false, true))
 
 	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")))
 	ready := readyCondition(t, r, "my-agent")
@@ -334,16 +334,22 @@ func TestAKeptGatewayGoesDownOnAHardStopOrPastTheWarmWindow(t *testing.T) {
 	})
 }
 
-// TEST_SCENARIO: a wake's reconcile ran from activity that has since ended, and the idle checker hibernated the agent again meanwhile. The wake removes only the stamp it read, so the new hibernation keeps its machine stopped.
+// TEST_SCENARIO: a wake's reconcile ran from activity that has since ended, and published readiness, and the idle checker hibernated the agent again before the wake removed its stamp. The new hibernation writes a stamp of its own, and the wake removes only the stamp it read, so the machine of the new hibernation stays stopped.
 func TestAWakeLeavesAHibernationStampedSinceItRead(t *testing.T) {
 	ctx := context.Background()
-	r, _, _ := warmHibernatedVMAgent(t)
-	stamp := storedVMAgent(t, r, nil).Annotations[annHibernatedAt]
-	require.NotEmpty(t, stamp)
+	r, _, checker := warmHibernatedVMAgent(t)
+	read := storedVMAgent(t, r, nil).Annotations[annHibernatedAt]
+	require.NotEmpty(t, read)
+	require.NoError(t, updateAgentStatus(ctx, r.dynamic, "test-agents", "my-agent", func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionReady, true, "AllPodsReady", "", "", 0)
+	}))
 
-	require.NoError(t, clearHibernated(ctx, r.dynamic, "test-agents", "my-agent", "2026-01-01T00:00:00Z"))
-	assert.Equal(t, stamp, storedVMAgent(t, r, nil).Annotations[annHibernatedAt])
+	checker.check(ctx)
+	again := storedVMAgent(t, r, nil).Annotations[annHibernatedAt]
+	require.NotEqual(t, read, again, "the new hibernation stamps anew")
+	require.NoError(t, clearHibernated(ctx, r.dynamic, "test-agents", "my-agent", read))
+	assert.Equal(t, again, storedVMAgent(t, r, nil).Annotations[annHibernatedAt])
 
-	require.NoError(t, clearHibernated(ctx, r.dynamic, "test-agents", "my-agent", stamp))
+	require.NoError(t, clearHibernated(ctx, r.dynamic, "test-agents", "my-agent", again))
 	assert.NotContains(t, storedVMAgent(t, r, nil).Annotations, annHibernatedAt)
 }

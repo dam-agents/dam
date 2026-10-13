@@ -84,8 +84,8 @@ func gatewayKeptWarm(annotations map[string]string, vm bool, base config.AgentBa
 	return err == nil && now.Sub(last) < base.VMGatewayWarmFor.AsDuration()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the controller's own record that it took the Agent down — hibernated, stopped or parked — and holds its machine stopped until the next wake. It is written before the machine is asked to stop, so a reconcile that runs while the machine stops already reads it, and it is the only signal a vm Agent's hibernation is read from while its gateway stays up.
-func stampHibernated(ctx context.Context, dyn dynamic.Interface, namespace, name string) error {
+// UNIT_BOUNDARY_DESCRIPTION: the controller's own record that it took the Agent down — hibernated, stopped or parked — and holds its machine stopped until the next wake. It is written before the machine is asked to stop, so a reconcile that runs while the machine stops already reads it, and it is the only signal a vm Agent's hibernation is read from while its gateway stays up. A new hibernation (`fresh`) writes a new value even over a standing stamp, so a wake still clearing the old one leaves it; a reconcile that holds an Agent down keeps the standing value, as rewriting it would requeue the Agent on every reconcile.
+func stampHibernated(ctx context.Context, dyn dynamic.Interface, namespace, name string, fresh bool) error {
 	cli := dyn.Resource(AgentsGVR).Namespace(namespace)
 	agent, err := cli.Get(ctx, name, metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
@@ -94,7 +94,7 @@ func stampHibernated(ctx context.Context, dyn dynamic.Interface, namespace, name
 	if err != nil {
 		return fmt.Errorf("reading agent %s: %w", name, err)
 	}
-	if _, ok := agent.GetAnnotations()[annHibernatedAt]; ok {
+	if _, ok := agent.GetAnnotations()[annHibernatedAt]; ok && !fresh {
 		return nil
 	}
 	raw, err := json.Marshal(map[string]any{

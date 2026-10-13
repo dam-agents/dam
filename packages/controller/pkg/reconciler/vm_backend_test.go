@@ -1326,7 +1326,7 @@ func TestHibernatingAVMAgentStopsItsMachine(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, agent))
 	require.True(t, node.spec("my-agent").Running, "the machine is up before we put it to sleep")
 
-	require.NoError(t, hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, testOwner, "test-agents", "my-agent", false))
+	require.NoError(t, hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, testOwner, "test-agents", "my-agent", false, true))
 
 	assert.False(t, node.spec("my-agent").Running, "the machine is stopped, not just the gateway scaled")
 	require.NotEmpty(t, node.puts)
@@ -1345,7 +1345,7 @@ func TestALapsedIdleTimeoutLeavesTheMachineToTheIdleChecker(t *testing.T) {
 	assert.True(t, node.spec("my-agent").Running, "the busy probe has not been asked yet")
 
 	unreachable := func(context.Context, string, string) error { return errors.New("the VM runner could not be reached") }
-	require.Error(t, hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent", false))
+	require.Error(t, hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent", false, true))
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.False(t, node.spec("my-agent").Running)
 }

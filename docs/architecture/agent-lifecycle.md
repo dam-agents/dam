@@ -270,7 +270,7 @@ See [agent-skills](agent-skills.md).
 
 Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)).
 On the `vm` Backend the agent side is the machine on the VM runner, which stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest.
-The gateway pod is the slower of the two to start, so a `vm` Agent's gateway stays up through a hibernation for a window after its last activity (`controller.agent.base.vmGatewayWarmFor`), and a wake inside it starts only the machine.
+The gateway pod is the slower of the two to start, so a `vm` Agent's gateway stays up through a hibernation for a warm window after its last activity, set by the install ([`helm/values.yaml`](../../helm/values.yaml)), and a wake inside it starts only the machine.
 Past the window the idle checker scales the gateway down, and a hard stop, a pause, a park over budget or a delete takes it down at once.
 While it stays up, its credentials stay current as a running gateway's do ([credential-gateway](credential-gateway.md)): a configuration change rolls it, and a rotated credential reaches it within seconds.
 A wake whose gateway is down scales it up before the agent side.

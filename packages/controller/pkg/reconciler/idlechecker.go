@@ -135,7 +135,7 @@ func (c *IdleChecker) check(ctx context.Context) {
 
 		slog.Info("hibernating idle agent", "agent", name)
 		keep := gatewayKeptWarm(agent.GetAnnotations(), isVMObject(agent), c.config.AgentBase, now)
-		if err := hibernateAgentPair(ctx, c.client, c.dynamic, c.halt, agent.GetLabels()[envoyOwnerLabel], c.config.Namespace, name, keep); err != nil {
+		if err := hibernateAgentPair(ctx, c.client, c.dynamic, c.halt, agent.GetLabels()[envoyOwnerLabel], c.config.Namespace, name, keep, true); err != nil {
 			slog.Error("idle checker: hibernating", "agent", name, "error", err)
 			continue
 		}
@@ -233,9 +233,9 @@ func agentPodIsBusy(ctx context.Context, namespace, agentName string) bool {
 	return !status.Idle
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: hibernation is published only once the agent's machine is stopped. The api-server trusts a health check answer on a wake from a published hibernation, because nothing should answer then, so a machine still running would pass for a woken one. When the runner cannot stop the machine, the rest of the pair goes down anyway and readiness goes down, but the agent is not reported hibernated: the error makes the idle checker try again on its next sweep, and the agent's next reconcile stops the machine once the runner answers, as the hibernation is stamped before the machine is asked to stop. `keepGateway` leaves a vm agent's gateway up through the hibernation.
-func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string, keepGateway bool) error {
-	if err := stampHibernated(ctx, dyn, namespace, name); err != nil {
+// UNIT_BOUNDARY_DESCRIPTION: hibernation is published only once the agent's machine is stopped. The api-server trusts a health check answer on a wake from a published hibernation, because nothing should answer then, so a machine still running would pass for a woken one. When the runner cannot stop the machine, the rest of the pair goes down anyway and readiness goes down, but the agent is not reported hibernated: the error makes the idle checker try again on its next sweep, and the agent's next reconcile stops the machine once the runner answers, as the hibernation is stamped before the machine is asked to stop. `keepGateway` leaves a vm agent's gateway up through the hibernation; `fresh` says the idle checker or reclaim starts a new hibernation here, rather than a reconcile holding a stop.
+func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string, keepGateway, fresh bool) error {
+	if err := stampHibernated(ctx, dyn, namespace, name, fresh); err != nil {
 		return err
 	}
 	var haltErr error
@@ -266,7 +266,7 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 
 // UNIT_BOUNDARY_DESCRIPTION: a machine that cannot be stopped now — its runner is restarting or unreachable — does not keep the rest of the pair up. The gateway is scaled down anyway, and the agent's own next reconcile, which asks for the machine stopped because the agent should not run, stops it once the runner answers.
 func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string, keepGateway bool) error {
-	if err := stampHibernated(ctx, dyn, namespace, name); err != nil {
+	if err := stampHibernated(ctx, dyn, namespace, name, false); err != nil {
 		return err
 	}
 	if halt != nil {
