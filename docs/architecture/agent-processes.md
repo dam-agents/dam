@@ -66,8 +66,8 @@ A row also says when it is a **container** or a **container runtime**, read from
 Docker and k3s run each container under a containerd shim that is re-parented to the reaper, so it lists as a Detached Process; its command names the containerd namespace (`moby` for Docker) and the container id, and a k3s shim runs from k3s's own paths.
 The row carries the engine and the id cut to twelve characters, which `docker` and `crictl` accept.
 `dockerd`, `containerd` and `k3s server` or `agent` are marked as the runtime of their engine.
-The panel shows both with a container icon and their engine, a container titled by its short id in place of the shim command, and lists them after the other rows of their group, so the user's own work comes first.
-The mark stays on the row in the finished history, which shows it the same way.
+The panel shows both with a container icon named by their engine, a container titled by its short id in place of the shim command, and lists them after the other rows of the same kind in their group, so the user's own detached work comes first.
+The mark stays on the row in the finished history, which shows the same icon and title; the engine is the icon's name there, since a finished row has no caption.
 
 **Finished work.** A Harness Task or Detached Process that a scan finds gone moves to a finished history — a Harness Task as soon as its process is gone, without waiting for the harness's next report.
 Turn Processes keep no history.

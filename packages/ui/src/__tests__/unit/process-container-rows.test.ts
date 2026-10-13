@@ -3,6 +3,7 @@ import type { FinishedRow, ProcessRow } from "agent-runtime-api";
 import { describe, expect, test } from "vitest";
 
 import {
+  containerLabel,
   processKindLabel,
   processTitle,
 } from "../../modules/processes/lib/process-copy.js";
@@ -40,6 +41,15 @@ describe("container row copy", () => {
   test("names a container by its engine and short id", () => {
     expect(processKindLabel(container)).toBe("Docker container");
     expect(processTitle(container)).toBe("3f2a9c1b4e5d");
+  });
+
+  test("names the container icon by engine and kind", () => {
+    expect(containerLabel({ role: "runtime", engine: "docker" })).toBe(
+      "Docker runtime",
+    );
+    expect(
+      containerLabel({ role: "container", engine: "k3s", id: "9e8d7c6b5a4f" }),
+    ).toBe("k3s container");
   });
 
   test("keeps a runtime's command and names its engine", () => {

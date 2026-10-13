@@ -2,6 +2,7 @@ import type {
   ContainerEngine,
   FinishedRow,
   PendingRestart,
+  ProcessContainer,
   ProcessKind,
   ProcessRow,
 } from "agent-runtime-api";
@@ -23,16 +24,18 @@ const CONTAINER_ENGINE_LABEL: Record<ContainerEngine, string> = {
   containerd: "containerd",
 };
 
+export function containerLabel(container: ProcessContainer): string {
+  const engine = CONTAINER_ENGINE_LABEL[container.engine];
+  return match(container.role)
+    .with("container", () => `${engine} container`)
+    .with("runtime", () => `${engine} runtime`)
+    .exhaustive();
+}
+
 export function processKindLabel(
   row: Pick<ProcessRow, "kind" | "container">,
 ): string | null {
-  if (row.container) {
-    const engine = CONTAINER_ENGINE_LABEL[row.container.engine];
-    return match(row.container.role)
-      .with("container", () => `${engine} container`)
-      .with("runtime", () => `${engine} runtime`)
-      .exhaustive();
-  }
+  if (row.container) return containerLabel(row.container);
   return row.kind === "turn" ? null : BACKGROUND_KIND_LABEL[row.kind];
 }
 
