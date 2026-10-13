@@ -24,8 +24,16 @@ describe("the runner's usage read", () => {
     expect(parseRunnerUsage(fixture("runner-usage.json"), at)).toEqual({
       storage: { usedBytes: 32212254720, usableBytes: 107374182400 },
       memory: { limitMiB: 12288, committedMiB: 3072 },
+      cpu: { limitMilli: 9000, usedMilli: 1200, throttledPercent: 4 },
       machines: [
-        { id: "agent-a", state: "running", usedMiB: 640, diskGiB: 100 },
+        {
+          id: "agent-a",
+          state: "running",
+          usedMiB: 640,
+          diskGiB: 100,
+          diskUsedBytes: 8589934592,
+          cpuMilli: 350,
+        },
       ],
       observedAt: at.toISOString(),
     });

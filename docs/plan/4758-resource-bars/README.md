@@ -59,12 +59,12 @@ export interface BudgetVmUsage {
 
 ## Sub-issues
 
-| #   | Title                                                       | Scope                      | Depends on |
-| --- | ----------------------------------------------------------- | -------------------------- | ---------- |
-| 01  | Runner: usage reports each machine's disk and CPU, and throttling | vm-runner (Rust) + Go mirror | #4757 |
-| 02  | api-server: pool levels, CPU and each agent's share         | api-server, api-server-api | 01         |
-| 03  | UI: pool bars replace the slot meter on Home                | ui, e2e                    | 02         |
-| 04  | UI: each bar names its fix                                  | ui                         | 03         |
+| #   | Title                                                             | Scope                        | Depends on |
+| --- | ----------------------------------------------------------------- | ---------------------------- | ---------- |
+| 01  | Runner: usage reports each machine's disk and CPU, and throttling | vm-runner (Rust) + Go mirror | #4757      |
+| 02  | api-server: pool levels, CPU and each agent's share               | api-server, api-server-api   | 01         |
+| 03  | UI: pool bars replace the slot meter on Home                      | ui, e2e                      | 02         |
+| 04  | UI: each bar names its fix                                        | ui                           | 03         |
 
 ## Conventions & glossary
 

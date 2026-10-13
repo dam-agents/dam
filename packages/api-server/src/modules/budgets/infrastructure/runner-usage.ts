@@ -19,12 +19,21 @@ const runnerUsageSchema = z.object({
     limitMiB: z.number().nonnegative(),
     committedMiB: z.number().nonnegative(),
   }),
+  cpu: z
+    .object({
+      limitMilli: z.number().nonnegative(),
+      usedMilli: z.number().nonnegative(),
+      throttledPercent: z.number().nonnegative(),
+    })
+    .optional(),
   machines: z.array(
     z.object({
       id: z.string(),
       state: z.string(),
       usedMiB: z.number().nonnegative().default(0),
       diskGiB: z.number().nonnegative().default(0),
+      diskUsedBytes: z.number().nonnegative().default(0),
+      cpuMilli: z.number().nonnegative().default(0),
     }),
   ),
 });
