@@ -1,40 +1,9 @@
-import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-
-const exec = promisify(execFile);
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const PKG_ROOT = resolve(HERE, "../..");
-const BIN_PATH = join(PKG_ROOT, "dist", "js", "bin.js");
-
-interface RunResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
-
-async function runDam(
-  args: string[],
-  env: Record<string, string>,
-): Promise<RunResult> {
-  try {
-    const { stdout, stderr } = await exec("node", [BIN_PATH, ...args], { env });
-    return { exitCode: 0, stdout, stderr };
-  } catch (e) {
-    const err = e as { code?: number; stdout?: string; stderr?: string };
-    return {
-      exitCode: typeof err.code === "number" ? err.code : 1,
-      stdout: err.stdout ?? "",
-      stderr: err.stderr ?? "",
-    };
-  }
-}
+import { runDam, spawnDam } from "./run-dam.js";
 
 interface Fixture {
   url: string;
@@ -132,7 +101,7 @@ describe("dam ping (integration)", () => {
     });
     await configureServer(fixture.url);
 
-    const r = await runDam(["ping"], {
+    const r = await spawnDam(["ping"], {
       HOME: home,
       PATH: process.env.PATH ?? "",
     });

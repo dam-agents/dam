@@ -169,6 +169,7 @@ function preview(
     offered: () => true,
     stopBrowser: async () => {},
     retryDelaysMs: [10],
+    displayRetryMs: 10,
     log: () => {},
     ...extra,
   });

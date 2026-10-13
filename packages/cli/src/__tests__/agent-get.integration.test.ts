@@ -1,11 +1,9 @@
-import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { runDam, spawnDam } from "./run-dam.js";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
 import {
@@ -22,41 +20,6 @@ const FIXTURE_USER: UserIdentity = {
   scopes: ALL_SCOPES,
   agentIds: "*",
 };
-
-const exec = promisify(execFile);
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const PKG_ROOT = resolve(HERE, "../..");
-const BIN_PATH = join(PKG_ROOT, "dist", "js", "bin.js");
-
-interface RunResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
-
-async function runDam(
-  args: string[],
-  env: Record<string, string>,
-): Promise<RunResult> {
-  try {
-    const { stdout, stderr } = await exec(
-      process.execPath,
-      [BIN_PATH, ...args],
-      {
-        env,
-      },
-    );
-    return { exitCode: 0, stdout, stderr };
-  } catch (e) {
-    const err = e as { code?: number; stdout?: string; stderr?: string };
-    return {
-      exitCode: typeof err.code === "number" ? err.code : 1,
-      stdout: err.stdout ?? "",
-      stderr: err.stderr ?? "",
-    };
-  }
-}
 
 async function startFixture(opts: {
   list?: () => Promise<Agent[]>;
@@ -248,7 +211,7 @@ describe("dam agent get (integration)", () => {
     try {
       await configureServer(fixture.url);
 
-      const r = await runDam(["agent", "get", "agent-00000000deadbeef"], {
+      const r = await spawnDam(["agent", "get", "agent-00000000deadbeef"], {
         HOME: home,
         PATH: process.env.PATH ?? "",
         DAM_TOKEN: "test-token",

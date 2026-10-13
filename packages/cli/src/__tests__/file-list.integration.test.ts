@@ -1,23 +1,15 @@
 // TEST_OVERVIEW: File listings name every entry of a directory, marking directories with a trailing slash, and recursively enumerate workspace paths through the existing file API, failing without partial output if a directory cannot be read.
-import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { join } from "node:path";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
 import { ALL_SCOPES, type Agent, type ApiContext } from "api-server-api";
 import { appRouter as runtimeRouter } from "agent-runtime-api/router";
 import type { AgentRuntimeContext, DirListResult } from "agent-runtime-api";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
-const exec = promisify(execFile);
-const BIN_PATH = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "../../dist/js/bin.js",
-);
+import { runDam } from "./run-dam.js";
 
 describe("dam file list (integration)", () => {
   let home: string;
@@ -137,37 +129,16 @@ describe("dam file list (integration)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  async function runList(...args: string[]) {
-    try {
-      const result = await exec(
-        process.execPath,
-        [
-          BIN_PATH,
-          "file",
-          "list",
-          "agent-0000000000000001",
-          "--server",
-          host,
-          ...args,
-        ],
-        {
-          env: {
-            HOME: home,
-            XDG_CONFIG_HOME: home,
-            XDG_STATE_HOME: home,
-            DAM_TOKEN: "test-token",
-          },
-        },
-      );
-      return { exitCode: 0, ...result };
-    } catch (error) {
-      const result = error as { code: number; stdout: string; stderr: string };
-      return {
-        exitCode: result.code,
-        stdout: result.stdout,
-        stderr: result.stderr,
-      };
-    }
+  function runList(...args: string[]) {
+    return runDam(
+      ["file", "list", "agent-0000000000000001", "--server", host, ...args],
+      {
+        HOME: home,
+        XDG_CONFIG_HOME: home,
+        XDG_STATE_HOME: home,
+        DAM_TOKEN: "test-token",
+      },
+    );
   }
 
   it("lists directories and files of one directory, marking directories with a trailing slash", async () => {
