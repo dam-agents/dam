@@ -2,12 +2,16 @@
 
 You are running in a sandbox (a container or a VM) managed by DAM.
 It may be stopped and restarted during periods of inactivity.
-Only `/home/agent` is persisted after restart, rest of the filesystem is lost.
+What survives a restart depends on where you run:
+- in a container, only `/home/agent`; the rest of the filesystem is lost.
+- in a VM, `/home/agent` and the rest of the root too, such as packages you installed, until a new image starts the root afresh; `/tmp`, `/var/tmp` and `/var/cache` are emptied on every boot.
+  What must outlast an image update belongs under `/home/agent`.
 
 Caches in the home that no tool here reads are removed at boot: a Go module cache (no Go is shipped) and pnpm's own store layouts (`pnpm` is aube).
 In a container, `~/.cache` and npm's cache live on local disk and reset on restart.
 
 Available:
+
 - usual Linux tools
 - `node` (26) with `npm`/`npx`, and `aube` for pnpm-style projects (also as `pnpm`; `aubx` runs one-off tools, and `aube add -g` installs into the home, so they last across restarts)
 - `python` (3.12), `pip`, `uv`, `uvx`
@@ -20,6 +24,7 @@ Available:
 - `mise` to install extra software: tools it installs are lost on restart, so declare them in a `mise.toml` in a folder of your own under `~/work` (`mise use <tool>` there), run them there with `mise exec -- <command>` or after `eval "$(mise env)"`, and run `mise install` in that folder again after a restart
 
 Additionally available if running in a root VM:
+
 - `docker`, with `docker buildx` and `docker compose`: start the daemon with `dockerd >/var/log/dockerd.log 2>&1 &`, stops on restart; images are kept in `~/.local/share/docker`; containers and builds get the gateway as their proxy and trust its CA, `/etc/platform/ca/ca.crt`, through `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS` and `GIT_SSL_CAINFO`, which name a copy of the image's own bundle with it appended; a tool that reads none of them, such as a Java keystore or GnuTLS-based wget and apt, still needs it added
 - `k3s`: start with `k3s server >/var/log/k3s.log 2>&1 &`, use `k3s kubectl`, stops on restart; cluster state is kept in `~/.local/share/k3s`; pods trust the gateway's CA the same way
 - `apt-get` to install extra software

@@ -26,26 +26,31 @@ Free-page reporting returns the added RAM's freed pages as it does the boot RAM'
 **Guest RAM and the guest kernel are mapped for huge pages.** KVM maps guest memory in 2 MiB pages only where the host address agrees with the guest address modulo 2 MiB, and an ordinary allocation almost never does.
 Under nested virtualization each guest page the guest touches first then costs a fault through both hypervisors, about 20 µs for each 4 KiB.
 On a Linux runner the platform's libkrun patch therefore places the boot RAM, the RAM a grow adds, and a copy of the guest kernel at host addresses that agree, and asks the host for transparent huge pages there.
+The request matters on a nested host whose huge-page defrag is `madvise`: a fallback to 4 KiB pages costs about 10 ms per 2 MiB, compaction about 2.
 The added RAM is anonymous memory rather than libkrun's shared-memory file, which a host whose shared-memory huge pages are off (as on RHEL by default) backs with 4 KiB pages whatever its placement; only a branchable machine, which no runner starts, keeps the file.
 The guest writes the page descriptors of added RAM into that RAM itself, so huge pages also make the grow about five times faster.
 
-**The runner measures every running machine.** Its health prober reads the resident memory of each machine's VMM at the steady probe cadence and reports it in the machine's status.
+**The runner measures every running machine.** Its health prober reads the resident memory of each running machine's VMM at every probe and reports it in the machine's status.
 The figure is kept out of what moves the status version, so it never wakes a waiting status read on its own.
 
 **A running machine is counted at its use plus headroom.** That is its measured use plus a per-machine headroom (`virtualization.runner.headroomMiB`), never more than its size.
-A machine not yet measured, and every machine an action is bringing up, counts at a boot estimate (`virtualization.runner.bootMiB`), or its size when that is smaller, until the runner first measures it about ten seconds in.
-Counting a boot at half the pool would let only two machines boot at once, so a runner roll or a few wakes together would refuse the rest; the cost is that a guest touching more than the estimate before its first measurement is under-counted until then.
-Admission, the committed-memory metric and the runner's memory request all count the same way.
+A machine not yet measured, and every machine an action is bringing up, counts at a boot estimate (`virtualization.runner.bootMiB`), or its size when that is smaller, until the runner first measures it.
+That is about 100 ms after its start returns, before the agent's harness has started; only a guest whose harness answered during the start waits for the steady probe, about ten seconds on.
+So from then on a machine counts at little more than its booted guest until later probes see the harness grow.
+Counting a boot at half the pool would let only two machines boot at once, so a runner roll or a few wakes together would refuse the rest; the cost is that machines whose harnesses start together are under-counted until the probes catch up.
+Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below.
 
 **Admission is against use, so an owner may run more machines than their sizes add up to.** A machine starts while every machine's count, the start's own count and the runner's reserve fit under the runner's limit; otherwise the runner refuses it with the shortfall named, and the Agent is parked as [budgets](budgets.md) describes.
 
 **The scheduler reserves what the machines use.** The controller keeps the runner pod's memory request, resized in place, at the machines' counts plus the reserve, in 512 MiB steps so a guest that drifts at every probe does not resize the pod, within the install's request and the limit.
+The request rises a step as soon as the counts need it, but falls only once they are a quarter step below the step under it, so use that sits on a step boundary does not resize the pod at every pass; admission and the metric stay exact.
 A cluster without in-place resize keeps the install's request.
 
 **Room is freed from the owner's own idle agents.** A start the runner refused, and an owner whose counted memory passes 90% of the runner's limit, hibernate that owner's vm agents under the rules a blocked start reclaims by in [budgets](budgets.md): unattended, hibernation enabled, idle past the floor, longest-idle first, and only when the agents chosen cover the whole shortfall; under pressure the target is 80%.
 A refused start is retried once their machines have stopped.
 No other owner's agent is touched.
 Because a running machine's use reaches the controller only when its agent reconciles, the controller also asks each owner's runner about its running machines every 30 seconds, which is what pressure is judged from and what moves the request between reconciles.
+That pass reconciles one of the owner's agents only when the request their counts call for differs from the runner pod's, so a count held within its step wakes nothing.
 
 **Guests give back cold page cache.** A guest keeps the files it read cached until something needs the memory, and the host counts that cache as the machine's.
 Every minute platform-init hands the cache on the kernel's inactive list to cgroup v2 proactive reclaim, and the freed pages return to the host within seconds.

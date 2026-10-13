@@ -231,7 +231,8 @@ describe("session pair model choices", () => {
     expect(state.revoke).not.toHaveBeenCalled();
     state.showConfirm.mockResolvedValueOnce(true);
     state.buttons["Disconnect IBM"]!();
-    await vi.waitFor(() => expect(state.revoke).toHaveBeenCalledWith("ibm"));
+    await Promise.resolve();
+    expect(state.revoke).toHaveBeenCalledWith("ibm");
   });
 
   // TEST_SCENARIO: With no provider connection at all there is nothing to pick, so the picker warns in its place and opens the provider modal instead of offering an empty menu.

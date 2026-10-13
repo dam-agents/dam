@@ -31,8 +31,8 @@ Score each issue for simplicity:
 Select **at most 3**; fewer if the backlog has no easy wins.
 Present them, one-sentence rationale each, and ask which to work on (default: all):
 
-| # | Issue | Title | Why it's simple |
-|---|-------|-------|-----------------|
+| #   | Issue | Title | Why it's simple |
+| --- | ----- | ----- | --------------- |
 
 ## 2. Fix in parallel
 
@@ -54,8 +54,8 @@ On rejection, ask what to change, or skip the item.
 
 ## 4. Summary
 
-| # | Issue | Title | Status | PR |
-|---|-------|-------|--------|----|
+| #   | Issue | Title | Status | PR  |
+| --- | ----- | ----- | ------ | --- |
 
 Status: PR opened, skipped, or user declined.
 

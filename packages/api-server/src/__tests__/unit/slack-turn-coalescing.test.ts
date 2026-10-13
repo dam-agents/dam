@@ -145,7 +145,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
       });
     },
     async waitFor(done: () => boolean) {
-      for (let i = 0; i < 400 && !done(); i++) await tick();
+      for (let i = 0; i < 40 && !done(); i++) await tick();
     },
   };
 }

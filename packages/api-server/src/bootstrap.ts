@@ -139,6 +139,7 @@ import {
 } from "./modules/attention/index.js";
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
+import { composeGettingStartedModule } from "./modules/getting-started/index.js";
 import {
   createUsageAgentsCleanupHook,
   listUsageAgentIds,
@@ -815,6 +816,13 @@ export async function bootstrap() {
 
   const audit = composeAuditModule();
   audit.start();
+
+  const gettingStarted = composeGettingStartedModule({
+    db,
+    ownedAgentIds: async (owner) =>
+      (await agentsRepo.list(owner)).map((a) => a.id),
+  });
+  gettingStarted.start();
 
   const caseStudies = composeCaseStudiesModule({
     db,
@@ -1616,6 +1624,7 @@ export async function bootstrap() {
     slackOauthCallbackUrl,
     shareHostGate,
     publicAgentPageService,
+    gettingStarted,
     sessionPresence,
     wakeAgent: wakeAgentFor,
     artifactLibraryFor,
@@ -1694,6 +1703,7 @@ export async function bootstrap() {
     approvalsWakeSaga.unsubscribe();
     usage.stop();
     audit.stop();
+    gettingStarted.stop();
     await agentStateCache.stop();
     await leaderLease.stop();
     liveEventsModule.stop();

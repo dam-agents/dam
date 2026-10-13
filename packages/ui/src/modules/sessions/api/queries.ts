@@ -18,7 +18,11 @@ import { useMemo } from "react";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
-import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
+import {
+  untilAgentOperable,
+  useAgentLacksLiveUpdates,
+} from "../../agents/api/queries.js";
+import { askAgainWhenReady } from "../../agents/lib/agent-start.js";
 import {
   findAgentSession,
   listAgentSessionPage,
@@ -29,6 +33,7 @@ import { acpSessionsKeys } from "./keys.js";
 
 const SESSION_PAGE_SIZE = 50;
 const SESSION_HISTORY_STALE_MS = 5_000;
+export const SESSION_HISTORY_TAIL = 200;
 
 type SessionPages = InfiniteData<SessionViewPage, SessionListCursor | null>;
 
@@ -165,11 +170,15 @@ export function useSessionPages(
     queryKey,
     queryFn: live
       ? async ({ pageParam }) => {
-          const page = await listAgentSessionPage(agentId, {
-            categories: [...categories],
-            ...(pageParam && { after: pageParam }),
-            limit: SESSION_PAGE_SIZE,
-          });
+          const page = await askAgainWhenReady(
+            () =>
+              listAgentSessionPage(agentId, {
+                categories: [...categories],
+                ...(pageParam && { after: pageParam }),
+                limit: SESSION_PAGE_SIZE,
+              }),
+            () => untilAgentOperable(agentId),
+          );
           if (pageParam) return page;
           const coversAll =
             categories.length === SESSION_CATEGORIES.length &&
@@ -236,7 +245,7 @@ export function useAgentSession(
 function sessionHistoryQuery(agentId: string, sessionId: string) {
   return {
     queryKey: acpSessionsKeys.history(agentId, sessionId),
-    queryFn: () => readSessionHistory(agentId, sessionId),
+    queryFn: () => readSessionHistory(agentId, sessionId, SESSION_HISTORY_TAIL),
     staleTime: SESSION_HISTORY_STALE_MS,
     retry: false,
   };

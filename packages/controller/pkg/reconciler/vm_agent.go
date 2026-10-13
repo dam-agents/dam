@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 	"time"
 
@@ -156,6 +157,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		machine.Migration = &vmrunner.MachineMigration{}
 	}
 	st, err := runner.Ensure(ctx, name, machine)
+	// UNIT_BOUNDARY_DESCRIPTION: the runner's Service is headless, so its name resolves only once the ready pod's endpoint is published and the cluster DNS has read it, which trails the Deployment's ready count by a few seconds. A fresh runner, an owner's first vm agent, is dialled inside that gap; it is still starting, not failing, so the agent waits on it rather than going into error.
+	var unresolved *net.DNSError
+	if errors.As(err, &unresolved) {
+		return vmrunner.MachineStatus{Reason: vmrunner.ReasonNotReady, Message: "the owner's VM runner is still starting: its address does not resolve yet"}, false, nil
+	}
 	if err != nil {
 		return st, false, err
 	}
@@ -460,7 +466,7 @@ func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name stri
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the vm agents of one owner, from the informer cache, for requeueing them when their runner's Deployment changes — its pod becoming ready is what they are waiting for, and nothing about the Agents themselves changes then.
-func (r *AgentReconciler) OwnerVMAgents(owner string) []string {
+func (r *AgentReconciler) OwnerAgents(owner string) []unstructured.Unstructured {
 	if r.agentCache == nil || owner == "" {
 		return nil
 	}
@@ -468,9 +474,19 @@ func (r *AgentReconciler) OwnerVMAgents(owner string) []string {
 	if err != nil {
 		return nil
 	}
-	var names []string
+	var agents []unstructured.Unstructured
 	for _, obj := range items {
-		if u, ok := obj.(*unstructured.Unstructured); ok && anyVMAgent([]unstructured.Unstructured{*u}) {
+		if u, ok := obj.(*unstructured.Unstructured); ok {
+			agents = append(agents, *u)
+		}
+	}
+	return agents
+}
+
+func (r *AgentReconciler) OwnerVMAgents(owner string) []string {
+	var names []string
+	for _, u := range r.OwnerAgents(owner) {
+		if anyVMAgent([]unstructured.Unstructured{u}) {
 			names = append(names, u.GetName())
 		}
 	}
@@ -619,7 +635,7 @@ func anyVMAgent(items []unstructured.Unstructured) bool {
 	return false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. A pod attaches a volume per path, so on the container backend a mount is a size and a placement at once and the sizes were summed here — two 10Gi mounts bought 20Gi that either path could eat, each rounded up to a GiB of its own. A machine has a single disk, so the size is one quantity, rounded once, and the path is not configurable: HOME is fixed on both backends, every template in the chart persists it and nothing else, and a machine throws its whole root away when it stops. A mount that asks for anything else outside HOME is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops. A size a persisted mount does declare raises the disk rather than being dropped — the container backend lets it win over the Agent's own storageSize, and a spec that asks for 50Gi there must not quietly get the chart's 10Gi here. Several of them take the largest and not the sum, because they are all nested inside the one path this backend keeps and a sum would size the disk for capacity no single mount could have claimed.
+// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. A pod attaches a volume per path, so on the container backend a mount is a size and a placement at once and the sizes were summed here — two 10Gi mounts bought 20Gi that either path could eat, each rounded up to a GiB of its own. A machine has a single disk, so the size is one quantity, rounded once, and the path is not configurable: HOME is fixed on both backends, every template in the chart persists it and nothing else, and a machine's root lasts only until an image of another root generation boots. A mount that asks for anything else outside HOME is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops. A size a persisted mount does declare raises the disk rather than being dropped — the container backend lets it win over the Agent's own storageSize, and a spec that asks for 50Gi there must not quietly get the chart's 10Gi here. Several of them take the largest and not the sum, because they are all nested inside the one path this backend keeps and a sum would size the disk for capacity no single mount could have claimed.
 func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) (int, error) {
 	for _, m := range resolveSpecMounts(spec, defaults) {
 		if m.Persist && m.Path != agentHomeDir && !strings.HasPrefix(m.Path, agentHomeDir+"/") {

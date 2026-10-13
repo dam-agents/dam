@@ -5,7 +5,6 @@ import {
   requirementAccepts,
   type StarterKitView,
 } from "api-server-api";
-import { leastUsedCharacter } from "api-server-api/avatar/svg";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -24,8 +23,8 @@ import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { useAgents } from "../../agents/api/queries.js";
-import { resolveCharacter } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableIdentity } from "../../agents/components/editable-agent-identity.js";
+import { defaultAvatar } from "../../agents/lib/default-avatar.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import {
   formatSizeLabel,
@@ -38,6 +37,7 @@ import {
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
 import { useApplyStarterKit } from "../api/mutations.js";
@@ -359,13 +359,10 @@ function KitDetail({
     !invalidSchedules.some((n) => !form.skippedSchedules.includes(n)) &&
     isStarterKitSetupComplete(kit, form, owned, templateById);
 
+  const unlocked = useUnlockedAvatars();
   const avatar = useMemo(
-    () =>
-      form.avatar ??
-      leastUsedCharacter(
-        (agents ?? []).map((a) => resolveCharacter(a.name, a.avatar)),
-      ),
-    [form.avatar, agents],
+    () => form.avatar ?? defaultAvatar(form.name, unlocked, agents ?? []),
+    [form.avatar, form.name, unlocked, agents],
   );
 
   const create = async () => {

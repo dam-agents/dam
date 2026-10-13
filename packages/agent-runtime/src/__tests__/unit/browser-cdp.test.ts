@@ -177,7 +177,10 @@ describe("watchPages", () => {
       { frame: { id: "ad-frame", parentId: "A", url: "http://ads/" } },
       t,
     );
-    await new Promise((r) => setTimeout(r, 100));
+    chrome.event("Target.targetInfoChanged", {
+      targetInfo: { targetId: "A", type: "page", title: "settled" },
+    });
+    await until(() => states.at(-1)?.title === "settled");
     expect(states.slice(seen).every((s) => !s.loading)).toBe(true);
     expect(states.at(-1)?.url).toBe("http://a/");
   });

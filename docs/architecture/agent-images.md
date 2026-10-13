@@ -42,6 +42,8 @@ Playwright's browsers sit there too, each image naming its own.
 An install cut short (the installer killed, a node drained) is redone on the next run rather than taken as done: mise records a version as mid-install only in its cache, so the installer keeps that cache in the node directory too, and it removes any version directory left empty.
 
 The directory is in the boot path: an agent that starts on a node before its installer has finished has no harness until its next start.
+A download host that stalls or trickles fails the install in bounded time, after mise's own retries, and the kubelet restarts the installer until it succeeds, each run keeping what the last one installed.
+CI's vm lane restores the node directory from a cache that main writes, keyed on the lockfile and the installer, so on a hit the installer reaches no download host.
 On a Mac, whose [host runner](vm-host-runner.md) runs outside the cluster, the tools are copied from the k3s node onto a case-sensitive volume of the runner's.
 
 Only the agent-runtime and the two driver SDKs (JavaScript and Python) come from the rest of the repo; the build compiles them into each image.
@@ -85,6 +87,7 @@ The bundle's record also holds the image's distribution roots, since a machine's
 A store no boot has touched yet, on a container's or a new machine root, is the one the image's build made, so the entrypoint adds only the platform CAs to it, with the same result as `update-ca-certificates` but not its pass over every root.
 Every other rebuild, a failed add, and any store with an update hook such as Java's keystore run `update-ca-certificates` itself.
 On a machine it also points docker's client at the gateway, so containers and builds the agent starts go through it too, and puts the share's runtime wrapper in front of docker's and k3s's runc, so they trust the MITM CA as well.
+docker's runc is on the read-only harness tools, so the wrapper is linked as `runc` in a directory under `/run` that the entrypoint and login shells put first on `PATH`; k3s's containerd names it in a drop-in.
 A container's root is its own image, which trusts only public roots; when the container starts, the wrapper gives it copies of the image's own bundle with the CA appended, at a path of its own mounted read-only, and points the common CA variables there; a variable the image sets to a bundle is pointed at a copy of that file.
 The image's own files are never mounted over, so a build that regenerates its trust store still works, nothing lands in a built image, and no Dockerfile changes.
 A client that reads only the distribution's own bundle path and no variable — a Java keystore, GnuTLS-based wget and apt — does not see the CA.

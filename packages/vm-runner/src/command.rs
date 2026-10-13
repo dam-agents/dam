@@ -8,7 +8,8 @@ use tokio_util::sync::CancellationToken;
 
 // UNIT_BOUNDARY_DESCRIPTION: runs the tools the runner fetches images with — crane, and the tar it pipes into — bounded by a deadline and by the runner's own lifetime. A fetch may take twenty minutes, and a runner that is closing must not leave one running against its image directory: the process is killed and its scratch tree is left to the caller's cleanup, which now gets to run.
 
-const POLL: Duration = Duration::from_millis(50);
+// UNIT_BOUNDARY_DESCRIPTION: how often a wait looks whether its tools have exited. The unit tests run a fake crane that exits at once, about a hundred times, so they look ten times as often.
+const POLL: Duration = Duration::from_millis(if cfg!(test) { 5 } else { 50 });
 
 // UNIT_BOUNDARY_DESCRIPTION: runs one command to completion and returns its stdout, or an error naming why it did not finish: it exited non-zero, with its stderr, the deadline passed, or the runner was closed. The caller caps that stderr before it reaches an Agent's status.
 pub fn output(

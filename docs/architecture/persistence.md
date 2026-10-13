@@ -117,7 +117,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   Owned by [starter-kits](starter-kits.md).
 - **public agent profiles** — a projection of each channel-bound Agent's name and owner (`agent_public_profiles`), serving the one unauthenticated read surface.
   It satisfies the rule above on every count: the controller does not reconcile it, only the api-server reads and writes it, and it must answer with no agent pod running.
-  What is unusual is _why_ it duplicates state the Agent custom resource already holds — that copy is authoritative but unreachable here, because serving an anonymous request from the K8s API would let unauthenticated traffic drive control-plane reads.
+  What is unusual is *why* it duplicates state the Agent custom resource already holds — that copy is authoritative but unreachable here, because serving an anonymous request from the K8s API would let unauthenticated traffic drive control-plane reads.
   Owned by [public-agent-page](public-agent-page.md).
 - **attention record** — the per-owner account of which sessions have asked for a user's attention, plus that user's own dismissal watermarks.
   A snapshot of agent-owned state, written by a lease-elected watcher so Home, and a sleeping Agent's session list, can answer for it; it never decides which sessions exist, and unlike the session directory it may be discarded — a fresh capture refills it.
@@ -153,9 +153,9 @@ An install with no object store fails closed: bulk-blob features are unavailable
 
 Resources the controller reconciles are Kubernetes CRDs under the `agent-platform.ai/v1` API group, each with a status subresource:
 
-| Kind | What it declares | `spec` writer | `status` writer |
-|---|---|---|---|
-| `Agent` | Agent definition and runtime state: image, mount declarations, env, secret refs, image-pull secret ref, granted secret and connection IDs. The sole resource per Agent — the former template/instance pair was collapsed into it | api-server | controller |
+| Kind    | What it declares                                                                                                                                                                                                                 | `spec` writer | `status` writer |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | --------------- |
+| `Agent` | Agent definition and runtime state: image, mount declarations, env, secret refs, image-pull secret ref, granted secret and connection IDs. The sole resource per Agent — the former template/instance pair was collapsed into it | api-server    | controller      |
 
 Each CR carries strict single-writer ownership, made structural by the status subresource rather than held by convention:
 
@@ -184,7 +184,8 @@ A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `
 PVCs are `ReadWriteOnce` on ordinary single-writer storage, which no install needs a shared filesystem class for.
 `ReadWriteOnce` binds a volume to one *node*, not one pod — any number of pods on that node could mount it — so what keeps a workspace single-writer is that the platform runs exactly one writer for it, not the access mode.
 A second writer on another node would not be refused at admission; its pod would schedule and then hang on attach.
-(Workspaces created before the RWO cutover sit on `ReadWriteMany` volumes until the storage migration below drains them.) An Agent may **pin its storage class** in its spec: a pinned Agent's workspace volumes provision on that class, while unpinned Agents use the install-wide class.
+(Workspaces created before the RWO cutover sit on `ReadWriteMany` volumes until the storage migration below drains them.)
+An Agent may **pin its storage class** in its spec: a pinned Agent's workspace volumes provision on that class, while unpinned Agents use the install-wide class.
 The pin is also honored by the warm pool and the storage migration below.
 
 A home volume mounts empty and shadows whatever the image bakes at that path, so the image's boot seeds it on the volume's first boot from the staged workspace: a no-clobber copy behind a sentinel file, run once per volume, so image content lands exactly once and files the user later edits are never overwritten by a restarted or upgraded image.
@@ -249,7 +250,6 @@ The record is learned from the answer rather than read off the disk, because the
 The storage template every new disk is copied from carries a journal; a disk smolvm formats itself has none, so an unclean stop — a killed runner — is what brings that repair on there.
 The loss is refused, not prevented.
 
-
 **The claim those disks sit on is sized from demand.** One claim per owner holds every machine disk they have, so it is sized from those disks, some headroom beside each, the image cache budget when the cache lives there, and, while a [runtime migration](vm-runtime-migration.md) is in flight, the capacity of the home volume its seed was copied from, since the seed waits there beside the disk it is restored into; the install's value is the ceiling, not the size.
 The runtime's disk templates live there too, sparse enough to need no share of it.
 It grows in place as agents are added, up to that ceiling, and is never shrunk.
@@ -286,16 +286,16 @@ Operators keep the old shared filesystem available until the last RWX volume dra
 
 ## Lifetime
 
-| Event | Postgres | Object store | Agent CR (spec/status) | PVC |
-|---|---|---|---|---|
-| Pod restart | survives | survives | survives | survives |
-| Hibernate (replicas → 0) | survives | survives | survives | survives |
-| Wake (replicas → 1) | survives | survives | survives | survives |
-| api-server restart | survives | survives | survives | survives |
-| Controller restart | survives | survives | survives | survives |
-| Agent delete | Agent-scoped rows removed or closed out (below) | artifacts survive (owned by the library, not the Agent); the Agent's knowledge-base share snapshots are purged | CR removed | PVCs removed by controller |
-| Schedule delete | schedule row removed | n/a | n/a | n/a |
-| Satellite delete | satellite row, grants and jobs removed | n/a | n/a | n/a |
+| Event                    | Postgres                                        | Object store                                                                                                   | Agent CR (spec/status) | PVC                        |
+| ------------------------ | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------------------- |
+| Pod restart              | survives                                        | survives                                                                                                       | survives               | survives                   |
+| Hibernate (replicas → 0) | survives                                        | survives                                                                                                       | survives               | survives                   |
+| Wake (replicas → 1)      | survives                                        | survives                                                                                                       | survives               | survives                   |
+| api-server restart       | survives                                        | survives                                                                                                       | survives               | survives                   |
+| Controller restart       | survives                                        | survives                                                                                                       | survives               | survives                   |
+| Agent delete             | Agent-scoped rows removed or closed out (below) | artifacts survive (owned by the library, not the Agent); the Agent's knowledge-base share snapshots are purged | CR removed             | PVCs removed by controller |
+| Schedule delete          | schedule row removed                            | n/a                                                                                                            | n/a                    | n/a                        |
+| Satellite delete         | satellite row, grants and jobs removed          | n/a                                                                                                            | n/a                    | n/a                        |
 
 **Agent-scoped rows follow the Agent.** No Postgres table references an Agent by foreign key — the custom resource is the authoritative record, so the database cannot cascade on its own and the api-server owns the cleanup.
 An API delete runs one cleanup per record kind from a single declared list: schedules (their queued fires cancelled), runtime-delivery outbox and events, egress rules, pending approvals, connection grants, environment variables, API-key scopes, satellite grants and jobs, the image-pull Secret, channel bindings, skills, knowledge-base shares (revoked, snapshots purged), the attention record, the usage mirror (marked deleted) and the public profile (retired); running Invocations the Agent drove are failed and its delegation records deleted.

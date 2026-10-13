@@ -1,15 +1,23 @@
 package reconciler
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 const gatewayTerminationGracePeriod int64 = 5
+
+const annGatewayCredentialsRev = "agent-platform.ai/credentials-rev"
 
 func GatewayName(pairKey string) string {
 	return pairKey + "-gateway"
@@ -108,4 +116,29 @@ func BuildGatewayService(agentName string, vm bool, cfg *config.Config, ownerRef
 			Ports:    ports,
 		},
 	}
+}
+
+func gatewayCredentialsRev(secrets []corev1.Secret) string {
+	h := sha256.New()
+	for _, s := range secrets {
+		if s.Labels[envoySecretTypeLabel] != envoySecretTypeAllowOnly {
+			fmt.Fprintf(h, "%s@%s\n", s.Name, s.ResourceVersion)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)[:8])
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a credential rewritten in place reaches the gateway's mounted files only when the kubelet next syncs the pod, which on its own is the periodic sync about a minute later. Any change to a pod's annotations makes the kubelet sync it at once and refresh its Secret volumes, so the gateway pod carries the resource versions of the credential Secrets it mounts, and a rotation changes them. The pod's spec and its StatefulSet's template stay as they are, so nothing restarts.
+func (r *AgentReconciler) refreshGatewayCredentials(ctx context.Context, ssName string, secrets []corev1.Secret) error {
+	pod, err := r.readPod(ctx, ssName)
+	if err != nil || pod == nil || pod.DeletionTimestamp != nil {
+		return err
+	}
+	rev := gatewayCredentialsRev(secrets)
+	if pod.Annotations[annGatewayCredentialsRev] == rev {
+		return nil
+	}
+	patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, annGatewayCredentialsRev, rev)
+	_, err = r.client.CoreV1().Pods(pod.Namespace).Patch(ctx, pod.Name, types.MergePatchType, []byte(patch), metav1.PatchOptions{})
+	return err
 }

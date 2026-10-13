@@ -235,6 +235,7 @@ export function createBrowserPreview(deps: {
   retryDelaysMs?: number[];
   stopBrowser?: () => Promise<void>;
   displayStreamUrl?: string;
+  displayRetryMs?: number;
   watch?: WatchPages;
   log: (msg: string) => void;
 }): BrowserPreview {
@@ -254,6 +255,7 @@ export function createBrowserPreview(deps: {
     deps.unresponsiveRestartMs ?? UNRESPONSIVE_RESTART_MS;
   const retryDelays = deps.retryDelaysMs ?? RETRY_DELAYS_MS;
   const displayStreamUrl = deps.displayStreamUrl ?? DISPLAY_STREAM_URL;
+  const displayRetryMs = deps.displayRetryMs ?? DISPLAY_RETRY_MS;
   const watch = deps.watch ?? watchPages;
 
   const viewers = new Set<(snapshot: BrowserSnapshot) => void>();
@@ -625,7 +627,7 @@ export function createBrowserPreview(deps: {
         if (stream !== s) return;
         stream = null;
         if (!opened && Date.now() - startedAt < DISPLAY_WAIT_MS) {
-          setTimeout(dial, DISPLAY_RETRY_MS).unref?.();
+          setTimeout(dial, displayRetryMs).unref?.();
           return;
         }
         if (client.readyState === WebSocket.OPEN)

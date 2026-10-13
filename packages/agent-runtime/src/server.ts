@@ -971,6 +971,8 @@ server.listen(config.PORT, () => {
 
   if (envStore.ready()) podService?.refreshEnv();
 
+  acpRuntime.prestart();
+
   if (imageSkillReconciler) {
     const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));
     if (bootState.kind === "corrupt") {

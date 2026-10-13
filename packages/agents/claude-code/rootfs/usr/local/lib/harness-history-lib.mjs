@@ -13,8 +13,6 @@ function adapterDir() {
   return dirname(dirname(shim ? resolve(dirname(bin), shim[1]) : realpathSync(bin)));
 }
 
-let modulesPromise;
-
 async function loadModules() {
   const adapter = adapterDir();
   const agent = await import(
@@ -30,6 +28,9 @@ async function loadModules() {
   const sdk = await import(pathToFileURL(sdkPath).href);
   return { agent, sdk };
 }
+
+const modulesPromise = loadModules();
+modulesPromise.catch(() => {});
 
 function parentToolUseIdOf(message) {
   const id = message.parent_tool_use_id;
@@ -108,7 +109,6 @@ const noopLogger = {
 const noopClient = { sessionUpdate: async () => {} };
 
 export async function loadHistory(sessionId) {
-  modulesPromise ??= loadModules();
   const { agent, sdk } = await modulesPromise;
 
   const info = await sdk.getSessionInfo(sessionId).catch(() => undefined);

@@ -2,7 +2,6 @@
 //MISE description="Test that Claude's model gateway starts on the model list it kept, and does not wait long for a provider that is slow to list"
 //MISE sources=["claude-code/rootfs/usr/local/lib/model-gateway.mjs", ".mise/tasks/test/claude-gateway-catalog"]
 //MISE outputs=[]
-//MISE wait_for=["//packages/agents:test:claude-gateway-tiers"]
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -14,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const gateway = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/model-gateway.mjs", import.meta.url));
 let listing = null;
+let listingHeld = Promise.resolve();
 const forwarded = [];
 const upstream = createServer((req, res) => {
   let body = "";
@@ -21,7 +21,7 @@ const upstream = createServer((req, res) => {
   req.on("end", () => {
     res.setHeader("content-type", "application/json");
     if (req.url.startsWith("/v1/models")) {
-      if (listing) res.end(JSON.stringify({ data: listing.map((id) => ({ id })) }));
+      void listingHeld.then(() => { if (listing) res.end(JSON.stringify({ data: listing.map((id) => ({ id })) })); });
       return;
     }
     forwarded.push(JSON.parse(body).model);
@@ -38,15 +38,15 @@ async function withGateway(catalog, run) {
   writeFileSync(join(home, ".platform/pod-service-env.json"), JSON.stringify({ env: {}, providers: { cb: { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: "t" } } }));
   if (catalog) writeFileSync(join(home, ".platform/model-gateway-catalog.json"), JSON.stringify({ cb: { base, ids: catalog } }));
   const started = Date.now();
-  const child = spawn(process.execPath, [gateway], { env: { ...process.env, HOME: home }, stdio: ["ignore", "ignore", "pipe"] });
+  const child = spawn(process.execPath, [gateway], { env: { ...process.env, HOME: home, MODEL_GATEWAY_PORT: "0" }, stdio: ["ignore", "ignore", "pipe"] });
   try {
     let log = "";
     child.stderr.on("data", (chunk) => { log += chunk; });
-    await new Promise((resolve, reject) => {
+    const port = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`gateway did not start:\n${log}`)), 15_000);
-      child.stderr.on("data", () => { if (log.includes("listening")) { clearTimeout(timer); resolve(); } });
+      child.stderr.on("data", () => { const m = log.match(/listening on [\d.]+:(\d+)/); if (m) { clearTimeout(timer); resolve(m[1]); } });
     });
-    await run({ home, listenedAfterMs: Date.now() - started });
+    await run({ home, port, listenedAfterMs: Date.now() - started });
   } finally {
     child.kill();
     await once(child, "exit");
@@ -54,24 +54,28 @@ async function withGateway(catalog, run) {
   }
 }
 
-const envSh = () => fetch("http://127.0.0.1:24180/p/cb/env.sh").then((r) => r.text());
+const call = (port, path, init) => fetch(`http://127.0.0.1:${port}/p/cb${path}`, { ...init, signal: AbortSignal.timeout(5_000) });
+const envSh = (port) => call(port, "/env.sh").then((r) => r.text());
 
 try {
   // TEST_SCENARIO: A wake: the gateway pod in front of the provider has only just started and does not answer the listing yet. The list the gateway kept from its last start is enough for Claude Code's tier models, so the gateway listens at once and Claude Code does not wait for the provider.
   listing = null;
-  await withGateway(["rits/zai-org/glm-5-3"], async ({ listenedAfterMs }) => {
+  await withGateway(["rits/zai-org/glm-5-3"], async ({ port, listenedAfterMs }) => {
     assert.ok(listenedAfterMs < 2_000, `listened after ${listenedAfterMs} ms`);
-    assert.match(await envSh(), /ANTHROPIC_DEFAULT_OPUS_MODEL='claude\/rits\/zai-org\/glm-5-3'/);
+    assert.match(await envSh(port), /ANTHROPIC_DEFAULT_OPUS_MODEL='claude\/rits\/zai-org\/glm-5-3'/);
   });
   console.log("a kept model list lets the gateway listen before the provider answers");
 
   // TEST_SCENARIO: The provider retired the model the kept list named for a tier, and Claude Code already started with that name. The listing that follows the start replaces the list, and a request for the retired name goes to the tier's current model instead of failing at the provider.
   listing = ["rits/zai-org/glm-5-4"];
+  let releaseListing;
+  listingHeld = new Promise((resolve) => { releaseListing = resolve; });
   forwarded.length = 0;
-  await withGateway(["rits/zai-org/glm-5-3"], async ({ home }) => {
-    assert.match(await envSh(), /claude\/rits\/zai-org\/glm-5-3/);
-    for (let i = 0; i < 50 && !(await fetch("http://127.0.0.1:24180/p/cb/v1/models").then((r) => r.text())).includes("glm-5-4"); i++) await new Promise((r) => setTimeout(r, 100));
-    await fetch("http://127.0.0.1:24180/p/cb/v1/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "claude/rits/zai-org/glm-5-3" }) });
+  await withGateway(["rits/zai-org/glm-5-3"], async ({ home, port }) => {
+    assert.match(await envSh(port), /claude\/rits\/zai-org\/glm-5-3/);
+    releaseListing();
+    for (let i = 0; i < 50 && !(await call(port, "/v1/models").then((r) => r.text())).includes("glm-5-4"); i++) await new Promise((r) => setTimeout(r, 100));
+    await call(port, "/v1/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "claude/rits/zai-org/glm-5-3" }) });
     assert.deepEqual(forwarded, ["rits/zai-org/glm-5-4"]);
     assert.deepEqual(JSON.parse(readFileSync(join(home, ".platform/model-gateway-catalog.json"), "utf8")).cb.ids, ["rits/zai-org/glm-5-4"]);
   });

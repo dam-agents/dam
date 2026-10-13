@@ -11,7 +11,13 @@ tools=$PLATFORM_TOOLS_VOLUME
 # beside the installs: in the container it would vanish with a killed install
 # and leave its dir passing as installed. Dirs left empty before that are swept.
 [ ! -d "$tools/installs" ] || find "$tools/installs" -mindepth 2 -maxdepth 2 -type d -empty -delete
-MISE_CACHE_DIR="$tools/cache" MISE_LOCKFILE=1 MISE_NPM_PACKAGE_MANAGER=aube MISE_GITHUB_SLSA=false mise install --system
+# A stalled download host fails an attempt after mise's 30 s read timeout: six
+# retries, backing off to 15 s, ride out a stall of about four minutes in one
+# run. A host that trickles is cut off at 5 minutes a file, not mise's 30,
+# so a failed run ends inside the e2e lane's 10-minute readiness wait. Past
+# either, the install fails and the kubelet restarts it.
+MISE_HTTP_RETRIES=6 MISE_HTTP_DOWNLOAD_TIMEOUT=5m \
+  MISE_CACHE_DIR="$tools/cache" MISE_LOCKFILE=1 MISE_NPM_PACKAGE_MANAGER=aube MISE_GITHUB_SLSA=false mise install --system
 # aube unpacks agent-browser's native binaries without their exec bit, and its
 # launcher's chmod fails on the volume agents mount read-only: set it here.
 [ ! -d "$tools/installs/npm-agent-browser" ] || find "$tools/installs/npm-agent-browser" -path '*/agent-browser/bin/agent-browser-*' -type f ! -name '*.js' ! -name '*.exe' -exec chmod +x {} +

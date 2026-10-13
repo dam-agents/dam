@@ -55,7 +55,6 @@ type AgentReconciler struct {
 	agentCache      cache.GenericLister
 	vmRunning       sync.Map
 	vmLive          sync.Map
-	ownerDemandMiB  sync.Map
 	resizeNotices   sync.Map
 	notReadyPolls   sync.Map
 	claimCapNotices sync.Map
@@ -352,6 +351,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	if err := r.forceRollStuckPod(ctx, gatewaySS.Namespace, gatewaySS.Name); err != nil {
 		slog.Warn("force-rolling stuck gateway pod failed; rollout may be deadlocked",
 			"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
+	}
+	if running {
+		if err := r.refreshGatewayCredentials(ctx, gatewaySS.Name, credentialSecrets); err != nil {
+			slog.Warn("asking the kubelet to refresh gateway credentials failed; the periodic refresh still applies",
+				"agent", name, "error", err)
+		}
 	}
 	timer.mark("gatewayStatefulSet")
 

@@ -1,6 +1,9 @@
 ---
 name: spawn-subagent
-description: Spawn platform sub-agents on DAM — fresh agents in their own sandboxes that run one task and return a schema-validated result. Use when asked to spawn, delegate or hand off to a sub-agent or a throwaway agent, run work on another harness or in isolation, fan work out to fresh agents, or run a make/test/eval step and expect a typed result. Its first step decides whether your harness's own subagent is enough. For one hand-off use the spawn_subagent and await_subagents tools; for loops and wide fan-outs write a script with the driver SDK (Python driver_sdk, JS driver-sdk.mjs).
+description: Spawn platform sub-agents on DAM — fresh agents in their own sandboxes that run one task and return a schema-validated result.
+  Use when asked to spawn, delegate or hand off to a sub-agent or a throwaway agent, run work on another harness or in isolation, fan work out to fresh agents, or run a make/test/eval step and expect a typed result.
+  Its first step decides whether your harness's own subagent is enough.
+  For one hand-off use the spawn_subagent and await_subagents tools; for loops and wide fan-outs write a script with the driver SDK (Python driver_sdk, JS driver-sdk.mjs).
 allowed-tools: mcp__platform-outbound__spawn_subagent, mcp__platform-outbound__await_subagents, mcp__platform-outbound__list_harnesses, mcp__platform-outbound__list_connections, mcp__platform-outbound__get_budget, Bash(python3 *), Bash(node *), Write
 ---
 
@@ -109,18 +112,18 @@ result = d.spawn(
 )
 ```
 
-| option | meaning |
-|---|---|
-| `seed` | Repository cloned into the workspace: `url`, optional `ref` or `commit`, `into` (`"work"` default or `"home"`). Pin `commit` to the commit you are running from, so it runs the same code. |
-| `install` | Shell command run once in the workspace before the prompt. Must finish within 15 minutes; longer setup belongs in an image. |
-| `env` | Environment variables (Python: a dict; JS: `[{ name, value }]`). |
-| `resources` | `cpu`, `memory`, `storage` (disk). Omitted values come from the harness's defaults. |
-| `backend` | `"vm"` for a microVM, when the work needs a container runtime or a cluster inside. |
-| `skills` | External skills to install: `[{"source": <skill source url>, "name": ...}]`. |
-| `connections` | Connection ids to grant, a subset of your own. |
-| `image` | A custom image to run instead of the harness's default one. |
-| `label` | Names the sub-agent in your script's log lines. |
-| `ttl_ms` | Deadline, ~1 min..6 h, default ~60 min. See below. |
+| option        | meaning                                                                                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `seed`        | Repository cloned into the workspace: `url`, optional `ref` or `commit`, `into` (`"work"` default or `"home"`). Pin `commit` to the commit you are running from, so it runs the same code. |
+| `install`     | Shell command run once in the workspace before the prompt. Must finish within 15 minutes; longer setup belongs in an image.                                                                |
+| `env`         | Environment variables (Python: a dict; JS: `[{ name, value }]`).                                                                                                                           |
+| `resources`   | `cpu`, `memory`, `storage` (disk). Omitted values come from the harness's defaults.                                                                                                        |
+| `backend`     | `"vm"` for a microVM, when the work needs a container runtime or a cluster inside.                                                                                                         |
+| `skills`      | External skills to install: `[{"source": <skill source url>, "name": ...}]`.                                                                                                               |
+| `connections` | Connection ids to grant, a subset of your own.                                                                                                                                             |
+| `image`       | A custom image to run instead of the harness's default one.                                                                                                                                |
+| `label`       | Names the sub-agent in your script's log lines.                                                                                                                                            |
+| `ttl_ms`      | Deadline, ~1 min..6 h, default ~60 min. See below.                                                                                                                                         |
 
 A **seed or install that fails fails the spawn at once** with the reason (for example `install failed: …`), so a broken setup costs seconds, not the whole deadline.
 
@@ -142,12 +145,12 @@ cheap = d.spawn(prompt, schema, harness="claude-code", model="haiku", mode="bypa
 strong = d.spawn(prompt, schema, harness="claude-code", model="opus", config_options={"effort": "high"})
 ```
 
-| harness | `model` | `config_options` |
-|---|---|---|
-| `claude-code` | `fable`, `opus`, `sonnet`, `haiku`, or `claude/<provider model>` (see below) | `effort`: `low` … `xhigh` (Haiku takes none) |
-| `codex` | a name from the provider's model list | `effort`: `minimal` … `xhigh` |
-| `pi` | a name from the provider's model list | — (`mode` is its thinking level: `off` … `xhigh`) |
-| `bob` | a name from the provider's model list | `approvals`: keep `auto` |
+| harness       | `model`                                                                      | `config_options`                                  |
+| ------------- | ---------------------------------------------------------------------------- | ------------------------------------------------- |
+| `claude-code` | `fable`, `opus`, `sonnet`, `haiku`, or `claude/<provider model>` (see below) | `effort`: `low` … `xhigh` (Haiku takes none)      |
+| `codex`       | a name from the provider's model list                                        | `effort`: `minimal` … `xhigh`                     |
+| `pi`          | a name from the provider's model list                                        | — (`mode` is its thinking level: `off` … `xhigh`) |
+| `bob`         | a name from the provider's model list                                        | `approvals`: keep `auto`                          |
 
 "The provider's model list" is what the Config panel shows for any agent on the same model connection.
 

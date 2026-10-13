@@ -5,6 +5,7 @@ status: proposed
 subsystem: channels
 summary: Replace pod-files SSE, exec trigger drops, and direct skills tRPC with one tRPC channel carrying a desired-state snapshot and an ordered event stream that share a single per-agent version cursor.
 ---
+
 # ADR-052: Unified runtime channel — state snapshot plus event stream between api-server and agent-runtime
 
 **Date:** 2026-05-21 **Status:** Proposed **Owner:** @jezekra1
@@ -31,10 +32,12 @@ The wire payload carries two named slices and a single shared cursor:
 - **`version`** (top-level) — a per-agent monotonic counter.
   Every change — contribution edit, event insert — bumps this number for that agent.
   The agent's `appliedVersion` is the single ack marker for the whole payload.
+
 - **`state`** — a complete desired-state snapshot (Contributions).
   Reconciled by diff against what's on the agent.
   Idempotent.
   `hash` short-circuits no-op pushes.
+
 - **`events`** — an ordered stream of one-shot directives the agent must execute (trigger fires today; rotate / rescan / … in the future).
   Processed in order.
   Each event commits at its own per-kind handler **inside the agent-runtime** — there is no callback to the api-server for event work.
@@ -113,7 +116,8 @@ The wire payload carries two named slices and a single shared cursor:
 - **One slice — fold events into the state snapshot as `pendingTriggers[]`** — rejected.
   Earlier draft.
   Events and contributions reconcile differently — contributions converge by diffing the desired set against what's on disk, events fire once and need a per-id "done" marker.
-  Forcing both into one field meant the agent had to inspect each item's kind to know whether it represented "be in this state" or "do this thing." Two named slices make the difference visible at the wire level.
+  Forcing both into one field meant the agent had to inspect each item's kind to know whether it represented "be in this state" or "do this thing."
+  Two named slices make the difference visible at the wire level.
 
 - **Two route pairs — `applyState` for state plus `deliverSignal` + `ack` for events** — rejected.
   Even earlier draft.

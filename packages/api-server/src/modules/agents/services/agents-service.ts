@@ -1,3 +1,4 @@
+import { avatarCharacter } from "api-server-api/avatar/svg";
 import {
   DEFAULT_TEMPLATE_ID,
   RETIRED_TEMPLATE_HARNESS,
@@ -1226,6 +1227,7 @@ export function createAgentsService(deps: {
         type: EventType.AgentCreated,
         agentId: agent.id,
         ownerSub: owner,
+        character: avatarCharacter(agent.spec.avatar, owner, agent.name),
       });
       return agent;
     },

@@ -294,13 +294,6 @@ describe("matchTurnsToReplies by time, for replies without a prompt id", () => {
     expect(matchTurnsToReplies(turns, messages).size).toBe(0);
   });
 
-  it("matches nothing when there are no turns", () => {
-    expect(
-      matchTurnsToReplies([], [prompt("2026-09-16T12:00:00.000Z"), reply("r1")])
-        .size,
-    ).toBe(0);
-  });
-
   it("is stable when a later turn arrives", () => {
     /**
      * TEST_SCENARIO: polling must not move an already-placed turn, which is

@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-10-09
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -59,6 +59,13 @@ A gateway that fails anyway — crash-looping, or wedged on a superseded configu
 The agent view therefore carries the gateway's failure message apart from the agent's state, and the UI shows it as a warning next to that state.
 Only hard failures count: a gateway that is starting, rolling, hibernated or parked over budget shows no warning.
 
+**Rotation.** A credential rewritten in place — a rotation, or a refreshed OAuth token — needs no roll: Envoy watches the mounted SDS and credentials files and swaps the new value in.
+The kubelet, though, rewrites a mounted Secret only when it syncs the pod, which on its own happens about once a minute.
+So the controller watches the credential Secrets the api-server writes, keeping their metadata only, and on a change reconciles that owner's Agents.
+The reconcile stamps the gateway pod with an annotation derived from the resource versions of the credential Secrets it mounts; a changed annotation makes the kubelet sync the pod at once, and the new value is in use within seconds.
+The annotation carries no credential, the pod's spec and its StatefulSet's template stay unchanged so nothing restarts, and the gateway gains no access to the API.
+If the stamp fails, or the kubelet syncs before its own copy of the Secret has caught up, the periodic sync still delivers the value within about a minute.
+
 A host's L7 chain can opt into HTTP/2 so credential injection also covers gRPC request streams (e.g. Modal); hosts default to HTTP/1.1 unchanged.
 
 **Non-443 upstreams and streaming.** Per-host injection descriptors can carry three more chain-level attributes, for upstreams such as external Kubernetes clusters:
@@ -113,6 +120,6 @@ The signed body has to be plain.
 A client that streams an upload as `aws-chunked` — a `STREAMING-` content hash, signed or unsigned, with a trailing checksum — has produced a body the gateway cannot re-sign, so the same guard refuses such a request with a readable 400 saying the egress gateway, not the storage service, refused it, that it re-signs requests and cannot re-sign a streaming upload, and which client setting turns streaming off.
 The profiles the platform writes already carry that setting ([connections](connections.md#app-preset-s3-compatible-storage)), so the refusal reaches only a client that overrode them, as its own message rather than a signature mismatch from upstream.
 
-Rotation needs no roll: the signing step watches the mounted credentials file, and a key pair rewritten in place by the Connections context — after it has re-proven the new keys against the endpoint — is in use within about a minute, the kubelet's Secret refresh, with the agent's placeholders untouched.
+Rotation needs no roll: the signing step watches the mounted credentials file, and a key pair rewritten in place by the Connections context — after it has re-proven the new keys against the endpoint — is in use within seconds, as any credential rewritten in place is (**Rotation**, above), with the agent's placeholders untouched.
 Adding or removing the credentials file is a configuration change and rolls the gateway, as an SDS key appearing or vanishing does.
 A credentials file the descriptor names but the Secret lacks, or a signing entry without its region or service, degrades the host to allow-only with a warning rather than rendering an unbootable gateway — the same answer a missing SDS file gets.

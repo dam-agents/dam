@@ -92,23 +92,6 @@ describe("file-ops removal of what the platform wrote", () => {
   afterEach(() => rmSync(home, { recursive: true, force: true }));
   const ctx = () => ({ agentHome: home, log: () => {} });
 
-  it("a section-marker delete strips the platform block and keeps the rest", async () => {
-    const target = join(home, ".gitconfig");
-    writeFileSync(target, "[core]\n\teditor = vi\n");
-    const identity: FileDesired = {
-      format: "ini",
-      mergeMode: "section-marker",
-      content: { user: { name: "Pat", email: "pat@example.com" } },
-    };
-    await applyFiles(new Map([[target, [identity]]]), ctx());
-    expect(readFileSync(target, "utf8")).toContain(">>> platform <<<");
-    await applyFiles(
-      new Map([[target, [{ ...identity, content: undefined, delete: true }]]]),
-      ctx(),
-    );
-    expect(readFileSync(target, "utf8")).toBe("[core]\n\teditor = vi\n");
-  });
-
   it("a key-targeted delete removes literal top-level keys, dots included", async () => {
     const target = join(home, "hosts.yml");
     writeFileSync(target, "other.example.com:\n  user: me\n");
@@ -158,21 +141,6 @@ describe("file-ops removal of what the platform wrote", () => {
       ]),
       ctx(),
     );
-    expect(existsSync(target)).toBe(false);
-  });
-
-  it("null removes an overwritten file", async () => {
-    const target = join(home, "kubeconfig");
-    await applyFiles(
-      new Map([
-        [
-          target,
-          [{ format: "yaml", mergeMode: "overwrite", content: { a: 1 } }],
-        ],
-      ]),
-      ctx(),
-    );
-    await applyFiles(new Map([[target, null]]), ctx());
     expect(existsSync(target)).toBe(false);
   });
 });

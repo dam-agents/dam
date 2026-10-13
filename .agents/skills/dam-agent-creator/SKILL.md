@@ -5,10 +5,13 @@ description: >
   autonomous Claude agent with its own definition repository, a `kit.yaml` Starter Kit the
   platform creates it from, onboarding runbook, runtime configuration, instruction trust
   boundary, versioning with migrations, weekly self-audit, logging, and (when it has
-  scheduled runs) deterministic pre-flight scripts with schedule prechecks. Use whenever
+  scheduled runs) deterministic pre-flight scripts with schedule prechecks.
+  Use whenever
   the user wants a new unattended platform agent (shared, team-owned, scheduled or
-  channel-driven) or its definition repository or `kit.yaml`. Built for unattended
-  service-tool agents operating on shared systems — not for personal assistants. Runs a
+  channel-driven) or its definition repository or `kit.yaml`.
+  Built for unattended
+  service-tool agents operating on shared systems — not for personal assistants.
+  Runs a
   domain interview first, then generates the complete definition repo from templates.
 argument-hint: "[one sentence: what should the agent do?]"
 ---
@@ -79,27 +82,27 @@ Present one proposal:
 
 Copy each template and resolve every `{{PLACEHOLDER}}` and `TODO(creator)` block: fill it from the proposal, or delete the section when it doesn't apply (e.g. the pre-flight contract for an agent with no scheduled runs).
 
-| Template | Becomes | Notes |
-| --- | --- | --- |
-| `templates/kit.yaml.template` | `kit.yaml` | The Starter Kit: seed, connections, schedules, size (`references/kit.md`). |
-| `templates/CLAUDE.md.template` | `CLAUDE.md` | Slim core: mission, run types, config, trust boundary, invariants, docs map. Under ~150 lines. |
-| `templates/AGENTS.md.template` | `AGENTS.md` | Harness pointer to `CLAUDE.md`, no rules of its own. ONBOARDING seeds a second copy into `work/`. |
-| `templates/ONBOARDING.md.template` | `ONBOARDING.md` | One-time setup runbook incl. config dialog and schedule registration. |
-| `templates/README.md.template` | `README.md` | Human-facing: setup, env-var + config tables, runtime requirements, external surfaces. |
-| `templates/gitignore.template` | `.gitignore` | Allowlist; re-include exactly the files the repo tracks. |
-| `templates/VERSION.template` | `VERSION` | Starts at `1.0.0`. |
-| `templates/CHANGELOG.md.template` | `CHANGELOG.md` | Rules header + the `1.0.0` entry. |
-| `templates/docs/self-modification.md.template` | `docs/self-modification.md` | Add the domain invariants to §10. |
-| `templates/docs/persistence.md.template` | `docs/persistence.md` | State backup + definition evolution + version check. |
-| `templates/verify-onboarding.sh.template` | `scripts/verify-onboarding.sh` | Structure verification by mode: `--config` mid-onboarding, bare at the end, `--live` for reachability; every `FAIL` carries its `fix:` (Phase 4). |
-| `templates/preflight.sh.template` | `scripts/preflight.sh` | Only with scheduled runs (Phase 4). |
-| `templates/precheck.sh.template` | `scripts/precheck.sh` | With the pre-flight: adapter from its JSON to the Precheck's exit code. Copied verbatim; no domain logic. |
-| `templates/config-lib.sh.template` | `scripts/lib/config.sh` | The one `work/CONFIG.md` reader; every config-reading script sources it, none re-implements it. |
-| `templates/toolpath.sh.template` | `scripts/lib/toolpath.sh` | Only when a script execs a shimmed CLI in a loop: the pod's `mise` shim tax (Phase 4). |
-| `templates/work-backup.sh.template` | `scripts/work-backup.sh` | Only with git-backed state backup: tmpfs-clone persist/restore. |
-| `templates/log.sh.template` | `scripts/log.sh` | Structured JSONL events log with secret masking; extend the masks per integration. |
-| `templates/tests-run.sh.template` | `scripts/tests/run.sh` | Offline test runner (Phase 4). |
-| `templates/ci.yml.template` | `.github/workflows/ci.yml` | CI on every definition PR (Phase 5). |
+| Template                                       | Becomes                        | Notes                                                                                                                                             |
+| ---------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `templates/kit.yaml.template`                  | `kit.yaml`                     | The Starter Kit: seed, connections, schedules, size (`references/kit.md`).                                                                        |
+| `templates/CLAUDE.md.template`                 | `CLAUDE.md`                    | Slim core: mission, run types, config, trust boundary, invariants, docs map. Under ~150 lines.                                                    |
+| `templates/AGENTS.md.template`                 | `AGENTS.md`                    | Harness pointer to `CLAUDE.md`, no rules of its own. ONBOARDING seeds a second copy into `work/`.                                                 |
+| `templates/ONBOARDING.md.template`             | `ONBOARDING.md`                | One-time setup runbook incl. config dialog and schedule registration.                                                                             |
+| `templates/README.md.template`                 | `README.md`                    | Human-facing: setup, env-var + config tables, runtime requirements, external surfaces.                                                            |
+| `templates/gitignore.template`                 | `.gitignore`                   | Allowlist; re-include exactly the files the repo tracks.                                                                                          |
+| `templates/VERSION.template`                   | `VERSION`                      | Starts at `1.0.0`.                                                                                                                                |
+| `templates/CHANGELOG.md.template`              | `CHANGELOG.md`                 | Rules header + the `1.0.0` entry.                                                                                                                 |
+| `templates/docs/self-modification.md.template` | `docs/self-modification.md`    | Add the domain invariants to §10.                                                                                                                 |
+| `templates/docs/persistence.md.template`       | `docs/persistence.md`          | State backup + definition evolution + version check.                                                                                              |
+| `templates/verify-onboarding.sh.template`      | `scripts/verify-onboarding.sh` | Structure verification by mode: `--config` mid-onboarding, bare at the end, `--live` for reachability; every `FAIL` carries its `fix:` (Phase 4). |
+| `templates/preflight.sh.template`              | `scripts/preflight.sh`         | Only with scheduled runs (Phase 4).                                                                                                               |
+| `templates/precheck.sh.template`               | `scripts/precheck.sh`          | With the pre-flight: adapter from its JSON to the Precheck's exit code. Copied verbatim; no domain logic.                                         |
+| `templates/config-lib.sh.template`             | `scripts/lib/config.sh`        | The one `work/CONFIG.md` reader; every config-reading script sources it, none re-implements it.                                                   |
+| `templates/toolpath.sh.template`               | `scripts/lib/toolpath.sh`      | Only when a script execs a shimmed CLI in a loop: the pod's `mise` shim tax (Phase 4).                                                            |
+| `templates/work-backup.sh.template`            | `scripts/work-backup.sh`       | Only with git-backed state backup: tmpfs-clone persist/restore.                                                                                   |
+| `templates/log.sh.template`                    | `scripts/log.sh`               | Structured JSONL events log with secret masking; extend the masks per integration.                                                                |
+| `templates/tests-run.sh.template`              | `scripts/tests/run.sh`         | Offline test runner (Phase 4).                                                                                                                    |
+| `templates/ci.yml.template`                    | `.github/workflows/ci.yml`     | CI on every definition PR (Phase 5).                                                                                                              |
 
 Also write the **domain procedure docs**: one `docs/<topic>.md` per run type or major procedure (e.g. `docs/triage.md`, `docs/escalation.md`), imperative, rule-per-bullet, one home per concept, elsewhere at most one line + link.
 Ask which **license** applies (default: the org's standard) and add `LICENSE`; with none, drop the `!/LICENSE` re-include from `.gitignore` and the `LICENSE` path from the `git add` allowlist in `docs/persistence.md`.

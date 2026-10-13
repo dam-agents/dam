@@ -127,6 +127,7 @@ export interface InfraAgent {
   imageUpdateRefused?: string;
   specStart?: "ready" | "failed";
   hibernatedSince?: Date;
+  wakeRequested?: boolean;
   quietSince?: Date;
   ready: boolean;
   hibernated: boolean;
@@ -318,6 +319,9 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       : {}),
     ...(specStart ? { specStart } : {}),
     ...(hibernatedSince ? { hibernatedSince } : {}),
+    ...(hibernatedSince &&
+      (validDate(annotations[LAST_ACTIVITY_KEY])?.getTime() ?? 0) >
+        hibernatedSince.getTime() && { wakeRequested: true }),
     ...(quietSince ? { quietSince } : {}),
     ready: ready?.status === "True",
     hibernated,

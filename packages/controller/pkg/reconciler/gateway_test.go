@@ -1,11 +1,14 @@
 package reconciler
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestBuildGatewayStatefulSet_Shape(t *testing.T) {
@@ -93,4 +96,45 @@ func TestLabelContract(t *testing.T) {
 	assert.Equal(t, "agent-platform.ai/role", LabelRole)
 	assert.Equal(t, "agent", RoleAgent)
 	assert.Equal(t, "gateway", RoleGateway)
+}
+
+// TEST_SCENARIO: a rotated credential reaches the gateway only when the kubelet re-syncs its pod, so a new resource version on a mounted credential Secret must change the gateway pod's annotation, and nothing else may. An unchanged set writes nothing, so the pod update this causes does not loop the reconcile, and an allow-only Secret, which is never mounted, does not count.
+func TestRefreshGatewayCredentials_AnnotatesOnRotationOnly(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewSimpleClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "a-gateway-0", Namespace: testConfig.Namespace}})
+	r := NewAgentReconciler(client, nil, testConfig)
+	cred := credSecret("platform-cred-aaa", "api.example.com")
+	cred.ResourceVersion = "1"
+	allowOnly := credSecret("platform-cred-bbb", "allow.example.com")
+	allowOnly.Labels[envoySecretTypeLabel] = envoySecretTypeAllowOnly
+	allowOnly.ResourceVersion = "1"
+
+	annotation := func() string {
+		pod, err := client.CoreV1().Pods(testConfig.Namespace).Get(ctx, "a-gateway-0", metav1.GetOptions{})
+		require.NoError(t, err)
+		return pod.Annotations[annGatewayCredentialsRev]
+	}
+	patches := func() int {
+		n := 0
+		for _, a := range client.Actions() {
+			if a.GetVerb() == "patch" {
+				n++
+			}
+		}
+		return n
+	}
+
+	require.NoError(t, r.refreshGatewayCredentials(ctx, "a-gateway", []corev1.Secret{cred, allowOnly}))
+	first := annotation()
+	require.NotEmpty(t, first)
+
+	allowOnly.ResourceVersion = "2"
+	require.NoError(t, r.refreshGatewayCredentials(ctx, "a-gateway", []corev1.Secret{cred, allowOnly}))
+	assert.Equal(t, 1, patches(), "an unchanged mounted set must not write the pod")
+
+	cred.ResourceVersion = "2"
+	require.NoError(t, r.refreshGatewayCredentials(ctx, "a-gateway", []corev1.Secret{cred, allowOnly}))
+	assert.NotEqual(t, first, annotation(), "a rotated credential must change the annotation")
+
+	require.NoError(t, r.refreshGatewayCredentials(ctx, "b-gateway", []corev1.Secret{cred}), "a hibernated gateway has no pod to refresh")
 }

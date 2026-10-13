@@ -113,15 +113,16 @@ Take away any one of the three legs and the attack becomes much harder.
 In practice, the third leg tends to be the most controllable: you usually have more say over where the agent is allowed to send things than over what text it might encounter.
 
 Meta's ["Agents Rule of Two"](https://ai.meta.com/blog/practical-ai-agent-security/) frames the same idea as a per-session rule.
-Label the three legs **[A]** untrusted input, **[B]** access to sensitive data, **[C]** external state change or communication.
+Label the three legs **\[A\]** untrusted input, **\[B\]** access to sensitive data, **\[C\]** external state change or communication.
 An agent should hold at most two of these at a time; if all three are genuinely needed, a human has to approve the dangerous step.
 Their worked examples are a useful illustration of the thinking:
 
-- **Travel agent [AB]**: takes untrusted web content and private booking data, but a human confirms every actual booking, so the external-action leg is gated.
-- **Research assistant [AC]**: browses arbitrary URLs and returns results, but runs sandboxed with no session credentials loaded, so untrusted content never meets sensitive data.
-- **Internal coder [BC]**: reads production data and makes stateful changes, but filters its inputs by *author lineage* (only accepting code from trusted contributors), so the untrusted-input leg never arises in the first place.
+- **Travel agent \[AB\]**: takes untrusted web content and private booking data, but a human confirms every actual booking, so the external-action leg is gated.
+- **Research assistant \[AC\]**: browses arbitrary URLs and returns results, but runs sandboxed with no session credentials loaded, so untrusted content never meets sensitive data.
+- **Internal coder \[BC\]**: reads production data and makes stateful changes, but filters its inputs by *author lineage* (only accepting code from trusted contributors), so the untrusted-input leg never arises in the first place.
 
-A natural question is: "Can't we just detect and block the malicious instructions?" Guardrail vendors claim around 95% accuracy, and as Simon puts it, *95% is a failing grade in web application security*.
+A natural question is: "Can't we just detect and block the malicious instructions?"
+Guardrail vendors claim around 95% accuracy, and as Simon puts it, *95% is a failing grade in web application security*.
 An attacker only has to succeed once, and new phrasings and languages keep slipping through.
 
 In practice, the best thing a Platform operator can do is shrink leg 3 (the outbound path).

@@ -8,7 +8,9 @@ A bounded context is a boundary within which one domain model and language apply
 The same real-world concept is modeled differently per context: in **Identity** a User has credentials, sessions and login history; in **Billing** a Customer has a payment method, invoices and a plan; in **Shipping** a Recipient has an address and delivery preferences.
 Each context owns its model and models only what it needs; there is no unified model.
 
-Bounded context (strategic DDD: where is the model's boundary?), vertical slice (architecture: how does code reflect it?) and module (codebase: what's the folder called?) are three views of one thing; module ↔ bounded context is 1:1.
+Bounded context (strategic DDD: where is the model's boundary?), vertical slice (architecture: how does code reflect it?)
+and module (codebase: what's the folder called?)
+are three views of one thing; module ↔ bounded context is 1:1.
 **Modules follow business boundaries, not technical concerns**: `identity/`, `billing/`, `orders/`, never `database/`, `middleware/`, `utils/`.
 
 ## Definition vs implementation

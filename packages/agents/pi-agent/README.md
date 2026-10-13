@@ -6,10 +6,10 @@ The harness ships in the default image every harness Template boots, built by `/
 
 ## Stack
 
-| Component | Package | Purpose |
-|---|---|---|
-| Harness | `@earendil-works/pi-coding-agent` + `pi-acp` | pi runtime fork + ACP bridge to Platform UI |
-| Memory | `@zhafron/pi-memory` | git-free file-based memory, auto-injected at session start; a tool of the image, loaded by `pi-platform` |
+| Component | Package                                      | Purpose                                                                                                  |
+| --------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Harness   | `@earendil-works/pi-coding-agent` + `pi-acp` | pi runtime fork + ACP bridge to Platform UI                                                              |
+| Memory    | `@zhafron/pi-memory`                         | git-free file-based memory, auto-injected at session start; a tool of the image, loaded by `pi-platform` |
 
 The image sets `PI_OFFLINE=1`, so Pi makes no network call at startup: no model-catalog fetch from `pi.dev` (which the egress gateway would hold for approval on every new Pi process), no version check, no install telemetry, and no install or update of the packages in `settings.json`.
 That last one is why pi-memory is a tool of the image: `pi-platform` loads it with `-e`.
@@ -78,26 +78,26 @@ Three steps to enable any pi built-in provider:
 
 Sourced from pi-mono [`env-api-keys.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/env-api-keys.ts) and [`models.generated.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/models.generated.ts) — pi's resolution order is documented in [providers.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md#resolution-order).
 
-| Provider | pi `provider` id | Env var(s) (placeholder in pod, real value in K8s Secret mounted into the Envoy sidecar) | Host pattern |
-|---|---|---|---|
-| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` (or `ANTHROPIC_OAUTH_TOKEN`) | `api.anthropic.com` |
-| OpenAI | `openai` | `OPENAI_API_KEY` | `api.openai.com` |
-| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` | `api.deepseek.com` |
-| Mistral | `mistral` | `MISTRAL_API_KEY` | `api.mistral.ai` |
-| Groq | `groq` | `GROQ_API_KEY` | `api.groq.com` |
-| Cerebras | `cerebras` | `CEREBRAS_API_KEY` | `api.cerebras.ai` |
-| xAI | `xai` | `XAI_API_KEY` | `api.x.ai` |
-| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | `openrouter.ai` |
-| Vercel AI Gateway | `vercel-ai-gateway` | `AI_GATEWAY_API_KEY` | `ai-gateway.vercel.sh` |
-| ZAI | `zai` | `ZAI_API_KEY` | `api.z.ai` |
-| Google Gemini (AI Studio) | `google` | `GEMINI_API_KEY` | `generativelanguage.googleapis.com` |
-| Hugging Face | `huggingface` | `HF_TOKEN` | `router.huggingface.co` |
-| Fireworks | `fireworks` | `FIREWORKS_API_KEY` | `api.fireworks.ai` |
-| OpenCode Zen | `opencode` | `OPENCODE_API_KEY` | `opencode.ai` (path `/zen/`) |
-| OpenCode Go | `opencode-go` | `OPENCODE_API_KEY` | `opencode.ai` (path `/zen/go/`) |
-| Kimi For Coding | `kimi-coding` | `KIMI_API_KEY` | `api.kimi.com` (path `/coding/`) |
-| MiniMax | `minimax` | `MINIMAX_API_KEY` | `api.minimax.io` |
-| MiniMax (China) | `minimax-cn` | `MINIMAX_CN_API_KEY` | `api.minimaxi.com` |
+| Provider                  | pi `provider` id    | Env var(s) (placeholder in pod, real value in K8s Secret mounted into the Envoy sidecar) | Host pattern                        |
+| ------------------------- | ------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------- |
+| Anthropic                 | `anthropic`         | `ANTHROPIC_API_KEY` (or `ANTHROPIC_OAUTH_TOKEN`)                                         | `api.anthropic.com`                 |
+| OpenAI                    | `openai`            | `OPENAI_API_KEY`                                                                         | `api.openai.com`                    |
+| DeepSeek                  | `deepseek`          | `DEEPSEEK_API_KEY`                                                                       | `api.deepseek.com`                  |
+| Mistral                   | `mistral`           | `MISTRAL_API_KEY`                                                                        | `api.mistral.ai`                    |
+| Groq                      | `groq`              | `GROQ_API_KEY`                                                                           | `api.groq.com`                      |
+| Cerebras                  | `cerebras`          | `CEREBRAS_API_KEY`                                                                       | `api.cerebras.ai`                   |
+| xAI                       | `xai`               | `XAI_API_KEY`                                                                            | `api.x.ai`                          |
+| OpenRouter                | `openrouter`        | `OPENROUTER_API_KEY`                                                                     | `openrouter.ai`                     |
+| Vercel AI Gateway         | `vercel-ai-gateway` | `AI_GATEWAY_API_KEY`                                                                     | `ai-gateway.vercel.sh`              |
+| ZAI                       | `zai`               | `ZAI_API_KEY`                                                                            | `api.z.ai`                          |
+| Google Gemini (AI Studio) | `google`            | `GEMINI_API_KEY`                                                                         | `generativelanguage.googleapis.com` |
+| Hugging Face              | `huggingface`       | `HF_TOKEN`                                                                               | `router.huggingface.co`             |
+| Fireworks                 | `fireworks`         | `FIREWORKS_API_KEY`                                                                      | `api.fireworks.ai`                  |
+| OpenCode Zen              | `opencode`          | `OPENCODE_API_KEY`                                                                       | `opencode.ai` (path `/zen/`)        |
+| OpenCode Go               | `opencode-go`       | `OPENCODE_API_KEY`                                                                       | `opencode.ai` (path `/zen/go/`)     |
+| Kimi For Coding           | `kimi-coding`       | `KIMI_API_KEY`                                                                           | `api.kimi.com` (path `/coding/`)    |
+| MiniMax                   | `minimax`           | `MINIMAX_API_KEY`                                                                        | `api.minimax.io`                    |
+| MiniMax (China)           | `minimax-cn`        | `MINIMAX_CN_API_KEY`                                                                     | `api.minimaxi.com`                  |
 
 > **Anthropic — prefer the dedicated provider.** Platform ships a first-class Anthropic provider that handles the OAuth-vs-API-key shape and is wired into the Configure Agent UI as the *Anthropic secret* type.
 > The plain env-var path above does work, but the dedicated provider is the recommended way and the tRPC router rejects `hostPattern` / `pathPattern` / `injectionConfig` on Anthropic secrets to keep the two paths from drifting.
@@ -116,14 +116,14 @@ Drop that handler once pi-acp propagates the error itself.
 These providers have additional configuration shapes (per-resource URLs, AWS credential chain, OAuth, SA-key files).
 The env vars below are what pi-mono reads; whether they compose cleanly with the Envoy sidecar's wire-level header rewrite hasn't been verified for each — confirm before relying on them in production.
 
-| Provider | pi `provider` id | Auth env vars | Notes |
-|---|---|---|---|
-| Azure OpenAI | `azure` | `AZURE_OPENAI_API_KEY` plus `AZURE_OPENAI_BASE_URL` (or `AZURE_OPENAI_RESOURCE_NAME`), optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` | Host is your Azure resource (e.g. `<resource>.openai.azure.com`). Should work with the placeholder-env + generic-secret pattern, but not validated. |
-| Amazon Bedrock | `amazon-bedrock` | One of: `AWS_PROFILE`; `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`; `AWS_BEARER_TOKEN_BEDROCK`; `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` / `_FULL_URI`; `AWS_WEB_IDENTITY_TOKEN_FILE`. Optional: `AWS_REGION`, `AWS_BEDROCK_FORCE_CACHE`, `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, `AWS_BEDROCK_SKIP_AUTH`, `AWS_BEDROCK_FORCE_HTTP1` | Host: `bedrock-runtime.<region>.amazonaws.com`. Supported through the platform's **AWS Bedrock** provider with a Bedrock API key: the gateway injects it as `Authorization: Bearer`, and the agent holds only a placeholder `AWS_BEARER_TOKEN_BEDROCK`. The `pi-dynamic-providers` extension selects `amazon-bedrock` and the connection's model pin, adding the pin to `models.json` only when Pi's built-in list lacks it, and narrows Pi's model list to the region's active inference profiles, listed through the same gateway (`AWS_ENDPOINT_URL_BEDROCK`). IAM access keys and assumed roles (SigV4, computed in-pod against the secret) are not supported. |
-| Google Vertex AI | `google-vertex` | `GOOGLE_CLOUD_API_KEY` **or** `GOOGLE_APPLICATION_CREDENTIALS` (SA key file) **or** ADC + `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION` | Host: `<location>-aiplatform.googleapis.com`. The API-key path may work with a generic secret; SA-key / ADC paths require a file mount and aren't a generic-secret shape. Untested. |
-| GitHub Copilot | `github-copilot` | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN` | Host: `api.individual.githubcopilot.com`. pi's documented path is OAuth via `/login`, with tokens stored in `~/.pi/agent/auth.json`. Untested with a generic secret. |
-| OpenAI Codex (ChatGPT) | (Codex Responses) | OAuth via `/login` — no env var | Host: `chatgpt.com/backend-api`. ChatGPT subscription only; not appropriate for production. |
-| Google Gemini CLI / Antigravity | `google-gemini-cli` | OAuth via `/login`, optional `GOOGLE_CLOUD_PROJECT` for paid Cloud Code Assist | Hosts: `cloudcode-pa.googleapis.com`, `daily-cloudcode-pa.sandbox.googleapis.com`. Untested. |
+| Provider                        | pi `provider` id    | Auth env vars                                                                                                                                                                                                                                                                                                                      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Azure OpenAI                    | `azure`             | `AZURE_OPENAI_API_KEY` plus `AZURE_OPENAI_BASE_URL` (or `AZURE_OPENAI_RESOURCE_NAME`), optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT_NAME_MAP`                                                                                                                                                                     | Host is your Azure resource (e.g. `<resource>.openai.azure.com`). Should work with the placeholder-env + generic-secret pattern, but not validated.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Amazon Bedrock                  | `amazon-bedrock`    | One of: `AWS_PROFILE`; `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`; `AWS_BEARER_TOKEN_BEDROCK`; `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` / `_FULL_URI`; `AWS_WEB_IDENTITY_TOKEN_FILE`. Optional: `AWS_REGION`, `AWS_BEDROCK_FORCE_CACHE`, `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, `AWS_BEDROCK_SKIP_AUTH`, `AWS_BEDROCK_FORCE_HTTP1` | Host: `bedrock-runtime.<region>.amazonaws.com`. Supported through the platform's **AWS Bedrock** provider with a Bedrock API key: the gateway injects it as `Authorization: Bearer`, and the agent holds only a placeholder `AWS_BEARER_TOKEN_BEDROCK`. The `pi-dynamic-providers` extension selects `amazon-bedrock` and the connection's model pin, adding the pin to `models.json` only when Pi's built-in list lacks it, and narrows Pi's model list to the region's active inference profiles, listed through the same gateway (`AWS_ENDPOINT_URL_BEDROCK`). IAM access keys and assumed roles (SigV4, computed in-pod against the secret) are not supported. |
+| Google Vertex AI                | `google-vertex`     | `GOOGLE_CLOUD_API_KEY` **or** `GOOGLE_APPLICATION_CREDENTIALS` (SA key file) **or** ADC + `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION`                                                                                                                                                                                         | Host: `<location>-aiplatform.googleapis.com`. The API-key path may work with a generic secret; SA-key / ADC paths require a file mount and aren't a generic-secret shape. Untested.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| GitHub Copilot                  | `github-copilot`    | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN`                                                                                                                                                                                                                                                                              | Host: `api.individual.githubcopilot.com`. pi's documented path is OAuth via `/login`, with tokens stored in `~/.pi/agent/auth.json`. Untested with a generic secret.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| OpenAI Codex (ChatGPT)          | (Codex Responses)   | OAuth via `/login` — no env var                                                                                                                                                                                                                                                                                                    | Host: `chatgpt.com/backend-api`. ChatGPT subscription only; not appropriate for production.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Google Gemini CLI / Antigravity | `google-gemini-cli` | OAuth via `/login`, optional `GOOGLE_CLOUD_PROJECT` for paid Cloud Code Assist                                                                                                                                                                                                                                                     | Hosts: `cloudcode-pa.googleapis.com`, `daily-cloudcode-pa.sandbox.googleapis.com`. Untested.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ### Custom OpenAI-compatible servers (models.json)
 
@@ -149,12 +149,12 @@ The full `models.json` schema (`compat`, `reasoning`, `contextWindow`, `thinking
 
 For non-Bearer auth, override `injectionConfig` on the secret instead of changing `models.json`:
 
-| Provider style | `injectionConfig.headerName` | `injectionConfig.valueFormat` |
-|---|---|---|
-| OpenAI-compatible (default) | `Authorization` (default) | `Bearer {value}` (default) |
-| Anthropic-compatible proxy | `x-api-key` | `{value}` |
-| Portkey | `x-portkey-api-key` | `{value}` |
-| RITS | `RITS_API_KEY` | `{value}` |
+| Provider style              | `injectionConfig.headerName` | `injectionConfig.valueFormat` |
+| --------------------------- | ---------------------------- | ----------------------------- |
+| OpenAI-compatible (default) | `Authorization` (default)    | `Bearer {value}` (default)    |
+| Anthropic-compatible proxy  | `x-api-key`                  | `{value}`                     |
+| Portkey                     | `x-portkey-api-key`          | `{value}`                     |
+| RITS                        | `RITS_API_KEY`               | `{value}`                     |
 
 ### RITS (custom provider via extension)
 
@@ -179,14 +179,14 @@ Requests to Claude models on `openai-proxy` carry Anthropic cache markers, becau
 `rits` keeps `max_tokens` and does not ask for counts (vLLM direct, untested).
 Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
 
-| Env var | Required | Default | Purpose |
-|---|---|---|---|
-| `RITS_URL` | yes | — | Endpoint URL; `/v1` is appended if missing. |
-| `RITS_MODEL` | yes | — | Model identifier. |
-| `RITS_REASONING` | no | `false` | Enable pi's thinking UI for reasoning-capable models. |
-| `RITS_CONTEXT_WINDOW` | no | `128000` | Context window in tokens. |
-| `RITS_MAX_TOKENS` | no | `16384` | Max output tokens. |
-| `RITS_THINKING_FORMAT` | no | — | `qwen`, `qwen-chat-template`, `zai`, `reasoning_effort`, or `openrouter` — request-body hint for servers with a matching reasoning parser. |
+| Env var                | Required | Default  | Purpose                                                                                                                                    |
+| ---------------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `RITS_URL`             | yes      | —        | Endpoint URL; `/v1` is appended if missing.                                                                                                |
+| `RITS_MODEL`           | yes      | —        | Model identifier.                                                                                                                          |
+| `RITS_REASONING`       | no       | `false`  | Enable pi's thinking UI for reasoning-capable models.                                                                                      |
+| `RITS_CONTEXT_WINDOW`  | no       | `128000` | Context window in tokens.                                                                                                                  |
+| `RITS_MAX_TOKENS`      | no       | `16384`  | Max output tokens.                                                                                                                         |
+| `RITS_THINKING_FORMAT` | no       | —        | `qwen`, `qwen-chat-template`, `zai`, `reasoning_effort`, or `openrouter` — request-body hint for servers with a matching reasoning parser. |
 
 The API key is **not** a pod env var.
 Configure it as a generic secret on the platform with `injectionConfig.headerName: RITS_API_KEY`, `injectionConfig.valueFormat: {value}`, and a host pattern matching your RITS deployment.
@@ -207,15 +207,15 @@ The real credential is sidecar-injected on the wire, so a `401` from the provide
 
 Pi system prompt conventions:
 
-| File | Scope | Behaviour |
-|---|---|---|
-| `~/.pi/agent/SYSTEM.md` | global | replaces the default system prompt |
-| `.pi/SYSTEM.md` | project (cwd) | replaces the default system prompt |
-| `~/.pi/agent/APPEND_SYSTEM.md` | global | appended to the system prompt |
-| `.pi/APPEND_SYSTEM.md` | project (cwd) | appended to the system prompt |
+| File                           | Scope         | Behaviour                          |
+| ------------------------------ | ------------- | ---------------------------------- |
+| `~/.pi/agent/SYSTEM.md`        | global        | replaces the default system prompt |
+| `.pi/SYSTEM.md`                | project (cwd) | replaces the default system prompt |
+| `~/.pi/agent/APPEND_SYSTEM.md` | global        | appended to the system prompt      |
+| `.pi/APPEND_SYSTEM.md`         | project (cwd) | appended to the system prompt      |
 
-> **`app/working-dir/`** seeds `/home/agent/` on first boot.  
-> Nothing seeds `/home/agent/work/`, the cwd where pi-acp spawns: a Starter Kit clones its repository there, and the seed refuses a non-empty directory.  
+> **`app/working-dir/`** seeds `/home/agent/` on first boot.\
+> Nothing seeds `/home/agent/work/`, the cwd where pi-acp spawns: a Starter Kit clones its repository there, and the seed refuses a non-empty directory.\
 > **`app/working-dir/.pi/agent/`** seeds `~/.pi/agent/` — pi's global config directory.
 
 ## pi-acp patch
@@ -250,22 +250,22 @@ That check fails on any pi-acp bump while the patch is still in place, so a bump
 Memory lives on the PVC (`/home/agent/` is the persistent mount), so everything survives restarts.
 The two scopes:
 
-| Scope | Path | What goes here |
-|---|---|---|
+| Scope                 | Path                  | What goes here                                                                  |
+| --------------------- | --------------------- | ------------------------------------------------------------------------------- |
 | **Personal** (global) | `~/.pi/agent/memory/` | Identity, user profile, preferences — facts about the user, not about a project |
-| **Project** (future) | `work/memory/` | Per-workspace context: tech stack, architecture decisions, repo-specific facts |
+| **Project** (future)  | `work/memory/`        | Per-workspace context: tech stack, architecture decisions, repo-specific facts  |
 
 `@zhafron/pi-memory` uses the personal scope by default (`memoryDir: ~/.pi/agent/memory`).
 Project-scope memory is not yet implemented.
 
 ### Memory files (personal scope)
 
-| File | Auto-injected | Purpose |
-|---|---|---|
-| `MEMORY.md` | yes | Durable facts, decisions, preferences |
-| `IDENTITY.md` | yes | Agent name, persona, behavioral rules |
-| `USER.md` | yes | User profile (name, role, preferences) |
-| `daily/YYYY-MM-DD.md` | no | Daily activity log (read via `memory` tool) |
+| File                  | Auto-injected | Purpose                                     |
+| --------------------- | ------------- | ------------------------------------------- |
+| `MEMORY.md`           | yes           | Durable facts, decisions, preferences       |
+| `IDENTITY.md`         | yes           | Agent name, persona, behavioral rules       |
+| `USER.md`             | yes           | User profile (name, role, preferences)      |
+| `daily/YYYY-MM-DD.md` | no            | Daily activity log (read via `memory` tool) |
 
 ### First-run bootstrap
 

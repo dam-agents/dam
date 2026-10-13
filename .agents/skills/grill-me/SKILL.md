@@ -1,6 +1,7 @@
 ---
 name: grill-me
-description: Interview the user relentlessly about a plan or design until reaching shared understanding, challenging it against the project's architecture docs and ubiquitous language, sharpening terminology, and cross-referencing the code. Use when user wants to stress-test a plan, get grilled on their design, or mentions "grill me".
+description: Interview the user relentlessly about a plan or design until reaching shared understanding, challenging it against the project's architecture docs and ubiquitous language, sharpening terminology, and cross-referencing the code.
+  Use when user wants to stress-test a plan, get grilled on their design, or mentions "grill me".
 ---
 
 Interview me relentlessly about every aspect of this plan until we reach a shared understanding.
@@ -17,13 +18,18 @@ Read alongside the code:
 
 - **Glossary conflicts**: call out at once a term used against its glossary meaning.
   "Your glossary defines 'cancellation' as X, but you seem to mean Y — which is it?"
+
 - **Fuzzy language**: propose a precise canonical term for a vague or overloaded one.
   "You're saying 'account' — do you mean the Customer or the User?
   Those are different things."
+
 - **Concrete scenarios**: stress-test domain relationships with invented edge-case scenarios that force precise boundaries between concepts.
+
 - **Code cross-reference**: when the user states how something works, check the code and surface contradictions.
   "Your code cancels entire Orders, but you just said partial cancellation is possible — which is right?"
+
 - **Update `docs/ubiquitous-language.md` as each term resolves**, not in a batch.
+
 - **Decision log**: after each answer, append to a file outside the repo (the session scratchpad if any, else a temp file):
 
   ```

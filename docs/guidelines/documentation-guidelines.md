@@ -7,11 +7,14 @@ Rules for writing project documentation under [`docs/`](../).
 Docs are split into a few kinds.
 Pick the right one before writing — putting the wrong content in the wrong place is the most common drift source.
 
-- **Guidelines** ([`docs/guidelines/`](.)) — rules to follow when writing docs, issues, or PRs.
+- **Guidelines** ([`docs/guidelines/`](.))
+  — rules to follow when writing docs, issues, or PRs.
   This page is one.
   Prescriptive, not descriptive.
+
 - **Strategy** ([`docs/strategy/`](../strategy/)) — high-level overview of what Platform is trying to be, for product, security, and positioning audiences.
   Independent of how the current system happens to be built.
+
 - **Architecture** ([`docs/architecture/`](../architecture/)) — the authoritative architectural overview of the system as it exists today.
   One page per subsystem, indexed from [`docs/architecture.md`](../architecture.md).
 
@@ -28,9 +31,10 @@ Pick the right one before writing — putting the wrong content in the wrong pla
 
 In every Markdown file, prose has one sentence per line: a single newline after each sentence, and a blank line between paragraphs as usual.
 Markdown renders both the same, and a diff or merge conflict then covers the sentence that changed, not the whole paragraph.
-`mise run fix:markdown` formats the files (`mise run fix` includes it), and `mise run check:markdown` fails on a file it would change; [`.mdslw.toml`](../../.mdslw.toml) configures it.
+`mise run fix:markdown` formats the files with panache as GitHub-Flavored Markdown (`mise run fix` includes it), and `mise run check:markdown` fails on a file it would change; [`panache.toml`](../../panache.toml) configures it.
+Besides the sentence breaks, the formatter also pads table columns to one width and normalizes emphasis, list markers and rules; let it, rather than hand-aligning.
 Accepted ADRs and vendored upstream skills are exempt, because they are never edited here.
-A generator that writes Markdown emits one sentence per line too.
+A generated Markdown file is excluded in `panache.toml`, because its generator's check compares bytes; the generator emits one sentence per line itself.
 
 ## Vocabulary
 
@@ -50,7 +54,7 @@ Make drift the harder path, not the default.
 - One page per subsystem under [`docs/architecture/`](../architecture/), indexed from [`docs/architecture.md`](../architecture.md).
 - Adding a new subsystem means adding a new page and linking it from the landing page.
 - No shared template.
-  Free-form per page, under a per-page character cap (enforced by `mise run check` and a write-time hook).
+  Free-form per page, under a per-page cap on its letters and digits — whitespace, punctuation and Markdown syntax do not count (enforced by `mise run check` and a write-time hook).
   The cap is a forcing function, not a style rule: going over means the page dropped to the level of the code, or grew to cover more than one subsystem.
   Reconcile by raising the level and cutting volatile detail, or by splitting the subsystem and reconsidering its boundaries — not by rewording to fit.
   Do not offload description into an ADR to relieve size: the log holds decisions authored when they were made, not documentation spillover.

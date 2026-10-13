@@ -2,3 +2,4 @@
 eval "$(mise env -s bash)"
 PATH="$PATH:$HOME/.local/share/aube/bin"
 if [ -d /opt/venv/bin ]; then PATH="/opt/venv/bin:$PATH"; fi
+if [ -e /run/platform/bin/runc ]; then PATH="/run/platform/bin:$PATH"; fi

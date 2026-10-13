@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: an agent is an agent like any other to its user, whichever Backend runs it. Both CI lanes run this spec, each on its own Backend: on the container lane the agent is a pod, on the vm lane a microVM on its owner's VM runner. On each, the agent boots, holds a chat turn, keeps a file written through the files API in HOME, takes a scheduled fire, and keeps that file across every way its sandbox goes down and comes back — hibernate and wake, the restart verb, and the pod that hosts it being deleted (the agent pod, or the owner's whole VM runner). HOME is the one path both Backends persist, so it is what each of those must keep. On the vm lane the runner it deletes also runs every other machine of the e2e user, so the Playwright config runs this spec there only after the rest of the suite has finished; on the container lane it runs after the agent project, whose provider connection the chat input needs.
+// TEST_OVERVIEW: an agent is an agent like any other to its user, whichever Backend runs it. Both CI lanes run this spec, each on its own Backend: on the container lane the agent is a pod, on the vm lane a microVM on its owner's VM runner. On each, the agent boots, holds a chat turn, keeps a file written through the files API in HOME, takes a scheduled fire, and keeps that file across every way its sandbox goes down and comes back — hibernate and wake, the restart verb, and the pod that hosts it being deleted (the agent pod, or the owner's whole VM runner). HOME is the one path both Backends persist, so it is what each of those must keep. On the vm lane the runner it deletes also runs every other machine of the e2e user, so the Playwright config runs this spec there only after the rest of the suite has finished; on the container lane it runs after the agent project, whose provider connection the chat input needs, beside the specs that drive the shared e2e-agent and one at a time with the other specs that boot their own agent.
 import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -96,7 +96,7 @@ test("keeps a file written to HOME", async () => {
   });
 });
 
-// TEST_SCENARIO: a cron schedule's fire reaches the harness. The api-server delivers it over the runtime channel, the same path on both Backends, so a fire that never lands names the Backend's runtime channel as the broken part.
+// TEST_SCENARIO: a cron schedule's fire reaches the harness. The api-server delivers it over the runtime channel, the same path on both Backends, so a fire that never lands names the Backend's runtime channel as the broken part. The vm lane runs this spec alone at the end of the suite, so there it fires the schedule with run-now, which commits and delivers the same trigger, rather than wait up to a minute for the cron. The container lane runs it beside the rest of the suite and waits for the cron itself, so the scheduler's own fire stays covered.
 test("takes a scheduled fire", async () => {
   test.setTimeout(300_000);
   const task = `e2e-backend-schedule-${randomUUID()}`;
@@ -108,6 +108,8 @@ test("takes a scheduled fire", async () => {
     sessionMode: "fresh",
   });
   try {
+    if (laneBackend === "vm")
+      await api.schedules.runNow.mutate({ id: schedule.id });
     await expect
       .poll(
         async () => {

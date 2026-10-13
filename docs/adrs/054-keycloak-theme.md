@@ -5,6 +5,7 @@ status: proposed
 subsystem: security-and-credentials
 summary: Ship a first-party Keycloak image with a Keycloakify-built React theme baked in, always enabled via loginTheme=platform.
 ---
+
 # ADR-054: Branded Keycloak login via Keycloakify-built custom image
 
 **Date:** 2026-05-28 **Status:** Proposed **Owner:** @kapetr
@@ -63,21 +64,29 @@ Keycloakify is chosen over raw FTL, CSS-only overrides, and replacing Keycloak's
 ## Consequences
 
 - **Easier:** Bumping Keycloak is a one-line `FROM` edit in the theme package's Dockerfile — the upstream version stops being duplicated between Helm values and any other surface.
+
 - **Easier:** Adding the next themed login-flow page (login-update-password, WebAuthn, IDP review) reuses the established template/component scaffolding — keycloakify's `eject-page` produces a typed React component scoped to a single FTL contract.
+
 - **Easier:** Local theme iteration runs at vite-dev speed against a mocked `kcContext`, decoupled from cluster restarts; full-cluster verification is a single `mise` task when needed.
+
 - **Easier:** No regression risk on existing tests — the repo has no browser/Playwright tests that depend on Keycloak HTML, and CLI auth tests use the device-grant flow which never renders the login page.
 
 - **Harder:** dam now publishes and maintains a Keycloak image.
   Upstream Keycloak releases require rebuilding our image, retesting the theme against the new FTL contract, and re-pinning the FROM digest — a new maintenance touchpoint that didn't exist before.
+
 - **Harder:** The theme package is locked to React 18 until [keycloakify#998](https://github.com/keycloakify/keycloakify/issues/998) lands.
   Runtime component sharing with `packages/ui` (React 19) is blocked; Tailwind utility classes are the only shareable layer.
+
 - **Harder:** The `values.yaml` shape for `keycloak.image` changes from a bare string to `{repository, tag, pullPolicy}` (matching ui/apiServer/controller).
   This is a breaking values change for any external override of the Keycloak image.
+
 - **Harder:** Dark mode handoff couples the UI and the theme through the OIDC `kc_theme` URL param contract — renaming the param or changing its values requires synchronized deploys of both components.
 
 - **Committed-to:** Keycloakify as the theming engine.
   Switching later (raw FTL, a different React-based theme tool) means rewriting every themed page.
+
 - **Committed-to:** A dam-owned Keycloak image in the chart.
   The chart's contract assumes the themed image; "unthemed dam" is not a supported deployment.
+
 - **Committed-to:** The `platform` theme identifier baked into the JAR's directory layout.
   Renaming requires republishing the image and updating the realm JSON in sync.

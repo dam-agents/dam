@@ -3,7 +3,8 @@ name: platform-artifacts
 description: >
   Write interactive HTML artifacts: buttons that send prompts to the open chat,
   and pages that share state with the agent (content both the page and the
-  agent read and change) through a small HTTP server the agent runs. Use
+  agent read and change) through a small HTTP server the agent runs.
+  Use
   only when the user explicitly requests this experimental capability and has
   enabled Interactive artifacts; ordinary artifacts do not need this skill.
 ---

@@ -4,7 +4,8 @@ import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const HOST = "127.0.0.1";
-const PORT = 24180;
+// UNIT_BOUNDARY_DESCRIPTION: the gateway listens on 24180, the port the image ABI fixes (ADR 067). MODEL_GATEWAY_PORT overrides it for tests, 0 meaning any free port, and the listening line names the port bound.
+const PORT = Number(process.env.MODEL_GATEWAY_PORT ?? 24180);
 const SNAPSHOT_FILE = `${process.env.HOME}/.platform/pod-service-env.json`;
 const CATALOG_FILE = `${process.env.HOME}/.platform/model-gateway-catalog.json`;
 const FIRST_LISTING_WAIT_MS = 3_000;
@@ -360,5 +361,5 @@ if (!discovered.some(Boolean))
     "no models discovered yet; passthrough only (built-in names still route)",
   );
 server.listen(PORT, HOST, () =>
-  log(`listening on ${HOST}:${PORT}, fronting ${upstreams.size} upstream(s)`),
+  log(`listening on ${HOST}:${server.address().port}, fronting ${upstreams.size} upstream(s)`),
 );
