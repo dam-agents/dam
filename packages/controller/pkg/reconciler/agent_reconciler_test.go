@@ -1016,7 +1016,7 @@ func (p overlapNetworkPolicyReads) Get(ctx context.Context, name string, opts me
 	return p.NetworkPolicyInterface.Get(ctx, name, opts)
 }
 
-// TEST_SCENARIO: every reconcile applies the Agent's own objects — envoy bootstrap, leaf certificate, ServiceAccount, ext-authz Service, two AuthorizationPolicies, three NetworkPolicies and the gateway Service — before it starts the pod or the machine. None of them reads another, so they are applied at once: one after the other, they were 140 ms of every wake of a vm agent on dev, and the single agent worker spent them on every reconcile that a wake had to wait behind.
+// TEST_SCENARIO: every reconcile applies the Agent's own objects — envoy bootstrap, leaf certificate, ServiceAccount, ext-authz Service, two AuthorizationPolicies, three NetworkPolicies and the gateway Service — before it starts the pod or the machine. None of them reads another, so they are applied at once: one after the other, they took about 130 ms of every wake of a vm agent on dev, and the single agent worker spent them on every reconcile that a wake had to wait behind.
 func TestTheAgentsOwnObjectsAreAppliedAtOnce(t *testing.T) {
 	agent := agentCR()
 	r, cs := setupReconciler(t, agent)
