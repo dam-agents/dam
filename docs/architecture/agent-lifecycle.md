@@ -102,7 +102,7 @@ See [connections](connections.md) and [runtime delivery](runtime-delivery.md).
 ### Template upgrade
 
 Templates are captured at create time; an install upgrade reconfigures no existing Agent beyond its image.
-The api-server reports an update when an Agent's image differs from its Template's current image, and [moves](agent-images.md#image-updates) the Agent there by itself, never during work.
+The api-server reports an update when an Agent's image differs from its Template's current image, and [moves](agent-images.md#image-updates) the Agent there by itself, never during work, and back when the Agent cannot start or keep running on it.
 Retired per-harness templates resolve to the default Template even when an install retains their old definitions.
 The upgrade preserves the Agent's chosen harness; when an older Agent has no explicit choice, its retired template identifies the harness to carry forward.
 
