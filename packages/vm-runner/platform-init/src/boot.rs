@@ -817,7 +817,7 @@ fn purge_discarded(dir: &Path, names: &[impl AsRef<str>]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free, the scratch folders lose their files least recently used first, in passes of decreasing age, until EVICT_UNTIL_PERCENT is free or only files used within the last pass's age are left — so a file a running tool is writing is never taken. Only files on the disk are deleted: the walk stays on the disk's device, follows no symlink and leaves the image's trust cache alone. A deleted file that is still open frees its space only when it is closed.
+// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free or the runner marks the owner's claim short of room, the scratch folders lose their files least recently used first, in passes of decreasing age, until EVICT_UNTIL_PERCENT is free and the mark is gone, or only files used within the last pass's age are left — so a file a running tool is writing is never taken. The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Only files on the disk are deleted: the walk stays on the disk's device, follows no symlink and leaves the image's trust cache alone. A deleted file that is still open frees its space only when it is closed.
 const EVICT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const EVICT_BELOW_PERCENT: u64 = 10;
 const EVICT_UNTIL_PERCENT: u64 = 20;
@@ -839,7 +839,7 @@ fn evict_scratch() {
         .collect();
     loop {
         std::thread::sleep(EVICT_INTERVAL);
-        if free_percent(home).is_none_or(|free| free >= EVICT_BELOW_PERCENT) {
+        if !evicting(free_percent(home), claim_short(), EVICT_BELOW_PERCENT) {
             continue;
         }
         let now = std::time::SystemTime::now()
@@ -853,11 +853,20 @@ fn evict_scratch() {
             if freed > 0 {
                 logf!("the disk is short of room: deleted {freed} bytes of scratch unused for {age} s");
             }
-            if free_percent(home).is_some_and(|free| free >= EVICT_UNTIL_PERCENT) {
+            if !evicting(free_percent(home), claim_short(), EVICT_UNTIL_PERCENT) {
                 break;
             }
         }
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether scratch is still to be freed: the disk has less than `percent` free, or the owner's claim under it is short. A disk whose room cannot be read is left alone unless the claim is short.
+fn evicting(free: Option<u64>, claim_short: bool, percent: u64) -> bool {
+    claim_short || free.is_some_and(|free| free < percent)
+}
+
+fn claim_short() -> bool {
+    Path::new(guest::STORAGE_SHORT_PATH).exists()
 }
 
 fn free_percent(path: &Path) -> Option<u64> {
@@ -1784,6 +1793,16 @@ mod tests {
     // TEST_OVERVIEW: platform-init is what makes a machine's persistence the platform's promise rather than the image's behaviour. The mounting itself needs a guest, but everything that decides what ends up on the disk — seeding the home from the image exactly once, never leaving a half-copy behind, keeping the boot log readable, which mounts follow the image onto its root and when that root is kept, which cache folders are cleared from the home, resolving the entrypoint it hands off to — is ordinary file or table work and is covered here.
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // TEST_SCENARIO: a guest's own disk can read as nearly empty while the owner's claim under it fills, so the runner's mark alone starts and continues eviction; without it, the disk's own free share decides, and a disk whose room cannot be read is left alone.
+    #[test]
+    fn scratch_is_freed_while_the_disk_or_the_claim_is_short() {
+        assert!(evicting(Some(5), false, EVICT_BELOW_PERCENT));
+        assert!(!evicting(Some(50), false, EVICT_BELOW_PERCENT));
+        assert!(evicting(Some(50), true, EVICT_BELOW_PERCENT));
+        assert!(evicting(None, true, EVICT_UNTIL_PERCENT));
+        assert!(!evicting(None, false, EVICT_BELOW_PERCENT));
+    }
 
     struct TempDir(PathBuf);
 

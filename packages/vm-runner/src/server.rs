@@ -1237,7 +1237,7 @@ impl Server {
         (self.config.measure_storage)().filter(StorageUse::critical)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again; machine disks and what the guests keep on them are not the runner's to free.
+    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again, and every machine's share carries the mark that has its guest give back its scratch; what the guests keep beyond that is not the runner's to free.
     fn check_storage(&self) {
         let Some(storage) = (self.config.measure_storage)() else {
             return;
@@ -1245,6 +1245,18 @@ impl Server {
         let was = self.storage_short.load(Ordering::Relaxed);
         let short = storage.short(was);
         self.storage_short.store(short, Ordering::Relaxed);
+        for id in state::machine_ids(&self.config.state_dir).unwrap_or_default() {
+            let Some(dir) = machine_dir(&self.config.state_dir, &id) else {
+                continue;
+            };
+            let share = dir.join(SHARE_DIR);
+            if !share.is_dir() {
+                continue;
+            }
+            if let Err(e) = share::mark_storage_short(&share, short) {
+                tracing::warn!(machine = %id, error = %e, "vm runner: cannot mark the machine's share with the claim's room");
+            }
+        }
         if short != was {
             tracing::warn!(
                 percent = storage.percent(),

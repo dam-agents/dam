@@ -20,6 +20,9 @@ pub const SEED_EXPECTED_PATH: &str = "/platform/seed-expected";
 // UNIT_BOUNDARY_DESCRIPTION: the runner writes this file into the share before every boot: one line that names the image the boot runs. For an image tree on the runner's host it also holds the tree's inode and mtime, because a tree staged again under the same name is a new image. platform-init keeps the machine's root only while this line is the one it recorded for that root. A share without it, from a runner older than this file, names no image, and the root is then fresh.
 pub const IMAGE_PATH: &str = "/platform/image";
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner keeps this file in the share while the owner's claim, which holds every machine disk of the owner, is short of room. A guest sees its own disk as free while the claim under it fills, so this is how it learns to give back what it keeps only as scratch; the runner removes it once the claim has room again.
+pub const STORAGE_SHORT_PATH: &str = "/platform/storage-short";
+
 // UNIT_BOUNDARY_DESCRIPTION: the system store file where platform-init records the SHA-256 of the seed it restored the home from. It is written before the restored home is renamed into place, so a home that exists and came from a seed always has it. A later boot that still expects a seed reads it to tell a home from that seed from any other.
 pub const SEEDED_FROM_FILE: &str = "seeded-from";
 

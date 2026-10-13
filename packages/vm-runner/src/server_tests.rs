@@ -2335,3 +2335,21 @@ async fn a_boot_that_fails_on_a_critical_claim_reports_full_storage() {
     assert!(failed.message.contains("95% full"), "{failed:?}");
     assert!(failed.message.contains("EXT4-fs (vda)"), "{failed:?}");
 }
+
+// TEST_SCENARIO: a guest sees its own disk as free while the claim under it fills, so the runner marks every machine's share while the claim is short, and keeps the mark until use is back under the lower threshold, so a claim hovering on the line does not mark and unmark at every look.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_short_claim_marks_every_share_until_it_has_room_again() {
+    let (h, claim) = with_claim("storage-short");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let mark = h
+        .dir
+        .join("machines/m1")
+        .join(SHARE_DIR)
+        .join(share::STORAGE_SHORT_FILE);
+    for (percent, marked) in [(74, false), (80, true), (72, true), (65, false)] {
+        *locked(&claim) = filled(percent);
+        h.server.check_storage();
+        assert_eq!(mark.exists(), marked, "at {percent}%");
+    }
+}
