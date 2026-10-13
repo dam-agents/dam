@@ -1,6 +1,7 @@
 # Operators can't see per-user pool use or cluster overcommit
 
-> Working plan — temporary, committed on the feature branch. Deleted once the feature ships.
+> Working plan — temporary, committed on the feature branch.
+> Deleted once the feature ships.
 
 **Issue:** https://github.com/dam-agents/dam/issues/4761 (epic https://github.com/dam-agents/dam/issues/4753)
 
@@ -34,11 +35,11 @@ Storage capacity, and its alert, exist only where the runner StorageClass's driv
 
 ## Sub-issues
 
-| #  | Title | Scope | Depends on |
-|----|-------|-------|------------|
-| 01 | Runner CPU and pressure metrics | Rust: cgroup `cpu.stat`/`cpu.max` reader, working set and pressure gauges | — |
-| 02 | Controller pool gauges and the RunnerCapacity condition | Go: committed/reserved/capacity gauges, band counts, resize-pending gauge, condition + Events, RBAC | 01; #4798 and #4797 merged |
-| 03 | Prometheus export and alert rules | Helm: exporter pipeline, ServiceMonitor, PrometheusRule, AuthorizationPolicy port, `monitoring` values | 01, 02 |
+| #   | Title                                                   | Scope                                                                                                  | Depends on                 |
+| --- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------- |
+| 01  | Runner CPU and pressure metrics                         | Rust: cgroup `cpu.stat`/`cpu.max` reader, working set and pressure gauges                              | —                          |
+| 02  | Controller pool gauges and the RunnerCapacity condition | Go: committed/reserved/capacity gauges, band counts, resize-pending gauge, condition + Events, RBAC    | 01; #4798 and #4797 merged |
+| 03  | Prometheus export and alert rules                       | Helm: exporter pipeline, ServiceMonitor, PrometheusRule, AuthorizationPolicy port, `monitoring` values | 01, 02                     |
 
 ## Conventions & glossary
 
@@ -55,4 +56,5 @@ On a local cluster with ClickStack and virtualization on and prometheus-operator
 
 ## Delivery
 
-Each sub-issue is one atomic commit. The whole feature lands as a single PR for https://github.com/dam-agents/dam/issues/4761.
+Each sub-issue is one atomic commit.
+The whole feature lands as a single PR for https://github.com/dam-agents/dam/issues/4761.

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use crate::plan::Action;
 
-// UNIT_BOUNDARY_DESCRIPTION: what a runner measures about its own machines and its image cache, for the platform's collector to scrape, under the series names the platform's dashboards and alerts select. Every label value is a `&'static str` from a fixed set — an operation, an outcome, a failure reason, a cache result — and never a machine, an image or an owner: a machine id or an image reference would grow a series per agent, and the runner exists per owner, so either would be a person's identity in disguise. Written out by hand rather than through a metrics library, because the one already in the lock installs a process-wide recorder that would also export whatever smolvm records, under labels this file does not choose.
+// UNIT_BOUNDARY_DESCRIPTION: what a runner measures about its own machines, its image cache and its cgroup's memory and CPU, for the platform's collector to scrape, under the series names the platform's dashboards and alerts select. Every label value is a `&'static str` from a fixed set — an operation, an outcome, a failure reason, a cache result — and never a machine, an image or an owner: a machine id or an image reference would grow a series per agent, and the runner exists per owner, so either would be a person's identity in disguise. Written out by hand rather than through a metrics library, because the one already in the lock installs a process-wide recorder that would also export whatever smolvm records, under labels this file does not choose.
 pub const NAMESPACE: &str = "platform_vm_runner";
 
 const BOOT_BUCKETS: &[f64] = &[
@@ -101,6 +101,10 @@ pub struct Gauges {
     pub reserve_mib: i32,
     pub committed_mib: Option<i64>,
     pub storage: Option<crate::storage::StorageUse>,
+    pub cpu: Option<crate::cpu::CpuStat>,
+    pub cpu_limit_milli: Option<u64>,
+    pub working_set_mib: Option<i32>,
+    pub pressured: Option<bool>,
 }
 
 impl Metrics {
@@ -290,6 +294,45 @@ impl Metrics {
             "Bytes the runner may use on the owner's claim, in use or free; past 90% of it no machine is created, started or grown.",
             gauges.storage.map_or(f64::NAN, |s| s.usable as f64),
         );
+        gauge(
+            &mut out,
+            "memory_working_set_mib",
+            "Memory the runner's cgroup charges less the file cache the kernel can drop: the figure the kernel kills the runner, and every machine with it, by.",
+            gauges.working_set_mib.map_or(f64::NAN, f64::from),
+        );
+        gauge(
+            &mut out,
+            "memory_pressure",
+            "1 while the working set is past the pressure threshold and the controller is asked to free memory, else 0.",
+            gauges.pressured.map_or(f64::NAN, |p| f64::from(u8::from(p))),
+        );
+        gauge(
+            &mut out,
+            "cpu_limit_millicores",
+            "The runner's CPU limit, shared by every machine's vCPUs; NaN where none is set.",
+            gauges.cpu_limit_milli.map_or(f64::NAN, |m| m as f64),
+        );
+        let cpu = gauges.cpu;
+        for (name, help, value) in [
+            (
+                "cpu_usage_seconds_total",
+                "CPU time the runner and its machines used.",
+                cpu.map(|c| c.usage_usec as f64 / 1e6),
+            ),
+            (
+                "cpu_periods_total",
+                "Scheduler periods in which the runner ran under its CPU limit.",
+                cpu.map(|c| c.nr_periods as f64),
+            ),
+            (
+                "cpu_throttled_periods_total",
+                "Periods in which the CPU limit throttled the runner; over cpu_periods_total, the share of time the owner's machines were slowed down.",
+                cpu.map(|c| c.nr_throttled as f64),
+            ),
+        ] {
+            header(&mut out, name, help, "counter");
+            sample(&mut out, name, &[], value.unwrap_or(f64::NAN));
+        }
         out
     }
 }
@@ -366,6 +409,10 @@ mod tests {
             reserve_mib: 3,
             committed_mib: None,
             storage: None,
+            cpu: None,
+            cpu_limit_milli: None,
+            working_set_mib: None,
+            pressured: None,
         });
 
         let types: Vec<&str> = text
@@ -392,6 +439,12 @@ mod tests {
                 "platform_vm_runner_memory_committed_mib gauge",
                 "platform_vm_runner_storage_used_bytes gauge",
                 "platform_vm_runner_storage_usable_bytes gauge",
+                "platform_vm_runner_memory_working_set_mib gauge",
+                "platform_vm_runner_memory_pressure gauge",
+                "platform_vm_runner_cpu_limit_millicores gauge",
+                "platform_vm_runner_cpu_usage_seconds_total counter",
+                "platform_vm_runner_cpu_periods_total counter",
+                "platform_vm_runner_cpu_throttled_periods_total counter",
             ]
         );
         for line in [
@@ -403,6 +456,9 @@ mod tests {
             "platform_vm_runner_image_fetch_duration_seconds_bucket{outcome=\"failed\",le=\"1200\"} 1",
             "platform_vm_runner_memory_committed_mib NaN",
             "platform_vm_runner_storage_used_bytes NaN",
+            "platform_vm_runner_memory_pressure NaN",
+            "platform_vm_runner_cpu_limit_millicores NaN",
+            "platform_vm_runner_cpu_throttled_periods_total NaN",
         ] {
             assert!(text.lines().any(|l| l == line), "missing {line}\n{text}");
         }
@@ -425,6 +481,14 @@ mod tests {
                 used: 75,
                 usable: 100,
             }),
+            cpu: Some(crate::cpu::CpuStat {
+                usage_usec: 2_500_000,
+                nr_periods: 40,
+                nr_throttled: 10,
+            }),
+            cpu_limit_milli: Some(9000),
+            working_set_mib: Some(3000),
+            pressured: Some(true),
         });
         for line in [
             "platform_vm_runner_machine_operation_duration_seconds_bucket{op=\"create\",outcome=\"ok\",le=\"1\"} 0",
@@ -438,6 +502,12 @@ mod tests {
             "platform_vm_runner_memory_committed_mib 2048",
             "platform_vm_runner_storage_used_bytes 75",
             "platform_vm_runner_storage_usable_bytes 100",
+            "platform_vm_runner_memory_working_set_mib 3000",
+            "platform_vm_runner_memory_pressure 1",
+            "platform_vm_runner_cpu_limit_millicores 9000",
+            "platform_vm_runner_cpu_usage_seconds_total 2.5",
+            "platform_vm_runner_cpu_periods_total 40",
+            "platform_vm_runner_cpu_throttled_periods_total 10",
         ] {
             assert!(text.lines().any(|l| l == line), "missing {line}\n{text}");
         }

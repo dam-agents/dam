@@ -13,7 +13,8 @@ The platform's metrics land in ClickHouse only, and no alert ships with the char
 2. New `helm/templates/monitoring/servicemonitor.yaml` and `prometheusrule.yaml`, rendered only with `monitoring.enabled` and `.Capabilities.APIVersions.Has "monitoring.coreos.com/v1"`.
 3. `helm/templates/clickstack/authorizationpolicy.yaml`: a rule admitting port 9464 with no `from`, since the scraper has no mesh identity.
 4. `helm/values.yaml` `monitoring:` enabled, `labels` for the rule selector, thresholds (warning 0.75, critical 0.9, throttled 0.2, overcommit 1.5); a validator that `monitoring.enabled` needs `clickstack.enabled`.
-5. Rules: pool memory and storage at warning and critical per runner, CPU throttled ≥ 20% for 15 m, resize infeasible > 0, resize deferred for 15 m, cluster memory committed/capacity > 1.5, reserved/capacity > 0.9, admission refusals rising for 15 m, memory pressure; storage overcommit only when capacity is exported. Each description names the `kubectl get events` query that finds the owner.
+5. Rules: pool memory and storage at warning and critical per runner, CPU throttled ≥ 20% for 15 m, resize infeasible > 0, resize deferred for 15 m, cluster memory committed/capacity > 1.5, reserved/capacity > 0.9, admission refusals rising for 15 m, memory pressure; storage overcommit only when capacity is exported.
+   Each description names the `kubectl get events` query that finds the owner.
 6. `docs/architecture/observability.md`: an Alerts section.
 
 ## Acceptance criteria

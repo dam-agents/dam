@@ -212,7 +212,8 @@ What a runner measures is what judging the vm backend against the container one 
 - **Machine operations** — each create, wake, restart and stop as a duration by outcome; the runtime's own start call inside it; and **ready latency**, from asking a machine to start to the first health check its guest answers, once per boot.
 - **Unhealthy restarts** — the ones the runner made on its own because a guest that had answered went quiet, apart from those a changed spec causes.
 - **Failures** by operation and by the reason the Agent is told, and **admission refusals** — machines whose memory did not fit.
-- **Memory** committed to machines, counted the way admission counts it, beside the runner's limit and its own reserve.
+- **Memory** committed to machines, counted the way admission counts it, beside the runner's limit and its own reserve; and the working set its cgroup charges, with whether it is past the [pressure](vm-memory.md) threshold.
+- **CPU** the runner's cgroup used, its limit, and the scheduler periods the limit throttled it in: every machine's vCPUs share that limit, so throttled periods over periods is how far the owner's machines are slowed down.
 - **The image cache** — creates that found a bootable tree and creates that did not, fetch durations by outcome, evictions and the bytes they freed, and the bytes held against the budget.
 - **Storage** — the bytes in use on the owner's claim and the bytes the runner may use there, which the claim's guard judges ([persistence](persistence.md#per-agent-pvcs)).
 
