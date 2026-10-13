@@ -312,6 +312,33 @@ describe("seeding a discovered model", () => {
     expect(await plugin.seedModel()).toBe(true);
     expect(readModel()).toBe("new/model");
   });
+
+  /**
+   * TEST_SCENARIO: The listing after the boot never answers, because the
+   * gateway pod stays down. The boot still counts as checked against the
+   * provider the agent woke with, so a later switch to another provider
+   * waits for the new listing instead of starting on the old model.
+   */
+  it("holds the spawn after a switch when the boot check got no listing", async () => {
+    writeModel("first/model");
+    let env: Record<string, string> = { REDIRECT_URL: "https://old" };
+    const plugin = pluginWith(
+      () => env,
+      async (_spec, asked) =>
+        asked.REDIRECT_URL === "https://old"
+          ? { status: "unavailable" }
+          : {
+              status: "observed",
+              via: "REDIRECT_URL",
+              models: [{ value: "new/model", name: "new/model" }],
+            },
+    );
+    expect(await plugin.seedModel()).toBe(false);
+
+    env = { REDIRECT_URL: "https://new" };
+    expect(await plugin.seedModel()).toBe(true);
+    expect(readModel()).toBe("new/model");
+  });
 });
 
 describe("the model a lease on another provider runs on", () => {

@@ -256,10 +256,7 @@ export function createHarnessConfigPlugin(deps: {
       return true;
     };
 
-    if (
-      standingModel() &&
-      (checkedProvider === undefined || checkedProvider === provider)
-    ) {
+    if (standingModel() && (checkedProvider ??= provider) === provider) {
       void reseed().catch((err: unknown) => {
         log(`[harness-config] model check failed: ${(err as Error).message}`);
       });
