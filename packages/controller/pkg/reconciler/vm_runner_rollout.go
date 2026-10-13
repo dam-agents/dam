@@ -82,7 +82,7 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 	if existing.DeletionTimestamp != nil {
 		return errRunnerTerminating
 	}
-	if stored := existing.Annotations[annRunnerTemplate]; stored != "" && stored != hash && stored == legacyRunnerTemplateHash(dep.Spec, r.config.VM.Runner.ReleaseHostPath != "") {
+	if stored := existing.Annotations[annRunnerTemplate]; stored != "" && stored != hash && stored == legacyRunnerTemplateHash(dep.Spec, existing.Spec, r.config.VM.Runner.ReleaseHostPath != "") {
 		existing.Annotations[annRunnerTemplate] = hash
 		if _, err := cli.Update(ctx, existing, metav1.UpdateOptions{}); err != nil {
 			return err
@@ -132,15 +132,27 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the pod is what the hash covers, so a runner whose pod is unchanged is not rolled — but its own labels and owner references can still drift, from a hand edit or from the runner ServiceAccount being recreated with a new UID, and a Deployment owned by nothing outlives the release. Those are put back with a metadata-only update, which does not change the pod and so restarts no machine. An owner reference the controller could not resolve this pass is not written, rather than stripping the one the runner has.
-// UNIT_BOUNDARY_DESCRIPTION: the hash a runner rendered before the roll left its memory limit out (runnerRollSpec). A runner still carrying it has the pod the controller renders now, so it takes the new hash in a metadata-only update rather than rolling every machine of every owner once.
-func legacyRunnerTemplateHash(spec appsv1.DeploymentSpec, releases bool) string {
-	legacy := runnerRollSpec(spec, releases)
+// UNIT_BOUNDARY_DESCRIPTION: the hash a runner rendered before the roll left its memory out (runnerRollSpec). That hash covered the memory limit and request the runner was rendered with, which for an owner with a UserBudget was the install's rather than their pool, so they are taken from the runner's own template, not the one rendered now. A runner whose hash matches has the pod the controller renders now in all but its memory, which the resize sets in place, so it takes the new hash in a metadata-only update rather than rolling every machine of every owner once.
+func legacyRunnerTemplateHash(desired, existing appsv1.DeploymentSpec, releases bool) string {
+	legacy := runnerRollSpec(desired, releases)
 	for i := range legacy.Template.Spec.Containers {
-		if mem, ok := spec.Template.Spec.Containers[i].Resources.Limits[corev1.ResourceMemory]; ok {
-			if legacy.Template.Spec.Containers[i].Resources.Limits == nil {
-				legacy.Template.Spec.Containers[i].Resources.Limits = corev1.ResourceList{}
+		c := &legacy.Template.Spec.Containers[i]
+		old := slices.IndexFunc(existing.Template.Spec.Containers, func(o corev1.Container) bool { return o.Name == c.Name })
+		if old < 0 {
+			continue
+		}
+		res := existing.Template.Spec.Containers[old].Resources
+		if mem, ok := res.Limits[corev1.ResourceMemory]; ok {
+			if c.Resources.Limits == nil {
+				c.Resources.Limits = corev1.ResourceList{}
 			}
-			legacy.Template.Spec.Containers[i].Resources.Limits[corev1.ResourceMemory] = mem
+			c.Resources.Limits[corev1.ResourceMemory] = mem
+		}
+		if mem, ok := res.Requests[corev1.ResourceMemory]; ok {
+			if c.Resources.Requests == nil {
+				c.Resources.Requests = corev1.ResourceList{}
+			}
+			c.Resources.Requests[corev1.ResourceMemory] = mem
 		}
 	}
 	hash, err := runnerTemplateHash(legacy)

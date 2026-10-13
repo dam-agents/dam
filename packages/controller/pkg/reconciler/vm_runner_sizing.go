@@ -214,12 +214,8 @@ type runnerPodWant struct {
 	hasCPULimit                              bool
 }
 
-func (p runnerPodWant) memoryMoves() bool {
-	return p.currentLimit.Cmp(p.memoryLimit) != 0 || p.currentRequest.Cmp(p.memoryRequest) != 0
-}
-
 func (p runnerPodWant) moves() bool {
-	return p.memoryMoves() || !p.hasCPULimit || p.currentCPU.Cmp(p.cpu) != 0
+	return p.currentLimit.Cmp(p.memoryLimit) != 0 || p.currentRequest.Cmp(p.memoryRequest) != 0 || !p.hasCPULimit || p.currentCPU.Cmp(p.cpu) != 0
 }
 
 func (r *AgentReconciler) runnerPodWants(ctx context.Context, owner string, pod *corev1.Pod, demand runnerDemand) (runnerPodWant, bool) {
@@ -303,7 +299,7 @@ func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, dem
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a reconcile would change the memory of the owner's runner pod: its memory limit or request differ from what the owner's pool and demand call for. The CPU limit is left to the agents' own reconciles, which follow every start and stop. The request holds within a step, so a count that crosses a step boundary and back does not change it; a cluster without in-place resize never changes it.
+// UNIT_BOUNDARY_DESCRIPTION: whether a reconcile would resize the owner's runner pod: its memory limit, memory request or CPU limit differ from what the owner's pool and demand call for, so a UserBudget that changes only `cpu` reaches the pod within one memory pass. The request holds within a step, so a count that crosses a step boundary and back does not change it; a cluster without in-place resize never changes it.
 func (r *AgentReconciler) runnerPodMoves(ctx context.Context, owner string, demand runnerDemand) bool {
 	if !r.podResizeAvailable(ctx) {
 		return false
@@ -317,7 +313,7 @@ func (r *AgentReconciler) runnerPodMoves(ctx context.Context, owner string, dema
 	}
 	return slices.ContainsFunc(pods.Items, func(pod corev1.Pod) bool {
 		want, ok := r.runnerPodWants(ctx, owner, &pod, demand)
-		return ok && want.memoryMoves()
+		return ok && want.moves()
 	})
 }
 

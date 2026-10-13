@@ -130,22 +130,64 @@ func TestAUserBudgetMemoryResizesTheRunnerPodInPlace(t *testing.T) {
 	assert.Equal(t, (4096-512)/2, r.machineMemoryMiB(ctx, testOwner, &agent.Spec))
 }
 
-// TEST_SCENARIO: runners rendered before the roll left the memory limit out carry a hash that includes it. They have the pod the controller renders now, so they must be recognised rather than rolled, which would reboot every machine of every owner once.
-func TestTheRollHashLeavesTheMemoryLimitOutAndKnowsTheOldOne(t *testing.T) {
-	spec := func(mem string) appsv1.DeploymentSpec {
+// TEST_SCENARIO: runners rendered before the roll left their memory out carry a hash that covers the memory limit and request they were rendered with — the install's, even for an owner whose UserBudget already set `memory`. They have the pod the controller renders now in all but the memory the resize sets in place, so they must be recognised from their own template rather than rolled, which would reboot every machine of the owner. A pool below the install's request clamps the rendered request, which must not change the hash either.
+func TestTheRollHashLeavesTheMemoryOutAndKnowsTheOldOne(t *testing.T) {
+	spec := func(request, limit string) appsv1.DeploymentSpec {
 		return appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{
 			Name: vmRunnerComponent, Image: "runner:1",
-			Resources: corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(mem)}},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(request)},
+				Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(limit)},
+			},
 		}}}}}
 	}
-	small, err := runnerTemplateHash(runnerRollSpec(spec("8Gi"), false))
+	install, err := runnerTemplateHash(runnerRollSpec(spec("8Gi", "16Gi"), false))
 	require.NoError(t, err)
-	large, err := runnerTemplateHash(runnerRollSpec(spec("24Gi"), false))
+	raised, err := runnerTemplateHash(runnerRollSpec(spec("8Gi", "24Gi"), false))
 	require.NoError(t, err)
-	assert.Equal(t, small, large)
+	belowRequest, err := runnerTemplateHash(runnerRollSpec(spec("4Gi", "4Gi"), false))
+	require.NoError(t, err)
+	assert.Equal(t, install, raised)
+	assert.Equal(t, install, belowRequest, "a pool below the install's request rolled the runner")
 
-	old, err := runnerTemplateHash(spec("8Gi"))
+	old, err := runnerTemplateHash(spec("8Gi", "16Gi"))
 	require.NoError(t, err)
-	assert.Equal(t, old, legacyRunnerTemplateHash(spec("8Gi"), false))
-	assert.NotEqual(t, old, small)
+	assert.NotEqual(t, old, install)
+	assert.Equal(t, old, legacyRunnerTemplateHash(spec("8Gi", "16Gi"), spec("8Gi", "16Gi"), false))
+	assert.Equal(t, old, legacyRunnerTemplateHash(spec("4Gi", "4Gi"), spec("8Gi", "16Gi"), false),
+		"an owner whose UserBudget already set memory was rendered at the install's memory, so the upgrade must not roll them")
+	changed := spec("4Gi", "4Gi")
+	changed.Template.Spec.Containers[0].Image = "runner:2"
+	assert.NotEqual(t, old, legacyRunnerTemplateHash(changed, spec("8Gi", "16Gi"), false), "a real pod change still rolls")
+}
+
+// TEST_SCENARIO: a UserBudget that changes only `cpu` must reach the running runner pod within one memory pass, not wait for one of the owner's agents to start or stop.
+func TestACPUOnlyUserBudgetChangeResizesWithinOneMemoryPass(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	r.vmRunning.Store(agent.Name, true)
+	node.mu.Lock()
+	node.statuses[agent.Name] = measured(1000)
+	node.mu.Unlock()
+	require.NoError(t, r.Reconcile(ctx, agent))
+	if _, moved := r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{agent}, nil); moved {
+		require.NoError(t, r.Reconcile(ctx, agent))
+	}
+	_, moved := r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{agent}, nil)
+	require.False(t, moved, "a pod already sized for its machines")
+
+	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{CPU: new(resource.MustParse("6"))})
+	name, moved := r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{agent}, nil)
+	assert.True(t, moved)
+	assert.Equal(t, agent.Name, name)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	cpu := runnerPodResources(t, r).Limits[corev1.ResourceCPU]
+	assert.Equal(t, "6", cpu.String())
 }

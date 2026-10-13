@@ -165,6 +165,11 @@ func TestTheMemoryPassReconcilesOnlyWhenThePodRequestWouldMove(t *testing.T) {
 	}
 	clusterResizesPods(r, true)
 	runnerPod(t, r, "2560Mi", "8Gi")
+	pod, err := r.client.CoreV1().Pods("test-agents").Get(context.Background(), r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	pod.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU] = resource.MustParse("8")
+	_, err = r.client.CoreV1().Pods("test-agents").Update(context.Background(), pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
 	r.vmRunning.Store(agent.Name, true)
 	ctx := context.Background()
 	pass := func(usedMiB int) bool {
