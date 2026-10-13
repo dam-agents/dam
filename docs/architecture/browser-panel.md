@@ -5,7 +5,7 @@ Last verified: 2026-10-13
 ## Overview
 
 The **Browser Panel** lets a user see and use a web app their agent runs — a dev server, a quick HTTP server, a whole nested platform — from a panel beside the chat, without SSH port-forwarding.
-It is experimental: it shows only to a user with the addressed-credential-injection flag ([features](features.md)), and only on an agent that requires named connections ([connections](connections.md#addressing-a-connection)).
+It shows only on an agent that requires named connections, which a new agent does by default ([connections](connections.md#addressing-a-connection)).
 
 The app never runs in the user's browser.
 A Chromium **inside the agent's sandbox** loads it, and the panel shows that browser's screen as a video stream and sends the user's pointer and keys back.

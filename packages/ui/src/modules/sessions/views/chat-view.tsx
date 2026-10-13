@@ -573,9 +573,7 @@ export function ChatView() {
     setMobileScreen("chat");
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
-  const canOpenBrowser =
-    features?.["strict-connection-addressing"] === true &&
-    agentView?.requireConnectionAddress === true;
+  const canOpenBrowser = agentView?.requireConnectionAddress === true;
   const browserFills =
     browserMaximized && openBrowserAgentId !== null && canOpenBrowser;
   const sidePanelOpen =

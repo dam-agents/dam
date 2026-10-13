@@ -12,7 +12,7 @@ describe("feature modes", () => {
       repo: {
         listEnabled: () =>
           Promise.resolve({
-            "strict-connection-addressing": true,
+            processes: true,
             "agent-telemetry": true,
           }),
         upsert: () => Promise.resolve(),
@@ -20,13 +20,13 @@ describe("feature modes", () => {
       owner: "u",
       surface: "test",
       modes: {
-        "strict-connection-addressing": "off",
+        processes: "off",
         "interactive-artifacts": "on",
         "agent-telemetry": "experimental",
       },
     });
     expect(await service.flags()).toMatchObject({
-      "strict-connection-addressing": false,
+      processes: false,
       "interactive-artifacts": true,
       "agent-telemetry": true,
       "advanced-connections": false,
