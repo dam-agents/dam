@@ -182,7 +182,7 @@ A cold request parks as a waiter.
 An image may declare a **session-history provider**: it fills the log with no harness process, and the first prompt rehydrates the harness silently, replay dropped — with `session/resume` where the harness advertises that session capability, `session/load` otherwise.
 Resume is the better fit: the log already holds the history, so a harness that streams its replay only after answering the load would otherwise duplicate it.
 Otherwise, or on provider failure, the runtime's own `session/load` fills the log, reaching no client.
-Waiters are then served from the log; the UI also reads that replay as data and renders it while the load engages the session.
+Waiters are then served from the log; the UI also reads its newest tail as data and renders it while the load engages the session.
 
 #### Prompt delivery
 
