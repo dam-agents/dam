@@ -214,9 +214,10 @@ const (
 	// ConditionStartFailed is present only while the pod or machine that runs
 	// the spec its observedGeneration names keeps failing after it started:
 	// its container keeps exiting (ReasonCrashLoop), or it runs without
-	// becoming ready (ReasonNeverReady). AgentPodReady's termination cause can
-	// come from the pod a roll replaces; this condition never does, so the
-	// api-server can roll an image update back on it.
+	// becoming ready (ReasonNeverReady); or while admission refuses the agent
+	// StatefulSet that spec's image (ReasonAdmissionDenied). AgentPodReady's
+	// termination cause can come from the pod a roll replaces; this condition
+	// never does, so the api-server can roll an image update back on it.
 	ConditionStartFailed = "StartFailed"
 )
 
@@ -229,6 +230,9 @@ const (
 	// ReasonNeverReady: the current pod's agent container, or the machine,
 	// has run for ten minutes on this spec without becoming ready.
 	ReasonNeverReady = "NeverReady"
+	// ReasonAdmissionDenied: an admission webhook or policy refused the agent
+	// StatefulSet with this spec's image, so the old pod keeps running.
+	ReasonAdmissionDenied = "AdmissionDenied"
 )
 
 // Reasons on ConditionRuntimeMigrating. Until Verified the container spec is
