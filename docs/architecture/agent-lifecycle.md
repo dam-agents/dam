@@ -189,6 +189,7 @@ A provider module runs in a worker thread that the runtime's entry point starts 
 Resume is the better fit: the log already holds the history, so a harness that streams its replay only after answering the load would otherwise duplicate it.
 Otherwise, or on provider failure, the runtime's own `session/load` fills the log, reaching no client.
 Waiters are then served from the log; the UI also reads its newest tail as data and renders it while the load engages the session.
+On a waking Agent the UI asks for that tail at the click, as it asks for the session list: the agent's tRPC relay holds the ask until the Agent answers, and an ask it refuses is asked again once the Agent is operable.
 
 #### Prompt delivery
 
