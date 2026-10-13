@@ -148,7 +148,7 @@ The schedule-driven poke is the exception: it doesn't wait, so there is no bound
 The UI holds a start to the same budget: past it, it offers Restart and the controller's not-ready message, timed from when it first saw the Agent starting.
 What the chat shows during the start depends on the Backend.
 A vm Agent boots in seconds, so its chat stays usable: the composer takes a prompt and holds it until the Agent is ready, and the sessions list shows a placeholder.
-A container Agent takes too long for that to make sense, so it starts behind a full-screen overlay with its avatar, the start's state and any workspace failure.
+A container Agent takes too long for that to make sense, so its chat sits behind an overlay while it starts, showing its avatar, a slow-start warning and any workspace failure.
 
 ### Schedule fire
 
