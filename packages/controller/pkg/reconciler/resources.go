@@ -114,6 +114,7 @@ func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr stri
 		{Name: "http_proxy", Value: proxyAddr},
 		{Name: "NODE_EXTRA_CA_CERTS", Value: "/etc/platform/ca/ca.crt"},
 		{Name: "NODE_USE_SYSTEM_CA", Value: "1"},
+		{Name: "SSL_CERT_DIR", Value: "/etc/platform/ca"},
 		{Name: "NODE_USE_ENV_PROXY", Value: "1"},
 		{Name: "GIT_HTTP_PROXY_AUTHMETHOD", Value: "basic"},
 		{Name: "NO_PROXY", Value: "localhost,127.0.0.1,::1"},
