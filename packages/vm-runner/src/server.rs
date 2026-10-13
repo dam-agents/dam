@@ -17,7 +17,7 @@ use crate::cacheapi::CacheClient;
 use crate::capability::Verified;
 use crate::capacity::Capacity;
 use crate::console::{with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
-use crate::fetch::{failure_reason, seed_missing, unusable};
+use crate::fetch::{failure_reason, on_own_claim, seed_missing, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::{
     CacheConfig, ImageCache, Images, Resolved, HOLD_LEASE, REF_FRESH, ROOTFS_DIR,
@@ -999,6 +999,7 @@ impl Server {
                 tracing::warn!(error = %format!("{e:#}"), digest = %held.digest, "image cache: the service cannot be reached, so this machine boots the tree another of this runner's machines holds");
                 held
             }
+            Err(e) if self.config.image_cache_socket.is_none() => return Err(on_own_claim(e)),
             Err(e) => return Err(e),
         };
         self.metrics.lookup(lookup.fetched.is_none());

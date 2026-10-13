@@ -5,7 +5,8 @@
     "MachineOutOfCapacity",
     "MachineImageUnavailable",
     "MachineBootFailed",
-    "MachineSeedMissing"
+    "MachineSeedMissing",
+    "MachineStorageFull"
   ],
   "seedExitPermanent": 3,
   "releaseHolds": ["unstaged", "runtime", "failed"]

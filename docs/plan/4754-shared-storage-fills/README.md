@@ -32,7 +32,7 @@ A refused machine is not parked: parking halts a running machine, and the decisi
 
 | #  | Title | Scope | Depends on |
 |----|-------|-------|------------|
-| 01 | [ ] A `MachineStorageFull` reason and honest out-of-space labels | vocabulary, runner classification, controller constant | — |
+| 01 | [x] A `MachineStorageFull` reason and honest out-of-space labels | vocabulary, runner classification, controller constant | — |
 | 02 | [ ] The runner guards its claim | statvfs guard, refusals, cache shedding, seed refusal, gauges, docs | 01 |
 | 03 | [ ] Guests free scratch while the claim is short | share flag, platform-init eviction trigger | 02 |
 | 04 | [ ] Users read why storage stopped their agent | api-server classification and copy | 01 |

@@ -157,6 +157,7 @@ pub const REASON_OUT_OF_CAPACITY: &str = "MachineOutOfCapacity";
 pub const REASON_IMAGE_UNAVAILABLE: &str = "MachineImageUnavailable";
 pub const REASON_BOOT_FAILED: &str = "MachineBootFailed";
 pub const REASON_SEED_MISSING: &str = "MachineSeedMissing";
+pub const REASON_STORAGE_FULL: &str = "MachineStorageFull";
 
 #[cfg(test)]
 mod tests {
@@ -299,6 +300,7 @@ mod tests {
                 REASON_IMAGE_UNAVAILABLE,
                 REASON_BOOT_FAILED,
                 REASON_SEED_MISSING,
+                REASON_STORAGE_FULL,
             ])
         );
         assert_eq!(vocabulary["seedExitPermanent"], SEED_EXIT_PERMANENT);
