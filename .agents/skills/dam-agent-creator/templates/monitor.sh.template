@@ -59,10 +59,11 @@ int_key() { # <key> <default>
   esac
 }
 
-# the retained events newer than <epoch>, one JSON object per line, torn lines skipped
+# the retained events newer than <epoch>, one JSON object per line, torn lines skipped;
+# the daily files back to that epoch, plus one for the UTC day boundary
 events_since() { # <epoch>
-  local f
-  for f in $(find "$LOG_DIR" -maxdepth 1 -name 'events-*.jsonl' -mtime -3 2>/dev/null | sort); do
+  local f days=$(( (NOW_EPOCH - $1) / 86400 + 2 ))
+  for f in $(find "$LOG_DIR" -maxdepth 1 -name 'events-*.jsonl' -mtime "-$days" 2>/dev/null | sort); do
     cat "$f" 2>/dev/null
   done | jq -cR 'fromjson? // empty' 2>/dev/null \
        | jq -c --argjson since "$1" \
@@ -174,7 +175,7 @@ fi
 if [ -n "${GITHUB_REPO_WORK:-}" ]; then
   ERR="$(events_since $(( NOW_EPOCH - 86400 )) | jq -sc "$EP"'
     [.[] | select(.event == "work_backup")] | sort_by(.ts | ep)
-    | (map(select(.level != "error")) | last) as $ok
+    | (map(select(.msg | startswith("pushed"))) | last) as $ok
     | [.[] | select(.level == "error" and ($ok == null or (.ts | ep) > ($ok.ts | ep)))] | first')"
   if [ -n "$ERR" ] && [ "$ERR" != null ] \
      && [ $(( NOW_EPOCH - $(printf '%s' "$ERR" | jq -r "$EP"'.ts | ep') )) -ge 21600 ]; then
