@@ -15,7 +15,7 @@ async function answers(healthUrl: string): Promise<boolean> {
   }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a relay hold that waits for a wake ends when the agent is Ready, or sooner, when the agent answers its health check through its Service while the cached Agent already shows its gateway ready. Ready reaches the api-server only after the controller's next full reconcile writes it, about half a second after the guest answers; the health check is the same one that makes the agent Ready, so the relay opens its upstream that much sooner. The gateway gate keeps the agent's egress up before anything is sent to it. A stop, a runtime migration or a client that left ends the polling, and a wake that fails still rejects with its cause.
+// UNIT_BOUNDARY_DESCRIPTION: a relay hold that waits for a wake ends when the agent is Ready. A hold that begins on a hibernated Agent, whether or not its wake is already asked for, can end sooner: when the agent answers its health check through its Service while the cached Agent shows its gateway ready. Ready reaches the api-server only after the controller's next full reconcile writes it, so the relay opens its upstream that much sooner. This check is weaker than Ready, because it does not know which pod or machine revision answered. It is used only on a wake from hibernation: hibernation stops the agent's pod or machine, so what answers came up for this wake. A running agent that is not Ready can be in a restart, and a vm machine keeps answering on its port until the restart stops it, so that hold waits for Ready. A hold that begins after the controller has started the wake also waits for Ready. The gap: a vm machine that its runner could not stop at hibernation runs until the next reconcile stops it. The gateway gate keeps the agent's egress up before anything is sent to it. A stop, a runtime migration or a client that left ends the polling, and a wake that fails still rejects with its cause.
 export async function readyOrAnswering(
   repo: Pick<AgentsRepository, "peekCached">,
   agentId: string,
@@ -23,6 +23,7 @@ export async function readyOrAnswering(
   healthUrl: string,
   gone: () => boolean,
 ): Promise<void> {
+  if (!repo.peekCached(agentId)?.hibernated) return ready;
   let settled = false;
   const done = ready.finally(() => {
     settled = true;
