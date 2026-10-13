@@ -323,9 +323,14 @@ virtualization:
     # A pass visits each runner about once a minute while its agents run, and
     # on the controller's ten-minute sweep otherwise, so a full roll takes
     # roughly owners / maxConcurrent × (runner restart + machine boot).
+    # A runner whose owner has an agent in the middle of a turn does not take
+    # a free place in the roll: it is offered again on the next pass, and
+    # other owners roll meanwhile. `idleWait` bounds that wait; past it, the
+    # runner rolls even with an agent busy.
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m
+      idleWait: 1h
     # A directory on the node holding pre-flattened image trees (each with
     # its launch record; `mise run image:stage-vm` makes one) or `docker save`
     # archives, named after the image reference and mounted read-only into

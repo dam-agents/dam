@@ -12,6 +12,10 @@ A runner is mid-roll from that moment until its new pod is ready and every machi
 A new pod that is still not ready at the timeout is a broken runner release, not a slow machine: that roll keeps its place, so the release goes no further, and is marked stalled and reported as an error until its pod becomes ready or the pod changes again.
 A runner whose pod is unchanged is not rolled, but labels or owner references that drifted on it are put back without touching the pod.
 A new owner's runner is created at once, since there is nothing of theirs to protect.
+A changed runner also waits for its owner's agents to be idle, since a roll ends the turn an agent is in.
+Before it takes a place in the roll, the controller asks each of the owner's ready machines the idle checker's own question, whether its agent's status says idle, and an agent that does not answer counts as idle.
+A runner with a busy agent holds no place, so other owners roll meanwhile, and the next pass offers it again.
+The install's idle wait, an hour by default, bounds this from the first pass that found the owner busy, and is recorded on the runner so a controller restart does not start it over; past it, the runner rolls with the agent busy, so an owner who is never idle still gets the release.
 Rolls advance as agents reconcile and on the periodic sweep, which offers every runner its turn in name order so owners whose agents all sleep still roll; which runners are mid-roll is read once every few seconds rather than on every turn, and a roll the controller starts counts at once.
 The sweep only ever updates a runner that exists — creating one is an agent's reconcile's alone.
 A roll still reboots each owner's machines once: nothing checkpoints them across it, and the VMM host is the same pod as the machine API it serves.

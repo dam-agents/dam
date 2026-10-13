@@ -25,8 +25,10 @@ const (
 	annRunnerRolledAt = "agent-platform.ai/runner-rolled-at"
 	annRunnerAwaiting = "agent-platform.ai/runner-awaiting"
 	annRunnerStalled  = "agent-platform.ai/runner-roll-stalled"
+	annRunnerBusy     = "agent-platform.ai/runner-busy-since"
 
 	defaultRunnerSettleTimeout = 10 * time.Minute
+	defaultRunnerIdleWait      = time.Hour
 
 	// UNIT_BOUNDARY_DESCRIPTION: how long the list of runners mid-roll is reused. The rollout sweep offers every runner its turn, and each turn asks which others are mid-roll; listing every runner Deployment and asking each mid-roll runner about its machines on every turn is quadratic in owners. A roll this controller starts is added to the kept list at once, so the width still holds; what can be late is only a roll settling, by this much.
 	runnerRollViewTTL = 10 * time.Second
@@ -95,12 +97,16 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 		slog.Info("vm runner: the pod changed, waiting for other runners to finish rolling", "owner", owner, "rolling", others)
 		return nil
 	}
+	if r.runnerRollWaitsForIdle(ctx, owner, existing) {
+		return nil
+	}
 	dep.Annotations = map[string]string{}
 	for k, v := range existing.Annotations {
 		dep.Annotations[k] = v
 	}
 	delete(dep.Annotations, annRunnerAwaiting)
 	delete(dep.Annotations, annRunnerStalled)
+	delete(dep.Annotations, annRunnerBusy)
 	dep.Annotations[annRunnerTemplate] = hash
 	dep.Annotations[annRunnerRolledAt] = time.Now().UTC().Format(time.RFC3339)
 	if ready := r.readyMachines(ctx, owner); len(ready) > 0 {
@@ -120,7 +126,9 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 
 // UNIT_BOUNDARY_DESCRIPTION: the pod is what the hash covers, so a runner whose pod is unchanged is not rolled — but its own labels and owner references can still drift, from a hand edit or from the runner ServiceAccount being recreated with a new UID, and a Deployment owned by nothing outlives the release. Those are put back with a metadata-only update, which does not change the pod and so restarts no machine. An owner reference the controller could not resolve this pass is not written, rather than stripping the one the runner has.
 func (r *AgentReconciler) repairRunnerDeploymentMeta(ctx context.Context, owner string, existing, desired *appsv1.Deployment) error {
-	if !repairRunnerMeta(&existing.ObjectMeta, desired.Labels, desired.OwnerReferences) {
+	_, waited := existing.Annotations[annRunnerBusy]
+	delete(existing.Annotations, annRunnerBusy)
+	if !repairRunnerMeta(&existing.ObjectMeta, desired.Labels, desired.OwnerReferences) && !waited {
 		return nil
 	}
 	if _, err := r.client.AppsV1().Deployments(existing.Namespace).Update(ctx, existing, metav1.UpdateOptions{}); err != nil {
@@ -146,6 +154,41 @@ func repairRunnerMeta(meta *metav1.ObjectMeta, labels map[string]string, refs []
 		changed = true
 	}
 	return changed
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a roll reboots every machine of the owner, and an agent in the middle of a turn loses that turn. So a changed runner whose owner has a busy agent — one whose `/api/status` does not say `idle`, the idle checker's own probe — does not take its place in the roll: it holds no place, so other owners roll meanwhile, and the next pass or sweep offers it again. `rollout.idleWait` bounds the wait from the first pass that found it busy, recorded on the Deployment so a controller restart does not start the wait over; past it, the runner rolls with the agent busy, since an owner who is never idle must still get the release. An agent that does not answer counts as idle.
+func (r *AgentReconciler) runnerRollWaitsForIdle(ctx context.Context, owner string, existing *appsv1.Deployment) bool {
+	var busy []string
+	for _, id := range r.readyMachines(ctx, owner) {
+		if r.busyProbe(ctx, id) {
+			busy = append(busy, id)
+		}
+	}
+	if len(busy) == 0 {
+		return false
+	}
+	wait := r.config.VM.Runner.Rollout.IdleWait.AsDuration()
+	if wait <= 0 {
+		wait = defaultRunnerIdleWait
+	}
+	since, err := time.Parse(time.RFC3339, existing.Annotations[annRunnerBusy])
+	if err != nil {
+		if existing.Annotations == nil {
+			existing.Annotations = map[string]string{}
+		}
+		existing.Annotations[annRunnerBusy] = time.Now().UTC().Format(time.RFC3339)
+		if _, err := r.client.AppsV1().Deployments(existing.Namespace).Update(ctx, existing, metav1.UpdateOptions{}); err != nil {
+			slog.Warn("vm runner: recording that the roll waits for busy agents", "owner", owner, "error", err)
+		}
+		slog.Info("vm runner: the pod changed, waiting for the owner's agents to finish their turns", "owner", owner, "busy", busy, "idleWait", wait)
+		return true
+	}
+	if time.Since(since) < wait {
+		slog.Info("vm runner: the pod changed, waiting for the owner's agents to finish their turns", "owner", owner, "busy", busy, "since", since)
+		return true
+	}
+	slog.Warn("vm runner: the owner's agents stayed busy past the idle wait, rolling anyway", "owner", owner, "busy", busy, "since", since, "idleWait", wait)
+	return false
 }
 
 func (r *AgentReconciler) readyMachines(ctx context.Context, owner string) []string {
