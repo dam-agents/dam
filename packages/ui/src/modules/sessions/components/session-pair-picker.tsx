@@ -6,7 +6,7 @@ import {
 } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
-import { useState } from "react";
+import { type ComponentProps, useState } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ import {
   fittingProviders,
   harnessOptions,
   nextPair,
+  pairLabel,
   type ProviderConnectionRef,
   providerOptions,
 } from "../lib/session-pair-options.js";
@@ -92,7 +93,6 @@ export function SessionPairPicker({
     [...offered.granted, ...offered.addable].some((o) => o.id === p.id),
   );
   const attached = (id: string) => offered.granted.some((p) => p.id === id);
-  const provider = providers.granted.find((p) => p.id === pair?.provider);
   const unsupported = (name: string) => {
     const fit = providerOptions(
       name,
@@ -113,6 +113,11 @@ export function SessionPairPicker({
   const choose = (next: SessionPair) => setPair(agentId, next);
   const withSettings = (next: SessionPair): SessionPair =>
     Object.keys(settings).length > 0 ? { ...next, settings } : next;
+  const label =
+    catalog &&
+    (pair
+      ? pairLabel(pair, catalog.harnesses, providers.granted)
+      : "Choose a harness and model");
 
   if (providers.loaded && providers.owned.length === 0)
     return <ConnectProvidersPrompt onClick={onConnectProviders} />;
@@ -120,17 +125,7 @@ export function SessionPairPicker({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          data-testid="session-pair-picker"
-          className="flex items-center gap-1 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {pair
-            ? [pair.model, harnessName(pair.harness), provider?.name]
-                .filter(Boolean)
-                .join(" · ")
-            : "Choose a harness and model"}
-        </button>
+        <SessionPairTrigger label={label} />
       </PopoverTrigger>
       <PopoverContent
         side="top"
@@ -271,6 +266,25 @@ export function SessionPairPicker({
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+export function SessionPairTrigger({
+  label,
+  testId = "session-pair-picker",
+  ...props
+}: ComponentProps<"button"> & { label: string | undefined; testId?: string }) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      aria-busy={label ? undefined : true}
+      aria-label={label ? undefined : "Loading harness and model"}
+      className="flex items-center gap-1 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      {...props}
+    >
+      {label || <Spinner size={12} />}
+    </button>
   );
 }
 

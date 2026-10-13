@@ -9,7 +9,8 @@ import {
   type AttentionItem,
   SESSION_CATEGORIES,
   type SessionCategory,
-  type SessionMode,
+  SessionMode,
+  type SessionPair,
   SessionType,
   type SessionView,
 } from "api-server-api";
@@ -65,13 +66,13 @@ export function seedEmptySessionList(
   );
 }
 
-export function optimisticInsertSession(
+function sessionStub(
   agentId: string,
   sessionId: string,
   mode: SessionMode,
-  running = false,
-): void {
-  const stub: SessionView = {
+  running: boolean,
+): SessionView {
+  return {
     sessionId,
     agentId,
     type: SessionType.Regular,
@@ -82,6 +83,36 @@ export function optimisticInsertSession(
     updatedAt: null,
     running,
   };
+}
+
+export function seedStartedSession(
+  agentId: string,
+  sessionId: string,
+  pair: SessionPair | null,
+): void {
+  queryClient.setQueryData<SessionView | null>(
+    acpSessionsKeys.session(agentId, sessionId),
+    (cached) =>
+      cached ?? {
+        ...sessionStub(agentId, sessionId, SessionMode.Chat, false),
+        ...(pair && {
+          harness: pair.harness,
+          provider: pair.provider,
+          model: pair.model,
+          ...(pair.settings && { settings: pair.settings }),
+        }),
+      },
+    { updatedAt: 0 },
+  );
+}
+
+export function optimisticInsertSession(
+  agentId: string,
+  sessionId: string,
+  mode: SessionMode,
+  running = false,
+): void {
+  const stub = sessionStub(agentId, sessionId, mode, running);
   queryClient.setQueriesData<SessionPages>(
     { queryKey: acpSessionsKeys.pages(agentId) },
     (prev) => {

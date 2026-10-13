@@ -26,6 +26,7 @@ import {
 import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
+import { seedStartedSession } from "../api/queries.js";
 import { settledNextSessionPair } from "../api/session-pair.js";
 import { draftKey } from "../lib/draft-key.js";
 import {
@@ -226,6 +227,7 @@ export function useAcpConnection(
           },
         });
         startedSessionId = session.sessionId;
+        seedStartedSession(agentId, startedSessionId, next?.pair ?? null);
       } catch (err) {
         try {
           ws.close();

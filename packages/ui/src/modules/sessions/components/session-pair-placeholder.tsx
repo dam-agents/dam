@@ -5,13 +5,21 @@ import {
 } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 
+import { useStore } from "../../../store.js";
 import {
   useHarnessCatalog,
   useProviderConnections,
   useRememberedPair,
 } from "../api/session-pair.js";
-import { fittingProviders, nextPair } from "../lib/session-pair-options.js";
-import { ConnectProvidersPrompt } from "./session-pair-picker.js";
+import {
+  fittingProviders,
+  nextPair,
+  pairLabel,
+} from "../lib/session-pair-options.js";
+import {
+  ConnectProvidersPrompt,
+  SessionPairTrigger,
+} from "./session-pair-picker.js";
 
 interface Props {
   agentId: string;
@@ -30,28 +38,23 @@ export function SessionPairPlaceholder({
 }: Props) {
   const { data: catalog } = useHarnessCatalog();
   const { data: remembered } = useRememberedPair(agentId);
+  const chosen = useStore((s) => s.nextSessionPair[agentId] ?? null);
   const providers = useProviderConnections(agentId);
   const views = catalog?.harnesses ?? [];
   const harness = agentHarness ?? catalog?.default;
   const pair =
     harness &&
     (nextPair(
-      null,
+      chosen,
       remembered?.harness === harness
         ? remembered
         : { harness, provider: null, model: null },
       [harness],
       fittingProviders(views, providers.granted),
     ) ?? { harness, provider: null, model: null });
-  const label =
-    pair &&
-    [
-      pair.model,
-      views.find((h) => h.name === pair.harness)?.displayName ?? pair.harness,
-      providers.granted.find((p) => p.id === pair.provider)?.name,
-    ]
-      .filter(Boolean)
-      .join(" · ");
+  const label = pair
+    ? pairLabel(pair, catalog?.harnesses, providers.granted)
+    : undefined;
 
   if (providers.loaded && providers.owned.length === 0)
     return <ConnectProvidersPrompt onClick={onConnectProviders} />;
@@ -59,15 +62,7 @@ export function SessionPairPlaceholder({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          data-testid="session-pair-picker"
-          aria-busy="true"
-          aria-label={label ? undefined : "Loading harness and model"}
-          className="flex items-center gap-1 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {label || <Spinner size={12} />}
-        </button>
+        <SessionPairTrigger label={label} aria-busy />
       </PopoverTrigger>
       <PopoverContent
         side="top"
