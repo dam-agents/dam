@@ -54,7 +54,7 @@ export function GettingStartedDock({ placement }: Props) {
   const finishCelebration = useCallback(() => {
     if (!celebrating) return;
     setJustUnlocked(celebrating.unlock.character);
-    if (celebrating.variant === "first-agent") setExpanded(true);
+    if (celebrating.unlock.task === "create-agent") setExpanded(true);
     markSeen.mutate({ task: celebrating.unlock.task });
   }, [celebrating, markSeen, setExpanded]);
 
@@ -81,27 +81,29 @@ export function GettingStartedDock({ placement }: Props) {
           />
         </div>
       )}
-      <div className="pointer-events-auto">
-        {expanded && !celebrating ? (
-          <ChecklistPanel
-            rows={checklist.rows}
-            unlocked={checklist.unlocked}
-            justUnlocked={justUnlocked}
-            onCollapse={() => setExpanded(false)}
-            onDismiss={dismiss}
-            onStart={(task) => void startTask(task)}
-          />
-        ) : (
-          <ChecklistPill
-            key={justUnlocked ?? "none"}
-            done={checklist.unlocked.length}
-            total={checklist.rows.length}
-            pulse={justUnlocked !== null}
-            onExpand={() => setExpanded(true)}
-            onDismiss={dismiss}
-          />
-        )}
-      </div>
+      {!checklist.dismissed && (
+        <div className="pointer-events-auto">
+          {expanded && !celebrating ? (
+            <ChecklistPanel
+              rows={checklist.rows}
+              unlocked={checklist.unlocked}
+              justUnlocked={justUnlocked}
+              onCollapse={() => setExpanded(false)}
+              onDismiss={dismiss}
+              onStart={(task) => void startTask(task)}
+            />
+          ) : (
+            <ChecklistPill
+              key={justUnlocked ?? "none"}
+              done={checklist.unlocked.length}
+              total={checklist.rows.length}
+              pulse={justUnlocked !== null}
+              onExpand={() => setExpanded(true)}
+              onDismiss={dismiss}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

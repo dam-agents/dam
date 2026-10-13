@@ -15,7 +15,8 @@ So a task counts the same whether the user did it in the browser, with the CLI, 
 The api-server records each unlock in Postgres and keeps it after the thing that earned it is deleted, so an avatar never locks again.
 Each replica remembers the tasks it already recorded, so the message sent on every prompt costs nothing after the first.
 
-The character a task unlocks is random among the ones still locked, with one exception: the first Agent unlocks the character it was created with, so the avatar the user sees on it is the one they just unlocked.
+The character a task unlocks is random among the ones still locked, with one exception: the first Agent unlocks the character it was created with while that character is still locked, so the avatar the user sees on it is the one they just unlocked.
+When another task already unlocked that character, the first Agent unlocks a random locked one, and the UI does not claim it is on the Agent.
 A user with nothing unlocked yet gets a first Agent with the character its name gives it, which the create stores on the Agent.
 Concurrent unlocks for one user are serialized in the database, so two tasks never unlock the same character.
 
@@ -27,7 +28,7 @@ The Agent whose create is that first meeting does not count.
 
 ## In the browser
 
-The UI reads the user's progress and renders it as a dock in the lower right corner; it starts as a collapsed pill and opens once the first Agent's character is unlocked.
+The UI reads the user's progress and renders it as a dock in the lower right corner; it starts as a collapsed pill and opens once the first Agent's task is done.
 On a page the dock floats above the mobile navigation bar; in an Agent's chat it sits inside the message area, so it never covers the composer.
 Each row opens the place where the task is done; tasks on an Agent open the newest one, and the chat tasks leave a starting line in its composer.
 Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md), and the dock plays a short celebration for each unlock the user has not seen, one at a time, then records it as seen.

@@ -1,5 +1,5 @@
 import type { AvatarCharacter } from "api-server-api/avatar/svg";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -42,7 +42,12 @@ interface Props {
  */
 export function UnlockCelebration({ character, variant, onFinished }: Props) {
   const [collecting, setCollecting] = useState(false);
+  const finished = useRef(onFinished);
   const copy = COPY[variant];
+
+  useEffect(() => {
+    finished.current = onFinished;
+  }, [onFinished]);
 
   useEffect(() => {
     const t = setTimeout(() => setCollecting(true), AUTO_COLLECT_MS);
@@ -51,9 +56,9 @@ export function UnlockCelebration({ character, variant, onFinished }: Props) {
 
   useEffect(() => {
     if (!collecting) return;
-    const t = setTimeout(onFinished, COLLECT_MS);
+    const t = setTimeout(() => finished.current(), COLLECT_MS);
     return () => clearTimeout(t);
-  }, [collecting, onFinished]);
+  }, [collecting]);
 
   return (
     <div
