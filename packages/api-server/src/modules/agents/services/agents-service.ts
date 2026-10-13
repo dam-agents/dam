@@ -1523,7 +1523,6 @@ export function createAgentsService(deps: {
       return ok(
         runtimeMigrationPlan(infra, {
           ...runtimeMigrationContext,
-          defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
           retentionMs: deps.runtimeMigrationRetentionMs ?? null,
         }),
       );
