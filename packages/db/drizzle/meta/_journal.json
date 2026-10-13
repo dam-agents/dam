@@ -498,6 +498,13 @@
       "when": 1791920121920,
       "tag": "0070_identity_link_team",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1791921552200,
+      "tag": "0071_resource_alerts",
+      "breakpoints": true
     }
   ]
 }

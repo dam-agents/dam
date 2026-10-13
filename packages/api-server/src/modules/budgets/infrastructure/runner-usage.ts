@@ -44,6 +44,15 @@ export async function readRunnerUsage(
   return usage;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the owners whose runner can be read for usage, one per usage Secret. A runner outside the cluster serves every owner from one Secret with no owner on it, so it names nobody.
+export async function listRunnerUsageOwners(k8s: K8sClient): Promise<string[]> {
+  const secrets = await k8s.listSecrets(`${USAGE_SECRET_LABEL}=true`);
+  return secrets.flatMap((s) => {
+    const owner = s.metadata?.labels?.[LABEL_OWNER];
+    return owner ? [owner] : [];
+  });
+}
+
 async function fetchUsage(
   k8s: K8sClient,
   owner: string,

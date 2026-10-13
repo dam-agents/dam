@@ -987,3 +987,19 @@ export const attentionState = pgTable(
     index("attention_state_user_idx").on(table.userSub),
   ],
 );
+
+export const resourceAlerts = pgTable(
+  "resource_alerts",
+  {
+    ownerSub: text("owner_sub").notNull(),
+    kind: text("kind").notNull(),
+    level: text("level").notNull(),
+    notifiedLevel: text("notified_level"),
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    version: integer("version").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.ownerSub, table.kind] })],
+);

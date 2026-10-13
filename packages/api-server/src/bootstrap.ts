@@ -11,7 +11,13 @@ import {
   createLeaseApi,
   podBaseUrl,
 } from "./modules/agents/infrastructure/k8s.js";
-import { composeStorageGate } from "./modules/budgets/index.js";
+import {
+  composeStorageGate,
+  listRunnerUsageOwners,
+  readRunnerUsage,
+} from "./modules/budgets/index.js";
+import { composeResourceAlerts } from "./modules/resource-alerts/index.js";
+import { parseInfraAgent } from "./modules/agents/infrastructure/agent-mappers.js";
 import { createKitUpdateMarks } from "./modules/agents/infrastructure/kit-update-marks.js";
 import {
   AGENTS_PLURAL,
@@ -874,7 +880,11 @@ export async function bootstrap() {
     bus: redisBus,
     log: (m) => getLogger().warn(`[live-events] ${m}`),
     k8s: k8sClient,
-    onAgentChanged: () => sessionWatcher.agentsChanged(),
+    onAgentChanged: (agentId) => {
+      sessionWatcher.agentsChanged();
+      const cached = agentStateCache.peekCached(agentId);
+      if (cached) resourceAlerts.agentChanged(parseInfraAgent(cached));
+    },
   });
   liveEventsModule.start();
   const agentWatchRole: LeaderRole = {
@@ -1128,6 +1138,21 @@ export async function bootstrap() {
     blobs: createRedisBlobHandoff(sharedRedis),
     isLeader: () => leaderLease.isRunning("channels"),
   });
+
+  const resourceAlerts = composeResourceAlerts({
+    db,
+    notify: (ownerSub, text) => channelManager.notifyPerson(ownerSub, text),
+    listStorageOwners: () => listRunnerUsageOwners(k8sClient),
+    readStorage: async (ownerSub) =>
+      (await readRunnerUsage(k8sClient, ownerSub))?.storage ?? null,
+    listOwnerAgents: async (ownerSub) =>
+      (await agentStateCache.list(ownerSub)).map(parseInfraAgent),
+    uiBaseUrl: config.uiBaseUrl,
+    log: (m) => getLogger().warn(`[resource-alerts] ${m}`),
+  });
+  await periodicJobs.register("resource-alerts", 5 * 60_000, () =>
+    resourceAlerts.evaluateStorage(),
+  );
 
   const leaderLease = createLeaderLease({
     leases: leaseApi,
@@ -1740,6 +1765,7 @@ export async function bootstrap() {
     await agentStateCache.stop();
     await leaderLease.stop();
     liveEventsModule.stop();
+    resourceAlerts.stop();
     await periodicJobs.close();
     channelRpc.close();
     await channelManager.stopAll();

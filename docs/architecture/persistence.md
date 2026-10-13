@@ -264,6 +264,7 @@ An out-of-space error the runner meets anywhere on the claim is reported the sam
 A storage refusal does not park the Agent the way a memory refusal does: parking would halt a machine, and nothing an idle agent holds in memory frees disk.
 The api-server says the same before an Agent is written: it reads the owner's runner through its read-only usage capability, and refuses a new vm agent — a create, a kit applied, a spawn, a move onto the vm backend — once the claim is 90% used, with the figures and the same three ways out.
 Usage it cannot read refuses nothing, since the runner refuses the machine anyway.
+Past 90%, and again past 98% when writes start failing, the owner also gets a Slack direct message with the same figures and ways out ([resource alerts](budgets.md#resource-alerts)).
 
 ### The machine image cache
 

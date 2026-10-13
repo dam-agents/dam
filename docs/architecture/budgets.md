@@ -152,3 +152,22 @@ Deliberately local to the api-server: the alternative — echoing the denied act
 
 Users free capacity by stopping a running agent (see [agent-lifecycle](agent-lifecycle.md) for the hard-stop mechanics) or letting it hibernate — and, for a start they are blocked on, the gate frees it for them where it can ([above](#reclaiming-room-for-a-blocked-start)).
 Reserved is computed from live state and never persisted, so a hibernate, stop, or delete credits the budget back with nothing to reconcile.
+
+## Resource alerts
+
+A vm agent's owner hears about a severe resource problem even when nobody is looking at the web app: the platform sends them a Slack direct message ([channels](channels.md)) when their agents' shared storage passes 90% — new and stopped agents can't start — or 98% — writes are failing ([persistence](persistence.md)), and when their runner was killed for running out of memory ([vm-memory](vm-memory.md)).
+Each message gives the figures or the agents affected, and what to do.
+Lower levels show only in the web app.
+
+The api-server evaluates them unattended, on one replica at a time.
+Storage is read every five minutes from each owner's runner, through the same read-only usage read the create refusal uses; a runner it cannot read changes nothing.
+An out-of-memory kill is seen on the agents the controller marks with it, collected over a short window so one message names every affected agent.
+
+Messages are limited so an owner near a threshold is not messaged at every reading:
+
+- **Storage** sends once per rise past the level last told, at most once a day, except one escalation from 90% to 98% inside the day; the level holds between 80% and 90%, and a reading under 80% re-arms it.
+- **Out of memory** sends once per episode, which ends when no agent carries the mark, and again only six hours after the last message, so a runner killed in a loop sends one.
+
+Each alert's state is a Postgres row per owner and kind.
+A message goes out only after a compare-and-set write of the next state wins, so two evaluations racing, or a lease handover, never send it twice; a send that then fails is lost rather than repeated.
+A user who never linked Slack (`/platform login`) gets no message; there is no opt-out, and a reply to one is not handled.
