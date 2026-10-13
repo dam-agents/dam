@@ -722,9 +722,6 @@ seaweedfs:
       cpu: 500m
       memory: 1Gi
 
-# -- Agent-telemetry backend (ClickStack). Off by default. Requires the ClickHouse and MongoDB
-# operator charts installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.
-# Keys other than `enabled`/`collector` are forwarded to the clickstack subchart.
 # Alert rules for operators on the users' VM pools and on what the cluster
 # holds for them. Needs clickstack.enabled: the platform collector exports the
 # pool series in Prometheus form on port 9464, and a ServiceMonitor and a
@@ -747,6 +744,9 @@ monitoring:
     # (storage) hold.
     overcommit: 1.5
 
+# -- Agent-telemetry backend (ClickStack). Off by default. Requires the ClickHouse and MongoDB
+# operator charts installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.
+# Keys other than `enabled`/`collector` are forwarded to the clickstack subchart.
 clickstack:
   enabled: false
 

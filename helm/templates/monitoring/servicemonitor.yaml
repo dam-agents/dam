@@ -22,4 +22,8 @@ spec:
   endpoints:
     - port: prometheus
       interval: 30s
+      # The export already labels each series with the runner or controller
+      # that produced it; without this the scrape would relabel every series
+      # with the collector's own address.
+      honorLabels: true
 {{- end }}
