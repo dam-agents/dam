@@ -53,7 +53,7 @@ import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
 import { createDriverOps, type DriverOpsDeps } from "./driver-ops.js";
 import { createAgentImageReader } from "./agent-image.js";
-import type { Config } from "../../config.js";
+import { agentsInstallSettings, type Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 import type {
@@ -174,6 +174,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         readTemplateResources: async (templateId) =>
           (await templatesRepo.readSpec(templateId))?.spec.resources,
         defaultLimits,
+        vmForced: agentsInstallSettings(config).vmForced,
         gate: composeSpawnSizeGate({
           k8s: k8sClient,
           owner,
