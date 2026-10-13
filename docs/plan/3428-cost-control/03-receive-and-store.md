@@ -39,7 +39,7 @@ Server code goes into the `spend` module (`packages/api-server/src/modules/spend
    - A call that the gate refuses also sends a billable record, because the meter runs before the gate.
      Envoy marks that entry with the response flag for an external-authorization refusal.
      Do not count such a record as a call or as spend: the gate counts its own refusals (slice 04).
-   - Give the spend ingest service one record: agent, call id, payer, address Connection, path, dialect, status, raw counts, model, tier, reply bytes, `complete`, the cost header, and whether the entry is periodic or final (`access_log_type`).
+   - Give the spend ingest service one record: agent, call id, payer, address Connection, path, dialect, status, raw counts, model, tier, speed, inference geography, reply bytes, `complete`, the cost header, and whether the entry is periodic or final (`access_log_type`).
 3. **Ingest service** (spend module, services layer).
    - **Payer and owner:** the payer is the record's `payer` (the root driver).
      Find the owner with a port that `bootstrap.ts` wires to `agentsRepo.resolveIdentity`.
@@ -53,8 +53,10 @@ Server code goes into the `spend` module (`packages/api-server/src/modules/spend
    - **Usage:** map the raw counts to the normalized usage of slice 02.
      OpenAI counts cached tokens inside the prompt tokens: subtract them.
      When `complete` is false or a count is missing, estimate the missing output tokens from the reply bytes (bytes ÷ 3), and mark the call estimated.
+     Check whether an Anthropic reply's `usage.iterations` list (sent after context compaction) is already inside the top-level counts: LiteLLM adds the iterations together, and the meter reads only the top-level counts.
    - **Price:** call the slice 02 lookup and formula.
      A source of `estimate` also marks the call estimated.
+     A source of `unpriced` (OpenAI and Bedrock without an operator price) keeps the tokens with cost 0, and it is not an estimated call.
    - **Deltas:** keep the last applied amounts of each call in Redis (a hash per call id, TTL 2 hours).
      Apply only the difference between the new record and the last applied amounts.
      A periodic record and the final record of one call then add up to the final amounts.

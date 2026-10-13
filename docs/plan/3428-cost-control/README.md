@@ -101,13 +101,14 @@ flowchart LR
 Each Connection has one unit.
 The unit comes from the Connection's provider template.
 
-| Provider template                               | Unit                                                 | In the agent limit, own limit and ceiling? |
-| ----------------------------------------------- | ---------------------------------------------------- | ------------------------------------------ |
-| `anthropic`, `openai`, `bedrock`, `ibm-litellm` | `usd`                                                | yes                                        |
-| `anthropic-oauth` (Claude subscription)         | `usd_list` (list-price dollars, a value, not a bill) | no, only in its Connection limit           |
-| `bob`                                           | `bobcoin` (from `usage.credits` in each reply)       | no, only in its Connection limit           |
-| `curve-bender`                                  | `free` ($0)                                          | no limit applies                           |
-| `custom-header` and others                      | not metered in this feature                          | —                                          |
+| Provider template                       | Unit                                                                    | In the agent limit, own limit and ceiling?     |
+| --------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------- |
+| `anthropic`, `ibm-litellm`              | `usd`                                                                   | yes                                            |
+| `openai`, `bedrock`                     | `usd`, but not priced in this feature: cost 0 without an operator price | yes, but only an operator price makes it count |
+| `anthropic-oauth` (Claude subscription) | `usd_list` (list-price dollars, a value, not a bill)                    | no, only in its Connection limit               |
+| `bob`                                   | `bobcoin` (from `usage.credits` in each reply)                          | no, only in its Connection limit               |
+| `curve-bender`                          | `free` ($0)                                                             | no limit applies                               |
+| `custom-header` and others              | not metered in this feature                                             | —                                              |
 
 `rits/*` models on IBM LiteLLM cost $0 (D14).
 The gate cannot see the model, because it does not read the request body.
@@ -120,22 +121,33 @@ The api-server prices each call when the record arrives, and it stores that cost
 A later price change does not change the history or a limit.
 The first match wins:
 
-1. **Operator override** for the provider and model, from Helm.
-   The chart ships the IBM LiteLLM prices that we read from IBM's `/model/info` on 2026-10-13 (input, output, cache read, 5-minute and 1-hour cache write).
+1. **Operator price** for the provider and model, from Helm.
+   The chart ships IBM LiteLLM's own prices: every price field that IBM's `/model/info` sets.
+   Petr reads them once with a temporary Management key and revokes the key (slice 02).
+   IBM LiteLLM is where most of the spend happens, so these prices matter most.
 2. **Provider rule:** RITS models and Curve Bender cost $0.
    Bob uses the Bobcoins in the reply.
-   The Claude subscription uses list prices, in the unit `usd_list`.
-3. **Generated table** in the api-server's code.
-   A script makes it from a pinned commit of the LiteLLM price list.
+   The Claude subscription uses Anthropic's list prices, in the unit `usd_list`.
+3. **Anthropic table** in the api-server's code: LiteLLM's rows for the Anthropic API, from a pinned commit of the LiteLLM price list.
+   It prices Anthropic API keys and the subscription value.
    Petr reviews each table update.
-4. **Unknown model:** the highest price of the model's family, marked "estimated".
+4. **Unknown model:** the highest price of the model's family among the provider's prices, else the highest price of the provider, marked "estimated".
+5. **OpenAI and Bedrock:** no table in this feature.
+   Their replies carry tokens only, and no cost.
+   Without an operator price, a call has no price: its cost is 0, and it is marked "not priced", not "estimated".
+   The meter still counts its tokens.
 
-The table has these prices: input, output, cache read, cache write for 5 minutes, cache write for 1 hour, the higher prices above 200k and 272k input tokens, the flex and priority tiers, and a price per web search.
-For IBM, the values of the tier fields and the long-prompt prices were not recorded.
-For these, the lookup uses the list price from the generated table.
-This counts high, as D10 asks.
+The prices follow LiteLLM's own cost rules, so our cost equals LiteLLM's cost for the same counts:
 
-When a reply carries the proxy's cost header (`x-litellm-response-cost`), the api-server compares it with our cost.
+- A row has input, output, cache read, cache write for 5 minutes, cache write for 1 hour, and a price per web search.
+- Above a prompt-size threshold (100k, 128k, 200k or 272k tokens; the prompt size counts the cache tokens too), all five token prices change.
+- In the flex or priority tier, input, output, cache read and the 5-minute cache write change.
+- A missing higher price uses the normal price of the same kind.
+  A missing cache price uses the input price, and a missing 1-hour price uses the 5-minute price.
+- On the Anthropic API, fast mode (`usage.speed`) and US-only inference (`usage.inference_geo`) multiply the prices by the factors in LiteLLM's row (×2 and ×1.1 today).
+
+When a reply carries the proxy's cost header (`x-litellm-response-cost`) with a value above 0, the api-server compares it with our cost.
+IBM LiteLLM sends a real value only on replies that are not streamed: on streams the header is 0.
 A difference above 5% gives a warning in the log with the provider, the model and both costs.
 
 ### Missing usage (D10)
@@ -277,13 +289,15 @@ Amounts are integers in micro-units of the unit, like the existing `cost_usd_mic
   Calls that were already running can lose their final record.
   The api-server then estimates them.
 - A runaway task on a $0 RITS model is not stopped by a spend limit (D14).
+- OpenAI and Bedrock calls are not priced in this feature, unless an operator sets prices in Helm.
+  A spend limit does not stop them.
 
 ## Sub-issues
 
 | #   | Title                                                                      | Scope                                                                                                                                               | Depends on | Done |
 | --- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---- |
 | 01  | [Gateway meter and ADR-101](./01-gateway-meter.md)                         | Controller: model-provider chains, call id, Lua meter, `accept-encoding` removal, gRPC access log with periodic flush. ADR-101.                     | —          | ✅   |
-| 02  | [Price table](./02-price-table.md)                                         | Pure price lookup, generator from a pinned LiteLLM commit, Helm overrides with IBM prices, IBM `/model/info` script, cost-header check function.    | —          |      |
+| 02  | [Price table](./02-price-table.md)                                         | Pure price lookup with LiteLLM's cost rules, Anthropic table from a pinned LiteLLM commit, IBM's own prices in Helm, meter reads speed and geo.     | —          | ✅   |
 | 03  | [Receive, price and store usage](./03-receive-and-store.md)                | AccessLogService, identity, Connection, periodic-to-final deltas, pricing at ingest, `spend_daily` and Redis counters, estimates, clean shutdown.   | 01, 02     |      |
 | 04  | [Agent limit, refusal and "continue?"](./04-agent-limit-and-refusal.md)    | Limit tables, `spend` router, gate refusal per API path, `spend_limit` approval, continue, chat error rule, CLI `dam spend`, harness refusal tests. | 03         |      |
 | 05  | [Ceiling, own limit, provider limits](./05-ceiling-and-provider-limits.md) | `UserSpendLimit` CRD and Helm default, own daily limit, Connection limits in their units, ceiling refusal, CLI flags.                               | 04         |      |

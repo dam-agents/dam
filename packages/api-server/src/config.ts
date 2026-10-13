@@ -6,6 +6,7 @@ import {
   featureModeSchema,
   harnessCatalogConfigSchema,
   linksSchema,
+  PROVIDER_TEMPLATE_IDS,
   signUpsSchema,
 } from "api-server-api";
 import { DEFAULT_DB_POOL_MAX } from "db";
@@ -103,6 +104,72 @@ const harnessesSchema = z
   })
   .pipe(harnessCatalogConfigSchema);
 
+const dollarsSchema = z.number().finite().nonnegative();
+
+const dollarTokenPricesShape = {
+  input: dollarsSchema.optional(),
+  output: dollarsSchema.optional(),
+  cacheRead: dollarsSchema.optional(),
+  cacheWrite5m: dollarsSchema.optional(),
+  cacheWrite1h: dollarsSchema.optional(),
+};
+
+const dollarTierPricesSchema = z.strictObject({
+  ...dollarTokenPricesShape,
+  aboveThreshold: z.strictObject(dollarTokenPricesShape).optional(),
+});
+
+// UNIT_BOUNDARY_DESCRIPTION: the chart's operator prices for model calls, in dollars per million tokens and per web search. They win over every other price, and the chart ships IBM LiteLLM's own prices, which no public price list has.
+const spendPriceOverridesSchema = z
+  .string()
+  .default("[]")
+  .transform((raw, ctx) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      ctx.addIssue({ code: "custom", message: "must be a JSON array" });
+      return z.NEVER;
+    }
+  })
+  .pipe(
+    z
+      .array(
+        z.strictObject({
+          provider: z.string().refine((id) => PROVIDER_TEMPLATE_IDS.has(id), {
+            message: "must be a provider template id",
+          }),
+          model: z.string().min(1),
+          ...dollarTokenPricesShape,
+          input: dollarsSchema,
+          output: dollarsSchema,
+          webSearch: dollarsSchema.optional(),
+          threshold: z
+            .strictObject({
+              promptTokens: z.number().int().positive(),
+              ...dollarTokenPricesShape,
+            })
+            .optional(),
+          flex: dollarTierPricesSchema.optional(),
+          priority: dollarTierPricesSchema.optional(),
+          factors: z.record(z.string(), z.number().positive()).optional(),
+        }),
+      )
+      .superRefine((rows, ctx) => {
+        const seen = new Set<string>();
+        for (const [index, row] of rows.entries()) {
+          const key = `${row.provider} ${row.model}`;
+          if (seen.has(key)) {
+            ctx.addIssue({
+              code: "custom",
+              path: [index, "model"],
+              message: `${row.model} is priced twice for ${row.provider}`,
+            });
+          }
+          seen.add(key);
+        }
+      }),
+  );
+
 const configSchema = z.object({
   serverVersion: z.string().min(1),
   appVersion: z.string().min(1),
@@ -198,6 +265,7 @@ const configSchema = z.object({
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
   harnesses: harnessesSchema,
+  spendPriceOverrides: spendPriceOverridesSchema,
   starterKitsCatalogs: z.string().default(""),
   githubEnterpriseHost: z.string().default(""),
   githubEnterpriseToken: z.string().default(""),
@@ -390,6 +458,7 @@ export function loadConfig(): Config {
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
     harnesses: process.env.HARNESSES,
+    spendPriceOverrides: process.env.SPEND_PRICE_OVERRIDES,
     starterKitsCatalogs: process.env.STARTER_KITS_CATALOGS,
     githubEnterpriseHost: process.env.GITHUB_ENTERPRISE_HOST,
     githubEnterpriseToken: process.env.GITHUB_ENTERPRISE_TOKEN,

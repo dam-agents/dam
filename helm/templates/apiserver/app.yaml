@@ -459,6 +459,8 @@ spec:
               value: {{ .Values.apiServer.oneTimeSchedules.agentMaxOpen | quote }}
             - name: ONCE_SCHEDULE_AGENT_MAX_PER_HOUR
               value: {{ .Values.apiServer.oneTimeSchedules.agentMaxPerHour | quote }}
+            - name: SPEND_PRICE_OVERRIDES
+              value: {{ (.Values.apiServer.spend | default dict).priceOverrides | default list | toJson | quote }}
             {{- if .Values.apiServer.maxImportBundleBytes }}
             - name: MAX_IMPORT_BUNDLE_BYTES
               value: {{ .Values.apiServer.maxImportBundleBytes | quote }}

@@ -49,6 +49,7 @@ The CRD is Go in `packages/controller/api/v1/`.
      When only soft limits are reached, use the soft text, and ask once for each reached soft limit.
    - A Connection in the unit `free` has no limits.
      A Connection that is not metered (`custom-header`) cannot get a limit.
+     An `openai` or `bedrock` Connection cannot get a Connection limit in this feature, because its calls are not priced.
    - `usd_list` and `bobcoin` Connections count only in their own Connection limit, never in the agent limit, the own limit or the ceiling.
 5. **Contract.**
    - Add the `owner` and `connection` kinds to the `scope` of `spend.setLimit`.

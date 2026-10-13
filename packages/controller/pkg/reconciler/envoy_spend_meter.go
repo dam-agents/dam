@@ -106,6 +106,7 @@ local FIELDS = {
   web_search_requests = "web_search_requests",
   credits = "credits",
 }
+local TEXT_FIELDS = {speed = true, inference_geo = true}
 local USAGE_OBJECTS = {'"usage"%s*:%s*{', '"amazon%-bedrock%-invocationMetrics"%s*:%s*{'}
 local STREAM_ENDS = {
   '"type"%s*:%s*"message_stop"',
@@ -255,6 +256,9 @@ local function new_meter(format)
       if field ~= nil and number ~= nil and number > (fields[field] or -1) then
         fields[field] = number
       end
+    end
+    for key, value in string.gmatch(object, '"([%w_]+)"%s*:%s*"([%w_%-]+)"') do
+      if TEXT_FIELDS[key] then fields[key] = value end
     end
   end
 
