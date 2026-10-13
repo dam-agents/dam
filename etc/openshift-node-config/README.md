@@ -194,3 +194,32 @@ Update the text that says the writers run as `spc_t`: the `values.yaml` comments
 The stager holds `DAC_OVERRIDE` on OpenShift (`DAC_READ_SEARCH` elsewhere) only to read guest-agent files in its own image whose mode keeps even their owner out.
 Make those files owner-readable in the runner image build, then drop the capability from the stager on every platform.
 The stager copies the guest agent's root filesystem with its modes, so check that the guest does not rely on the restrictive mode before changing it.
+
+## Turn on runner release hand-offs
+
+Do this after the chart changes above, on an install whose nodes all have the release directory.
+
+1. Set `virtualization.runner.releaseHostPath: /var/lib/platform-vm-runner-releases` in the install's values and upgrade the release.
+   The chart then deploys the release stager on the runners' nodes.
+2. The new hostPath changes every runner pod's shape, so the controller rolls every runner once, and each roll reboots all of that owner's machines.
+   The roll follows `virtualization.runner.rollout`: `maxConcurrent` runners at a time, and a runner whose owner has an agent in the middle of a turn waits for it to go idle, at most `idleWait`.
+   Expect the whole roll to take about owners / `maxConcurrent` × (runner restart + machine boot), plus the idle waits.
+3. From then on, a new runner image reaches each runner pod in place: the loader hands the machines to the new release, and no machine reboots.
+   The first live hand-off is the first proof of the hand-off on OpenShift; it happens at the next chart upgrade that changes the runner image.
+
+Watch the first hand-off:
+
+```sh
+oc get ds -n <agent-namespace> -l app.kubernetes.io/component=vm-runner-releases
+oc logs -n <agent-namespace> -l app.kubernetes.io/component=vm-runner-releases --tail=5 | grep 'staged the runner release'
+oc logs -n <agent-namespace> -l app.kubernetes.io/component=vm-runner --tail=200 --prefix | grep -E 'handing the machines off|started the runner|going back to the one it replaced|the runner exited'
+oc get pods -n <agent-namespace> -l app.kubernetes.io/component=vm-runner -o custom-columns=NAME:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount,STARTED:.status.startTime
+```
+
+A good hand-off logs `handing the machines off to another runner release`, then `started the runner` with the new release, in each runner pod.
+The runner pods keep their start time and restart count, and the agents' sessions keep running: their machines did not reboot.
+A line with `going back to the one it replaced` means the new release failed and the loader returned to the old one; the machines keep running on it, and the controller rolls that runner's pod onto the new image only when the release was built for another pod.
+
+To roll back, unset `releaseHostPath` and upgrade the release.
+That removes the stager and changes every runner pod's shape again, so every runner rolls once more and reboots its owner's machines; after that, each new runner image rolls the pods as before.
+The directory and its staged releases stay on the nodes until removed by hand.
