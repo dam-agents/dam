@@ -136,12 +136,15 @@ A move never strands an Agent.
 It records the image the Agent came from until the Agent has stayed ready on the new spec for five minutes, so a container that crashes seconds after it becomes ready does not prove the move.
 If the controller instead reports, for that spec, a failure the image can cause, the job writes the old image back and marks the new one refused for that Agent, which is not moved to it again; a later image is tried as usual.
 The failures are: the image cannot be pulled or unpacked, the machine cannot boot it, or the controller's `StartFailed` condition.
-The controller sets `StartFailed` only from the pod or machine that runs the current spec, never from the pod a roll replaces, which exits too.
+The controller sets `StartFailed` only from the pod or machine that runs the current spec, or from a refusal to admit that spec, never from the pod a roll replaces, which exits too.
 On the container backend that is a pod of the agent StatefulSet's update revision, once the StatefulSet has observed its generation.
 On the vm backend the runner's status names no spec, but a restart in flight reads not ready, so the controller counts from the first read at the current generation.
-The controller sets `StartFailed` for one of two reasons.
+The controller sets `StartFailed` for one of three reasons.
 Either the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now.
 Or it ran on this spec and never became ready, not counting the time an image pull takes: for ten minutes in a container, or for two minutes in a vm machine.
+Or, on the container backend, admission refused the agent StatefulSet with this spec's image, as a cluster policy that blocks images older than a year does.
+The old pod then keeps running and no pod of the new spec ever starts, so the refusal is the only failure there is to report.
+It counts only when the refused write changes the agent container's image: a refusal of a StatefulSet already on that image is not the new image's fault, and a move back would not cure it.
 The vm bound is short because a moved vm Agent takes the new image when it wakes, and the vm idle timeout hibernates it again five minutes later.
 At ten minutes, the runner's own restart of the quiet guest would also stop the clock first.
 An exit from out of memory or a full home volume does not count, since any image meets it.
