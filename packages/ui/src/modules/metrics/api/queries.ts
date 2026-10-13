@@ -44,6 +44,7 @@ export function useSpendBreakdown(
   return {
     data: query.data,
     isPending: query.isPending,
+    isFetching: query.isFetching,
     isError: query.isError,
     isPlaceholderData: query.isPlaceholderData,
     isUnavailable,

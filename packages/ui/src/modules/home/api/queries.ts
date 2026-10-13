@@ -1,4 +1,5 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { type QueryClient, useQueries, useQuery } from "@tanstack/react-query";
+import type { inferInput, inferOutput } from "@trpc/tanstack-react-query";
 import { useMemo } from "react";
 
 import { trpc } from "../../../trpc.js";
@@ -6,6 +7,7 @@ import type { AgentView } from "../../../types.js";
 import { useAgents, useAgentsList } from "../../agents/api/queries.js";
 import { useApprovalsForOwner } from "../../approvals/api/queries.js";
 import { type FeedItem, toFeedItems } from "../lib/feed-item.js";
+import { type SpendPeriod, spendRange } from "../lib/spend-period.js";
 
 const ARTIFACTS_STALE_MS = 30_000;
 const TOUCH_SESSIONS_MAX = 50;
@@ -127,4 +129,31 @@ export function useFeed(): Feed {
     feedUnreadable: attention.isError,
     approvalsUnreadable: approvals.isError,
   };
+}
+
+type SpendBreakdown = inferOutput<typeof trpc.metrics.spendBreakdown>;
+type SpendInput = inferInput<typeof trpc.metrics.spendBreakdown>;
+
+export function cachedSpend(
+  queryClient: QueryClient,
+  period: SpendPeriod,
+  timeZone: string,
+) {
+  return queryClient
+    .getQueriesData<SpendBreakdown>(trpc.metrics.spendBreakdown.queryFilter())
+    .filter(([key, data]) => {
+      const input = (key[1] as { input?: SpendInput } | undefined)?.input;
+      return (
+        data !== undefined &&
+        input !== undefined &&
+        input.agentId === undefined &&
+        input.timeZone === timeZone &&
+        spendRange(period, new Date(input.to)).from === input.from
+      );
+    })
+    .sort(
+      ([a], [b]) =>
+        (queryClient.getQueryState(b)?.dataUpdatedAt ?? 0) -
+        (queryClient.getQueryState(a)?.dataUpdatedAt ?? 0),
+    )[0]?.[1];
 }
