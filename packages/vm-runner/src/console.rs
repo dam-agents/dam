@@ -45,7 +45,7 @@ pub fn machine_tail(dir: &Path) -> String {
     .join("\n")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the last `limit` bytes of the kernel's lines in the VMM log, as printable text. The VMM logs every health probe as well, so the kernel's few lines are searched for through the whole file: a window of its end holds only probes once a boot has been stuck for a while. The read grows with how long the boot has run — a guest that never answers is probed twice a second, which adds a few megabytes an hour — and a runner that must read less would keep an offset per machine.
+// UNIT_BOUNDARY_DESCRIPTION: the last `limit` bytes of the kernel's lines in the VMM log, as printable text. The VMM writes lines of its own as well, so the kernel's few lines are searched for through the whole file: a window of its end may hold none of them once a guest has run for a while. The read grows with the file, which the trim keeps under LOG_CAP_BYTES, and a runner that must read less would keep an offset per machine.
 fn kernel_tail(path: &Path, limit: u64) -> String {
     let Ok(file) = fs::File::open(path) else {
         return String::new();
@@ -71,7 +71,7 @@ fn find(line: &[u8], needle: &[u8]) -> Option<usize> {
     line.windows(needle.len()).position(|w| w == needle)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the last `limit` bytes of the console, from the first whole line in them, as printable text. smolvm's agent logs every connection it accepts, and the runner opens one per health probe, so within a minute those lines are all the tail would hold; they say nothing about the guest and are dropped, from a window sixteen times the limit, so the guest's own last lines stay in view.
+// UNIT_BOUNDARY_DESCRIPTION: the last `limit` bytes of the console, from the first whole line in them, as printable text. smolvm's agent logs every connection it accepts, one for each command the runner runs in the guest, and enough of them are all the tail would hold; they say nothing about the guest and are dropped, from a window sixteen times the limit, so the guest's own last lines stay in view.
 pub fn tail_of(path: &Path, limit: u64) -> String {
     let Ok(mut file) = fs::File::open(path) else {
         return String::new();
@@ -252,22 +252,22 @@ mod tests {
         assert_eq!(tail_of(&dir.path().join("missing"), 1000), "");
     }
 
-    // TEST_SCENARIO: the runner probes the guest's health once a second and smolvm's agent logs each accepted connection to the console, so within a minute those lines are all a 4 KiB tail would hold. They say nothing about the guest, so the tail drops them and shows what the guest itself printed before them; the agent's other lines, which do say what it is doing, stay.
+    // TEST_SCENARIO: smolvm's agent logs each accepted connection to the console, and enough of those lines are all a 4 KiB tail would hold. They say nothing about the guest, so the tail drops them and shows what the guest itself printed before them; the agent's other lines, which do say what it is doing, stay.
     #[test]
-    fn probe_lines_do_not_crowd_the_guest_out_of_the_tail() {
-        let dir = TempDir::new("console-probes");
+    fn accepted_connection_lines_do_not_crowd_the_guest_out_of_the_tail() {
+        let dir = TempDir::new("console-accepted");
         let log = dir.path().join(CONSOLE_LOG);
-        let probe = "{\"timestamp\":\"t\",\"level\":\"INFO\",\"fields\":{\"message\":\"accepted connection\"},\"target\":\"smolvm_agent\"}\n";
+        let accepted = "{\"timestamp\":\"t\",\"level\":\"INFO\",\"fields\":{\"message\":\"accepted connection\"},\"target\":\"smolvm_agent\"}\n";
         let flatten = "{\"timestamp\":\"t\",\"level\":\"INFO\",\"fields\":{\"message\":\"flattening local image archive\"},\"target\":\"smolvm_agent::storage\"}";
         let mut text = format!("kernel panic\n{flatten}\n");
         for _ in 0..200 {
-            text.push_str(probe);
+            text.push_str(accepted);
         }
         fs::write(&log, &text).unwrap();
         assert_eq!(tail_of(&log, 4096), format!("kernel panic\n{flatten}"));
     }
 
-    // TEST_SCENARIO: platform-init refused the boot, and said why as a kernel line. The guest kernel's console is not the console file, so its lines reach only the VMM's log, among the lines the VMM writes for every health probe. The tail finds the refusal there after hours of probes, shows it first and without the VMM's own prefix, and then the guest agent's lines from the console file.
+    // TEST_SCENARIO: platform-init refused the boot, and said why as a kernel line. The guest kernel's console is not the console file, so its lines reach only the VMM's log, among the VMM's own lines. The tail finds the refusal there after hours of them, shows it first and without the VMM's own prefix, and then the guest agent's lines from the console file.
     #[test]
     fn a_refusal_the_kernel_printed_reaches_the_tail() {
         let dir = TempDir::new("console-kernel");
