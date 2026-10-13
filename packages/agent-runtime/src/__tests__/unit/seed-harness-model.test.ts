@@ -64,24 +64,43 @@ describe("seeding a discovered model", () => {
     ],
   });
 
+  const pluginWith = (
+    env: () => Record<string, string>,
+    discoverModels: ModelDiscovery,
+    onApplied?: () => void,
+  ) =>
+    createHarnessConfigPlugin({
+      harness: "test",
+      binding: BINDING,
+      agentHome: home,
+      envReader: asLease({ current: env, ready: () => true }),
+      discoverModels,
+      seedListingRetry: { attempts: 3, delayMs: 0 },
+      ...(onApplied ? { onApplied } : {}),
+      log: () => {},
+    });
+
   const seedWith = (
     env: Record<string, string>,
     via: string,
     discoverModels: ModelDiscovery = async () => listing(via),
-  ) => {
-    const envReader: RuntimeEnvReader = {
-      current: () => env,
-      ready: () => true,
-    };
-    return createHarnessConfigPlugin({
-      harness: "test",
-      binding: BINDING,
-      agentHome: home,
-      envReader: asLease(envReader),
-      discoverModels,
-      seedListingRetry: { attempts: 3, delayMs: 0 },
-      log: () => {},
-    }).seedModel();
+  ) => pluginWith(() => env, discoverModels).seedModel();
+
+  const fixedInBackground = async (
+    env: Record<string, string>,
+    via: string,
+  ): Promise<void> => {
+    let applied = (): void => {};
+    const done = new Promise<void>((resolve) => {
+      applied = resolve;
+    });
+    const plugin = pluginWith(
+      () => env,
+      async () => listing(via),
+      applied,
+    );
+    expect(await plugin.seedModel()).toBe(false);
+    await done;
   };
 
   const writeModel = (model: string) => {
@@ -169,12 +188,10 @@ describe("seeding a discovered model", () => {
    * first listed model is seeded instead of letting every turn fail on it.
    */
   it("passes over a pinned model the provider does not list", async () => {
-    expect(
-      await seedWith(
-        { REDIRECT_URL: "https://proxy", PINNED_MODEL: "retired/model" },
-        "REDIRECT_URL",
-      ),
-    ).toBe(true);
+    await fixedInBackground(
+      { REDIRECT_URL: "https://proxy", PINNED_MODEL: "retired/model" },
+      "REDIRECT_URL",
+    );
     expect(readModel()).toBe("first/model");
   });
 
@@ -194,9 +211,7 @@ describe("seeding a discovered model", () => {
    */
   it("replaces a set model the provider does not list", async () => {
     writeModel("chosen/on-old-provider");
-    expect(
-      await seedWith({ REDIRECT_URL: "https://proxy" }, "REDIRECT_URL"),
-    ).toBe(true);
+    await fixedInBackground({ REDIRECT_URL: "https://proxy" }, "REDIRECT_URL");
     expect(readModel()).toBe("first/model");
   });
 
@@ -208,12 +223,10 @@ describe("seeding a discovered model", () => {
    */
   it("clears a set model the provider does not list when a listed pin stands behind it", async () => {
     writeModel("chosen/on-old-provider");
-    expect(
-      await seedWith(
-        { REDIRECT_URL: "https://proxy", PINNED_MODEL: "second/model" },
-        "REDIRECT_URL",
-      ),
-    ).toBe(true);
+    await fixedInBackground(
+      { REDIRECT_URL: "https://proxy", PINNED_MODEL: "second/model" },
+      "REDIRECT_URL",
+    );
     expect(readModel()).toBeUndefined();
   });
 
@@ -238,6 +251,66 @@ describe("seeding a discovered model", () => {
     ).toBe(true);
     expect(asked).toBe(3);
     expect(readModel()).toBe("first/model");
+  });
+
+  /**
+   * TEST_SCENARIO: A wake of an agent that already has a model in its file.
+   * The listing goes through a gateway pod that has only just started and can
+   * take seconds or fail, and the harness spawn waits for the seed. A model
+   * that stands already lets the spawn go at once; the listing still runs,
+   * after the spawn.
+   */
+  it("does not hold the spawn for the listing when a model stands", async () => {
+    writeModel("second/model");
+    let asked = 0;
+    const neverAnswers: ModelDiscovery = () => {
+      asked += 1;
+      return new Promise(() => {});
+    };
+    expect(
+      await seedWith(
+        { REDIRECT_URL: "https://proxy" },
+        "REDIRECT_URL",
+        neverAnswers,
+      ),
+    ).toBe(false);
+    expect(asked).toBe(1);
+    expect(readModel()).toBe("second/model");
+  });
+
+  /**
+   * TEST_SCENARIO: The agent was switched to another provider while it ran.
+   * The model in the file was checked against the old provider only, so it
+   * does not stand on the new one: the spawn that follows the env change
+   * waits for the new provider's listing, as on a first boot.
+   */
+  it("holds the spawn after a switch to another provider", async () => {
+    writeModel("first/model");
+    let env: Record<string, string> = { REDIRECT_URL: "https://old" };
+    let checked = (): void => {};
+    const firstCheck = new Promise<void>((resolve) => {
+      checked = resolve;
+    });
+    const plugin = pluginWith(
+      () => env,
+      async (_spec, asked) => {
+        if (asked.REDIRECT_URL === "https://old") {
+          setTimeout(checked, 0);
+          return listing("REDIRECT_URL");
+        }
+        return {
+          status: "observed",
+          via: "REDIRECT_URL",
+          models: [{ value: "new/model", name: "new/model" }],
+        };
+      },
+    );
+    expect(await plugin.seedModel()).toBe(false);
+    await firstCheck;
+
+    env = { REDIRECT_URL: "https://new" };
+    expect(await plugin.seedModel()).toBe(true);
+    expect(readModel()).toBe("new/model");
   });
 });
 
