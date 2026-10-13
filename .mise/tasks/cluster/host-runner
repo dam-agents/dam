@@ -52,7 +52,7 @@ image="$pkg/dist/oci/vm-runner.tar"
 [ -n "${SKIP_IMAGE_BUILD:-}" ] && [ -f "$image" ] || mise run //packages/vm-runner:oci
 for bin in platform-init platform-runc; do
   for blob in $(tar -tf "$image" | grep '^blobs/sha256/.'); do
-    tar -xOf "$image" "$blob" | gzip -cdf | tar -xOf - "usr/local/libexec/$bin" > "$R/$bin.new" 2>/dev/null || true
+    tar -xOf "$image" "$blob" | gzip -cdf | tar -xOf - "usr/local/libexec/vm-runner/$bin" > "$R/$bin.new" 2>/dev/null || true
     [ ! -s "$R/$bin.new" ] || break
   done
   [ -s "$R/$bin.new" ] || { echo "FATAL: no $bin in $image" >&2; exit 1; }
