@@ -22,6 +22,19 @@ describe("agent-runtime compile cache", () => {
     dist = join(mkdtempSync(join(tmpdir(), "compile-cache-")), "dist");
     mkdirSync(dist);
     copyFileSync(launcher, join(dist, "main.ts"));
+    for (const [module, exported] of [
+      ["modules/runtime-channel/manifest-paths.js", "harnessManifestPaths"],
+      [
+        "modules/acp/infrastructure/history-worker.js",
+        "prestartHistoryWorkers",
+      ],
+    ]) {
+      mkdirSync(join(dist, module, ".."), { recursive: true });
+      writeFileSync(
+        join(dist, module),
+        `export const ${exported} = () => ({});\n`,
+      );
+    }
     writeFileSync(
       join(dist, "server.js"),
       `import { execFileSync } from "node:child_process";
