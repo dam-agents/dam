@@ -13,10 +13,11 @@ summary: While they hold for a wake from hibernation, the api-server's agent rel
 **Date:** 2026-10-13
 **Status:** Accepted
 **Owner:** @JanPokorny
+**Amends:** ADR-059
 
 ## Context
 
-ADR-032 made observed `Ready` the authoritative answer to "can I call this pod?".
+ADR-059 made the controller-computed `Ready` condition the only answer to "can I call this pod?", and ruled out an api-server probe for lower latency.
 For a waking vm agent, the controller writes `Ready` only at the end of a full reconcile that starts after the runner's prober sees the guest answer.
 Two traced wakes on dev on 2026-10-13 put the guest's first `/healthz` answer at 2318 ms and 2383 ms after the click, and the `Ready` write at 2792 ms and 2770 ms: the user's first message waited about 0.4 s for a pod that already answered.
 The reconcile itself took 310–330 ms over about 60 sequential API calls, and the wait for it to start took 60–160 ms.
@@ -24,13 +25,17 @@ The reconcile itself took 310–330 ms over about 60 sequential API calls, and t
 ## Decision
 
 While an agent relay holds a connection for a wake from hibernation, it opens its upstream on the agent's first `/healthz` answer, provided the cached Agent already shows its gateway pod Ready, no stop requested and no runtime migration in progress; otherwise it waits for `Ready` as before.
-This refines ADR-032 for agent relays only: `Ready` stays the authoritative answer for every other caller, channels and the scheduler included.
+This amends ADR-059 for agent relays only: `Ready` stays the authoritative answer for every other caller, channels and the scheduler included.
 
 - **Wakes from hibernation only.** The shortcut applies only when the hold began on a hibernated agent, or on one with a wake from hibernation requested.
   A restart or roll of a running agent waits for `Ready`: during a spec restart of a vm agent, the old machine keeps answering `/healthz` on the same port while the new image pulls, so an answer does not tell the two apart.
 - **The gateway gate.** The shortcut needs the gateway pod Ready, so an agent never takes a prompt before it has egress.
 - **The wake still decides failure.** The wake keeps running alongside the health poll; if it fails before an answer arrives, the relay closes with the wake's error, as before.
 - **Same probe as the platform's.** The relay asks the same `/healthz` that the runner prober and the kubelet ask, through the agent's Service.
+
+## Amends
+
+- **ADR-059** — its Committed-to says sub-controller-latency readiness must make the controller prompter and never reintroduce an api-server probe. Agent relays now probe `/healthz` during a wake from hibernation; every other caller still reads only `Ready`, and the api-server still has no pod access, as the probe goes through the agent's Service.
 
 ## Alternatives Considered
 
