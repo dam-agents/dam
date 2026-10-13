@@ -113,6 +113,8 @@ export {
 } from "./modules/agents/view.js";
 export type {
   BudgetReserved,
+  BudgetStorageFull,
+  BudgetVmUsage,
   BudgetsService,
 } from "./modules/budgets/types.js";
 export type { AgentSpecCR } from "./crd-types.gen.js";

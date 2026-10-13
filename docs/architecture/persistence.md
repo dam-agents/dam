@@ -261,6 +261,8 @@ So the runner measures the claim itself: past 75% used it sheds what it can fetc
 Past 90% it creates, starts, restarts and grows no machine and takes no seed, and reports the refusal as `MachineStorageFull` with how full the storage is and how to free it; it never stops a running machine, which would free nothing and lose what the guest holds in memory.
 An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
 A storage refusal does not park the Agent the way a memory refusal does: parking would halt a machine, and nothing an idle agent holds in memory frees disk.
+The api-server says the same before an Agent is written: it reads the owner's runner through its read-only usage capability, and refuses a new vm agent — a create, a kit applied, a spawn, a move onto the vm backend — once the claim is 90% used, with the figures and the same three ways out.
+Usage it cannot read refuses nothing, since the runner refuses the machine anyway.
 
 ### The machine image cache
 
