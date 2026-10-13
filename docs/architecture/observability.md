@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-10-08
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -201,7 +201,7 @@ The runner's health prober writes the note for a quiet guest and refreshes it ab
 
 ### Runtime migration
 
-A [runtime migration](vm-runner.md#runtime-migration) reports on the Agent rather than as a signal.
+A [runtime migration](vm-runtime-migration.md) reports on the Agent rather than as a signal.
 Its condition's message says what holds the current phase up, written from what is true now and cleared once nothing does: a pod stuck terminating, named with its node; a copy pod's latest warning, an admission refusal included; a copy waiting for a slot; what the runner reports; a boot held by a stop or the owner's budget.
 vm-seed names the agent's own files in its errors, so the text is escaped, stripped of in-cluster addresses and cut to a status line, any advice ahead of the copied error.
 Each phase entered, copy failure, copy given up for a pod that never started (`RuntimeMigrationCopyStuck`), abort, retry and finish is also an Event on the Agent, as is each retained volume the sweep deletes, and the controller counts them by reason alone.

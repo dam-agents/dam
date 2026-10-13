@@ -62,7 +62,7 @@ The agent pod has no service-account credentials and no upstream tokens of its o
 Each page is the authoritative, self-contained description of its subsystem.
 
 - [platform-topology](architecture/platform-topology.md) — the long-lived components, the protocols between them, and the K8s resource model; the [images](architecture/agent-images.md) agents run in.
-- [vm-runner](architecture/vm-runner.md) — `vm` hosts; [Mac](architecture/vm-host-runner.md), [image cache](architecture/vm-image-cache.md), [upgrades](architecture/vm-runner-upgrades.md).
+- [vm-runner](architecture/vm-runner.md) — `vm` hosts; [Mac](architecture/vm-host-runner.md), [image cache](architecture/vm-image-cache.md), [upgrades](architecture/vm-runner-upgrades.md), [runtime migration](architecture/vm-runtime-migration.md).
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; the [processes](architecture/agent-processes.md) inside.
 - [schedules](architecture/schedules.md) — recurring and one-time work on an Agent: arming and firing occurrences, the Precheck that declines a fire before any model wakes, and the Session each fire opens.
 - [budgets](architecture/budgets.md) — per-user ceiling on concurrently reserved compute, enforced by the controller at the 0→1 scale transition; UserBudget CRs for privileged users.
