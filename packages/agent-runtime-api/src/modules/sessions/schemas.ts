@@ -87,8 +87,11 @@ export const sessionSpendInputSchema = z.object({
   to: z.string().datetime({ offset: true }),
 });
 
+const SESSION_HISTORY_TAIL_MAX = 10_000;
+
 export const sessionHistoryInputSchema = z.object({
   sessionId: z.string().min(1),
+  tail: z.number().int().min(1).max(SESSION_HISTORY_TAIL_MAX).optional(),
 });
 
 export const sessionHistorySchema = z.object({
