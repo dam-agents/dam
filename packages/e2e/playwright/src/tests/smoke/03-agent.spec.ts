@@ -76,10 +76,7 @@ test("one-click create from the Generalist kit, then the mock agent with the con
     );
     const viewport = { width: 1280, height: 240 };
     await page.setViewportSize(viewport);
-    await page
-      .getByTestId("app-sidebar")
-      .getByRole("button", { name: "Home" })
-      .click();
+    await page.goto(baseUrl);
     await page
       .getByTestId("agent-row")
       .filter({
