@@ -1,5 +1,10 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { createSessionMetadata, createWorld, frames } from "./acp-world.js";
+import {
+  createSessionMetadata,
+  createWorld,
+  frames,
+  QUEUE_PARK_MS,
+} from "./acp-world.js";
 import type { DocumentStoreBackend } from "../../../../../core/document-store.js";
 import { createUndeliveredPromptStore } from "../../../infrastructure/undelivered-prompt-store.js";
 
@@ -128,6 +133,33 @@ describe("acp-runtime: env changes", () => {
     expect(world.harness().killed()).toBe(false);
 
     client.send({ jsonrpc: "2.0", id: 900, result: {} });
+
+    expect(world.harness().killed()).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: An env change lands while a prompt waits parked behind a
+   * finished turn, its sender gone, on a harness that cannot close sessions.
+   * The parked queue keeps the runtime busy until the park window drops it;
+   * no session is closed then, so the drop itself is the idle edge.
+   */
+  it("should recycle when a parked queue expires on a harness without session close", () => {
+    vi.useFakeTimers();
+    const world = createWorld();
+    const client = world.connect();
+    client.send(frames.initialize(1));
+    world.harness().replyTo("initialize", { agentCapabilities: {} });
+    client.send(frames.newSession(2));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    client.send(frames.prompt(3, SESSION, "first"));
+    client.send(frames.prompt(4, SESSION, "second"));
+    client.disconnect();
+    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
+
+    world.runtime.refreshEnv({ force: false });
+    expect(world.harness().killed()).toBe(false);
+
+    vi.advanceTimersByTime(QUEUE_PARK_MS);
 
     expect(world.harness().killed()).toBe(true);
   });

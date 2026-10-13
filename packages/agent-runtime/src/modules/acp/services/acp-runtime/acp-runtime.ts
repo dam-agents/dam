@@ -278,7 +278,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.log?.(
         `${String(dropped.length)} queued prompt(s) for ${sessionId} undelivered: ${cause}`,
       );
-      if (cause === "park-expired") maybeCloseIdleSession(sessionId);
+      if (cause !== "park-expired") return;
+      maybeCloseIdleSession(sessionId);
+      lease.maybeRecycle();
     },
     ...(deps.queueParkMs !== undefined
       ? { queueParkMs: deps.queueParkMs }
