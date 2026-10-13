@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -157,6 +159,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		machine.Migration = &vmrunner.MachineMigration{}
 	}
 	st, err := runner.Ensure(ctx, name, machine)
+	if r.config.VM.Runner.HostAddress == "" {
+		r.resizeRunnerPod(ctx, owner, demand)
+	}
 	// UNIT_BOUNDARY_DESCRIPTION: the runner's Service is headless, so its name resolves only once the ready pod's endpoint is published and the cluster DNS has read it, which trails the Deployment's ready count by a few seconds. A fresh runner, an owner's first vm agent, is dialled inside that gap; it is still starting, not failing, so the agent waits on it rather than going into error.
 	var unresolved *net.DNSError
 	if errors.As(err, &unresolved) {
@@ -216,6 +221,9 @@ func (r *AgentReconciler) applyVMAgentService(ctx context.Context, name, owner s
 	}
 	if err != nil {
 		return err
+	}
+	if maps.Equal(existing.Spec.Selector, desired.Spec.Selector) && len(desired.Spec.Ports) == len(existing.Spec.Ports) && equality.Semantic.DeepDerivative(desired.Spec.Ports, existing.Spec.Ports) {
+		return nil
 	}
 	existing.Spec.Selector = desired.Spec.Selector
 	existing.Spec.Ports = desired.Spec.Ports
@@ -544,9 +552,20 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	if st.Restarts > 0 {
 		restartReason = "GuestStoppedAnswering"
 	}
+	var clock vmStartClock
+	if v, ok := r.vmStartClocks.Load(agent.Name); ok {
+		clock = v.(vmStartClock)
+	}
+	clock, failure := vmStartFailure(clock, agent.Generation, st, time.Now())
+	if runnerReached {
+		r.vmStartClocks.Store(agent.Name, clock)
+	}
 	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason,
 		func(s *apiv1.AgentStatus) {
 			nestingCondition(s, agent, st, r.config.AgentTemplateDefaults, r.config.VM.Runner.NestedVirtualization)
+			if runnerReached {
+				setStartFailure(s, failure, agent.Generation)
+			}
 		})
 }
 
@@ -635,7 +654,7 @@ func anyVMAgent(items []unstructured.Unstructured) bool {
 	return false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. A pod attaches a volume per path, so on the container backend a mount is a size and a placement at once and the sizes were summed here — two 10Gi mounts bought 20Gi that either path could eat, each rounded up to a GiB of its own. A machine has a single disk, so the size is one quantity, rounded once, and the path is not configurable: HOME is fixed on both backends, every template in the chart persists it and nothing else, and a machine throws its whole root away when it stops. A mount that asks for anything else outside HOME is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops. A size a persisted mount does declare raises the disk rather than being dropped — the container backend lets it win over the Agent's own storageSize, and a spec that asks for 50Gi there must not quietly get the chart's 10Gi here. Several of them take the largest and not the sum, because they are all nested inside the one path this backend keeps and a sum would size the disk for capacity no single mount could have claimed.
+// UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. A pod attaches a volume per path, so on the container backend a mount is a size and a placement at once and the sizes were summed here — two 10Gi mounts bought 20Gi that either path could eat, each rounded up to a GiB of its own. A machine has a single disk, so the size is one quantity, rounded once, and the path is not configurable: HOME is fixed on both backends, every template in the chart persists it and nothing else, and a machine's root lasts only until an image of another root generation boots. A mount that asks for anything else outside HOME is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops. A size a persisted mount does declare raises the disk rather than being dropped — the container backend lets it win over the Agent's own storageSize, and a spec that asks for 50Gi there must not quietly get the chart's 10Gi here. Several of them take the largest and not the sum, because they are all nested inside the one path this backend keeps and a sum would size the disk for capacity no single mount could have claimed.
 func resolveVMDiskGiB(spec *apiv1.AgentSpec, defaults config.AgentTemplateDefaults) (int, error) {
 	for _, m := range resolveSpecMounts(spec, defaults) {
 		if m.Persist && m.Path != agentHomeDir && !strings.HasPrefix(m.Path, agentHomeDir+"/") {

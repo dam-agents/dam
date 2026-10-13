@@ -365,12 +365,12 @@ The cost is an out-of-band deletion noticed one read later.
 Skills are entirely an **Application State** subsystem ([persistence](persistence.md)).
 Four Postgres tables in [`packages/db/src/schema.ts`](../../packages/db/src/schema.ts):
 
-| Table | Key | Owner |
-|---|---|---|
-| `skill_sources` | `(id)`, unique on `(owner, gitUrl)` | per-user |
-| `skill_sets` | `(id)`, unique on `(owner, name)` | per-user |
-| `agent_skills` | `(agentId, source, name)` | per-agent |
-| `agent_skill_publishes` | `(id)`, indexed by `agentId` | per-agent |
+| Table                   | Key                                 | Owner     |
+| ----------------------- | ----------------------------------- | --------- |
+| `skill_sources`         | `(id)`, unique on `(owner, gitUrl)` | per-user  |
+| `skill_sets`            | `(id)`, unique on `(owner, name)`   | per-user  |
+| `agent_skills`          | `(agentId, source, name)`           | per-agent |
+| `agent_skill_publishes` | `(id)`, indexed by `agentId`        | per-agent |
 
 System and template sources do **not** persist — system sources come from `SKILL_SOURCES_SEED`, template sources from the template's `spec.skillSources`.
 Both are computed at request time.

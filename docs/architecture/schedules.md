@@ -96,12 +96,14 @@ A starter kit cannot declare one: an absolute moment means nothing in a kit appl
 ## Precheck
 
 A schedule carries an optional shell command that decides its own fires.
-Most fires of a periodic check — "did a new PR land?", "is the queue backing up?" — find nothing to do, and reaching that answer through a model is the most expensive way to ask a question a timestamp comparison could settle.
+Most fires of a periodic check — "did a new PR land?", "is the queue backing up?"
+— find nothing to do, and reaching that answer through a model is the most expensive way to ask a question a timestamp comparison could settle.
 The Precheck moves the question out of the turn.
 
 It runs in the agent pod, in the workspace directory, under `bash -lc` with the runtime process's own environment — so `HTTPS_PROXY` still points at the paired gateway and a check may reach GitHub or an API with the same injected credentials the agent gets ([security-and-credentials](security-and-credentials.md)).
 Running it there is the point: the inputs a real check needs — the workspace, the checkout, credentialed network access — are already present, with no new plumbing to feed them anywhere else.
-The schedule's id, the occurrence being decided, and the time of the last fire that actually started a run arrive as environment variables, so "anything new since last time?" needs no bookkeeping of its own.
+The schedule's id, the occurrence being decided, and the time of the last fire that actually started a run arrive as environment variables, so "anything new since last time?"
+needs no bookkeeping of its own.
 
 The exit code is the verdict, split the way `grep` splits it: `0` allows the run, `1` declines this occurrence, and every other way the command can end — a higher code, the two-minute deadline, a command that will not spawn — means the Precheck itself broke.
 A broken Precheck **allows** the run and records the reason, because an optimization that breaks should degrade to the unoptimized behaviour rather than silently stop the work; the opposite default would let one typo exiting `127` silence a schedule for weeks while looking exactly like "nothing changed".
@@ -178,7 +180,8 @@ An agent creating a schedule can name a model too.
 
 **A schedule never silently runs on another model.** A switch the harness refuses at fire time gets no prompt.
 The fire still settles, so it is not redelivered, and the runtime reports a failed *run*, a stage distinct from a broken Precheck.
-The schedule's last result shows the harness's reason (a one-time task records it as its result), and the last-run stamp stays put, since a Precheck measures "anything new since last time?" from it.
+The schedule's last result shows the harness's reason (a one-time task records it as its result), and the last-run stamp stays put, since a Precheck measures "anything new since last time?"
+from it.
 The unprompted session stays behind, empty.
 Follow-up turns keep the session's model as far as the harness restores it on reload.
 
@@ -197,7 +200,8 @@ What it does not do is behave like an occurrence:
 - **The cadence is untouched.** No next occurrence is computed and none is armed, so trying a schedule out never shifts when it next fires — and the fire carries an identity of its own rather than an occurrence's, so the Agent's per-fire dedup cannot conflate it with the occurrence it lands beside.
 - **Quiet hours do not suppress it, and neither does being disabled.** Both govern *occurrences*; this run was asked for by hand.
   A paused schedule is also the one most likely to be under construction, and enabling it just to try it would move its next occurrence — the thing the action exists to avoid.
-- **A run that happens stamps the last-run pair** like any other, because that stamp means *the last fire that actually ran* and is what the next Precheck's "anything new since last time?" measures from — a manual run that did the work must not leave the next check to find it again.
+- **A run that happens stamps the last-run pair** like any other, because that stamp means *the last fire that actually ran* and is what the next Precheck's "anything new since last time?"
+  measures from — a manual run that did the work must not leave the next check to find it again.
   The boundary is the **outbox commit**, not the whole send: once the event is committed the task will run when the Agent is `Ready`, so any step that fails after it — the delivery enqueue or the wake poke — stamps the pair and records that failure as the result.
   Only a fire that never committed is not a run, and that one leaves the previous record standing.
 - **Its expiry is its own.** An occurrence's fire expires at the next occurrence so a stale backlog cannot replay; an on-demand fire has no successor to be superseded by, and capping it at an occurrence minutes away would expire a run somebody is waiting for.

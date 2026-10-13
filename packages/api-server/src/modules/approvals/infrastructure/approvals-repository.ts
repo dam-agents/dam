@@ -46,7 +46,7 @@ export interface ApprovalsRepository {
     staleMs: number;
     limit: number;
   }): Promise<PendingApprovalRow[]>;
-  expirePending(id: string): Promise<void>;
+  expirePending(id: string): Promise<boolean>;
   expireOverdue(
     now: Date,
   ): Promise<Array<{ id: string; agentId: string; ownerSub: string }>>;
@@ -283,7 +283,7 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
     },
 
     async expirePending(id) {
-      await db
+      const rows = await db
         .update(pendingApprovals)
         .set({ status: "expired", resolvedAt: new Date() })
         .where(
@@ -291,7 +291,9 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
             eq(pendingApprovals.id, id),
             eq(pendingApprovals.status, "pending"),
           ),
-        );
+        )
+        .returning({ id: pendingApprovals.id });
+      return rows.length > 0;
     },
 
     async expireOverdue(now) {

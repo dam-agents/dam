@@ -77,13 +77,13 @@ export function effectiveMounts(
   return spec.mounts && spec.mounts.length > 0 ? spec.mounts : defaultMounts;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the persisted paths a migration cannot carry, each with the reason. The machine keeps only HOME, and the migration copies only HOME's volume, so every other persisted mount — outside HOME, or a volume of its own inside it — would be lost, and the Agent is refused rather than moved without it. A mount that is not persisted keeps nothing on either backend, so it is no reason to refuse.
+// UNIT_BOUNDARY_DESCRIPTION: the persisted paths a migration cannot carry, each with the reason. The migration copies only HOME's volume, the one path a machine keeps whatever image it boots, so every other persisted mount — outside HOME, or a volume of its own inside it — would be lost, and the Agent is refused rather than moved without it. A mount that is not persisted keeps nothing on either backend, so it is no reason to refuse.
 export function unmovablePaths(mounts: readonly AgentMount[]): UnmovablePath[] {
   return mounts
     .filter((m) => m.persist && m.path !== AGENT_HOME)
     .map((m) => ({
       path: m.path,
-      reason: "the new runtime keeps only the home directory",
+      reason: "a move carries only the home directory",
     }));
 }
 

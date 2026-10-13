@@ -76,7 +76,7 @@ See [knowledge-bases](knowledge-bases.md) for what a knowledge base adds on top 
 The api-server writes a new Agent custom resource whose spec carries the Agent's image / mount declarations (copied from a Template at create time, if any), env, and secret refs.
 There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity.
 The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its gateway), two Services (the agent's headless ACP and the `<agent>-gateway` proxy), agent-egress and gateway-ingress NetworkPolicies, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate.
-On the `vm` Backend the agent StatefulSet and its workspace PVC are not rendered at all: the Agent's storage is one disk on the owner's [VM runner](vm-runner.md), holding HOME and nothing else ([persistence](persistence.md)), and the agent Service selects that runner rather than a pod of its own.
+On the `vm` Backend the agent StatefulSet and its workspace PVC are not rendered at all: the Agent's storage is one disk on the owner's [VM runner](vm-runner.md), holding `HOME` and the machine's root ([persistence](persistence.md#per-agent-pvcs)), and the agent Service selects that runner rather than a pod of its own.
 
 When the create request carries a private-registry credential, the api-server writes an agent-scoped `dockerconfigjson` pull Secret *before* the Agent CR and rolls it back if that write fails; the controller hands that Secret first, ahead of any install-wide default, to whatever pulls the image — the kubelet, or on the vm Backend the owner's runner.
 It never enters the agent, and a bad one surfaces as a pull failure rather than a create-time error.
@@ -101,13 +101,12 @@ See [connections](connections.md) and [runtime delivery](runtime-delivery.md).
 
 ### Template upgrade
 
-Templates are captured at create time; an install upgrade does not reconfigure existing Agents.
-The api-server reports an update when an Agent's image differs from its Template's current image.
-Retired per-harness templates resolve to the default Template even when an install retains their old definitions, so their Agents [move](agent-images.md#retired-images) to it.
+Templates are captured at create time; an install upgrade reconfigures no existing Agent beyond its image.
+The api-server reports an update when an Agent's image differs from its Template's current image, and [moves](agent-images.md#image-updates) the Agent there by itself, never during work, and back when the Agent cannot start or keep running on it.
+Retired per-harness templates resolve to the default Template even when an install retains their old definitions.
 The upgrade preserves the Agent's chosen harness; when an older Agent has no explicit choice, its retired template identifies the harness to carry forward.
 
-Users apply upgrades individually or in a batch, confirming the target images and restart cost.
-The api-server refuses a target that changed since confirmation.
+A user may apply an upgrade sooner, confirming the target image and restart cost; the api-server refuses a target that changed since confirmation.
 A running pair or vm machine restarts; a hibernated Agent takes the image on its next wake.
 No configuration is re-seeded: template env stays frozen to preserve user edits, and mount/storage changes still require recreating the Agent.
 A runtime advertising kinds its predecessor did not is re-delivered the Contributions the old image refused, closing the capability gap ([runtime-delivery](runtime-delivery.md#capability-negotiation)).
@@ -116,7 +115,7 @@ A runtime advertising kinds its predecessor did not is re-delivered the Contribu
 
 Every caller that sends work to a pod — the api-server's ACP relay, channel adapters, skills management — routes through a single reachability primitive in the api-server.
 The primitive's contract: **the controller-published `Ready` condition is the authoritative answer to "can I call this pod?"** The primitive pokes activity by bumping the `agent-platform.ai/last-activity` annotation (the reconciler scales up any Agent with recent activity), single-flights concurrent waits per Agent, and bumps the same annotation on every successful call, so any caller implicitly keeps the pod warm.
-The deliberate opt-outs never wake anything: a **passive** relay connection (`passive=1`) fails closed unless `Ready`, takes no pin and never bumps activity; the per-agent tRPC relay takes no pin, waits out a wake already asked for, and keeps the stamp fresh while a view is open.
+The deliberate opt-outs never wake anything: a **passive** relay connection (`passive=1`) fails closed unless `Ready`, takes no pin and never bumps activity; the per-agent tRPC relay takes no pin, waits out a wake already asked for without stamping activity, and keeps the stamp fresh while a view is open.
 Contributions are applied out-of-band by a single background worker (a pod's `hello` is presence-only — it just signals the worker to dispatch).
 The worker dispatches **only to a Ready agent** — the same readiness gate the relay's `ensureReady` uses — so an apply never targets a pod that is down or rolling; when the agent isn't Ready the outbox row stays unsettled and the periodic sweep re-dispatches once it is.
 Each apply runs every contribution to termination and records which drivers failed; a degraded agent (failed installs retrying in the background, capped) surfaces via its `contributionFailures` badge and never wedges.
@@ -173,7 +172,7 @@ For the rest it hibernates only when *both* checks below agree it is quiet:
 
 **What counts as activity.** Those two checks rest on four signals, each catching something the others miss:
 
-- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while prompts queue behind it, while an agent-initiated request (e.g. a permission prompt) awaits the client, while kept background work runs — a reported Harness Task or a marked Detached Process ([agent-processes](agent-processes.md#keeping-work)), or while a terminal (PTY) is open — an open-but-idle terminal counts, because the open PTY *is* the signal.
+- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while prompts queue behind it, while a session setting change (mode or model) waits to be sent or answered, while an agent-initiated request (e.g. a permission prompt) awaits the client, while kept background work runs — a reported Harness Task or a marked Detached Process ([agent-processes](agent-processes.md#keeping-work)), or while a terminal (PTY) is open — an open-but-idle terminal counts, because the open PTY *is* the signal.
   A chat is the exception to "open connection = busy": an attached chat with no turn running reads as `idle` here, since the flag tracks work, not watchers — such a chat stays awake via `active-session` below, not this probe.
   What the probe uniquely catches is in-flight work that no connection holds and `last-activity` no longer covers: a scheduled run outlasting the idle timeout, or a turn still running after its tab closed.
 - **api-server (`active-session` annotation).** A refcount of open chat, terminal, SSH and browser connections — set on the first, cleared on the last.

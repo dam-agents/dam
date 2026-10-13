@@ -723,7 +723,11 @@ export function createAgentsService(deps: {
     if (!infra.templateId) return undefined;
     const tmpl = await deps.readTemplateSpec(infra.templateId);
     if (!tmpl) return undefined;
-    return templateImageUpdate(infra.spec.image, tmpl.spec.image);
+    return templateImageUpdate(
+      infra.spec.image,
+      tmpl.spec.image,
+      infra.imageUpdateRefused,
+    );
   }
 
   async function project(
@@ -960,7 +964,11 @@ export function createAgentsService(deps: {
           deps.agentIdleTimeoutMinutes,
           status?.preparingWorkspace ?? false,
           templateImage
-            ? templateImageUpdate(infra.spec.image, templateImage)
+            ? templateImageUpdate(
+                infra.spec.image,
+                templateImage,
+                infra.imageUpdateRefused,
+              )
             : undefined,
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],

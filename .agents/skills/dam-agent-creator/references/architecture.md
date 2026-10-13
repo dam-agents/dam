@@ -5,11 +5,11 @@ The generated `docs/self-modification.md` cites them rather than restating them.
 
 ## One repo, one data directory, one backup remote
 
-| Path | Kind | Holds |
-| --- | --- | --- |
-| `$HOME` (`/home/agent`) | **definition repo** (`origin` = the kit's seed, or where ONBOARDING.md was fetched from — fork-aware either way) | `kit.yaml`, `CLAUDE.md`, `AGENTS.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE` |
-| `$HOME/work` | **plain data directory — never a git repo** (the shared volume corrupts a concurrently-mutated `.git`; `references/platform-dam.md`) | `CONFIG.md`, `MEMORY.md`, `LESSONS.md`, domain state files, logs |
-| state remote | optional git remote (env var, e.g. `GITHUB_REPO_WORK`) | durable, versioned backup of `work/`, written only via the tmpfs backup script |
+| Path                    | Kind                                                                                                                                 | Holds                                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `$HOME` (`/home/agent`) | **definition repo** (`origin` = the kit's seed, or where ONBOARDING.md was fetched from — fork-aware either way)                     | `kit.yaml`, `CLAUDE.md`, `AGENTS.md`, `ONBOARDING.md`, `README.md`, `docs/`, `scripts/`, `VERSION`, `CHANGELOG.md`, `.gitignore`, `LICENSE` |
+| `$HOME/work`            | **plain data directory — never a git repo** (the shared volume corrupts a concurrently-mutated `.git`; `references/platform-dam.md`) | `CONFIG.md`, `MEMORY.md`, `LESSONS.md`, domain state files, logs                                                                            |
+| state remote            | optional git remote (env var, e.g. `GITHUB_REPO_WORK`)                                                                               | durable, versioned backup of `work/`, written only via the tmpfs backup script                                                              |
 
 Why this shape works:
 

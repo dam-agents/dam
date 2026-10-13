@@ -1,11 +1,14 @@
 ---
 name: babysit
 description: >
-  Get a PR to mergeable. Opens the PR with the `pr-open` skill, marks it ready
+  Get a PR to mergeable.
+  Opens the PR with the `pr-open` skill, marks it ready
   so `dam-code-guardian` reviews it, then loops: answer each review with one
   `review-remediation` round, re-request review, until guardian approves and
-  CI is green. Use when asked to babysit a PR, take it to green, watch it, or
-  get it merged or approved. A single round of fixing review findings, with
+  CI is green.
+  Use when asked to babysit a PR, take it to green, watch it, or
+  get it merged or approved.
+  A single round of fixing review findings, with
   the next round left to the caller, is `review-remediation` alone.
 ---
 

@@ -33,10 +33,9 @@ auto = true
 "conda:bash" = "latest"
 "conda:pigz" = "latest"
 "github:Boshen/cargo-shear" = "latest"
-# mdslw 0.18.0 (2026-10-08) is under the 7-day floor: its never-break-code-spans
-# keeps sentence breaks out of inline code. Floor passes 2026-10-15. It ships
-# no linux-arm64 asset, so check:markdown cannot run there.
-"github:razziel89/mdslw" = { version = "0.18.0", os = ["macos", "linux/x64"] }
+# panache formats Markdown with semantic line breaks; config in panache.toml.
+# 3.14.0 (2026-10-02) is the newest release past the 7-day floor.
+"github:jolars/panache" = "3.14.0"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 # Staticcheck 0.8.1 cannot read go1.27.2's export data (dominikh/go-tools#1832).
 # The pin is its unreleased fix, commit f1838cc3 (2026-10-09), under the

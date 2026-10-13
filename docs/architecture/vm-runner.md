@@ -70,7 +70,7 @@ An agent that crashed is back in seconds instead of at the runner's ten-minute u
 A stop signal ends the supervision instead.
 platform-init's refusals to boot, each hand-off and each exit reach the console as kernel log lines, because its own log is on the disk the host never reads ([observability](observability.md#vm-runner)).
 A machine's egress allows one destination, the paired gateway, so the controller marks the address ranges a guest might itself hold — the private, carrier-grade-NAT and link-local ones — as local to it, and a client that honors that marking reaches them directly rather than through a gateway that could never route them.
-What a machine keeps across a stop is its storage disk on the runner's one PVC, and nothing else ([persistence](persistence.md) owns the rule).
+What a machine keeps across a stop is its storage disk on the runner's one PVC: `HOME`, and the upper layer of its root for as long as its images share a root generation ([persistence](persistence.md#per-agent-pvcs) owns the rule).
 That disk is formatted once, from the runtime's template on its first boot, and a start never copies the template over a disk that already holds a filesystem — not even one whose first format stopped short of resizing it to the size asked for.
 A stop first sends the workload SIGTERM through the guest agent and gives it a few seconds, as a pod's container gets, then has the guest quiesce that disk, and a guest that does not confirm it did is powered off anyway, so a stop or a delete always ends the machine.
 A start refuses a disk that a VMM which outlived even its kill still holds, since booting beside it would put two VMMs on one disk.

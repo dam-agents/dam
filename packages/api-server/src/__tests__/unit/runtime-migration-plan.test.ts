@@ -114,7 +114,7 @@ describe("the runtime migration plan", () => {
     const view = toRuntimeMigrationPlanView(plan);
     expect(view.allowed).toBe(false);
     expect(view.refusal?.reasons).toEqual([
-      "/data cannot be moved: the new runtime keeps only the home directory",
+      "/data cannot be moved: a move carries only the home directory",
     ]);
   });
 

@@ -2,8 +2,10 @@ package reconciler
 
 import (
 	"context"
+	"maps"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -50,6 +52,10 @@ func (r *AgentReconciler) applyExtAuthzService(ctx context.Context, desired *cor
 		}
 		if err != nil {
 			return err
+		}
+		if existing.Spec.Type == desired.Spec.Type && maps.Equal(existing.Spec.Selector, desired.Spec.Selector) &&
+			len(desired.Spec.Ports) == len(existing.Spec.Ports) && equality.Semantic.DeepDerivative(desired.Spec.Ports, existing.Spec.Ports) && objectMetaCurrent(existing.ObjectMeta, desired.ObjectMeta) {
+			return nil
 		}
 		desired.Spec.ClusterIP = existing.Spec.ClusterIP
 		desired.ResourceVersion = existing.ResourceVersion

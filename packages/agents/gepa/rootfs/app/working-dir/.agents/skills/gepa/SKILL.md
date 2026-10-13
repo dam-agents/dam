@@ -2,11 +2,13 @@
 name: gepa
 description: >-
   Run GEPA (Genetic-Pareto), the reflective text-optimization library, by
-  authoring Python driver scripts around `gepa.optimize`. Use when the user
+  authoring Python driver scripts around `gepa.optimize`.
+  Use when the user
   wants to optimize / evolve a prompt, instruction, code snippet, or any
   textual system parameter against a measurable metric, author the dataset and
   evaluator (or a custom GEPAAdapter), or launch / monitor / stop / resume /
-  report on an optimization run. Pure library reference — for reaching model
+  report on an optimization run.
+  Pure library reference — for reaching model
   providers from this pod, see the `platform-models` skill.
 ---
 
@@ -106,19 +108,19 @@ Then present the cost estimate, get the go-ahead, and launch backgrounded per th
 
 ## `gepa.optimize` reference (the knobs that matter here)
 
-| Parameter | Meaning |
-|---|---|
-| `seed_candidate` | `dict[str, str]` — named text component(s) to evolve; **required** |
-| `trainset` / `valset` | dataset items; `valset` drives Pareto scoring (defaults to `trainset`) |
-| `task_lm` + `evaluator` | Path A — mutually exclusive with `adapter` |
-| `adapter` | Path B — a `GEPAAdapter`; pass `task_lm=None`, `evaluator=None` |
-| `reflection_lm` (+ `reflection_lm_kwargs`) | the strong model proposing improvements; kwargs carry `api_base`/`api_key` |
-| `max_metric_calls` | **the budget** — total task-evaluations across the run; `optimize` raises `ValueError` without a stop condition, and this is the one to use |
-| `max_reflection_cost` / `stop_callbacks` | optional extra stoppers (USD cap on reflection; `TimeoutStopCondition`, `NoImprovementStopper`, … from `gepa.utils`) — layered on top of, never instead of, the approved budget |
-| `run_dir` | checkpoint dir: state saves here, an existing state **resumes automatically**, and a `gepa.stop` file in it stops the run gracefully |
-| `reflection_minibatch_size` | examples per reflection step (default 3) |
-| `display_progress_bar` | keep `False` for backgrounded runs |
-| `seed` | RNG seed for reproducibility |
+| Parameter                                  | Meaning                                                                                                                                                                         |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `seed_candidate`                           | `dict[str, str]` — named text component(s) to evolve; **required**                                                                                                              |
+| `trainset` / `valset`                      | dataset items; `valset` drives Pareto scoring (defaults to `trainset`)                                                                                                          |
+| `task_lm` + `evaluator`                    | Path A — mutually exclusive with `adapter`                                                                                                                                      |
+| `adapter`                                  | Path B — a `GEPAAdapter`; pass `task_lm=None`, `evaluator=None`                                                                                                                 |
+| `reflection_lm` (+ `reflection_lm_kwargs`) | the strong model proposing improvements; kwargs carry `api_base`/`api_key`                                                                                                      |
+| `max_metric_calls`                         | **the budget** — total task-evaluations across the run; `optimize` raises `ValueError` without a stop condition, and this is the one to use                                     |
+| `max_reflection_cost` / `stop_callbacks`   | optional extra stoppers (USD cap on reflection; `TimeoutStopCondition`, `NoImprovementStopper`, … from `gepa.utils`) — layered on top of, never instead of, the approved budget |
+| `run_dir`                                  | checkpoint dir: state saves here, an existing state **resumes automatically**, and a `gepa.stop` file in it stops the run gracefully                                            |
+| `reflection_minibatch_size`                | examples per reflection step (default 3)                                                                                                                                        |
+| `display_progress_bar`                     | keep `False` for backgrounded runs                                                                                                                                              |
+| `seed`                                     | RNG seed for reproducibility                                                                                                                                                    |
 
 Budget intuition: each optimization iteration costs roughly `reflection_minibatch_size` × 2 task-evaluations (before/after) plus one full-`valset` pass when a candidate improves, plus one reflection call.
 With the default minibatch of 3 and a 20-example valset, `max_metric_calls=300` buys on the order of 10–20 iterations.
@@ -126,6 +128,7 @@ With the default minibatch of 3 and a 20-example valset, `max_metric_calls=300` 
 ## Outputs
 
 Under `run_dir/`:
+
 - `gepa_state.bin` — the checkpoint; its presence is what makes a rerun resume.
 - `run_log.txt` — iteration-by-iteration log (the thing to tail for progress).
 - `candidates.json` — every candidate proposed so far, in proposal order.
@@ -162,7 +165,7 @@ result = gepa.optimize(
 print(result.best_candidate["system_prompt"])
 ```
 
-Stubbing for the no-network smoke: `task_lm` may be any `(messages) -> str` callable, and `reflection_lm` any `(prompt) -> str` callable whose reply wraps the proposed instruction in a ``` block (that's the format the default proposer parses).
+Stubbing for the no-network smoke: `task_lm` may be any `(messages) -> str` callable, and `reflection_lm` any `(prompt) -> str` callable whose reply wraps the proposed instruction in a \`\`\` block (that's the format the default proposer parses).
 
 ## Reporting (and optional PR)
 

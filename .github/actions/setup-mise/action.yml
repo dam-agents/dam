@@ -8,7 +8,9 @@ inputs:
     description: The tools to install; empty installs every tool mise.lock pins.
     default: ""
   cache:
-    description: Whether mise-action restores its tool cache.
+    description: >-
+      Whether mise-action restores its tool cache. Only a full install on x64
+      has one.
     default: "true"
   quay-username:
     description: quay.io user; empty skips the login.
@@ -28,12 +30,17 @@ runs:
       run: |
         [ -n "${SOURCE_DATE_EPOCH:-}" ] || echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
     # A PR never saves the tool cache: a branch must not write an entry main
-    # then restores.
+    # then restores. mise-action keys the cache by the tools a job names, so
+    # each install_args was its own entry, all of them rotating with every
+    # mise.lock change and evicting the build caches from the repo's 10 GB.
+    # Only the full install is cached, on x64 alone: a subset installs in
+    # seconds without one (mirror-images: 3 s), and on arm64 only
+    # build-images installs everything, on main.
     - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
       with:
         version: "2026.10.4"
         install_args: ${{ inputs.install_args }}
-        cache: ${{ inputs.cache }}
+        cache: ${{ inputs.cache == 'true' && inputs.install_args == '' && runner.arch == 'X64' }}
         cache_save: ${{ github.event_name != 'pull_request' }}
     - if: inputs.quay-username != ''
       shell: bash

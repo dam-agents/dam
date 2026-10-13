@@ -3,10 +3,12 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/netip"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -207,6 +209,9 @@ func applyNetworkPolicy(ctx context.Context, client kubernetes.Interface, desire
 		if err != nil {
 			return err
 		}
+		if equality.Semantic.DeepEqual(existing.Spec, desired.Spec) && objectMetaCurrent(existing.ObjectMeta, desired.ObjectMeta) {
+			return nil
+		}
 		desired.ResourceVersion = existing.ResourceVersion
 		_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
 		return err
@@ -215,4 +220,9 @@ func applyNetworkPolicy(ctx context.Context, client kubernetes.Interface, desire
 		return fmt.Errorf("applying NetworkPolicy %s: %w", desired.Name, err)
 	}
 	return nil
+}
+
+func objectMetaCurrent(existing, desired metav1.ObjectMeta) bool {
+	return maps.Equal(existing.Labels, desired.Labels) && maps.Equal(existing.Annotations, desired.Annotations) &&
+		equality.Semantic.DeepEqual(existing.OwnerReferences, desired.OwnerReferences)
 }

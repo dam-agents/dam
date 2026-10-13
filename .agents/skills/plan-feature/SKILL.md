@@ -3,7 +3,8 @@ name: plan-feature
 description: >
   Turn a GitHub issue into an implementation plan under docs/plan/<feature>/: a feature spec
   decomposed into context-window-sized sub-issues, committed as the first commit of the feature
-  branch with a draft PR. Use when the user wants to plan a feature, decompose a GitHub issue
+  branch with a draft PR.
+  Use when the user wants to plan a feature, decompose a GitHub issue
   into sub-issues, or produce an implementation plan from an issue.
 ---
 

@@ -39,3 +39,17 @@ export function untilAgentReady(
     });
   });
 }
+
+export async function askAgainWhenReady<T>(
+  ask: () => Promise<T>,
+  untilReady: () => Promise<void> | null,
+): Promise<T> {
+  try {
+    return await ask();
+  } catch (err) {
+    const ready = untilReady();
+    if (!ready) throw err;
+    await ready;
+    return ask();
+  }
+}

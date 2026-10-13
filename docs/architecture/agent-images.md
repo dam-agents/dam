@@ -87,6 +87,7 @@ The bundle's record also holds the image's distribution roots, since a machine's
 A store no boot has touched yet, on a container's or a new machine root, is the one the image's build made, so the entrypoint adds only the platform CAs to it, with the same result as `update-ca-certificates` but not its pass over every root.
 Every other rebuild, a failed add, and any store with an update hook such as Java's keystore run `update-ca-certificates` itself.
 On a machine it also points docker's client at the gateway, so containers and builds the agent starts go through it too, and puts the share's runtime wrapper in front of docker's and k3s's runc, so they trust the MITM CA as well.
+docker's runc is on the read-only harness tools, so the wrapper is linked as `runc` in a directory under `/run` that the entrypoint and login shells put first on `PATH`; k3s's containerd names it in a drop-in.
 A container's root is its own image, which trusts only public roots; when the container starts, the wrapper gives it copies of the image's own bundle with the CA appended, at a path of its own mounted read-only, and points the common CA variables there; a variable the image sets to a bundle is pointed at a copy of that file.
 The image's own files are never mounted over, so a build that regenerates its trust store still works, nothing lands in a built image, and no Dockerfile changes.
 A client that reads only the distribution's own bundle path and no variable — a Java keystore, GnuTLS-based wget and apt — does not see the CA.
@@ -108,18 +109,31 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
   An agent's own `aube add -g` and `pip install --user` land in the home and last; `mise use -g`, `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its root generation, which the base declares, is bumped ([persistence](persistence.md)).
   mise reads no config from the home, so a tool pin an older image persisted there is inert.
 
-## Retired images
+## Image updates
 
-Each harness once had an image of its own.
-They are no longer built, and an Agent still on one pays a full image unpack whenever it wakes on a node that lacks it, so the platform moves such Agents to the default image without their owner.
-A periodic api-server job applies the [template upgrade](agent-lifecycle.md#template-upgrade) a user would, so the Agent's harness carries over.
-It selects only by image: the four retired images, found beside the default image in the same registry, so workload and custom images are never touched.
+An Agent created from a Template is kept on that Template's current image without its owner, so a deploy's new image, and the runtime fixes in it, reach existing Agents.
+An Agent created on an image of its own, a [starter kit](starter-kits.md)'s included, carries no Template and is never moved, nor is one whose Template the install no longer has.
+A periodic api-server job applies the [template upgrade](agent-lifecycle.md#template-upgrade) a user would, so the harness carries over: each harness once had an image of its own, and the Templates for those retired images resolve to the default Template, so their Agents move to the default image the same way.
 It covers both Backends.
-A vm machine keeps its root when the default image declares the same root generation as the old one, and otherwise boots on a fresh root, losing what was installed outside HOME ([vm-runner](vm-runner.md)); that loss is accepted.
+A vm machine keeps its root when the new image declares the same root generation as the old one, and otherwise boots on a fresh root, losing what was installed outside HOME ([vm-runner](vm-runner.md)); that loss is accepted.
 
 It never interrupts work.
 A hibernated, stopped or over-budget Agent moves at once and takes the image on its next wake.
+That wake costs nothing extra for the default image: the harness tools' DaemonSet has already pulled it onto every node, and the [image cache](vm-image-cache.md) preloads and pins the harness images the install ships, which an older image no longer is.
+A Template on an image the cache does not preload is fetched on its first wake, as its old image would be on a node that lacks it.
 A running Agent waits for the [idle checker](agent-lifecycle.md#hibernate) to hibernate it.
-An always-on Agent never hibernates, so it is restarted onto the default image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its pod reporting idle, which covers a running turn, an open terminal and kept background work.
+An always-on Agent never hibernates, so it is restarted onto the new image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its pod reporting idle, which covers a running turn, an open terminal and kept background work.
 The job re-reads each Agent before deciding, probes the pod after that read, and writes against that read's version, so a connection, a wake or an activity stamp in between makes the write conflict, and the Agent is decided again later.
 A prompt arriving in the seconds between the write and the pod's restart is the one window it cannot close.
+
+A move never strands an Agent.
+It records the image the Agent came from until the Agent has stayed ready on the new spec for five minutes, so a container that crashes seconds after it becomes ready does not prove the move.
+If the controller instead reports, for that spec, a failure the image can cause, the job writes the old image back and marks the new one refused for that Agent, which is not moved to it again; a later image is tried as usual.
+The failures are: the image cannot be pulled or unpacked, the machine cannot boot it, or the controller's `StartFailed` condition.
+The controller sets `StartFailed` only from the pod or machine that runs the current spec, never from the pod a roll replaces, which exits too.
+On the container backend that is a pod of the agent StatefulSet's update revision, once the StatefulSet has observed its generation.
+On the vm backend the runner's status names no spec, but a restart in flight reads not ready, so the controller counts from the first read at the current generation.
+`StartFailed` has two reasons: `CrashLoop` (the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now) and `NeverReady` (running for ten minutes on this spec without becoming ready, an image pull not counted).
+An exit from out of memory or a full home volume does not count, since any image meets it.
+A harness that crash-loops on any image, from something in the Agent's home, also moves the Agent back, and the new image is then refused for this Agent although it is not at fault.
+The owner's Update stays available, to move a running Agent now, and says so when the Agent failed to start on that image.

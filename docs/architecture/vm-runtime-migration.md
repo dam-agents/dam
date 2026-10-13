@@ -3,7 +3,7 @@
 Last verified: 2026-10-13
 
 A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at the user's request, and can be undone until the Agent's machine has booted from the copy; the UI offers it only to users who opted into the new runtime.
-A machine keeps only `HOME` ([persistence](persistence.md#per-agent-pvcs)), so a migration carries exactly one thing: the volume that held `HOME`, copied as the machine's home.
+`HOME` is the only path a machine keeps whatever image it boots, and a container's root outside its persisted mounts is the image's and keeps nothing ([persistence](persistence.md#per-agent-pvcs)), so a migration carries exactly one thing: the volume that held `HOME`, copied as the machine's home.
 An Agent whose mounts persist any other path — outside `HOME`, or a volume of its own inside it — is refused with each such path named, rather than moved without it; a mount that is not persisted, such as `/tmp`, is carried by nothing and refuses nothing.
 The api-server plans from the mounts the controller renders — the Agent's own, or the install's template defaults when it names none — and refuses such a path, an Agent that does not persist `HOME`, which leaves nothing to carry, an Agent already being moved or still clearing up an earlier move, and one mid-way through a storage migration; the UI offers the move from that same refusal.
 Otherwise it writes a request and no spec: the **target** shape — the disk sized for `HOME`, which the preflight raises to its volume's capacity — and a **snapshot** of every field the switch will change.

@@ -45,6 +45,7 @@ Merge a single campaign's extracted knowledge into the cross-campaign registry.
    - Normalize the name (lowercase, strip content in parentheses) for matching
    - Check if an entity with the same normalized name exists in `projects[repo_path].entities[]`
      - If yes: add this campaign name to its `campaigns[]` array (if not already there)
+
      - If no: assign new ID `E-{max_entity_id + 1}`, create entry:
        ```json
        {"id": "E-N", "name": "<entity name>", "aliases": [], "campaigns": ["<campaign-name>"]}
@@ -84,16 +85,16 @@ Merge a single campaign's extracted knowledge into the cross-campaign registry.
    b.
    Semantically group entities by functional role/purpose into clusters.
    Rules:
-      - Min 2 entities per cluster, max 10
-      - Max 20 clusters total per project — if grouping would exceed 20, merge the smallest/most-similar clusters
-      - Each entity belongs to at most one cluster (singletons are valid — omit them)
-      - Labels: 2-4 words, Title Case, describe the functional group
+   - Min 2 entities per cluster, max 10
+   - Max 20 clusters total per project — if grouping would exceed 20, merge the smallest/most-similar clusters
+   - Each entity belongs to at most one cluster (singletons are valid — omit them)
+   - Labels: 2-4 words, Title Case, describe the functional group
 
    c.
    Assign sequential IDs `EC-1`, `EC-2`, etc. Set `projects[repo_path].entity_clusters` to:
-      ```json
-      [{"id": "EC-1", "label": "...", "entities": ["E-4", "E-5", "E-6"]}, ...]
-      ```
+   ```json
+   [{"id": "EC-1", "label": "...", "entities": ["E-4", "E-5", "E-6"]}, ...]
+   ```
 
    d.
    **CRITICAL**: This step ONLY writes the `entity_clusters` field.

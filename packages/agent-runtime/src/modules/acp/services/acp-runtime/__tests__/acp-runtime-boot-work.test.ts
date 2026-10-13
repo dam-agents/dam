@@ -12,6 +12,10 @@ import { createWorld, frames } from "./acp-world.js";
  * cannot hang that work on the moment it first learns the environment is
  * ready: on every boot after the first that moment never comes. It also cannot wait forever, or a hook that never
  * settles would leave the pod unable to start at all.
+ *
+ * Work that only a turn needs, such as the browser panel's display, which the
+ * agent's own browser draws on, waits for a prompt instead: started with the
+ * harness, it slows the harness's start and the opening of the first session.
  */
 describe("acp-runtime: spawn work before the harness starts", () => {
   afterEach(() => {
@@ -201,5 +205,31 @@ describe("acp-runtime: spawn work before the harness starts", () => {
     world.connect().send(frames.initialize(1));
     expect(world.harnessCount()).toBe(1);
     expect(world.harness().receivedMethods()).toEqual(["initialize"]);
+  });
+
+  /**
+   * TEST_SCENARIO: A wake opens a session and sends a prompt. The prompt work
+   * must not run for the prestart, initialize or session/new, which it would
+   * slow, and must run for the prompt, before the harness can call a tool.
+   */
+  it("runs the prompt work for a prompt, not for the harness's start or a new session", async () => {
+    let prompts = 0;
+    const world = createWorld({
+      envReadyAtBoot: true,
+      onPrompt: () => {
+        prompts += 1;
+      },
+    });
+
+    world.runtime.prestart();
+    await Promise.resolve();
+    const client = world.connect();
+    client.send(frames.initialize(1));
+    client.send(frames.newSession(2));
+    world.harness().replyTo("session/new", { sessionId: "sess-boot" });
+    expect(prompts).toBe(0);
+
+    client.send(frames.prompt(3, "sess-boot", "open the docs"));
+    expect(prompts).toBe(1);
   });
 });

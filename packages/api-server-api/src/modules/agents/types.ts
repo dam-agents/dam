@@ -58,6 +58,7 @@ export type AgentSpec = AgentSpecCR & { name: string };
 export interface TemplateUpdate {
   fromImage: string;
   toImage: string;
+  startFailed?: boolean;
 }
 
 export type RuntimeMigrationPhase =

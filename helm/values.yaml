@@ -172,12 +172,13 @@ istio:
 # persistent microVM (smolvm) instead of as a pod, hosted by the **VM
 # runner** — one pod per owner, created by the controller, that holds /dev/kvm
 # and runs the platform's
-# vm-runner agent plus smolvm. A machine persists the agent's home and nothing
-# else, bind-mounted from its one storage disk by platform-init, which the
-# runner runs as every machine's entrypoint; the rest of the guest is a root
-# overlay the machine discards each time it stops, so anything installed
-# outside HOME is gone on the next boot. An Agent whose mounts ask to persist
-# a path outside HOME is refused rather than silently losing it. The controller drives its machine API over TLS
+# vm-runner agent plus smolvm. A machine persists the agent's home,
+# bind-mounted from its one storage disk by platform-init, which the runner
+# runs as every machine's entrypoint; the rest of the guest is a root overlay
+# whose upper layer is on that disk too, kept across stops until an image of
+# another root generation boots, with /tmp, /var/tmp and /var/cache emptied on
+# every boot. An Agent whose mounts ask to persist a path outside HOME is
+# refused rather than silently losing it. The controller drives its machine API over TLS
 # and a bearer token: the controller mints the token, and cert-manager issues
 # the runner's certificate from the runners' own CA (`runnerCA` below), so
 # virtualization needs cert-manager; the agent Service resolves to the

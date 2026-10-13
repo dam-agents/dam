@@ -4,7 +4,7 @@ import { UpdateAvailableAction } from "./update-available-action.js";
 
 export function RuntimeOutdatedNotice({ agentId }: { agentId: string | null }) {
   const agents = useAgentsList();
-  const { updateOne, updatingId, updatingAll } = useUpdateSandbox();
+  const { updateOne, updatingId } = useUpdateSandbox();
   const agent = agentId ? agents.find((a) => a.id === agentId) : undefined;
   const update = agent?.templateUpdate ?? null;
   if (!agent || !update) return null;
@@ -22,7 +22,6 @@ export function RuntimeOutdatedNotice({ agentId }: { agentId: string | null }) {
         agent={agent}
         onUpdate={() => void updateOne(agent)}
         pending={updatingId === agent.id}
-        busy={updatingAll}
       />
     </div>
   );

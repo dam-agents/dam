@@ -146,7 +146,11 @@ export interface AgentView {
   name: string;
   createdAt?: string;
   templateId: string | null;
-  templateUpdate: { fromImage: string; toImage: string } | null;
+  templateUpdate: {
+    fromImage: string;
+    toImage: string;
+    startFailed?: boolean;
+  } | null;
   features: { liveUpdates: boolean | null };
   image: string;
   description?: string;

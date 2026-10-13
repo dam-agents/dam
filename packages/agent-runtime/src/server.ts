@@ -262,8 +262,8 @@ const {
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
+  onPrompt: startDisplay,
   beforeSpawn: () => {
-    startDisplay();
     if (seedHarnessModel) return seedHarnessModel();
     process.stderr.write(
       "[acp] first spawn reached before the runtime channel was composed — no model seeded\n",
