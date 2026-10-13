@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const gateway = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/model-gateway.mjs", import.meta.url));
 let listing = null;
-let listingGate = null; // when set, the listing waits for it, so a test can read what the gateway kept before the listing replaces it
+let listingGate = null;
 const forwarded = [];
 const upstream = createServer((req, res) => {
   let body = "";
