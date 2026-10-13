@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
@@ -150,4 +151,30 @@ func TestAMachineStillRunningAtItsOldSizeCountsAtTheLarger(t *testing.T) {
 	smaller, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
 	assert.Equal(t, before, smaller, "the size its next start takes is the larger")
+}
+
+// TEST_SCENARIO: the memory pass reconciles an owner's agent only when that would change the runner pod's request. A count that crosses a step boundary but stays within the hold of the request the pod already has wakes no reconcile, or a guest sitting on the boundary would be reconciled at every pass for nothing; a count clearly below the step does.
+func TestTheMemoryPassReconcilesOnlyWhenThePodRequestWouldMove(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")},
+	}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "2560Mi", "8Gi")
+	r.vmRunning.Store(agent.Name, true)
+	ctx := context.Background()
+	pass := func(usedMiB int) bool {
+		node.mu.Lock()
+		node.statuses[agent.Name] = measured(usedMiB)
+		node.mu.Unlock()
+		_, moved := r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{agent})
+		return moved
+	}
+
+	assert.False(t, pass(2300-768), "a need of 2300 MiB already has its 2560Mi request")
+	assert.False(t, pass(2040-768), "a need of 2040 MiB is held at 2560Mi")
+	assert.True(t, pass(1860-768), "a need of 1860 MiB lowers the request to 2Gi")
+	assert.Equal(t, 0, resizeCalls(r), "the pass leaves the resize to the reconcile")
 }
