@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { avatarCharacter, SLACK_EMOJI_INDEX } from "api-server-api/avatar/svg";
 import type { TtlStore } from "../../../core/ttl-store.js";
+import {
+  annotateSpan,
+  inBackgroundSpan,
+} from "../../../core/background-span.js";
 import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
 import {
   addressedGuidance,
@@ -2745,7 +2749,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     });
   }
 
-  async function relayOwnerTurn(ctx: {
+  function relayOwnerTurn(ctx: Parameters<typeof runOwnerTurn>[0]) {
+    return inBackgroundSpan(
+      "channel.turn",
+      { "platform.channel": "slack", "platform.channel.ambient": false },
+      () => runOwnerTurn(ctx),
+    );
+  }
+
+  async function runOwnerTurn(ctx: {
     instanceName: string;
     channel: string;
     threadTs: string;
@@ -3071,6 +3083,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           watchTurn(nudgeSessionId, settledRefs, false, { endedAs: "clean" });
       }
       await presenter.clearStatus();
+      annotateSpan({
+        "platform.channel.outcome": outcome,
+        ...(failureReason !== undefined && {
+          "platform.channel.failure_reason": failureReason,
+        }),
+      });
       emit({
         type: EventType.ChannelTurnRelayed,
         channel: "slack",
@@ -4918,7 +4936,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     });
   }
 
-  async function relayAmbientTurn(args: {
+  function relayAmbientTurn(args: Parameters<typeof runAmbientTurn>[0]) {
+    return inBackgroundSpan(
+      "channel.turn",
+      { "platform.channel": "slack", "platform.channel.ambient": true },
+      () => runAmbientTurn(args),
+    );
+  }
+
+  async function runAmbientTurn(args: {
     instanceName: string;
     channel: string;
     teamId: SlackWorkspace;
@@ -5112,6 +5138,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         for (const sid of seenSessionIds)
           turnRecovery.dismiss(args.instanceName, sid);
       }
+      annotateSpan({
+        "platform.channel.outcome": outcome,
+        ...(failureReason !== undefined && {
+          "platform.channel.failure_reason": failureReason,
+        }),
+      });
       emit({
         type: EventType.ChannelTurnRelayed,
         channel: "slack",

@@ -1,4 +1,5 @@
 import type {
+  ApprovalVerdict,
   ChannelType,
   EntryPointChoice,
   GettingStartedTask,
@@ -9,6 +10,8 @@ import { filter } from "rxjs/operators";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 
 export type TurnOutcome = "success" | "failure";
+
+export type ApprovalResolution = ApprovalVerdict | "expired" | "superseded";
 
 export enum EventType {
   UserAuthenticated = "UserAuthenticated",
@@ -223,6 +226,7 @@ export type ApprovalResolved = {
   approvalId: string;
   agentId: string;
   ownerSub: string;
+  resolution: ApprovalResolution;
 };
 
 export type ScheduleCreated = {
