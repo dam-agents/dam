@@ -205,11 +205,11 @@ export function useAcpConnection(
       const handler = makeUpdateHandler();
       const { connection, ws, forksSessions, steers } =
         await openInitializedConnection(
-        selectedAgent,
-        withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
-          if (listening) handler(update, updateSessionId, frame);
-        }),
-      );
+          selectedAgent,
+          withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
+            if (listening) handler(update, updateSessionId, frame);
+          }),
+        );
       ws.addEventListener("close", () => releaseStartSlot(holders));
 
       let startedSessionId: string;
@@ -292,25 +292,25 @@ export function useAcpConnection(
     if (!selectedAgent) throw new Error("No agent selected");
     const handler = makeUpdateHandler();
     const { connection, ws, forksSessions, steers } =
-        await openInitializedConnection(
-      selectedAgent,
-      withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
-        const collector = collectorRef.current;
-        if (
-          collector &&
-          updateSessionId === collector.sid &&
-          frame?.replayFor === collector.token
-        ) {
-          collector.updates.push({ update, frame });
-          return;
-        }
-        handler(update, updateSessionId, frame);
-      }),
-    );
+      await openInitializedConnection(
+        selectedAgent,
+        withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
+          const collector = collectorRef.current;
+          if (
+            collector &&
+            updateSessionId === collector.sid &&
+            frame?.replayFor === collector.token
+          ) {
+            collector.updates.push({ update, frame });
+            return;
+          }
+          handler(update, updateSessionId, frame);
+        }),
+      );
     attachCloseHandler(ws);
     connectionRef.current = { connection, ws };
     useStore.getState().setHarnessForks(forksSessions);
-        useStore.getState().setHarnessSteers(steers);
+    useStore.getState().setHarnessSteers(steers);
     return connectionRef.current;
   }, [selectedAgent, makeUpdateHandler, delivery, attachCloseHandler]);
 
