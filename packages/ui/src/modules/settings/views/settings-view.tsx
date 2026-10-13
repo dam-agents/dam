@@ -23,6 +23,7 @@ import { SlackWorkspacesView } from "../../slack/views/slack-workspaces-view.js"
 import { useUsageInspectAvailability } from "../../usage/api/queries.js";
 import { UsageAnalyticsView } from "../../usage/views/usage-analytics-view.js";
 import { AboutTab } from "../components/about-tab.js";
+import { ToolActivitySetting } from "../components/tool-activity-setting.js";
 
 const baseTabs: readonly TabDef<SettingsTab>[] = [
   { value: "account", label: "Account" },
@@ -149,6 +150,8 @@ export function SettingsView() {
                 )}
               </div>
             </div>
+
+            <ToolActivitySetting />
           </div>
         )}
 

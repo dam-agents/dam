@@ -5,6 +5,7 @@ import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
+import { useStore } from "../../../store.js";
 import type { ToolChip } from "../../../types.js";
 import { groupLabel, runningChip } from "../lib/activity-groups.js";
 import { ActivityBlock } from "./activity-block.js";
@@ -44,14 +45,13 @@ function DoneLabel({ chips }: { chips: readonly ToolChip[] }) {
 
 export function ActivityGroup({
   chips,
-  defaultOpen = false,
   streaming,
 }: {
   chips: readonly ToolChip[];
-  defaultOpen?: boolean;
   streaming: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const expanded = useStore((s) => s.toolActivityExpanded);
+  const [open, setOpen] = useState(expanded);
   const running = streaming ? runningChip(chips) : undefined;
 
   return (
