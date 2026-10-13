@@ -2,7 +2,8 @@
 name: openevolve
 description: >-
   Run OpenEvolve, the evolutionary coding agent, to optimize code against a
-  measurable objective via the `openevolve-run` CLI. Use when the user wants to
+  measurable objective via the `openevolve-run` CLI.
+  Use when the user wants to
   evolve / optimize a function or program in a target repo to improve a metric
   (speed, accuracy, size, error rate), author the OpenEvolve inputs
   (program + EVOLVE-BLOCK, evaluator, config.yaml), pick the evolution model, or
@@ -120,15 +121,15 @@ openevolve-run <program> <evaluator> -c config.yaml -o <output> -i <N> \
   [-t <target-score>] [--checkpoint <dir>] [-l INFO]
 ```
 
-| Flag | Meaning |
-|---|---|
-| `<program> <evaluator>` | positional: initial program file, evaluator file |
-| `-c, --config` | config YAML |
-| `-o, --output` | output dir — **always** an explicit path on `$OPENEVOLVE_OUTPUT_ROOT`, outside the target repo |
-| `-i, --iterations` | iterations **this invocation** runs (not an absolute cap) — **always bound**; config default is 10000 |
-| `-t, --target-score` | stop once `combined_score` reaches this |
-| `--checkpoint <dir>` | resume full state from `output/checkpoints/checkpoint_<N>` (continues iteration numbering) |
-| `-l, --log-level` | `INFO` for the per-iteration progress lines |
+| Flag                    | Meaning                                                                                               |
+| ----------------------- | ----------------------------------------------------------------------------------------------------- |
+| `<program> <evaluator>` | positional: initial program file, evaluator file                                                      |
+| `-c, --config`          | config YAML                                                                                           |
+| `-o, --output`          | output dir — **always** an explicit path on `$OPENEVOLVE_OUTPUT_ROOT`, outside the target repo        |
+| `-i, --iterations`      | iterations **this invocation** runs (not an absolute cap) — **always bound**; config default is 10000 |
+| `-t, --target-score`    | stop once `combined_score` reaches this                                                               |
+| `--checkpoint <dir>`    | resume full state from `output/checkpoints/checkpoint_<N>` (continues iteration numbering)            |
+| `-l, --log-level`       | `INFO` for the per-iteration progress lines                                                           |
 
 > On a `--checkpoint` resume `-i` adds that many **more** iterations, so pass the remaining budget (`max_iterations − checkpoint_N`), not the original `-i`.
 
@@ -140,6 +141,7 @@ A run doesn't advance faster because you look at it — poll infrequently.
 ## Outputs
 
 Under `<output>/`:
+
 - `best/best_program.*` — the winning variant; `best/best_program_info.json` — its metrics (report `combined_score` and the objective metric from here).
 - `checkpoints/checkpoint_<N>/` — resumable full state (drives `--checkpoint`).
 - `logs/` — run logs.

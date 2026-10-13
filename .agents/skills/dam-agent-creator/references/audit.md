@@ -82,7 +82,8 @@ Then append `<ISO> ok=<n> warn=<n> red=<n> sent=<channel|chat>` to `work/AUDIT.l
 
 ## Optional: a periodic quality benchmark
 
-For agents whose output quality is a judgment call (reviews, classifications, summaries): a rarer run (monthly, off by default, own config key) replays fixed synthetic fixtures through the full pipeline and scores output against seeded ground truth, recording time and token cost per item, so "did the model upgrade help?" gets an answer.
+For agents whose output quality is a judgment call (reviews, classifications, summaries): a rarer run (monthly, off by default, own config key) replays fixed synthetic fixtures through the full pipeline and scores output against seeded ground truth, recording time and token cost per item, so "did the model upgrade help?"
+gets an answer.
 Trust invariants: ground truth lives **outside** the pipeline's inputs (a set naming its own answers is never scored); fixture creation and scored runs never share a session; one scored run at a time behind a lock; results append-only and validated before entering the history; nothing in the production domain touched beyond its own report.
 Propose it only where the operator would act on the numbers: it costs real tokens.
 

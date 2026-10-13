@@ -4,7 +4,8 @@ description: >-
   Reach LLM providers from this platform pod: discover which model-provider
   connection is attached (injected env), wire LiteLLM with placeholder
   credentials through the egress credential gateway, and probe models with a
-  cheap completion. Use whenever any code in this pod — a GEPA driver, a
+  cheap completion.
+  Use whenever any code in this pod — a GEPA driver, a
   script, a library — needs to call a model API, or when a model call fails
   with an auth error.
 ---

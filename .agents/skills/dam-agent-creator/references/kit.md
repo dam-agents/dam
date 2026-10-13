@@ -7,15 +7,15 @@ Without it the operator wires the agent by hand from README and pastes the ONBOA
 
 ## What the kit does and what ONBOARDING still owns
 
-| Step | Without a kit | With a kit |
-| --- | --- | --- |
+| Step                              | Without a kit                                                               | With a kit                                                                     |
+| --------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Definition checked out at `$HOME` | ONBOARDING derives the repo from the runbook URL, then init + fetch + reset | the platform seeds it at the commit the kit was read at, before the first turn |
-| Required connections | the operator reads README and grants them | `connections:` — apply refuses before anything is created when one is missing |
-| Fixed env vars | the operator sets them on the agent | `env:` |
-| Schedules | ONBOARDING creates each one over MCP | `schedules:` — apply creates them; suggested ones arrive disabled |
-| Size, hibernation | install defaults | `resources:`, `hibernationTimeoutMin:` |
-| First turn | the operator pastes the ONBOARDING.md link | the platform composes the briefing and opens the session itself |
-| Idle scheduled fire | a turn wakes, runs the pre-flight, reads `nothing_to_do`, ends | the `precheck` declines and **no model is woken at all** |
+| Required connections              | the operator reads README and grants them                                   | `connections:` — apply refuses before anything is created when one is missing  |
+| Fixed env vars                    | the operator sets them on the agent                                         | `env:`                                                                         |
+| Schedules                         | ONBOARDING creates each one over MCP                                        | `schedules:` — apply creates them; suggested ones arrive disabled              |
+| Size, hibernation                 | install defaults                                                            | `resources:`, `hibernationTimeoutMin:`                                         |
+| First turn                        | the operator pastes the ONBOARDING.md link                                  | the platform composes the briefing and opens the session itself                |
+| Idle scheduled fire               | a turn wakes, runs the pre-flight, reads `nothing_to_do`, ends              | the `precheck` declines and **no model is woken at all**                       |
 
 ONBOARDING still owns everything only the operator can answer: config dialog, roster, state seeds, state reconstruction, sentinel, verification pass.
 The kit declares what the *platform* can set up; `ONBOARDING.md` settles what only a conversation can.
@@ -111,23 +111,23 @@ schedules:
 
 All optional; declare only what the design needs.
 
-| Field | When |
-| --- | --- |
-| `tagline`, `icon`, `docsUrl` | catalog presentation — a one-line hook, an icon name, a link to README |
-| `harnesses: [claude-code, …]` | the definition depends on a harness family's conventions (hooks under `scripts/harness/<harness>/`, a command spelling) |
-| `providers: [...]` | the workload needs specific provider presets |
-| `resources: {cpu, memory, storage, note}` | the workload needs more than the install default; `note` says why. Limits only — never requests. `storage` is fixed at create |
-| `egressRules: [{host, verdict, …}]` | hosts the job always needs beyond the preset, or must never reach (`verdict: deny`); same shape as a rule written by hand |
-| `egressPreset: none \| trusted \| all` | the agent's web access at create. Omit for the platform default (`trusted`); `none` for a job that needs no network beyond its connections, `all` only when the job browses arbitrary sites |
-| `hibernationTimeoutMin` | a heartbeat finer than the install's idle timeout, so the agent is not paid for round-trip wake-ups |
-| `requireConnectionAddress: true` | the agent runs tools (Docker containers, nested agents) that call the same services with their own credentials or none, so its gateway must inject only requests that name a connection and leave theirs alone |
-| `env: [{name, value}]` | a **fixed** value every deployment shares. Instance values belong in the config dialog, never here |
-| `bundledSkills: {path}` | the design bundles a skill — a scan root (`.agents/skills`); declared for display, the platform installs nothing |
-| `skills: [{source, name}]` | a skill from another repository, installed at apply from a connected Skill Source |
-| `channels: [{type, note}]` | the agent listens on Slack or Telegram; suggested only, never blocks apply |
-| `install: {command}` | a bootstrap that must run before the first session. Rarely needed here — ONBOARDING is this skill's bootstrap, and it runs as a conversation |
-| `knowledgeBase: {shareRoots}` | the agent publishes a knowledge base from named workspace paths |
-| `image: {ref, harness, providers}` | never, for a generated definition — it runs on a harness the operator picks |
+| Field                                     | When                                                                                                                                                                                                           |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tagline`, `icon`, `docsUrl`              | catalog presentation — a one-line hook, an icon name, a link to README                                                                                                                                         |
+| `harnesses: [claude-code, …]`             | the definition depends on a harness family's conventions (hooks under `scripts/harness/<harness>/`, a command spelling)                                                                                        |
+| `providers: [...]`                        | the workload needs specific provider presets                                                                                                                                                                   |
+| `resources: {cpu, memory, storage, note}` | the workload needs more than the install default; `note` says why. Limits only — never requests. `storage` is fixed at create                                                                                  |
+| `egressRules: [{host, verdict, …}]`       | hosts the job always needs beyond the preset, or must never reach (`verdict: deny`); same shape as a rule written by hand                                                                                      |
+| `egressPreset: none \| trusted \| all`    | the agent's web access at create. Omit for the platform default (`trusted`); `none` for a job that needs no network beyond its connections, `all` only when the job browses arbitrary sites                    |
+| `hibernationTimeoutMin`                   | a heartbeat finer than the install's idle timeout, so the agent is not paid for round-trip wake-ups                                                                                                            |
+| `requireConnectionAddress: true`          | the agent runs tools (Docker containers, nested agents) that call the same services with their own credentials or none, so its gateway must inject only requests that name a connection and leave theirs alone |
+| `env: [{name, value}]`                    | a **fixed** value every deployment shares. Instance values belong in the config dialog, never here                                                                                                             |
+| `bundledSkills: {path}`                   | the design bundles a skill — a scan root (`.agents/skills`); declared for display, the platform installs nothing                                                                                               |
+| `skills: [{source, name}]`                | a skill from another repository, installed at apply from a connected Skill Source                                                                                                                              |
+| `channels: [{type, note}]`                | the agent listens on Slack or Telegram; suggested only, never blocks apply                                                                                                                                     |
+| `install: {command}`                      | a bootstrap that must run before the first session. Rarely needed here — ONBOARDING is this skill's bootstrap, and it runs as a conversation                                                                   |
+| `knowledgeBase: {shareRoots}`             | the agent publishes a knowledge base from named workspace paths                                                                                                                                                |
+| `image: {ref, harness, providers}`        | never, for a generated definition — it runs on a harness the operator picks                                                                                                                                    |
 
 ## Constraints
 

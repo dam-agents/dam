@@ -5,10 +5,13 @@ description: >
   Inspects a PR, branch, or local diff against the project's documentation guidelines
   (`docs/guidelines/documentation-guidelines.md`) and flags places where architecture pages
   no longer match the code — missing page updates, stale `Last verified:` dates, missing
-  pages for new subsystems, volatile content or ADR references leaking into pages. Scope is
-  architecture docs only — vocabulary, ADRs, READMEs, and other docs are out of scope. Triggers on phrases like "doc drift", "docs drift",
+  pages for new subsystems, volatile content or ADR references leaking into pages.
+  Scope is
+  architecture docs only — vocabulary, ADRs, READMEs, and other docs are out of scope.
+  Triggers on phrases like "doc drift", "docs drift",
   "are the architecture docs in sync", "check documentation drift", "do the docs need
-  updating", or "architecture documentation review". Also invocable via the `/doc-drift`
+  updating", or "architecture documentation review".
+  Also invocable via the `/doc-drift`
   slash command.
 ---
 

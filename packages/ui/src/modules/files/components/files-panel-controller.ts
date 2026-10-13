@@ -370,6 +370,7 @@ export function useFilesPanelController({
       handleAction,
       handleRowDragEnter,
       handleRowDragLeave,
+      handleRowDragEnd,
       handleRowDrop,
       handleRowMove,
     ],

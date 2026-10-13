@@ -5,6 +5,7 @@ status: proposed
 subsystem: agent-lifecycle
 summary: agent-runtime materializes declarative file fragments from opaque producers into agent pods over SSE, merging without a pod restart.
 ---
+
 # DRAFT-ADR: Push declarative file state to agent pods
 
 **Date:** 2026-04-27 **Status:** Draft **Owner:** @jjeliga

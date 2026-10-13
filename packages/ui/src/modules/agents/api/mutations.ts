@@ -198,14 +198,12 @@ export function useRestartAgentMutation() {
   });
 }
 
-export function useUpgradeAgentMutation(opts?: { silent?: boolean }) {
+export function useUpgradeAgentMutation() {
   return useMutation({
     ...trpc.agents.upgrade.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      ...(opts?.silent
-        ? { suppressErrorToast: true }
-        : { errorToast: "Couldn't update agent" }),
+      errorToast: "Couldn't update agent",
     },
   });
 }

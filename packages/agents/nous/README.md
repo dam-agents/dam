@@ -59,10 +59,10 @@ It's sourced by the chat/terminal harness and the SSH login profile, so the whol
 
 ## Harness modes
 
-| Mode | Entrypoint | Behavior |
-|---|---|---|
-| **chat** | inherited claude-code (`claude-agent-acp`) | Claude Code with `nous` installed, the `nous` skill, and the Nous-oriented `AGENTS.md` — chat "run a campaign on …" and Claude drives the `nous` CLI (auto-approve, background, resume-on-restart). The primary path. |
-| **terminal** | inherited claude-code | The Claude Code TUI in a terminal (same harness as the base image). For a hands-on shell, use **SSH** — it drops into a plain login shell with `nous` on `PATH`. |
+| Mode         | Entrypoint                                 | Behavior                                                                                                                                                                                                              |
+| ------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **chat**     | inherited claude-code (`claude-agent-acp`) | Claude Code with `nous` installed, the `nous` skill, and the Nous-oriented `AGENTS.md` — chat "run a campaign on …" and Claude drives the `nous` CLI (auto-approve, background, resume-on-restart). The primary path. |
+| **terminal** | inherited claude-code                      | The Claude Code TUI in a terminal (same harness as the base image). For a hands-on shell, use **SSH** — it drops into a plain login shell with `nous` on `PATH`.                                                      |
 
 ## Build
 

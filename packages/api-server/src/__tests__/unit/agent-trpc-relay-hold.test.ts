@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The per-agent tRPC relay holds a browser's socket while the agent wakes, so the session list can be asked for at the click. It never wakes an agent itself: one that is hibernated with no wake asked for is refused as before. While it holds, it answers the client's keep-alive, and it forwards what the client sent once the agent is ready. A wake that fails closes the socket with the wake's cause.
+// TEST_OVERVIEW: The per-agent tRPC relay holds a browser's socket while the agent wakes, so the session list can be asked for while the agent starts. It never wakes an agent itself and records no activity while it waits: one that is hibernated with no wake asked for is refused as before. While it holds, it answers the client's keep-alive, and it forwards what the client sent once the agent is ready. A wake that fails closes the socket with the wake's cause.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
@@ -45,7 +45,7 @@ function deferred() {
 async function harness(agent: Partial<InfraAgent> | null) {
   const upstream = await fakeAgent();
   const wake = deferred();
-  const ensureReady = vi.fn(() => wake.promise);
+  const ensureReady = vi.fn((_id: string, _opts?: object) => wake.promise);
   const repo = {
     get: vi.fn(async () => agent as InfraAgent | null),
     ensureReady,
@@ -133,6 +133,7 @@ describe("agent tRPC relay during a wake", () => {
     h.ws.send("first");
     h.wake.resolve();
     await until(() => h.upstream.received.includes("first"));
+    expect(h.ensureReady).toHaveBeenCalledWith("agent-a", { waitOnly: true });
   });
 
   it("closes with the wake's cause when the wake fails", async () => {

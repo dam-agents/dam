@@ -141,13 +141,13 @@ A heartbeat that cleared it would let a shutting-down machine un-shut itself on 
 
 ## Jobs
 
-| State | Meaning |
-|---|---|
-| queued | accepted; no worker has claimed it yet |
-| running | claimed, under a lease the worker renews |
-| done | terminal: the tool's result, and its exit code where the tool has one; a call the machine refused is a done Job whose result is an error |
-| interrupted | the worker stopped renewing, or it was killed — the outcome is unknowable |
-| cancelled | terminal after a cancellation or the Satellite's removal |
+| State       | Meaning                                                                                                                                  |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| queued      | accepted; no worker has claimed it yet                                                                                                   |
+| running     | claimed, under a lease the worker renews                                                                                                 |
+| done        | terminal: the tool's result, and its exit code where the tool has one; a call the machine refused is a done Job whose result is an error |
+| interrupted | the worker stopped renewing, or it was killed — the outcome is unknowable                                                                |
+| cancelled   | terminal after a cancellation or the Satellite's removal                                                                                 |
 
 **Interruption is detected by lease expiry, not reported.** A worker that dies cannot file a report about itself, so a Job whose lease lapses is swept into *interrupted*.
 A worker that knows it is dying reports directly, which is faster and says why.

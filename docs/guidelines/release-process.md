@@ -75,11 +75,11 @@ Then merge the fix to `main` first, cherry-pick it onto the hotfix branch with `
 
 ## Utilities
 
-| Task | Purpose |
-|---|---|
-| `mise run release:status` | Show current version, latest release branch, latest tag, CD link |
-| `mise run release:checkout` | Check out the latest `release-v*` branch |
-| `mise run release:set-version <ver>` | Manually set version across all packages and commit |
+| Task                                 | Purpose                                                          |
+| ------------------------------------ | ---------------------------------------------------------------- |
+| `mise run release:status`            | Show current version, latest release branch, latest tag, CD link |
+| `mise run release:checkout`          | Check out the latest `release-v*` branch                         |
+| `mise run release:set-version <ver>` | Manually set version across all packages and commit              |
 
 ## What CD publishes
 

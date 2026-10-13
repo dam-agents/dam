@@ -4,14 +4,14 @@
 
 ## Principles
 
-**[CRITICAL] Types are contracts at boundaries, not obstacles inside.** Type props, API responses, hook returns and store state tightly; inside a function, trust inference and don't annotate what TypeScript already knows.
+**\[CRITICAL\] Types are contracts at boundaries, not obstacles inside.** Type props, API responses, hook returns and store state tightly; inside a function, trust inference and don't annotate what TypeScript already knows.
 
-**[CRITICAL] `any` is a bug.** One `any` at a boundary deletes type safety for everything touching it.
+**\[CRITICAL\] `any` is a bug.** One `any` at a boundary deletes type safety for everything touching it.
 Use `unknown` and narrow, define the type, or infer it from Zod.
 
 ## `type` vs `interface`
 
-**[MODERATE]** `interface` for object shapes that might be extended (props, context values, module augmentation; errors show the interface name).
+**\[MODERATE\]** `interface` for object shapes that might be extended (props, context values, module augmentation; errors show the interface name).
 `type` for everything else: unions, intersections, tuples, mapped/conditional types, records, function types.
 
 ```ts
@@ -22,7 +22,7 @@ Use `unknown` and narrow, define the type, or infer it from Zod.
 
 ## Props
 
-**[HIGH] No `React.FC<>`**; plain function declarations with a `Props` parameter (`references/components.md`).
+**\[HIGH\] No `React.FC<>`**; plain function declarations with a `Props` parameter (`references/components.md`).
 
 ```tsx
 interface Props {
@@ -38,7 +38,7 @@ Children are typed explicitly as `ReactNode` (not `PropsWithChildren`, whose ind
 
 ## Zod-inferred types
 
-**[CRITICAL]** Shapes to/from the server are Zod schemas with inferred types: one source of truth, runtime validation matching compile-time types, schema changes propagating automatically.
+**\[CRITICAL\]** Shapes to/from the server are Zod schemas with inferred types: one source of truth, runtime validation matching compile-time types, schema changes propagating automatically.
 
 ```ts
 export const agentSchema = z.object({
@@ -50,7 +50,7 @@ export const agentSchema = z.object({
 export type Agent = z.infer<typeof agentSchema>;
 ```
 
-**[HIGH] Export the schema *and* the type**: validators import the schema, everyone else the type.
+**\[HIGH\] Export the schema *and* the type**: validators import the schema, everyone else the type.
 
 ## `unknown` over `any`
 
@@ -66,7 +66,7 @@ export type Agent = z.infer<typeof agentSchema>;
 
 ## `as`: last resort
 
-**[HIGH]** In order of preference: type guards (`isAgent(x): x is Agent`); Zod parsing at boundaries; discriminated unions matched on a tag; only then `as`, isolated in a well-named helper so the name says why.
+**\[HIGH\]** In order of preference: type guards (`isAgent(x): x is Agent`); Zod parsing at boundaries; discriminated unions matched on a tag; only then `as`, isolated in a well-named helper so the name says why.
 
 Allowed: `as const`; `as CSSProperties` where React's `style` type rejects CSS custom properties; narrowing after an `if` TS can't express, inside a named type guard.
 
@@ -81,7 +81,7 @@ Casting to narrow after a conditional (`colors[state as Status]`) is the common 
 
 ## Discriminated unions + `ts-pattern`
 
-**[HIGH]** Model tagged variants as discriminated unions and match exhaustively; `.exhaustive()` fails to type-check when a new variant goes unhandled.
+**\[HIGH\]** Model tagged variants as discriminated unions and match exhaustively; `.exhaustive()` fails to type-check when a new variant goes unhandled.
 
 ```ts
 type FormField =
@@ -109,7 +109,7 @@ Use them only when the function truly parameterizes over its input; no `<T>` for
 
 ## Hook return types
 
-**[MODERATE]** Let inference type hook returns.
+**\[MODERATE\]** Let inference type hook returns.
 Annotate only to hide implementation detail (a narrower interface) or ugly internal types (a giant `QueryObserverResult<A, B, C>`).
 
 ```ts
@@ -118,13 +118,13 @@ Annotate only to hide implementation detail (a narrower interface) or ugly inter
 
 ## Errors
 
-**[HIGH]** Use a typed error hierarchy (`class ApiError extends Error { status; body }`, `class ValidationError extends Error`) so `instanceof` narrows in `catch` blocks and toast/logging code.
+**\[HIGH\]** Use a typed error hierarchy (`class ApiError extends Error { status; body }`, `class ValidationError extends Error`) so `instanceof` narrows in `catch` blocks and toast/logging code.
 No duck-typing (`"status" in err`) when a class exists.
 End-to-end contract: `references/api-layer.md`.
 
 ## Constants & literals
 
-**[HIGH] No magic strings/numbers.** Name a literal when it carries meaning beyond its value or appears more than once, i.e. when a reader would have to read surrounding code to understand `3000` or `"idle"`.
+**\[HIGH\] No magic strings/numbers.** Name a literal when it carries meaning beyond its value or appears more than once, i.e. when a reader would have to read surrounding code to understand `3000` or `"idle"`.
 Single-use, self-explanatory values stay inline.
 
 ```ts

@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 
 use crate::guest;
 
-// UNIT_BOUNDARY_DESCRIPTION: the name the image's entrypoint moves docker's own runc to when it puts this wrapper in its place. docker's builder runs whatever `runc` it finds on PATH and ignores the daemon's default runtime, so the wrapper has to take the name itself, and it finds the binary it replaced beside it under this suffix.
+// UNIT_BOUNDARY_DESCRIPTION: the name an image's entrypoint moves docker's own runc to when it puts this wrapper in its place on a writable root. docker's builder runs whatever `runc` it finds on PATH and ignores the daemon's default runtime, so the wrapper has to take the name itself, and it finds the binary it replaced beside it under this suffix. The default image's docker is on the read-only harness tools, so its entrypoint links the wrapper in a directory ahead of docker's on PATH instead.
 pub const REAL_SUFFIX: &str = ".real";
 
 // UNIT_BOUNDARY_DESCRIPTION: where distributions keep the CA bundle their TLS clients read: Debian, Ubuntu and Alpine; Fedora and RHEL; SUSE; and the path LibreSSL and some minimal images use. The first one the image ships as a real file is the bundle the copies start from; a path that is a symlink in the image is skipped, because its target is on this list too.
@@ -379,6 +379,22 @@ mod tests {
             real_runc(Some(&path), &this).unwrap(),
             docker.join("runc.real")
         );
+    }
+
+    // TEST_SCENARIO: where docker's runc is read-only, the entrypoint links the wrapper as runc in a directory ahead of docker's on PATH. The wrapper skips its own link, which has no original beside it, and hands the container to docker's runc.
+    #[test]
+    fn a_link_ahead_of_docker_hands_to_dockers_runc() {
+        let dir = TempDir::new("ahead");
+        let this = dir.path().join("platform/runc");
+        executable(&this);
+        let link = dir.path().join("run/platform/bin");
+        fs::create_dir_all(&link).unwrap();
+        symlink(&this, link.join("runc")).unwrap();
+        let docker = dir.path().join("docker");
+        executable(&docker.join("runc"));
+        let path = std::env::join_paths([&link, &docker]).unwrap();
+
+        assert_eq!(real_runc(Some(&path), &this).unwrap(), docker.join("runc"));
     }
 
     // TEST_SCENARIO: a PATH with only the wrapper on it has no runtime to hand to. That is an error, never an exec of the wrapper itself, which would loop.

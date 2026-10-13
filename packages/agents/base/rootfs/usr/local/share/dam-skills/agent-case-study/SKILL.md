@@ -4,9 +4,11 @@ description: >
   Produce this agent's case study - a sanitized, plain-English, one-page account
   of the use case it serves, how it uses the platform, and where the platform
   got in the way - then submit it to the platform as a pending edition
-  only the owner can see. Use only when a scheduled task or the owner explicitly
+  only the owner can see.
+  Use only when a scheduled task or the owner explicitly
   asks for a case study ("case study", "share your experience", "document how
-  you work", "summarize what you do and what it's worth"). Never start one on
+  you work", "summarize what you do and what it's worth").
+  Never start one on
   your own initiative.
 ---
 
