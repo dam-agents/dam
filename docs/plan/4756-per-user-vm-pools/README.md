@@ -39,11 +39,11 @@ A lowered pool never kills anything:
 
 ## Sub-issues
 
-| #   | Title                                            | Scope                                                               | Depends on |
-| --- | ------------------------------------------------ | ------------------------------------------------------------------- | ---------- |
-| 01  | UserBudget overrides the VM pool (done)          | CRD fields, owner pool resolution, claim ceiling, api-server reader | —          |
-| 02  | The runner admits against its live memory limit  | vm-runner reads `memory.max`                                        | —          |
-| 03  | The owner's pool reaches the runner pod in place | pod limits resized, pool in machine size and reclaim, roll hash     | 01, 02     |
+| #   | Title                                                  | Scope                                                               | Depends on |
+| --- | ------------------------------------------------------ | ------------------------------------------------------------------- | ---------- |
+| 01  | UserBudget overrides the VM pool (done)                | CRD fields, owner pool resolution, claim ceiling, api-server reader | —          |
+| 02  | The runner admits against its live memory limit (done) | vm-runner reads `memory.max`                                        | —          |
+| 03  | The owner's pool reaches the runner pod in place       | pod limits resized, pool in machine size and reclaim, roll hash     | 01, 02     |
 
 ## Conventions & glossary
 

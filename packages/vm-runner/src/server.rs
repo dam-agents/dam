@@ -388,7 +388,7 @@ impl Server {
         };
         let now = crate::pressure::pressured(
             i64::from(working_set_mib),
-            i64::from(self.config.memory_mib),
+            i64::from(self.memory_limit_mib()),
             was,
         );
         let signal = now != was
@@ -429,7 +429,7 @@ impl Server {
         RunnerPressure {
             version: machines.pressure.version,
             pressured: machines.pressure.pressured,
-            limit_mib: self.config.memory_mib,
+            limit_mib: self.memory_limit_mib(),
             working_set_mib: machines.pressure.working_set_mib,
         }
     }
@@ -1332,7 +1332,7 @@ impl Server {
             .ok();
         self.metrics.render(&Gauges {
             budget_bytes: self.config.image_budget,
-            limit_mib: self.config.memory_mib,
+            limit_mib: self.memory_limit_mib(),
             reserve_mib: self.config.reserve_mib,
             committed_mib: committed,
             storage: (self.config.measure_storage)(),
@@ -1456,10 +1456,19 @@ impl Server {
         }
     }
 
+    fn memory_limit_mib(&self) -> i32 {
+        self.config
+            .cgroup_dir
+            .as_deref()
+            .and_then(crate::pressure::limit_mib)
+            .and_then(|mib| i32::try_from(mib).ok())
+            .unwrap_or(self.config.memory_mib)
+    }
+
     fn capacity(&self) -> Capacity<'_> {
         Capacity {
             state_dir: &self.config.state_dir,
-            limit_mib: self.config.memory_mib,
+            limit_mib: self.memory_limit_mib(),
             reserve_mib: self.config.reserve_mib,
             headroom_mib: self.config.headroom_mib,
             boot_mib: self.config.boot_mib,
