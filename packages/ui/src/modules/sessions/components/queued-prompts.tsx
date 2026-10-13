@@ -185,14 +185,16 @@ export function QueuedPrompts({
     (m) => m.role === "user" && m.queued === true && !listed.has(m.id),
   );
   return [
-    ...items.map((item, i) => (
-      <QueuedPromptItem
-        key={item.promptId ?? `queued-${String(i)}`}
-        item={item}
-        message={queuedMessage(item, i)}
-        onFileClick={onFileClick}
-      />
-    )),
+    ...items
+      .filter((item) => item.starting !== true)
+      .map((item, i) => (
+        <QueuedPromptItem
+          key={item.promptId ?? `queued-${String(i)}`}
+          item={item}
+          message={queuedMessage(item, i)}
+          onFileClick={onFileClick}
+        />
+      )),
     ...pending.map((m) => (
       <QueuedPromptItem
         key={m.id}

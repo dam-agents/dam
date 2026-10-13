@@ -258,6 +258,7 @@ export const queuedPromptSchema = z.object({
   blocks: z.array(promptBlockSchema),
   queuedAt: z.string(),
   editable: z.boolean(),
+  starting: z.boolean().optional(),
 });
 export type QueuedPrompt = z.infer<typeof queuedPromptSchema>;
 

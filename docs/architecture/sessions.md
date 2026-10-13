@@ -60,6 +60,7 @@ The runtime therefore reports them, over the same channel extension as the end-o
 Both ride a sender-minted prompt id as platform metadata, stripped before the agent sees it; channel workers and older clients mint none and get none.
 Both are **sender-only and ephemeral**; the queue is the conversation's: every viewer sees each change and can edit or remove a prompt until it starts, and a load returns it.
 A prompt's echo enters the log only when it starts.
+The queue marks a prompt that waits only for its session — nothing running ahead, the harness still loading the session after a wake, a restart or a rewind — as **starting**, and the chat shows it as sent rather than queued.
 Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api/).
 
 A harness that can **steer** takes a prompt into the turn it is running rather than after it.

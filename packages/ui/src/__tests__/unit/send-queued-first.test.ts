@@ -4,6 +4,7 @@ import {
   applyUpdate,
   isQueuedSend,
   sendWaits,
+  withoutQueuedSends,
 } from "../../modules/acp/session-projection.js";
 import type { AcpUpdate } from "../../modules/acp/types.js";
 import type { Message } from "../../types.js";
@@ -139,5 +140,36 @@ describe("a sent message: queued, then sent", () => {
     expect(sendWaits(sentWhileBusy().slice(0, 1), [])).toBe(true);
     expect(sendWaits([], queued)).toBe(true);
     expect(sendWaits(pendingOnly, [])).toBe(true);
+  });
+});
+
+describe("a message waiting only for its session", () => {
+  /**
+   * TEST_SCENARIO: After a wake, a restart or a rewind, the runtime queues a
+   * message until the harness has loaded the session, and marks it starting.
+   * Nothing runs ahead of it, so the chat must keep it in the conversation as
+   * sent rather than move it into the queue.
+   */
+  test("stays in the conversation while it is starting", () => {
+    const sent: Message[] = [
+      {
+        id: PROMPT,
+        role: "user",
+        parts: [{ kind: "text", text: "hi" }],
+        streaming: false,
+      },
+    ];
+
+    expect(
+      withoutQueuedSends(sent, [
+        {
+          promptId: PROMPT,
+          blocks: [],
+          queuedAt: "",
+          editable: true,
+          starting: true,
+        },
+      ]),
+    ).toEqual(sent);
   });
 });

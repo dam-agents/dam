@@ -312,7 +312,9 @@ export function withoutQueuedSends(
   items: QueuedPrompt[],
 ): Message[] {
   const queued = new Set(
-    items.flatMap((item) => (item.promptId === null ? [] : [item.promptId])),
+    items.flatMap((item) =>
+      item.promptId === null || item.starting === true ? [] : [item.promptId],
+    ),
   );
   if (queued.size === 0) return messages;
   return messages.filter(

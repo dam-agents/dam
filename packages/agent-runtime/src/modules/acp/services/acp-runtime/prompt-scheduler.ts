@@ -341,6 +341,22 @@ export function createPromptScheduler(
     };
   }
 
+  function nothingAhead(sessionId: string): boolean {
+    return (
+      !activeTurns.has(sessionId) &&
+      !steering.has(sessionId) &&
+      !pendingSettings.has(sessionId) &&
+      !settingsInFlight.has(sessionId)
+    );
+  }
+
+  function firstBatchSize(queue: readonly PromptSubmission[]): number {
+    if (queue.length === 0) return 0;
+    if (queue[0]!.steerable !== true) return 1;
+    const plain = queue.findIndex((entry) => entry.steerable !== true);
+    return plain === -1 ? queue.length : plain;
+  }
+
   function joinTurn(sessionId: string, follower: PromptSubmission): void {
     notifyAccepted(follower, false, true);
     const active = activeTurns.get(sessionId);
@@ -650,11 +666,14 @@ export function createPromptScheduler(
     },
 
     snapshot(sessionId) {
-      return (queues.get(sessionId) ?? []).map((entry) => ({
+      const queue = queues.get(sessionId) ?? [];
+      const starting = nothingAhead(sessionId) ? firstBatchSize(queue) : 0;
+      return queue.map((entry, i) => ({
         promptId: entry.promptId,
         blocks: entry.blocks ?? [],
         queuedAt: entry.queuedAt ?? "",
         editable: entry.editable === true && entry.promptId !== null,
+        ...(i < starting && { starting: true }),
       }));
     },
 
