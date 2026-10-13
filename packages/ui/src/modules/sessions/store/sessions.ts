@@ -44,6 +44,7 @@ export interface SessionsSlice {
   runStarts: string[];
   queuedPrompts: QueuedPrompt[];
   harnessForks: boolean;
+  harnessSteers: boolean;
   rewriting: Rewriting | null;
   nextSessionPair: Record<string, SessionPair>;
   sessionError: SessionError | null;
@@ -67,6 +68,7 @@ export interface SessionsSlice {
   setRunStarts: (list: string[]) => void;
   setQueuedPrompts: (items: QueuedPrompt[]) => void;
   setHarnessForks: (forks: boolean) => void;
+  setHarnessSteers: (steers: boolean) => void;
   setRewriting: (rewriting: Rewriting | null) => void;
   addRunStart: (at: string) => void;
   setNextSessionPair: (agentId: string, pair: SessionPair) => void;
@@ -132,6 +134,7 @@ export const createSessionsSlice: StateCreator<
     runStarts: [],
     queuedPrompts: [],
     harnessForks: false,
+    harnessSteers: false,
     rewriting: null,
     nextSessionPair: {},
     sessionMode: null,
@@ -164,6 +167,7 @@ export const createSessionsSlice: StateCreator<
     setRunStarts: (list) => set({ runStarts: list }),
     setQueuedPrompts: (items) => set({ queuedPrompts: items }),
     setHarnessForks: (forks) => set({ harnessForks: forks }),
+    setHarnessSteers: (steers) => set({ harnessSteers: steers }),
     setRewriting: (rewriting) => set({ rewriting }),
     setNextSessionPair: (agentId, pair) =>
       set((state) => ({

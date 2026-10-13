@@ -72,6 +72,7 @@ function QueuedPromptItem({
 }) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
+  const steers = useStore((s) => s.harnessSteers);
   const [draft, setDraft] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const target =
@@ -153,16 +154,18 @@ function QueuedPromptItem({
         </span>
         {target !== null && (
           <>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              tooltip="Send now — interrupts the agent"
-              aria-label="Send now"
-              disabled={pending}
-              onClick={sendNow}
-            >
-              <SendAlt size={14} />
-            </Button>
+            {steers && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                tooltip="Send now — interrupts the agent"
+                aria-label="Send now"
+                disabled={pending}
+                onClick={sendNow}
+              >
+                <SendAlt size={14} />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon-xs"

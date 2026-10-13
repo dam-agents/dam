@@ -203,7 +203,8 @@ export function useAcpConnection(
       let settled = false;
       let kept = false;
       const handler = makeUpdateHandler();
-      const { connection, ws, forksSessions } = await openInitializedConnection(
+      const { connection, ws, forksSessions, steers } =
+        await openInitializedConnection(
         selectedAgent,
         withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
           if (listening) handler(update, updateSessionId, frame);
@@ -228,6 +229,7 @@ export function useAcpConnection(
         });
         startedSessionId = session.sessionId;
         useStore.getState().setHarnessForks(forksSessions);
+        useStore.getState().setHarnessSteers(steers);
       } catch (err) {
         try {
           ws.close();
@@ -289,7 +291,8 @@ export function useAcpConnection(
     if (existing && existing.ws.readyState === WebSocket.OPEN) return existing;
     if (!selectedAgent) throw new Error("No agent selected");
     const handler = makeUpdateHandler();
-    const { connection, ws, forksSessions } = await openInitializedConnection(
+    const { connection, ws, forksSessions, steers } =
+        await openInitializedConnection(
       selectedAgent,
       withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
         const collector = collectorRef.current;
@@ -307,6 +310,7 @@ export function useAcpConnection(
     attachCloseHandler(ws);
     connectionRef.current = { connection, ws };
     useStore.getState().setHarnessForks(forksSessions);
+        useStore.getState().setHarnessSteers(steers);
     return connectionRef.current;
   }, [selectedAgent, makeUpdateHandler, delivery, attachCloseHandler]);
 

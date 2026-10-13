@@ -1612,12 +1612,25 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const parsed = platformSteerQueuedParamsSchema.safeParse(
           (frame as { params?: unknown }).params,
         );
-        answerQueueEdit(
-          channel,
-          frame.id,
-          parsed.success &&
-            promptScheduler.steerNow(paramsSid, parsed.data.promptId),
-        );
+        const fate = parsed.success
+          ? promptScheduler.steerNow(paramsSid, parsed.data.promptId)
+          : "not-queued";
+        if (fate === "cannot-steer") {
+          sendToChannel(
+            channel,
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: frame.id,
+              error: {
+                code: -32000,
+                message:
+                  "This agent can't take a message mid-turn; it is sent when the turn ends.",
+              },
+            }),
+          );
+          return;
+        }
+        answerQueueEdit(channel, frame.id, fate === "sent");
         return;
       }
 

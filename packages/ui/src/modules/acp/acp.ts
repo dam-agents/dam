@@ -6,6 +6,7 @@ import {
   type RequestPermissionRequest,
   type Stream,
 } from "@agentclientprotocol/sdk";
+import { steeringSupported } from "api-server-api";
 
 import { getAccessToken } from "../../auth.js";
 import { useStore } from "../../store.js";
@@ -110,6 +111,7 @@ export async function openInitializedConnection(
   connection: ClientConnection;
   ws: WebSocket;
   forksSessions: boolean;
+  steers: boolean;
 }> {
   const { connection, ws } = await openConnection(agentId, onUpdate, opts);
   let init: unknown;
@@ -125,7 +127,12 @@ export async function openInitializedConnection(
     } catch {}
     throw err;
   }
-  return { connection, ws, forksSessions: forksSessionsIn(init) };
+  return {
+    connection,
+    ws,
+    forksSessions: forksSessionsIn(init),
+    steers: steeringSupported(init),
+  };
 }
 
 function forksSessionsIn(init: unknown): boolean {

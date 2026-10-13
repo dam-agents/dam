@@ -17,6 +17,8 @@ const DEFAULT_STEER_WAIT_MS = 60 * 1000;
 
 export type PromptFate = "started" | "queued" | "steering" | "refused";
 
+export type SteerNowFate = "sent" | "not-queued" | "cannot-steer";
+
 export type SteerOutcome = "injected" | "refused";
 
 export type QueueDropCause =
@@ -75,7 +77,7 @@ export interface PromptScheduler {
     ) => Pick<PromptSubmission, "source" | "frame" | "typed" | "blocks">,
   ): boolean;
   remove(sessionId: string, promptId: string): PromptSubmission | null;
-  steerNow(sessionId: string, promptId: string): boolean;
+  steerNow(sessionId: string, promptId: string): SteerNowFate;
   onSteerPoint(sessionId: string): void;
   forget(sessionId: string): void;
   clear(): void;
@@ -672,10 +674,13 @@ export function createPromptScheduler(
         queue?.findIndex(
           (e) => e.editable === true && e.promptId === promptId,
         ) ?? -1;
-      if (queue === undefined || index === -1) return false;
+      if (queue === undefined || index === -1) return "not-queued";
+      const target = queue[index]!;
       for (const entry of queue.slice(0, index + 1)) entry.steerNow = true;
       steerFromQueue(sessionId);
-      return true;
+      if (!activeTurns.has(sessionId) || steering.has(sessionId)) return "sent";
+      target.steerNow = false;
+      return "cannot-steer";
     },
 
     onSteerPoint(sessionId) {
