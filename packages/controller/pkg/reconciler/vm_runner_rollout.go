@@ -13,6 +13,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -81,6 +82,12 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 	if existing.DeletionTimestamp != nil {
 		return errRunnerTerminating
 	}
+	if stored := existing.Annotations[annRunnerTemplate]; stored != "" && stored != hash && stored == legacyRunnerTemplateHash(dep.Spec, r.config.VM.Runner.ReleaseHostPath != "") {
+		existing.Annotations[annRunnerTemplate] = hash
+		if _, err := cli.Update(ctx, existing, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
+	}
 	if existing.Annotations[annRunnerTemplate] == hash && !r.runnerNeedsPodForRelease(ctx, owner, existing) {
 		return r.repairRunnerDeploymentMeta(ctx, owner, existing, dep)
 	}
@@ -125,6 +132,24 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the pod is what the hash covers, so a runner whose pod is unchanged is not rolled — but its own labels and owner references can still drift, from a hand edit or from the runner ServiceAccount being recreated with a new UID, and a Deployment owned by nothing outlives the release. Those are put back with a metadata-only update, which does not change the pod and so restarts no machine. An owner reference the controller could not resolve this pass is not written, rather than stripping the one the runner has.
+// UNIT_BOUNDARY_DESCRIPTION: the hash a runner rendered before the roll left its memory limit out (runnerRollSpec). A runner still carrying it has the pod the controller renders now, so it takes the new hash in a metadata-only update rather than rolling every machine of every owner once.
+func legacyRunnerTemplateHash(spec appsv1.DeploymentSpec, releases bool) string {
+	legacy := runnerRollSpec(spec, releases)
+	for i := range legacy.Template.Spec.Containers {
+		if mem, ok := spec.Template.Spec.Containers[i].Resources.Limits[corev1.ResourceMemory]; ok {
+			if legacy.Template.Spec.Containers[i].Resources.Limits == nil {
+				legacy.Template.Spec.Containers[i].Resources.Limits = corev1.ResourceList{}
+			}
+			legacy.Template.Spec.Containers[i].Resources.Limits[corev1.ResourceMemory] = mem
+		}
+	}
+	hash, err := runnerTemplateHash(legacy)
+	if err != nil {
+		return ""
+	}
+	return hash
+}
+
 func (r *AgentReconciler) repairRunnerDeploymentMeta(ctx context.Context, owner string, existing, desired *appsv1.Deployment) error {
 	_, waited := existing.Annotations[annRunnerBusy]
 	delete(existing.Annotations, annRunnerBusy)

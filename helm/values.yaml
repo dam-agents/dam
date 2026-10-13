@@ -260,7 +260,9 @@ virtualization:
     # REQUIRED when virtualization.enabled — the install fails without
     # limits.memory. Machines are processes of this pod, so that limit is also
     # what the runner admits them against (it refuses one that does not fit,
-    # keeping `reserveMiB` for itself). It is the owner's whole memory pool:
+    # keeping `reserveMiB` for itself). It is the owner's whole memory pool,
+    # unless their UserBudget sets `memory` (and `cpu`, which caps the CPU
+    # limit below); the controller then resizes that owner's pod in place:
     # vm agents have no size of their own and do not count toward the user's
     # budget; every machine may grow to half of the limit less `reserveMiB`,
     # so one agent can use most of the pool while a runaway guest hits its

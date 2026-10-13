@@ -6,7 +6,6 @@ import (
 	"sort"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -50,9 +49,9 @@ func (r *AgentReconciler) liveMachine(name string) vmrunner.MachineStatus {
 // UNIT_BOUNDARY_DESCRIPTION: or no estimate is set, until the runner has measured it.
 // UNIT_BOUNDARY_DESCRIPTION: A running machine's size is the larger of the one
 // UNIT_BOUNDARY_DESCRIPTION: it booted with and the one its next start takes.
-func (r *AgentReconciler) accountedMemoryMiB(name string, spec *apiv1.AgentSpec) int {
+func (r *AgentReconciler) accountedMemoryMiB(ctx context.Context, owner, name string, spec *apiv1.AgentSpec) int {
 	live := r.liveMachine(name)
-	size := max(r.machineMemoryMiB(spec), live.MemoryMiB)
+	size := max(r.machineMemoryMiB(ctx, owner, spec), live.MemoryMiB)
 	if live.UsedMiB == 0 {
 		if boot := r.config.VM.Runner.BootMiB; boot > 0 {
 			return min(size, boot)
@@ -62,21 +61,12 @@ func (r *AgentReconciler) accountedMemoryMiB(name string, spec *apiv1.AgentSpec)
 	return min(size, live.UsedMiB+r.config.VM.Runner.HeadroomMiB)
 }
 
-func (r *AgentReconciler) runnerLimitMiB() int {
-	if res := r.config.VM.Runner.Resources; res != nil {
-		if q, ok := res.Limits[corev1.ResourceMemory]; ok {
-			return int(q.Value() >> 20)
-		}
-	}
-	return 0
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: how much more memory the owner's machines are
 // UNIT_BOUNDARY_DESCRIPTION: counted at, with the reserve, than `percent` of
 // UNIT_BOUNDARY_DESCRIPTION: the runner's limit; zero or less when they fit,
 // UNIT_BOUNDARY_DESCRIPTION: and always zero for an install with no limit.
-func (r *AgentReconciler) runnerOvershootMiB(demandMiB, percent int) int {
-	limit := r.runnerLimitMiB()
+func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, demandMiB, percent int) int {
+	limit := r.runnerLimitMiB(ctx, owner)
 	if limit == 0 {
 		return 0
 	}
@@ -178,6 +168,7 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	if err != nil {
 		return "", false
 	}
+	r.refreshVMPool(ctx, owner)
 	var first *apiv1.Agent
 	for _, a := range agents {
 		running, err := r.peerShouldRun(ctx, a.Name)
@@ -203,9 +194,13 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	need := 0
 	switch {
 	case pressure != nil && !r.freedUnderPressureSince(owner, time.Now().Add(-pressureReclaimCooldown)):
-		need = max(r.runnerOvershootMiB(demand.memoryMiB, memoryTargetPercent), pressure.WorkingSetMiB-pressure.LimitMiB*memoryTargetPercent/100)
-	case pressure == nil && r.runnerOvershootMiB(demand.memoryMiB, memoryPressurePercent) > 0:
-		need = r.runnerOvershootMiB(demand.memoryMiB, memoryTargetPercent)
+		limit := pressure.LimitMiB
+		if pool := r.runnerLimitMiB(ctx, owner); pool > 0 {
+			limit = min(limit, pool)
+		}
+		need = max(r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryTargetPercent), pressure.WorkingSetMiB-limit*memoryTargetPercent/100)
+	case pressure == nil && r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryPressurePercent) > 0:
+		need = r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryTargetPercent)
 	}
 	if need > 0 {
 		freed, err := r.reclaimRunnerMemory(ctx, owner, "", need, pressure != nil)
@@ -216,7 +211,7 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 			r.noteFreedUnderPressure(owner)
 		}
 	}
-	if !r.runnerRequestMoves(ctx, owner, demand.memoryMiB) {
+	if !r.runnerPodMoves(ctx, owner, demand) {
 		return "", false
 	}
 	return first.Name, true
@@ -254,7 +249,7 @@ func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *api
 	if err != nil {
 		return err
 	}
-	_, err = r.reclaimRunnerMemory(ctx, owner, agent.Name, r.runnerOvershootMiB(demand.memoryMiB, 100), false)
+	_, err = r.reclaimRunnerMemory(ctx, owner, agent.Name, r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, 100), false)
 	return err
 }
 

@@ -154,7 +154,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	machine := vmrunner.MachineSpec{
 		Image:           spec.Image,
 		CPUs:            max(r.config.VM.Runner.MachineCPUs, 1),
-		MemoryMiB:       r.machineMemoryMiB(spec),
+		MemoryMiB:       r.machineMemoryMiB(ctx, owner, spec),
 		StorageGiB:      storageGiB,
 		Env:             env,
 		CACert:          machineTrustedCAs(string(leaf.Data["ca.crt"]), r.config),

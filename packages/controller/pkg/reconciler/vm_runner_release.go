@@ -85,14 +85,15 @@ func (r *AgentReconciler) runnerReleaseNamedLongAgo(ctx context.Context, owner s
 	return err == nil && time.Since(at) > runnerReleaseUnreachableRoll
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner pod as the roll compares it. With releases staged on the node, the pod's image is only the release it started with — the loader runs whichever one the controller names — so the image, and the env that tells the loader which release it is, are left out: a new runner image alone changes no pod and restarts no machine.
+// UNIT_BOUNDARY_DESCRIPTION: the runner pod as the roll compares it. Its memory limit is the owner's pool, which the controller changes on the running pod in place, so it is left out: a UserBudget that raises or lowers the pool restarts no machine, and a pod created later takes the pool rendered then. With releases staged on the node, the pod's image is only the release it started with — the loader runs whichever one the controller names — so the image, and the env that tells the loader which release it is, are left out too: a new runner image alone changes no pod and restarts no machine.
 func runnerRollSpec(spec appsv1.DeploymentSpec, releases bool) appsv1.DeploymentSpec {
-	if !releases {
-		return spec
-	}
 	spec = *spec.DeepCopy()
 	for i := range spec.Template.Spec.Containers {
 		c := &spec.Template.Spec.Containers[i]
+		delete(c.Resources.Limits, corev1.ResourceMemory)
+		if !releases {
+			continue
+		}
 		c.Image = ""
 		for j := range c.Env {
 			if c.Env[j].Name == vmRunnerBuiltinEnv {

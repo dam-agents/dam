@@ -614,6 +614,12 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	if resources.Limits == nil {
 		resources.Limits = corev1.ResourceList{}
 	}
+	if pool := r.vmPoolOf(ctx, owner).memory; pool != nil {
+		resources.Limits[corev1.ResourceMemory] = *pool
+		if req, ok := resources.Requests[corev1.ResourceMemory]; ok && req.Cmp(*pool) > 0 {
+			resources.Requests[corev1.ResourceMemory] = *pool
+		}
+	}
 	for k, v := range spec.Devices {
 		q, err := resource.ParseQuantity(v)
 		if err != nil {

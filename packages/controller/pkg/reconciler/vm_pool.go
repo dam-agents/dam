@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,6 +51,30 @@ func (r *AgentReconciler) refreshVMPool(ctx context.Context, owner string) vmPoo
 	}
 	r.vmPools.Store(owner, pool)
 	return pool
+}
+
+func (r *AgentReconciler) runnerLimitMiB(ctx context.Context, owner string) int {
+	if pool := r.vmPoolOf(ctx, owner); pool.memory != nil {
+		return int(pool.memory.Value() >> 20)
+	}
+	if res := r.config.VM.Runner.Resources; res != nil {
+		if q, ok := res.Limits[corev1.ResourceMemory]; ok {
+			return int(q.Value() >> 20)
+		}
+	}
+	return 0
+}
+
+func (r *AgentReconciler) runnerCPUCeiling(ctx context.Context, owner string) *resource.Quantity {
+	if pool := r.vmPoolOf(ctx, owner); pool.cpu != nil {
+		return pool.cpu
+	}
+	if res := r.config.VM.Runner.Resources; res != nil {
+		if q, ok := res.Limits[corev1.ResourceCPU]; ok {
+			return &q
+		}
+	}
+	return nil
 }
 
 func (r *AgentReconciler) runnerStorageCeiling(ctx context.Context, owner string) (resource.Quantity, error) {
