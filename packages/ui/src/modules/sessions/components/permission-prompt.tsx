@@ -162,14 +162,15 @@ export function PermissionPrompt({
 
   const deniable = pending.filter((p) => denyOnceOption(p.options));
   const denyAll = async () => {
-    const prompt = denyAllPrompt(deniable.length);
+    const confirmed = new Set(deniable.map((p) => p.toolCallId));
+    const prompt = denyAllPrompt(confirmed.size);
     const ok = await showConfirm(prompt.message, prompt.title, {
       kind: "destructive",
       confirmLabel: prompt.confirmLabel,
     });
     if (!ok) return;
     for (const entry of useStore.getState().pendingPermissions) {
-      if (entry.sessionId !== sessionId) continue;
+      if (!confirmed.has(entry.toolCallId)) continue;
       const opt = denyOnceOption(entry.options);
       if (opt) answer(entry, opt);
     }

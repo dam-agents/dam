@@ -165,7 +165,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
               size="inline"
               disabled={denying}
               onClick={() => void denyAll(shownApprovals)}
-              title="Denies every approval shown here, once each. No rule is written, so an agent asks again if it retries."
+              title="Denies every approval shown here, once each. Nothing is remembered, so an agent asks again if it tries again."
               data-testid="deny-all-approvals"
               className="ml-auto shrink-0 text-sm"
             >
