@@ -311,22 +311,35 @@ export function withoutQueuedSends(
   messages: Message[],
   items: QueuedPrompt[],
 ): Message[] {
-  const queued = new Set(
-    items.flatMap((item) =>
-      item.promptId === null || item.starting === true ? [] : [item.promptId],
-    ),
-  );
-  if (queued.size === 0) return messages;
-  return messages.filter(
-    (m) =>
-      !(m.role === "user" && queued.has(m.id)) &&
-      !(
-        m.role === "assistant" &&
-        m.promptId !== undefined &&
-        queued.has(m.promptId) &&
-        m.parts.length === 0
+  const idsOf = (starting: boolean) =>
+    new Set(
+      items.flatMap((item) =>
+        item.promptId === null || (item.starting === true) !== starting
+          ? []
+          : [item.promptId],
       ),
-  );
+    );
+  const queued = idsOf(false);
+  const starting = idsOf(true);
+  if (queued.size === 0 && starting.size === 0) return messages;
+  return messages
+    .filter(
+      (m) =>
+        !(m.role === "user" && queued.has(m.id)) &&
+        !(
+          m.role === "assistant" &&
+          m.promptId !== undefined &&
+          queued.has(m.promptId) &&
+          m.parts.length === 0
+        ),
+    )
+    .map((m) =>
+      m.queued === true &&
+      (starting.has(m.id) ||
+        (m.promptId !== undefined && starting.has(m.promptId)))
+        ? { ...m, queued: false }
+        : m,
+    );
 }
 
 function withReplyPlaceholder(
@@ -1079,9 +1092,12 @@ function appendOrExtendUser(
   if (mid) {
     const idx = messages.findIndex((m) => m.id === mid);
     if (idx !== -1) {
-      return messages.map((m, i) =>
-        i !== idx ? m : { ...m, parts: mergeParts(m.parts, parts) },
-      );
+      return messages.map((m, i) => {
+        if (i !== idx) return m;
+        return m.sentHere
+          ? { ...m, parts, sentHere: false }
+          : { ...m, parts: mergeParts(m.parts, parts) };
+      });
     }
   }
   const newMsg: Message = {

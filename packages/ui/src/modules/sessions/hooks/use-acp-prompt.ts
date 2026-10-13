@@ -225,6 +225,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         parts: userParts,
         streaming: false,
         at: new Date().toISOString(),
+        sentHere: true,
         ...(waits && { queued: true }),
       };
       const aMsg: Message = {

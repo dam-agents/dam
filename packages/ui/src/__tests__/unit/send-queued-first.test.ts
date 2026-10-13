@@ -68,7 +68,9 @@ describe("a sent message: queued, then sent", () => {
    * the runtime queues it — out of the conversation, so the running reply
    * stays last — and moves in once the runtime starts it. A message the
    * runtime marks starting, waiting only for its session, stays in the
-   * conversation as sent: nothing runs ahead of it.
+   * conversation as sent: nothing runs ahead of it — even one sent while an
+   * earlier message still waited, which was hidden both here and from the
+   * queue. Its echo then replaces the local copy rather than doubling it.
    */
   test("moves into the conversation only when it starts", () => {
     const queued = applyUpdate(sentWhileBusy(), accepted({ queued: true }));
@@ -80,18 +82,29 @@ describe("a sent message: queued, then sent", () => {
     const started = applyUpdate(sentWhileBusy(), accepted({ queued: false }));
     expect(user(started)?.queued).toBe(false);
 
-    const starting = [{ ...user(started)! }];
-    expect(
-      withoutQueuedSends(starting, [
-        {
-          promptId: PROMPT,
-          blocks: [],
-          queuedAt: "",
-          editable: true,
-          starting: true,
-        },
-      ]),
-    ).toEqual(starting);
+    const starting = withoutQueuedSends(sentWhileBusy(), [
+      {
+        promptId: PROMPT,
+        blocks: [],
+        queuedAt: "",
+        editable: true,
+        starting: true,
+      },
+    ]);
+    expect(starting.map((m) => [m.id, m.queued])).toEqual([
+      ["a1", undefined],
+      [PROMPT, false],
+      ["a2", false],
+    ]);
+
+    const echoed = applyUpdate([{ ...user(starting)!, sentHere: true }], {
+      sessionUpdate: "user_message_chunk",
+      messageId: PROMPT,
+      content: { type: "text", text: "and one more thing" },
+    } as AcpUpdate);
+    expect(echoed[0]!.parts).toEqual([
+      { kind: "text", text: "and one more thing" },
+    ]);
   });
 
   /**
