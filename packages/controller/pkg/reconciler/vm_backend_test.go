@@ -48,6 +48,7 @@ type fakeNode struct {
 	version  uint64
 	waits    int
 	release  vmrunner.RunnerRelease
+	onPut    func(vmrunner.MachineSpec)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long the fake holds a waiting status read before answering with no change. It is far below the real runner's wait, so a test's server closes promptly under a watch that is still reading.
@@ -86,6 +87,9 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&spec))
 			n.specs[id] = spec
 			n.puts = append(n.puts, spec)
+			if n.onPut != nil {
+				n.onPut(spec)
+			}
 			st, ok := n.statuses[id]
 			if !ok {
 				n.version++
@@ -619,6 +623,93 @@ func markGatewayReady(t *testing.T, r *AgentReconciler) {
 	}
 	_, err = r.client.CoreV1().Pods("test-agents").Create(ctx, pod, metav1.CreateOptions{})
 	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: a waking gateway pod takes longer to start than the machine beside it, so a wake scales the gateway up before the runner is asked to start the machine, not after the runner answers.
+func TestAWakeScalesTheGatewayUpBeforeItStartsTheMachine(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Annotations[annLastActivity] = time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+	r, node, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")), "the Agent starts out hibernated")
+
+	gatewayAtStart := int32(-1)
+	node.onPut = func(spec vmrunner.MachineSpec) {
+		if spec.Running && gatewayAtStart < 0 {
+			gatewayAtStart = agentSSReplicas(t, r, GatewayName("my-agent"))
+		}
+	}
+	agent.Annotations[annLastActivity] = time.Now().UTC().Format(time.RFC3339)
+	agent.Status.Conditions = []metav1.Condition{{Type: apiv1.ConditionReady, Status: metav1.ConditionFalse, Reason: apiv1.ReasonHibernated}}
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, int32(1), gatewayAtStart, "the gateway is already scaled up when the machine is asked to run")
+}
+
+// TEST_SCENARIO: the retry of an agent the runner refused must not scale its gateway up ahead of the runner call either, or each 30 s retry would start and stop a gateway pod.
+func TestARetryAfterARefusedStartKeepsTheGatewayDown(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"}
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason)
+
+	gatewayAtRetry := int32(-1)
+	node.onPut = func(vmrunner.MachineSpec) { gatewayAtRetry = agentSSReplicas(t, r, GatewayName("my-agent")) }
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	cached, err := FromCacheObject[apiv1.Agent](u)
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, cached))
+	assert.Equal(t, int32(0), gatewayAtRetry, "the gateway stays down while the runner is asked again")
+}
+
+// TEST_SCENARIO: on a wake the machine often answers before its gateway pod is ready, and the gateway pod turning ready starts a reconcile. That reconcile publishes Ready once the gateway is applied, before it calls the runner, because the status already holds the machine ready for this generation.
+func TestAGatewayTurningReadyIsPublishedBeforeTheRunnerCall(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agentSide, _ := agentCondition(t, r, "my-agent", apiv1.ConditionAgentPodReady)
+	require.Equal(t, "True", agentSide, "the machine is ready")
+	require.Equal(t, metav1.ConditionFalse, readyCondition(t, r, "my-agent").Status, "and the gateway pod is not there yet")
+
+	markGatewayReady(t, r)
+	readyAtRunnerCall := ""
+	node.onPut = func(vmrunner.MachineSpec) {
+		readyAtRunnerCall, _ = agentCondition(t, r, "my-agent", apiv1.ConditionReady)
+	}
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	cached, err := FromCacheObject[apiv1.Agent](u)
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, cached))
+	assert.Equal(t, "True", readyAtRunnerCall, "Ready is published before the runner call")
+	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status, "and the full publish keeps it")
+}
+
+// TEST_SCENARIO: the early publish trusts the agent side only for the generation it was published for. After a spec change the reconcile must ask the runner first, so Ready waits for the full publish.
+func TestAGatewayTurningReadyAfterASpecChangeWaitsForTheRunner(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	markGatewayReady(t, r)
+
+	readyAtRunnerCall := ""
+	node.onPut = func(vmrunner.MachineSpec) {
+		readyAtRunnerCall, _ = agentCondition(t, r, "my-agent", apiv1.ConditionReady)
+	}
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	cached, err := FromCacheObject[apiv1.Agent](u)
+	require.NoError(t, err)
+	cached.Generation++
+	require.NoError(t, r.Reconcile(ctx, cached))
+	assert.Equal(t, "False", readyAtRunnerCall, "a status from another generation is not trusted")
 }
 
 // TEST_SCENARIO: a hard stop must reach the machine: the node is told the machine should not run, and the gateway pair scales down as for any agent.
