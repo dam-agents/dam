@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::*;
 use crate::api::{
@@ -44,6 +44,7 @@ struct Fake {
     panic_on_state: AtomicBool,
     nests: AtomicBool,
     state_fails_until_start: Mutex<HashSet<String>>,
+    state_reads: AtomicUsize,
 }
 
 impl Fake {
@@ -70,6 +71,7 @@ impl Runtime for Fake {
             !self.panic_on_state.load(Ordering::SeqCst),
             "the fake was told to panic"
         );
+        self.state_reads.fetch_add(1, Ordering::SeqCst);
         if locked(&self.state_fails_until_start).contains(id) {
             anyhow::bail!("the runtime cannot read the machine's record");
         }
@@ -734,6 +736,7 @@ async fn a_changed_shape_restarts_the_machine_in_place() {
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
     let _guest = guest(h.base);
+    h.until("m1", "ready", |s| s.ready).await;
     assert!(h.server.put("m1", spec(true)).unwrap().ready);
     let mut changed = spec(true);
     changed.revision = "r2".into();
@@ -1831,6 +1834,36 @@ async fn the_prober_reports_a_guest_that_comes_up_to_a_waiting_read() {
     assert_ne!(ready.version, booted.version);
 }
 
+// TEST_SCENARIO: a PUT plans from what the prober recorded while that is no older than the probe cadence, so it costs no runtime read and no health check: on a wake, the PUT right after the start answered at once instead of looking at the guest the start had just looked at. A record past the cadence is looked at again, so a VMM that died since is started at once.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_put_plans_from_a_recent_look_and_looks_again_once_it_is_old() {
+    let h = Harness::new("put-reuses-look");
+    let _guest = guest(h.base);
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.until("m1", "ready", |s| s.ready).await;
+    let reads = h.fake.state_reads.load(Ordering::SeqCst);
+    let status = h.server.put("m1", spec(true)).unwrap();
+    assert!(status.ready && status.state == STATE_RUNNING, "{status:?}");
+    assert_eq!(
+        h.fake.state_reads.load(Ordering::SeqCst),
+        reads,
+        "the PUT read the runtime again"
+    );
+
+    locked(&h.fake.states).insert("m1".into(), State::Stopped);
+    h.machine("m1", |m| m.probed = Some(Instant::now() - STEADY_PROBE));
+    assert_eq!(
+        h.server.put("m1", spec(true)).unwrap().state,
+        STATE_STARTING
+    );
+    h.settle("m1").await;
+    assert_eq!(
+        h.fake.calls(),
+        vec!["create m1", "start m1", "update m1", "start m1"]
+    );
+}
+
 // TEST_SCENARIO: the probe cadence is what the user waits on between the guest answering and the controller hearing of it, so a fresh boot is asked every FRESH_BOOT_PROBE. A probe still costs a connect, so a boot still quiet after SLOW_BOOT_AFTER falls back to BOOT_PROBE, and a guest that has answered is asked only at the steady cadence.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_fresh_boot_is_probed_tightly_and_an_old_or_answered_one_is_not() {
@@ -2228,6 +2261,7 @@ async fn a_machine_another_runtime_booted_is_rebooted_at_its_first_runtime_error
     .unwrap();
     for id in ["own", "adopted"] {
         locked(&h.fake.state_fails_until_start).insert(id.to_string());
+        h.machine(id, |m| m.probed = Some(Instant::now() - STEADY_PROBE));
         h.server.put(id, spec(true)).unwrap();
         h.settle(id).await;
     }
