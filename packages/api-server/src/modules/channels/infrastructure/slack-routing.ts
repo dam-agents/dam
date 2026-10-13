@@ -7,6 +7,7 @@ export interface RosterEntry {
   name: string;
   owner: string;
   ambient: boolean;
+  whisper: boolean;
   isDefault: boolean;
 }
 

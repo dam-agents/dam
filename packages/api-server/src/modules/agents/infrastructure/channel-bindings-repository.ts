@@ -139,6 +139,7 @@ export interface SlackBindingRow {
   owner: string;
   teamId: string;
   ambient: boolean;
+  whisper: boolean;
   isDefault: boolean;
 }
 
@@ -156,6 +157,7 @@ export function findSlackBindingsByChannelId(db: Db) {
         owner: channels.owner,
         teamId: sql<string | null>`${channels.config}->>'teamId'`,
         ambient: sql<string | null>`${channels.config}->>'ambient'`,
+        whisper: sql<string | null>`${channels.config}->>'whisper'`,
         isDefault: sql<string | null>`${channels.config}->>'default'`,
         createdAt: channels.createdAt,
       })
@@ -167,6 +169,7 @@ export function findSlackBindingsByChannelId(db: Db) {
       owner: row.owner,
       teamId: row.teamId ?? "",
       ambient: row.ambient === "true",
+      whisper: row.whisper !== "false",
       isDefault: row.isDefault === "true",
     }));
   };
@@ -226,6 +229,23 @@ export function setSlackChannelAmbient(db: Db) {
         config: ambient
           ? sql`${channels.config} || '{"ambient": true}'::jsonb`
           : sql`${channels.config} - 'ambient'`,
+      })
+      .where(
+        and(eq(channels.agentId, agentId), slackChannelIs(slackChannelId)),
+      );
+  };
+}
+
+export function setSlackChannelWhisper(db: Db) {
+  return async (
+    agentId: string,
+    slackChannelId: string,
+    whisper: boolean,
+  ): Promise<void> => {
+    await db
+      .update(channels)
+      .set({
+        config: sql`${channels.config} || ${JSON.stringify({ whisper })}::jsonb`,
       })
       .where(
         and(eq(channels.agentId, agentId), slackChannelIs(slackChannelId)),

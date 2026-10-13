@@ -967,6 +967,7 @@ export interface SlackBindingInfo {
   owner: string;
   teamId: SlackWorkspace;
   ambient: boolean;
+  whisper?: boolean;
   isDefault: boolean;
 }
 
@@ -1317,6 +1318,11 @@ export type SlackWorkerDeps = {
     slackChannelId: string,
     ambient: boolean,
   ) => Promise<void>;
+  setSlackChannelWhisper: (
+    agentId: string,
+    slackChannelId: string,
+    whisper: boolean,
+  ) => Promise<void>;
   ignoredApps: SlackIgnoredApps;
   setSlackDefault: (
     agentId: string,
@@ -1347,6 +1353,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     channelRegistry,
     unbindSlackChannel,
     setSlackChannelAmbient,
+    setSlackChannelWhisper,
     ignoredApps,
     setSlackDefault,
     brand,
@@ -2052,6 +2059,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         owner: binding.owner,
         teamId: binding.teamId,
         ambient: binding.ambient,
+        whisper: binding.whisper !== false,
         isDefault: binding.isDefault,
       })),
     );
@@ -3627,11 +3635,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         await handleDefaultCommand(rest, command, ack);
       })
       .with("whisper", async () => {
-        await handleWhisperCommand(command, ack);
+        const { action, nameArg } = parseSwitchArgs(rest);
+        if (action && parseWhisperRequest(rest).message === null)
+          await handleWhisperSwitchCommand(action, nameArg, command, ack);
+        else await handleWhisperCommand(command, ack);
       })
       .with(P.string, async () => {
         await ack({
-          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
+          text: `Usage: \`/${brandShort} bind\`, \`/${brandShort} unbind [agent]\`, \`/${brandShort} default [agent]\`, \`/${brandShort} ambient [agent] on|off\`, \`/${brandShort} ignore [message link]\`, \`/${brandShort} unignore <app>\`, \`/${brandShort} whisper [agent] ["message"]\`, \`/${brandShort} whisper [agent] on|off\`, or \`/${brandShort} delete <message link> [reason]\`. The agent name is needed only where more than one is connected here.`,
         });
       })
       .exhaustive();
@@ -3696,6 +3707,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return;
     }
     const target = picked.entry;
+    if (!target.whisper) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: null,
+        actorKind: "external",
+        surface: "slack",
+        agentId: target.instanceName,
+        decision: "deny",
+        reason: "whisper-off",
+        detail: { slackUserId: command.userId, channelId: command.channelId },
+      });
+      await ack({ text: whisperOffText(target.name) });
+      return;
+    }
 
     if (request.message !== null) {
       await ack({
@@ -3872,6 +3897,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     if (!entry) {
       deny("whisper-unbound");
       await ended(`its agent is no longer connected to <#${session.origin}>`);
+      return;
+    }
+    if (!entry.whisper) {
+      deny("whisper-off");
+      await ended(
+        `whispers to its agent are turned off in <#${session.origin}>`,
+      );
       return;
     }
     if (session.checksMembership) {
@@ -4331,6 +4363,75 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       text: removed
         ? `The agents here hear ${appLabel(app)} again.`
         : `The agents here don't ignore ${appLabel(app)}.`,
+    });
+  }
+
+  function whisperOffText(name: string): string {
+    return (
+      `Whispers to \`${name}\` are turned off in this conversation, so ` +
+      "everything said to it here happens where everyone can see it. " +
+      "Mention it in the conversation instead."
+    );
+  }
+
+  async function handleWhisperSwitchCommand(
+    action: "on" | "off",
+    nameArg: string,
+    command: SlackSlashCommand,
+    ack: SlackAck,
+  ) {
+    const subcommand = `whisper ${action}`;
+    const picked = await pickRosterAgent(
+      command.channelId,
+      nameArg,
+      (name) => `/${brandShort} whisper ${name} ${action}`,
+    );
+    if (!picked.ok) {
+      await ack({ text: picked.text });
+      return;
+    }
+    const binding = picked.entry;
+
+    const invoker = await authorizeBindingSwitch(
+      command,
+      ack,
+      binding,
+      subcommand,
+      "whispers",
+    );
+    if (!invoker) return;
+
+    const enable = action === "on";
+    if (enable === binding.whisper) {
+      await ack({
+        text: `Whispers to \`${binding.name}\` are already ${action}.`,
+      });
+      return;
+    }
+
+    await setSlackChannelWhisper(
+      binding.instanceName,
+      command.channelId,
+      enable,
+    );
+    securityLog("info", "channel.whisper_toggled", {
+      category: "authz-list",
+      actor: invoker,
+      actorKind: "user",
+      surface: "slack",
+      agentId: binding.instanceName,
+      result: "success",
+      detail: {
+        slackUserId: command.userId,
+        channelId: command.channelId,
+        whisper: enable,
+      },
+    });
+
+    await ack({
+      text: enable
+        ? `Whispers turned on. Anyone here can now talk to \`${binding.name}\` privately with \`/${brandShort} whisper\`; nobody else in this conversation sees it, but the agent's owner can read every whisper. Run \`/${brandShort} whisper ${binding.name} off\` to turn them off again.`
+        : `Whispers turned off. \`${binding.name}\` no longer takes whispers from this conversation, and open whisper threads with it end at their next message.`,
     });
   }
 

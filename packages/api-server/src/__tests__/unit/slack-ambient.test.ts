@@ -104,6 +104,7 @@ function harness(opts: {
     ) => {
       ambientCalls.push({ agentId, channelId, ambient });
     },
+    setSlackChannelWhisper: async () => {},
     ignoredApps: {
       list: async () => [],
       ignore: async () => true,

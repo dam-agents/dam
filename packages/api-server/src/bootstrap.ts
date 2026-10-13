@@ -44,6 +44,7 @@ import {
   findSlackChannelsByAgent,
   deleteSlackChannelBinding,
   setSlackChannelAmbient,
+  setSlackChannelWhisper,
   setSlackChannelDefault,
   createAgentSweep,
   createRuntimeMigrationSwitch,
@@ -1015,6 +1016,7 @@ export async function bootstrap() {
         owner: row.owner,
         teamId: row.teamId,
         ambient: row.ambient,
+        whisper: row.whisper,
         isDefault: row.isDefault,
       }));
     },
@@ -1074,6 +1076,7 @@ export async function bootstrap() {
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
         setSlackChannelAmbient: setSlackChannelAmbient(db),
+        setSlackChannelWhisper: setSlackChannelWhisper(db),
         ignoredApps: createSlackIgnoredAppsRepository(db),
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },

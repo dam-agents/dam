@@ -612,6 +612,7 @@ export function createAgentsService(deps: {
       owner: string;
       teamId: string;
       ambient: boolean;
+      whisper: boolean;
       isDefault: boolean;
     }[]
   >;
@@ -808,6 +809,7 @@ export function createAgentsService(deps: {
     ambient?: boolean,
     knownWorkspace?: string,
     customEmoji?: string[] | null,
+    whisper?: boolean,
   ): Promise<ConnectSlackResult> => {
     const infra = await deps.repo.get(id, deps.owner);
     if (!infra) return err({ type: "AgentNotFound" });
@@ -840,6 +842,7 @@ export function createAgentsService(deps: {
           slackChannelId,
           ...(workspace.teamId ? { teamId: workspace.teamId } : {}),
           ...(requestedAmbient ? { ambient: true } : {}),
+          ...(whisper !== undefined ? { whisper } : {}),
           ...(customEmoji !== undefined ? { customEmoji } : {}),
         });
       } catch (e) {
@@ -890,6 +893,19 @@ export function createAgentsService(deps: {
         agentId: id,
         result: "success",
         detail: { slackChannelId, ambient: requestedAmbient },
+      });
+    }
+
+    const wasWhisper = existing ? existing.whisper : true;
+    if (whisper !== undefined && whisper !== wasWhisper) {
+      securityLog("info", "channel.whisper_toggled", {
+        category: "authz-list",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        surface: "slack",
+        agentId: id,
+        result: "success",
+        detail: { slackChannelId, whisper },
       });
     }
 
@@ -1535,13 +1551,14 @@ export function createAgentsService(deps: {
       await deps.repo.ensureReady(id, opts);
     },
 
-    async connectSlack(id, slackChannelId, ambient, customEmoji) {
+    async connectSlack(id, slackChannelId, ambient, customEmoji, whisper) {
       return connectSlackImpl(
         id,
         slackChannelId,
         ambient,
         undefined,
         customEmoji,
+        whisper,
       );
     },
 

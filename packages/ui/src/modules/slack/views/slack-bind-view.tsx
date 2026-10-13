@@ -77,13 +77,15 @@ export function SlackBindView() {
     );
   };
 
+  const copy = pickerCopy(flow.data);
   return (
     <AgentBindPicker
-      copy={pickerCopy(flow.data)}
+      copy={copy}
       error={error}
       pending={bind.isPending}
       onPick={pick}
       onAgentCreated={() => setError(null)}
+      whisper={copy.audience !== null}
     />
   );
 }

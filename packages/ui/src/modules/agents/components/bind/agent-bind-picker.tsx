@@ -33,6 +33,7 @@ interface Props {
   pending: boolean;
   onPick: (agent: AgentView) => void;
   onAgentCreated: () => void;
+  whisper?: boolean;
 }
 
 export function AgentBindPicker({
@@ -41,6 +42,7 @@ export function AgentBindPicker({
   pending,
   onPick,
   onAgentCreated,
+  whisper = false,
 }: Props) {
   const {
     isLoading,
@@ -61,11 +63,12 @@ export function AgentBindPicker({
   const selectedId = pickedId ?? justCreatedId;
   const selected = displayedAgents.find((a) => a.id === selectedId) ?? null;
   const bindConfirm = useBindSharingConfirm(selected);
-  const sharing = bindConfirm.body(copy.audience);
+  const sharing = bindConfirm.body(copy.audience, whisper);
 
   const confirmPick = async () => {
     if (!selected) return;
-    if (!(await bindConfirm.confirm(copy.audience, copy.action))) return;
+    if (!(await bindConfirm.confirm(copy.audience, copy.action, whisper)))
+      return;
     onPick(selected);
   };
 

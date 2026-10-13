@@ -67,6 +67,7 @@ function harness(opts?: {
     },
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    setSlackChannelWhisper: async () => {},
     ignoredApps: {
       list: async () => [],
       ignore: async () => true,
