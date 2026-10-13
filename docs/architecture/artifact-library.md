@@ -202,6 +202,7 @@ Two different consumers read them, and the split matters because the same moment
 
 - **Live updates.** Create, update, delete, and folder changes exist so an open browser refreshes without polling.
   They fire on every mutation, including ones no person asked for — the retention sweep deletes artifacts on a timer and raises a delete like any other.
+
 - **Usage.** Publish, share, view, and delete are recorded as [Activity Events](usage-tracking.md).
   Share is raised only on the transition *out of* private — into public or restricted alike — so neither extending retention, moving between the two shared states, nor revoking a link counts as sharing.
   A view is what places an opening in time — the artifact's own counter is a lifetime total that cannot say when, or whether the link was opened at all after some date.

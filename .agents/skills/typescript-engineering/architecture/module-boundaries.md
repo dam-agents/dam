@@ -75,11 +75,11 @@ export function startOrderFulfillmentSaga(deps: { shippingService: ShippingServi
 
 Rules: sagas own side effects (I/O, infrastructure cleanup, external calls); return a subscription handle for teardown on shutdown; receive dependencies by injection (same factory pattern as services); are resilient (log and continue, never crash the process); start at boot from the composition root or server setup.
 
-| Use a **service** when… | Use a **saga** when… |
-|---|---|
+| Use a **service** when…                   | Use a **saga** when…                        |
+| ----------------------------------------- | ------------------------------------------- |
 | part of the primary request/response flow | reacting to something that already happened |
-| the caller needs the result | fire-and-forget |
-| the logic belongs to one bounded context | the reaction crosses contexts |
+| the caller needs the result               | fire-and-forget                             |
+| the logic belongs to one bounded context  | the reaction crosses contexts               |
 
 ## Dependency direction
 

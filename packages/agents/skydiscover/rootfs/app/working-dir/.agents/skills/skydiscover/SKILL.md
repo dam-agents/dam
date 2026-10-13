@@ -2,7 +2,8 @@
 name: skydiscover
 description: >-
   Run SkyDiscover's AdaEvolve and EvoX search strategies via the
-  `skydiscover optimize` CLI. Use when the user wants to optimize / evolve a
+  `skydiscover optimize` CLI.
+  Use when the user wants to optimize / evolve a
   function, program, or algorithm to improve a metric (speed, accuracy, size,
   error rate), author the SkyDiscover run inputs (evaluator, optional initial
   program with EVOLVE-BLOCK markers), pick the search model, or launch /
@@ -26,10 +27,10 @@ The CLI's other subcommands are not for this pod: `skydiscover viewer` needs a U
 
 The pod is preset to one of SkyDiscover's two own strategies via `$SKYDISCOVER_SEARCH` (that's what the user picked in the catalog):
 
-| Preset | `--search` | Best at |
-|---|---|---|
+| Preset    | `--search`  | Best at                                                                          |
+| --------- | ----------- | -------------------------------------------------------------------------------- |
 | AdaEvolve | `adaevolve` | multi-island adaptive search; fast early gains on short budgets (≲50 iterations) |
-| EvoX | `evox` | self-evolving search strategy; stronger long-horizon gains (≳50 iterations) |
+| EvoX      | `evox`      | self-evolving search strategy; stronger long-horizon gains (≳50 iterations)      |
 
 Both are installed, so you can suggest the other when the budget clearly fits it — the user decides.
 The wrapped external backends (`openevolve|gepa|shinkaevolve|*_native`) are **not** installed here.
@@ -123,7 +124,7 @@ def evaluate(program_path):
 Every evaluator must return `combined_score`.
 
 **Keep the score discriminating across the whole range you care about.** `1/(1+MSE)` saturates once MSE ≪ 1 — every good candidate rounds to 1.0000, late iterations have no gradient, and the search stops searching while still spending.
-For convergent numerical objectives prefer a log-scaled error (e.g. a clamped `-log10(MSE)` mapped to (0, 1]) or minimax error, which stay discriminating down to machine precision.
+For convergent numerical objectives prefer a log-scaled error (e.g. a clamped `-log10(MSE)` mapped to (0, 1\]) or minimax error, which stay discriminating down to machine precision.
 
 **Constrain the candidate space, or the search will cheat.** The search optimizes the score you wrote, not the task you meant: an evaluator that scores "approximate sin(x)" without *enforcing* "…as a polynomial" will happily crown `return math.sin(x)`.
 Encode every structural constraint as a hard reject (score 0 with an explanatory `error`) — banned imports/calls, required form — and treat a **perfect or too-good score as a finding to verify, never a result to report**: read the winning candidate's source before trusting it.
@@ -158,18 +159,18 @@ skydiscover optimize [INITIAL_PROGRAM] EVALUATOR --search <type> \
   [-c <yaml>] [--checkpoint <dir>] [--agentic]
 ```
 
-| Flag | Meaning |
-|---|---|
-| `INITIAL_PROGRAM` | optional on the CLI (omitting it takes the from-scratch path) |
-| `EVALUATOR` | required — the `evaluate(program_path)` file |
-| `--search` | strategy — default to `$SKYDISCOVER_SEARCH` (`adaevolve` or `evox`; unset → `adaevolve`); only those two work in this pod |
-| `-i, --iterations` | the run's iteration budget — always bound; on resume, set to the *remainder* of the approved total |
-| `-m, --model` | `openai/<id>` for an id the endpoint serves (Step 1); an ensemble goes in the config YAML instead |
-| `--api-base` | the OpenAI-compatible endpoint (`"$base/v1"`) — **always pass it** in this pod |
-| `-o, --output` | output dir — **always** an explicit path on `$SKYDISCOVER_OUTPUT_ROOT`, outside the target repo |
-| `-c, --config` | YAML config (model ensemble, `search.*` tuning, `checkpoint_interval`) — flags win over it |
-| `--checkpoint` | resume from a prior `output/checkpoints/checkpoint_<N>` dir |
-| `--agentic` | off by default; see below |
+| Flag               | Meaning                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `INITIAL_PROGRAM`  | optional on the CLI (omitting it takes the from-scratch path)                                                             |
+| `EVALUATOR`        | required — the `evaluate(program_path)` file                                                                              |
+| `--search`         | strategy — default to `$SKYDISCOVER_SEARCH` (`adaevolve` or `evox`; unset → `adaevolve`); only those two work in this pod |
+| `-i, --iterations` | the run's iteration budget — always bound; on resume, set to the *remainder* of the approved total                        |
+| `-m, --model`      | `openai/<id>` for an id the endpoint serves (Step 1); an ensemble goes in the config YAML instead                         |
+| `--api-base`       | the OpenAI-compatible endpoint (`"$base/v1"`) — **always pass it** in this pod                                            |
+| `-o, --output`     | output dir — **always** an explicit path on `$SKYDISCOVER_OUTPUT_ROOT`, outside the target repo                           |
+| `-c, --config`     | YAML config (model ensemble, `search.*` tuning, `checkpoint_interval`) — flags win over it                                |
+| `--checkpoint`     | resume from a prior `output/checkpoints/checkpoint_<N>` dir                                                               |
+| `--agentic`        | off by default; see below                                                                                                 |
 
 **Agentic mode (`--agentic`)** turns each proposal into a short tool loop: before it answers, the model can call `read_file` and `search` (a regex grep) over the codebase root — the initial program's directory, or `agentic.codebase_root` in the config (point it at the run's `repo/` clone when the evolved code depends on the code around it).
 Each tool round is one more LLM call, up to `agentic.max_steps` (default 5) per proposal, so count that in the cost estimate.
@@ -193,6 +194,7 @@ A run doesn't advance faster because you look at it — poll infrequently, and i
 ## Outputs
 
 Under `-o`:
+
 - `best/` — `best_program.py` and `best_program_info.json` (score, iteration, lineage): the source of truth for "best so far".
 - `checkpoints/checkpoint_<N>/` — the resume points; the numbering is the iterations completed.
 - `logs/` — the search's own log (your `run.log` mirrors stdout/stderr).

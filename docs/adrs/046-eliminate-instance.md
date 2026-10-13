@@ -5,6 +5,7 @@ status: proposed
 subsystem: agent-lifecycle
 summary: Collapse Instance into Agent so one ConfigMap carries definition, runtime state, and lifecycle; Template, Agent, and Fork become the only durable concepts.
 ---
+
 # ADR-046: Eliminate Instance — collapse into Agent
 
 **Date:** 2026-05-19 **Status:** Proposed **Owner:** @jezekra1
@@ -39,7 +40,8 @@ ADR-024 and `docs/architecture/agent-lifecycle.md` misstate this by listing temp
 ## Alternatives Considered
 
 - **Keep Instance and Agent distinct.** No feature uses N:1; the FK split between `agent_id` and `instance_id` reflects the absence of a real boundary, not its presence.
-- **Collapse Fork too.** Fork is a turn-scoped, Job-shaped impersonation envelope — a different axis from "the durable runtime." Folding it would make Agent a sum type and complicate every selector that distinguishes durable from ephemeral resources.
+- **Collapse Fork too.** Fork is a turn-scoped, Job-shaped impersonation envelope — a different axis from "the durable runtime."
+  Folding it would make Agent a sum type and complicate every selector that distinguishes durable from ephemeral resources.
 - **Two-layer env composition on merged Agent (`envDefaults` vs `envOverrides`).** One writer (the api-server) owns both; the boundary buys no enforcement, last-write-wins already covers the semantic.
 - **Wipe data on cutover; drop all backwards compatibility.** Was the original direction.
   Rejected once the migration cost turned out to be small: a single post-upgrade Job that folds two CMs into one and rewrites a handful of `instance_id` columns is cheaper than asking every deployment to recreate its agents.

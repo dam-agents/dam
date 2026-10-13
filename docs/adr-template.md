@@ -1,16 +1,16 @@
 ---
-id: NNN                       # zero-padded, matches the filename; omit for DRAFT-
+id: NNN # zero-padded, matches the filename; omit for DRAFT-
 title: Title
-status: accepted              # accepted | proposed | deprecated
-supersedes:                   # id this record replaces (optional); superseded status is derived from it
-subsystem: subsystem-name     # the architecture page this decision concerns
-tags: []                      # optional free list
+status: accepted # accepted | proposed | deprecated
+supersedes: # id this record replaces (optional); superseded status is derived from it
+subsystem: subsystem-name # the architecture page this decision concerns
+tags: [] # optional free list
 summary: One line stating what was decided.
 ---
 
 # ADR-NNN: Title
 
-**Date:** YYYY-MM-DD **Status:** Proposed | Accepted | Deprecated | Superseded by ADR-NNN **Owner:** @github-username
+**Date:** YYYY-MM-DD **Status:** Proposed \| Accepted \| Deprecated \| Superseded by ADR-NNN **Owner:** @github-username
 
 ## Context
 
@@ -36,4 +36,5 @@ No "feels cleaner," no "more elegant."
 
 - **Easier:** what now becomes cheap, possible, or obvious — and the evidence that it does.
 - **Harder:** what now costs more, or what future work has to work around — and the evidence that it does.
-- **Committed-to:** what's now load-bearing — the thing a future reader would ask "do we still need this?" about.
+- **Committed-to:** what's now load-bearing — the thing a future reader would ask "do we still need this?"
+  about.

@@ -5,6 +5,7 @@ status: proposed
 subsystem: agent-lifecycle
 summary: Every caller reaches an agent pod through one single-flight ensureReady(instanceId) primitive that treats observed pod Ready, not desiredState, as authoritative.
 ---
+
 # ADR-032: Centralized pod-reachability primitive; observed pod Ready is the truth
 
 **Date:** 2026-04-24 **Status:** Proposed **Owner:** @janjeliga
@@ -25,7 +26,8 @@ Adding tactical patches at each site would fix the immediate symptoms but preser
 
 Every caller that sends work to an agent pod routes through a single primitive, `ensureReady(instanceId)`, whose contract is:
 
-- Observed pod `Ready` condition is the authoritative answer to "can I call this pod?" — not `desiredState`.
+- Observed pod `Ready` condition is the authoritative answer to "can I call this pod?"
+  — not `desiredState`.
 - Idempotent and single-flight per `instanceId`; concurrent callers share one wait.
 - Bumps `platform.ai/last-activity` on every successful call, so any caller implicitly keeps the pod warm and closes the continuous-schedule re-hibernation race without special-casing trigger sessions.
 - `desiredState` remains **user intent** (running vs. hibernated) and continues to drive the reconciler.

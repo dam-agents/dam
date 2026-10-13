@@ -75,7 +75,6 @@ All event kinds are built-in to every agent: the agent advertises the full set o
 Contribution kinds, by contrast, are gated by what the manifest's drivers declare — so capability filtering applies to contributions, not events.
 (`harness-config` is the carve-out: every agent can receive the event, but only one whose manifest declares a `harness-config` driver has anywhere to write it — so it advertises a `harnessConfig` capability flag the UI gates on, and the handler no-ops without it.)
 
-
 ## The runtime channel
 
 The routes are prefixed by protocol-major version (`runtime.v1.*`).
@@ -240,10 +239,10 @@ The agent checks incoming TTLs as defense in depth.
 
 One outbox surface in Postgres, plus the events table that feeds the payload:
 
-| Table | Shape | Why |
-|---|---|---|
-| `runtime_state_outbox` | One row per agent | Delivery is per-agent and last-write-wins. Coalesce-by-agent. Carries the desired version and two cursors: the version the agent last **answered** for, and the one it last **applied cleanly**. Removed with the Agent, so a later Agent under the same name starts from version zero. |
-| `runtime_events` | One row per pending event | Each carries its own version slot in the agent's monotonic sequence, a ttl, a dispatched marker, and an error slot — filled by the agent's own event report when that report carries a reason, and for the bounded workspace-mutating kinds by the worker when delivery gives up past the attempt counter the same row carries. The state-builder reads the live ones into `events[]`. Removed with the Agent. |
+| Table                  | Shape                     | Why                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runtime_state_outbox` | One row per agent         | Delivery is per-agent and last-write-wins. Coalesce-by-agent. Carries the desired version and two cursors: the version the agent last **answered** for, and the one it last **applied cleanly**. Removed with the Agent, so a later Agent under the same name starts from version zero.                                                                                                                        |
+| `runtime_events`       | One row per pending event | Each carries its own version slot in the agent's monotonic sequence, a ttl, a dispatched marker, and an error slot — filled by the agent's own event report when that report carries a reason, and for the bounded workspace-mutating kinds by the worker when delivery gives up past the attempt counter the same row carries. The state-builder reads the live ones into `events[]`. Removed with the Agent. |
 
 ### Mutation transaction
 
@@ -318,6 +317,7 @@ A scheduled job runs every minute and does two things:
    Running-state is read through the agents subsystem (below) and can fail.
    A definite *not running* suppresses the row; a read that errors or times out is treated as **unknown** and the row is re-enqueued anyway.
    The worker applies the same gate one step later and exits clean, so an unknown that was really a stopped agent costs one job and never mis-delivers — whereas reading it as *not running* would silently disable the recovery path for as long as the failures lasted.
+
 2. **Expired-event drop.** Delete the event rows that expired without ever being dispatched; emit a `dropped-expired` count.
    This does not depend on the running check, so it still runs on a tick where every row was skipped.
 
@@ -352,10 +352,10 @@ Custom impl names may not collide with a built-in name — registration rejects 
 
 ### Built-in contribution impls
 
-| Impl | Used by | Behavior |
-|---|---|---|
-| `file` | `file` kind directly, and `mcp-entry` via composition | A format × merge-mode matrix, the substrate for every file-shaped write. |
-| `skill-install` | `skill-ref` kind | Materializes a source's skill onto the PVC at the pinned version and reaps ones that leave the snapshot. Owned in depth by [skills](skills.md). |
+| Impl            | Used by                                               | Behavior                                                                                                                                        |
+| --------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `file`          | `file` kind directly, and `mcp-entry` via composition | A format × merge-mode matrix, the substrate for every file-shaped write.                                                                        |
+| `skill-install` | `skill-ref` kind                                      | Materializes a source's skill onto the PVC at the pinned version and reaps ones that leave the snapshot. Owned in depth by [skills](skills.md). |
 
 ### Driver reconciliation
 
@@ -391,16 +391,17 @@ for each event E in payload.events:
 ```
 
 Settled event ids ride back on the apply response, and the worker stamps `dispatched_at` from the ack cursor.
-The "have I run this?" state is the agent's own: the local state store records a per-key last-run timestamp, so a redelivered event settles without re-firing.
+The "have I run this?"
+state is the agent's own: the local state store records a per-key last-run timestamp, so a redelivered event settles without re-firing.
 
 ## Versioning
 
-| Version | Where it lives | Bumps on |
-|---|---|---|
-| **`protocolVersion`** | hello payload + route prefix | Wire-incompatible break (field removed, semantic changed). Routes coexist for one release; agents on the old major continue to function via their existing route prefix. |
-| **`manifestVersion`** | top of `runtime-manifest.yaml` | Manifest schema break. Independent of protocolVersion. |
-| **`agentRuntimeVersion`** | hello payload | Image build identity. Diagnostic only — never used for routing. |
-| **`version`** (per-agent) | applyState payload (top-level), outbox row, event row | Monotonic per agent; bumped on every contribution edit or event insert. The single ack cursor. |
+| Version                   | Where it lives                                        | Bumps on                                                                                                                                                                 |
+| ------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`protocolVersion`**     | hello payload + route prefix                          | Wire-incompatible break (field removed, semantic changed). Routes coexist for one release; agents on the old major continue to function via their existing route prefix. |
+| **`manifestVersion`**     | top of `runtime-manifest.yaml`                        | Manifest schema break. Independent of protocolVersion.                                                                                                                   |
+| **`agentRuntimeVersion`** | hello payload                                         | Image build identity. Diagnostic only — never used for routing.                                                                                                          |
+| **`version`** (per-agent) | applyState payload (top-level), outbox row, event row | Monotonic per agent; bumped on every contribution edit or event insert. The single ack cursor.                                                                           |
 
 ### Forward-compat is the supported direction
 
@@ -424,20 +425,19 @@ Bumping rather than merely enqueueing keeps the trigger durable: the row goes be
 
 Capabilities also gate whole flows, not only payload items: `hello` carries a numeric knowledge-base publish capability, and the api-server delegates share publishing to the pod only when it meets the current level — a runtime below it gets the share marked failed with an update-the-agent hint instead of silently never publishing ([knowledge bases](knowledge-bases.md)).
 
-
 ## Persistence touchpoints
 
-| Substrate | What lives there | Notes |
-|---|---|---|
-| Postgres `agent_env` | User-typed env per agent | The Environment editor's store — read by the state-builder as `env` contributions, ordered first. |
-| Postgres `runtime_state_outbox` | One row per agent — the desired version, the two cursors behind it, and the Contribution kinds the last delivery dropped | Compared against the applied hash by the sweep; the dropped kinds are what the owner-facing warning reads. |
-| Postgres `runtime_events` | One row per pending event | Read by the state-builder; stamped by the worker as the agent settles each id, and claimed by the agent's own event report when one arrives. |
-| Runtime-state file on the agent PVC | The applied cursor, the driver bindings it was applied under, and per-key event last-run timestamps | The timestamps settle redelivered events without re-firing; the cursor answers contribution staleness. |
-| Redis (BullMQ queues) | Pending BullMQ jobs referencing outbox row ids | Relaxed durability; Postgres outbox + cron sweep is the recovery path, for as long as the agent is running. |
-| Per-agent PVC env snapshot file | Reconciled credential-placeholder env | Written by the `env` driver from the channel snapshot (in [`packages/agent-runtime/`](../../packages/agent-runtime/)); read by the harness/terminal spawn paths. |
-| `agents` table | Runtime registration per agent (protocol and runtime versions, advertised capabilities, last hello) plus the harness-config snapshot | Registration is rewritten on every `hello`; the snapshot on every apply, and on every pod report that changes it. |
-| Per-Agent PVC | Materialized files, MCP config, installed skills | Driver-written via runtime channel. |
-| Per-driver state file on the agent PVC | Driver's tracking of what it has previously written | Per-contribution-driver, opt-in. Every file mode records the path; key-targeted also its keys. |
+| Substrate                              | What lives there                                                                                                                     | Notes                                                                                                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Postgres `agent_env`                   | User-typed env per agent                                                                                                             | The Environment editor's store — read by the state-builder as `env` contributions, ordered first.                                                                |
+| Postgres `runtime_state_outbox`        | One row per agent — the desired version, the two cursors behind it, and the Contribution kinds the last delivery dropped             | Compared against the applied hash by the sweep; the dropped kinds are what the owner-facing warning reads.                                                       |
+| Postgres `runtime_events`              | One row per pending event                                                                                                            | Read by the state-builder; stamped by the worker as the agent settles each id, and claimed by the agent's own event report when one arrives.                     |
+| Runtime-state file on the agent PVC    | The applied cursor, the driver bindings it was applied under, and per-key event last-run timestamps                                  | The timestamps settle redelivered events without re-firing; the cursor answers contribution staleness.                                                           |
+| Redis (BullMQ queues)                  | Pending BullMQ jobs referencing outbox row ids                                                                                       | Relaxed durability; Postgres outbox + cron sweep is the recovery path, for as long as the agent is running.                                                      |
+| Per-agent PVC env snapshot file        | Reconciled credential-placeholder env                                                                                                | Written by the `env` driver from the channel snapshot (in [`packages/agent-runtime/`](../../packages/agent-runtime/)); read by the harness/terminal spawn paths. |
+| `agents` table                         | Runtime registration per agent (protocol and runtime versions, advertised capabilities, last hello) plus the harness-config snapshot | Registration is rewritten on every `hello`; the snapshot on every apply, and on every pod report that changes it.                                                |
+| Per-Agent PVC                          | Materialized files, MCP config, installed skills                                                                                     | Driver-written via runtime channel.                                                                                                                              |
+| Per-driver state file on the agent PVC | Driver's tracking of what it has previously written                                                                                  | Per-contribution-driver, opt-in. Every file mode records the path; key-targeted also its keys.                                                                   |
 
 ## Invariants
 

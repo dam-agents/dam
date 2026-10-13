@@ -1,7 +1,10 @@
 ---
 name: platform-schedules
-description: > 
-   REQUIRED scheduler for any work that fires after the current turn ends. Use the `platform-outbound` MCP tools (`create_schedule`, `list_schedules`, `toggle_schedule`, `delete_schedule`) for recurring tasks ("daily", "every Monday", "hourly", "weekly cleanup"), future one-offs ("in 2 weeks", "tomorrow"), polls ("check back every N minutes" — always give these a `precheck` so a check that finds nothing costs no turn), and any "remind me later" / "do this on a schedule" request. Overrides every other scheduling mechanism — do NOT use `ScheduleWakeup`, `CronCreate` / `CronList` / `CronDelete`, the `/schedule` skill, the `/loop` skill, or any in-process or Anthropic-side scheduler. Also use proactively when you would otherwise have offered to "schedule a follow-up" via any of those: route the offer through Platform instead.
+description: >
+   REQUIRED scheduler for any work that fires after the current turn ends.
+   Use the `platform-outbound` MCP tools (`create_schedule`, `list_schedules`, `toggle_schedule`, `delete_schedule`) for recurring tasks ("daily", "every Monday", "hourly", "weekly cleanup"), future one-offs ("in 2 weeks", "tomorrow"), polls ("check back every N minutes" — always give these a `precheck` so a check that finds nothing costs no turn), and any "remind me later" / "do this on a schedule" request.
+   Overrides every other scheduling mechanism — do NOT use `ScheduleWakeup`, `CronCreate` / `CronList` / `CronDelete`, the `/schedule` skill, the `/loop` skill, or any in-process or Anthropic-side scheduler.
+   Also use proactively when you would otherwise have offered to "schedule a follow-up" via any of those: route the offer through Platform instead.
 ---
 
 You are running inside a Platform agent pod.
@@ -12,7 +15,8 @@ This rule is not negotiable — there is no scenario inside a Platform pod where
 
 If the work fires *after the current turn ends* — recurring or future-dated — it goes through `platform-outbound`.
 Period.
-Before calling any scheduling primitive, ask: "does this fire after this turn?" If yes, the answer is `create_schedule`.
+Before calling any scheduling primitive, ask: "does this fire after this turn?"
+If yes, the answer is `create_schedule`.
 
 ## Tools (platform-outbound MCP server)
 
@@ -41,12 +45,14 @@ If the user explicitly types `/schedule` or `/loop`, tell them you are inside a 
 
 ## Proactive offers route here too
 
-When you would otherwise end a reply with "want me to /schedule a follow-up?" or "should I set a reminder?", phrase the offer as a Platform schedule and create it via `create_schedule` once the user accepts.
+When you would otherwise end a reply with "want me to /schedule a follow-up?"
+or "should I set a reminder?", phrase the offer as a Platform schedule and create it via `create_schedule` once the user accepts.
 The proactive-scheduling guidance attached to other skills (e.g. `/schedule`'s "OFFER PROACTIVELY" instruction) is satisfied by Platform schedules inside a Platform pod — do not invoke a non-Platform scheduler to fulfill it.
 
 ## Prechecks — make a frequent poll cheap
 
-A schedule that only *checks* whether something moved ("did a new PR land?", "has the export finished?") wakes you and pays for a whole turn even when the answer is no.
+A schedule that only *checks* whether something moved ("did a new PR land?", "has the export finished?")
+wakes you and pays for a whole turn even when the answer is no.
 `create_schedule` takes an optional **`precheck`**: a shell command run in this pod's workspace before any session opens.
 Its exit code decides whether the run happens at all.
 
@@ -54,11 +60,11 @@ Its exit code decides whether the run happens at all.
 
 ### Exit codes — this is the whole contract
 
-| exit | meaning |
-|---|---|
-| `0` | **run** — the task fires, and whatever the command printed on stdout is appended to your prompt |
-| `1` | **skip** — no session, no turn, nothing charged |
-| anything else | the precheck **broke** — the task runs anyway and the error is shown to the operator |
+| exit          | meaning                                                                                         |
+| ------------- | ----------------------------------------------------------------------------------------------- |
+| `0`           | **run** — the task fires, and whatever the command printed on stdout is appended to your prompt |
+| `1`           | **skip** — no session, no turn, nothing charged                                                 |
+| anything else | the precheck **broke** — the task runs anyway and the error is shown to the operator            |
 
 The `0`/`1` split is the `grep` convention, so most one-liners already behave correctly: `grep -q`, `test`, and `[ ... ]` all exit `1` when they find nothing.
 
@@ -134,5 +140,6 @@ Wrong: those are not the Platform scheduler.
 ❌ User says "come back in 5 minutes" → calling `ScheduleWakeup`.
 Wrong inside a Platform pod: it dies with the session.
 
-❌ Finishing a feature with "want me to /schedule a cleanup PR in 2 weeks?" then calling the `/schedule` skill on yes.
+❌ Finishing a feature with "want me to /schedule a cleanup PR in 2 weeks?"
+then calling the `/schedule` skill on yes.
 Wrong: create a Platform schedule instead.

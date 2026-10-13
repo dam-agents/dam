@@ -121,8 +121,11 @@ A Slack channel binds to at most one instance globally; the binding routes every
    `im:read` lets the UI label a connected 1:1 DM with the person it is with; without it the DM shows as its raw id.
    The `users:read` pair lets an agent resolve the user ids it sees in a conversation to names and profiles — the email field needs `users:read.email`.
    `reactions:read` lets an agent look up who reacted to a message and with what emoji.
-   All three are optional: an install without `users:read` never registers the lookup tool at all, rather than exposing one that would always fail, and `reactions:read` gates the reaction-lookup tool the same way; an install with `users:read` but not `users:read.email` still resolves people, just without their email.) [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) carries the full scope and event-subscription set — create the app from it to get everything, including the scopes that ambient mode needs.
+   All three are optional: an install without `users:read` never registers the lookup tool at all, rather than exposing one that would always fail, and `reactions:read` gates the reaction-lookup tool the same way; an install with `users:read` but not `users:read.email` still resolves people, just without their email.)
+   [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) carries the full scope and event-subscription set — create the app from it to get everything, including the scopes that ambient mode needs.
+
 2. Add slash command `/platform` pointing to your app.
+
 3. Generate an app-level token (`xapp-...`) with `connections:write` scope, register `<urls.ui>/api/slack/install/callback` as an OAuth redirect URL, and deploy with the app-level token and the app's client credentials (Basic Information → App Credentials).
    Slack never fetches the redirect URL — the installing admin's browser does — so an internal host behind a VPN works and nothing has to be exposed.
 
@@ -136,8 +139,10 @@ A Slack channel binds to at most one instance globally; the binding routes every
 
 4. Grant yourself the `keycloak.slackInstallerRole` realm role — the chart creates it along with a `slack-installers` group mapped to it, so adding yourself to that group in the Keycloak admin UI is enough.
    Connecting a workspace is install-wide, so only an operator may start one.
+
 5. Connect the app's own workspace the way every workspace is connected (below).
    No bot token is pasted anywhere: each workspace's token comes from the install handshake and is stored in a Kubernetes Secret.
+
 6. In the Platform UI, click the Slack icon on any instance and connect it to a channel (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
 
 **Agent name and avatar on replies:** with the `chat:write.customize` scope, agent replies post under the agent's name instead of the app's.

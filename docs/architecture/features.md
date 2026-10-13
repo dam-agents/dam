@@ -51,6 +51,7 @@ It controls where a feature *appears*:
 
 - **UI surfaces** — navigation destinations, settings tabs, panels.
   All current features gate only these.
+
 - **Agent surface** — whether the feature's MCP tools are registered into an agent's MCP session, decided at session creation.
   A toggle then reaches live agents when their session rolls over (bounded by the session TTL) and new sessions immediately.
   No current feature carries an agent surface (the artifact library did before its promotion to a standard surface); the session-creation check is reintroduced with the next feature that needs it.

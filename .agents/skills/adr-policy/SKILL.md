@@ -1,14 +1,19 @@
 ---
 name: adr-policy
 description: >
-  Review-time policy check for pull requests that touch `docs/adrs/`. Surfaces the
+  Review-time policy check for pull requests that touch `docs/adrs/`.
+  Surfaces the
   deterministic ADR immutability gate (`mise run //docs:check:adr-immutable`) and adds the
   judgment checks a script cannot own: re-litigation of settled decisions, `supersedes`
-  pointer correctness, and summary honesty. Scope is ADR log integrity and decision
-  judgment only — the ADR files, their frontmatter, and git history. Docs-match-the-code
-  is doc-drift's job, not this skill's. Triggers on phrases like "adr policy", "check
+  pointer correctness, and summary honesty.
+  Scope is ADR log integrity and decision
+  judgment only — the ADR files, their frontmatter, and git history.
+  Docs-match-the-code
+  is doc-drift's job, not this skill's.
+  Triggers on phrases like "adr policy", "check
   this ADR", "review the ADR change", "is this ADR re-litigating", "is supersedes
-  correct". Also invocable via the `/adr-policy` slash command.
+  correct".
+  Also invocable via the `/adr-policy` slash command.
 ---
 
 # ADR Policy

@@ -38,6 +38,7 @@ Scan `$SHINKA_OUTPUT_ROOT` (`~/work/shinka-runs`) for run directories (each has 
   ```
 
   The cmdline check is not optional: a pod restart resets the PID namespace, so a stale `run.pid` on persistent `$HOME` can name an unrelated live process — bare `kill -0` would misclassify a dead run as running and silently skip its resume.
+
 - **not running** — finished, stopped, or paused by a pod hibernation (below).
 
 Present the grouped list, then offer a status pull (tail `run.log`, count persisted generations in `results/programs.sqlite`) or a resume.
@@ -49,7 +50,8 @@ If the user instead opens with a concrete task ("evolve X in repo Y to improve Z
 Steps 1–3 are *correctness* checks that protect the user's own tokens, so they always run — "go fast" lets you run them inline without narrating each one, but it does **not** let you drop them (the smoke-eval especially: skipping it can silently burn the whole run on a miswired evaluator).
 Step 4 is a *consent* check: always show the estimate, but an informed user may pre-authorize it.
 
-1. **The objective is measurable.** You must be able to write an evaluator that returns a number for "better." If the user's goal isn't measurable as a score (e.g. "make it nicer"), **refuse and clarify** — propose a concrete metric (runtime, accuracy, size, error rate) and agree on it first.
+1. **The objective is measurable.** You must be able to write an evaluator that returns a number for "better."
+   If the user's goal isn't measurable as a score (e.g. "make it nicer"), **refuse and clarify** — propose a concrete metric (runtime, accuracy, size, error rate) and agree on it first.
 2. **You've authored the task inputs** — `initial.<ext>` (with `EVOLVE-BLOCK` markers) and `evaluate.py` (emitting `combined_score`) — per the skill.
 3. **You've run a smoke-eval** (`"$SHINKA_VENV/bin/python" evaluate.py --program_path    initial.<ext> --results_dir <tmp>`) and shown the evaluator scores a known input sensibly (a baseline number the user recognizes as correct).
    This catches the silent failure mode where the evaluator runs but scores the wrong thing.
@@ -62,6 +64,7 @@ Step 4 is a *consent* check: always show the estimate, but an informed user may 
 - **First run in this pod:** create the runs root lazily — `mkdir -p "$SHINKA_OUTPUT_ROOT"`.
   It is deliberately never baked into the image: a pre-seeded folder would make the work dir non-empty and block the platform's repo seed (which clones into the work-dir root and refuses a non-empty dir).
   If `~/work` is a seeded git repo, also append `shinka-runs/` to `.git/info/exclude` (a local ignore — never touch tracked files) so the checkout stays clean; the run's own target clone lives inside the run directory, so outputs never touch it either way.
+
 - **Launch as a harness background task** (your backgrounded-Bash facility), never a bare detached `nohup … &`.
   The platform's background-work contract reports harness-registered tasks to the runtime: the pod is held awake for as long as the run lives, and the finishing task wakes you for a follow-up turn — **report the result to the user then** (best `combined_score`, the objective metric, and where the winner lives in `results/`).
   A bare `nohup` process does not hold the pod awake, so it can hibernate mid-run.
@@ -84,9 +87,12 @@ Step 4 is a *consent* check: always show the estimate, but an informed user may 
   ```
 
 - **Always pass an explicit `--results_dir`** on the **persisted** workspace (`$SHINKA_OUTPUT_ROOT`, on `$HOME`) and **outside the cloned target repo** — so the population DB survives hibernation and never pollutes the target.
+
 - **Always bound the run**: `--num_generations` is the run's **total** budget (generations `0..N-1`), the single source of truth — set it to what the user approved, never unbounded.
+
 - **Clone the target into its own run directory**, never the pod home root or an unrelated path.
   Give each run a unique web-safe `<run-id>` (repo + objective slug; append `-2`, `-3` on collision).
+
 - **Watch for stalls.** A wedged LLM call can hang a generation indefinitely.
   If `run.log` and the generation count in `results/programs.sqlite` haven't advanced in ~30 minutes, kill the process and relaunch per resume-on-wake below — the run resumes from the persisted population.
 

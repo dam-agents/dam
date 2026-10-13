@@ -48,6 +48,7 @@ Scan `$SKYDISCOVER_OUTPUT_ROOT` (`~/work/skydiscover-runs`) for run directories 
   ```
 
   The cmdline check is not optional: a pod restart resets the PID namespace, so a stale `run.pid` on persistent `$HOME` can name an unrelated live process — bare `kill -0` would misclassify a dead run as running and silently skip its resume.
+
 - **not running** — finished, stopped, or paused by a pod hibernation (below).
 
 Present the grouped list, then offer a status pull (tail `run.log`, read `output/best/best_program_info.json`, count `output/checkpoints/`) or a resume.
@@ -59,7 +60,8 @@ If the user instead opens with a concrete task ("optimize X in repo Y to improve
 Steps 1–3 are *correctness* checks that protect the user's own tokens, so they always run — "go fast" lets you run them inline without narrating each one, but it does **not** let you drop them (the smoke-eval especially: skipping it can silently burn the whole run on a miswired evaluator).
 Step 4 is a *consent* check: always show the estimate, but an informed user may pre-authorize it.
 
-1. **The objective is measurable.** You must be able to write an evaluator that returns a number for "better." If the user's goal isn't measurable as a score (e.g. "make it nicer"), **refuse and clarify** — propose a concrete metric (runtime, accuracy, size, error rate) and agree on it first.
+1. **The objective is measurable.** You must be able to write an evaluator that returns a number for "better."
+   If the user's goal isn't measurable as a score (e.g. "make it nicer"), **refuse and clarify** — propose a concrete metric (runtime, accuracy, size, error rate) and agree on it first.
 2. **You've authored the run inputs** — `evaluator.py` (an `evaluate(...)` returning `combined_score`) and `initial.py` (with `EVOLVE-BLOCK` markers; for a from-scratch problem, a minimal stub — the CLI can run without one, but a stub gives the smoke-eval a baseline); see the skill.
 3. **You've run a smoke-eval** — call the evaluator directly on the initial program and show the user a baseline score they recognize as sensible.
    This catches the silent failure mode where the evaluator runs but scores the wrong thing.
@@ -72,6 +74,7 @@ Step 4 is a *consent* check: always show the estimate, but an informed user may 
 - **First run in this pod:** create the runs root lazily — `mkdir -p "$SKYDISCOVER_OUTPUT_ROOT"`.
   It is deliberately never baked into the image: a pre-seeded folder would make the work dir non-empty and block the platform's repo seed (which clones into the work-dir root and refuses a non-empty dir).
   If `~/work` is a seeded git repo, also append `skydiscover-runs/` to `.git/info/exclude` (a local ignore — never touch tracked files) so the checkout stays clean; the run's own target clone lives inside the run directory, so outputs never touch it either way.
+
 - **Launch as a harness background task** (your backgrounded-Bash facility), never a bare detached `nohup … &`.
   The platform's background-work contract reports harness-registered tasks to the runtime: the pod is held awake for as long as the run lives, and the finishing task wakes you for a follow-up turn — **report the result to the user then** (best `combined_score`, the objective metric, and the `output/best/` path).
   A bare `nohup` process does not hold the pod awake, so it can hibernate mid-run.
@@ -97,10 +100,13 @@ Step 4 is a *consent* check: always show the estimate, but an informed user may 
   ```
 
 - **Always pass an explicit `-o`** on the **persisted** workspace (`$SKYDISCOVER_OUTPUT_ROOT`, on `$HOME`) and **outside the cloned target repo** — so checkpoints survive hibernation and never pollute the target.
+
 - **Always bound the run**: `-i` is the iteration budget — set it to what the user approved, never unbounded.
   The approved total is the source of truth across resumes.
+
 - **Clone the target into its own run directory**, never the pod home root or an unrelated path.
   Give each run a unique web-safe `<run-id>` (repo + objective slug; append `-2`, `-3` on collision).
+
 - **Watch for stalls.** A wedged LLM call can hang an iteration indefinitely.
   If `run.log` and the newest `output/checkpoints/` entry haven't advanced in ~30 minutes, kill the process and relaunch per resume-on-wake below — the run resumes from the last checkpoint.
 

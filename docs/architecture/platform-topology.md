@@ -98,7 +98,6 @@ A reconnecting watch replays the full list, and a sweep a few seconds later hint
 A second Agent watch is deliberately unleased: every replica keeps one to serve its own Agent reads from cache, which projects nothing and so needs no election — watch count there tracks replica count.
 Anything crossing the process boundary is schema-parsed on receipt and dropped on mismatch, so replicas on different versions cannot poison each other's streams.
 
-
 A session's mode is agent-owned metadata: the client switching modes persists it over ACP (`session/resume` carrying `_meta.platform.mode`), and other clients follow it live — the write lands in the pod's metadata store, whose session-watch notice makes them re-read.
 There is no server-side mode-change side effect, and the notice carries no payload — it means re-read, never the new mode; mode stays a hint about which surface to render, and the running harness is unaffected.
 The UI's session *list*, though, is no longer an ACP read: agent-runtime composes it on its own tRPC surface, unioning what the harness reports with its own metadata store — so a session it has recorded but the harness has not yet persisted is listed with no title, rather than being invisible until its first turn lands.
@@ -214,26 +213,26 @@ So a reply never lands above a newer message, unprompted work shows as the lates
 
 ## Protocols
 
-| Edge | Protocol | Purpose |
-|------|----------|---------|
-| ui → api-server (`<rel>-apiserver`) | tRPC over WebSocket | Resource CRUD, permission flows, terms acceptance, and the live-events subscription (server-pushed cache invalidation) |
-| ui → api-server | WebSocket (ACP, JSON-RPC 2.0) | Live chat session, permission prompts, streaming output; also carries session list/create/delete and mode changes, all over ACP (sessions are agent-owned) |
-| ui → api-server | WebSocket (binary terminal frames) | Live terminal session — input / output / resize / exit / session moved |
-| cli → api-server | tRPC over HTTP | Agent resolution, auth (same tRPC surface the UI uses). Session CRUD is removed — sessions are agent-owned over ACP |
-| cli → api-server | WebSocket (binary terminal frames) | `dam chat` terminal attach — same frame protocol as the UI terminal path |
-| api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
-| api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
-| ui → api-server → agent-runtime | WebSocket (tRPC relay) | The pod's own tRPC surface — in-pod file operations, the session list, and the watches behind all three live panels. Admitted once per upgrade on ownership, the operate scope and the key's agent binding; relayed opaquely, so the api-server never parses tRPC |
-| api-server → agent-runtime | HTTP (tRPC proxy) | The same pod surface over HTTP, gated per request. No UI caller remains; kept as a non-browser door |
-| api-server → agent-runtime | HTTP (tRPC, direct) | A channel worker writing an inbound attachment into the workspace. Not the proxy: no bearer, so the pod's NetworkPolicy is the whole gate, and a woken pod becomes a precondition for building that turn's prompt |
-| api-server → agent-runtime | HTTP (status read) | Passive read of the pod's status surface for session-reported background work; never wakes a pod or defers hibernation |
-| ui → api-server → agent-runtime, cli → api-server → agent-runtime | HTTP (multipart, streamed) | Bundled file import (UI bulk, CLI `dam import`) |
-| agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP | MCP tool access, runtime-channel `hello`, and the knowledge-base publish handshake — the pod requests a publish (work order out) and reports completion |
-| agent-runtime → object store (via paired gateway) | HTTPS (presigned PUT) | Knowledge-base snapshot uploads. The pod holds no object-store credential: it can only write the specific keys the api-server signed for it, and only until those links expire |
-| gateway → api-server (`<rel>-extauthz-<id>`) | gRPC | HITL ext_authz Check; per-agent Service pinned by AuthorizationPolicy to the gateway's SA principal |
-| controller → K8s API | watch / list / write | Resource reconciliation and status writes |
-| api-server → K8s API | REST + watch | Resource CRUD, spec writes, pod wake; a watch per replica keeps the Agent read cache current ([agent-lifecycle](agent-lifecycle.md)) |
-| api-server → agent-runtime | HTTP (tRPC) | Runtime-channel `applyState` delivery from the outbox worker; knowledge-base share config sync (roots, limits, flush nudge) |
+| Edge                                                                                        | Protocol                           | Purpose                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ui → api-server (`<rel>-apiserver`)                                                         | tRPC over WebSocket                | Resource CRUD, permission flows, terms acceptance, and the live-events subscription (server-pushed cache invalidation)                                                                                                                                            |
+| ui → api-server                                                                             | WebSocket (ACP, JSON-RPC 2.0)      | Live chat session, permission prompts, streaming output; also carries session list/create/delete and mode changes, all over ACP (sessions are agent-owned)                                                                                                        |
+| ui → api-server                                                                             | WebSocket (binary terminal frames) | Live terminal session — input / output / resize / exit / session moved                                                                                                                                                                                            |
+| cli → api-server                                                                            | tRPC over HTTP                     | Agent resolution, auth (same tRPC surface the UI uses). Session CRUD is removed — sessions are agent-owned over ACP                                                                                                                                               |
+| cli → api-server                                                                            | WebSocket (binary terminal frames) | `dam chat` terminal attach — same frame protocol as the UI terminal path                                                                                                                                                                                          |
+| api-server → agent-runtime                                                                  | WebSocket (ACP, JSON-RPC 2.0)      | Chat-mode relay target — one hop, no fan-out                                                                                                                                                                                                                      |
+| api-server → agent-runtime                                                                  | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session                                                                                                                                                                                                   |
+| ui → api-server → agent-runtime                                                             | WebSocket (tRPC relay)             | The pod's own tRPC surface — in-pod file operations, the session list, and the watches behind all three live panels. Admitted once per upgrade on ownership, the operate scope and the key's agent binding; relayed opaquely, so the api-server never parses tRPC |
+| api-server → agent-runtime                                                                  | HTTP (tRPC proxy)                  | The same pod surface over HTTP, gated per request. No UI caller remains; kept as a non-browser door                                                                                                                                                               |
+| api-server → agent-runtime                                                                  | HTTP (tRPC, direct)                | A channel worker writing an inbound attachment into the workspace. Not the proxy: no bearer, so the pod's NetworkPolicy is the whole gate, and a woken pod becomes a precondition for building that turn's prompt                                                 |
+| api-server → agent-runtime                                                                  | HTTP (status read)                 | Passive read of the pod's status surface for session-reported background work; never wakes a pod or defers hibernation                                                                                                                                            |
+| ui → api-server → agent-runtime, cli → api-server → agent-runtime                           | HTTP (multipart, streamed)         | Bundled file import (UI bulk, CLI `dam import`)                                                                                                                                                                                                                   |
+| agent-runtime → api-server (`<rel>-apiserver-harness`, via paired gateway → Istio waypoint) | HTTP                               | MCP tool access, runtime-channel `hello`, and the knowledge-base publish handshake — the pod requests a publish (work order out) and reports completion                                                                                                           |
+| agent-runtime → object store (via paired gateway)                                           | HTTPS (presigned PUT)              | Knowledge-base snapshot uploads. The pod holds no object-store credential: it can only write the specific keys the api-server signed for it, and only until those links expire                                                                                    |
+| gateway → api-server (`<rel>-extauthz-<id>`)                                                | gRPC                               | HITL ext_authz Check; per-agent Service pinned by AuthorizationPolicy to the gateway's SA principal                                                                                                                                                               |
+| controller → K8s API                                                                        | watch / list / write               | Resource reconciliation and status writes                                                                                                                                                                                                                         |
+| api-server → K8s API                                                                        | REST + watch                       | Resource CRUD, spec writes, pod wake; a watch per replica keeps the Agent read cache current ([agent-lifecycle](agent-lifecycle.md))                                                                                                                              |
+| api-server → agent-runtime                                                                  | HTTP (tRPC)                        | Runtime-channel `applyState` delivery from the outbox worker; knowledge-base share config sync (roots, limits, flush nudge)                                                                                                                                       |
 
 ACP frames are JSON-RPC 2.0, one logical message per WebSocket frame.
 
@@ -243,6 +242,7 @@ The controller-reconciled domain resources are CRDs under the `agent-platform.ai
 
 - `spec` — user intent.
   Owned exclusively by the api-server; validated by the K8s API server at admission.
+
 - `status` — observed state.
   Owned exclusively by the controller, written through the status subresource.
   Conditions (`Ready`, `AgentPodReady`, `GatewayPodReady`, `Reconciled`) are the source of truth; the api-server routes on `Ready` alone and **never inspects pods itself**.
@@ -260,8 +260,8 @@ The controller-reconciled domain resources are CRDs under the `agent-platform.ai
   The liveness sweep reads the count the same way for either backend.
   The vm Agent's restart verb, resizes and template-driven env and image changes reach the machine as a restart.
 
-| Kind | Purpose |
-|---|---|
+| Kind    | Purpose                                                                                                                                                                                                                                                         |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Agent` | Agent definition and runtime state: image, mounts, env, secret refs, granted secret and connection IDs. The sole resource per Agent — there is no separate instance resource and no `desiredState` — running-vs-hibernated is derived from activity annotations |
 
 Two domain resources are deliberately not CRDs: **Templates** are chart-rendered ConfigMaps loaded by the api-server at boot (read-only, never reconciled), and **Schedules** are Postgres rows owned by the api-server — see [persistence](persistence.md).

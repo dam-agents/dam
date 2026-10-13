@@ -101,15 +101,15 @@ No quoting, no globbing, no `$VAR`, no pipes, no shell, ever — the format rese
 
 ### Grammar
 
-| Form | Meaning |
-|---|---|
-| `literal` | matches exactly, nothing else |
-| `(a\|b\|c)` | one of a closed set |
-| `[…]` | optional |
-| `(…)...` | repeats, capped |
-| `*` | one filename-like argument, or part of one — no `/` |
-| `**` | one path-like argument, or part of one — `/` allowed |
-| `^…$` | a regex covering a **whole** argument |
+| Form        | Meaning                                              |
+| ----------- | ---------------------------------------------------- |
+| `literal`   | matches exactly, nothing else                        |
+| `(a\|b\|c)` | one of a closed set                                  |
+| `[…]`       | optional                                             |
+| `(…)...`    | repeats, capped                                      |
+| `*`         | one filename-like argument, or part of one — no `/`  |
+| `**`        | one path-like argument, or part of one — `/` allowed |
+| `^…$`       | a regex covering a **whole** argument                |
 
 Seven forms, no sub-syntax.
 There are no named placeholders: the names were never read by anything — not the matcher, not the model — and explaining what to pass is the `about` line's job, not the pattern's.
@@ -144,12 +144,12 @@ Integer ranges are gone; `^[1-9][0-9]{0,3}$` covers the cases that had them, at 
 Satellites are tools on the **platform MCP server** the Agent already has, not a separate MCP entry.
 The endpoint is stateless — it builds a server per request ([`mcp-endpoint.ts`](../../packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts)) — so registering them only when the Agent holds at least one Satellite Grant costs nothing and needs no invalidation, exactly as `kbShares: null` already gates the knowledge-base tools.
 
-| Tool | |
-|---|---|
-| `start_satellite_job(satellite, cmd)` | returns `gpu-box#7`, running |
+| Tool                                     |                                                 |
+| ---------------------------------------- | ----------------------------------------------- |
+| `start_satellite_job(satellite, cmd)`    | returns `gpu-box#7`, running                    |
 | `wait_for_satellite_job(satellite, job)` | blocks until the job ends, or returns `running` |
-| `get_satellite_job(satellite, job)` | `running` / `done` / `interrupted` / `none` |
-| `cancel_satellite_job(satellite, job)` | requests cancellation |
+| `get_satellite_job(satellite, job)`      | `running` / `done` / `interrupted` / `none`     |
+| `cancel_satellite_job(satellite, job)`   | requests cancellation                           |
 
 `cmd` is a `string[]` mapping 1:1 to what gets executed — `["./process.sh", "sales.db", "-n", "50"]`.
 **No named-tool facade over the commands:** users think in terms of the script they run, and a facade would put a second vocabulary between them and it while helping nothing.
@@ -172,13 +172,13 @@ A Job is identified by `(satellite, sequence)` — a per-Satellite integer, rend
 The composite key says the Satellite owns its own numbering, and a small integer reads better than a UUID everywhere a human meets it.
 **The sequence is minted server-side at `start`**, since the Satellite has not seen the job yet when the id must be returned.
 
-| State | Meaning |
-|---|---|
-| queued | accepted and matched; no worker has claimed it |
-| running | claimed by a worker, which is renewing its lease |
-| done | terminal: exit code and captured output |
-| interrupted | the worker stopped renewing — outcome unknowable |
-| cancelled | terminal after a cancellation the worker acknowledged |
+| State       | Meaning                                               |
+| ----------- | ----------------------------------------------------- |
+| queued      | accepted and matched; no worker has claimed it        |
+| running     | claimed by a worker, which is renewing its lease      |
+| done        | terminal: exit code and captured output               |
+| interrupted | the worker stopped renewing — outcome unknowable      |
+| cancelled   | terminal after a cancellation the worker acknowledged |
 
 **Interruption is detected by lease expiry, not by a report.** A claimed job carries a lease the worker renews on each heartbeat; when renewal stops, a sweep marks the job interrupted.
 This is the only mechanism that works when the machine is the thing that died — a `serve` process that dies cannot file a report about itself.
