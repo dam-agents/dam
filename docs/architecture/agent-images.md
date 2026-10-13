@@ -49,8 +49,8 @@ On a Mac, whose [host runner](vm-host-runner.md) runs outside the cluster, the t
 Only the agent-runtime and the two driver SDKs (JavaScript and Python) come from the rest of the repo; the build compiles them into each image.
 
 The build also bundles Claude Code's ACP adapter with its agent SDK, from the locked install, into a few files of the default image.
-Loaded from the tools, the adapter is about 200 ES modules, each a few reads over a machine's tools mount: they cost each adapter start, and the session-history worker's import of it, about 0.3 s.
-The native CLI the adapter runs stays in the tools; the bundle cannot find it beside the SDK, so `harness-chat` names its path.
+Loaded from the tools, the adapter is hundreds of ES modules, each a few reads over a machine's tools mount, paid by each adapter start and by the session-history worker's import of it.
+The native CLI the adapter runs stays in the tools; the bundle cannot find it beside the SDK, so Claude Code's chat entry point names its path.
 
 ## Building
 

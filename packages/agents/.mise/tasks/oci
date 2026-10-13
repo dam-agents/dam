@@ -250,6 +250,7 @@ build_default() (
   (cd "$adapter" && "$root/node_modules/.bin/esbuild" dist/index.js dist/acp-agent.js @anthropic-ai/claude-agent-sdk \
     --bundle --splitting --format=esm --platform=node --outdir="$bundle" '--entry-names=[name]' --log-level=warning)
   [ "$(mise -E "$envs" exec -- node "$bundle/index.js" --version)" = "$(jq -r .version "$adapter/package.json")" ]
+  mise -E "$envs" exec -- node -e 'Promise.all(process.argv.slice(1).map((f) => import(f)))' "$bundle/acp-agent.js" "$bundle/claude-agent-sdk.js"
   # Playwright's browsers: the node installer puts them in the tools, beside
   # other Playwrights' own, and the image names this one's.
   PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "$envs" exec -- playwright install chromium
