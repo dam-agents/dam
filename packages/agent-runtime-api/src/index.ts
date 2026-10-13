@@ -125,6 +125,7 @@ export {
   finishedRowSchema,
   keepMarkRequestSchema,
   PROCESS_OUTPUT_MAX_BYTES,
+  processContainerSchema,
   processListSchema,
   processNoticeSchema,
   processOutputSchema,

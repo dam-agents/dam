@@ -44,6 +44,7 @@ export const finishedRowSchema = z.object({
   outputPath: z.string().nullable(),
   keptAwake: z.boolean(),
   keepSource: keepSourceSchema,
+  container: processContainerSchema.nullable().default(null),
 });
 
 export const pendingRestartSchema = z.object({

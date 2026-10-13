@@ -1,14 +1,10 @@
-import { ContainerEngine, ContainerSoftware } from "@carbon/icons-react";
-import type {
-  ProcessContainer,
-  ProcessRow as ProcessRowData,
-} from "agent-runtime-api";
-import { match } from "ts-pattern";
+import type { ProcessRow as ProcessRowData } from "agent-runtime-api";
 
 import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import { processKindLabel, processTitle } from "../lib/process-copy.js";
+import { ContainerIcon } from "./container-icon.js";
 import { ProcessActionsMenu } from "./process-actions-menu.js";
 import { ProcessCommand } from "./process-command.js";
 import { ProcessStats } from "./process-stats.js";
@@ -67,16 +63,5 @@ export function ProcessRow({
         onToggleOutput={toggleOutput}
       />
     </li>
-  );
-}
-
-function ContainerIcon({ container }: { container: ProcessContainer }) {
-  return (
-    <span aria-hidden className="flex shrink-0 text-muted-foreground">
-      {match(container.role)
-        .with("container", () => <ContainerSoftware size={14} />)
-        .with("runtime", () => <ContainerEngine size={14} />)
-        .exhaustive()}
-    </span>
   );
 }

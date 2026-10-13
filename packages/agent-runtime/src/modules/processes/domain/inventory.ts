@@ -1,4 +1,9 @@
-import type { FinishedRow, KeepSource, ProcessRow } from "agent-runtime-api";
+import type {
+  FinishedRow,
+  KeepSource,
+  ProcessContainer,
+  ProcessRow,
+} from "agent-runtime-api";
 import type { ReportedTask } from "../../acp/index.js";
 import { commandLabel, type ProcessTree } from "./classify.js";
 import { containerOf } from "./container.js";
@@ -18,6 +23,7 @@ export interface TrackedRow {
   outputPath: string | null;
   keepsAwake: boolean;
   keepSource: KeepSource;
+  container: ProcessContainer | null;
 }
 
 export interface ProcessesDocument {
@@ -74,6 +80,7 @@ export function finishedFrom(
     outputPath: row.outputPath,
     keptAwake: row.keepsAwake,
     keepSource: row.keepSource,
+    container: row.container,
   };
 }
 
@@ -155,6 +162,7 @@ export function assembleInventory(input: {
       outputPath: row.outputPath,
       keepsAwake: row.keepsAwake,
       keepSource: row.keepSource,
+      container: row.container,
     });
   }
 

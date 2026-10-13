@@ -98,6 +98,7 @@ function stoppedRow(row: ProcessRow, kind: FinishedRow["kind"], at: string) {
     outputPath: row.outputPath,
     keptAwake: row.keepsAwake,
     keepSource: row.keepSource,
+    container: row.container,
   };
 }
 

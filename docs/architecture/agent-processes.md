@@ -67,7 +67,7 @@ Docker and k3s run each container under a containerd shim that is re-parented to
 The row carries the engine and the id cut to twelve characters, which `docker` and `crictl` accept.
 `dockerd`, `containerd` and `k3s server` or `agent` are marked as the runtime of their engine.
 The panel shows both with a container icon and their engine, a container titled by its short id in place of the shim command, and lists them after the other rows of their group, so the user's own work comes first.
-Finished rows carry no such mark.
+The mark stays on the row in the finished history, which shows it the same way.
 
 **Finished work.** A Harness Task or Detached Process that a scan finds gone moves to a finished history — a Harness Task as soon as its process is gone, without waiting for the harness's next report.
 Turn Processes keep no history.
