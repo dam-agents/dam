@@ -11,7 +11,8 @@ This slice makes it read the kernel's limit.
 ## Implementation plan
 
 1. `packages/vm-runner/src/pressure.rs`: read `memory.max` from the cgroup directory; `max` or unreadable means no limit there.
-2. `src/server.rs`: one function gives the memory limit — the cgroup's when `cgroup_dir` is set and it has one, else `config.memory_mib`. Use it for capacity, the pressure sample, the pressure read and the metrics gauge.
+2. `src/server.rs`: one function gives the memory limit — the cgroup's when `cgroup_dir` is set and it has one, else `config.memory_mib`.
+   Use it for capacity, the pressure sample, the pressure read and the metrics gauge.
 3. Unit tests over a fake cgroup directory.
 4. Docs: `vm-memory.md` — the runner admits against the limit the kernel holds.
 

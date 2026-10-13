@@ -60,6 +60,7 @@ type AgentReconciler struct {
 	podCache        corelisters.PodLister
 	vmRunning       sync.Map
 	vmLive          sync.Map
+	vmPools         sync.Map
 	resizeNotices   sync.Map
 	notReadyPolls   sync.Map
 	vmStartClocks   sync.Map

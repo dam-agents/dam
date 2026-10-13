@@ -236,7 +236,8 @@ virtualization:
     # The claim outlives a pod restart and a chart upgrade, but not its owner:
     # the sweep removes a runner once that owner has no vm agents left, and
     # takes the claim with it, so the next one re-fetches the image.
-    # `storage` is the CEILING of one owner's claim, not its size. The claim
+    # `storage` is the CEILING of one owner's claim, not its size; an owner's
+    # UserBudget `storage` replaces it for that owner. The claim
     # is sized from demand: the sum of that owner's machine disks, 1Gi of
     # headroom per machine for its root overlay and bookkeeping, and
     # `imageCache.budget` when the cache lives on this claim (no `hostPath`

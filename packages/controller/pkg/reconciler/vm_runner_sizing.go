@@ -111,11 +111,11 @@ func (r *AgentReconciler) peerShouldRun(ctx context.Context, name string) (bool,
 	return r.agentDesiredUp(ctx, name, true)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the claim holds every machine disk of the owner, the headroom each machine writes beside its disk, the seed of each migration still in flight, and the image cache when the install left the cache on the claim. `runner.storage` is the ceiling, not the size: a claim sized for a fleet the owner does not have reserves storage nobody uses, and a single 10Gi agent would otherwise cost a 100Gi volume.
-func (r *AgentReconciler) runnerClaimSize(owner string, demand runnerDemand) (resource.Quantity, resource.Quantity, error) {
-	ceiling, err := resource.ParseQuantity(r.config.VM.Runner.Storage)
+// UNIT_BOUNDARY_DESCRIPTION: the claim holds every machine disk of the owner, the headroom each machine writes beside its disk, the seed of each migration still in flight, and the image cache when the install left the cache on the claim. The owner's storage pool — their UserBudget's `storage`, else `runner.storage` — is the ceiling, not the size: a claim sized for a fleet the owner does not have reserves storage nobody uses, and a single 10Gi agent would otherwise cost a 100Gi volume.
+func (r *AgentReconciler) runnerClaimSize(ctx context.Context, owner string, demand runnerDemand) (resource.Quantity, resource.Quantity, error) {
+	ceiling, err := r.runnerStorageCeiling(ctx, owner)
 	if err != nil {
-		return resource.Quantity{}, resource.Quantity{}, fmt.Errorf("vm runner storage %q is not a quantity: %w", r.config.VM.Runner.Storage, err)
+		return resource.Quantity{}, resource.Quantity{}, err
 	}
 	need := int64(demand.diskGiB+demand.machines*runnerClaimHeadroomGiB)<<30 + demand.seedBytes
 	if spec := r.config.VM.Runner; runnerOwnsImageCache(spec) {

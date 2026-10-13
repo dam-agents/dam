@@ -1,6 +1,7 @@
 # Per-user VM pools
 
-> Working plan — temporary, committed on the feature branch. Deleted once the feature ships.
+> Working plan — temporary, committed on the feature branch.
+> Deleted once the feature ships.
 
 **Issue:** https://github.com/dam-agents/dam/issues/4756 (epic https://github.com/dam-agents/dam/issues/4753)
 
@@ -18,7 +19,8 @@ The existing `UserBudget` ([budgets](../../architecture/budgets.md)) becomes the
 
 - `cpu` and `memory` become optional and also set the VM pool; `storage` is new and optional.
 - Each field falls back to its own default: `controller.userBudgets` for the container ceiling, `virtualization.runner.*` for the VM pool.
-- No new CRD. The only CRD change is these UserBudget fields.
+- No new CRD.
+  The only CRD change is these UserBudget fields.
 
 The controller resolves an owner's pool once per reconcile of their vm agent and once per memory pass (every 30 s), and keeps it in memory.
 Everything that read the install's runner limit reads the owner's pool instead: machine size, pressure and reclaim, the runner pod's memory request and CPU limit, and the claim ceiling.
@@ -37,11 +39,11 @@ A lowered pool never kills anything:
 
 ## Sub-issues
 
-| #  | Title | Scope | Depends on |
-|----|-------|-------|------------|
-| 01 | UserBudget overrides the VM pool | CRD fields, owner pool resolution, claim ceiling, api-server reader | — |
-| 02 | The runner admits against its live memory limit | vm-runner reads `memory.max` | — |
-| 03 | The owner's pool reaches the runner pod in place | pod limits resized, pool in machine size and reclaim, roll hash | 01, 02 |
+| #   | Title                                            | Scope                                                               | Depends on |
+| --- | ------------------------------------------------ | ------------------------------------------------------------------- | ---------- |
+| 01  | UserBudget overrides the VM pool (done)          | CRD fields, owner pool resolution, claim ceiling, api-server reader | —          |
+| 02  | The runner admits against its live memory limit  | vm-runner reads `memory.max`                                        | —          |
+| 03  | The owner's pool reaches the runner pod in place | pod limits resized, pool in machine size and reclaim, roll hash     | 01, 02     |
 
 ## Conventions & glossary
 
@@ -61,4 +63,5 @@ On a local cluster with virtualization (`mise run //:cluster:install`):
 
 ## Delivery
 
-Each sub-issue is one atomic commit. The whole feature lands as a single PR for https://github.com/dam-agents/dam/issues/4756.
+Each sub-issue is one atomic commit.
+The whole feature lands as a single PR for https://github.com/dam-agents/dam/issues/4756.
