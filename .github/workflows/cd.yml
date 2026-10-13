@@ -578,6 +578,17 @@ jobs:
           persist-credentials: false
           # e2e:ci-images resolves every image by its source history.
           fetch-depth: 0
+      # k3s comes up in about twenty seconds and needs nothing the steps
+      # below set up, so it starts here, beside them: before setup-mise, on
+      # the runner image's own yq, as setup-mise alone takes about 20 s.
+      # `mise run e2e` waits for it and keeps the cluster instead of nuking it
+      # first; if this provision fails, it nukes whatever is left and
+      # provisions again.
+      - &e2e-provision
+        name: Provision k3s in the background
+        run: |
+          nohup bash -c '.mise/tasks/cluster/provision-host etc/lima/k3s-test.yaml; echo $? > /tmp/k3s-provision.status' \
+            > /tmp/k3s-provision.log 2>&1 &
       # See build-images. Before setup-mise, like check-test's.
       - &e2e-keycloak-theme-cache
         if: github.event_name == 'pull_request'
@@ -622,15 +633,6 @@ jobs:
         with:
           quay-username: ${{ secrets.QUAY_USERNAME }}
           quay-password: ${{ secrets.QUAY_PASSWORD }}
-      # k3s comes up in about twenty seconds and needs nothing the steps
-      # below set up, so it starts here, beside them. `mise run e2e` waits
-      # for it and keeps the cluster instead of nuking it first; if this
-      # provision fails, it nukes whatever is left and provisions again.
-      - &e2e-provision
-        name: Provision k3s in the background
-        run: |
-          nohup bash -c '.mise/tasks/cluster/provision-host etc/lima/k3s-test.yaml; echo $? > /tmp/k3s-provision.status' \
-            > /tmp/k3s-provision.log 2>&1 &
       # The keycloak image bakes in the theme JAR. Built here, before the
       # background build starts, so it does not race e2e:install's own run of
       # the same task, which is then a cache hit.
@@ -748,6 +750,7 @@ jobs:
       - name: Record the job start
         run: printf '%s\tjob started\n' "$(date +%s)" >> "$E2E_TIMINGS"
       - *e2e-checkout
+      - *e2e-provision
       - name: Open /dev/kvm to the runner user
         run: |
           set -euo pipefail
@@ -784,7 +787,6 @@ jobs:
           path: *rust-release-paths
           key: *rust-release-key
       - *e2e-setup-mise
-      - *e2e-provision
       - *e2e-keycloak-theme
       - *e2e-pnpm-install
       # The default image, which smoke/22-harness-tools boots, packages none of
