@@ -51,11 +51,14 @@ wait_for "$pulse_socket" "PipeWire's PulseAudio server"
 # a small CPU share. The panel is the client's whole frame, so its sidebar and
 # buttons are hidden; sound starts on its own. Audio is queued 250 ms deep (backpressure-queue-size counts 10 ms chunks of
 # it) so a stall does not drop sound; the page's jitter buffer drops past
-# 80 ms itself, so the depth adds no steady lag.
+# 80 ms itself, so the depth adds no steady lag. File transfer is off, and its
+# directory, which Selkies creates even then, is kept out of the agent's home.
 /opt/selkies/bin/selkies \
   --port=5999 \
   --enable-basic-auth=false \
   --gamepad-enabled=false \
+  --file-transfers=none \
+  --file-manager-path="$XDG_RUNTIME_DIR/selkies-files" \
   --use-css-scaling=true \
   --backpressure-queue-size=25 \
   --video-streaming-mode=false \
