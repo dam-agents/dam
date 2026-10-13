@@ -87,3 +87,25 @@ export function tailStart(
     ? first.start
     : walkBack(first.unopened).start;
 }
+
+function opensUserTurn(
+  frames: readonly { line: string }[],
+  i: number,
+): boolean {
+  const kindAt = (j: number) =>
+    j < 0 ? null : sessionUpdateOf(frames[j]!.line)?.sessionUpdate;
+  return kindAt(i) === "user_message_chunk" && kindAt(i - 1) !== kindAt(i);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Moves a cut back to the prompt that opens its
+ * turn, so a reader shown only the newest frames sees each reply under the
+ * prompt it answers. A log with no prompt before the cut keeps the cut.
+ */
+export function turnStartAtOrBefore(
+  frames: readonly { line: string }[],
+  start: number,
+): number {
+  for (let i = start; i > 0; i--) if (opensUserTurn(frames, i)) return i;
+  return start;
+}

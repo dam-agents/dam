@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A session's replay read as data can ask for only its newest frames, cut the way a tail load cuts, so a reader that shows a long session at once does not move its whole log. The cut never splits one message's chunks, and a read without a tail still returns everything.
+// TEST_OVERVIEW: A session's replay read as data can ask for only its newest frames, so a reader that shows a long session at once does not move its whole log. The cut never splits a message and starts at the prompt of the turn it falls into; a read without a tail still returns everything.
 import { describe, expect, it } from "vitest";
 
 import type { SessionMetadataStore } from "../../modules/acp/infrastructure/session-metadata-store.js";
@@ -39,9 +39,9 @@ function service(live: string[], stored: string[] | null = null) {
 }
 
 describe("sessions.history tail", () => {
-  it("returns the newest frames without splitting a message", async () => {
+  it("starts at the prompt of the turn the cut falls into", async () => {
     const history = await service(log).history("s1", { tail: 1 });
-    expect(history).toEqual({ frames: log.slice(3), truncated: true });
+    expect(history).toEqual({ frames: log.slice(2), truncated: true });
   });
 
   it("cuts the provider's frames the same way", async () => {

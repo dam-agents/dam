@@ -53,7 +53,10 @@ export type DelegationFrames = z.infer<typeof delegationFramesSchema>;
 export interface SessionsService {
   list(query?: SessionListQuery): Promise<SessionPage>;
   watch(signal?: AbortSignal): AsyncIterable<PodSessionNotice>;
-  history(sessionId: string, opts?: { tail?: number }): Promise<SessionHistory>;
+  history(
+    sessionId: string,
+    opts?: Pick<SessionHistoryInput, "tail">,
+  ): Promise<SessionHistory>;
   setTitle(input: SetSessionTitleInput): Promise<boolean>;
   storeDelegationFrames(
     input: StoreDelegationFramesInput,

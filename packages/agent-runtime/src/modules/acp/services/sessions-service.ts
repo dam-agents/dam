@@ -11,7 +11,7 @@ import {
   pageSessions,
   type ListedHarnessSession,
 } from "../domain/session-list.js";
-import { tailStart } from "../domain/replay-tail.js";
+import { tailStart, turnStartAtOrBefore } from "../domain/replay-tail.js";
 import { spendBySession, spendTotal } from "../domain/session-spend.js";
 import type { DelegationFramesStore } from "../infrastructure/delegation-frames-store.js";
 import type { HistoryProvider } from "../infrastructure/history-provider.js";
@@ -31,10 +31,8 @@ function newestTail(
   tail: number | undefined,
 ): SessionHistory {
   if (tail === undefined) return history;
-  const start = tailStart(
-    history.frames.map((line) => ({ line })),
-    tail,
-  );
+  const lines = history.frames.map((line) => ({ line }));
+  const start = turnStartAtOrBefore(lines, tailStart(lines, tail));
   return start === 0
     ? history
     : { frames: history.frames.slice(start), truncated: true };
