@@ -10,7 +10,7 @@ interface UpdateFrame {
 }
 
 interface UserMessage {
-  id: string;
+  ids: Set<string>;
   text: string;
   first: number;
 }
@@ -51,11 +51,12 @@ function userMessagesOf(frames: readonly UpdateFrame[]): UserMessage[] {
       open = null;
       return;
     }
-    if (open?.id === id) {
+    if (open !== null) {
+      open.ids.add(id);
       open.text += textOf(update);
       return;
     }
-    open = { id, text: textOf(update), first: index };
+    open = { ids: new Set([id]), text: textOf(update), first: index };
     messages.push(open);
   });
   return messages.map((m) => ({
@@ -77,9 +78,9 @@ function historyMessageFor(
   log: readonly UserMessage[],
   messageId: string,
 ): UserMessage | null {
-  const direct = history.find((m) => m.id === messageId);
+  const direct = history.find((m) => m.ids.has(messageId));
   if (direct) return direct;
-  const sent = log.find((m) => m.id === messageId);
+  const sent = log.find((m) => m.ids.has(messageId));
   if (!sent || sent.text === "") return null;
   const later = laterWithSameText(log, sent);
   const sameText = history.filter((m) => m.text === sent.text);
@@ -89,8 +90,9 @@ function historyMessageFor(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Finds where a rewind or fork cuts the harness's
  * own history: right before the user message being rewritten, whatever sits
- * above it — an agent reply, a tool result, or another user message, as a
- * steered message has. The history is the session-history provider's replay,
+ * above it — an agent reply or a tool result. User messages with nothing
+ * between them are one unit: a batch the harness took as one message, which
+ * a rewrite replaces whole. The history is the session-history provider's replay,
  * each frame stamped with the harness entry it came from (`platform.entry`).
  * The message is named by the id the client shows: the harness's own id after
  * a cold load, or the sender's prompt id for a message the runtime's log

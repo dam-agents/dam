@@ -33,6 +33,7 @@ interface BaseProps {
   userLabel?: string;
   readOnly?: boolean;
   showModel?: boolean;
+  continued?: boolean;
   isLast: boolean;
   hasPendingPermission: boolean;
   pendingNotice?: ReactNode;
@@ -100,6 +101,7 @@ export const ChatMessage = memo(function ChatMessage({
   userLabel = "You",
   readOnly = false,
   showModel = false,
+  continued = false,
   isLast,
   timeLabel,
   timeTitle,
@@ -147,6 +149,7 @@ export const ChatMessage = memo(function ChatMessage({
         className={cn(
           "flex gap-1.5 mb-0.5",
           avatarAgent === undefined ? "items-baseline" : "items-center",
+          continued && "hidden",
         )}
       >
         {isAssistant && avatarAgent !== undefined && (

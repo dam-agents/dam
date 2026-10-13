@@ -115,6 +115,8 @@ describe("rewriteCutOf", () => {
   it("should find a live message through the log's echo of it", () => {
     const log = [
       echo("p1", "My name is Petr, wait 30 seconds."),
+      toolCall("msg_a", "t1"),
+      toolResult("tr1", "t1"),
       echo("p2", "I changed my mind"),
     ];
 
@@ -221,5 +223,40 @@ describe("withOriginalTimes", () => {
       "2026-10-08T07:00:00Z",
       "2026-10-12T10:00:00Z",
     ]);
+  });
+});
+
+describe("rewriteCutOf: a batch", () => {
+  /**
+   * TEST_SCENARIO: Messages sent while the agent worked reached it as one
+   * batch — one harness entry carrying each of them. The runtime's log echoed
+   * them one by one. Rewinding the batch, named by its first message, must
+   * cut right before the whole batch, after the tool result above it.
+   */
+  it("cuts before the whole batch", () => {
+    const history = [
+      user("u1", "Hi, wait 20 seconds."),
+      toolCall("msg_a", "t1"),
+      toolResult("tr1", "t1"),
+      user("u2", "be grumpy"),
+      user("u2", "be funny"),
+      agent("msg_b", "sigh"),
+    ];
+    const log = [
+      echo("p1", "Hi, wait 20 seconds."),
+      toolCall("msg_a", "t1"),
+      toolResult("tr1", "t1"),
+      echo("p2", "be grumpy"),
+      echo("p3", "be funny"),
+    ];
+
+    expect(rewriteCutOf(history, log, "p2")).toEqual({
+      kind: "after",
+      entry: "tr1",
+    });
+    expect(rewriteCutOf(history, [], "u2")).toEqual({
+      kind: "after",
+      entry: "tr1",
+    });
   });
 });

@@ -40,7 +40,7 @@ import {
 } from "../../../lib/persisted-prefs.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import type { AgentView } from "../../../types.js";
+import type { AgentView, Message } from "../../../types.js";
 import { isQueuedSend, rewritePointsOf } from "../../acp/session-projection.js";
 import {
   useHarnessConfigCurrent,
@@ -144,7 +144,12 @@ import {
 } from "../hooks/use-sidebar-panels.js";
 import { draftKey } from "../lib/draft-key.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
-import { dividerLabel, threadItems, timeProps } from "../lib/thread-items.js";
+import {
+  dividerLabel,
+  threadItems,
+  timeProps,
+  userRunsOf,
+} from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
 import type { SessionError } from "../store/sessions.js";
 
@@ -227,6 +232,7 @@ export function ChatView() {
     () => threadItems(shown, runStarts),
     [shown, runStarts],
   );
+  const userRuns = useMemo(() => userRunsOf(items), [items]);
   const deleteMessage = useDeleteUndelivered(selectedAgent, sessionId);
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
@@ -898,17 +904,24 @@ export function ChatView() {
                             </div>
                           );
                         }
+                        if (userRuns.inner.has(item.message.id)) return null;
                         const turn = turnForMessage.get(item.message.id);
-                        const chatMessage = (
+                        const members = userRuns.runs.get(item.message.id) ?? [
+                          item.message,
+                        ];
+                        const lastIndex = item.index + members.length - 1;
+                        const bubbles = members.map((m, k) => (
                           <ChatMessage
-                            message={item.message}
+                            key={m.id}
+                            message={m}
+                            continued={k > 0}
                             avatarAgent={agentView ?? undefined}
-                            isLast={item.index === shown.length - 1}
+                            isLast={item.index + k === shown.length - 1}
                             showModel={runStarts.length > 0}
-                            {...timeProps(item.message.at, now)}
+                            {...timeProps(m.at, now)}
                             hasPendingPermission={hasPendingPermission}
                             pendingNotice={
-                              item.index === shown.length - 1
+                              item.index + k === shown.length - 1
                                 ? startNotice
                                 : undefined
                             }
@@ -917,7 +930,22 @@ export function ChatView() {
                             onDelete={deleteMessage}
                             onLoadOlder={loadOlderKeepingScroll}
                           />
-                        );
+                        ));
+                        const chatMessage =
+                          members.length === 1 ? (
+                            bubbles[0]
+                          ) : (
+                            <div className="flex flex-col gap-2">{bubbles}</div>
+                          );
+                        const runMessage: Message =
+                          members.length === 1
+                            ? item.message
+                            : {
+                                ...item.message,
+                                parts: members.flatMap((m) =>
+                                  m.parts.filter((p) => p.kind === "text"),
+                                ),
+                              };
                         const upTo = rewritePoints.get(item.message.id);
                         const editingHere =
                           rewriting?.messageId === item.message.id;
@@ -928,7 +956,7 @@ export function ChatView() {
                         const content =
                           rewritable && rewritePoints.has(item.message.id) ? (
                             <RewritableMessage
-                              message={item.message}
+                              message={runMessage}
                               onRewrite={(mode, text) =>
                                 rewriteFrom({
                                   messageId: item.message.id,
@@ -956,7 +984,7 @@ export function ChatView() {
                             {editingHere && rewriting && (
                               <RewriteMarker
                                 mode={rewriting.mode}
-                                following={shown.length - 1 - item.index}
+                                following={shown.length - 1 - lastIndex}
                               />
                             )}
                             {selectedAgent && sessionId && turn && (

@@ -25,6 +25,7 @@ export interface FrameMeta {
   model?: string;
   turnId?: string;
   stopReason?: string;
+  block?: number;
 }
 
 export type UpdateHandler = (

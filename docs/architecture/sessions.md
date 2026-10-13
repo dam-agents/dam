@@ -40,7 +40,8 @@ Otherwise, or on provider failure, the runtime's own `session/load` fills the lo
 Waiters are then served from the log; the UI also reads its newest tail as data and renders it while the load engages the session.
 
 **Rewinding and forking from a message.** A user can take an earlier message of an idle chat Session, edit it, and either **rewind** the conversation to it or **fork** a new one from it.
-A harness cannot cut a session short in place, so one that can **fork** copies the Session up to the entry right before that message — the agent's reply, a tool result, or a message sent mid-turn, which lands wherever the agent took it.
+A harness cannot cut a session short in place, so one that can **fork** copies the Session up to the entry right before that message — the agent's reply, or a tool result where a message sent mid-turn landed.
+User messages with nothing between them are one **batch**, which the agent took as one message: the chat shows them under one header and rewrites them as one, editing their texts joined by a blank line and sending the result as one message.
 The runtime finds that entry in the harness's own history, through the session-history provider, by the message's id or, for a message sent live, by its text; a message that history does not hold is refused rather than cut somewhere else, and only for the first message does an empty Session stand in.
 The copy's history is loaded before anything else and the edited message is its first new prompt.
 A rewind gives the copy the original's place, title and creation time and then deletes the original like any deleted Session, so the conversation keeps going under a new id; a fork leaves the original as it was and lists the copy as a new conversation.
@@ -64,8 +65,9 @@ Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api
 A harness that can **steer** takes a prompt into the turn it is running rather than after it.
 A web UI prompt sent mid-turn is then **steered** — a fourth fate, reported in place of a start — and queued prompts drain into a running turn the same way.
 The harness takes a steer by aborting whatever the agent is generating, so a steer waits for a **steer point** — the agent neither writing nor running a tool, which is right after its tool calls finish — and the agent reads the prompt beside their results instead of having a reply cut off.
-A steer starts the agent generating again, so a steer point takes one prompt and the next waits for the next point — steered together, the harness would merge them into one message.
-A turn that ends first starts the prompt as the next turn; a prompt never waits longer than a minute for a steer point.
+Prompts waiting together go as one batch — one message carrying each of them in order — since a later one may change what an earlier one asked; separate steers sent together would be merged by the harness on its own, in no reliable order.
+A steer starts the agent generating again, so prompts sent after it wait for the next steer point.
+A turn that ends first starts the waiting prompts as the next turn, again as one batch; a prompt never waits longer than a minute for a steer point.
 Until then it is an ordinary queued prompt the user can still change.
 A refused steer queues again at the head, so the agent receives each prompt once and in order.
 Scheduled fires, invocation outcomes and CLI runs always queue.

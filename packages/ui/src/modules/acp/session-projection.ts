@@ -143,7 +143,7 @@ export function applyUpdate(
 function applyUpdateOf(
   messages: Message[],
   update: AcpUpdate,
-  { at, telemetryPromptId, turnId }: FrameMeta,
+  { at, telemetryPromptId, turnId, block }: FrameMeta,
 ): Message[] {
   switch (update.sessionUpdate) {
     case "platform_turn_ended": {
@@ -180,7 +180,7 @@ function applyUpdateOf(
       return appendClippedMarker(messages, update.older);
 
     case "user_message_chunk":
-      return handleUserChunk(messages, update, at);
+      return handleUserChunk(messages, update, at, block);
 
     case "agent_message_chunk":
       return handleAgentChunk(messages, update, "text", at, turnId);
@@ -579,6 +579,7 @@ function handleUserChunk(
   messages: Message[],
   u: ContentChunk,
   at?: string,
+  block?: number,
 ): Message[] {
   const queued = u._meta?.queued === true;
   const steered = u._meta?.steered === true;
@@ -602,6 +603,9 @@ function handleUserChunk(
     return queued ? messages : closeActiveAssistant(messages);
 
   if (queued) return appendQueuedUser(messages, mid, bubbles.flat(), at);
+
+  if (block !== undefined && mid !== null && messages.some((m) => m.id === mid))
+    return withBatchBubble(messages, mid, bubbles.flat(), at, steered);
 
   if (steered && mid !== null) {
     if (messages.some((m) => m.id === mid))
@@ -1033,6 +1037,34 @@ function stampActiveReply<K extends ReplyStampKey>(
   const i = activeReplyIndex(messages);
   if (i === -1 || messages[i][key] === value) return messages;
   return messages.map((x, j) => (j === i ? { ...x, [key]: value } : x));
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Messages the agent took as one batch come back
+ * from the harness's history as one user message with a text block each.
+ * Each block is its own bubble, right after the batch's earlier ones, with an
+ * id derived from the message's own.
+ */
+function withBatchBubble(
+  messages: Message[],
+  mid: string,
+  parts: MessagePart[],
+  at: string | undefined,
+  steered: boolean,
+): Message[] {
+  const members = messages.flatMap((m, i) =>
+    m.id === mid || m.id.startsWith(`${mid}:`) ? [i] : [],
+  );
+  const after = members[members.length - 1]! + 1;
+  const bubble: Message = {
+    id: `${mid}:${String(members.length)}`,
+    role: "user",
+    parts,
+    streaming: false,
+    ...(at !== undefined && { at }),
+    ...(steered && { steered: true }),
+  };
+  return [...messages.slice(0, after), bubble, ...messages.slice(after)];
 }
 
 function appendOrExtendUser(

@@ -9,8 +9,12 @@ function adapterDir() {
     .map((dir) => join(dir, "claude-agent-acp"))
     .find((candidate) => existsSync(candidate));
   if (!bin) throw new Error("claude-agent-acp not found on PATH");
-  const shim = readFileSync(bin, "utf8").match(/^# aube-bin-shim v\d+ target=(\S+)$/m);
-  return dirname(dirname(shim ? resolve(dirname(bin), shim[1]) : realpathSync(bin)));
+  const shim = readFileSync(bin, "utf8").match(
+    /^# aube-bin-shim v\d+ target=(\S+)$/m,
+  );
+  return dirname(
+    dirname(shim ? resolve(dirname(bin), shim[1]) : realpathSync(bin)),
+  );
 }
 
 async function loadModules() {
@@ -55,6 +59,14 @@ function stampOf(message) {
     : null;
 }
 
+function isUserText(notification) {
+  const update = notification?.update;
+  return (
+    update?.sessionUpdate === "user_message_chunk" &&
+    update.content?.type === "text"
+  );
+}
+
 function objectOr(value) {
   return typeof value === "object" && value !== null ? value : {};
 }
@@ -80,7 +92,7 @@ function modelOf(message, parentToolUseId) {
     : null;
 }
 
-function withStamp(notification, entry, at, telemetryPromptId, model) {
+function withStamp(notification, entry, block, at, telemetryPromptId, model) {
   const meta = objectOr(notification._meta);
   return {
     ...notification,
@@ -89,6 +101,7 @@ function withStamp(notification, entry, at, telemetryPromptId, model) {
       platform: {
         ...objectOr(meta.platform),
         ...(entry ? { entry } : {}),
+        ...(block > 0 ? { block } : {}),
         ...(at !== null ? { at } : {}),
         ...(telemetryPromptId !== null ? { telemetryPromptId } : {}),
         ...(model !== null ? { model } : {}),
@@ -144,6 +157,7 @@ export async function loadHistory(sessionId) {
       content = agent.stripLocalCommandMetadata(content);
       if (content === null) continue;
     }
+    let userTextBlock = 0;
     for (const notification of agent.toAcpNotifications(
       content,
       message.message.role,
@@ -166,6 +180,7 @@ export async function loadHistory(sessionId) {
           params: withStamp(
             notification,
             messageId,
+            isUserText(notification) ? userTextBlock++ : 0,
             at,
             telemetryPromptId,
             modelOf(message, parentToolUseId),

@@ -114,8 +114,13 @@ export interface PromptSchedulerDeps {
  * queue the scheduler holds.
  * A steerable prompt that arrives while a turn runs and nothing waits ahead of
  * it is steered into that turn instead of queued, when the harness steers; so
- * is the head of the queue, one at a time, whenever a turn is running and no
- * steer is out, so a queue drains into the turn in order. A steer waits for a
+ * is the queue, whenever a turn is running and no steer is out. Steerable
+ * prompts waiting together go as one batch — one message carrying each of
+ * them in order — because a later one may change what an earlier one asked,
+ * and because the harness merges steers that arrive together on its own, in
+ * no reliable order. A turn that ends with steerable prompts waiting starts
+ * them the same way: the first opens the turn carrying all of them, and the
+ * rest join it as steered. A steer waits for a
  * steer point — the agent is not writing and has no tool call open, which is
  * right after its tools finish — because the harness aborts whatever the agent
  * is generating to take a steer, and would cut a reply off mid-sentence. Until
@@ -123,10 +128,10 @@ export interface PromptSchedulerDeps {
  * starts it as the next turn, and a prompt that has waited steerWaitMs is
  * steered regardless. The steer is a round
  * trip: while it is out, the queue holds, so a turn ending in that window
- * cannot start a later prompt ahead of it. Injected, the prompt is part of the
- * running turn and its sender is answered when that turn ends; refused, it
- * goes back to the head of the queue and waits for the next turn. Either way
- * it reaches the harness once.
+ * cannot start a later prompt ahead of it. Injected, each prompt of the batch
+ * is part of the running turn and its sender is answered when that turn ends;
+ * refused, the batch goes back to the head of the queue in order and waits for
+ * the next turn. Either way each prompt reaches the harness once.
  * A turn becomes active only when the harness actually took the frame:
  * sendToAgent reports delivery, and on failure the prompt stays queued and
  * no promptStarted is sent. The turn-started and turn-ended callbacks fire on
@@ -173,6 +178,7 @@ export function createPromptScheduler(
     }
   >();
   const steering = new Map<string, PromptSubmission>();
+  const steeringBatches = new WeakMap<PromptSubmission, PromptSubmission[]>();
   const steerTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const queues = new Map<string, PromptSubmission[]>();
   const pendingSettings = new Map<string, PromptSubmission[]>();
@@ -307,7 +313,44 @@ export function createPromptScheduler(
     );
   }
 
-  function beginSteer(entry: PromptSubmission): void {
+  function takeBatch(queue: PromptSubmission[]): PromptSubmission[] {
+    const head = queue.shift();
+    if (head === undefined) return [];
+    const batch = [head];
+    while (
+      head.steerable === true &&
+      queue[0]?.steerable === true &&
+      deps.canStart(queue[0])
+    )
+      batch.push(queue.shift()!);
+    return batch;
+  }
+
+  function leadOf(batch: PromptSubmission[]): PromptSubmission {
+    const head = batch[0]!;
+    if (batch.length === 1) return head;
+    const frame = head.frame as { params?: Record<string, unknown> };
+    const prompt = batch.flatMap(
+      (m) =>
+        ((m.frame as { params?: { prompt?: unknown[] } }).params?.prompt ??
+          []) as unknown[],
+    );
+    return {
+      ...head,
+      frame: { ...frame, params: { ...frame.params, prompt } },
+    };
+  }
+
+  function joinTurn(sessionId: string, follower: PromptSubmission): void {
+    notifyAccepted(follower, false, true);
+    const active = activeTurns.get(sessionId);
+    active?.steered.push(follower);
+    deps.onSteered?.(follower, active === undefined);
+  }
+
+  function beginSteer(batch: PromptSubmission[]): void {
+    const entry = leadOf(batch);
+    steeringBatches.set(entry, batch);
     steering.set(entry.sessionId, entry);
     const steer = deps.steer;
     if (steer === undefined) return;
@@ -323,10 +366,10 @@ export function createPromptScheduler(
     const head = queue?.[0];
     if (queue === undefined || head === undefined) return;
     if (canSteerNow(head)) {
-      queue.shift();
+      const batch = takeBatch(queue);
       if (queue.length === 0) queues.delete(sessionId);
       deps.onQueueChanged?.(sessionId);
-      beginSteer(head);
+      beginSteer(batch);
       return;
     }
     if (
@@ -349,18 +392,18 @@ export function createPromptScheduler(
     const sessionId = entry.sessionId;
     if (steering.get(sessionId) !== entry) return;
     steering.delete(sessionId);
+    const batch = steeringBatches.get(entry) ?? [entry];
     if (outcome === "refused") {
-      entry.steerRefused = true;
-      enqueue(entry, true);
-      notifyAccepted(entry, true);
+      for (const member of [...batch].reverse()) {
+        member.steerRefused = true;
+        enqueue(member, true);
+      }
+      for (const member of batch) notifyAccepted(member, true);
       maybeStartNext(sessionId);
       return;
     }
-    notifyAccepted(entry, false, true);
-    const active = activeTurns.get(sessionId);
-    active?.steered.push(entry);
-    deps.onSteered?.(entry, active === undefined);
-    if (active === undefined) maybeStartNext(sessionId);
+    for (const member of batch) joinTurn(sessionId, member);
+    if (!activeTurns.has(sessionId)) maybeStartNext(sessionId);
     else steerFromQueue(sessionId);
   }
 
@@ -399,13 +442,14 @@ export function createPromptScheduler(
     const next = queue?.[0];
     if (queue === undefined || next === undefined) return;
     if (!deps.canStart(next)) return;
-    queue.shift();
-    if (!start(next)) {
-      queue.unshift(next);
+    const batch = takeBatch(queue);
+    if (!start(leadOf(batch))) {
+      queue.unshift(...batch);
       return;
     }
     if (queue.length === 0) queues.delete(sessionId);
     deps.onQueueChanged?.(sessionId);
+    for (const follower of batch.slice(1)) joinTurn(sessionId, follower);
     steerFromQueue(sessionId);
   }
 
@@ -432,7 +476,7 @@ export function createPromptScheduler(
     submit(submission) {
       const sessionId = submission.sessionId;
       if (!queues.get(sessionId)?.length && canSteerNow(submission)) {
-        beginSteer(submission);
+        beginSteer([submission]);
         return "steering";
       }
       if (
