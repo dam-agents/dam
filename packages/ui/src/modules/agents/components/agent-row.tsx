@@ -39,7 +39,7 @@ import { UpdateAvailableAction } from "./update-available-action.js";
 import { VmRuntimeBadge } from "./vm-runtime-badge.js";
 
 const SECOND_LINE_ITEM =
-  "rounded-none border-0 bg-transparent p-0 text-sm tracking-normal text-muted-foreground";
+  "rounded-none border-0 bg-transparent p-0 text-sm tracking-normal text-muted-foreground dark:text-muted-foreground";
 
 interface Props {
   agent: AgentView;
@@ -127,7 +127,7 @@ export function AgentRow({
           <GatewayFailureBadge agent={agent} />
           <UnsupportedContributionsBadge agent={agent} />
         </div>
-        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground [&>*+*]:before:mr-1.5 [&>*+*]:before:content-['·']">
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground [&>*+*]:before:mr-1.5 [&>*+*]:before:content-['·'_/_'']">
           <OnboardingTag agent={agent} className={SECOND_LINE_ITEM} />
           {kitBadge && (
             <span
@@ -156,8 +156,9 @@ export function AgentRow({
               keptWork={keptWork}
               className={cn(
                 SECOND_LINE_ITEM,
-                display.state === "error" && "text-danger",
-                display.state === "over_budget" && "text-warning-fg",
+                display.state === "error" && "text-danger dark:text-danger",
+                display.state === "over_budget" &&
+                  "text-warning-fg dark:text-warning-fg",
               )}
             />
           </span>
