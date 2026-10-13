@@ -98,7 +98,8 @@ Expect 6 to 10 minutes per node (drain plus an RHCOS reboot), times the node cou
    oc get mcp
    ```
 
-2. Pause those pools, so MCO renders both changes into one config and each node reboots once:
+2. Pause those pools, so MCO renders both changes into one config and each node reboots once.
+   `<custom-pool>` stands for every custom pool that inherits `worker` MachineConfigs, here and below; leave it out on a cluster with none.
 
    ```sh
    oc patch mcp worker <custom-pool> --type merge -p '{"spec":{"paused":true}}'
@@ -116,7 +117,7 @@ Expect 6 to 10 minutes per node (drain plus an RHCOS reboot), times the node cou
 
    ```sh
    oc get kubeletconfig worker-image-gc -o jsonpath='{.status.conditions[*].type}={.status.conditions[*].status}{"\n"}'
-   oc get mcp worker <custom-pool> -o jsonpath='{range .items[*]}{.metadata.name}: {.spec.configuration.source[*].name}{"\n"}{end}'
+   oc get mcp worker <custom-pool> -o custom-columns='NAME:.metadata.name,SOURCES:.spec.configuration.source[*].name'
    ```
 
    Each list must name `99-worker-platform-host-dirs` and `99-worker-generated-kubelet`; repeat until it does.
@@ -155,7 +156,7 @@ Then the same pause, delete, check, unpause sequence, which rolls the pools once
 oc patch mcp worker <custom-pool> --type merge -p '{"spec":{"paused":true}}'
 oc delete kubeletconfig worker-image-gc
 oc delete mc 99-worker-platform-host-dirs
-oc get mcp worker <custom-pool> -o jsonpath='{range .items[*]}{.metadata.name}: {.spec.configuration.source[*].name}{"\n"}{end}'
+oc get mcp worker <custom-pool> -o custom-columns='NAME:.metadata.name,SOURCES:.spec.configuration.source[*].name'
 oc patch mcp worker <custom-pool> --type merge -p '{"spec":{"paused":false}}'
 ```
 
