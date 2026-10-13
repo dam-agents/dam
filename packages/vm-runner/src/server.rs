@@ -10,8 +10,8 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::api::{
-    MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage, SeedResult,
-    State, StorageUsage, REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_OUT_OF_CAPACITY,
+    CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage,
+    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_OUT_OF_CAPACITY,
     REASON_STORAGE_FULL,
 };
 use crate::cache::{self, pinned_digest};
@@ -134,6 +134,8 @@ struct MachineEntry {
     version: u64,
     acting_mib: i32,
     resident_mib: Option<i32>,
+    cpu: Option<(Instant, u64)>,
+    cpu_milli: u64,
     cancel: Option<CancellationToken>,
     deletes: u32,
 }
@@ -174,6 +176,7 @@ struct Machines {
     closed: bool,
     entries: HashMap<String, MachineEntry>,
     pressure: Pressure,
+    cpu: crate::cpu::Window,
 }
 
 pub struct Server {
@@ -367,6 +370,9 @@ impl Server {
                     let Some(server) = sampler.upgrade() else {
                         return;
                     };
+                    if let Some(stat) = crate::cpu::stat(&cgroup) {
+                        locked(&server.machines).cpu.push(Instant::now(), stat);
+                    }
                     match crate::pressure::working_set_mib(&cgroup) {
                         Ok(mib) => server.sample_pressure(i32::try_from(mib).unwrap_or(i32::MAX)),
                         Err(e) => {
@@ -1354,7 +1360,14 @@ impl Server {
             .into_iter()
             .map(|id| {
                 let status = self.status(&id);
+                let cpu_milli = locked(&self.machines)
+                    .entries
+                    .get(&id)
+                    .filter(|e| e.resident_mib.is_some())
+                    .map_or(0, |e| e.cpu_milli);
                 MachineUsage {
+                    disk_used_bytes: self.runtime.disk_used_bytes(&id).unwrap_or(0),
+                    cpu_milli,
                     id,
                     state: status.state,
                     used_mib: status.used_mib,
@@ -1362,6 +1375,19 @@ impl Server {
                 }
             })
             .collect();
+        let cpu = self
+            .config
+            .cgroup_dir
+            .as_deref()
+            .and_then(crate::cpu::limit_milli)
+            .and_then(|limit_milli| {
+                let (used_milli, throttled_percent) = locked(&self.machines).cpu.figures()?;
+                Some(CpuUsage {
+                    limit_milli,
+                    used_milli,
+                    throttled_percent,
+                })
+            });
         Ok(RunnerUsage {
             storage: StorageUsage {
                 used_bytes: storage.used,
@@ -1371,6 +1397,7 @@ impl Server {
                 limit_mib: self.memory_limit_mib(),
                 committed_mib: committed,
             },
+            cpu,
             machines,
         })
     }
@@ -1682,12 +1709,25 @@ impl Server {
             },
             None => self.look(id),
         };
-        let resident = (seen.state == State::Running)
-            .then(|| self.runtime.resident_mib(id))
-            .flatten();
+        let running = seen.state == State::Running;
+        let resident = running.then(|| self.runtime.resident_mib(id)).flatten();
+        let cpu = running
+            .then(|| self.runtime.cpu_usec(id))
+            .flatten()
+            .map(|usec| (Instant::now(), usec));
         self.record(id, seen, Some(looked));
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
             entry.resident_mib = resident;
+            entry.cpu_milli = match (entry.cpu, cpu) {
+                (Some((from, before)), Some((to, now))) if now >= before => {
+                    let micros = to.duration_since(from).as_micros() as u64;
+                    ((now - before) * 1000)
+                        .checked_div(micros)
+                        .unwrap_or(entry.cpu_milli)
+                }
+                _ => 0,
+            };
+            entry.cpu = cpu;
         }
         self.note_slow_boot(id);
         if !self.dead_for_long(id) {
