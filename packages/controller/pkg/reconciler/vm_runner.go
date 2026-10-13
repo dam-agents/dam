@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -863,6 +864,23 @@ func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (str
 		}
 	}
 	return vmrunner.ReasonNotReady, starting
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: when the kernel last OOM-killed the owner's runner, from its pods' container statuses; zero when it never did or the pods cannot be read. A pod keeps only its container's last termination, so a kill older than the restart after it is forgotten, which the rule that reads this allows for.
+func (r *AgentReconciler) runnerOOMKilledAt(ctx context.Context, owner string) time.Time {
+	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labels.Set(vmRunnerSelector(owner)).String(),
+	})
+	if err != nil {
+		return time.Time{}
+	}
+	var at time.Time
+	for i := range pods.Items {
+		if killed := runnerOOMKilledAt(&pods.Items[i]); killed.After(at) {
+			at = killed
+		}
+	}
+	return at
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what cert-manager says about a Certificate it has not issued yet — a missing issuer, a CA that is not ready, a rate limit — from its Ready condition. Empty when it says nothing, or the Certificate cannot be read.

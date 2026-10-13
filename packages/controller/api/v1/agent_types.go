@@ -278,6 +278,13 @@ const ReasonStuckOnSupersededRevision = "StuckOnSupersededRevision"
 // scheduler's own account.
 const ReasonMachineRunnerUnschedulable = "MachineRunnerUnschedulable"
 
+// ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent the
+// kernel took down when it OOM-killed the owner's VM runner, from the
+// runner pod's last termination, until the agent is ready again. Every
+// machine of the owner is a process of that pod, so they all restart at
+// once. Not a Machine* reason: the agent is starting again, not failed.
+const ReasonRunnerOutOfMemory = "RunnerOutOfMemory"
+
 // ReasonHomeVolumeFull is stamped on AgentPodReady when the agent container
 // exited because its home volume ran out of space. agent-runtime reports it as
 // the container's termination message, since the exit code alone cannot tell

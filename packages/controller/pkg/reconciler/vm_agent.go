@@ -549,6 +549,12 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	if reason == "" {
 		reason = vmrunner.ReasonNotReady
 	}
+	running, _ := r.vmRunning.Load(agent.Name)
+	killedAt := func() time.Time { return r.runnerOOMKilledAt(ctx, agent.Labels[envoyOwnerLabel]) }
+	if runnerOOMTookDown(apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionAgentPodReady), running == true, st.Ready, killedAt) {
+		reason = apiv1.ReasonRunnerOutOfMemory
+		msg = "its owner's VM memory ran out, so every VM agent of theirs that was running restarted; stop agents you are not using to free memory"
+	}
 	restartReason := ""
 	if st.Restarts > 0 {
 		restartReason = "GuestStoppedAnswering"
@@ -568,6 +574,21 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 				setStartFailure(s, failure, agent.Generation)
 			}
 		})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the runner's OOM kill is what keeps this agent down: it should run and is not ready, and it was ready at or before the kill, or already carries the reason, which then lasts through the runner's restart and the machine's boot. An agent woken after the kill was not taken down by it. The runner pod is read only when a ready agent goes down, so a booting agent costs no read.
+func runnerOOMTookDown(prev *metav1.Condition, running, ready bool, killedAt func() time.Time) bool {
+	if !running || ready || prev == nil {
+		return false
+	}
+	if prev.Reason == apiv1.ReasonRunnerOutOfMemory {
+		return true
+	}
+	if prev.Status != metav1.ConditionTrue {
+		return false
+	}
+	at := killedAt()
+	return !at.IsZero() && !prev.LastTransitionTime.After(at)
 }
 
 func wantsNesting(agent *apiv1.Agent, defaults config.AgentTemplateDefaults) bool {

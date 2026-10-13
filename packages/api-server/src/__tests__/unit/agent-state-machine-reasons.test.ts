@@ -38,4 +38,8 @@ describe("computeAgentState with a machine reason", () => {
     expect(computeAgentState(notReady("MachineNotReady"))).toBe("starting");
     expect(computeAgentState(notReady())).toBe("starting");
   });
+
+  it("leaves a machine rebooting after its runner's OOM kill as starting", () => {
+    expect(computeAgentState(notReady("RunnerOutOfMemory"))).toBe("starting");
+  });
 });
