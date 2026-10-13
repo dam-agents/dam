@@ -1,6 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import type { BudgetReserved, BudgetsService } from "api-server-api";
 import { parseCpuMilli, parseMemoryBytes } from "../../../core/quantities.js";
+import {
+  storageRefusal,
+  vmUsageView,
+  type RunnerUsage,
+} from "../domain/vm-usage.js";
 
 export interface BudgetedAgent {
   id: string;
@@ -12,11 +17,14 @@ export interface BudgetedAgent {
   overBudget: boolean;
 }
 
+export type CeilingOverride = Partial<{ cpu: string; memory: string }>;
+
 interface BudgetsServiceDeps {
   listAgents(): Promise<BudgetedAgent[]>;
-  readCeilingOverride(): Promise<{ cpu: string; memory: string } | null>;
+  readCeilingOverride(): Promise<CeilingOverride | null>;
   defaultCeiling: { cpu: string; memory: string };
   slotSize: { cpu: string; memory: string };
+  readVmUsage(): Promise<RunnerUsage | null>;
 }
 
 export interface ResizeGate {
@@ -27,7 +35,7 @@ export interface ResizeGate {
 }
 
 export function createResizeGate(
-  deps: Omit<BudgetsServiceDeps, "slotSize">,
+  deps: Omit<BudgetsServiceDeps, "slotSize" | "readVmUsage">,
 ): ResizeGate {
   return {
     async assertResizeFits(agent, newSize) {
@@ -44,7 +52,7 @@ export function createResizeGate(
         deps.listAgents(),
         deps.readCeilingOverride(),
       ]);
-      const ceiling = override ?? deps.defaultCeiling;
+      const ceiling = { ...deps.defaultCeiling, ...override };
       const { cpuMilli, memoryBytes } = reservedBy(
         agents.filter((a) => a.id !== agent.id),
       );
@@ -81,7 +89,7 @@ export function createSpawnSizeGate(
   return {
     async assertCanEverFit(limits) {
       const override = await deps.readCeilingOverride();
-      const ceiling = override ?? deps.defaultCeiling;
+      const ceiling = { ...deps.defaultCeiling, ...override };
       const cpuMilli = parseCpuMilli(limits.cpu);
       const memoryBytes = parseMemoryBytes(limits.memory);
       const ceilCpu = parseCpuMilli(ceiling.cpu);
@@ -97,15 +105,31 @@ export function createSpawnSizeGate(
   };
 }
 
+export interface StorageGate {
+  assertCanCreateVm(): Promise<void>;
+}
+
+export function createStorageGate(
+  deps: Pick<BudgetsServiceDeps, "readVmUsage">,
+): StorageGate {
+  return {
+    async assertCanCreateVm() {
+      const refusal = storageRefusal(await deps.readVmUsage());
+      if (refusal) throw refusal;
+    },
+  };
+}
+
 export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
   return {
     async reserved(): Promise<BudgetReserved> {
-      const [agents, override] = await Promise.all([
+      const [agents, override, vmUsage] = await Promise.all([
         deps.listAgents(),
         deps.readCeilingOverride(),
+        deps.readVmUsage(),
       ]);
       const { cpuMilli, memoryBytes } = reservedBy(agents);
-      const ceiling = override ?? deps.defaultCeiling;
+      const ceiling = { ...deps.defaultCeiling, ...override };
       return {
         cpu: {
           reservedMilli: cpuMilli,
@@ -119,6 +143,18 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
           cpuMilli: parseCpuMilli(deps.slotSize.cpu),
           memoryBytes: parseMemoryBytes(deps.slotSize.memory),
         },
+        ...(vmUsage
+          ? {
+              vm: vmUsageView(
+                vmUsage,
+                new Set(
+                  agents
+                    .filter((a) => a.spec.backend?.type === "vm")
+                    .map((a) => a.id),
+                ),
+              ),
+            }
+          : {}),
       };
     },
   };

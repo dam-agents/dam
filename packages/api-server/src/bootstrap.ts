@@ -11,6 +11,7 @@ import {
   createLeaseApi,
   podBaseUrl,
 } from "./modules/agents/infrastructure/k8s.js";
+import { composeStorageGate } from "./modules/budgets/index.js";
 import { createKitUpdateMarks } from "./modules/agents/infrastructure/kit-update-marks.js";
 import {
   AGENTS_PLURAL,
@@ -535,7 +536,10 @@ export async function bootstrap() {
     namespace: config.namespace,
     bullConnection,
     agentRunningPort: {
-      isRunning: (agentId) => agentsRepo.isReady(agentId),
+      // UNIT_BOUNDARY_DESCRIPTION: a migrated machine is Ready only after the Backend switches, but its runtime waits just 15 s for the env the copy left behind before it starts the harness without it. A verified machine already holds the Agent's Service, so it takes the push at once.
+      isRunning: async (agentId) =>
+        (await agentsRepo.isReady(agentId)) ||
+        agentsRepo.peekCached(agentId)?.runtimeMigration?.phase === "verified",
     },
     snapshotWriter: createHarnessConfigSnapshotWriter({
       db,
@@ -1433,6 +1437,7 @@ export async function bootstrap() {
   const harnessAgentsServiceFor = (owner: string) =>
     composeAgentsModule({
       api,
+      storageGate: composeStorageGate({ k8s: k8sClient, owner }),
       resolveSlackWorkspace,
       agentStateCache,
       namespace: config.namespace,

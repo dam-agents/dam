@@ -181,8 +181,6 @@ export type RuntimeMigrationRefusal = Exclude<
 
 export interface RuntimeMigrationPlan {
   unmovable: UnmovablePath[];
-  storageSize: string;
-  storageResized: boolean;
   bootsSleepingAgent: boolean;
   retentionMs: number | null;
   refusal: RuntimeMigrationRefusal | null;

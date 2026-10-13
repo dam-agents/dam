@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,14 +27,18 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
@@ -620,7 +625,7 @@ func markGatewayReady(t *testing.T, r *AgentReconciler) {
 	require.NoError(t, err)
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: GatewayName("my-agent") + "-0", Namespace: "test-agents",
-			Labels: map[string]string{"controller-revision-hash": "rev-1"}},
+			Labels: map[string]string{"controller-revision-hash": "rev-1", LabelAgent: "my-agent"}},
 		Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 	}
 	_, err = r.client.CoreV1().Pods("test-agents").Create(ctx, pod, metav1.CreateOptions{})
@@ -856,9 +861,9 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	r, _, _ := setupVMReconciler(t, agent)
 	ctx := context.Background()
 
-	_, _, err := r.ensureRunner(ctx, "owner-a", runnerDemand{})
+	_, _, err := r.ensureRunner(ctx, "owner-a")
 	require.ErrorIs(t, err, errRunnerTLSPending, "a runner is not dialled before cert-manager issues its certificate")
-	_, _, err = r.ensureRunner(ctx, "owner-b", runnerDemand{})
+	_, _, err = r.ensureRunner(ctx, "owner-b")
 	require.ErrorIs(t, err, errRunnerTLSPending)
 
 	a, b := r.runnerName("owner-a"), r.runnerName("owner-b")
@@ -931,6 +936,42 @@ func TestVMBackendSizesOneDiskRatherThanSummingMounts(t *testing.T) {
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
 	assert.Equal(t, 10, node.spec("my-agent").StorageGiB, "the Agent's storage size, not 4+4")
+}
+
+// TEST_SCENARIO: a vm agent has no disk size of its own: once its runner reports the machine's disk, which only a runner that grows a disk at the next start does, the machine is asked for the owner's whole storage pool. Before that the runner may be an older release that would reboot a running machine to grow it, so the Agent's own size is kept.
+func TestTheMachineDiskIsTheOwnersPoolOnceTheRunnerReportsDisks(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, 10, node.spec("my-agent").StorageGiB, "no disk reported yet: the Agent's own size")
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, Port: 31000, DiskGiB: 10})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, 100, node.spec("my-agent").StorageGiB, "the owner's pool, runner.storage")
+}
+
+// TEST_SCENARIO: the api-server reads an owner's runner with what the usage Secret holds: the runner's URL, the CA its certificate chains to, and a usage capability. It must never hold the token, which drives every route of the machine API, nor the runner's TLS key.
+func TestTheUsageSecretHoldsACapabilityAndNeverTheToken(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	secrets := r.client.CoreV1().Secrets(r.config.Namespace)
+	usage, err := secrets.Get(ctx, r.runnerUsageName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	token, err := secrets.Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "true", usage.Labels[vmRunnerUsageLabel])
+	assert.Equal(t, testOwner, usage.Labels[envoyOwnerLabel])
+	assert.Equal(t, vmrunner.MintUsageCapability(string(token.Data["token"])), string(usage.Data["capability"]))
+	assert.Equal(t, fmt.Sprintf("https://%s:%d", r.runnerHost(testOwner), vmRunnerPort), string(usage.Data["url"]))
+	assert.ElementsMatch(t, []string{"url", "ca.crt", "capability"}, slices.Collect(maps.Keys(usage.Data)))
+	for _, v := range usage.Data {
+		assert.NotContains(t, string(v), string(token.Data["token"]))
+	}
 }
 
 // TEST_SCENARIO: the default template's mounts — HOME persisted, /tmp not — are what every shipped template and starter kit declares, and they are exactly what a machine already does: HOME on the disk, everything else discarded with the root at the next stop. So the common case reconciles with nothing to decide.
@@ -1931,4 +1972,203 @@ func TestAMachinesSecretsAreReadInTwoRounds(t *testing.T) {
 	assert.True(t, reached)
 	assert.Equal(t, "MITM-CA", node.spec("my-agent").CACert)
 	assert.Less(t, elapsed, 3*delay, "the Secrets were read in more than two rounds")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the fake clientset neither sets resourceVersions nor checks them, so a write sent from a stale cache would pass. This stamps a new version on every write of the cached kinds, bumps a StatefulSet's generation on a spec update, and refuses an update whose version is not the stored one, as the API server does.
+func versionWrites(client *fake.Clientset) {
+	version := int64(100)
+	for _, kind := range []string{"statefulsets", "deployments", "pods"} {
+		client.PrependReactor("*", kind, func(action k8stesting.Action) (bool, runtime.Object, error) {
+			write, ok := action.(interface{ GetObject() runtime.Object })
+			if !ok || action.GetVerb() != "create" && action.GetVerb() != "update" {
+				return false, nil, nil
+			}
+			obj, err := apimeta.Accessor(write.GetObject())
+			if err != nil {
+				return true, nil, err
+			}
+			if action.GetVerb() == "update" {
+				stored, err := client.Tracker().Get(action.GetResource(), action.GetNamespace(), obj.GetName())
+				if err != nil {
+					return true, nil, err
+				}
+				current, _ := apimeta.Accessor(stored)
+				if obj.GetResourceVersion() != current.GetResourceVersion() {
+					return true, nil, k8serrors.NewConflict(action.GetResource().GroupResource(), obj.GetName(), errors.New("the object has been modified"))
+				}
+				if kind == "statefulsets" && action.GetSubresource() == "" {
+					obj.SetGeneration(current.GetGeneration() + 1)
+				}
+			}
+			version++
+			obj.SetResourceVersion(strconv.FormatInt(version, 10))
+			return false, nil, nil
+		})
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the informers the controller runs, with the selectors main.go gives them, started over the fake clientset and wired into the reconciler.
+func startCaches(t *testing.T, r *AgentReconciler) {
+	t.Helper()
+	client := r.client.(*fake.Clientset)
+	selected := func(selector string) informers.SharedInformerFactory {
+		return informers.NewSharedInformerFactoryWithOptions(client, 0, informers.WithNamespace("test-agents"),
+			informers.WithTweakListOptions(func(opts *metav1.ListOptions) { opts.LabelSelector = selector }))
+	}
+	agents, runners := selected(LabelAgent), selected("app.kubernetes.io/component="+vmRunnerComponent)
+	pods, statefulSets := agents.Core().V1().Pods(), agents.Apps().V1().StatefulSets().Informer()
+	deployments, runnerPods := runners.Apps().V1().Deployments().Informer(), runners.Core().V1().Pods()
+	r.WithPodCache(pods.Lister()).WithStatefulSetCache(statefulSets).WithRunnerCaches(deployments, runnerPods.Lister())
+	agents.Start(t.Context().Done())
+	runners.Start(t.Context().Done())
+	require.True(t, cache.WaitForCacheSync(t.Context().Done(), pods.Informer().HasSynced, statefulSets.HasSynced, deployments.HasSynced, runnerPods.Informer().HasSynced))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an informer that is never started, so a test puts in it exactly the stale view it needs.
+func staleInformer(objType runtime.Object, objs ...runtime.Object) cache.SharedIndexInformer {
+	informer := cache.NewSharedIndexInformer(&cache.ListWatch{}, objType, 0, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	for _, obj := range objs {
+		_ = informer.GetStore().Add(obj)
+	}
+	return informer
+}
+
+// TEST_SCENARIO: a vm agent that is up is reconciled again and again while it runs — a machine poll, a pod event, a drift sweep. Each of those reconciles read its gateway StatefulSet three to four times, its runner Deployment twice and its runner's pods once, all live, and the runner's token and certificate twice each. The StatefulSet, the Deployment and the runner's pods are served from the informers the controller runs, and each runner Secret is read once, so a steady reconcile reads none of the cached kinds from the API server.
+func TestASteadyVMReconcileReadsItsObjectsFromTheCaches(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	client := r.client.(*fake.Clientset)
+	versionWrites(client)
+	_, err := client.CoreV1().ServiceAccounts("test-agents").Create(ctx, &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner", Namespace: "test-agents", UID: "runner-sa"},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	require.NoError(t, r.Reconcile(ctx, agent))
+	markGatewayReady(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	startCaches(t, r)
+
+	reads := map[string]int{}
+	require.Eventually(t, func() bool {
+		client.ClearActions()
+		require.NoError(t, r.Reconcile(ctx, agent))
+		clear(reads)
+		writes := 0
+		for _, a := range client.Actions() {
+			switch a.GetVerb() {
+			case "get":
+				reads["get "+a.GetResource().Resource+" "+a.(k8stesting.GetAction).GetName()]++
+			case "list":
+				reads["list "+a.GetResource().Resource]++
+			default:
+				writes++
+			}
+		}
+		return writes == 0
+	}, 5*time.Second, 20*time.Millisecond, "the reconciles settle into one that writes nothing")
+
+	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
+	assert.Zero(t, reads["get statefulsets "+GatewayName("my-agent")], "the gateway StatefulSet comes from the cache")
+	assert.Zero(t, reads["get deployments "+r.runnerName(testOwner)], "the runner Deployment comes from the cache")
+	assert.Zero(t, reads["list pods"], "the runner's pods come from the cache")
+	assert.Equal(t, 1, reads["get secrets "+r.runnerName(testOwner)], "the runner's token is read once")
+	assert.Equal(t, 1, reads["get secrets "+r.runnerTLSName(testOwner)], "the runner's certificate is read once")
+}
+
+// TEST_SCENARIO: the runner pod cache can hold a pod from before its last change. A resize sent from it carries that old resourceVersion, so the API server refuses it rather than applying it over the change, and the resize is decided again from a live read of the pod.
+func TestAResizeFromAStalePodIsRefusedAndRedoneLive(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	client := r.client.(*fake.Clientset)
+	versionWrites(client)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	pods := client.CoreV1().Pods("test-agents")
+	stale, err := pods.Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	changed := stale.DeepCopy()
+	changed.Labels["changed"] = "after the cache read"
+	_, err = pods.Update(ctx, changed, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	require.NoError(t, indexer.Add(stale))
+	r.WithRunnerCaches(staleInformer(&appsv1.Deployment{}), corelisters.NewPodLister(indexer))
+	client.ClearActions()
+
+	r.resizeRunnerPod(ctx, testOwner, runnerDemand{memoryMiB: 4096, vCPUs: 4})
+
+	assert.Equal(t, 2, resizeCalls(r), "the resize from the stale pod was refused and sent again")
+	pod, err := pods.Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "after the cache read", pod.Labels["changed"], "the change the cache had not seen is kept")
+	assert.NotEqual(t, "1Gi", runnerPodRequest(t, r), "and the resize landed on the current pod")
+}
+
+// TEST_SCENARIO: right after the reconcile updates the gateway's template, the informer still holds the StatefulSet as it was, whose pod is ready on the current revision. A readiness check on that copy would call the gateway ready while it is about to roll, so the reconcile reads its own update, whose generation the StatefulSet controller has not observed yet.
+func TestAReconcileReadsItsOwnStatefulSetUpdate(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	client := r.client.(*fake.Clientset)
+	versionWrites(client)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	markGatewayReady(t, r)
+	ss, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	pod, err := client.CoreV1().Pods("test-agents").Get(ctx, GatewayName("my-agent")+"-0", metav1.GetOptions{})
+	require.NoError(t, err)
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	require.NoError(t, indexer.Add(pod))
+	r.WithPodCache(corelisters.NewPodLister(indexer)).WithStatefulSetCache(staleInformer(&appsv1.StatefulSet{}, ss))
+	require.True(t, r.podCurrentAndReady(ctx, GatewayName("my-agent")))
+
+	desired := ss.DeepCopy()
+	desired.Spec.Template.Annotations = map[string]string{"changed": "yes"}
+	require.NoError(t, r.applyStatefulSet(ctx, desired, true))
+
+	assert.False(t, r.podCurrentAndReady(ctx, GatewayName("my-agent")), "the gateway is rolling to the new template")
+}
+
+// TEST_SCENARIO: the StatefulSet and its pods come from two caches, so the pod can be the newer of the two: a pod the StatefulSet controller just created on a new revision, not ready yet, looks stuck on a superseded revision against a cached StatefulSet that has not seen the new one. It is deleted only when a live read still finds it stuck.
+func TestAPodNewerThanTheCachedStatefulSetIsNotForceRolled(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	client := r.client.(*fake.Clientset)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	sets := client.AppsV1().StatefulSets("test-agents")
+	ss, err := sets.Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	ss.Status.ObservedGeneration, ss.Status.UpdateRevision = ss.Generation, "rev-1"
+	cached := ss.DeepCopy()
+	ss.Status.UpdateRevision = "rev-2"
+	_, err = sets.UpdateStatus(ctx, ss, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: GatewayName("my-agent") + "-0", Namespace: "test-agents",
+			Labels: maps.Clone(ss.Spec.Selector.MatchLabels)},
+	}
+	pod.Labels["controller-revision-hash"] = "rev-2"
+	_, err = client.CoreV1().Pods("test-agents").Create(ctx, pod, metav1.CreateOptions{})
+	require.NoError(t, err)
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	require.NoError(t, indexer.Add(pod))
+	r.WithPodCache(corelisters.NewPodLister(indexer)).WithStatefulSetCache(staleInformer(&appsv1.StatefulSet{}, cached))
+
+	require.NoError(t, r.forceRollStuckPod(ctx, "test-agents", GatewayName("my-agent")))
+
+	_, err = client.CoreV1().Pods("test-agents").Get(ctx, pod.Name, metav1.GetOptions{})
+	assert.NoError(t, err, "the pod on the current revision is left to start")
 }

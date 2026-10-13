@@ -25,6 +25,18 @@ func TestASeedCapabilityIsWhatTheContractSays(t *testing.T) {
 	assert.Equal(t, fixture.Fingerprint, SeedCapabilityFingerprint(got))
 }
 
+// TEST_SCENARIO: the controller mints the usage capability in Go and the runner checks it in Rust; minting from the fixture's token must give exactly its capability, and the capability must not carry the token.
+func TestAUsageCapabilityIsWhatTheContractSays(t *testing.T) {
+	fixture := decodeStrictly[struct {
+		Token      string `json:"token"`
+		Capability string `json:"capability"`
+	}](t, "usage-capability.json", contractFixture(t, "usage-capability.json"))
+
+	got := MintUsageCapability(fixture.Token)
+	assert.Equal(t, fixture.Capability, got)
+	assert.NotContains(t, got, fixture.Token)
+}
+
 // TEST_SCENARIO: every capability is minted with a fresh nonce, so two Jobs for one machine never hold the same one, and none of them carries the token it was derived from.
 func TestEachSeedCapabilityIsFreshAndHoldsNoToken(t *testing.T) {
 	expires := time.Unix(1790000000, 0)

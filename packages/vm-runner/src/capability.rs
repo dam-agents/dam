@@ -80,6 +80,21 @@ pub fn verify(key: &[u8; 32], bearer: &str, machine: &str, now: u64) -> Result<V
     })
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the usage capability: what the controller gives the api-server in place of the runner's token, so the api-server can show a user their pools without being able to create, change or delete a machine. It is good only for the usage read, which names machine ids and sizes and nothing an agent wrote, so it carries no machine, nonce or expiry; it is an HMAC-SHA256 over the usage scope under a key derived from the token with a label of its own, so it is void once the token changes and a seed key cannot verify it. Held to contract/usage-capability.json on both sides.
+const USAGE_PREFIX: &str = "usagecap1";
+const USAGE_KEY_LABEL: &[u8] = b"vm-runner usage capability key v1";
+const USAGE_SCOPE: &[u8] = b"usage";
+
+pub fn mint_usage(token: &[u8]) -> String {
+    let mac = hmac_sha256(&hmac_sha256(token, USAGE_KEY_LABEL), USAGE_SCOPE);
+    format!("{USAGE_PREFIX}.{}", hex(&mac))
+}
+
+pub fn verify_usage(token: &[u8], bearer: &str) -> bool {
+    bearer.starts_with(USAGE_PREFIX)
+        && crate::http::constant_time_eq(bearer.as_bytes(), mint_usage(token).as_bytes())
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the first 16 hex characters of the capability's SHA-256. The controller logs the same one when it mints, so the upload a runner accepted can be tied to the Job it was minted for without either log holding the capability.
 pub fn fingerprint(bearer: &str) -> String {
     hex(&Sha256::digest(bearer.as_bytes()))[..16].to_string()
@@ -167,6 +182,23 @@ mod tests {
         );
         let verified = verify(&key, &field("capability"), &field("machine"), expires - 1).unwrap();
         assert_eq!(verified.fingerprint, field("fingerprint"));
+    }
+
+    // TEST_SCENARIO: the usage capability is minted in Go and checked in Rust, held together only by the shared document; it verifies under its own token, and neither under another runner's token nor in place of a seed capability.
+    #[test]
+    fn a_usage_capability_is_what_the_contract_says() {
+        let path = format!(
+            "{}/contract/usage-capability.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let fixture: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let token = fixture["token"].as_str().unwrap();
+        let capability = fixture["capability"].as_str().unwrap();
+        assert_eq!(mint_usage(token.as_bytes()), capability);
+        assert!(verify_usage(token.as_bytes(), capability));
+        assert!(!verify_usage(b"other", capability));
+        assert!(!looks_like(capability));
     }
 
     // TEST_SCENARIO: a capability names one machine. The Job for machine A presenting it on machine B's seed route is refused, as is a capability signed under another runner's token.

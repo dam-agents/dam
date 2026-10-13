@@ -23,6 +23,7 @@ import {
   type ContributionsProgressPort,
   type OnboardingChecklistReader,
   type ResizeGatePort,
+  type StorageGatePort,
   type TelegramBindingPort,
   type SlackBindingPort,
 } from "./services/agents-service.js";
@@ -81,6 +82,7 @@ export function composeAgentsModule(deps: {
   agentDefaultLimits: { cpu: string; memory: string };
   install: AgentsInstallSettings;
   resizeGate?: ResizeGatePort;
+  storageGate?: StorageGatePort;
   owner: string | undefined;
   db: Db;
   readTemplateSpec: ReadTemplateSpec;
@@ -116,6 +118,7 @@ export function composeAgentsModule(deps: {
       telemetry: deps.install.telemetry,
       runtimeMigrationRetentionMs: deps.install.runtimeMigrationRetentionMs,
       resizeGate: deps.resizeGate,
+      storageGate: deps.storageGate,
       resizeLock: createXactLock(deps.db),
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,

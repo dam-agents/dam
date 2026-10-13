@@ -9,6 +9,7 @@ import {
 import { getApiHealthSnapshot, subscribeApiHealth } from "./lib/api-health.js";
 import { getErrorMessage } from "./lib/errors.js";
 import { emitToast } from "./lib/toast.js";
+import { showStorageFull } from "./modules/budgets/lib/storage-full.js";
 import {
   isTermsStale,
   isTermsStaleError,
@@ -71,6 +72,7 @@ export const queryClient = new QueryClient({
           return;
         }
         if (mutation.meta?.suppressErrorToast) return;
+        if (showStorageFull(error)) return;
         if (getApiHealthSnapshot() === "reconnecting" || isTermsStale()) return;
         const title = mutation.meta?.errorToast;
         const detail = getErrorMessage(error, "");

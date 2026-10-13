@@ -1,0 +1,11 @@
+{
+  "storage": {
+    "usedBytes": 0,
+    "usableBytes": 0
+  },
+  "memory": {
+    "limitMiB": 0,
+    "committedMiB": 0
+  },
+  "machines": []
+}

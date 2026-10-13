@@ -214,8 +214,6 @@ export interface RuntimeMigrationView {
 
 export interface RuntimeMigrationPlanView {
   unmovable: { path: string; reason: string }[];
-  storageSize: string;
-  storageResized: boolean;
   bootsSleepingAgent: boolean;
   retentionMs: number | null;
   allowed: boolean;

@@ -1,0 +1,18 @@
+{
+  "storage": {
+    "usedBytes": 32212254720,
+    "usableBytes": 107374182400
+  },
+  "memory": {
+    "limitMiB": 12288,
+    "committedMiB": 3072
+  },
+  "machines": [
+    {
+      "id": "agent-a",
+      "state": "running",
+      "usedMiB": 640,
+      "diskGiB": 100
+    }
+  ]
+}

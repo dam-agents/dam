@@ -20,7 +20,7 @@ const pressureReclaimCooldown = 15 * time.Second
 
 // UNIT_BOUNDARY_DESCRIPTION: starts the one pressure watch on the owner's runner, unless it is already running. Only a runner in the cluster with a memory limit reports pressure; the host runner admits against a share of the Mac's memory the controller never learns. The watch lives no longer than the reconciler's lifetime, and a failed read ends it, so the next reconcile of the owner's agents starts it again on a runner it can reach.
 func (r *AgentReconciler) watchRunnerPressure(runner *vmrunner.Client, owner string) {
-	if r.lifetime == nil || r.config.VM.Runner.HostAddress != "" || r.runnerLimitMiB() == 0 {
+	if r.lifetime == nil || r.config.VM.Runner.HostAddress != "" || r.runnerLimitMiB(r.lifetime, owner) == 0 {
 		return
 	}
 	r.machineWatchMu.Lock()

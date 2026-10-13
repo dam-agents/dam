@@ -22,6 +22,7 @@ export async function waitForRunningOrExit(
   const waitResult = await waitForRunning(svc, agent.id, {
     timeoutSeconds: opts.timeoutSeconds,
     graceSeconds: opts.graceSeconds,
+    initialState: agent.state,
     onStateChange: (state) => {
       if (opts.json) return;
       if (!firstStateSeen) {
@@ -40,10 +41,19 @@ export async function waitForRunningOrExit(
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(waitResult.agent)}\n`);
       } else {
-        const reason = waitResult.agent.error ?? "unknown";
         const id = opts.showIdOnError ? ` (${waitResult.agent.id})` : "";
         process.stderr.write(
-          `error: agent "${opts.name}"${id} entered error state: ${reason}\n`,
+          `error: agent "${opts.name}"${id} entered error state: ${failureReason(waitResult.agent)}\n`,
+        );
+      }
+      return process.exit(EXIT_RUNTIME_FAILURE);
+    case "refused":
+      if (opts.json) {
+        process.stdout.write(`${JSON.stringify(waitResult.agent)}\n`);
+      } else {
+        const id = opts.showIdOnError ? ` (${waitResult.agent.id})` : "";
+        process.stderr.write(
+          `error: agent "${opts.name}"${id} could not start: ${refusalReason(waitResult.agent)}\n${REFUSAL_HINT}\n`,
         );
       }
       return process.exit(EXIT_RUNTIME_FAILURE);
@@ -54,8 +64,10 @@ export async function waitForRunningOrExit(
         );
       } else {
         process.stderr.write(
-          `error: timed out waiting for "${opts.name}" to reach running (current: ${waitResult.lastState})\n`,
+          `error: timed out waiting for "${opts.name}" to reach running (current: ${waitResult.agent.state})\n`,
         );
+        if (waitResult.agent.state === "over_budget")
+          process.stderr.write(`${refusalReason(waitResult.agent)}\n`);
       }
       return process.exit(EXIT_RUNTIME_FAILURE);
     case "transport":
@@ -64,4 +76,15 @@ export async function waitForRunningOrExit(
       );
       return process.exit(EXIT_RUNTIME_FAILURE);
   }
+}
+
+export const REFUSAL_HINT =
+  "hint: stop an agent you are not using to free room, then start this one again; it may also start by itself once room frees";
+
+export function refusalReason(agent: AgentView): string {
+  return agent.overBudgetMessage ?? "its owner's pool is full";
+}
+
+export function failureReason(agent: AgentView): string {
+  return agent.error ?? agent.podTerminationReason ?? "unknown";
 }
