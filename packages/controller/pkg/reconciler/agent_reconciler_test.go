@@ -18,7 +18,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
@@ -959,4 +961,79 @@ func TestReconcileOrphanPVCs_LeavesPoolSparesAlone(t *testing.T) {
 	assert.NoError(t, err, "unclaimed spare carries no agent label → the sweep never sees it")
 	_, err = client.CoreV1().PersistentVolumeClaims("test-agents").Get(context.Background(), "home-agent-ghost-0", metav1.GetOptions{})
 	assert.True(t, errors.IsNotFound(err), "orphan PVC for a missing agent is reclaimed")
+}
+
+func writesAfterSettle(t *testing.T, r *AgentReconciler, cs *fake.Clientset, agent *apiv1.Agent) []string {
+	t.Helper()
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	cs.ClearActions()
+	dyn := r.dynamic.(*dynfake.FakeDynamicClient)
+	dyn.ClearActions()
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	var writes []string
+	for _, a := range append(cs.Actions(), dyn.Actions()...) {
+		if a.GetVerb() == "update" && a.GetResource().Resource != "agents" {
+			writes = append(writes, a.GetResource().Resource+"/"+a.GetSubresource())
+		}
+	}
+	return writes
+}
+
+// TEST_SCENARIO: an agent whose objects already match is reconciled on every pod event, wake and drift pass, and the single agent worker spends each reconcile's API calls in turn. On dev each one rewrote eleven objects that had not changed — envoy bootstrap, two Certificates, two AuthorizationPolicies, four NetworkPolicies and two Services — about 90 ms per reconcile, and a write each for the API server and the watchers behind it. A settled agent is now left as it is.
+func TestASettledAgentRewritesNothing(t *testing.T) {
+	agent := agentCR()
+	r, cs := setupReconciler(t, agent, readyPod("my-agent-0"), readyPod("my-agent-gateway-0"))
+	assert.Empty(t, writesAfterSettle(t, r, cs, agent), "container agent")
+
+	vm := vmAgentCR()
+	r, _, _ = setupVMReconciler(t, vm)
+	assert.Empty(t, writesAfterSettle(t, r, r.client.(*fake.Clientset), vm), "vm agent")
+}
+
+// TEST_SCENARIO: skipping unchanged objects must not stop the controller from putting back an object someone edited by hand: a NetworkPolicy or AuthorizationPolicy that was opened up is a hole in the agent's isolation until the next reconcile closes it.
+func TestAnEditedPolicyIsStillPutBack(t *testing.T) {
+	agent := agentCR()
+	r, cs := setupReconciler(t, agent, readyPod("my-agent-0"), readyPod("my-agent-gateway-0"))
+	ctx := context.Background()
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	np, err := cs.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-agent-gateway-ingress", metav1.GetOptions{})
+	require.NoError(t, err)
+	want := np.Spec.DeepCopy()
+	np.Spec.Ingress = nil
+	_, err = cs.NetworkingV1().NetworkPolicies("test-agents").Update(ctx, np, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	policies := r.dynamic.Resource(authzPolicyGVR).Namespace("default")
+	ap, err := policies.Get(ctx, "my-agent-harness-allow", metav1.GetOptions{})
+	require.NoError(t, err)
+	wantRules, _, _ := unstructured.NestedFieldCopy(ap.Object, "spec", "rules")
+	unstructured.RemoveNestedField(ap.Object, "spec", "rules")
+	_, err = policies.Update(ctx, ap, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	np, err = cs.NetworkingV1().NetworkPolicies("test-agents").Get(ctx, "my-agent-gateway-ingress", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, *want, np.Spec)
+	ap, err = policies.Get(ctx, "my-agent-harness-allow", metav1.GetOptions{})
+	require.NoError(t, err)
+	rules, _, _ := unstructured.NestedFieldCopy(ap.Object, "spec", "rules")
+	assert.Equal(t, wantRules, rules)
+}
+
+// TEST_SCENARIO: readiness is read off the agent's pods, which the pod informer already holds and whose every change requeues the agent. A reconcile reads them from that cache rather than up to three times from the API server; what it publishes is what the cache says.
+func TestPodsAreReadFromTheInformerCache(t *testing.T) {
+	agent := agentCR()
+	r, cs := setupReconciler(t, agent)
+	pods := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	require.NoError(t, pods.Add(readyPod("my-agent-0")))
+	require.NoError(t, pods.Add(readyPod("my-agent-gateway-0")))
+	r.WithPodCache(corelisters.NewPodLister(pods))
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	st, _ := agentCondition(t, r, "my-agent", apiv1.ConditionReady)
+	assert.Equal(t, string(metav1.ConditionTrue), st, "the cached pods are ready")
+	for _, a := range cs.Actions() {
+		assert.False(t, a.GetResource().Resource == "pods" && (a.GetVerb() == "get" || a.GetVerb() == "list"), "%s pods", a.GetVerb())
+	}
 }
