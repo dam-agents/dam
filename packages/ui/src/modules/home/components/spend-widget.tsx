@@ -27,7 +27,9 @@ export function SpendWidget() {
   const [period, setPeriod] = useState<SpendPeriod>("1m");
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), REFRESH_MS);
+    const timer = setInterval(() => {
+      if (!document.hidden) setNow(Date.now());
+    }, REFRESH_MS);
     return () => clearInterval(timer);
   }, []);
   const agents = useAgentsList();
@@ -87,7 +89,13 @@ export function SpendWidget() {
         </div>
 
         <p className="mb-5 text-2xl font-semibold tabular-nums text-foreground">
-          {data ? <AnimatedUsd value={total} /> : <TextSkeleton width={96} />}
+          {data ? (
+            <AnimatedUsd value={total} />
+          ) : query.isError ? (
+            "—"
+          ) : (
+            <TextSkeleton width={96} />
+          )}
         </p>
 
         <div className="relative min-h-[132px]">
@@ -141,6 +149,10 @@ export function SpendWidget() {
                 )}
               </AnimatePresence>
             </div>
+          ) : query.isError ? (
+            <p className="text-sm text-muted-foreground">
+              Spend could not be loaded.
+            </p>
           ) : (
             <div className="space-y-3">
               {Array.from({ length: TOP_SPENDERS }, (_, i) => (
