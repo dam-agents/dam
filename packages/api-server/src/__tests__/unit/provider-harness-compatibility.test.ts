@@ -59,6 +59,7 @@ describe("provider harness compatibility", () => {
             { id: "oauth", type: "anthropic", templateId: "anthropic-oauth" },
           ],
         },
+        specHarness: async () => undefined,
         getCapabilities: async () => ({
           defaultHarness: "pi",
           harnesses: [

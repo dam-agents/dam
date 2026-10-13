@@ -87,9 +87,11 @@ On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-
 The environment also points `SSL_CERT_DIR` at `/etc/platform/ca`: Node's system store reads every file in that directory, and the default, `/etc/ssl/certs`, holds a link to each certificate the bundle already has, and reading them one by one delays every node process on a machine before it can exit or make its first TLS call.
 OpenSSL-based clients still find every root in the bundle, and Go also reads the platform CAs from the directory itself.
 The bundle, and Chromium's store below, record what they were last built from and are rebuilt only when it changes: a machine's root and every home outlive a boot, and `update-ca-certificates` forks several times for each root the distribution ships, which takes seconds on a machine.
-The bundle's record also holds the image's distribution roots, since a machine's root outlives a new image too.
-A store no boot has touched yet, on a container's or a new machine root, is the one the image's build made, so the entrypoint adds only the platform CAs to it, with the same result as `update-ca-certificates` but not its pass over every root.
+The bundle's record also holds the image's distribution roots, since a machine's root outlives a new image too: the digest of them that the image's build writes, since reading every root costs a machine boot about 150 ms.
+An image built without the digest has its roots read instead, and an agent that changes the roots in its own root does so with the package manager, whose trigger rebuilds the bundle with the platform CAs in it.
+A store no boot has touched yet, on a container's or a new machine root, is the one the image's build made, so the entrypoint adds only the platform CAs to it and hashes only them, with the same result as `update-ca-certificates` but not its pass over every root.
 Every other rebuild, a failed add, and any store with an update hook such as Java's keystore run `update-ca-certificates` itself.
+Chromium's store is built beside the runtime's start rather than before it, since nothing starts Chromium before the runtime listens.
 On a machine it also points docker's client at the gateway, so containers and builds the agent starts go through it too, and puts the share's runtime wrapper in front of docker's and k3s's runc, so they trust the MITM CA as well.
 docker's runc is on the read-only harness tools, so the wrapper is linked as `runc` in a directory under `/run` that the entrypoint and login shells put first on `PATH`; k3s's containerd names it in a drop-in.
 A container's root is its own image, which trusts only public roots; when the container starts, the wrapper gives it copies of the image's own bundle with the CA appended, at a path of its own mounted read-only, and points the common CA variables there; a variable the image sets to a bundle is pointed at a copy of that file.
@@ -137,7 +139,11 @@ The failures are: the image cannot be pulled or unpacked, the machine cannot boo
 The controller sets `StartFailed` only from the pod or machine that runs the current spec, never from the pod a roll replaces, which exits too.
 On the container backend that is a pod of the agent StatefulSet's update revision, once the StatefulSet has observed its generation.
 On the vm backend the runner's status names no spec, but a restart in flight reads not ready, so the controller counts from the first read at the current generation.
-`StartFailed` has two reasons: `CrashLoop` (the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now) and `NeverReady` (running for ten minutes on this spec without becoming ready, an image pull not counted).
+The controller sets `StartFailed` for one of two reasons.
+Either the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now.
+Or it ran on this spec and never became ready, not counting the time an image pull takes: for ten minutes in a container, or for two minutes in a vm machine.
+The vm bound is short because a moved vm Agent takes the new image when it wakes, and the vm idle timeout hibernates it again five minutes later.
+At ten minutes, the runner's own restart of the quiet guest would also stop the clock first.
 An exit from out of memory or a full home volume does not count, since any image meets it.
 A harness that crash-loops on any image, from something in the Agent's home, also moves the Agent back, and the new image is then refused for this Agent although it is not at fault.
 The owner's Update stays available, to move a running Agent now, and says so when the Agent failed to start on that image.

@@ -18,6 +18,9 @@ const (
 	startFailureNotReady = 10 * time.Minute
 )
 
+// UNIT_BOUNDARY_DESCRIPTION: how long a vm machine may run on one spec without answering before it is reported NeverReady. It must be well under the chart's vm idle timeout, five minutes from the wake: an Agent moved while hibernated takes the new image on its next wake, so the report and the image update job's move back have to land before the idle checker hibernates it again. It must also be under the runner's own ten-minute restart of a quiet guest that once answered, which every moved machine has, since that restart stops the clock. A guest boots in seconds and the runner reports one silent for a minute as a slow boot, so two minutes running without an answer is a failure. An install whose vm idle timeout is under about four minutes never reports NeverReady; it would need the idle checker to hold an Agent until its start is decided.
+const vmStartFailureNotReady = 2 * time.Minute
+
 type startFailure struct {
 	reason, message string
 }
@@ -70,8 +73,8 @@ func vmStartFailure(prev vmStartClock, generation int64, st vmrunner.MachineStat
 		return prev, startFailure{}
 	case st.Restarts-prev.restartsAtGen >= startFailureRestarts:
 		return prev, startFailure{apiv1.ReasonCrashLoop, fmt.Sprintf("the guest stopped answering and was restarted %d times", st.Restarts-prev.restartsAtGen)}
-	case !prev.notReadySince.IsZero() && now.Sub(prev.notReadySince) >= startFailureNotReady:
-		return prev, startFailure{apiv1.ReasonNeverReady, fmt.Sprintf("the machine ran for %s without answering", startFailureNotReady)}
+	case !prev.notReadySince.IsZero() && now.Sub(prev.notReadySince) >= vmStartFailureNotReady:
+		return prev, startFailure{apiv1.ReasonNeverReady, fmt.Sprintf("the machine ran for %s without answering", vmStartFailureNotReady)}
 	}
 	return prev, startFailure{}
 }

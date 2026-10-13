@@ -1,9 +1,9 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { monitorEventLoopDelay } from "node:perf_hooks";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import headlessPkg from "@xterm/headless";
 const { Terminal: HeadlessTerminal } = headlessPkg;
 import serializePkg from "@xterm/addon-serialize";
@@ -83,6 +83,7 @@ import {
   sessionModelOf,
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
+import { harnessManifestPaths } from "./modules/runtime-channel/manifest-paths.js";
 import { leaseSpawnEnv } from "./core/runtime-env.js";
 import { reportHomeVolumeFullOnCrash } from "./core/home-volume-full.js";
 import {
@@ -118,25 +119,17 @@ function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
 }
 
 const defaultHarness = process.env.PLATFORM_HARNESS ?? "";
-const manifestsDir = join(__dir, "../runtime-manifests");
 const harnessManifests: Record<string, RuntimeManifest> = config.PLATFORM_DEV
   ? {
       [defaultHarness]: loadManifest(
         join(__dir, "../../agents/base/rootfs/app/runtime-manifest.yaml"),
       ),
     }
-  : existsSync(join(manifestsDir, `${defaultHarness}.yaml`))
-    ? Object.fromEntries(
-        readdirSync(manifestsDir)
-          .filter((f) => f.endsWith(".yaml"))
-          .map((f) => [
-            basename(f, ".yaml"),
-            loadManifest(join(manifestsDir, f)),
-          ]),
-      )
-    : {
-        [defaultHarness]: loadManifest(join(__dir, "../runtime-manifest.yaml")),
-      };
+  : Object.fromEntries(
+      Object.entries(
+        harnessManifestPaths(join(__dir, ".."), defaultHarness),
+      ).map(([harness, path]) => [harness, loadManifest(path)]),
+    );
 const runtimeManifest = harnessManifests[defaultHarness]!;
 
 const platformAgentId =

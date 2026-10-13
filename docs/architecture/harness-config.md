@@ -19,8 +19,10 @@ The catalog remains usable where discovery is not configured.
 Before a session starts, the picker lists every provider the harness accepts in one stable order: an attached provider shows its models and a disconnect action, and one not attached offers to attach it, so a provider never carries another provider's model.
 It grays out a harness that no provider the owner holds accepts.
 With no provider at all, the chat opens the provider list in a modal, and the picker's place holds a link that reopens it.
-Until the agent has reported the harnesses it carries, as a new agent has not before it first answers, the picker shows the pair a new session is expected to run on, from the Agent's own harness, its granted providers and the harness catalog: the remembered pair when it names that harness, otherwise the harness on the first granted provider it accepts, with its default model.
+Until the agent has reported the harnesses it carries, as a new agent has not before it first answers, the picker shows the pair a new session is expected to run on, from the Agent's own harness, its granted providers and the harness catalog: the pair picked for the next session, else the remembered pair when it names that harness, otherwise the harness on the first granted provider it accepts, with its default model.
 Opened then, it shows a loader until the list arrives, and a session started meanwhile names its pair only after the harnesses and the remembered pair are read again.
+Until the harness catalog arrives, the picker label is a loader, never a raw harness name.
+A session the UI starts holds the pair it sent as its own view until the agent lists the session, so the composer names that pair from the first moment.
 While a sleeping agent wakes, the picker shows each provider's models as loading rather than asking for a start.
 In an existing session, the picker shows its harness and only its active provider's models: another harness or provider needs a new session, which the picker links to, and context moves over only through a file the agent saves.
 
@@ -29,6 +31,7 @@ In an existing session, the picker shows its harness and only its active provide
 A session may also pick the settings its harness manifest lists under `sessionSettings`: mode, effort, thinking level, prompt cache or approvals, each a catalog option.
 The choice belongs to that session alone and starts with its next turn; it is kept in the runtime's session metadata beside the [Session Pair](../ubiquitous-language.md), and `_platform/session/configure` changes it.
 Only **Set as default** on a running session, or the default harness, provider and model picker on the agent's Providers page, saves the pair as the agent's remembered pair, which preselects the next session and is what schedules and channel turns run on; starting a session saves nothing.
+With none saved, the remembered pair is the agent's own harness on the first granted provider it accepts: the default harness its runtime reports, or, before the agent's first `hello`, the Agent's own harness, and the catalog's default only when the Agent names none.
 Each binding says how the harness takes the value.
 A session-scoped one (`mode`, `configOption`) is sent as ACP `session/set_mode` or `session/set_config_option` to that session only, never by recycling a harness other sessions share.
 The runtime sends it again whenever the session is loaded or resumed into a harness process.
@@ -71,6 +74,12 @@ The source names the variables that hold the connection's credential placeholder
 Once the env rail has materialized, no connection supplying a URL means the agent has no provider to list, so the read reports no list at all and one an earlier provider established is cleared rather than left offering models the agent can no longer reach; before that first materialization a missing URL says nothing about the grant.
 A source may also name a second listing on the same endpoint, asked only when the provider refuses the first: a LiteLLM key can be barred from the model-information route yet allowed the OpenAI model list, which says nothing of what a model is for, so there only the name keeps an embedding model out.
 A provider that refuses every listing or cannot be reached and a listing with no conversational model in it are one outcome — *unavailable* — which leaves whatever list was last established in place and never fails the read; the first read of a pod's life pays DNS and a TLS handshake before any of that, so it is retried once rather than being written off on a merely slow cold path.
+The runtime keeps the last list each provider endpoint gave a harness, in memory and on the agent's home volume, and answers the model list and the current-values read from it at once, asking the provider again behind the answer, so a slow listing through the gateway never holds the picker or the defaults label; the next read sees what that listing found.
+Reads that overlap share one listing.
+With no kept list, on the first read for an endpoint, the read waits for the listing.
+The seed and a lease's model never answer from the kept list: they ask the provider, and what it answers refreshes the list.
+A kept list can offer a model the provider has since retired.
+On Claude Code a name the gateway published for a tier, or one naming a tier, then goes to that tier's current model; any other name, on any harness, reaches the provider unchanged and the turn reports its refusal, so a stale list never runs a turn on a model nobody picked.
 Which choices a harness offers is its catalog's to say: Codex's offers no mode, because its image runs it never asking for approval, so there is no permission mode to pick and nothing for a [channel turn](channel-turns.md) to refuse.
 
 ## Model discovery and the seeded model

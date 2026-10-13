@@ -3,6 +3,9 @@
 set -eu
 
 home="${HOME:-/home/agent}"
+# A machine's guest takes several milliseconds to start any process, so the
+# boot runs as few as it can.
+uid=$(id -u)
 
 # A container runtime started under a tighter umask creates image layers a
 # non-root container cannot traverse (CoreDNS and traefik under k3s die on it).
@@ -10,9 +13,11 @@ umask 022
 
 # On a machine, SSH logins as `agent` must land as root, the harness's user;
 # extrausers serves no uid 0 entry.
-if [ "$(id -u)" = 0 ]; then
-	grep -q '^agent:' /etc/passwd || grep '^agent:' /var/lib/extrausers/passwd >>/etc/passwd
-	sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
+if [ "$uid" = 0 ]; then
+	if ! grep -q '^agent:x:0:0:' /etc/passwd; then
+		grep -q '^agent:' /etc/passwd || grep '^agent:' /var/lib/extrausers/passwd >>/etc/passwd
+		sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
+	fi
 	install -d -m 0755 /run/sshd
 fi
 
@@ -25,31 +30,42 @@ ca_files=$(find "$ca_dir" -maxdepth 1 -name '*.crt' -size +0 2>/dev/null | sort)
 # differs: a machine's root and every home outlive a boot, and
 # update-ca-certificates forks per bundled root, seconds on a machine. A
 # machine's root also outlives a new image, so the system record holds the
-# image's distribution roots as well.
+# image's distribution roots as well: the digest of them the image's build
+# recorded, as reading every root costs a machine boot about 150 ms. An image
+# built without the digest reads the roots. An agent that changes the roots on
+# its own root does it with the package manager, whose trigger rebuilds the
+# store with the platform CAs in it.
 ca_set() { for f in $ca_files; do echo "$f"; cat "$f"; done; }
 system_inputs() {
 	ca_set
 	cat /etc/ca-certificates.conf
-	find /usr/share/ca-certificates -type f -print0 | sort -z | xargs -0r cat
+	cat /usr/share/ca-certificates.sha256 ||
+		find /usr/share/ca-certificates -type f -print0 | sort -z | xargs -0r cat
 } 2>/dev/null
 local_cas=/usr/local/share/ca-certificates
 system_set="$local_cas/.platform-ca-set"
 certs=/etc/ssl/certs
 # A store no boot has touched is the one the image's own update-ca-certificates
 # built, so the platform CAs are added the way it would add them alone: a link
-# per CA, the CAs after the bundle's, each ending in a newline, and the hash
-# links, once dangling links, which fail openssl rehash, are gone. That takes a
-# few forks, not several for each distribution root. A Secret's or ConfigMap's
-# key holds no character it would rewrite in a name.
+# per CA, the CAs after the bundle's, each ending in a newline, and a hash link
+# per CA file holding one certificate, as openssl rehash skips any other. That
+# takes a few forks, not several for each distribution root, and only the
+# platform CAs are hashed: a rehash of the whole directory reads every root,
+# about half a second on a machine. A Secret's or ConfigMap's key holds no
+# character it would rewrite in a name.
 add_platform_cas() {
 	for crt in "$local_cas"/platform-*.crt; do
 		name=${crt##*/}
 		ln -sf "$crt" "$certs/${name%.crt}.pem" || return
+		[ "$(grep -c -- '-----BEGIN CERTIFICATE-----' "$crt")" = 1 ] || continue
+		hash=$(openssl x509 -hash -noout -in "$crt") || return
+		n=0
+		while [ -e "$certs/$hash.$n" ] || [ -L "$certs/$hash.$n" ]; do n=$((n + 1)); done
+		ln -s "${name%.crt}.pem" "$certs/$hash.$n" || return
 	done
 	# update-ca-certificates appends to a leftover .new bundle, so none is left.
 	new="$certs/ca-certificates.crt.new"
 	{ { cat "$certs/ca-certificates.crt" && awk 1 "$local_cas"/platform-*.crt; } >"$new" &&
-		find -L "$certs" -maxdepth 1 -type l -exec rm -f {} + && openssl rehash "$certs" &&
 		chmod 0644 "$new" && mv -f "$new" "$certs/ca-certificates.crt"; } ||
 		{ rm -f "$new"; return 1; }
 }
@@ -69,22 +85,27 @@ if [ -n "$ca_files" ] && ! system_inputs | cmp -s - "$system_set"; then
 		echo "agent-entrypoint: WARNING: could not trust the platform CAs; intercepted hosts may fail TLS" >&2
 fi
 # Chromium trusts its own NSS store in the home, not the system bundle, and
-# certutil imports one certificate per file, so each bundle is split.
-if [ -n "$ca_files" ] && ! { [ -f "$nssdb/cert9.db" ] && ca_set | cmp -s - "$nssdb/platform-ca-set"; }; then
-	rm -f "$nssdb/platform-ca-set"
-	split="$(mktemp -d)"
-	if ! (mkdir -p "$nssdb" && { [ -f "$nssdb/cert9.db" ] || certutil -d "sql:$nssdb" -N --empty-password; } &&
-		for nick in $(certutil -d "sql:$nssdb" -L | sed -n 's/^\(platform-[^ ]*\) .*/\1/p'); do
-			certutil -d "sql:$nssdb" -D -n "$nick" || exit 1
-		done &&
-		cat $ca_files | awk -v dir="$split" '/-----BEGIN CERTIFICATE-----/ { n++ } n { print > (dir "/" n ".pem") }' &&
-		for pem in "$split"/*.pem; do
-			certutil -d "sql:$nssdb" -A -t "C,," -n "platform-ca-$(basename "$pem" .pem)" -i "$pem" || exit 1
-		done && ca_set >"$nssdb/platform-ca-set") 2>/dev/null; then
-		echo "agent-entrypoint: WARNING: could not trust the platform CAs in Chromium; its intercepted hosts may fail TLS" >&2
+# certutil imports one certificate per file, so each bundle is split. Nothing
+# starts Chromium before the runtime listens, so the store is built while the
+# runtime starts, which a machine's first boot no longer waits about 300 ms for.
+# The build is left to the init to reap: the runtime reaps only its own.
+( (
+	if [ -n "$ca_files" ] && ! { [ -f "$nssdb/cert9.db" ] && ca_set | cmp -s - "$nssdb/platform-ca-set"; }; then
+		rm -f "$nssdb/platform-ca-set"
+		split="$(mktemp -d)"
+		if ! (mkdir -p "$nssdb" && { [ -f "$nssdb/cert9.db" ] || certutil -d "sql:$nssdb" -N --empty-password; } &&
+			for nick in $(certutil -d "sql:$nssdb" -L | sed -n 's/^\(platform-[^ ]*\) .*/\1/p'); do
+				certutil -d "sql:$nssdb" -D -n "$nick" || exit 1
+			done &&
+			cat $ca_files | awk -v dir="$split" '/-----BEGIN CERTIFICATE-----/ { n++ } n { print > (dir "/" n ".pem") }' &&
+			for pem in "$split"/*.pem; do
+				certutil -d "sql:$nssdb" -A -t "C,," -n "platform-ca-$(basename "$pem" .pem)" -i "$pem" || exit 1
+			done && ca_set >"$nssdb/platform-ca-set") 2>/dev/null; then
+			echo "agent-entrypoint: WARNING: could not trust the platform CAs in Chromium; its intercepted hosts may fail TLS" >&2
+		fi
+		rm -rf "$split"
 	fi
-	rm -rf "$split"
-fi
+) & )
 
 # /app/working-dir stays pristine: the runtime reconciles image skills against it.
 if [ ! -f "$home/.initialized" ]; then
@@ -97,7 +118,7 @@ mkdir -p "$home/work"
 # docker runs only on a machine. Its client passes the agent's gateway, which
 # differs per agent, to every container and build; the rest of the file, logins
 # included, is kept.
-if [ "$(id -u)" = 0 ] && [ -n "${HTTPS_PROXY:-}" ]; then
+if [ "$uid" = 0 ] && [ -n "${HTTPS_PROXY:-}" ]; then
 	cfg="$home/.docker/config.json"
 	mkdir -p "$home/.docker"
 	[ -s "$cfg" ] || echo '{}' >"$cfg"
@@ -118,7 +139,7 @@ fi
 # own containerd, which reads a drop-in under the data dir. A share without the
 # wrapper removes the drop-in, or every pod would name a runtime that is gone.
 runc_wrapper=/platform/runc
-if [ "$(id -u)" = 0 ]; then
+if [ "$uid" = 0 ]; then
 	k3s_data=$(sed -n 's/^data-dir: *//p' /etc/rancher/k3s/config.yaml 2>/dev/null || true)
 	dropin="${k3s_data:-/var/lib/rancher/k3s}/agent/etc/containerd/config-v3.toml.d/platform-runc.toml"
 	if [ -x "$runc_wrapper" ]; then
@@ -127,7 +148,7 @@ if [ "$(id -u)" = 0 ]; then
 		else
 			echo "agent-entrypoint: WARNING: docker containers and builds do not get the platform CA" >&2
 		fi
-		if ! { mkdir -p "$(dirname "$dropin")" &&
+		if ! { mkdir -p "${dropin%/*}" &&
 			printf '[plugins."io.containerd.cri.v1.runtime".containerd.runtimes.runc.options]\n  BinaryName = "%s"\n' \
 				"$runc_wrapper" >"$dropin"; } 2>/dev/null; then
 			echo "agent-entrypoint: WARNING: k3s pods do not get the platform CA" >&2

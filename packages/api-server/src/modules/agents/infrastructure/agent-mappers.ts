@@ -246,10 +246,9 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
   const kbShareRoots = splitRoots(annotations[ANN_KB_SHARE_ROOTS]);
   const lifetimeMs = Number.parseInt(annotations[ANN_LIFETIME_MS] ?? "", 10);
   const kindParse = agentKindSchema.safeParse(annotations[ANN_AGENT_KIND]);
-  const hibernatedSince =
-    hibernated && ready?.lastTransitionTime
-      ? new Date(ready.lastTransitionTime)
-      : undefined;
+  const hibernatedSince = hibernated
+    ? validDate(ready?.lastTransitionTime)
+    : undefined;
   const createdAt = createdAtOf(obj);
   const migrating = status.conditions?.find(
     (c) => c.type === RUNTIME_MIGRATING_CONDITION,
@@ -277,9 +276,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
           ? "ready"
           : undefined;
   const readySince =
-    ready?.status === "True" && ready.lastTransitionTime
-      ? new Date(ready.lastTransitionTime)
-      : undefined;
+    ready?.status === "True" ? validDate(ready.lastTransitionTime) : undefined;
   const quietSince =
     annotations[ACTIVE_SESSION_KEY] === "true" ||
     annotations[INVOCATIONS_ACTIVE_KEY] === "true"

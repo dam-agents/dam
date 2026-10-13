@@ -390,7 +390,8 @@ build_apt_base() {
     ${sudo[@]+"${sudo[@]}"} tar -xf - -C "$r"
   packages="$(grep -v '^#' "$agents/base/apt.txt" | xargs)"
   # policy-rc.d keeps a package's postinst from starting its service here. The
-  # trust store is the agent's, which the entrypoint fills; the host keys
+  # trust store is the agent's, which the entrypoint fills, and the digest of
+  # the distribution roots spares it reading them every boot; the host keys
   # openssh-server's postinst generated would be every image's. Every image
   # already shares one machine id, so it is one that follows the package list.
   ${sudo[@]+"${sudo[@]}"} unshare --mount --propagation private sh -euc '
@@ -407,6 +408,8 @@ build_apt_base() {
     rm -rf "$r"/var/lib/apt/lists/* "$r/usr/sbin/policy-rc.d" "$r"/etc/ssh/ssh_host_* \
       "$r"/var/log/*.log "$r"/var/log/apt/* "$r"/var/cache/ldconfig/aux-cache "$r"/var/cache/debconf/*-old
     for f in etc/machine-id var/lib/dbus/machine-id; do [ ! -e "$r/$f" ] || echo "$machine_id" > "$r/$f"; done
+    find "$r/usr/share/ca-certificates" -type f -print0 | LC_ALL=C sort -z | xargs -0r cat | sha256sum |
+      cut -c1-64 > "$r/usr/share/ca-certificates.sha256"
     chown -R 65532:0 "$r/etc/ssl/certs" "$r/usr/local/share/ca-certificates"
     : > "$r/etc/resolv.conf"
     find "$r" -xdev -newer "$r/.apt-start" -exec touch -h -d "@$epoch" {} +

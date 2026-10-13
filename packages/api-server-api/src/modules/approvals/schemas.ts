@@ -22,6 +22,9 @@ export const approvalApprovePermanentInputSchema = idSchema;
 export const approvalApproveHostInputSchema = idSchema;
 export const approvalDenyForeverInputSchema = idSchema;
 export const approvalDismissInputSchema = idSchema;
+export const approvalDismissManyInputSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(500),
+});
 
 const approvalActionRuleSchema = z.object({
   host: z.string(),

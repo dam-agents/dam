@@ -62,7 +62,8 @@ The UI is unaffected: it reads the telemetry store directly, not the collector.
 
 Harnesses produce telemetry by exporting it themselves over OTLP — the platform does not scrape or tap it.
 Export turns on with the backend: enabling `clickstack.enabled` stands up the collector, the gateway's collector egress chain, and the [trusted attribution](#trusted-attribution) below, and configures the harness to export to the collector.
-Each harness in the install's harness catalog may name a `telemetry` rail, which opts it in **and names which env rail it gets**, because the harnesses read different export configuration: Claude Code the standard OTLP env, Bob Shell its own `BOB_TELEMETRY_*` set — and, since 2.0.3, the standard OTLP exporter env as well, but only with the JSON protocol the Claude Code rail does not use, so a Bob image on that rail sends its export to the vendor endpoint instead of sharing the rail.
+Each harness in the install's harness catalog may name a `telemetry` rail, which opts it in **and names which env rail it gets**, because the harnesses read different export configuration: Claude Code the standard OTLP env, Bob Shell its own `BOB_TELEMETRY_*` set.
+Bob Shell reads the standard OTLP exporter env too, but on it the harness also sends a copy of its export to the vendor endpoint, so a Bob image does not share the Claude Code rail.
 Two rails exist today — Claude Code's and Bob Shell's — and both point at the same collector over the same gateway egress; a third harness means a third rail, not a change to anything downstream.
 
 - **Rides the agent's ordinary egress.** Claude Code's exporter honours the agent's `HTTPS_PROXY`, so its telemetry leaves through the paired gateway pod over HTTPS to the bundled collector — the same dedicated, MITM-terminating chain that performs the trusted attribution below.
@@ -73,7 +74,7 @@ Two rails exist today — Claude Code's and Bob Shell's — and both point at th
 - **A malformed rail can redirect telemetry outward.** Bob's rail is the case that makes this explicit: its provider selection validates a key pair the platform's collector ignores but the harness insists on, and a rail that fails that validation is discarded whole — the harness then falls back to its **vendor's own external endpoint** rather than exporting nothing.
   So a rail value is not merely inert when wrong; for this harness a missing or malformed one changes *where the telemetry goes*.
   The rail therefore carries the placeholder credentials the validation demands, and the export is otherwise credential-free — no upstream secret is injected into it.
-  Since 2.0.3 a second value redirects the same way: a standard `OTEL_EXPORTER_OTLP_*` setting the harness cannot parse — the Claude Code rail's `http/protobuf` protocol among them — fails its whole env parse and sends the export to the vendor endpoint too.
+  A second value redirects the same way: a standard `OTEL_EXPORTER_OTLP_*` setting the harness cannot parse fails its whole env parse and sends the export to the vendor endpoint too.
 
 - **Config travels the harness env rail.** Each rail's export environment — the standard OTLP set on the Claude Code rail, the `BOB_TELEMETRY_*` set on Bob's — reaches the harness through the same runtime channel that carries connection env — not a pod-level Secret or env.
   The api-server delivers it tagged with its harness, and only to a runtime that advertises the harnesses it carries, so each [Harness Lease](sessions.md#session-inside-the-pod) reads its own harness's rail.

@@ -19,6 +19,32 @@ jobs:
           find scripts -name '*.sh' -print0 | xargs -0 -n1 bash -n
       - name: structural validator
         run: bash scripts/validate-definition.sh .
+      # docs/self-modification.md §12: entries already on the base branch are
+      # released history, and a new entry lands only on top. Two byte-identical
+      # headings merge without a conflict, and the validator's VERSION check still
+      # passes because VERSION equals a number that is already released.
+      - name: The newest CHANGELOG entry is unreleased and on top
+        if: github.event_name == 'pull_request'
+        run: |
+          set -e
+          base="${{ github.base_ref }}"
+          git fetch --depth=1 origin "$base"
+          ver() { grep -m1 -E '^## [0-9]+\.[0-9]+\.[0-9]+ ' | sed -E 's/^## ([0-9.]+).*/\1/'; }
+          top="$(ver < CHANGELOG.md)"
+          basetop="$(git show FETCH_HEAD:CHANGELOG.md | ver)"
+          echo "this branch: $top, newest on $base: $basetop"
+          [ -n "$top" ]     || { echo "no version entry in this branch's CHANGELOG.md"; exit 1; }
+          [ -n "$basetop" ] || { echo "could not read a version entry in $base's CHANGELOG.md"; exit 1; }
+          esc="$(printf '%s' "$top" | sed 's/\./\\./g')"
+          if git show "FETCH_HEAD:CHANGELOG.md" | grep -qE "^## $esc "; then
+            echo "$top is already released on $base — re-number this branch's pending entry (docs/self-modification.md §12)"
+            exit 1
+          fi
+          if [ "$top" = "$(printf '%s\n%s\n' "$top" "$basetop" | sort -V | head -1)" ]; then
+            echo "$top is below $base's newest entry $basetop — re-number upward (docs/self-modification.md §12)"
+            exit 1
+          fi
+          echo "$top is unreleased and above $basetop"
       # Cross-file section references ("<file>.md -> **Label**"). They are prose,
       # not anchors, so a renamed section breaks them silently — this is the
       # cross-reference sweep of docs/self-modification.md §9, mechanized.

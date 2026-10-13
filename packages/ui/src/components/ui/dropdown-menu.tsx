@@ -28,7 +28,7 @@ function DropdownMenuContent({
         collisionPadding={8}
         className={cn(
           menuContentClassName,
-          "data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
+          "max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto overflow-x-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
           className,
         )}
         {...props}

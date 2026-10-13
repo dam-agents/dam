@@ -2,7 +2,6 @@ import { expect, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
 import {
-  deleteAgentIfPresent,
   waitForAgentIdRunning,
   waitForAgentRunning,
 } from "../../lib/agents.js";
@@ -69,7 +68,41 @@ test("one-click create from the Generalist kit, then the mock agent with the con
     );
     expect(agent?.avatar).toBeTruthy();
     await waitForAgentIdRunning(api, agent!.id);
-    await deleteAgentIfPresent(api, agent!.name);
+  });
+
+  await test.step("delete the one-click agent from its card menu on a short screen", async () => {
+    const agent = (await api.agents.list.query()).find((a) =>
+      /^agent(-\d+)?$/.test(a.name),
+    );
+    const viewport = { width: 1280, height: 240 };
+    await page.setViewportSize(viewport);
+    await page.goto(baseUrl);
+    await page
+      .getByTestId("agent-row")
+      .filter({
+        has: page.getByRole("heading", { name: agent!.name, exact: true }),
+      })
+      .getByRole("button", { name: "Agent actions" })
+      .click();
+    await expect
+      .poll(async () => {
+        const menu = await page.getByRole("menu").boundingBox();
+        return menu && menu.y >= 0 && menu.y + menu.height <= viewport.height;
+      })
+      .toBe(true);
+    await page.getByRole("menuitem", { name: "Delete agent" }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Delete agent" })
+      .click();
+    await expect
+      .poll(
+        async () =>
+          (await api.agents.list.query()).some((a) => a.id === agent!.id),
+        { timeout: 120_000, intervals: [2_000] },
+      )
+      .toBe(false);
+    await page.setViewportSize({ width: 1280, height: 720 });
   });
 
   await test.step("create the suite's mock agent with the connection", async () => {

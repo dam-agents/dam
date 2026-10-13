@@ -19,6 +19,9 @@ The task's entry command runs it first; the agent follows its output.
 
 The agent-side contract, stated verbatim in the generated CLAUDE.md:
 
+- **One fire, one pass.** A gated run arrives with `worklist: <path>` in its prompt: read that file and never run the pass again this run.
+  Its bookkeeping is one-shot (a status flip, a claim), so a second pass answers with less than the first.
+  Only a prompt with no worklist path (the gate broke, an ungated run, the direct session) runs the entry command itself.
 - `nothing_to_do: true` → echo `logs` as a one-line summary and **end the run**: no state writes, API calls or narration.
 - Otherwise → perform **every** worklist entry per its `docs/` file, then persist state.
   The script decides *what*; the agent keeps its action-time re-checks for *whether it is still valid* (items move between detection and action).
@@ -36,9 +39,13 @@ The runtime contract (`scripts/precheck.sh` implements it; the template states i
 
 - **Exit 0** allows the run; **exit 1** declines this occurrence; **anything else** (a higher code, the two-minute deadline, a command that won't spawn) means the Precheck broke, and a broken Precheck **allows** the run and records the reason.
   Fail-open is deliberate: otherwise one typo exiting `127` silences a schedule for weeks while looking exactly like "nothing changed".
-- **stdout is appended to the task prompt**, capped at 8 KiB, so the turn starts with the worklist in hand.
-  Past the cap the adapter sends `logs` plus a re-run instruction rather than JSON cut mid-way.
-- **stderr is not appended**, except that a broken Precheck's recorded reason carries its tail to the owner's panel, so secrets printed to stderr show there.
+- **stdout is appended to the task prompt**, capped at 8 KiB.
+  The adapter therefore keeps the worklist **in a file** (`/tmp`, mode 0600: it carries resolved config) and prints `worklist: <path>`, the non-empty arrays with their counts and ids, the `logs`, and the line "read the file, do not run the pass again this run".
+  The JSON itself never travels in the prompt: a worklist with per-item context reaches megabytes.
+- **The pass runs under the adapter's own budget** (`timeout`, 100 s by default), below the platform's two-minute limit: a pass the platform stops leaves no trace of why, one stopped by the adapter exits 2 and names the last step it logged.
+  A host without `timeout` runs it unbounded.
+- **stderr is not appended**, except that a broken Precheck's recorded reason carries its tail to the owner's panel, so the adapter passes that tail through the log's secret masking before printing it.
+- The adapter also sweeps its own scratch (worklist files older than 3 h): a declined fire has no session to clean up after it.
 - Runs under `bash -lc`, cwd = the work directory, with `PLATFORM_SCHEDULE_ID`, `PLATFORM_FIRE_AT` and **`PLATFORM_LAST_RUN_AT`** set.
   The last is the last fire that *actually ran* (declines don't move it): the right "changed since?"
   watermark, better than a timestamp the agent keeps.
@@ -51,6 +58,17 @@ Two design consequences for the pre-flight:
   Declining would bury an outage in the decline counter, reading like a quiet week, so the adapter allows it and the turn reports it.
 
 The platform's decline count is *since the last run*, not lifetime: how many occurrences the check saved since work last happened, which tells the operator whether it still finds anything.
+
+**The monitor is a second pass behind the same adapter**: `precheck.sh monitor` runs `scripts/monitor.sh` (`references/architecture.md` → Monitor) with the same exit-code translation and the same file-based output; the audit is the one run that stays ungated, because its worklist carries work whenever the report is enabled.
+
+## Cadence
+
+With a Precheck, an idle tick is free, so the default cadence is **around the clock at the active interval**; a quiet-hour or off-day schedule saves one script pass per tick and costs a night-time item up to an hour of latency.
+Keep working-hour keys only for a platform without Precheck support (or a pass that is itself expensive), and don't ask the operator about working hours when the pass is cheap: offer 24/7 as the default and the window as the exception.
+People-facing runs (nudges) keep their own hours, because that is about the people, not the cost.
+
+**Bookkeeping alone waits.** Cleanup, self-heal and status-reset arrays never open the gate by themselves: they ride along with the next run that has work of its own, and start a run of their own only after a wait (e.g. 6 h) or a backlog (e.g. 10 items).
+That run's worklist carries `housekeeping_only: true` and a short `read_set`.
 
 ## Designing the worklist
 
@@ -77,6 +95,10 @@ One JSON key per action kind, arrays of self-contained entries:
   Every resident definition token is paid again on each call of the run, so a doc the run doesn't need is cost with no work behind it.
   A run without a worklist (fallback, audit, direct session) reads the docs map.
 - **`logs`**: one-liners explaining every decision, skips included; the agent echoes them to the chat UI, and they are the audit trail of the script's reasoning.
+- **`config`**: every `work/CONFIG.md` key resolved with its default, present whenever the worklist carries work, so the run never parses the file itself (`references/architecture.md` → Context per run).
+- **`title`**: the session title of the work, `<Verb> <object>` from ids and work kinds alone (`Process item #17`, `Process items #17, #21 +3 more`, `Tidy state`), which the run passes to `rename_session`.
+  Composed here, never by the model, and never from item text.
+  A dispatched unit carries its own (`references/architecture.md` → Fan-out).
 - `error` + `nothing_to_do: true` for "could not even list" failures; the agent just logs those.
 - **A failed read is never an answer.** A scan that couldn't run emits `null`/`unknown` plus a warn in `checks`/`logs`, never `0`, an empty array, or "no marker → not handled yet".
 
@@ -95,11 +117,14 @@ The task text is the single source of truth for the entry command, written once 
 Pattern:
 
 > <Run name>.
-> Run `bash "$HOME/scripts/preflight.sh" <mode>` first.
-> If its JSON says nothing_to_do, report its logs in one line and end the run.
-> Otherwise follow CLAUDE.md → "<Run section>": read exactly the worklist's read_set, …, and back up work/ at the end with `bash "$HOME/scripts/work-backup.sh" persist` when <state-repo env var> is set.
+> The precheck already ran the pre-flight and found work: read the worklist JSON at the path its output names, and never run preflight.sh again this run.
+> If the prompt carries no worklist path, run `bash "$HOME/scripts/preflight.sh" <mode>` yourself.
+> Then follow CLAUDE.md → "<Run section>": read exactly the worklist's read_set, …, and back up work/ at the end with `bash "$HOME/scripts/work-backup.sh" persist` when <state-repo env var> is set.
 
-Changing an entry command later is a **major** bump (deployed schedules must be re-registered; the changelog's upgrade block says so).
+Beside the text, each schedule carries its `precheck`, a `sessionTitle` (`<Verb> <object>`, e.g. `Process new items`) and `model: <run_model>` (none under `default`).
+The kit schema has no `model` or `sessionTitle` field yet, so ONBOARDING's reconcile re-registers each kit schedule with them (`references/kit.md` → Schedules).
+
+Changing an entry command later is a **major** bump (deployed schedules must be re-registered; the changelog's upgrade block says so); a gate added to or removed from a schedule is one too.
 
 ## Testing a generated pre-flight
 
@@ -107,6 +132,6 @@ Changing an entry command later is a **major** bump (deployed schedules must be 
 2. Read-only dry run per mode against the real integration where reachable (`preflight.sh <mode> | jq .`): valid JSON, decisions match observable reality, `nothing_to_do` on a quiet target.
 3. Pod compatibility: GNU-date-first with BSD fallback where the script may also run on macOS in development (`references/platform-dam.md`).
 4. Source `scripts/lib/toolpath.sh` first when the script execs a shimmed CLI in a loop: on the pod `jq`/`gh` are `mise` shims costing ~250 ms per exec (`references/platform-dam.md` → Runtime environment).
-5. Test the adapter's verdicts in `scripts/tests/` with a stubbed pre-flight on `PATH`: quiet → exit 1; worklist → exit 0 with the JSON on stdout; `error`, non-JSON and missing script → exit 0 each.
+5. Test the adapter's verdicts in `scripts/tests/` with a stubbed pre-flight on `PATH`: quiet → exit 1 and no output; worklist → exit 0 with a readable file at the printed path; `error`, non-JSON, missing script and a pass over the budget → exit 2 each, with the reason on stdout.
    Fail-open rules are the ones nobody notices breaking.
-6. Time one real run per mode: past two minutes the Precheck breaks on every occurrence and the schedule silently loses its optimization.
+6. Time one real run per mode: past the adapter's budget the Precheck breaks on every occurrence and the schedule silently loses its optimization.

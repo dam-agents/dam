@@ -62,6 +62,7 @@ const state = vi.hoisted(() => ({
   buttons: {} as Record<string, () => void>,
   newSession: vi.fn(),
   connectProviders: vi.fn(),
+  catalogLoaded: true,
 }));
 
 vi.mock("../../store.js", () => ({
@@ -99,7 +100,7 @@ vi.mock("@/components/ui/tooltip", () => ({
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({
-    data: {
+    data: state.catalogLoaded && {
       harnesses: [
         {
           name: "pi",
@@ -172,6 +173,7 @@ describe("session pair model choices", () => {
     state.noProviders = false;
     state.configured = undefined;
     state.chosen = null;
+    state.catalogLoaded = true;
   });
 
   it("lists each provider's models without a default-model choice", () => {
@@ -298,6 +300,55 @@ describe("session pair model choices", () => {
     expect(html).toContain("Loading models…");
     expect(html).not.toContain("Configure");
     expect(html).not.toContain("Connect an LLM provider");
+  });
+
+  // TEST_SCENARIO: The harness catalog loads after the agent view, so until it does the label waits on a loader instead of showing the raw harness id.
+  it("shows a loader, not the harness id, until the harness catalog loads", () => {
+    state.catalogLoaded = false;
+    const trigger = (html: string) =>
+      /data-testid="session-(pair|model)-picker"[^>]*>(.*?)<\/button>/.exec(
+        html,
+      )?.[0];
+    const triggers = [
+      renderToStaticMarkup(
+        createElement(SessionPairPlaceholder, {
+          agentId: "agent",
+          agentHarness: "pi",
+          onConnectProviders: state.connectProviders,
+        }),
+      ),
+      renderPicker(),
+      renderToStaticMarkup(
+        createElement(ModelIndicator, {
+          agentId: "agent",
+          harness: "pi",
+          provider: "ibm",
+          model: null,
+          carried,
+          onChoose: vi.fn(),
+          onConfigure: vi.fn(),
+          onNewSession: state.newSession,
+        }),
+      ),
+    ].map(trigger);
+    for (const html of triggers) {
+      expect(html).toContain('aria-label="Loading harness and model"');
+      expect(html).toContain("animate-spin");
+      expect(html).not.toMatch(/>pi|Choose/);
+    }
+  });
+
+  // TEST_SCENARIO: The new session runs on the pair the person picked, so the placeholder label shows that pair over the remembered one.
+  it("labels the placeholder with the picked pair", () => {
+    state.chosen = { harness: "pi", provider: "curve", model: "glm" };
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPlaceholder, {
+        agentId: "agent",
+        agentHarness: "pi",
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain(">glm · Pi · Curve</button>");
   });
 
   it("warns before the agent answers when no provider is connected", () => {

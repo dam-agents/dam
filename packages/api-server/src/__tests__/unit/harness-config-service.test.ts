@@ -70,6 +70,7 @@ function makeService(opts?: {
       telemetryEnv: () => [],
     },
     isOwnedAgent: async () => opts?.owned ?? true,
+    specHarness: async () => undefined,
     getCapabilities: async () => opts?.capabilities,
     isSettled: async () => opts?.settled ?? true,
     now: () => 1000,
