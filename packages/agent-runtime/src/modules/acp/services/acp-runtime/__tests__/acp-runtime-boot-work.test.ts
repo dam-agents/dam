@@ -151,34 +151,14 @@ describe("acp-runtime: spawn work before the harness starts", () => {
   });
 
   /**
-   * TEST_SCENARIO: The boot work never settles — an unreachable provider with
-   * no timeout of its own. The spawn-work ceiling releases the caller so the
-   * harness still starts; the agent then runs without the seeded value rather
-   * than not running at all.
-   */
-  it("starts the harness anyway when boot work never settles", () => {
-    vi.useFakeTimers();
-    const world = createWorld({
-      envReadyAtBoot: true,
-      spawnWorkTimeoutMs: 1_000,
-      beforeSpawn: () => new Promise<void>(() => {}),
-    });
-
-    world.connect();
-    expect(world.harnessStarted()).toBe(false);
-
-    vi.advanceTimersByTime(1_000);
-    expect(world.harnessStarted()).toBe(true);
-  });
-
-  /**
-   * TEST_SCENARIO: A wake with no model to stand on: the listing behind the
-   * seed goes through a gateway pod that has only just started. The person
+   * TEST_SCENARIO: The boot work never settles — an unreachable provider, or a
+   * listing through a gateway pod that has only just started. The person
    * opening the chat is the caller held, so the spawn work gets a ceiling of
-   * five seconds, well short of the fifteen the env may take to arrive; a
-   * seed that lands later recycles the harness onto it.
+   * five seconds, well short of the fifteen the env may take to arrive, and
+   * the harness then starts without the seeded value rather than not at all;
+   * a seed that lands later recycles the harness onto it.
    */
-  it("holds the first caller for the spawn work at most five seconds", () => {
+  it("starts the harness anyway after holding the first caller at most five seconds", () => {
     vi.useFakeTimers();
     const world = createWorld({
       envReadyAtBoot: true,

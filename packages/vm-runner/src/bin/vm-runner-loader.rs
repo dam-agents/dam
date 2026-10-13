@@ -47,7 +47,7 @@ enum Mode {
     },
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how often the loader reads the release the controller names. The kubelet refreshes a mounted ConfigMap within about a minute, so a faster read buys nothing.
+// UNIT_BOUNDARY_DESCRIPTION: how often the loader reads the release the controller names. The kubelet refreshes a mounted ConfigMap within about a minute, so a faster read buys nothing. VM_RUNNER_LOADER_POLL_MS overrides it so the hand-off test does not wait out five seconds per release.
 const POLL: Duration = Duration::from_secs(5);
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a runner that took over must keep running before the loader trusts the release. One that exits sooner is a broken release, and the loader goes back to the one it replaced rather than restarting the broken one in a loop.
@@ -301,7 +301,11 @@ impl Loader {
             _ => self.spawn(builtin, None)?,
         };
         let mut backoff = Duration::from_secs(1);
-        let mut tick = tokio::time::interval(POLL);
+        let mut tick = tokio::time::interval(
+            env("VM_RUNNER_LOADER_POLL_MS")
+                .parse()
+                .map_or(POLL, Duration::from_millis),
+        );
         loop {
             tokio::select! {
                 exited = running.child.wait() => {

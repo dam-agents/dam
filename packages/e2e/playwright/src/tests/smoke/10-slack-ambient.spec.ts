@@ -27,16 +27,7 @@ test("an unmentioned channel message gets an ambient reply", async () => {
     });
   });
 
-  await test.step("connecting with ambient posts no announcement to the channel", async () => {
-    await new Promise((r) => setTimeout(r, 10_000));
-    const { records } = await api.e2e.slackReadOutbound.query();
-    expect(
-      records.filter((r) => r.kind === "message" && r.text.includes("ambient")),
-    ).toEqual([]);
-  });
-
   await test.step("a plain message is answered in its own thread", async () => {
-    await api.e2e.slackResetOutbound.mutate();
     await api.e2e.slackFireMessage.mutate({
       user: strangerSlackUserId,
       channel: ambientChannelId,
@@ -66,6 +57,15 @@ test("an unmentioned channel message gets an ambient reply", async () => {
     const { records } = await api.e2e.slackReadOutbound.query();
     expect(records.filter((r) => r.kind === "reaction")).toEqual([]);
     expect(records.filter((r) => r.kind === "ephemeral")).toEqual([]);
+    expect(
+      records.filter(
+        (r) =>
+          r.kind === "message" &&
+          r.text.includes("ambient") &&
+          !r.text.includes(mockDefaultReply),
+      ),
+      "connecting with ambient posts no announcement to the channel",
+    ).toEqual([]);
   });
 
   await test.step("the prompt is ambient-framed and speaker-labelled", async () => {
@@ -92,7 +92,7 @@ test("without ambient, an unmentioned message stays unanswered", async () => {
     });
   });
 
-  await test.step("a plain message triggers no relay", async () => {
+  await test.step("a plain message triggers no relay, while a mention after it is answered", async () => {
     await api.e2e.slackResetOutbound.mutate();
     await api.e2e.slackFireMessage.mutate({
       user: strangerSlackUserId,
@@ -100,9 +100,30 @@ test("without ambient, an unmentioned message stays unanswered", async () => {
       ts: "1700000006.000100",
       text: "chatting amongst ourselves",
     });
+    await api.e2e.slackFireMention.mutate({
+      user: strangerSlackUserId,
+      channel: ambientChannelId,
+      ts: "1700000007.000100",
+      text: "a mention after the chatter",
+    });
 
-    await new Promise((r) => setTimeout(r, 15_000));
+    await expect
+      .poll(
+        async () => {
+          const { records } = await api.e2e.slackReadOutbound.query();
+          return records.some(
+            (r) => r.kind === "message" && r.threadTs === "1700000007.000100",
+          );
+        },
+        {
+          timeout: 180_000,
+          intervals: [1_000],
+          message: "the mention after the plain message got no reply",
+        },
+      )
+      .toBe(true);
+
     const { records } = await api.e2e.slackReadOutbound.query();
-    expect(records).toEqual([]);
+    expect(JSON.stringify(records)).not.toContain("1700000006.000100");
   });
 });

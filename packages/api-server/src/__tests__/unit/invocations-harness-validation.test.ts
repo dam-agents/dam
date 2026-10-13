@@ -98,19 +98,6 @@ describe("spawn harness validation", () => {
     expect(spawned).toHaveLength(0);
   });
 
-  test("runs a known harness on its Template", async () => {
-    const { app, spawned } = makeApp();
-
-    const res = await app.request(
-      "/api/agents/driver-1/invocations",
-      body("pi"),
-    );
-
-    expect(res.status).toBe(201);
-    expect(spawned).toHaveLength(1);
-    expect(spawned[0]).toMatchObject({ target: { templateId: "pi-agent" } });
-  });
-
   /** TEST_SCENARIO: The default image carries every harness in the install's
    * catalog. A spawn naming one runs on the default Template with that harness
    * as the target's own, and only on providers the harness can use. */

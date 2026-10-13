@@ -817,7 +817,7 @@ async fn a_machine_reads_as_nested_only_when_it_asks_and_its_runner_nests() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_guest_that_answers_is_ready_before_its_start_returns() {
     let h = Harness::new("early-ready");
-    *locked(&h.fake.start_delay) = Duration::from_secs(2);
+    *locked(&h.fake.start_delay) = Duration::from_secs(1);
     let _guest = guest(h.base);
     h.server.put("m1", spec(true)).unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);

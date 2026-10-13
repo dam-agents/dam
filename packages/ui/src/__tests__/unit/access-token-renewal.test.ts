@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as auth from "../../auth.js";
+
 /**
  * TEST_OVERVIEW: Every connection the UI opens takes its bearer from
  * getAccessToken. The tRPC WebSocket is nudged to reconnect 30 s before its
@@ -42,8 +44,6 @@ vi.mock("../../modules/sessions/lib/undelivered-store.js", () => ({
 
 async function signedIn(user: { access_token: string; expires_in?: number }) {
   oidc.user = user;
-  vi.resetModules();
-  const auth = await import("../../auth.js");
   await auth.initAuth();
   return auth;
 }

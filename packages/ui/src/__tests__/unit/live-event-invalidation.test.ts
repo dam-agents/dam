@@ -61,7 +61,7 @@ it("collapses a burst of hints into one trailing refetch", async () => {
   for (let i = 0; i < 4; i++)
     void invalidateForLiveEvent({ topic: "harnessConfig", agentId: "A" });
   releases.shift()?.();
-  await vi.waitFor(() => expect(releases).toHaveLength(1));
+  await vi.waitFor(() => expect(releases).toHaveLength(1), { interval: 1 });
   releases.shift()?.();
   await first;
 
