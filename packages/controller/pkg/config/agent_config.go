@@ -36,6 +36,7 @@ type AgentBase struct {
 
 	IdleTimeout            Duration `json:"idleTimeout,omitempty"`
 	VMIdleTimeout          Duration `json:"vmIdleTimeout,omitempty"`
+	VMGatewayWarmFor       Duration `json:"vmGatewayWarmFor,omitempty"`
 	TerminationGracePeriod int64    `json:"terminationGracePeriod,omitempty"`
 
 	ExtraLabels      map[string]string `json:"extraLabels,omitempty"`

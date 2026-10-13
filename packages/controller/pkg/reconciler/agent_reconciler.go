@@ -246,7 +246,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			if !autoRetry {
 				r.recordDeniedWake(name, lastActivity)
 			}
-			if err := scaleAgentPairToZero(ctx, r.client, r.HaltMachine, owner, r.config.Namespace, name); err != nil {
+			if err := scaleAgentPairToZero(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, name, false); err != nil {
 				return r.setError(ctx, name, fmt.Sprintf("parking resized-over-budget pair: %v", err))
 			}
 		}
@@ -281,16 +281,14 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			slog.Warn("force-rolling stuck gateway pod failed; rollout may be deadlocked",
 				"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
 		}
-		if running {
-			if err := r.refreshGatewayCredentials(ctx, gatewaySS.Name, credentialSecrets); err != nil {
-				slog.Warn("asking the kubelet to refresh gateway credentials failed; the periodic refresh still applies",
-					"agent", name, "error", err)
-			}
+		if err := r.refreshGatewayCredentials(ctx, gatewaySS.Name, credentialSecrets); err != nil {
+			slog.Warn("asking the kubelet to refresh gateway credentials failed; the periodic refresh still applies",
+				"agent", name, "error", err)
 		}
 		timer.mark("gatewayStatefulSet")
 		return nil
 	}
-	// UNIT_BOUNDARY_DESCRIPTION: a waking gateway pod takes longer to start than the machine or agent pod beside it, mostly for the pod network and the kubelet's relist once a second, so it is scaled up before the agent side rather than after the runner call. The runner can still refuse a vm machine for lack of room, so a vm agent whose last start was refused, or one with no status yet, keeps the old order: a parked agent retried every 30 s must not start and stop a gateway pod each time. A runtime migration and a gateway going down also keep their place after the agent side, because a vm agent that is not running reads from its gateway whether it was hibernated.
+	// UNIT_BOUNDARY_DESCRIPTION: a waking gateway pod takes longer to start than the machine or agent pod beside it, mostly for the pod network and the kubelet's relist once a second, so it is scaled up before the agent side rather than after the runner call. The runner can still refuse a vm machine for lack of room, so a vm agent whose last start was refused, or one with no status yet, keeps the old order: a parked agent retried every 30 s must not start and stop a gateway pod each time. A runtime migration and a gateway going down also keep their place after the agent side. A gateway kept up through a hibernation is already up, so its wake applies nothing new here.
 	lastReady := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionReady)
 	runnerAccepted := !agentSpec.IsVM() || (lastReady != nil && lastReady.Reason != apiv1.ReasonOverBudget)
 	gatewayUp := running && !hardStop && !migration.active() && runnerAccepted
@@ -323,8 +321,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		}
 		machineRuns := running
 		if !running && !hardStop && !parked && !migration.holdsDown() {
-			if machineRuns, err = r.pairAwake(ctx, name); err != nil {
-				return r.setError(ctx, name, fmt.Sprintf("reading gateway statefulset: %v", err))
+			if machineRuns, err = r.machineAwake(ctx, name); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("reading whether the agent is hibernated: %v", err))
 			}
 		}
 		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, machineRuns && migration.machineMayRun(), true)
@@ -403,7 +401,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 
 	if hardStop {
-		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, name); err != nil {
+		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, name, false); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("stopping agent: %v", err))
 		}
 		err = r.publishReconciled(ctx, agent)
@@ -418,10 +416,14 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			err = r.publishReadiness(ctx, agent)
 		}
 		timer.mark("readiness")
+		if seen, ok := agent.Annotations[annHibernatedAt]; ok && err == nil {
+			err = clearHibernated(ctx, r.dynamic, r.config.Namespace, name, seen)
+			timer.mark("clearHibernated")
+		}
 		return err
 	}
 	if parked {
-		if err := scaleAgentPairToZero(ctx, r.client, r.HaltMachine, owner, r.config.Namespace, name); err != nil {
+		if err := scaleAgentPairToZero(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, name, false); err != nil {
 			return r.setError(ctx, name, fmt.Sprintf("scaling down parked agent pair: %v", err))
 		}
 	}
@@ -435,16 +437,16 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	return err
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the idle checker has yet to hibernate the Agent, read off its gateway, which the checker scales to zero with the machine. A lapsed idle timeout alone must not stop a vm machine, as it never scales a container down: only the checker also asks agent-runtime whether it is busy. A gateway at zero whose machine did not stop, because the runner was unreachable, is stopped here on the next reconcile.
-func (r *AgentReconciler) pairAwake(ctx context.Context, name string) (bool, error) {
-	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, GatewayName(name), metav1.GetOptions{})
+// UNIT_BOUNDARY_DESCRIPTION: whether the idle checker has yet to hibernate the Agent. A lapsed idle timeout alone must not stop a vm machine, as it never scales a container down: only the checker also asks agent-runtime whether it is busy. The Agent is read live rather than from the cache, since the hibernation is stamped just before the machine is asked to stop, and a reconcile from a cache that has not seen the stamp would start it again. A stamp whose machine did not stop, because the runner was unreachable, has it stopped here on the next reconcile.
+func (r *AgentReconciler) machineAwake(ctx context.Context, name string) (bool, error) {
+	live, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	return ss.Spec.Replicas == nil || *ss.Spec.Replicas != 0, nil
+	return r.agentDesiredUp(ctx, name, true, live.GetAnnotations())
 }
 
 func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Agent) error {

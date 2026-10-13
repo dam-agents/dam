@@ -1543,6 +1543,10 @@ controller:
       # vm agents start fast, so they always take this and ignore their own
       # hibernationTimeout
       vmIdleTimeout: "5m"
+      # a hibernated vm agent keeps its gateway pod up this long after its last
+      # activity, so a wake in that window does not wait for a gateway pod to
+      # start; "0s" scales the gateway down with the machine
+      vmGatewayWarmFor: "8h"
       terminationGracePeriod: 5 # gateway pods have a hardcoded drain
 
       # Pod metadata + scheduling

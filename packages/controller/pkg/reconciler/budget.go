@@ -21,7 +21,7 @@ func (r *AgentReconciler) budgetAllows(ctx context.Context, agent *apiv1.Agent, 
 	if owner == "" || agent.Spec.IsVM() {
 		return "", nil
 	}
-	up, err := r.agentDesiredUp(ctx, agent.Name, agent.Spec.IsVM())
+	up, err := r.agentDesiredUp(ctx, agent.Name, agent.Spec.IsVM(), agent.Annotations)
 	if err != nil {
 		return "", err
 	}
@@ -154,8 +154,12 @@ func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self strin
 	return cpu, mem, nil
 }
 
-func (r *AgentReconciler) agentDesiredUp(ctx context.Context, name string, vm bool) (bool, error) {
+// UNIT_BOUNDARY_DESCRIPTION: a vm Agent's machine is down exactly while its hibernation stamp stands, whatever its gateway, which stays up through a hibernation. Only an Agent with no stamp is read off its gateway: every scale-down stamps, so a gateway at zero without one is a hibernation from a controller that did not stamp, and a gateway up without one is an Agent awake.
+func (r *AgentReconciler) agentDesiredUp(ctx context.Context, name string, vm bool, annotations map[string]string) (bool, error) {
 	if vm {
+		if _, hibernated := annotations[annHibernatedAt]; hibernated {
+			return false, nil
+		}
 		name = GatewayName(name)
 	}
 	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})

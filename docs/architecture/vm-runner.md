@@ -103,7 +103,7 @@ A changed token also voids every seed capability minted under the old one, since
 An agent whose runner is not ready is looked at again with a backoff up to a minute, and the controller watches the runner Deployments, so a runner's pod becoming ready requeues its owner's vm agents at once.
 What an agent waits for is on its status: a certificate cert-manager has not issued, with cert-manager's own account; a runner pod the scheduler cannot place, under a reason of its own that the api-server reads as a failed start ([agent-lifecycle](agent-lifecycle.md#wake)); a runner that cannot be reached, described without its in-cluster address.
 A reconcile that could not ensure the machine takes the Agent's readiness down with it.
-Hibernation does not wait for an unreachable runner: the gateway goes down anyway, readiness goes down, and the machine is stopped by the Agent's next reconcile.
+Hibernation does not wait for an unreachable runner: the Agent is stamped hibernated and readiness goes down anyway, and the machine is stopped by the Agent's next reconcile.
 The Agent is published hibernated only after the runner confirmed the stop, on the idle checker's next sweep, because a wake from hibernation trusts the first health check answer ([agent-lifecycle](agent-lifecycle.md#wake)).
 
 ## Runtime migration

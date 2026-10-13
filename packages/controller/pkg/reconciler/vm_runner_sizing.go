@@ -70,7 +70,7 @@ func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, s
 		d.seedBytes += r.runtimeMigrationSeedBytes(ctx, a)
 		running := selfRunning
 		if a.Name != self.Name {
-			if running, err = r.peerShouldRun(ctx, a.Name); err != nil {
+			if running, err = r.peerShouldRun(ctx, a); err != nil {
 				return runnerDemand{}, err
 			}
 		}
@@ -103,12 +103,12 @@ func (r *AgentReconciler) ownerAgents(ctx context.Context, owner string) ([]runt
 	return items, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether an agent's machine should run is the decision its own last reconcile made, which this controller keeps in memory. Only an agent not reconciled since the controller started is read from the cluster, by its gateway, which is scaled up exactly when its machine should run.
-func (r *AgentReconciler) peerShouldRun(ctx context.Context, name string) (bool, error) {
-	if running, ok := r.vmRunning.Load(name); ok {
+// UNIT_BOUNDARY_DESCRIPTION: whether an agent's machine should run is the decision its own last reconcile made, which this controller keeps in memory. Only an agent not reconciled since the controller started is read from the cluster, by its hibernation stamp.
+func (r *AgentReconciler) peerShouldRun(ctx context.Context, a *apiv1.Agent) (bool, error) {
+	if running, ok := r.vmRunning.Load(a.Name); ok {
 		return running.(bool), nil
 	}
-	return r.agentDesiredUp(ctx, name, true)
+	return r.agentDesiredUp(ctx, a.Name, true, a.Annotations)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the claim holds every machine disk of the owner, the headroom each machine writes beside its disk, the seed of each migration still in flight, and the image cache when the install left the cache on the claim. `runner.storage` is the ceiling, not the size: a claim sized for a fleet the owner does not have reserves storage nobody uses, and a single 10Gi agent would otherwise cost a 100Gi volume.

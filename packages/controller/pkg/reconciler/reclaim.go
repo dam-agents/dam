@@ -19,11 +19,12 @@ const (
 )
 
 type reclaimCandidate struct {
-	name      string
-	idleSince time.Time
-	cpu       resource.Quantity
-	mem       resource.Quantity
-	vmMiB     int
+	name        string
+	idleSince   time.Time
+	cpu         resource.Quantity
+	mem         resource.Quantity
+	vmMiB       int
+	keepGateway bool
 }
 
 func (r *AgentReconciler) reclaimIdleRoom(ctx context.Context, agent *apiv1.Agent, owner string) (bool, error) {
@@ -112,7 +113,7 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 		if !ok {
 			continue
 		}
-		up, err := r.agentDesiredUp(ctx, peer.Name, peer.Spec.IsVM())
+		up, err := r.agentDesiredUp(ctx, peer.Name, peer.Spec.IsVM(), peer.Annotations)
 		if err != nil {
 			return nil, err
 		}
@@ -120,7 +121,8 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 			continue
 		}
 		cpu, mem := r.limitsOf(&peer.Spec)
-		c := reclaimCandidate{name: peer.Name, idleSince: idleSince, cpu: cpu, mem: mem}
+		c := reclaimCandidate{name: peer.Name, idleSince: idleSince, cpu: cpu, mem: mem,
+			keepGateway: gatewayKeptWarm(peer.Annotations, peer.Spec.IsVM(), r.config.AgentBase, now)}
 		if peer.Spec.IsVM() {
 			c.vmMiB = r.accountedMemoryMiB(peer.Name, &peer.Spec)
 		}

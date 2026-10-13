@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 // TEST_SCENARIO: an Agent is deleted while its owner's runner is restarting. The machine cannot be removed yet, so the cleanup says so — the delete queue retries it — and a later attempt, with the runner back, removes it.
@@ -112,7 +113,7 @@ func TestHibernatingWhileTheRunnerIsUnreachableScalesDownButDoesNotPublishHibern
 	}))
 	unreachable := func(context.Context, string, string) error { return errors.New("the VM runner could not be reached") }
 
-	require.Error(t, hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent"))
+	require.Error(t, hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent", false))
 
 	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")))
 	ready := readyCondition(t, r, "my-agent")
@@ -242,4 +243,107 @@ func TestARunnerWhoseAddressDoesNotResolveYetIsStillStarting(t *testing.T) {
 	_, msg := agentPodReadyMessage(t, r, "my-agent")
 	assert.Equal(t, "the owner's VM runner is still starting: its address does not resolve yet", msg)
 	assert.Equal(t, "3s", requeued.last().String())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the Agent as stored, with `mutate` applied to its annotations and written back, so a reconcile reads what the api-server or the idle checker left there.
+func storedVMAgent(t *testing.T, r *AgentReconciler, mutate func(map[string]string)) *apiv1.Agent {
+	t.Helper()
+	ctx := context.Background()
+	cli := r.dynamic.Resource(AgentsGVR).Namespace("test-agents")
+	stored, err := cli.Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	if mutate != nil {
+		ann := stored.GetAnnotations()
+		mutate(ann)
+		stored.SetAnnotations(ann)
+		stored, err = cli.Update(ctx, stored, metav1.UpdateOptions{})
+		require.NoError(t, err)
+	}
+	a, err := FromCacheObject[apiv1.Agent](stored)
+	require.NoError(t, err)
+	return a
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent the idle checker has just hibernated inside the warm window: its last activity two hours ago, past the one-hour idle timeout, and the gateway kept for eight hours.
+func warmHibernatedVMAgent(t *testing.T) (*AgentReconciler, *fakeNode, *IdleChecker) {
+	t.Helper()
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.AgentBase.VMGatewayWarmFor = config.Duration(8 * time.Hour)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.True(t, node.spec("my-agent").Running)
+	storedVMAgent(t, r, func(ann map[string]string) {
+		ann[annLastActivity] = time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+	})
+	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine)
+	checker.busyProbe = func(context.Context, string) bool { return false }
+	checker.check(ctx)
+	return r, node, checker
+}
+
+// TEST_SCENARIO: a vm agent hibernates and keeps its gateway pod up, so a wake does not wait for one to start. The machine must stay stopped although the gateway is up — later reconciles, and the runner's memory accounting after a controller restart, read the hibernation from its own stamp, not from the gateway — and a wake starts the machine again beside the gateway already running, and drops the stamp.
+func TestAHibernatedVMAgentKeepsItsGatewayUpAndItsMachineStopped(t *testing.T) {
+	ctx := context.Background()
+	r, node, _ := warmHibernatedVMAgent(t)
+
+	assert.Equal(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+	assert.False(t, node.spec("my-agent").Running)
+	assert.Equal(t, int32(1), agentSSReplicas(t, r, GatewayName("my-agent")), "the gateway stays up through the hibernation")
+
+	hibernated := storedVMAgent(t, r, nil)
+	require.NoError(t, r.Reconcile(ctx, hibernated))
+	assert.False(t, node.spec("my-agent").Running, "a gateway that is up does not start the hibernated machine again")
+	r.vmRunning.Delete("my-agent")
+	up, err := r.peerShouldRun(ctx, hibernated)
+	require.NoError(t, err)
+	assert.False(t, up, "a peer read from the cluster counts no memory for a hibernated machine")
+
+	woken := storedVMAgent(t, r, func(ann map[string]string) {
+		ann[annLastActivity] = time.Now().UTC().Format(time.RFC3339)
+	})
+	require.NoError(t, r.Reconcile(ctx, woken))
+	assert.True(t, node.spec("my-agent").Running, "the wake starts the machine")
+	assert.Equal(t, int32(1), agentSSReplicas(t, r, GatewayName("my-agent")))
+	assert.NotContains(t, storedVMAgent(t, r, nil).Annotations, annHibernatedAt, "the wake drops the stamp it woke from")
+}
+
+// TEST_SCENARIO: the gateway kept up through a hibernation costs a pod per agent, so it is bounded: a hard stop takes it down at once, and the idle checker takes it down once the agent's last activity is past the warm window.
+func TestAKeptGatewayGoesDownOnAHardStopOrPastTheWarmWindow(t *testing.T) {
+	ctx := context.Background()
+	t.Run("hard stop", func(t *testing.T) {
+		r, node, _ := warmHibernatedVMAgent(t)
+		stopped := storedVMAgent(t, r, func(ann map[string]string) {
+			ann[annStopRequested] = time.Now().UTC().Format(time.RFC3339)
+		})
+		require.NoError(t, r.Reconcile(ctx, stopped))
+		assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")))
+		assert.False(t, node.spec("my-agent").Running)
+	})
+	t.Run("past the warm window", func(t *testing.T) {
+		r, node, checker := warmHibernatedVMAgent(t)
+		checker.check(ctx)
+		require.Equal(t, int32(1), agentSSReplicas(t, r, GatewayName("my-agent")), "inside the window the sweep leaves the gateway up")
+		storedVMAgent(t, r, func(ann map[string]string) {
+			ann[annLastActivity] = time.Now().Add(-9 * time.Hour).UTC().Format(time.RFC3339)
+		})
+		checker.check(ctx)
+		assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")))
+		assert.False(t, node.spec("my-agent").Running)
+		assert.Equal(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+	})
+}
+
+// TEST_SCENARIO: a wake's reconcile ran from activity that has since ended, and the idle checker hibernated the agent again meanwhile. The wake removes only the stamp it read, so the new hibernation keeps its machine stopped.
+func TestAWakeLeavesAHibernationStampedSinceItRead(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := warmHibernatedVMAgent(t)
+	stamp := storedVMAgent(t, r, nil).Annotations[annHibernatedAt]
+	require.NotEmpty(t, stamp)
+
+	require.NoError(t, clearHibernated(ctx, r.dynamic, "test-agents", "my-agent", "2026-01-01T00:00:00Z"))
+	assert.Equal(t, stamp, storedVMAgent(t, r, nil).Annotations[annHibernatedAt])
+
+	require.NoError(t, clearHibernated(ctx, r.dynamic, "test-agents", "my-agent", stamp))
+	assert.NotContains(t, storedVMAgent(t, r, nil).Annotations, annHibernatedAt)
 }

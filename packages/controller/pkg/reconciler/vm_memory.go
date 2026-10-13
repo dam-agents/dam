@@ -164,7 +164,7 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	}
 	var first *apiv1.Agent
 	for _, a := range agents {
-		running, err := r.peerShouldRun(ctx, a.Name)
+		running, err := r.peerShouldRun(ctx, a)
 		if err != nil || !running {
 			continue
 		}
@@ -211,7 +211,7 @@ func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []recla
 		if err := r.stampReclaimed(ctx, c.name, now); err != nil {
 			return err
 		}
-		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, c.name); err != nil {
+		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, c.name, c.keepGateway); err != nil {
 			return err
 		}
 		slog.InfoContext(ctx, why, "agent", c.name, "for", forName, "owner", owner, "idleFor", time.Since(c.idleSince).Round(time.Second))

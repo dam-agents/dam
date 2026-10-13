@@ -269,18 +269,24 @@ See [agent-skills](agent-skills.md).
 ### Hibernate
 
 Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)).
-On the `vm` Backend the gateway scales the same way and the agent side is the machine on the VM runner, which stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest.
-A wake scales the gateway up before the agent side, because the gateway pod is the slower of the two to start.
+On the `vm` Backend the agent side is the machine on the VM runner, which stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest.
+The gateway pod is the slower of the two to start, so a `vm` Agent's gateway stays up through a hibernation for a window after its last activity (`controller.agent.base.vmGatewayWarmFor`), and a wake inside it starts only the machine.
+Past the window the idle checker scales the gateway down, and a hard stop, a pause, a park over budget or a delete takes it down at once.
+While it stays up, its credentials stay current as a running gateway's do ([credential-gateway](credential-gateway.md)): a configuration change rolls it, and a rotated credential reaches it within seconds.
+A wake whose gateway is down scales it up before the agent side.
 A `vm` Agent whose last start the runner refused for lack of room, or one with no status yet, keeps the gateway after the runner's answer, so a parked Agent's retries do not start and stop a gateway pod.
 When the status already holds the agent side ready and only the gateway was missing, the reconcile that sees the gateway pod ready publishes `Ready` right after it applies the gateway, before the runner call and the remaining applies.
 Only the idle checker or [reclaim](vm-memory.md) hibernates it, not a lapsed timeout.
-An unreachable runner does not hold the gateway up, but the Agent is published hibernated only once its runner has confirmed the machine stopped.
+Every scale-down — hibernation, hard stop, pause, park — stamps the Agent `agent-platform.ai/hibernated-at` before it asks the runner to stop the machine, and the reconcile of a wake removes the stamp it woke from.
+That stamp, not the gateway, is what says a `vm` Agent's machine is down: the reconciler holds the machine stopped while it stands, and the runner's memory accounting counts no memory for it.
+An Agent with no stamp is read off its gateway, which is down only for an Agent hibernated before the controller stamped.
+An unreachable runner does not hold the rest of the pair up, but the Agent is published hibernated only once its runner has confirmed the machine stopped.
 Until then its readiness is down and it reads as starting, the Agent's next reconcile stops the machine once the runner answers, and the idle checker tries the hibernation again on each sweep.
-Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
+Whether an Agent is "idle" is **derived from observed activity, never stored** — the hibernation stamp records only that the controller acted on it — and the derivation is split across two independent checks.
 
 **The decision.** The controller's idle checker scans Agents on a timer whose interval scales with the *shortest effective timeout it saw last sweep* — an Agent that chooses a window far below the cluster-wide default is swept inside its own window rather than at the default's pace, subject to a floor that keeps the sweep off the API server's back.
 It runs even when the default is never-hibernate, for the Agents that opt in, and once at start-up, since a restart forgets the shortest window it saw.
-It skips any Agent already at rest — pair observed at zero *and* hibernation published.
+It skips any Agent already at rest — pair observed at zero, or a hibernation stamped, *and* hibernation published — after scaling down a kept gateway whose window has passed.
 For the rest it hibernates only when *both* checks below agree it is quiet:
 
 1. **Activity annotations** — the same `shouldRun` gate the reconciler uses to scale *up*, so scale-down and scale-up can never disagree.

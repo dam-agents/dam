@@ -118,7 +118,13 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
-		if atZero[name] && hibernationPublished(agent) {
+		if _, stamped := agent.GetAnnotations()[annHibernatedAt]; hibernationPublished(agent) && (atZero[name] || stamped) {
+			if !atZero[name] && !gatewayKeptWarm(agent.GetAnnotations(), isVMObject(agent), c.config.AgentBase, now) {
+				slog.Info("scaling down the gateway of a hibernated agent past its warm window", "agent", name)
+				if err := scaleAgentPairToZero(ctx, c.client, c.dynamic, nil, agent.GetLabels()[envoyOwnerLabel], c.config.Namespace, name, false); err != nil {
+					slog.Error("idle checker: scaling down a warm gateway", "agent", name, "error", err)
+				}
+			}
 			continue
 		}
 
@@ -128,7 +134,8 @@ func (c *IdleChecker) check(ctx context.Context) {
 		}
 
 		slog.Info("hibernating idle agent", "agent", name)
-		if err := c.hibernate(ctx, agent.GetLabels()[envoyOwnerLabel], name); err != nil {
+		keep := gatewayKeptWarm(agent.GetAnnotations(), isVMObject(agent), c.config.AgentBase, now)
+		if err := hibernateAgentPair(ctx, c.client, c.dynamic, c.halt, agent.GetLabels()[envoyOwnerLabel], c.config.Namespace, name, keep); err != nil {
 			slog.Error("idle checker: hibernating", "agent", name, "error", err)
 			continue
 		}
@@ -226,17 +233,16 @@ func agentPodIsBusy(ctx context.Context, namespace, agentName string) bool {
 	return !status.Idle
 }
 
-func (c *IdleChecker) hibernate(ctx context.Context, owner, name string) error {
-	return hibernateAgentPair(ctx, c.client, c.dynamic, c.halt, owner, c.config.Namespace, name)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: hibernation is published only once the agent's machine is stopped. The api-server trusts a health check answer on a wake from a published hibernation, because nothing should answer then, so a machine still running would pass for a woken one. When the runner cannot stop the machine, the gateway is scaled down anyway and readiness goes down, but the agent is not reported hibernated: the error makes the idle checker try again on its next sweep, and the agent's next reconcile stops the machine once the runner answers.
-func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string) error {
+// UNIT_BOUNDARY_DESCRIPTION: hibernation is published only once the agent's machine is stopped. The api-server trusts a health check answer on a wake from a published hibernation, because nothing should answer then, so a machine still running would pass for a woken one. When the runner cannot stop the machine, the rest of the pair goes down anyway and readiness goes down, but the agent is not reported hibernated: the error makes the idle checker try again on its next sweep, and the agent's next reconcile stops the machine once the runner answers, as the hibernation is stamped before the machine is asked to stop. `keepGateway` leaves a vm agent's gateway up through the hibernation.
+func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string, keepGateway bool) error {
+	if err := stampHibernated(ctx, dyn, namespace, name); err != nil {
+		return err
+	}
 	var haltErr error
 	if halt != nil {
 		haltErr = halt(ctx, owner, name)
 	}
-	if err := scaleAgentPairToZero(ctx, kube, nil, owner, namespace, name); err != nil {
+	if err := scaleAgentPairToZero(ctx, kube, dyn, nil, owner, namespace, name, keepGateway); err != nil {
 		return err
 	}
 	if haltErr != nil {
@@ -259,7 +265,10 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a machine that cannot be stopped now — its runner is restarting or unreachable — does not keep the rest of the pair up. The gateway is scaled down anyway, and the agent's own next reconcile, which asks for the machine stopped because the agent should not run, stops it once the runner answers.
-func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, halt MachineHalt, owner, namespace, name string) error {
+func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string, keepGateway bool) error {
+	if err := stampHibernated(ctx, dyn, namespace, name); err != nil {
+		return err
+	}
 	if halt != nil {
 		if err := halt(ctx, owner, name); err != nil {
 			slog.WarnContext(ctx, "stopping the agent's machine failed; scaling the rest down, the next reconcile stops the machine", "agent", name, "owner", owner, "error", err)
@@ -273,7 +282,7 @@ func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, halt M
 	}
 	for i := range sss.Items {
 		ss := &sss.Items[i]
-		if ss.Spec.Replicas != nil && *ss.Spec.Replicas == 0 {
+		if (ss.Spec.Replicas != nil && *ss.Spec.Replicas == 0) || (keepGateway && ss.Name == GatewayName(name)) {
 			continue
 		}
 		ssName := ss.Name
