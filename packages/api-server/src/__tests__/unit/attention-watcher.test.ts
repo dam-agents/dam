@@ -56,7 +56,7 @@ interface Harness {
   upserted: string[];
   deleted: string[][];
   reads: number;
-  setSessions: (sessions: PodSession[]) => void;
+  setSessions: (sessions: PodSession[], incomplete?: boolean) => void;
   failNextWrite: () => void;
   settleRead: () => void;
   holdReads: (held: boolean) => void;
@@ -64,6 +64,7 @@ interface Harness {
 
 function harness(): Harness {
   let listed: PodSession[] = [];
+  let incomplete = false;
   let onNotice: () => void = () => {};
   let failWrite = false;
   let holding = false;
@@ -103,14 +104,14 @@ function harness(): Harness {
     deleteForAgent: async () => {},
   };
 
-  const read = async (): Promise<PodSession[]> => {
+  const read = async () => {
     state.reads = (state.reads ?? 0) + 1;
     if (holding) {
       await new Promise<void>((resolve) => {
         releaseRead = resolve;
       });
     }
-    return listed;
+    return { sessions: listed, incomplete };
   };
 
   const watcher = createSessionWatcher({
@@ -131,8 +132,9 @@ function harness(): Harness {
   return Object.assign(state, {
     watcher,
     notify: () => onNotice(),
-    setSessions: (sessions: PodSession[]) => {
+    setSessions: (sessions: PodSession[], partial = false) => {
       listed = sessions;
+      incomplete = partial;
     },
     failNextWrite: () => {
       failWrite = true;
@@ -215,6 +217,35 @@ describe("createSessionWatcher", () => {
     h.watcher.stop();
   });
 
+  /*
+   * TEST_SCENARIO: right after a wake the agent answers before its harness
+   * does and marks the list incomplete. A session missing from that answer is
+   * not gone, so its row (and the person's dismissal on it) must stay until a
+   * complete list leaves it out.
+   */
+  it("keeps rows a list marked incomplete leaves out", async () => {
+    const h = harness();
+    h.setSessions([
+      session("s1", "2026-09-10T00:00:00.000Z"),
+      session("s2", "2026-09-10T00:00:00.000Z"),
+    ]);
+
+    h.watcher.start();
+    await flush();
+
+    h.setSessions([session("s1", "2026-09-10T00:00:00.000Z")], true);
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.deleted ?? []).toEqual([]);
+
+    h.setSessions([session("s1", "2026-09-10T00:00:00.000Z")]);
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.deleted).toEqual([["s2"]]);
+    h.watcher.stop();
+  });
   /*
    * TEST_SCENARIO: a write fails mid-pass. A watched agent is captured only
    * when its session list changes, so without a retry the removal waits for

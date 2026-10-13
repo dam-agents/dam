@@ -106,7 +106,8 @@ A title the platform stores — from a [schedule](schedules.md#session-continuit
 A harness that mints its own id for a terminal session's conversation (Codex, Bob) pins that id in a directory its runtime manifest names (`terminalSessionPins`), one file per terminal session; the union lists the pinned conversation once, under the terminal session's id and with the harness's title, so opening it resumes the conversation rather than starting an empty terminal under the harness's id.
 A harness that keeps its own cost per conversation (Bob, in Bobcoins) declares a command for it in its runtime manifest (`sessionSpend`), and the read carries each session's cost in that unit; a failed command costs the list only that figure.
 The read is paged, newest activity first: a client asks for one page, optionally narrowed to session categories, one schedule or a single session, and follows a cursor for older ones; the pod filters before it cuts, so a narrowed page is full of matches.
-Behind it the pod gathers the harness's whole listing, following the harness's own pages, and reuses it until a session change or a short expiry drops it, so paging and notice-driven refreshes do not re-read the harness each time.
+Behind it the pod gathers the harness's whole listing and reuses it until a session change or short expiry drops it.
+A read waits briefly for a starting harness, then answers from the platform's records, marked incomplete so no reader takes a missing session as gone.
 The same read carries each session's live turn status: whether a turn is in flight, or for terminal sessions (which have no turn) whether the PTY has produced output recently.
 A watch on that surface reports when any of it changes, and clients refresh from the notice instead of a timer.
 The ACP `session/list` intercept still serves the readers that hold ACP connections anyway — channel workers matching a thread, and the CLI.
