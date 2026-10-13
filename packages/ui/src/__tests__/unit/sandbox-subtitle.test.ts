@@ -49,13 +49,19 @@ const agent: AgentView = {
 
 const lookup: SandboxSubtitleLookup = {
   templates: [template],
-  connectionTemplateIdById: new Map([["provider", "ibm-litellm"]]),
-  slotUnit: null,
+  slotUnit: { cpuMilli: 1000, memoryMi: 1024 },
 };
 
 describe("agent card subtitle", () => {
-  it("leaves the template out, starting with the provider", () => {
-    expect(sandboxSubtitle(agent, lookup)).toBe("IBM ETE LiteLLM Proxy");
+  const sized = { ...agent, size: { cpu: "2", memory: "2Gi" } };
+
+  it("names the resource class of a container agent, never its provider", () => {
+    expect(sandboxSubtitle(sized, lookup)).not.toMatch(/LiteLLM/);
+    expect(sandboxSubtitle(sized, lookup)).toBeTruthy();
+  });
+
+  it("is empty for a vm agent", () => {
+    expect(sandboxSubtitle({ ...sized, vm: true }, lookup)).toBeNull();
   });
 });
 

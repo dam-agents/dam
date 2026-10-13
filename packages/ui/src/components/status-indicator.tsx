@@ -43,14 +43,16 @@ export function StatusBadge({
   state,
   working,
   keptWork = 0,
+  className,
 }: {
   state: AgentDisplayState;
   working?: boolean;
   keptWork?: number;
+  className?: string;
 }) {
   const splitRunning = state === "running" && working !== undefined;
   if (splitRunning && !working && keptWork > 0) {
-    return <BackgroundWorkBadge count={keptWork} />;
+    return <BackgroundWorkBadge count={keptWork} className={className} />;
   }
   const label = splitRunning
     ? working
@@ -58,10 +60,20 @@ export function StatusBadge({
       : "Idle"
     : stateLabel[state];
   const variant = splitRunning && !working ? "accent" : stateVariant[state];
-  return <Badge variant={variant}>{label}</Badge>;
+  return (
+    <Badge variant={variant} className={className}>
+      {label}
+    </Badge>
+  );
 }
 
-function BackgroundWorkBadge({ count }: { count: number }) {
+function BackgroundWorkBadge({
+  count,
+  className,
+}: {
+  count: number;
+  className?: string;
+}) {
   const hint =
     count === 1
       ? "1 background process keeps this agent awake."
@@ -69,7 +81,11 @@ function BackgroundWorkBadge({ count }: { count: number }) {
   return (
     <Tooltip side="top" content={hint}>
       <span className="inline-flex" tabIndex={0} aria-label={hint}>
-        <Badge variant="success" data-testid="background-work-badge">
+        <Badge
+          variant="success"
+          className={className}
+          data-testid="background-work-badge"
+        >
           Background work
         </Badge>
       </span>
