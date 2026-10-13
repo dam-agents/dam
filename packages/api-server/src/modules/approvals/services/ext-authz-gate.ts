@@ -196,13 +196,15 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         return "deny";
       }
 
-      const { verdict, reason } = await waitForVerdict(deps, pendingId);
-      if (reason === "hold-expired") {
+      const settledVerdict = await waitForVerdict(deps, pendingId);
+      const { verdict, reason } = settledVerdict;
+      if (settledVerdict.reason === "hold-expired" && settledVerdict.flipped) {
         emit({
           type: EventType.ApprovalResolved,
           approvalId: pendingId,
           agentId: identity.agentId,
           ownerSub: identity.ownerSub,
+          resolution: "expired",
         });
       }
       securityLog(verdict === "deny" ? "warn" : "info", "egress.decision", {
@@ -222,10 +224,9 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
   };
 }
 
-interface SettledVerdict {
-  verdict: ExtAuthzVerdict;
-  reason: "hold-resolved" | "hold-expired";
-}
+type SettledVerdict =
+  | { verdict: ExtAuthzVerdict; reason: "hold-resolved" }
+  | { verdict: "deny"; reason: "hold-expired"; flipped: boolean };
 
 async function waitForVerdict(
   deps: CreateExtAuthzGateDeps,
@@ -262,13 +263,14 @@ async function waitForVerdict(
     poll.unref();
 
     const timeout = setTimeout(async () => {
-      await deps.repo.expirePending(id).catch((err) => {
+      const flipped = await deps.repo.expirePending(id).catch((err) => {
         getLogger().error(
           { pendingId: id, reason: formatError(err) },
           "egress.hold_expire_error",
         );
+        return false;
       });
-      settle({ verdict: "deny", reason: "hold-expired" });
+      settle({ verdict: "deny", reason: "hold-expired", flipped });
     }, deps.holdSeconds * 1000);
     timeout.unref();
 

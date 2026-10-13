@@ -4,6 +4,10 @@ const HARNESS_NONE = "none";
 const HARNESS_UNKNOWN = "unknown";
 const HARNESS_OTHER = "other";
 
+export function harnessLabels(known: ReadonlySet<string>): Set<string> {
+  return new Set([...known, HARNESS_NONE, HARNESS_UNKNOWN, HARNESS_OTHER]);
+}
+
 export type AgentHarness =
   { agent: "unresolved" } | { agent: "resolved"; harness?: string };
 

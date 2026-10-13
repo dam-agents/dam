@@ -5,7 +5,7 @@ import { UpdateAvailableAction } from "./update-available-action.js";
 
 export function ContributionGapNotice({ agentId }: { agentId: string | null }) {
   const agents = useAgentsList();
-  const { updateOne, updatingId, updatingAll } = useUpdateSandbox();
+  const { updateOne, updatingId } = useUpdateSandbox();
   const agent = agentId ? agents.find((a) => a.id === agentId) : undefined;
   const kinds = agent?.unsupportedContributionKinds ?? [];
   if (!agent || kinds.length === 0) return null;
@@ -28,7 +28,6 @@ export function ContributionGapNotice({ agentId }: { agentId: string | null }) {
           agent={agent}
           onUpdate={() => void updateOne(agent)}
           pending={updatingId === agent.id}
-          busy={updatingAll}
         />
       )}
     </div>

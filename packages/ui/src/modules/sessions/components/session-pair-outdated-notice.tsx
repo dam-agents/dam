@@ -7,7 +7,7 @@ import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 
 export function SessionPairOutdatedNotice({ agentId }: { agentId: string }) {
   const agents = useAgentsList();
-  const { updateOne, updatingId, updatingAll } = useUpdateSandbox();
+  const { updateOne, updatingId } = useUpdateSandbox();
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return null;
 
@@ -29,7 +29,7 @@ export function SessionPairOutdatedNotice({ agentId }: { agentId: string }) {
             <Button
               variant="link"
               size="inline"
-              disabled={updatingId === agent.id || updatingAll}
+              disabled={updatingId === agent.id}
               onClick={() => void updateOne(agent)}
             >
               Update

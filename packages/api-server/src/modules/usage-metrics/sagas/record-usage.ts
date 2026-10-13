@@ -4,6 +4,7 @@ import {
   ofType,
   EventType,
   type AgentRelayAttached,
+  type ApprovalResolved,
   type AgentSkillChanged,
   type ChannelTurnRelayed,
   type ConnectionCreated,
@@ -12,8 +13,12 @@ import {
   type EntryPointChosen,
   type FilesImported,
   type InvocationSpawned,
+  type KbSharePublished,
+  type KbSharePublishFailed,
   type ScheduleFired,
   type SessionTurnRelayed,
+  type SkillSetDeleted,
+  type SkillSetSaved,
   type UserAuthenticated,
 } from "../../../events.js";
 import { getLogger } from "../../../core/logger.js";
@@ -130,6 +135,26 @@ export function startUsageMetricsSaga(
 
   on<EntryPointChosen>(EventType.EntryPointChosen, (e) =>
     deps.recorder.entryPointChoice({ choice: e.choice }),
+  );
+
+  on<ApprovalResolved>(EventType.ApprovalResolved, (e) =>
+    deps.recorder.approvalResolution({ resolution: e.resolution }),
+  );
+
+  on<KbSharePublished>(EventType.KbSharePublished, () =>
+    deps.recorder.kbShare({ outcome: "success" }),
+  );
+
+  on<KbSharePublishFailed>(EventType.KbSharePublishFailed, () =>
+    deps.recorder.kbShare({ outcome: "failure" }),
+  );
+
+  on<SkillSetSaved>(EventType.SkillSetSaved, () =>
+    deps.recorder.skillSetChange({ action: "saved" }),
+  );
+
+  on<SkillSetDeleted>(EventType.SkillSetDeleted, () =>
+    deps.recorder.skillSetChange({ action: "deleted" }),
   );
 
   return sub;

@@ -278,7 +278,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.log?.(
         `${String(dropped.length)} queued prompt(s) for ${sessionId} undelivered: ${cause}`,
       );
-      if (cause === "park-expired") maybeCloseIdleSession(sessionId);
+      if (cause !== "park-expired") return;
+      maybeCloseIdleSession(sessionId);
+      lease.maybeRecycle();
     },
     ...(deps.queueParkMs !== undefined
       ? { queueParkMs: deps.queueParkMs }
@@ -1027,8 +1029,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             reportTurnEnd(sid, buffer);
           }
           maybeCloseIdleSession(sid);
-          if (turnEnded) lease.maybeRecycle();
         }
+        lease.maybeRecycle();
       }
       return;
     }
@@ -1096,7 +1098,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
 
     if (isResponse(frame)) {
-      pendingRequests.answer(frame);
+      if (pendingRequests.answer(frame)) lease.maybeRecycle();
       return;
     }
 

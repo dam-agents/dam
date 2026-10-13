@@ -110,8 +110,9 @@ Enabling the backend sets the standard OTLP endpoint environment on each deploym
 Unlike agent telemetry, this export does not ride a gateway: it arrives without the trusted attribution header, so it carries no `platform.agent.id` and is never attributed to a user — which is exactly how the read path distinguishes platform telemetry from agent telemetry.
 
 - The **controller** emits one trace per reconcile pass and background sweep (with spans for each Kubernetes API call), reconcile and workqueue metrics, and its structured logs with trace correlation.
-- The **api-server** emits one trace per incoming request with a child span per tRPC procedure (and spans for outbound calls: agents, Keycloak, channels, Redis, the ext-authz gRPC checks), per-procedure duration/outcome metrics plus Node runtime health (event loop, GC, heap), the **usage counters** below, and its structured logs with trace correlation.
+- The **api-server** emits one trace per incoming request with a child span per tRPC procedure (and spans for outbound calls: agents, Keycloak, channels, Redis, the ext-authz gRPC checks), per-procedure duration/outcome metrics plus Node runtime health (event loop, GC, heap), the **usage counters** and **state gauges** below, and its structured logs with trace correlation.
   Health-probe requests are not traced.
+  Background work gets [traces of its own](#background-traces).
   The primary Postgres pool is not yet instrumented (no driver instrumentation exists for it); that gap is tracked as follow-up work.
 
 ### Usage counters
@@ -153,6 +154,12 @@ What each measurement counts, and what it cannot answer:
   Delegation volume is the question it answers.
 - **Entry-point choices** — one per way-in chosen on the empty home screen, by **choice**.
   It counts clicks rather than people: the activity log keeps one row per person and so answers *how many chose*, while this answers *how often it was chosen*.
+- **Approval resolutions** — one per approval request closed, by how it closed: the owner's verdict, an **expiry** nobody answered, or **superseded** by a newer request for the same tool call.
+  Expiry stays apart from a decision so unanswered requests are visible; only the actor that actually flipped the request announces it, so a hold timing out against a concurrent answer does not count twice.
+  A rule written after expiry closes the request a second time, so this counts closings, not requests.
+- **Knowledge base share publishes** — one per publish attempt that settled, by **outcome**; the failure reason is free text and stays in the logs.
+  Most publishes are the automatic republish after a shared folder changes, so this measures publishing activity; how many knowledge bases are shared is a [state gauge](#state-gauges).
+- **Skill set changes** — one per skill set saved or deleted, by **action**.
 
 **The harness** a turn or fire ran on is the one dimension that had to be collected rather than exported.
 A UI turn names its Session's harness; anything else — a channel turn, a schedule fire, a client that names none — falls back to the agent's own harness, read from the api-server's in-process replica of the agent records, so it costs no call to the cluster.
@@ -168,11 +175,28 @@ No group reaches the api-server — a Keycloak group is not claimed into the tok
 Which groups use the platform for what therefore stays unanswerable from either store.
 
 And **core-team exclusion** has no counterpart here: the activity log's inspector-facing aggregates filter the platform team's own traffic out — its analytics passthroughs leave that to their consumer — while these counters filter nothing, so a number read from the store includes the people who built it.
-Several recorded interactions have no counter at all, among them artifact publishing, sharing, viewing and deletion, skill publishing and skill sets, agents created under a Kind, feature flags, API keys, harness-config edits and contribution-delivery health; those remain answerable only through the activity log.
+Several recorded interactions have no counter at all, among them artifact publishing, sharing, viewing and deletion, skill publishing, agents created under a Kind, feature flags, API keys, harness-config edits and contribution-delivery health; those remain answerable only through the activity log.
 
 Reading them takes one property into account: each process exports its own cumulative series, so a restart resets it and replicas do not collide but do partition.
 Rates and increments summed across series are the honest read; raw values are not.
 There is no platform-owned read path over metrics — [metrics](metrics.md) reads agent log records and spans, not these — so today they are reached through the exploration UI or the store directly.
+
+### State gauges
+
+Counters answer *how often*; a few questions are about *how many exist now*, which no sum of events answers past the store's retention.
+The api-server reports those as gauges read from the platform's own records: **agents** by harness — folded as above — and by how they were made (from a Starter Kit, blank, or spawned by another agent), **Slack workspaces** by whether their credential still works, **knowledge bases** with an active share, and saved **skill sets**.
+They follow the counters' rule — bounded dimensions, no identity — and, like the counters, filter nothing, core team included.
+Every combination of their bounded values is reported, zeros included, so a count that drops to nothing reads as zero rather than as a gap.
+
+They describe the whole install, so exactly one replica reports them: the holder of the api-server's [leader lease](platform-topology.md), which refreshes them on a minutes-long interval and stops when it loses the lease.
+Gauges export without carrying earlier observations forward, so a former holder's series ends instead of repeating a stale value; read the latest point, never a sum across replicas.
+
+### Background traces
+
+Work that runs outside any request — each attempt at a schedule fire and each Slack or Telegram turn — opens a trace of its own, linked to whatever started it rather than nested under it, so its outbound calls (database, Redis, the agent, the cluster) group under one root.
+Its attributes follow the counters' rule: a fire carries its type, mode, attempt, outcome, the stage that failed and why it was held; a turn carries its channel, whether it was read-along, its outcome and its failure reason token.
+A failure records its error type and never its message, since a message is free text.
+Traces are sampled, so they explain individual fires and turns; counting stays with the counters and the activity log.
 
 ### VM runner
 

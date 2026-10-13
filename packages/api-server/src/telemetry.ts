@@ -28,6 +28,7 @@ if (isOtelEnabled(process.env)) {
     { PinoInstrumentation },
     { PgInstrumentation },
     { RuntimeNodeInstrumentation },
+    { withGaugeDeltaTemporality },
   ] = await Promise.all([
     import("@opentelemetry/sdk-node"),
     import("@opentelemetry/exporter-trace-otlp-proto"),
@@ -40,6 +41,7 @@ if (isOtelEnabled(process.env)) {
     import("@opentelemetry/instrumentation-pino"),
     import("@opentelemetry/instrumentation-pg"),
     import("@opentelemetry/instrumentation-runtime-node"),
+    import("./telemetry-temporality.js"),
   ]);
 
   const sdk = new NodeSDK({
@@ -49,7 +51,7 @@ if (isOtelEnabled(process.env)) {
     traceExporter: new OTLPTraceExporter(),
     metricReaders: [
       new metrics.PeriodicExportingMetricReader({
-        exporter: new OTLPMetricExporter(),
+        exporter: withGaugeDeltaTemporality(new OTLPMetricExporter(), metrics),
       }),
     ],
     logRecordProcessors: [

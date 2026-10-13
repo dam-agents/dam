@@ -101,13 +101,12 @@ See [connections](connections.md) and [runtime delivery](runtime-delivery.md).
 
 ### Template upgrade
 
-Templates are captured at create time; an install upgrade does not reconfigure existing Agents.
-The api-server reports an update when an Agent's image differs from its Template's current image.
-Retired per-harness templates resolve to the default Template even when an install retains their old definitions, so their Agents [move](agent-images.md#retired-images) to it.
+Templates are captured at create time; an install upgrade reconfigures no existing Agent beyond its image.
+The api-server reports an update when an Agent's image differs from its Template's current image, and [moves](agent-images.md#image-updates) the Agent there by itself, never during work.
+Retired per-harness templates resolve to the default Template even when an install retains their old definitions.
 The upgrade preserves the Agent's chosen harness; when an older Agent has no explicit choice, its retired template identifies the harness to carry forward.
 
-Users apply upgrades individually or in a batch, confirming the target images and restart cost.
-The api-server refuses a target that changed since confirmation.
+A user may apply an upgrade sooner, confirming the target image and restart cost; the api-server refuses a target that changed since confirmation.
 A running pair or vm machine restarts; a hibernated Agent takes the image on its next wake.
 No configuration is re-seeded: template env stays frozen to preserve user edits, and mount/storage changes still require recreating the Agent.
 A runtime advertising kinds its predecessor did not is re-delivered the Contributions the old image refused, closing the capability gap ([runtime-delivery](runtime-delivery.md#capability-negotiation)).
@@ -287,7 +286,7 @@ For the rest it hibernates only when *both* checks below agree it is quiet:
 
 **What counts as activity.** Those two checks rest on four signals, each catching something the others miss:
 
-- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while prompts queue behind it, while an agent-initiated request (e.g. a permission prompt) awaits the client, while kept background work runs — a reported Harness Task or a marked Detached Process ([agent-processes](agent-processes.md#keeping-work)), or while a terminal (PTY) is open — an open-but-idle terminal counts, because the open PTY *is* the signal.
+- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while prompts queue behind it, while a session setting change (mode or model) waits to be sent or answered, while an agent-initiated request (e.g. a permission prompt) awaits the client, while kept background work runs — a reported Harness Task or a marked Detached Process ([agent-processes](agent-processes.md#keeping-work)), or while a terminal (PTY) is open — an open-but-idle terminal counts, because the open PTY *is* the signal.
   A chat is the exception to "open connection = busy": an attached chat with no turn running reads as `idle` here, since the flag tracks work, not watchers — such a chat stays awake via `active-session` below, not this probe.
   What the probe uniquely catches is in-flight work that no connection holds and `last-activity` no longer covers: a scheduled run outlasting the idle timeout, or a turn still running after its tab closed.
 - **api-server (`active-session` annotation).** A refcount of open chat, terminal, SSH and browser connections — set on the first, cleared on the last.

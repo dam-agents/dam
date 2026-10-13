@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The per-agent tRPC relay holds a browser's socket while the agent wakes, so the session list can be asked for while the agent starts. It never wakes an agent itself and records no activity while it waits: one that is hibernated with no wake asked for is refused as before. While it holds, it answers the client's keep-alive, and it forwards what the client sent once the agent is ready, or, on a wake from hibernation, once the agent answers its health check while its gateway is ready. A running agent that is not Ready waits for Ready. A wake that fails closes the socket with the wake's cause.
+// TEST_OVERVIEW: The per-agent tRPC relay holds a browser's socket while the agent wakes, so the session list can be asked for while the agent starts. It never wakes an agent itself and records no activity while it waits: one that is hibernated with no wake asked for is refused as before. While it holds, it answers the client's keep-alive, and it forwards what the client sent once the agent is ready, or, on a wake from hibernation, once the agent answers its health check while its gateway is ready. A running agent that is not Ready waits for Ready. A wake that fails closes the socket with the wake's cause. On shutdown it closes every socket with 1001, as the other relays do.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
@@ -82,7 +82,7 @@ async function harness(agent: Partial<InfraAgent> | null) {
     ws.once("close", (code, reason) => r({ code, reason: reason.toString() })),
   );
   await new Promise<void>((r) => ws.once("open", () => r()));
-  return { ws, messages, closed, upstream, wake, ensureReady };
+  return { ws, messages, closed, upstream, wake, ensureReady, relay };
 }
 
 async function until(check: () => boolean, ms = 2_000) {
@@ -211,5 +211,20 @@ describe("agent tRPC relay during a wake", () => {
     const h = await harness({ hibernated: false });
     h.wake.reject(new AgentStoppedError("agent-a"));
     expect(await h.closed).toEqual({ code: 1011, reason: "agent not ready" });
+  });
+});
+
+describe("agent tRPC relay on shutdown", () => {
+  it("closes held and forwarding sockets with 1001", async () => {
+    const forwarding = await harness({ hibernated: false });
+    forwarding.wake.resolve();
+    forwarding.ws.send("first");
+    await until(() => forwarding.upstream.received.includes("first"));
+    const held = await harness({ hibernated: false });
+    forwarding.relay.close();
+    held.relay.close();
+    const shutdown = { code: 1001, reason: "server shutting down" };
+    expect(await forwarding.closed).toEqual(shutdown);
+    expect(await held.closed).toEqual(shutdown);
   });
 });

@@ -195,6 +195,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
       terminalRelay.close();
       sshRelay.close();
       browserStreamRelay.close();
+      agentTrpcRelay.close();
     },
   };
 }
