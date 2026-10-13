@@ -20,11 +20,13 @@ import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
 import {
   findAgentSession,
   listAgentSessionPage,
+  readSessionHistory,
   type SessionViewPage,
 } from "./acp-session-ops.js";
 import { acpSessionsKeys } from "./keys.js";
 
 const SESSION_PAGE_SIZE = 50;
+const SESSION_HISTORY_STALE_MS = 5_000;
 
 type SessionPages = InfiniteData<SessionViewPage, SessionListCursor | null>;
 
@@ -216,4 +218,40 @@ export function useAgentSession(
         : skipToken,
     staleTime: 5_000,
   });
+}
+
+function sessionHistoryQuery(agentId: string, sessionId: string) {
+  return {
+    queryKey: acpSessionsKeys.history(agentId, sessionId),
+    queryFn: () => readSessionHistory(agentId, sessionId),
+    staleTime: SESSION_HISTORY_STALE_MS,
+    retry: false,
+  };
+}
+
+export function fetchSessionHistory(
+  agentId: string,
+  sessionId: string,
+): Promise<readonly string[]> {
+  return queryClient.fetchQuery(sessionHistoryQuery(agentId, sessionId));
+}
+
+export function prefetchSessionHistory(
+  agentId: string,
+  sessionId: string,
+): void {
+  void queryClient.prefetchQuery(sessionHistoryQuery(agentId, sessionId));
+}
+
+export function listedSessionRunning(
+  agentId: string,
+  sessionId: string,
+): boolean {
+  return queryClient
+    .getQueriesData<SessionPages>({ queryKey: acpSessionsKeys.pages(agentId) })
+    .some(([, data]) =>
+      data?.pages.some((p) =>
+        p.sessions.some((s) => s.sessionId === sessionId && s.running),
+      ),
+    );
 }

@@ -26,7 +26,11 @@ import { isUnreadSession } from "../../home/lib/unread.js";
 import { useSessionCosts } from "../../metrics/api/queries.js";
 import { downloadTelemetryExport } from "../../telemetry/api/download-export.js";
 import { useAgentBackgroundWork } from "../api/background-work.js";
-import { setSessionSeen, useSessionPages } from "../api/queries.js";
+import {
+  prefetchSessionHistory,
+  setSessionSeen,
+  useSessionPages,
+} from "../api/queries.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
 import { SESSION_CATEGORY_LABELS } from "../lib/session-category.js";
 import { useSessionConversations } from "../lib/use-session-conversations.js";
@@ -155,6 +159,12 @@ export function SessionsSidebar({
           if (selectedAgent) setSessionSeen(selectedAgent, s.sessionId);
           onResumeSession(s.sessionId, s.mode);
         }}
+        {...(agentOperable &&
+          selectedAgent &&
+          s.mode !== SessionMode.Terminal && {
+            onPrefetch: () =>
+              prefetchSessionHistory(selectedAgent, s.sessionId),
+          })}
         onRename={() => setRenaming(s)}
         onDelete={() => confirmDelete(s.sessionId, s.title)}
         {...(telemetryEnabled && selectedAgent
