@@ -1195,7 +1195,7 @@ index 1c4bb62..5bbbd93 100644
      (cfg!(target_os = "linux") || cfg!(target_os = "macos") || cfg!(target_os = "windows"))
          && std::env::var_os("SMOLVM_FORKABLE").is_some_and(|v| v == "1")
  }
-@@ -2263,6 +2280,70 @@ fn advise_huge_pages(memory: &GuestMemoryMmap) {
+@@ -2263,6 +2280,74 @@ fn advise_huge_pages(memory: &GuestMemoryMmap) {
  #[cfg(not(target_os = "linux"))]
  fn advise_huge_pages(_memory: &GuestMemoryMmap) {}
  
@@ -1232,6 +1232,10 @@ index 1c4bb62..5bbbd93 100644
 +            (start + size) as *mut libc::c_void,
 +            base + len - start - size,
 +        );
++        // Keep this although upstream (libkrun#186) dropped it: on nested hosts
++        // with defrag=madvise, compaction (~1-2 ms per 2 MiB) is cheaper than
++        // falling back to 4 KiB pages (~10 ms per 2 MiB); measured on dam-cl,
++        // a busy node filled 4 GiB in 4.1 s with it and 8.3 s without.
 +        libc::madvise(start as *mut libc::c_void, size, libc::MADV_HUGEPAGE);
 +    }
 +    // Safety: [start, start + size) is a live, page-aligned mapping made here,
@@ -1266,7 +1270,7 @@ index 1c4bb62..5bbbd93 100644
  /// Create an anonymous, RAM-backed `memfd` of `size` bytes to back a guest-RAM
  /// region. Being a real file object, it can later be CoW-cloned with
  /// `mmap(MAP_PRIVATE)` for fast, dense VM fork.
-@@ -2664,8 +2745,11 @@ pub fn create_guest_memory(
+@@ -2664,8 +2749,11 @@ pub fn create_guest_memory(
          advise_huge_pages(&memory);
          memory
      } else {
@@ -1280,7 +1284,7 @@ index 1c4bb62..5bbbd93 100644
      };
  
      let LoadedPayload {
-@@ -3912,6 +3996,36 @@ pub mod tests {
+@@ -3912,6 +4000,36 @@ pub mod tests {
      use super::*;
      use crate::vmm_config::kernel_bundle::KernelBundle;
  
