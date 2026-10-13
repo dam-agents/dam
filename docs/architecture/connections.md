@@ -163,12 +163,12 @@ Naming a Connection is only *required* where two of them genuinely collide: the 
 Connections that scope themselves to different parts of one service — one per Google Workspace service on `www.googleapis.com` — are not rivals, and each keeps being injected on its own paths without any address.
 Where the scopes do overlap, an unaddressed request fails closed at the gateway, because the alternative, serving it from whichever credential sorted first, is the silent wrong-account failure this addressing exists to end.
 
-An Agent can make naming *required* for every one of its Connections, and a new Agent does unless its create or its starter kit says otherwise.
-The Agent's spec says so, and agent settings change it later; Agents created before this default keep what they had.
+An Agent can make naming *required* for every one of its Connections; a new one does unless its create or starter kit says otherwise.
+The Agent's spec says so, and agent settings change it later.
 Its gateway then injects a Connection's credential only into a request that names it, and sends any other request upstream with the credential it already carries, rather than replacing it.
 Contested scopes still fail closed.
 It serves an agent whose tools — Docker containers, nested agents, a browser its user drives — call the same hosts with their own credentials or none: their requests name none of the agent's Connections, so the gateway leaves them alone.
-Turning it off serves the opposite case, an agent whose tools need a credential added to a request that names no Connection.
+Off serves the opposite: tools that need a credential added to a request naming no Connection.
 Platform-written values already carry an address, so the agent's own clients are unaffected.
 A Connection with no credential of the agent's own is reachable only through its path prefix.
 Only such an agent offers the [browser panel](browser-panel.md), whose user browses through the agent's gateway.
