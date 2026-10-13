@@ -4,8 +4,8 @@ import type { K8sClient } from "../../agents/infrastructure/k8s.js";
 import { LABEL_OWNER } from "../../agents/infrastructure/labels.js";
 import type { RunnerUsage } from "../domain/vm-usage.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: the controller writes one Secret per runner holding the runner's URL, the CA its serving certificate chains to, and a usage capability, which the runner accepts on its usage read alone. The api-server reads that Secret rather than the runner's token or TLS Secret, so it can never create, change or delete a machine, nor hold the runner's key.
-const USAGE_SECRET_COMPONENT = "vm-runner-usage";
+// UNIT_BOUNDARY_DESCRIPTION: the controller writes one Secret per runner holding the runner's URL, the CA its serving certificate chains to, and a usage capability, which the runner accepts on its usage read alone, and marks it with this label beside the owner's. The api-server reads that Secret rather than the runner's token or TLS Secret, so it can never create, change or delete a machine, nor hold the runner's key.
+const USAGE_SECRET_LABEL = "agent-platform.ai/vm-runner-usage";
 
 const READ_TIMEOUT_MS = 2_000;
 const CACHE_MS = 10_000;
@@ -49,7 +49,7 @@ async function fetchUsage(
   owner: string,
 ): Promise<RunnerUsage | null> {
   const [secret] = await k8s.listSecrets(
-    `app.kubernetes.io/component=${USAGE_SECRET_COMPONENT},${LABEL_OWNER}=${owner}`,
+    `${USAGE_SECRET_LABEL}=true,${LABEL_OWNER}=${owner}`,
   );
   const field = (key: string) => {
     const value = secret?.data?.[key];
@@ -60,9 +60,17 @@ async function fetchUsage(
   const capability = field("capability");
   if (!url || !ca || !capability) return null;
   const body = await getText(`${url}/usage`, capability, ca);
-  const parsed = runnerUsageSchema.safeParse(JSON.parse(body));
-  if (!parsed.success) return null;
-  return { ...parsed.data, observedAt: new Date().toISOString() };
+  return parseRunnerUsage(JSON.parse(body), new Date());
+}
+
+export function parseRunnerUsage(
+  body: unknown,
+  observedAt: Date,
+): RunnerUsage | null {
+  const parsed = runnerUsageSchema.safeParse(body);
+  return parsed.success
+    ? { ...parsed.data, observedAt: observedAt.toISOString() }
+    : null;
 }
 
 function getText(url: string, bearer: string, ca: string): Promise<string> {
