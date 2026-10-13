@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-//MISE description="Test that Claude's model gateway starts on the model list it kept, and does not wait long for a provider that is slow to list"
+//MISE description="Test that Claude's model gateway listens before the provider lists its models, on the list it kept or on its own tier names"
 //MISE sources=["claude-code/rootfs/usr/local/lib/model-gateway.mjs", ".mise/tasks/test/claude-gateway-catalog"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
@@ -81,12 +81,22 @@ try {
   });
   console.log("a retired tier model goes to the tier's current model, and the new list is kept");
 
-  // TEST_SCENARIO: A first start, with no kept list, on a provider that does not answer the listing. The gateway waits a short while for it, not the listing's whole timeout, because Claude Code and the person opening a chat wait behind it.
-  listing = null;
-  await withGateway(null, async ({ listenedAfterMs }) => {
-    assert.ok(listenedAfterMs < 5_000, `listened after ${listenedAfterMs} ms`);
+  // TEST_SCENARIO: A first start, with no kept list, while the provider has not answered the listing yet. The gateway listens at once and gives Claude Code its own tier names, so Claude Code starts without waiting; a request for one of them waits for the listing and goes to that tier's model.
+  listing = ["rits/zai-org/glm-5-4"];
+  listingHeld = new Promise((resolve) => { releaseListing = resolve; });
+  forwarded.length = 0;
+  await withGateway(null, async ({ port, listenedAfterMs }) => {
+    assert.ok(listenedAfterMs < 2_000, `listened after ${listenedAfterMs} ms`);
+    assert.match(await envSh(port), /ANTHROPIC_DEFAULT_OPUS_MODEL='claude\/opus'/);
+    const sent = call(port, "/v1/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "claude/sonnet" }) });
+    await new Promise((r) => setTimeout(r, 200));
+    assert.deepEqual(forwarded, []);
+    releaseListing();
+    await sent;
+    assert.deepEqual(forwarded, ["rits/zai-org/glm-5-4"]);
+    assert.match(await envSh(port), /ANTHROPIC_DEFAULT_OPUS_MODEL='claude\/rits\/zai-org\/glm-5-4'/);
   });
-  console.log("with no kept list the gateway waits for the listing only briefly");
+  console.log("with no kept list the gateway listens at once and maps its tier names once the provider lists");
 } finally {
   upstream.closeAllConnections();
   upstream.close();
