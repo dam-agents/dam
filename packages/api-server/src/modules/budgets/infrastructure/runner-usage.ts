@@ -24,6 +24,7 @@ const runnerUsageSchema = z.object({
       limitMilli: z.number().nonnegative(),
       usedMilli: z.number().nonnegative(),
       throttledPercent: z.number().nonnegative(),
+      pressurePercent: z.number().nonnegative().optional(),
     })
     .optional(),
   machines: z.array(

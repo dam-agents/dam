@@ -10,7 +10,8 @@
   "cpu": {
     "limitMilli": 9000,
     "usedMilli": 1200,
-    "throttledPercent": 4
+    "throttledPercent": 4,
+    "pressurePercent": 12
   },
   "machines": [
     {

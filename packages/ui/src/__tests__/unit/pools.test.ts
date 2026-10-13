@@ -2,6 +2,7 @@ import type { BudgetVmUsage } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
+  cpuPressureBar,
   idleVmAgents,
   largestVmAgents,
   memoryBar,
@@ -82,6 +83,21 @@ describe("pool bars", () => {
       "a",
       "1 more",
       "Caches and system",
+    ]);
+  });
+
+  it("fills the CPU bar with the pressure, in one segment at the server's level", () => {
+    const bar = cpuPressureBar({
+      limitMilli: 4000,
+      usedMilli: 4000,
+      throttledPercent: 10,
+      pressurePercent: 62.4,
+      level: "critical",
+      slowed: true,
+    });
+    expect(bar).toMatchObject({ percent: 62, level: "critical" });
+    expect(bar.segments).toEqual([
+      { agentId: null, label: "CPU pressure · 62%", bytes: 62, filled: true },
     ]);
   });
 

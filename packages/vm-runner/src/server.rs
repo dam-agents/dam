@@ -1375,19 +1375,21 @@ impl Server {
                 }
             })
             .collect();
-        let cpu = self
-            .config
-            .cgroup_dir
-            .as_deref()
-            .and_then(crate::cpu::limit_milli)
-            .and_then(|limit_milli| {
-                let (used_milli, throttled_percent) = locked(&self.machines).cpu.figures()?;
-                Some(CpuUsage {
-                    limit_milli,
-                    used_milli,
-                    throttled_percent,
-                })
-            });
+        let cpu = self.config.cgroup_dir.as_deref().and_then(|cgroup| {
+            let limit_milli = crate::cpu::limit_milli(cgroup);
+            let stall = crate::cpu::pressure_percent(cgroup);
+            if limit_milli.is_none() && stall.is_none() {
+                return None;
+            }
+            let (used_milli, throttled_percent) =
+                locked(&self.machines).cpu.figures().unwrap_or((0, 0));
+            Some(CpuUsage {
+                limit_milli: limit_milli.unwrap_or(0),
+                used_milli,
+                throttled_percent,
+                pressure_percent: stall.map(|stall| stall.max(throttled_percent)),
+            })
+        });
         Ok(RunnerUsage {
             storage: StorageUsage {
                 used_bytes: storage.used,

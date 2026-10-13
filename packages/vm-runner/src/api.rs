@@ -90,7 +90,7 @@ pub struct RunnerUsage {
     pub machines: Vec<MachineUsage>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner's CPU over the last minute, off its cgroup: the limit the kernel holds it to, what its machines used on average, and the percentage of active scheduler periods in which that limit held them back. Absent when the runner has no cgroup or no CPU limit, since a use with nothing to hold it back slows nobody down.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's CPU over the last minute, off its cgroup: the limit the kernel holds it to (zero for none), what its machines used on average, the percentage of active scheduler periods in which that limit held them back, and the CPU pressure: the share of the last minute in which its agents waited for a CPU, by the cgroup's pressure stall information or by that throttling, whichever is higher. The pressure is absent when the cgroup has no cpu.pressure, and the whole figure when the runner has no cgroup, or neither a CPU limit nor a pressure to read.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct CpuUsage {
@@ -100,6 +100,8 @@ pub struct CpuUsage {
     pub used_milli: u64,
     #[serde(rename = "throttledPercent")]
     pub throttled_percent: u32,
+    #[serde(rename = "pressurePercent", skip_serializing_if = "Option::is_none")]
+    pub pressure_percent: Option<u32>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the claim's use as the storage guard measures it; both zero when it could not be measured.
@@ -355,6 +357,7 @@ mod tests {
                     limit_milli: 9000,
                     used_milli: 1200,
                     throttled_percent: 4,
+                    pressure_percent: Some(12),
                 }),
             },
         );

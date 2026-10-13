@@ -6,6 +6,7 @@ export interface PoolSegment {
   agentId: string | null;
   label: string;
   bytes: number;
+  filled: boolean;
 }
 
 export interface PoolBarView {
@@ -37,6 +38,7 @@ function poolBar(
     agentId: s.agent.id,
     label: s.agent.name,
     bytes: s.bytes,
+    filled: true,
   }));
   const foldedBytes = folded.reduce((sum, s) => sum + s.bytes, 0);
   if (folded.length > 0)
@@ -44,11 +46,17 @@ function poolBar(
       agentId: null,
       label: `${folded.length} more`,
       bytes: foldedBytes,
+      filled: false,
     });
   const restBytes =
     usedBytes - segments.reduce((sum, segment) => sum + segment.bytes, 0);
   if (restBytes > 0)
-    segments.push({ agentId: null, label: rest, bytes: restBytes });
+    segments.push({
+      agentId: null,
+      label: rest,
+      bytes: restBytes,
+      filled: false,
+    });
   return {
     percent:
       limitBytes > 0
@@ -98,6 +106,26 @@ export function storageBar(
     usage.storage.level,
     "Caches and system",
   );
+}
+
+export function cpuPressureBar(
+  cpu: NonNullable<BudgetVmUsage["cpu"]>,
+): PoolBarView {
+  const percent = Math.min(100, Math.round(cpu.pressurePercent));
+  return {
+    percent,
+    level: cpu.level,
+    usedBytes: percent,
+    limitBytes: 100,
+    segments: [
+      {
+        agentId: null,
+        label: `CPU pressure · ${percent}%`,
+        bytes: percent,
+        filled: true,
+      },
+    ],
+  };
 }
 
 export function topCpuAgents(

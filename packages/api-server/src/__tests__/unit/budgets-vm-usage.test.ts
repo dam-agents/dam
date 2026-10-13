@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  cpuLevel,
   poolLevel,
   storageRefusal,
   vmUsageView,
@@ -30,6 +31,13 @@ describe("pool levels", () => {
     expect(poolLevel(5, 0)).toBe("ok");
   });
 
+  it("sets CPU pressure's levels lower, at 20% and 50%", () => {
+    expect(cpuLevel(19)).toBe("ok");
+    expect(cpuLevel(20)).toBe("warning");
+    expect(cpuLevel(49)).toBe("warning");
+    expect(cpuLevel(50)).toBe("critical");
+  });
+
   it("refuses a new vm agent exactly when storage is critical", () => {
     for (const usedBytes of [89, 90, 100]) {
       const u = usage({ storage: { usedBytes, usableBytes: 100 } });
@@ -42,10 +50,15 @@ describe("pool levels", () => {
 });
 
 describe("the budgets read's vm figures", () => {
-  it("lists only the caller's agents with their shares, and CPU only under a limit", () => {
+  it("lists only the caller's agents with their shares, and CPU only with a limit or a pressure", () => {
     const view = vmUsageView(
       usage({
-        cpu: { limitMilli: 4000, usedMilli: 3900, throttledPercent: 20 },
+        cpu: {
+          limitMilli: 4000,
+          usedMilli: 3900,
+          throttledPercent: 20,
+          pressurePercent: 55,
+        },
         machines: [
           {
             id: "mine",
@@ -79,6 +92,8 @@ describe("the budgets read's vm figures", () => {
       limitMilli: 4000,
       usedMilli: 3900,
       throttledPercent: 20,
+      pressurePercent: 55,
+      level: "critical",
       slowed: true,
     });
     expect(
@@ -89,5 +104,13 @@ describe("the budgets read's vm figures", () => {
         new Set(),
       ).cpu,
     ).toBeUndefined();
+    expect(
+      vmUsageView(
+        usage({
+          cpu: { limitMilli: 4000, usedMilli: 10, throttledPercent: 25 },
+        }),
+        new Set(),
+      ).cpu,
+    ).toMatchObject({ pressurePercent: 25, level: "warning", slowed: true });
   });
 });

@@ -4,7 +4,12 @@ import type { BudgetVmUsage, PoolLevel } from "api-server-api";
 export interface RunnerUsage {
   storage: { usedBytes: number; usableBytes: number };
   memory: { limitMiB: number; committedMiB: number };
-  cpu?: { limitMilli: number; usedMilli: number; throttledPercent: number };
+  cpu?: {
+    limitMilli: number;
+    usedMilli: number;
+    throttledPercent: number;
+    pressurePercent?: number;
+  };
   machines: {
     id: string;
     state: string;
@@ -20,8 +25,14 @@ export interface RunnerUsage {
 export const POOL_WARNING_PERCENT = 75;
 export const POOL_CRITICAL_PERCENT = 90;
 
-// UNIT_BOUNDARY_DESCRIPTION: the share of its active scheduler periods in which the runner's CPU limit held it back, from which its agents count as slowed down. CPU never fails anything, so it has no critical level.
-export const CPU_SLOWED_PERCENT = 20;
+// UNIT_BOUNDARY_DESCRIPTION: CPU pressure — the share of the last minute the agents waited for a CPU — is never refused on, since a CPU that is short only slows agents down, so its levels sit lower than the other pools': warning from CPU_WARNING_PERCENT, critical (shown as slowed down) from CPU_CRITICAL_PERCENT. A runner too old to report pressure is judged by its throttling.
+export const CPU_WARNING_PERCENT = 20;
+export const CPU_CRITICAL_PERCENT = 50;
+
+export function cpuLevel(pressurePercent: number): PoolLevel {
+  if (pressurePercent < CPU_WARNING_PERCENT) return "ok";
+  return pressurePercent < CPU_CRITICAL_PERCENT ? "warning" : "critical";
+}
 
 export function poolPercent(used: number, limit: number): number | null {
   return limit > 0 ? Math.floor((used * 100) / limit) : null;
@@ -50,13 +61,8 @@ export function vmUsageView(
       usableBytes: storage.usableBytes,
       level: poolLevel(storage.usedBytes, storage.usableBytes),
     },
-    ...(cpu && cpu.limitMilli > 0
-      ? {
-          cpu: {
-            ...cpu,
-            slowed: cpu.throttledPercent >= CPU_SLOWED_PERCENT,
-          },
-        }
+    ...(cpu && (cpu.limitMilli > 0 || cpu.pressurePercent !== undefined)
+      ? { cpu: cpuView(cpu) }
       : {}),
     agents: usage.machines
       .filter((m) => ownAgentIds.has(m.id))
@@ -67,6 +73,21 @@ export function vmUsageView(
         cpuMilli: m.cpuMilli,
       })),
     observedAt: usage.observedAt,
+  };
+}
+
+function cpuView(
+  cpu: NonNullable<RunnerUsage["cpu"]>,
+): NonNullable<BudgetVmUsage["cpu"]> {
+  const pressurePercent = cpu.pressurePercent ?? cpu.throttledPercent;
+  const level = cpuLevel(pressurePercent);
+  return {
+    limitMilli: cpu.limitMilli,
+    usedMilli: cpu.usedMilli,
+    throttledPercent: cpu.throttledPercent,
+    pressurePercent,
+    level,
+    slowed: level !== "ok",
   };
 }
 

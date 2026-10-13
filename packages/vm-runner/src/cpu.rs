@@ -39,6 +39,19 @@ pub fn limit_milli(cgroup: &Path) -> Option<u64> {
     (period > 0).then(|| quota * 1000 / period)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the share of the last minute in which some of the runner's processes waited for a CPU, rounded to a whole percent, from the `some avg60` of the cgroup's cpu.pressure. Whether time a task spends held back by its cgroup's CPU limit counts as waiting here was not verified on the kernels the runner runs on, so the usage read reports the higher of this and the throttling, and a pool at its limit shows either way. No cpu.pressure, as on a kernel built without pressure stall information, gives None.
+pub fn pressure_percent(cgroup: &Path) -> Option<u32> {
+    let text = fs::read_to_string(cgroup.join("cpu.pressure")).ok()?;
+    let avg60: f64 = text
+        .lines()
+        .find_map(|line| line.strip_prefix("some "))?
+        .split_whitespace()
+        .find_map(|field| field.strip_prefix("avg60="))?
+        .parse()
+        .ok()?;
+    Some(avg60.round().clamp(0.0, 100.0) as u32)
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the readings of the last WINDOW, from which the runner's CPU use and how often its limit held it back are taken. A runner with fewer than two readings, or whose counters went backwards (a new cgroup), reports nothing yet.
 #[derive(Default)]
 pub struct Window {
@@ -106,6 +119,13 @@ mod tests {
         fs::write(dir.path().join("cpu.max"), "max 100000\n").unwrap();
         assert_eq!(limit_milli(dir.path()), None);
         assert_eq!(stat(&dir.path().join("absent")), None);
+        fs::write(
+            dir.path().join("cpu.pressure"),
+            "some avg10=80.00 avg60=37.62 avg300=5.00 total=123\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        )
+        .unwrap();
+        assert_eq!(pressure_percent(dir.path()), Some(38));
+        assert_eq!(pressure_percent(&dir.path().join("absent")), None);
     }
 
     // TEST_SCENARIO: the figures are deltas over the window: a runner that used two CPUs for ten seconds and was held back in a quarter of its periods says so, a reading older than the window drops out, and counters that start over begin a new window instead of reading as a negative use.
