@@ -57,6 +57,7 @@ export const identityLinks = pgTable(
     provider: text("provider").notNull(),
     externalUserId: text("external_user_id").notNull(),
     keycloakSub: text("keycloak_sub").notNull(),
+    teamId: text("team_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

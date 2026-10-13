@@ -21,6 +21,7 @@ It runs on the channel leader, and other replicas reach it over the existing cha
 An unlinked user, a workspace whose credential is rejected or that lacks `im:write`, and an install without Slack all send nothing.
 
 **Alerts are evaluated unattended, once, with their state in Postgres.**
+
 - **Storage**: a periodic job every 5 minutes reads each owner's runner usage (the read-only usage read [persistence](../../architecture/persistence.md) describes) and sends at most one DM per level.
   Levels: `high` at ≥90% (the runner refuses new, starting and restarting machines) and `full` at ≥98% (writes are failing).
   A reading below 80% re-arms; at most one DM per 24 h, except one escalation from `high` to `full`.
@@ -40,11 +41,11 @@ No CRD and no CRD field change.
 
 ## Sub-issues
 
-| #   | Title                                   | Scope                                                                | Depends on              |
-| --- | --------------------------------------- | -------------------------------------------------------------------- | ----------------------- |
-| 01  | The platform can DM a person on Slack   | identity link workspace, `notifyPerson`, channel RPC                 | —                       |
-| 02  | Unattended resource alerts              | Postgres alert state, storage poll, OOM watch, repeat limits, copy   | 01, #4757 (usage read)  |
-| 03  | A reclaimed agent says why it is asleep | api-server `reclaimed`, overlay, row tooltip, toast, ADR             | —                       |
+| #   | Title                                        | Scope                                                              | Depends on             |
+| --- | -------------------------------------------- | ------------------------------------------------------------------ | ---------------------- |
+| 01  | The platform can DM a person on Slack (done) | identity link workspace, `notifyPerson`, channel RPC               | —                      |
+| 02  | Unattended resource alerts                   | Postgres alert state, storage poll, OOM watch, repeat limits, copy | 01, #4757 (usage read) |
+| 03  | A reclaimed agent says why it is asleep      | api-server `reclaimed`, overlay, row tooltip, toast, ADR           | —                      |
 
 ## Conventions & glossary
 
@@ -53,7 +54,8 @@ No CRD and no CRD field change.
 - **Linked user**: a user with a Slack identity link, made by `/dam login` or an in-chat bind.
 - Replies to an alert DM are not handled; a reply behaves like any message to the app in that DM.
 - Code comments follow `docs/guidelines/comment-guidelines.md`; run `mise run //:check:comment-types`.
-- Server-side TS: apply `/typescript-engineering`. UI: apply `/react-ui-engineering`.
+- Server-side TS: apply `/typescript-engineering`.
+  UI: apply `/react-ui-engineering`.
 
 ## Whole-feature smoke test
 
