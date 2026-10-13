@@ -81,7 +81,7 @@ The seed and a lease's model never answer from the kept list: they ask the provi
 A kept list can offer a model the provider has since retired.
 On Claude Code a name the gateway published for a tier, or one naming a tier, then goes to that tier's current model.
 Any other name reaches the provider unchanged, so a model the provider serves without listing it still runs.
-When the provider refuses a name it does not list, Claude Code's gateway sends the turn again on the model its opus tier maps to, Claude Code's default, and logs the remap; on other harnesses the turn reports the refusal.
+When the provider refuses a name it does not list, and its refusal names that model, Claude Code's gateway sends the turn again on the model its opus tier maps to, Claude Code's default, and logs the remap; on other harnesses the turn reports the refusal.
 An existing session's label marks a model its provider no longer lists, so a turn that runs on another model than the pick never does so unseen.
 Which choices a harness offers is its catalog's to say: Codex's offers no mode, because its image runs it never asking for approval, so there is no permission mode to pick and nothing for a [channel turn](channel-turns.md) to refuse.
 

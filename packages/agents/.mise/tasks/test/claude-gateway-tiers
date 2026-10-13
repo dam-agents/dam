@@ -28,8 +28,9 @@ const upstream = createServer((req, res) => {
     }
     const { model } = JSON.parse(body);
     forwarded.push(model);
-    // TEST_SCENARIO: The provider retired rits/qwen-3: it is no longer listed, and the provider refuses it.
-    if (model === "rits/qwen-3") res.statusCode = 404;
+    // TEST_SCENARIO: The provider retired rits/qwen-3: it is no longer listed, and the provider refuses it by name. A refusal for another reason, such as a prompt that is too long, does not name the model.
+    if (model === "rits/qwen-3") { res.statusCode = 404; res.end(JSON.stringify({ error: { message: `model: ${model}` } })); return; }
+    if (model === "too-long") { res.statusCode = 400; res.end(JSON.stringify({ error: { message: "prompt is too long" } })); return; }
     res.end("{}");
   });
 });
@@ -56,6 +57,13 @@ try {
   assert.deepEqual(forwarded, ["rits/qwen-3", "rits/zai-org/glm-5-3"]);
   assert.match(log, /rits\/qwen-3 is not listed by provider cb and was refused; sending rits\/zai-org\/glm-5-3 instead/);
   console.log("a retired model the provider refuses goes to its default model, and the gateway logs it");
+
+  forwarded.length = 0;
+  const refused = await send("too-long");
+  assert.equal(refused.status, 400);
+  assert.match(await refused.text(), /prompt is too long/);
+  assert.deepEqual(forwarded, ["too-long"]);
+  console.log("a refusal that does not name the model reaches Claude Code unchanged");
 } finally {
   child.kill();
   upstream.close();

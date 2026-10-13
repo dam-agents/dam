@@ -266,10 +266,12 @@ async function proxy(upstream, path, req, res) {
     r = await send(body);
     const models = [...upstream.knownModels.values()];
     if ([400, 404].includes(r.status) && models.length && model !== undefined && !models.includes(model)) {
-      const standIn = tierModels(models).opus;
-      log(`${model} is not listed${upstream.key ? ` by provider ${upstream.key}` : ""} and was refused; sending ${standIn} instead`);
-      await r.body?.cancel();
-      r = await send(rewriteModel(raw, contentType, () => standIn));
+      const refusal = await r.text();
+      if (refusal.includes(model)) {
+        const standIn = tierModels(models).opus;
+        log(`${model} is not listed${upstream.key ? ` by provider ${upstream.key}` : ""} and was refused; sending ${standIn} instead`);
+        r = await send(rewriteModel(raw, contentType, () => standIn));
+      } else r = new Response(refusal, r);
     }
   } catch (err) {
     if (!ac.signal.aborted) {
