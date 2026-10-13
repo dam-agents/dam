@@ -1804,3 +1804,33 @@ func TestMachineTrustedCAsAppendsTheExtraCAs(t *testing.T) {
 	assert.Equal(t, "-----BEGIN CERTIFICATE-----\nmitm\n-----END CERTIFICATE-----\n"+cfg.ExtraTrustedCAs,
 		machineTrustedCAs("-----BEGIN CERTIFICATE-----\nmitm\n-----END CERTIFICATE-----", &cfg))
 }
+
+// TEST_SCENARIO: an agent the runner's OOM kill took down carries that reason through the runner's restart and the machine's boot, but only while nothing more specific explains the wait. A boot that then fails is a reason the owner has to act on, which the api-server reads as an error; hidden behind the kill, the agent would read as still starting with its boot console lost.
+func TestAFreshTerminalReasonWinsOverACarriedRunnerOOM(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	r.vmRunning.Store(agent.Name, true)
+	agent.Status.Conditions = []metav1.Condition{{
+		Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionFalse,
+		Reason: apiv1.ReasonRunnerOutOfMemory, LastTransitionTime: metav1.Now(),
+	}}
+	reason := func() string {
+		got, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, agent.Name, metav1.GetOptions{})
+		require.NoError(t, err)
+		conds, _, _ := unstructured.NestedSlice(got.Object, "status", "conditions")
+		for _, c := range conds {
+			if m, ok := c.(map[string]any); ok && m["type"] == apiv1.ConditionAgentPodReady {
+				return m["reason"].(string)
+			}
+		}
+		return ""
+	}
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent, vmrunner.MachineStatus{State: vmrunner.StateStarting}, true))
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, reason(), "the reason did not last through the boot")
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonBootFailed, Message: "the guest console ends: panic"}, true))
+	assert.Equal(t, vmrunner.ReasonBootFailed, reason())
+}
