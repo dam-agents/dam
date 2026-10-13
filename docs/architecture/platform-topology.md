@@ -112,6 +112,7 @@ The same read carries each session's live turn status: whether a turn is in flig
 A watch on that surface reports when any of it changes, and clients refresh from the notice instead of a timer.
 The ACP `session/list` intercept still serves the readers that hold ACP connections anyway — channel workers matching a thread, and the CLI.
 Neither the read nor the watch wakes a hibernated agent.
+A browser asks for the list once the agent shows as starting, not first at Ready: the tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the agent turns Ready.
 Deferring hibernation splits by who holds the watch: a client-held watch keeps the activity stamp fresh while its view is open, while the watcher's own watches refresh nothing.
 Session read state rides the same metadata: agent-runtime stamps when a session was last seen by a viewer (machine-driven channels like the trigger driver don't count), so clients can render unread — activity newer than the stamp — consistently across devices.
 Home renders it from the attention record ([home-feed](home-feed.md)).

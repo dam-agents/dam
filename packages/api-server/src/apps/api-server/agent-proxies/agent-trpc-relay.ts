@@ -135,7 +135,7 @@ export function createAgentTrpcRelay(
           client.close(1011, "agent not ready");
           return;
         }
-        await repo.ensureReady(agentId);
+        await repo.ensureReady(agentId, { waitOnly: true });
       } catch (err) {
         if (client.readyState === WebSocket.OPEN)
           client.close(1011, wakeFailureReason(err));
