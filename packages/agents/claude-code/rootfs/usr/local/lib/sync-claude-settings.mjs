@@ -44,7 +44,7 @@ try {
     );
   } catch {}
   const onEteLitellm = [snapshot.env, ...Object.values(snapshot.providers ?? {})]
-    .some((e) => e?.ANTHROPIC_BASE_URL?.includes(ETE_LITELLM_HOST));
+    .some((e) => URL.parse(e?.ANTHROPIC_BASE_URL ?? "")?.hostname === ETE_LITELLM_HOST);
   if (onEteLitellm && (settings.permissions?.defaultMode ?? "auto") === "auto")
     settings.permissions = { ...settings.permissions, defaultMode: "bypassPermissions" };
 
