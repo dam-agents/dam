@@ -60,6 +60,16 @@ describe("framesToMessages", () => {
     expect(framesToMessages(lines)).toHaveLength(60);
   });
 
+  it("closes a reply on the logged end of its turn", () => {
+    const ended = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "platform/turnEnded",
+      params: { sessionId: "s1", stopReason: "cancelled", model: "opus" },
+    });
+    const reply = framesToMessages([...turn(1), ended])[1];
+    expect(reply).toMatchObject({ model: "opus", stopped: true });
+  });
+
   it("skips frames it cannot read", () => {
     expect(texts(["not json", "null", ...turn(1)])).toHaveLength(2);
   });

@@ -1,7 +1,11 @@
 import type { Message } from "../../types.js";
-import { frameMetaOf } from "./ext-notifications.js";
+import {
+  frameMetaOf,
+  PLATFORM_NOTIFICATION_METHODS,
+  routeExtNotification,
+} from "./ext-notifications.js";
 import { applyUpdate, settleReplay } from "./session-projection.js";
-import type { AcpUpdate } from "./types.js";
+import type { AcpUpdate, FrameMeta } from "./types.js";
 
 interface UpdateFrame {
   params: { update: AcpUpdate; _meta?: unknown };
@@ -25,6 +29,30 @@ function parseLine(line: string): unknown {
   }
 }
 
+const PLATFORM_METHODS: readonly string[] = PLATFORM_NOTIFICATION_METHODS;
+
+function toUpdate(
+  frame: unknown,
+): { update: AcpUpdate; frame: FrameMeta } | null {
+  if (isUpdateFrame(frame))
+    return {
+      update: frame.params.update,
+      frame: frameMetaOf(frame.params._meta),
+    };
+  const { method, params } = (frame ?? {}) as {
+    method?: unknown;
+    params?: unknown;
+  };
+  if (
+    typeof method !== "string" ||
+    !PLATFORM_METHODS.includes(method) ||
+    typeof params !== "object" ||
+    params === null
+  )
+    return null;
+  return routeExtNotification(method, params as Record<string, unknown>);
+}
+
 function kindOf(frame: unknown): string | null {
   return isUpdateFrame(frame) ? frame.params.update.sessionUpdate : null;
 }
@@ -46,12 +74,8 @@ export function framesToMessages(
   const frames = lines.map(parseLine);
   const from = opts.tail === undefined ? 0 : tailStart(frames, opts.tail);
   const messages = frames.slice(from).reduce<Message[]>((acc, frame) => {
-    if (!isUpdateFrame(frame)) return acc;
-    return applyUpdate(
-      acc,
-      frame.params.update,
-      frameMetaOf(frame.params._meta),
-    );
+    const routed = toUpdate(frame);
+    return routed ? applyUpdate(acc, routed.update, routed.frame) : acc;
   }, []);
   return settleReplay(messages, { turnInFlight: opts.turnInFlight ?? false });
 }
