@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	stderrors "errors"
 	"testing"
 	"time"
 
@@ -10,6 +11,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
@@ -86,7 +89,7 @@ func startFailedCondition(t *testing.T, r *AgentReconciler) map[string]any {
 	return nil
 }
 
-// TEST_SCENARIO: the readiness publish puts a crash loop of the current pod on the Agent as StartFailed at the Agent's generation, and takes it off once the pod it reads is the old one of a roll, so a condition already written does not outlive the pod it was about.
+// TEST_SCENARIO: the readiness publish puts a crash loop of the current pod on the Agent as StartFailed at the Agent's generation. A StatefulSet it cannot read leaves the condition as it is, since nothing was learned. It takes the condition off once the pod it reads is the old one of a roll, so a condition already written does not outlive the pod it was about.
 func TestPublishReadinessReportsTheCurrentPodsStartFailure(t *testing.T) {
 	agent := agentCR()
 	agent.Generation = 4
@@ -99,6 +102,13 @@ func TestPublishReadinessReportsTheCurrentPodsStartFailure(t *testing.T) {
 	assert.Equal(t, "True", cond["status"])
 	assert.Equal(t, apiv1.ReasonCrashLoop, cond["reason"])
 	assert.EqualValues(t, 4, cond["observedGeneration"])
+
+	client.PrependReactor("get", "statefulsets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, stderrors.New("apiserver unavailable")
+	})
+	require.NoError(t, r.publishReadiness(context.Background(), agent))
+	assert.NotNil(t, startFailedCondition(t, r), "an unread StatefulSet removes nothing")
+	client.ReactionChain = client.ReactionChain[1:]
 
 	pod.Labels["controller-revision-hash"] = "r1"
 	_, err := client.CoreV1().Pods("test-agents").Update(context.Background(), pod, metav1.UpdateOptions{})

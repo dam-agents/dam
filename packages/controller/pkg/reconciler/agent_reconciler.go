@@ -418,13 +418,17 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 		}
 	}
 	agentRestarts, agentRestartReason := podRestarts(agentPod)
-	ss, _ := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	ss, ssReadErr := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
 	failure, recheck := podStartFailure(ss, agentPod, time.Now())
 	if recheck > 0 && r.requeue != nil {
 		r.requeue(name, recheck)
 	}
 	return r.publishReadinessOf(ctx, agent, agentReady, agentFailReason, agentFailMsg, podReadErr == nil, agentRestarts, agentRestartReason,
-		func(s *apiv1.AgentStatus) { setStartFailure(s, failure, agent.Generation) })
+		func(s *apiv1.AgentStatus) {
+			if podReadErr == nil && (ssReadErr == nil || errors.IsNotFound(ssReadErr)) {
+				setStartFailure(s, failure, agent.Generation)
+			}
+		})
 }
 
 func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.Agent, agentReady bool, agentFailReason, agentFailMsg string, restartsObserved bool, agentRestarts int32, agentRestartReason string, also ...func(*apiv1.AgentStatus)) error {
