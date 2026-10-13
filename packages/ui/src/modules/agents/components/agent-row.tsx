@@ -40,6 +40,7 @@ import { VmRuntimeBadge } from "./vm-runtime-badge.js";
 
 const SECOND_LINE_ITEM =
   "rounded-none border-0 bg-transparent p-0 text-sm tracking-normal text-muted-foreground";
+
 interface Props {
   agent: AgentView;
   display: AgentDisplay;

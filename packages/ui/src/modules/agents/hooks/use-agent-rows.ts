@@ -21,7 +21,6 @@ import { useWakeAgent } from "./use-wake-agent.js";
 
 export function useAgentRows() {
   const { data: agentsData } = useAgents();
-
   const { data: budget } = useBudgetReserved();
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
