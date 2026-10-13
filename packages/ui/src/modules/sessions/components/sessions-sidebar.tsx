@@ -19,7 +19,10 @@ import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
-import { useIsAgentOperable } from "../../agents/api/queries.js";
+import {
+  useIsAgentAnswerableSoon,
+  useIsAgentOperable,
+} from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { isUnreadSession } from "../../home/lib/unread.js";
@@ -70,6 +73,7 @@ export function SessionsSidebar({
   const [renaming, setRenaming] = useState<SessionView | null>(null);
 
   const agentOperable = useIsAgentOperable(selectedAgent);
+  const agentAnswerableSoon = useIsAgentAnswerableSoon(selectedAgent);
   const conversationOf = useSessionConversations(selectedAgent);
   const {
     sessions: listed,
@@ -78,7 +82,7 @@ export function SessionsSidebar({
     isFetchingNextPage,
     fetchNextPage,
   } = useSessionPages(selectedAgent, sessionFilter, {
-    enabled: agentOperable,
+    enabled: agentAnswerableSoon,
     activeSessionId: sessionId,
   });
   const sessions: SessionView[] = listed ?? EMPTY;

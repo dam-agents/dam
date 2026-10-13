@@ -223,7 +223,7 @@ So a reply never lands above a newer message, unprompted work shows as the lates
 | cli → api-server | WebSocket (binary terminal frames) | `dam chat` terminal attach — same frame protocol as the UI terminal path |
 | api-server → agent-runtime | WebSocket (ACP, JSON-RPC 2.0) | Chat-mode relay target — one hop, no fan-out |
 | api-server → agent-runtime | WebSocket (binary terminal frames) | Terminal-mode relay target — one hop, single client per session |
-| ui → api-server → agent-runtime | WebSocket (tRPC relay) | The pod's own tRPC surface — in-pod file operations, the session list, and the watches behind all three live panels. Admitted once per upgrade on ownership, the operate scope and the key's agent binding; relayed opaquely, so the api-server never parses tRPC |
+| ui → api-server → agent-runtime | WebSocket (tRPC relay) | The pod's own tRPC surface — in-pod file operations, the session list, and the watches behind all three live panels. Admitted per upgrade on ownership, the operate scope and the key's agent binding; relayed opaquely — it parses no tRPC, only answering keep-alives during a wake |
 | api-server → agent-runtime | HTTP (tRPC proxy) | The same pod surface over HTTP, gated per request. No UI caller remains; kept as a non-browser door |
 | api-server → agent-runtime | HTTP (tRPC, direct) | A channel worker writing an inbound attachment into the workspace. Not the proxy: no bearer, so the pod's NetworkPolicy is the whole gate, and a woken pod becomes a precondition for building that turn's prompt |
 | api-server → agent-runtime | HTTP (status read) | Passive read of the pod's status surface for session-reported background work; never wakes a pod or defers hibernation |
