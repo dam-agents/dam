@@ -66,7 +66,8 @@ links:
 # -- Experimental features, one mode each: `experimental` leaves the per-user
 # switch in the hidden settings tab; `on` or `off` hides the switch and decides
 # for every user, whatever they stored. An omitted feature is `experimental`.
-# `vm-sandboxes` also needs `virtualization.enabled`.
+# `vm-sandboxes` also needs `virtualization.enabled`; pinned `on`, it makes
+# every new agent a microVM, starter kits and API creates included.
 features:
   advanced-connections: experimental
   vm-sandboxes: experimental

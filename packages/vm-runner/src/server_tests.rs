@@ -1860,7 +1860,7 @@ async fn a_put_plans_from_a_recent_look_and_looks_again_once_it_is_old() {
     );
 }
 
-// TEST_SCENARIO: the probe cadence is what the user waits on between the guest answering and the controller hearing of it, so a fresh boot is asked every FRESH_BOOT_PROBE. Each probe is also a console line, so a boot still quiet after SLOW_BOOT_AFTER falls back to BOOT_PROBE, and a guest that has answered is asked only at the steady cadence.
+// TEST_SCENARIO: the probe cadence is what the user waits on between the guest answering and the controller hearing of it, so a fresh boot is asked every FRESH_BOOT_PROBE. A probe still costs a connect, so a boot still quiet after SLOW_BOOT_AFTER falls back to BOOT_PROBE, and a guest that has answered is asked only at the steady cadence.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_fresh_boot_is_probed_tightly_and_an_old_or_answered_one_is_not() {
     let h = Harness::new("probe-cadence");

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a prompt typed while the agent starts is held until the agent is operable. The hold covers the starting and preparing-workspace states, ends when the agent becomes operable, and fails when the agent leaves those states another way, so the message shows as undelivered instead of waiting forever. An agent that is not starting gives no hold, so the send goes out as before.
+// TEST_OVERVIEW: a prompt typed while the agent starts is held until the agent is operable. The hold covers the starting and preparing-workspace states, ends when the agent becomes operable, and fails when the agent leaves those states another way, so the message shows as undelivered instead of waiting forever. An agent that is not starting gives no hold, so the send goes out as before. A vm agent starts in its usable chat; a container agent starts behind the full-screen overlay.
 import { describe, expect, test } from "vitest";
 
 import {
@@ -6,6 +6,7 @@ import {
   type AgentReadiness,
   agentReadiness,
   askAgainWhenReady,
+  startsInChat,
   untilAgentReady,
 } from "../../modules/agents/lib/agent-start.js";
 
@@ -114,5 +115,26 @@ describe("askAgainWhenReady", () => {
       () => untilAgentReady(() => "down", source("down").subscribe),
     );
     await expect(asked).rejects.toThrow("boom");
+  });
+});
+
+describe("where the agent starts", () => {
+  const starting = ["starting", "preparing_workspace"] as const;
+
+  // TEST_SCENARIO: a vm agent boots in seconds, so its chat stays usable while it starts.
+  test("a vm agent starts in its chat", () => {
+    for (const state of starting)
+      expect(startsInChat({ vm: true }, state)).toBe(true);
+  });
+
+  // TEST_SCENARIO: a container agent takes too long to start for a usable chat to make sense, so it starts behind the overlay.
+  test("a container agent starts behind the overlay", () => {
+    for (const state of starting)
+      expect(startsInChat({ vm: false }, state)).toBe(false);
+  });
+
+  test("an agent that is not starting is not started in its chat", () => {
+    for (const state of ["hibernated", "error", "over_budget"] as const)
+      expect(startsInChat({ vm: true }, state)).toBe(false);
   });
 });

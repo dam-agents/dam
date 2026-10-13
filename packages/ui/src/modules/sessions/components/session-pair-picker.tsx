@@ -6,7 +6,7 @@ import {
 } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
-import { type ComponentProps, useState } from "react";
+import { useState } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Button } from "@/components/ui/button";
@@ -33,12 +33,14 @@ import {
 } from "../api/session-pair.js";
 import {
   fittingProviders,
+  harnessDisplayName,
   harnessOptions,
   nextPair,
   pairLabel,
   type ProviderConnectionRef,
   providerOptions,
 } from "../lib/session-pair-options.js";
+import { SessionPairTrigger } from "./session-pair-trigger.js";
 import {
   SessionSettingsControls,
   settingDefaults,
@@ -102,8 +104,6 @@ export function SessionPairPicker({
     );
     return fit.granted.length === 0 && fit.addable.length === 0;
   };
-  const harnessName = (name: string | undefined) =>
-    harnesses.find((h) => h.name === name)?.displayName ?? name;
   const capability = carried.find((h) => h.name === harness);
   const defaults = settingDefaults(
     capability,
@@ -235,8 +235,8 @@ export function SessionPairPicker({
           )}
           {sections.length === 0 && (
             <p className="px-1 text-muted-foreground">
-              No connected model provider runs {harnessName(harness)}. Connect
-              one first.
+              No connected model provider runs{" "}
+              {harnessDisplayName(harness, views)}. Connect one first.
             </p>
           )}
         </div>
@@ -266,25 +266,6 @@ export function SessionPairPicker({
         </div>
       </PopoverContent>
     </Popover>
-  );
-}
-
-export function SessionPairTrigger({
-  label,
-  testId = "session-pair-picker",
-  ...props
-}: ComponentProps<"button"> & { label: string | undefined; testId?: string }) {
-  return (
-    <button
-      type="button"
-      data-testid={testId}
-      aria-busy={label ? undefined : true}
-      aria-label={label ? undefined : "Loading harness and model"}
-      className="flex items-center gap-1 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      {...props}
-    >
-      {label || <Spinner size={12} />}
-    </button>
   );
 }
 

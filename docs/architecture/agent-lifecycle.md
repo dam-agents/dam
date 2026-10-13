@@ -67,6 +67,7 @@ Creation is per-purpose: the plain create picks an image, and a [starter kit](st
 The **Agent Kind** marker survives only on agents stamped before kits: a knowledge base is now a kit that declares one capability, and a marker the platform no longer knows reads as no kind at all.
 A kit apply is the plain create with the kit's grants, followed by the kit's schedules and channel binding, compensated by delete on failure.
 A new agent takes its template's size and the trusted egress preset — or, for a kit that declares either, the kit's — both editable afterwards, plus a Backend the template has no say in: a container, or a microVM, which has no size and shares its owner's [memory pool](vm-memory.md) instead.
+The caller picks the Backend, except on an install that pins the new sandbox runtime on, where every create is a microVM ([features](features.md)).
 A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-pod)): it boots the default Template on the install's default harness and grants the caller's IBM LiteLLM provider Connection, else their earliest-created one, that the harness runs on.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
 Only a template create gets a default provider; a bare image and a [sub-agent](invocations.md) hold only what they name.
@@ -146,6 +147,9 @@ Callers can additionally register for a cold-start signal, fired when a call ent
 The schedule-driven poke is the exception: it doesn't wait, so there is no bounded wait to fail.
 
 The UI holds a start to the same budget: past it, it offers Restart and the controller's not-ready message, timed from when it first saw the Agent starting.
+What the chat shows during the start depends on the Backend.
+A vm Agent boots in seconds, so its chat stays usable: the composer takes a prompt and holds it until the Agent is ready, and the sessions list shows a placeholder.
+A container Agent takes too long for that to make sense, so its chat sits behind an overlay while it starts, showing its avatar, a slow-start warning and any workspace failure.
 
 ### Schedule fire
 

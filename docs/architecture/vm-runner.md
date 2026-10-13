@@ -32,7 +32,7 @@ The runner keeps only the latest ensure for each machine and one worker convergi
 A guest starting to answer changes nothing the cluster can watch, so the runner watches for it: a **health prober** asks each machine on its way up often, most in the first minute of its boot, and a steady one rarely, and a status is built from what it last heard rather than probing on the read.
 An ensure plans from that same record while it is no older than the prober's cadence for the machine, or is about a stopped or absent machine, which only an action changes; it looks again only at an older record, one holding a runtime error, or a machine being deleted.
 An ensure that reaches a runner already closing is refused, not stored.
-A live VMM whose guest agent is slow to answer smolvm's ping reads as running, not stopped: a busy guest looks the same as a dead agent there, so only the prober's silence restarts it: the prober itself, within a minute after an answer, ten for slow boots and repeat stalls.
+A live VMM reads as running, not stopped, whatever its guest is doing, and a probe never pings the guest agent, so only the prober's silence restarts it: the prober itself, within a minute after an answer, ten for slow boots and repeat stalls.
 Its memory stays counted meanwhile.
 A failure stays on the status until an action succeeds or a spec arrives that needs none.
 Each status carries a version that moves whenever the status does, and a status read may name the version it last saw and wait, up to half a minute, for it to move.
@@ -45,6 +45,7 @@ The runner's claim holds the machine disks, the bookkeeping a restart rebuilds �
 It publishes each guest's agent port on a port of the pod, on an address the runner is told (every interface of a pod's own network), and the agent's Service selects that runner and maps the agent port onto the one its machine publishes there, so the api-server dials a vm Agent exactly like a pod.
 The selector reaches the runner only because the Service shares the agent namespace.
 A pod restart stops every machine — they are its processes — so a runner told to stop, rather than to [hand off](vm-runner-upgrades.md), first stops each running machine the way a stop does, all at once and within a window its pod's termination grace covers, rather than leaving the pod's kill to cut their power; the controller's periodic sweep brings them back.
+A deleted runner pod is replaced at once, while the old one still runs that stop on the same claim, and the stop would reach the new runner's machines through the guest sockets both pods share; so a runner holds a lock on its claim for as long as its process lives, and a new one takes the claim, and only then serves, once the old process has exited.
 
 **The runtime is one Rust workspace; the controller is its only Go peer.** The runner, the image cache service and platform-init are built together into the runner image, from that workspace alone, against one smolvm release: a single pin names it, and the crate is built from that release's source while the image installs its guest agent and disk templates, so the two are always one version.
 platform-init is linked statically because it runs against the agent image's libc rather than the runner's.

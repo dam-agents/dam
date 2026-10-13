@@ -1,11 +1,14 @@
 package reconciler
 
 import (
+	stderrors "errors"
 	"fmt"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -16,6 +19,7 @@ import (
 const (
 	startFailureRestarts = 3
 	startFailureNotReady = 10 * time.Minute
+	admissionMessageMax  = 1024
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a vm machine may run on one spec without answering before it is reported NeverReady. It must be well under the chart's vm idle timeout, five minutes from the wake: an Agent moved while hibernated takes the new image on its next wake, so the report and the image update job's move back have to land before the idle checker hibernates it again. It must also be under the runner's own ten-minute restart of a quiet guest that once answered, which every moved machine has, since that restart stops the clock. A guest boots in seconds and the runner reports one silent for a minute as a slow boot, so two minutes running without an answer is a failure. An install whose vm idle timeout is under about four minutes never reports NeverReady; it would need the idle checker to hold an Agent until its start is decided.
@@ -77,6 +81,29 @@ func vmStartFailure(prev vmStartClock, generation int64, st vmrunner.MachineStat
 		return prev, startFailure{apiv1.ReasonNeverReady, fmt.Sprintf("the machine ran for %s without answering", vmStartFailureNotReady)}
 	}
 	return prev, startFailure{}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how a refused write of the agent StatefulSet fails the spec it carries, or nothing. An admission webhook or policy can refuse the StatefulSet for its image, as a StackRox policy refuses images older than a year; the old pod then keeps running and no pod of the new spec ever starts, so the pod checks never see a failure. A refusal counts only when the write changes the agent container's image, so a refusal of a StatefulSet already on that image, which a move back cannot cure, and every other reconcile error never count. The message is capped, as a webhook can list every finding it has on the image.
+func admissionStartFailure(err error, live *appsv1.StatefulSet, image string) startFailure {
+	var status apierrors.APIStatus
+	if !stderrors.As(err, &status) {
+		return startFailure{}
+	}
+	msg := status.Status().Message
+	if !strings.Contains(msg, "denied") || !strings.Contains(msg, "admission webhook") && !strings.Contains(msg, "ValidatingAdmissionPolicy") {
+		return startFailure{}
+	}
+	if live != nil {
+		for _, c := range live.Spec.Template.Spec.Containers {
+			if c.Name == AgentContainerName && c.Image == image {
+				return startFailure{}
+			}
+		}
+	}
+	if len(msg) > admissionMessageMax {
+		msg = strings.ToValidUTF8(msg[:admissionMessageMax], "") + "…"
+	}
+	return startFailure{apiv1.ReasonAdmissionDenied, msg}
 }
 
 func setStartFailure(s *apiv1.AgentStatus, f startFailure, generation int64) {

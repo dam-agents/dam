@@ -20,11 +20,13 @@ const gate = (ceiling: { cpu: string; memory: string }) =>
 const admission = (opts: {
   templateResources?: { limits?: Record<string, string> };
   ceiling: { cpu: string; memory: string };
+  vmForced?: boolean;
 }) =>
   createTargetAdmission({
     readTemplateResources: async () => opts.templateResources,
     defaultLimits: { cpu: "1", memory: "1Gi" },
     gate: gate(opts.ceiling),
+    vmForced: opts.vmForced ?? false,
   });
 
 describe("target admission", () => {
@@ -46,6 +48,18 @@ describe("target admission", () => {
 
     await expect(
       a.assertCanEverFit({ size: { cpu: "8", memory: "4Gi" }, vm: true }),
+    ).resolves.toBeUndefined();
+  });
+
+  // TEST_SCENARIO: an install that pins the vm runtime makes every target a microVM, so a setup that names no backend is not held to the container Ceiling either.
+  test("admits any size on an install that pins the vm runtime", async () => {
+    const a = admission({
+      ceiling: { cpu: "6", memory: "14Gi" },
+      vmForced: true,
+    });
+
+    await expect(
+      a.assertCanEverFit({ size: { cpu: "8", memory: "4Gi" } }),
     ).resolves.toBeUndefined();
   });
 
