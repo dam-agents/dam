@@ -2,12 +2,18 @@ import type { ActiveTurnStore } from "../infrastructure/active-turn-store.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
 import type { TriggerSessionDriver } from "./trigger-session-driver.js";
 
-const INTERRUPTION_NOTICE = [
+export const INTERRUPTION_NOTICE = [
   "<turn-interrupted>",
   "Your previous turn here was cut short: the sandbox restarted mid-task " +
     "(most often because it ran out of memory). Some effects of your last " +
     "actions may be partial — a file half-written, a command that never " +
     "finished.",
+  "The tool call that was running when the sandbox restarted may show in " +
+    'your history as rejected or interrupted by the user — "The user ' +
+    'doesn\'t want to proceed with this tool use", "[Request interrupted ' +
+    'by user for tool use]". Nobody rejected it: the restart cut it off, ' +
+    "and the harness records that as a rejection. Do not stop or wait for " +
+    "the user because of it.",
   "Check the current state of the workspace before you continue, then carry " +
     "on with the task you were working on.",
   "If this problem persists, stop and instruct the user to go to ⵗ → " +
@@ -25,7 +31,10 @@ export const MAX_RESUME_ATTEMPTS = 5;
  * attempts left and not deleted, resumes the Session through the Trigger
  * Session Driver with an injected interruption notice as the prompt; the
  * running harness picks the resumed turn up the way it would a message sent
- * mid-task. A continuation that dies again is resumed again, up to
+ * mid-task. The notice also disowns the harness's record of the tool call the
+ * restart cut off — written as a user's rejection that says to stop and wait —
+ * so the agent carries on instead of waiting for a person who never acted.
+ * A continuation that dies again is resumed again, up to
  * MAX_RESUME_ATTEMPTS times for one interruption. The attempt is counted before
  * the resume is tried, so a continuation that keeps running out of memory
  * cannot crash-loop the pod. This is
