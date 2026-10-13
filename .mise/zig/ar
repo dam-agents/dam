@@ -1,4 +1,3 @@
 #!/usr/bin/env bash
 # The archiver the cc crate runs, for a machine without binutils.
-zig=$(command -v zig || mise -C "$(dirname "$0")/../.." which zig)
-exec "$zig" ar "$@"
+exec zig ar "$@"
