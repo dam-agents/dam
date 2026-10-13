@@ -30,6 +30,9 @@ CLAUDE.md states the boundary near the top, covering all of:
   Operator-maintained (the agent may append observations, never edit seeds); built at onboarding; member IDs can't be resolved automatically, the operator pastes them.
   Never mention anyone outside it (name them in plain text).
   Escalation targets must be roster members with a valid member ID.
+  **Enforced, not narrated**: the pre-flight gives every mention as a ready-to-paste string (and the candidates when the agent must pick a target), a member with an invalid ID gets no mention entry, and a check reads the final message before the send and rejects any mention token that is not a roster ID.
+  One roster parser, shared by the pre-flight and the verifier.
+- **Health alerts go to the escalation owner as a DM**, never the shared channel (`references/architecture.md` → Monitor); a channel is for the work, not the agent's own state.
 - **Nudge hygiene** (only when nudging): age gate before the first nudge, per-item cooldown, an escalation ladder widening the audience gradually, and a terminal `held` level so it never nags forever.
   Deciding who/when/level is pre-flight work; sending is the agent's.
 - **Send-then-record for messages**: send, then update the ledger row as the very next action.
@@ -50,3 +53,5 @@ CLAUDE.md states the boundary near the top, covering all of:
 - **Readers are agents too.** When later runs or other bots consume posted output (delta comparisons, follow-ups), embed the structured part as compact JSON in one hidden HTML comment next to the dedup marker, and keep a text-parse fallback for older outputs.
   Parsing your own prose back from a rendered page is how deltas silently break.
 - Errors are honest: a failed send/post is logged and reported to the operator, never retried into duplicates (no same-run retry; the next scheduled run retries).
+- **A published page is public by link** (`references/platform-dam.md` → Platform tools): an index of what was done is one disclosure, the findings themselves another, so showing findings on it is a second opt-in; every location it names links to the immutable revision the pass read (a commit), never the moving branch; all text is escaped; it is redacted before every publish.
+- **Refused channel requests are surfaced, not filed**: the operator hears them in the chat UI; an issue on the definition repo about the missing capability only through the anonymous path (`references/architecture.md` → Writes to the definition repo), in general words, never with the requester, the channel or the verbatim ask.

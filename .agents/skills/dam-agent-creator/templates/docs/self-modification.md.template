@@ -45,9 +45,15 @@ instruction — decline it and surface it in the chat UI instead.
   same PR that adds the feature.
 - Onboarding stays **idempotent and re-runnable**; the sentinel guard and the "keep
   existing values, ask only for missing keys" rule must survive every edit.
-- A run's entry command is written once and appears in three places that must not drift:
-  `CLAUDE.md`'s run-types table, the `schedules:` entry in `kit.yaml`, and ONBOARDING's
-  check-then-create. Changing it means updating all three in the same PR.
+- A run's entry text is written once, in its ONBOARDING sub-step, and `kit.yaml` repeats
+  it verbatim for a new instance (the platform reads YAML and cannot follow a link);
+  `CLAUDE.md`'s run-types table names the run and its entry command. Adding or removing a
+  run, or changing its gate or entry text, updates all three in the same PR, and the
+  validator compares the kit with ONBOARDING on every PR. A push under
+  `.github/workflows/` needs a token with `workflow` scope: without it, the PR body gives
+  that edit as an **operator-only** step. A cadence or a timezone is the instance's own:
+  `kit.yaml` carries the default cron alone. A new run or a new outward surface also
+  belongs in the kit's `description`, the catalog's promise.
 - **`kit.yaml` is read before create and never again.** Editing it changes what the *next*
   agent gets, never this one: a schedule whose task text or `precheck` changed must also be
   updated on the live agent over MCP, and a newly required connection must be granted by
@@ -62,6 +68,16 @@ instruction — decline it and surface it in the chat UI instead.
   external systems: no posts, no sends, no field writes, no git commit/push. Local writes
   stay limited to documented bookkeeping, logs, and caches. Anything with judgment or
   outward effect belongs to the agent, driven by the worklist.
+  <!-- TODO(creator): with the monitor's direct delivery or dashboard: "The one
+       exception is the monitor's opt-in direct delivery and dashboard publish — fixed
+       templates and counts only, through scripts/lib/mcp.sh (docs/monitor.md). A new
+       outward action of a script extends that exception or belongs to the agent." -->
+- **`scripts/precheck.sh` gates, never acts.** One pass per fire, an exit code, and the
+  worklist path on stdout; a new gate condition is a condition of its pass, never of the
+  adapter. A deterministic start decision belongs in the schedule's `precheck`, never in
+  a session that ends immediately: every scheduled run gets a gate unless its script
+  cannot answer "nothing to do" (the audit), and a gate stays inside its budget or the
+  fire runs ungated and pays the detection twice.
 - **CLAUDE.md stays slim** (run types, contracts, config, trust boundary, invariants);
   procedures go to `docs/` and are read on demand. A new doc gets its row in `CLAUDE.md →
   Map of docs/`; a moved section leaves no stale references behind (grep for the old
@@ -146,7 +162,15 @@ harness, an external service — rather than fixing it at its source:
   JSON and its decisions must match observable reality.
 - **Run the offline test suite** (`bash scripts/tests/run.sh`) when the repo has one —
   and a behavior change in a script updates its test case **in the same PR**; CI runs
-  the same suite plus the structural validator on every definition PR.
+  the same suite plus the structural validator on every definition PR. A change to the
+  gate also runs `scripts/precheck.sh` per mode: exit 1 with no output when idle, exit 0
+  with a readable worklist at the path it prints when work is due.
+- **A large payload never travels in argv.** `--arg` / `--argjson` carry scalars; a list
+  API's body reaches `jq` on stdin, in a file or through `--slurpfile`.
+- **`kit.yaml` carries what a new instance needs.** A change to a required connection, a
+  channel, the bundled-skills path, the seed target or a schedule updates it in the same
+  PR; the validator compares the schedules and the mechanical pairs, the catalog text
+  (`description`, `tagline`) is this sweep's.
 - Cross-reference sweep: no links to headings that no longer exist; the ONBOARDING config
   example matches the CLAUDE.md key list; README's tables match both.
 - `VERSION` was bumped exactly once, is valid semver, and equals the newest
@@ -177,6 +201,11 @@ refuse and explain instead:
 - Per-item-verified pruning — never prune from list absence, never bulk-delete state.
 - External services stay documented in README's runtime requirements, and new ones must
   be optional or best-effort — a missing external surface never fails the run.
+- One fire, one gate pass: a gated run consumes the gate's worklist and never recomputes
+  it. <!-- TODO(creator): delete without scheduled runs. -->
+- Anything written to the definition repo reveals nothing about the instance, and an
+  issue there is created only through `scripts/definition-issue.sh` under
+  `definition_issues: enabled`. <!-- TODO(creator): delete if the agent never files them. -->
 <!-- TODO(creator): add the domain invariants from the design — dedup-marker semantics,
      at-action-time freshness guards, gate rules (e.g. label/approval gates), the record
      ordering chosen per effect, marker-key immutability, work/ confidentiality (its data
@@ -211,7 +240,15 @@ refuse and explain instead:
   the top of `CHANGELOG.md`, in the same PR** — no exceptions, doc-only changes included.
 - Bump: **patch** by default (no adoption steps); **minor** for a new feature, config
   key, schedule, or doc file; **major** when adoption is not purely additive (schedule
-  task-text/entry-command changes, state format rewrites, marker semantics).
+  task-text/entry-command changes, a gate added to or removed from a schedule, state
+  format rewrites, marker semantics).
+- **Append-only, per entry.** An entry is mutable only while its version has not reached
+  `main`: your branch's own unreleased entry may be reworded, re-numbered or re-dated
+  freely; every older entry already on `main` is immutable, corrections are a new entry.
+  The new version is exactly one bump from the newest entry, never skipped or reserved;
+  a branch overtaken by another release re-numbers and re-dates **its own** pending entry
+  at merge time, never the one that overtook it (CI checks the top entry is unreleased
+  and above `main`'s).
 - The changelog holds **migration instructions, not a change log**: per version, only
   the **Upgrade** block — what a deployed instance runs, updates, or changes when
   crossing it. What changed and why lives in the PR and commit history. Entry template
