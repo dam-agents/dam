@@ -54,7 +54,11 @@ async function harness(agent: Partial<InfraAgent> | null) {
   const relay = createAgentTrpcRelay("ns", repo, () => upstream.base);
   const server: Server = createServer();
   server.on("upgrade", (req, socket, head) =>
-    relay.handleUpgrade(req, socket, head, "agent-a"),
+    relay.handleUpgrade(req, socket, head, "agent-a", {
+      sub: "u",
+      surface: "web",
+      attached: () => {},
+    }),
   );
   await new Promise<void>((r) => server.listen(0, r));
   closers.push(() => new Promise<void>((r) => server.close(() => r())));
