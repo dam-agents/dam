@@ -214,6 +214,7 @@ What a runner measures is what judging the vm backend against the container one 
 - **Failures** by operation and by the reason the Agent is told, and **admission refusals** — machines whose memory did not fit.
 - **Memory** committed to machines, counted the way admission counts it, beside the runner's limit and its own reserve.
 - **The image cache** — creates that found a bootable tree and creates that did not, fetch durations by outcome, evictions and the bytes they freed, and the bytes held against the budget.
+- **Storage** — the bytes in use on the owner's claim and the bytes the runner may use there, which the claim's guard judges ([persistence](persistence.md#per-agent-pvcs)).
 
 The [usage counters](#usage-counters)' identity-free rule holds here with a sharper edge: a runner exists per owner, so a machine id, an image reference or the runner's owner label would each make a series a person.
 Every dimension comes from a closed set — operation, outcome, failure reason, cache result — and the scrape copies no pod label onto a series.

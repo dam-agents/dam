@@ -11,6 +11,7 @@ use tokio_util::task::TaskTracker;
 
 use crate::api::{
     MachineSpec, MachineStatus, SeedResult, State, REASON_BOOT_FAILED, REASON_OUT_OF_CAPACITY,
+    REASON_STORAGE_FULL,
 };
 use crate::cache::{self, pinned_digest};
 use crate::cacheapi::CacheClient;
@@ -33,6 +34,7 @@ use crate::share::{self, write_share, SeedFile, SHARE_DIR};
 use crate::state::{
     self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, IMAGE_DIGEST_FILE,
 };
+use crate::storage::StorageUse;
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine API behind the HTTP layer: one persistent microVM per vm Agent, converged on the latest spec the controller sent. A PUT stores that spec and makes sure one worker is converging the machine; the worker takes one whole action at a time, and GET reports the action in flight as the machine's state. What a machine is survives the runner on disk — its spec, its port, its share. What the runner is doing to it lives in one entry per machine here and is lost with the process.
 
@@ -61,6 +63,9 @@ pub const RUNTIME_CALL_LIMIT: Duration = Duration::from_secs(15 * 60);
 // UNIT_BOUNDARY_DESCRIPTION: how often the runner names the digests its machines boot to the image cache again. Well inside HOLD_LEASE, so one missed refresh never lets a hold lapse.
 pub const HOLD_REFRESH: Duration = Duration::from_secs(60);
 
+// UNIT_BOUNDARY_DESCRIPTION: how often the runner looks at how full its claim is, and sheds what it can fetch again while it is short. A machine is refused on a critical claim by a look at the time of the request, not at this cadence.
+pub const STORAGE_CHECK: Duration = Duration::from_secs(30);
+
 // UNIT_BOUNDARY_DESCRIPTION: what a runner is given at start, as the flags the controller sets on the runner's Deployment. With `image_cache_socket` the image directory is the node's cache, read-only here, and every image is resolved by the node's service; without it the runner is the one writer of its own cache.
 pub struct Config {
     pub state_dir: PathBuf,
@@ -78,6 +83,8 @@ pub struct Config {
     pub listen: Option<Arc<Listen>>,
     // UNIT_BOUNDARY_DESCRIPTION: the VM runtime this runner's release was built against, which every machine it starts boots. None where the runner's release names none, which makes no machine foreign.
     pub runtime: Option<String>,
+    // UNIT_BOUNDARY_DESCRIPTION: how full the owner's claim is now (see storage::StorageUse), or nothing when it cannot be told, which guards nothing. A function rather than a path, so a test can stand a full claim in for a real one.
+    pub measure_storage: Arc<dyn Fn() -> Option<StorageUse> + Send + Sync>,
 }
 
 #[derive(Clone)]
@@ -91,7 +98,7 @@ struct Boot {
     at: Instant,
     action: Action,
     seed: Option<String>,
-    note: Option<(String, Instant)>,
+    note: Option<(String, Instant, Option<&'static str>)>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what the runtime and the guest last said about a machine. `error` is set only with the unknown state, when the runtime could not be read.
@@ -167,6 +174,7 @@ pub struct Server {
     versions: AtomicU64,
     admission: Mutex<()>,
     ports: Mutex<()>,
+    storage_short: std::sync::atomic::AtomicBool,
     lifetime: CancellationToken,
     work: TaskTracker,
     metrics: Metrics,
@@ -204,6 +212,13 @@ impl Rejected {
     fn conflict(message: impl Into<String>) -> Self {
         Self {
             status: 409,
+            message: message.into(),
+        }
+    }
+
+    fn insufficient_storage(message: impl Into<String>) -> Self {
+        Self {
+            status: 507,
             message: message.into(),
         }
     }
@@ -272,6 +287,7 @@ impl Server {
             ),
             admission: Mutex::new(()),
             ports: Mutex::new(()),
+            storage_short: std::sync::atomic::AtomicBool::new(false),
             lifetime,
             work: TaskTracker::new(),
             metrics: Metrics::default(),
@@ -297,6 +313,20 @@ impl Server {
                     return;
                 };
                 let _ = tokio::task::spawn_blocking(move || server.hold_images()).await;
+            }
+        });
+        let checking = Arc::downgrade(&server);
+        let lifetime = server.lifetime.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = lifetime.cancelled() => return,
+                    _ = tokio::time::sleep(STORAGE_CHECK) => {}
+                }
+                let Some(server) = checking.upgrade() else {
+                    return;
+                };
+                let _ = tokio::task::spawn_blocking(move || server.check_storage()).await;
             }
         });
         // UNIT_BOUNDARY_DESCRIPTION: the health prober: one task per runner that starts a probe of each machine worth probing at its cadence, and each probe records what it hears, so a status read never waits on a probe. It holds the server weakly and ends with it, as well as when the runner closes.
@@ -435,10 +465,16 @@ impl Server {
             let action = self.next_action(id, &spec, state, status.ready);
             let converging = self.converging(id);
             let boots = spec.running && (converging || action.is_some_and(|a| a != Action::Stop));
+            if boots || action == Some(Action::Create) {
+                if let Some(full) = self.storage_critical() {
+                    return Ok(self.refuse(id, status, REASON_STORAGE_FULL, full.refusal()));
+                }
+            }
             let _admitting = boots.then(|| locked(&self.admission));
             if boots {
                 if let Err(e) = self.room_for(id, &spec) {
-                    return Ok(self.refuse(id, status, e.to_string()));
+                    self.metrics.refused();
+                    return Ok(self.refuse(id, status, REASON_OUT_OF_CAPACITY, e.to_string()));
                 }
             }
             let mut machines = locked(&self.machines);
@@ -486,18 +522,23 @@ impl Server {
         }
     }
 
-    fn refuse(&self, id: &str, mut status: MachineStatus, message: String) -> MachineStatus {
-        self.metrics.refused();
+    fn refuse(
+        &self,
+        id: &str,
+        mut status: MachineStatus,
+        reason: &'static str,
+        message: String,
+    ) -> MachineStatus {
         let mut machines = locked(&self.machines);
         let entry = machines.entries.entry(id.to_string()).or_default();
         entry.failure = Some(Failed {
             message: message.clone(),
-            reason: REASON_OUT_OF_CAPACITY,
+            reason,
         });
         self.bump(entry);
         status.version = entry.version;
         status.message = message;
-        status.reason = REASON_OUT_OF_CAPACITY.to_string();
+        status.reason = reason.to_string();
         status.ready = false;
         status
     }
@@ -629,6 +670,9 @@ impl Server {
         check_id(id)?;
         let spec = read_spec(&self.config.state_dir, id)
             .ok_or_else(|| Rejected::not_found(format!("machine {id} does not exist")))?;
+        if let Some(full) = self.storage_critical() {
+            return Err(Rejected::insufficient_storage(full.refusal()));
+        }
         let desired = {
             let mut machines = locked(&self.machines);
             let closed = machines.closed;
@@ -806,11 +850,15 @@ impl Server {
         let failure = result.err().map(|e| {
             let mut message = format!("{e:#}");
             tracing::error!(machine = %id, op = action.label(), error = %message, "machine action failed");
-            let reason = failure_reason(&e);
-            self.metrics.failed(action, reason);
+            let mut reason = failure_reason(&e);
             if reason == REASON_BOOT_FAILED {
                 message = with_console(&message, &self.console_tail(id));
+                if let Some(full) = self.storage_critical() {
+                    reason = REASON_STORAGE_FULL;
+                    message = format!("{}; {message}", full.refusal());
+                }
             }
+            self.metrics.failed(action, reason);
             Failed { message, reason }
         });
         {
@@ -1134,13 +1182,20 @@ impl Server {
                 && boot
                     .note
                     .as_ref()
-                    .is_none_or(|(_, noted)| noted.elapsed() >= SLOW_BOOT_AFTER);
+                    .is_none_or(|(_, noted, _)| noted.elapsed() >= SLOW_BOOT_AFTER);
             if !waiting || !due {
                 return;
             }
             boot.at
         };
-        let message = with_console(SLOW_BOOT, &self.console_tail(id));
+        let tail = self.console_tail(id);
+        let (message, reason) = match self.storage_critical() {
+            Some(full) => (
+                with_console(&full.refusal(), &tail),
+                Some(REASON_STORAGE_FULL),
+            ),
+            None => (with_console(SLOW_BOOT, &tail), None),
+        };
         let mut machines = locked(&self.machines);
         let Some(entry) = machines.entries.get_mut(id) else {
             return;
@@ -1148,8 +1203,11 @@ impl Server {
         let Some(boot) = entry.boot.as_mut().filter(|boot| boot.at == at) else {
             return;
         };
-        let changed = boot.note.as_ref().is_none_or(|(old, _)| *old != message);
-        boot.note = Some((message, Instant::now()));
+        let changed = boot
+            .note
+            .as_ref()
+            .is_none_or(|(old, _, was)| *old != message || *was != reason);
+        boot.note = Some((message, Instant::now(), reason));
         if changed {
             self.bump(entry);
         }
@@ -1171,7 +1229,41 @@ impl Server {
             limit_mib: self.config.memory_mib,
             reserve_mib: self.config.reserve_mib,
             committed_mib: committed,
+            storage: (self.config.measure_storage)(),
         })
+    }
+
+    fn storage_critical(&self) -> Option<StorageUse> {
+        (self.config.measure_storage)().filter(StorageUse::critical)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again; machine disks and what the guests keep on them are not the runner's to free.
+    fn check_storage(&self) {
+        let Some(storage) = (self.config.measure_storage)() else {
+            return;
+        };
+        let was = self.storage_short.load(Ordering::Relaxed);
+        let short = storage.short(was);
+        self.storage_short.store(short, Ordering::Relaxed);
+        if short != was {
+            tracing::warn!(
+                percent = storage.percent(),
+                used = storage.used,
+                usable = storage.usable,
+                short,
+                "vm runner: the owner's storage claim changed between short of room and not"
+            );
+        }
+        if !short {
+            return;
+        }
+        let shed = self.images.shed();
+        for bytes in &shed.freed {
+            self.metrics.evicted(*bytes);
+        }
+        if let Some(used) = shed.used {
+            self.metrics.cache_size(used);
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the `docker save` archive an install with no registry stages for this reference, with the launch read out of the archive's own config. The directory is mounted read-only in that mode, so nothing can be fetched there and this is what the machine boots.
@@ -1541,7 +1633,10 @@ impl Server {
             .and_then(|e| e.boot.as_ref())
             .and_then(|boot| boot.note.as_ref())
             .filter(|_| failed.is_none() && !status.ready && reads_ready(state));
-        if let Some((note, _)) = note {
+        if let Some((note, _, reason)) = note {
+            if let Some(reason) = reason {
+                status.reason = reason.to_string();
+            }
             status.message = if status.message.is_empty() {
                 note.clone()
             } else {

@@ -235,6 +235,26 @@ fn eviction_spares_what_is_held_until_the_hold_lapses() {
     );
 }
 
+// TEST_SCENARIO: a runner whose claim runs short sheds every tree no machine holds, far inside its budget, because a tree can be fetched again and the room it frees can keep a guest's write from failing. A held tree stays, as it does for any eviction.
+#[test]
+fn shedding_frees_every_tree_no_machine_holds_whatever_the_budget() {
+    let f = Fixture::new("shed", PUBLIC_CRANE);
+    let cache = f.cache(|c| c.hold_lease = Duration::from_millis(500));
+    let first = digest_of(&cache, "quay.io/x/a:1");
+    let second = digest_of(&cache, "quay.io/x/b:1");
+    std::thread::sleep(Duration::from_millis(600));
+    cache.hold(&[second.clone()].into()).unwrap();
+    assert!(
+        cache.evict(None).freed.is_empty(),
+        "inside its budget, nothing is evicted"
+    );
+
+    let shed = Images::shed(&cache);
+    assert_eq!(shed.freed.len(), 1);
+    assert!(!cache.digest_entry(&first).exists());
+    assert!(cache.digest_entry(&second).exists(), "a held tree was shed");
+}
+
 // TEST_SCENARIO: a hold only extends. A runner that names fewer digests than another holds — a short list, or a compromised runner's empty one — cannot free a tree another owner's machine is running from.
 #[test]
 fn a_hold_cannot_drop_what_another_holds() {

@@ -94,12 +94,13 @@ impl Default for Metrics {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the gauges read from the runner as it is at the moment of the scrape rather than recorded as it goes. `committed_mib` is None when the runner could not count it, which is reported as NaN rather than as a number nobody committed.
+// UNIT_BOUNDARY_DESCRIPTION: the gauges read from the runner as it is at the moment of the scrape rather than recorded as it goes. `committed_mib` is None when the runner could not count it, and `storage` when its claim could not be measured, each reported as NaN rather than as a number nobody committed.
 pub struct Gauges {
     pub budget_bytes: i64,
     pub limit_mib: i32,
     pub reserve_mib: i32,
     pub committed_mib: Option<i64>,
+    pub storage: Option<crate::storage::StorageUse>,
 }
 
 impl Metrics {
@@ -277,6 +278,18 @@ impl Metrics {
             "Memory committed to running machines and to machines being started, as admission counts it.",
             gauges.committed_mib.map_or(f64::NAN, |mib| mib as f64),
         );
+        gauge(
+            &mut out,
+            "storage_used_bytes",
+            "Bytes in use on the owner's claim: every machine disk, the runner's bookkeeping and an image cache kept there.",
+            gauges.storage.map_or(f64::NAN, |s| s.used as f64),
+        );
+        gauge(
+            &mut out,
+            "storage_usable_bytes",
+            "Bytes the runner may use on the owner's claim, in use or free; past 90% of it no machine is created, started or grown.",
+            gauges.storage.map_or(f64::NAN, |s| s.usable as f64),
+        );
         out
     }
 }
@@ -352,6 +365,7 @@ mod tests {
             limit_mib: 2,
             reserve_mib: 3,
             committed_mib: None,
+            storage: None,
         });
 
         let types: Vec<&str> = text
@@ -376,6 +390,8 @@ mod tests {
                 "platform_vm_runner_memory_limit_mib gauge",
                 "platform_vm_runner_memory_reserve_mib gauge",
                 "platform_vm_runner_memory_committed_mib gauge",
+                "platform_vm_runner_storage_used_bytes gauge",
+                "platform_vm_runner_storage_usable_bytes gauge",
             ]
         );
         for line in [
@@ -386,6 +402,7 @@ mod tests {
             "platform_vm_runner_image_cache_lookups_total{result=\"hit\"} 1",
             "platform_vm_runner_image_fetch_duration_seconds_bucket{outcome=\"failed\",le=\"1200\"} 1",
             "platform_vm_runner_memory_committed_mib NaN",
+            "platform_vm_runner_storage_used_bytes NaN",
         ] {
             assert!(text.lines().any(|l| l == line), "missing {line}\n{text}");
         }
@@ -404,6 +421,10 @@ mod tests {
             limit_mib: 4096,
             reserve_mib: 512,
             committed_mib: Some(2048),
+            storage: Some(crate::storage::StorageUse {
+                used: 75,
+                usable: 100,
+            }),
         });
         for line in [
             "platform_vm_runner_machine_operation_duration_seconds_bucket{op=\"create\",outcome=\"ok\",le=\"1\"} 0",
@@ -415,6 +436,8 @@ mod tests {
             "platform_vm_runner_machine_operation_failures_total{op=\"wake\",reason=\"MachineBootFailed\"} 1",
             "platform_vm_runner_image_cache_lookups_total{result=\"miss\"} 1",
             "platform_vm_runner_memory_committed_mib 2048",
+            "platform_vm_runner_storage_used_bytes 75",
+            "platform_vm_runner_storage_usable_bytes 100",
         ] {
             assert!(text.lines().any(|l| l == line), "missing {line}\n{text}");
         }

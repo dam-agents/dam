@@ -256,6 +256,12 @@ It grows in place as agents are added, up to that ceiling, and is never shrunk.
 On a storage class that cannot expand, or one the controller cannot read, it is created at the ceiling, since it could not grow later.
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
 
+**The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk fails and its filesystem reports the loss.
+So the runner measures the claim itself: past 75% used it sheds what it can fetch again — every image tree no machine holds, when the cache is on the claim — until use is back under 70%.
+Past 90% it creates, starts, restarts and grows no machine and takes no seed, and reports the refusal as `MachineStorageFull` with how full the storage is and how to free it; it never stops a running machine, which would free nothing and lose what the guest holds in memory.
+An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
+A storage refusal does not park the Agent the way a memory refusal does: parking would halt a machine, and nothing an idle agent holds in memory frees disk.
+
 ### The machine image cache
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked once into a tree every machine of that image mounts read-only, on the runner's own claim by default or on a node directory an install shares.
