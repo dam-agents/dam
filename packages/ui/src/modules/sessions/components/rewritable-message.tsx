@@ -72,23 +72,25 @@ export function RewritableMessage({
         <div className="flex gap-1 transition-opacity md:absolute md:right-0 md:top-full md:z-10 md:pt-0.5 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
           <Button
             variant="ghost"
-            size="xs"
+            size="icon-xs"
+            tooltip="Rewind"
+            aria-label="Rewind"
             onClick={() =>
               setRewriting({ messageId: message.id, mode: "rewind" })
             }
           >
             <Undo size={14} />
-            Rewind
           </Button>
           <Button
             variant="ghost"
-            size="xs"
+            size="icon-xs"
+            tooltip="Fork"
+            aria-label="Fork"
             onClick={() =>
               setRewriting({ messageId: message.id, mode: "fork" })
             }
           >
             <Branch size={14} />
-            Fork
           </Button>
         </div>
       )}
