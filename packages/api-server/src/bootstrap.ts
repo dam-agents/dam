@@ -39,7 +39,7 @@ import {
   setSlackChannelDefault,
   createAgentSweep,
   createRuntimeMigrationSwitch,
-  createRetiredImageMigration,
+  createImageUpdate,
   podIsIdle,
 } from "./modules/agents/index.js";
 import {
@@ -1530,7 +1530,7 @@ export async function bootstrap() {
     runtimeMigrationSwitch.tick(),
   );
 
-  const retiredImageMigration = createRetiredImageMigration({
+  const imageUpdate = createImageUpdate({
     listAgents: () => agentsRepo.list(),
     getAgent: (id) => liveAgentsRepo.getLive(id, undefined),
     readTemplateSpec: templatesRepo.readSpec,
@@ -1540,9 +1540,7 @@ export async function bootstrap() {
     idleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     log: (message) => process.stderr.write(`${message}\n`),
   });
-  await periodicJobs.register("retired-image-migration", 60_000, () =>
-    retiredImageMigration.tick(),
-  );
+  await periodicJobs.register("image-update", 60_000, () => imageUpdate.tick());
 
   const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
     composeSessionDirectory(db);
