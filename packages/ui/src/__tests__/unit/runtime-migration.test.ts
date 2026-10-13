@@ -1,7 +1,7 @@
 // TEST_OVERVIEW: the agent row's runtime badge and its Migrate action. With the
 // TEST_OVERVIEW: vm-sandboxes experiment off, only a vm agent is badged, as the
-// TEST_OVERVIEW: new runtime. With it on, a container agent is badged as the old
-// TEST_OVERVIEW: runtime and offered the migration, and a migrating agent shows
+// TEST_OVERVIEW: new runtime. With it on, no settled agent is badged and a
+// TEST_OVERVIEW: container agent is offered the migration, and a migrating agent shows
 // TEST_OVERVIEW: the migration in progress with its phase and the controller's
 // TEST_OVERVIEW: reason, a failed one distinctly, and the way back until the
 // TEST_OVERVIEW: agent has started on the new runtime. Each row's Abort and
@@ -42,18 +42,10 @@ describe("runtimeBadge", () => {
     expect(runtimeBadge(agent({}), OFF)).toBeNull();
   });
 
-  // TEST_SCENARIO: with the experiment on the new runtime is the default, so badging it would badge almost every agent; the old runtime is the exception worth pointing at.
-  test("experiment on: badges a container agent as the old runtime", () => {
-    const badge = runtimeBadge(agent({}), ON);
-    expect(badge?.kind).toBe("old");
-    expect(badge?.label).toBe("Old runtime");
-    expect(badge?.title).toMatch(/can be migrated/);
-  });
-
-  test("experiment on: does not promise a migration the agent cannot have", () => {
-    expect(
-      runtimeBadge(agent({ runtimeMigratable: false }), ON)?.title,
-    ).not.toMatch(/migrated/);
+  // TEST_SCENARIO: with the experiment on the new runtime is the default, and a container agent already shows its Migrate action, so a badge saying it is old would only repeat it.
+  test("experiment on: leaves a container agent unbadged", () => {
+    expect(runtimeBadge(agent({}), ON)).toBeNull();
+    expect(runtimeBadge(agent({ runtimeMigratable: false }), ON)).toBeNull();
   });
 
   test("experiment on: leaves a vm agent unbadged", () => {

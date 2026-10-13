@@ -106,12 +106,12 @@ impl Smolvm {
 }
 
 impl Runtime for Smolvm {
-    // UNIT_BOUNDARY_DESCRIPTION: read from the record and the VMM process. smolvm resolves a live VMM whose guest agent missed one vsock ping, with a three-second timeout, as unreachable, and that is what a busy guest looks like as well as a dead agent. It reads as running here: the machine is up and holds its memory, and whether it serves is the health prober's to judge, so a guest that stays quiet is restarted after the unhealthy grace, and counted, rather than rebooted on the first missed ping. Only a VMM that is gone reads as stopped.
+    // UNIT_BOUNDARY_DESCRIPTION: read from the record and the VMM process alone, never by pinging the guest agent: every probe reads it, and each ping is a line in both of the machine's logs. A live VMM reads as running whatever its guest is doing: the machine is up and holds its memory, and whether it serves is the health prober's to judge, so a guest that stays quiet is restarted after the unhealthy grace, and counted. Only a VMM that is gone reads as stopped.
     fn state(&self, id: &str) -> anyhow::Result<State> {
         Ok(match self.record(id)? {
             None => State::Absent,
-            Some(record) => match state_probe::resolve_state(id, &record) {
-                RecordState::Running | RecordState::Unreachable => State::Running,
+            Some(record) => match record.actual_state() {
+                RecordState::Running => State::Running,
                 _ => State::Stopped,
             },
         })

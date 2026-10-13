@@ -34,6 +34,7 @@ export const POD_FAILURE_REASONS = new Set([
   "MachineImageUnavailable",
   "MachineRunnerUnschedulable",
   "RunnerOutOfMemory",
+  "MachineStorageFull",
 ]);
 
 export const GATEWAY_FAILURE_REASONS = new Set([
@@ -142,6 +143,8 @@ export function describeWakeFailure(c: WakeFailureCause): string {
           return "the VM runner for this agent's owner cannot be placed on any node";
         case "RunnerOutOfMemory":
           return "its owner's VM agents ran out of memory together and all restarted — stop agents that are not in use to free memory";
+        case "MachineStorageFull":
+          return "the storage its owner's agents share is full";
         default:
           return "the agent crashed while starting";
       }

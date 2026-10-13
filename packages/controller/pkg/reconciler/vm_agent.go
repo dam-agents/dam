@@ -546,8 +546,11 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		r.requeue(agent.Name, poll)
 	}
 	reason := st.Reason
-	if reason == "" {
+	switch reason {
+	case "":
 		reason = vmrunner.ReasonNotReady
+	case vmrunner.ReasonHomeFull:
+		reason = apiv1.ReasonHomeVolumeFull
 	}
 	running, _ := r.vmRunning.Load(agent.Name)
 	killedAt := func() time.Time { return r.runnerOOMKilledAt(ctx, agent.Labels[envoyOwnerLabel]) }

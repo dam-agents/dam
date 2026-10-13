@@ -231,7 +231,7 @@ An Agent whose mounts ask to persist a path outside `HOME` is refused rather tha
 The runner names it in the share at every start, and a new generation, or none named, boots onto an empty upper: what must outlast that belongs under `HOME`.
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
 Temporary folders are kept off that root instead: `/tmp`, `/var/tmp` and `/var/cache` are directories of the disk bound in place, empty on every boot, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
-They share the disk with the agent's work, so when it runs short platform-init deletes their least recently used files — never one in use, never anything outside them — and smolvm's trim returns the freed space to the runner's volume.
+They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used files — never one in use, never anything outside them — and smolvm's trim returns the freed space to the runner's volume.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
 
 Mounting the disk is the platform's job rather than the image's.
@@ -255,6 +255,12 @@ The runtime's disk templates live there too, sparse enough to need no share of i
 It grows in place as agents are added, up to that ceiling, and is never shrunk.
 On a storage class that cannot expand, or one the controller cannot read, it is created at the ceiling, since it could not grow later.
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
+
+**The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk fails and its filesystem reports the loss.
+So the runner measures the claim itself: past 75% used it sheds what it can fetch again — every image tree no machine holds, when the cache is on the claim — and marks every machine's share, so each guest gives back its scratch, until use is back under 70%.
+Past 90% it creates, starts, restarts and grows no machine and takes no seed, and reports the refusal as `MachineStorageFull` with how full the storage is and how to free it; it never stops a running machine, which would free nothing and lose what the guest holds in memory.
+An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
+A storage refusal does not park the Agent the way a memory refusal does: parking would halt a machine, and nothing an idle agent holds in memory frees disk.
 
 ### The machine image cache
 

@@ -8,10 +8,12 @@ import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
+import { workspaceFailureSentence } from "../lib/workspace-failure.js";
 import type {
   AgentDisplay,
   AgentDisplayState,
 } from "../utils/agent-resolver.js";
+import { AgentAvatar } from "./avatar/agent-avatar.js";
 import { OverlayFrame } from "./overlay-frame.js";
 import { StartupTip } from "./startup-tip.js";
 import { VmRuntimeBadge } from "./vm-runtime-badge.js";
@@ -24,7 +26,9 @@ interface OverlayCopy {
 const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   running: { description: "" },
   starting: { description: "" },
-  preparing_workspace: { description: "" },
+  preparing_workspace: {
+    description: "Setting up the workspace. This finishes shortly.",
+  },
   hibernating: { description: "The agent is going to sleep." },
   hibernated: {
     Icon: Asleep,
@@ -102,10 +106,18 @@ export function AgentUnavailableOverlay({
   const { state, powerAction } = display;
   const { Icon } = OVERLAY_COPY[state];
   const description = overlayDescription(state, agent);
+  const waiting = state === "starting" || state === "preparing_workspace";
 
   return (
     <OverlayFrame onBack={onBack}>
-      {Icon ? (
+      {waiting ? (
+        <AgentAvatar
+          name={agent.name}
+          avatar={agent.avatar}
+          size={128}
+          playing
+        />
+      ) : Icon ? (
         <Icon size={40} className="text-muted-foreground" />
       ) : (
         <Spinner size={40} />
@@ -116,13 +128,34 @@ export function AgentUnavailableOverlay({
         </h2>
         <div className="flex items-center gap-2 empty:hidden">
           <VmRuntimeBadge agent={agent} />
-          <StatusBadge state={state} />
+          {state !== "starting" && <StatusBadge state={state} />}
         </div>
       </div>
       {description && (
         <p className="max-w-105 text-sm text-muted-foreground">{description}</p>
       )}
+      {state === "starting" && (
+        <p role="status" className="sr-only">
+          The agent is starting up.
+        </p>
+      )}
       {!Icon && <StartupTip sandbox={agent.name} />}
+      {display.slowStart && !agent.podTerminationReason && (
+        <div className="flex max-w-105 flex-col gap-2 text-sm">
+          <p
+            role="status"
+            className="flex items-center justify-center gap-1.5 text-warning"
+          >
+            <Warning size={14} className="shrink-0" />
+            Starting is taking longer than usual.
+          </p>
+          {agent.notReadyMessage && (
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2 text-left font-mono text-xs text-muted-foreground">
+              {agent.notReadyMessage}
+            </pre>
+          )}
+        </div>
+      )}
       {agent.podTerminationReason && (
         <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
           <Warning size={14} className="shrink-0" />
@@ -151,5 +184,9 @@ function overlayDescription(
   const budget = agent.overBudgetMessage;
   if (state === "over_budget" && budget)
     return `${budget[0].toUpperCase()}${budget.slice(1)}.`;
+  if (state === "preparing_workspace") {
+    const failing = agent.workspaceFailures.find((f) => !f.settled);
+    if (failing) return workspaceFailureSentence(failing);
+  }
   return OVERLAY_COPY[state].description;
 }

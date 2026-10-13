@@ -548,6 +548,7 @@ mod tests {
                 listen: Some(Arc::new(|_| std::net::TcpListener::bind("127.0.0.1:0"))),
                 runtime: None,
                 cgroup_dir: None,
+                measure_storage: Arc::new(|| None),
             },
             runtime,
         )

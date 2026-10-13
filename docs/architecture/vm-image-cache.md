@@ -1,6 +1,6 @@
 # VM image cache
 
-Last verified: 2026-09-27
+Last verified: 2026-10-13
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 Where that tree lives is the one part of the runner's storage an install may move off its claim.
@@ -27,12 +27,14 @@ A writer that dies mid-fetch or mid-eviction leaves only a scratch tree, which t
 A fetch that finds an incomplete tree, or another platform's, under its name moves it aside and puts its own in place.
 A resolve has one deadline for everything it does, fetch included, and a runner waits a little past it, so a service that is slow is told apart from one that is gone — only one that is gone lets a runner boot a tree it already holds.
 A fetch that fails for its image — a registry refusing the export, a stream tar cannot unpack — is reported as an unavailable image, and a disk that fills, or has less room than the image's manifest names before the download starts, as a lack of capacity, never as a boot to retry at once into the same state.
+On a runner's own volume that disk is the owner's claim, so there it is reported as the owner's storage being full ([persistence](persistence.md#per-agent-pvcs)).
 
 **Eviction never frees a tree a machine is running from.** It takes the oldest write first, down to a byte count the install states, sparing what is held.
 A runner holds the digests its machines boot by naming them again every minute, and a hold lapses only once nobody names it — a runner that stopped has no machines left.
 A hold only extends, so no runner can release what another holds, and only a tree on disk is held, so a resolve that fails holds nothing; past half again its budget, the service fetches nothing.
 Each fetch under way counts toward that ceiling at the compressed size its manifest names, so fetches that start together cannot each find the cache under it.
 A service that restarts has forgotten every hold, so it evicts nothing until the runners have had time to name theirs again.
+A runner whose own claim runs short sheds every tree no machine holds, however far inside its budget the cache is, because a tree can be fetched again and a machine disk on the same claim cannot.
 
 **Nothing could fill that cache before an agent needed it.** A runner exists only once its owner's agents need one, so the first machine on an image, on every node after every deploy, would wait out the fetch with a user watching.
 The service therefore preloads the harness images the install ships, resolving their tags on every pass, and pins them against eviction.

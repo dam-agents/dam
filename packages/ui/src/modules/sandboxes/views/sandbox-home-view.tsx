@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "../../../store.js";
 import { useAgents, useIsAgentInaccessible } from "../../agents/api/queries.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
+import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-watch.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
@@ -42,6 +43,7 @@ export function SandboxHomeView() {
   usePublicAgentFallback(agentId, agentInaccessible);
 
   const display = useResolvedAgentDisplay(agent);
+  useHarnessConfigWatch(agentId);
 
   const { summaries, warnings } = useSectionSummaries(agent);
   // UNIT_BOUNDARY_DESCRIPTION: vm agents have no setup settings, so links to "setup" land on the first section they do have.

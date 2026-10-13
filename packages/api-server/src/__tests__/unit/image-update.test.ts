@@ -530,10 +530,10 @@ describe("parseInfraAgent", () => {
 
   // TEST_SCENARIO: the controller says StartFailed only of the pod or
   // TEST_SCENARIO: machine that runs the spec its generation names, so a
-  // TEST_SCENARIO: crash loop or a harness that never becomes ready on the
-  // TEST_SCENARIO: new image moves the agent back, while one about an older
-  // TEST_SCENARIO: spec does not.
-  it.each(["CrashLoop", "NeverReady"])(
+  // TEST_SCENARIO: crash loop, a harness that never becomes ready, or an
+  // TEST_SCENARIO: admission refusal of the new image moves the agent back,
+  // TEST_SCENARIO: while one about an older spec does not.
+  it.each(["CrashLoop", "NeverReady", "AdmissionDenied"])(
     "reads StartFailed %s on the current spec as a failed start",
     (reason) => {
       const startFailed = (observedGeneration: number) => ({

@@ -6,8 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::*;
 use crate::api::{
-    REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, REASON_SEED_MISSING, STATE_ABSENT,
-    STATE_CREATING, STATE_RESTARTING, STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
+    REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE, REASON_SEED_MISSING,
+    REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING,
+    STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -15,6 +16,7 @@ use crate::imagecache::{CacheConfig, ImageCache};
 use crate::launch::{ImageLaunch, LAUNCH_FILE};
 use crate::plan::{READY_GRACE, STALLED_RESTART, UNHEALTHY_RESTART};
 use crate::state::RUNTIME_FILE;
+use crate::storage::StorageUse;
 use std::path::Path;
 
 // UNIT_BOUNDARY_DESCRIPTION: what one update asked of the fake runtime: the image it moved the machine to, if any, and the allowlist and disk size it wrote.
@@ -215,6 +217,7 @@ impl Harness {
             })),
             runtime: None,
             cgroup_dir: None,
+            measure_storage: Arc::new(|| None),
         };
         tune(&mut config);
         let fake = Arc::new(Fake::default());
@@ -1237,6 +1240,7 @@ async fn a_restarted_runner_republishes_its_ports() {
             listen: Some(listen),
             runtime: None,
             cgroup_dir: None,
+            measure_storage: Arc::new(|| None),
         },
         h.fake.clone(),
     )
@@ -1834,7 +1838,7 @@ async fn the_prober_reports_a_guest_that_comes_up_to_a_waiting_read() {
     assert_ne!(ready.version, booted.version);
 }
 
-// TEST_SCENARIO: the probe cadence is what the user waits on between the guest answering and the controller hearing of it, so a fresh boot is asked every FRESH_BOOT_PROBE. Each probe is also a console line, so a boot still quiet after SLOW_BOOT_AFTER falls back to BOOT_PROBE, and a guest that has answered is asked only at the steady cadence.
+// TEST_SCENARIO: the probe cadence is what the user waits on between the guest answering and the controller hearing of it, so a fresh boot is asked every FRESH_BOOT_PROBE. A probe still costs a connect, so a boot still quiet after SLOW_BOOT_AFTER falls back to BOOT_PROBE, and a guest that has answered is asked only at the steady cadence.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_fresh_boot_is_probed_tightly_and_an_old_or_answered_one_is_not() {
     let h = Harness::new("probe-cadence");
@@ -2201,6 +2205,7 @@ async fn a_hand_off_leaves_every_machine_running_for_the_next_runner() {
             listen: Some(retrying_listen()),
             runtime: None,
             cgroup_dir: None,
+            measure_storage: Arc::new(|| None),
         },
         h.fake.clone(),
     )
@@ -2314,4 +2319,111 @@ async fn a_working_set_past_ninety_five_percent_answers_a_pressure_wait_with_fre
             .await
             .unwrap();
     assert!(!ended.pressured, "{ended:?}");
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a runner over a claim whose use the test sets, starting at nothing measured.
+fn with_claim(name: &str) -> (Harness, Arc<Mutex<Option<StorageUse>>>) {
+    let claim: Arc<Mutex<Option<StorageUse>>> = Arc::default();
+    let measured = claim.clone();
+    let h = Harness::with(name, move |c| {
+        c.measure_storage = Arc::new(move || *locked(&measured));
+    });
+    (h, claim)
+}
+
+fn filled(percent: u64) -> Option<StorageUse> {
+    Some(StorageUse {
+        used: percent << 30,
+        usable: 100 << 30,
+    })
+}
+
+// TEST_SCENARIO: once the owner's claim is critically full, every disk a new machine would add and every boot that would write to one is refused with the reason the controller shows as full storage, and nothing is created for it: a create, the start of a stopped machine, a restart for a changed spec and a seed upload alike. A running machine whose spec asks for nothing new keeps running untouched, since stopping it would lose what it holds in memory and free nothing. Once room is freed, the same start goes through.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_critical_claim_refuses_every_boot_and_leaves_running_machines_alone() {
+    let (h, claim) = with_claim("storage-critical");
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    h.server.put("m2", spec(false)).unwrap();
+    assert_eq!(h.settle("m2").await.state, STATE_STOPPED);
+    let before = h.fake.calls();
+
+    *locked(&claim) = filled(91);
+    let created = h.server.put("m3", spec(true)).unwrap();
+    assert_eq!(created.reason, REASON_STORAGE_FULL, "{created:?}");
+    assert!(created.message.contains("91% full"), "{created:?}");
+    assert!(read_spec(&h.dir.join("machines"), "m3").is_none());
+    let started = h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(started.reason, REASON_STORAGE_FULL, "{started:?}");
+    let steady = h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(
+        (steady.state.as_str(), steady.reason.as_str()),
+        (STATE_RUNNING, "")
+    );
+    let mut changed = spec(true);
+    changed.revision = "r2".into();
+    let restarted = h.server.put("m1", changed).unwrap();
+    assert_eq!(restarted.reason, REASON_STORAGE_FULL, "{restarted:?}");
+    assert_eq!(
+        h.server.claim_seed("m2", None).err().map(|e| e.status),
+        Some(507)
+    );
+    assert_eq!(h.fake.calls(), before, "nothing reached the runtime");
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+
+    *locked(&claim) = filled(50);
+    assert_eq!(
+        h.server.put("m2", spec(true)).unwrap().state,
+        STATE_STARTING
+    );
+    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a guest whose writes fail on a full claim makes its boot fail with nothing typed in the error, so a failed boot on a critical claim is reported as the owner's storage being full, with the console it left, rather than as a boot to retry.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_boot_that_fails_on_a_critical_claim_reports_full_storage() {
+    let (h, claim) = with_claim("storage-boot");
+    *locked(&h.fake.start_delay) = Duration::from_millis(200);
+    *locked(&h.fake.fail_start_once) = Some("start machine: guest agent never became ready".into());
+    *locked(&h.fake.console) = "EXT4-fs (vda): failed to convert unwritten extents".into();
+    h.server.put("m1", spec(true)).unwrap();
+    h.wait_for_call("start m1").await;
+    *locked(&claim) = filled(95);
+    let failed = h.settle("m1").await;
+    assert_eq!(failed.reason, REASON_STORAGE_FULL, "{failed:?}");
+    assert!(failed.message.contains("95% full"), "{failed:?}");
+    assert!(failed.message.contains("EXT4-fs (vda)"), "{failed:?}");
+}
+
+// TEST_SCENARIO: a guest sees its own disk as free while the claim under it fills, so the runner marks every machine's share while the claim is short, and keeps the mark until use is back under the lower threshold, so a claim hovering on the line does not mark and unmark at every look.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_short_claim_marks_every_share_until_it_has_room_again() {
+    let (h, claim) = with_claim("storage-short");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let mark = h
+        .dir
+        .join("machines/m1")
+        .join(SHARE_DIR)
+        .join(share::STORAGE_SHORT_FILE);
+    for (percent, marked) in [(74, false), (80, true), (72, true), (65, false)] {
+        *locked(&claim) = filled(percent);
+        h.server.check_storage();
+        assert_eq!(mark.exists(), marked, "at {percent}%");
+    }
+}
+
+// TEST_SCENARIO: a guest whose own disk filled has an agent that exits as it starts, which on its own reads as a boot that failed. platform-init marks that exit on the console, and the runner reports it as a full home, which the controller shows as the full home volume a container agent reports.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_boot_whose_console_shows_a_full_home_reports_it() {
+    let h = Harness::new("home-full");
+    *locked(&h.fake.fail_start_once) = Some("start machine: guest agent never became ready".into());
+    *locked(&h.fake.console) = "[ 2.0] platform-init: the image entrypoint exited with status 1 after 1s; the agent's home is full".into();
+    h.server.put("m1", spec(true)).unwrap();
+    let failed = h.settle("m1").await;
+    assert_eq!(failed.reason, REASON_HOME_FULL, "{failed:?}");
+    assert!(
+        failed.message.contains("the agent's disk is full"),
+        "{failed:?}"
+    );
 }

@@ -74,12 +74,17 @@ The source names the variables that hold the connection's credential placeholder
 Once the env rail has materialized, no connection supplying a URL means the agent has no provider to list, so the read reports no list at all and one an earlier provider established is cleared rather than left offering models the agent can no longer reach; before that first materialization a missing URL says nothing about the grant.
 A source may also name a second listing on the same endpoint, asked only when the provider refuses the first: a LiteLLM key can be barred from the model-information route yet allowed the OpenAI model list, which says nothing of what a model is for, so there only the name keeps an embedding model out.
 A provider that refuses every listing or cannot be reached and a listing with no conversational model in it are one outcome — *unavailable* — which leaves whatever list was last established in place and never fails the read; the first read of a pod's life pays DNS and a TLS handshake before any of that, so it is retried once rather than being written off on a merely slow cold path.
-The runtime keeps the last list each provider endpoint gave a harness, in memory and on the agent's home volume, and answers the model list and the current-values read from it at once, asking the provider again behind the answer, so a slow listing through the gateway never holds the picker or the defaults label; the next read sees what that listing found.
+The runtime keeps the last list each provider endpoint gave a harness, in memory and on the agent's home volume, and answers the model list and the current-values read from it at once, asking the provider again behind the answer, so a slow listing through the gateway never holds the picker or the defaults label.
+When that listing changes a kept list, a watch on the runtime's harness-config surface tells each open chat and agent settings view to read the model lists and current values again; the notice carries no payload, and every subscription opens with one, so a reconnect heals by re-reading.
+A runtime that predates the watch leaves the next read to see what the listing found.
 Reads that overlap share one listing.
 With no kept list, on the first read for an endpoint, the read waits for the listing.
 The seed and a lease's model never answer from the kept list: they ask the provider, and what it answers refreshes the list.
 A kept list can offer a model the provider has since retired.
-On Claude Code a name the gateway published for a tier, or one naming a tier, then goes to that tier's current model; any other name, on any harness, reaches the provider unchanged and the turn reports its refusal, so a stale list never runs a turn on a model nobody picked.
+On Claude Code a name the gateway published for a tier, or one naming a tier, then goes to that tier's current model.
+Any other name reaches the provider unchanged, so a model the provider serves without listing it still runs.
+When the provider refuses a name it does not list, and its refusal names that model, Claude Code's gateway sends the turn again on the model its opus tier maps to, Claude Code's default, and logs the remap; on other harnesses the turn reports the refusal.
+An existing session's label marks a model its provider no longer lists, so a turn that runs on another model than the pick never does so unseen.
 Which choices a harness offers is its catalog's to say: Codex's offers no mode, because its image runs it never asking for approval, so there is no permission mode to pick and nothing for a [channel turn](channel-turns.md) to refuse.
 
 ## Model discovery and the seeded model
@@ -108,9 +113,11 @@ What no listing can say is whether the account has been granted a model: that is
 Claude Code's catalog is model tiers, which Claude Code itself resolves to the region's Bedrock profiles ([connections](connections.md#app-preset-aws-bedrock)), so its source asks only the LiteLLM-shaped endpoint a connection points it at, and extends the tiers rather than replacing them.
 There its in-pod model gateway defaults every tier to the newest model the provider has for it, which on a provider that serves no Claude model is one model for all of them unless the Connection pins the slots; the provider's other models are reachable only by name, so the panel lists them after the tiers, under the lowercased, `claude/`-prefixed names the gateway publishes to Claude Code itself, so a choice made in the panel and one made in Claude Code's own model picker are the same value.
 Nothing is seeded: the tiers already resolve on any provider.
-Claude Code starts only once the gateway answers with the tier models, so the gateway keeps the last list each provider gave it on the agent's home volume and answers from that list at once on the next start, refreshing it from the provider afterwards.
+Claude Code reads its tier models only at start, from the gateway, so the gateway keeps the last list each provider gave it on the agent's home volume and answers from that list at once on the next start, refreshing it from the provider afterwards.
 A name it gave Claude Code for a tier that the provider has since retired goes to that tier's current model, so a kept list that is out of date costs nothing.
-With no kept list, on the agent's first start or a new provider, it waits for the listing at most three seconds; a provider still unlisted then leaves the tiers to the request-time mapping above.
+With no kept list, on the agent's first start or a new provider, the gateway does not wait for the listing: it listens at once and gives Claude Code its own tier names, `claude/opus` and the like, which each request maps to that tier's model once the listing is in, the request waiting for it.
+Claude Code knows those names no better than a provider's own, so it sizes the request as for any model it does not know; the next start gets the listed names.
+A provider that never lists then receives the bare tier name and refuses the turn.
 
 CurveBender pins Claude Code's Sonnet slot to its non-reasoning Nemotron model for the auto-permission classifier, and every work slot and the default conversation to GLM.
 It also turns off the server-side auto-mode check: GLM cannot answer the classifier's non-thinking request within its deadline, so the model pin and that flag are needed together.

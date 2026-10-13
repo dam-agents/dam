@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-//MISE description="Test that Claude's model gateway never forwards a tier name the provider does not serve"
+//MISE description="Test that Claude's model gateway never forwards a tier name or a retired model the provider does not serve"
 //MISE sources=["claude-code/rootfs/usr/local/lib/model-gateway.mjs", ".mise/tasks/test/claude-gateway-tiers"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
@@ -26,7 +26,11 @@ const upstream = createServer((req, res) => {
       res.end(JSON.stringify({ data: [{ id: "rits/zai-org/glm-5-3" }, { id: "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4" }] }));
       return;
     }
-    forwarded.push(JSON.parse(body).model);
+    const { model } = JSON.parse(body);
+    forwarded.push(model);
+    // TEST_SCENARIO: The provider retired rits/qwen-3: it is no longer listed, and the provider refuses it by name. A refusal for another reason, such as a prompt that is too long, does not name the model.
+    if (model === "rits/qwen-3") { res.statusCode = 404; res.end(JSON.stringify({ error: { message: `model: ${model}` } })); return; }
+    if (model === "too-long") { res.statusCode = 400; res.end(JSON.stringify({ error: { message: "prompt is too long" } })); return; }
     res.end("{}");
   });
 });
@@ -46,7 +50,20 @@ try {
   const send = (model) => fetch(`http://127.0.0.1:${port}/p/cb/v1/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model }), signal: AbortSignal.timeout(5_000) });
   for (const model of ["claude-opus-5-5", "claude/rits/zai-org/glm-5-3", "claude-haiku-4-5", "custom-name"]) await send(model);
   assert.deepEqual(forwarded, ["rits/zai-org/glm-5-3", "rits/zai-org/glm-5-3", "rits/zai-org/glm-5-3", "custom-name"]);
-  console.log("unserved tier names go to the provider's own tier models");
+  console.log("unserved tier names go to the provider's own tier models, and an unlisted name the provider serves is left alone");
+
+  forwarded.length = 0;
+  assert.equal((await send("claude/rits/qwen-3")).status, 200);
+  assert.deepEqual(forwarded, ["rits/qwen-3", "rits/zai-org/glm-5-3"]);
+  assert.match(log, /rits\/qwen-3 is not listed by provider cb and was refused; sending rits\/zai-org\/glm-5-3 instead/);
+  console.log("a retired model the provider refuses goes to its default model, and the gateway logs it");
+
+  forwarded.length = 0;
+  const refused = await send("too-long");
+  assert.equal(refused.status, 400);
+  assert.match(await refused.text(), /prompt is too long/);
+  assert.deepEqual(forwarded, ["too-long"]);
+  console.log("a refusal that does not name the model reaches Claude Code unchanged");
 } finally {
   child.kill();
   upstream.close();

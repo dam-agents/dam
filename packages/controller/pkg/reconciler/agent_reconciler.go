@@ -369,6 +369,17 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		applyPoolClaims(agentSS, claims)
 		stampRollRev(agentSS, rollRev)
 		if err := r.applyStatefulSet(ctx, agentSS, running && !migration.containerDown()); err != nil {
+			live, getErr := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+			if errors.IsNotFound(getErr) {
+				live, getErr = nil, nil
+			}
+			if failure := admissionStartFailure(err, live, agentSpec.Image); getErr == nil && failure.reason != "" {
+				if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
+					setStartFailure(s, failure, agent.Generation)
+				}); err != nil {
+					slog.Warn("writing agent admission start failure", "agent", name, "error", err)
+				}
+			}
 			return r.setError(ctx, name, fmt.Sprintf("applying agent statefulset: %v", err))
 		}
 		if err := r.forceRollStuckPod(ctx, agentSS.Namespace, agentSS.Name); err != nil {

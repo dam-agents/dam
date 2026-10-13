@@ -34,6 +34,10 @@ describe("computeAgentState with a machine reason", () => {
     );
   });
 
+  it("reads a machine refused for its owner's full storage as an error", () => {
+    expect(computeAgentState(notReady("MachineStorageFull"))).toBe("error");
+  });
+
   it("leaves a machine that is merely coming up as starting", () => {
     expect(computeAgentState(notReady("MachineNotReady"))).toBe("starting");
     expect(computeAgentState(notReady())).toBe("starting");

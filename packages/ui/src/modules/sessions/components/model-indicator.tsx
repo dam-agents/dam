@@ -19,7 +19,8 @@ import {
   useRememberedPair,
 } from "../api/session-pair.js";
 import { harnessDisplayName } from "../lib/session-pair-options.js";
-import { SessionPairTrigger, SetAsDefault } from "./session-pair-picker.js";
+import { SetAsDefault } from "./session-pair-picker.js";
+import { SessionPairTrigger } from "./session-pair-trigger.js";
 import {
   SessionSettingsControls,
   settingDefaults,
@@ -74,6 +75,10 @@ export function ModelIndicator({
           ?.choices ?? [])
       : (data?.availableModels ?? []);
   const modelName = models.find((m) => m.value === model)?.name ?? model;
+  const unlisted =
+    model !== null &&
+    !!data?.availableModels?.length &&
+    !data.availableModels.some((m) => m.value === model);
 
   return (
     <Popover>
@@ -87,6 +92,7 @@ export function ModelIndicator({
               harnessName,
               activeProvider?.name,
               removed ? "Provider removed" : null,
+              unlisted ? "Model not offered" : null,
             ]
               .filter(Boolean)
               .join(" · ")

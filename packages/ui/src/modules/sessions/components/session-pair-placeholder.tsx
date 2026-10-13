@@ -16,10 +16,8 @@ import {
   nextPair,
   pairLabel,
 } from "../lib/session-pair-options.js";
-import {
-  ConnectProvidersPrompt,
-  SessionPairTrigger,
-} from "./session-pair-picker.js";
+import { ConnectProvidersPrompt } from "./session-pair-picker.js";
+import { SessionPairTrigger } from "./session-pair-trigger.js";
 
 interface Props {
   agentId: string;

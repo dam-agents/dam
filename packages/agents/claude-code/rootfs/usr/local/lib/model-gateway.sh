@@ -24,9 +24,6 @@ else
 			export no_proxy="127.0.0.1,localhost,::1${no_proxy:+,$no_proxy}"
 			export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1
 			eval "$_gateway_env"
-			if [ -z "$_gateway_env" ]; then
-				echo "model-gateway: WARNING — gateway up but no models discovered yet (upstream unreachable or rejecting credentials; diagnostics: pod logs, [pod-service] lines)" >&2
-			fi
 		else
 			echo "model-gateway: WARNING — gateway not ready; using upstream directly (diagnostics: pod logs, [pod-service] lines)" >&2
 		fi
