@@ -49,7 +49,10 @@ const (
 	// prune it.
 	// Agent gen 18: avatar added to AgentSpec — the avatar character the owner
 	// picked; an older CRD would prune it.
-	AgentSchemaGeneration = 18
+	// Agent gen 19: machineRestartBaseline added to AgentStatus — the vm
+	// machine's restart count at a generation's first read, so a controller
+	// restart does not reset the crash-loop count; an older CRD would prune it.
+	AgentSchemaGeneration = 19
 	// UserBudget gen 1: per-user concurrent-compute ceiling (#1900).
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.

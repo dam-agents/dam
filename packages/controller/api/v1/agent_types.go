@@ -322,6 +322,22 @@ type AgentStatus struct {
 	// no migration runs.
 	// +optional
 	RuntimeMigrationAttempts int32 `json:"runtimeMigrationAttempts,omitempty"`
+	// MachineRestartBaseline is the vm runner's restart count for the Agent's
+	// machine when the controller first read it at a spec generation. The
+	// runner's count is cumulative and names no spec, so ReasonCrashLoop counts
+	// the restarts since this baseline; kept here so a controller restart does
+	// not start the count again. Absent on the container backend.
+	// +optional
+	MachineRestartBaseline *MachineRestartBaseline `json:"machineRestartBaseline,omitempty"`
+}
+
+// MachineRestartBaseline is a machine's restart count at the first read of a
+// spec generation.
+type MachineRestartBaseline struct {
+	// Generation is the Agent's spec generation the count was read at.
+	Generation int64 `json:"generation"`
+	// Restarts is the runner's restart count at that read.
+	Restarts int32 `json:"restarts"`
 }
 
 // Mount declares a volume mounted into the agent container.
@@ -357,7 +373,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=18
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=19
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

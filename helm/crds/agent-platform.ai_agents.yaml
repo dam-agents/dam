@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "18"
+    agent-platform.ai/crd-schema-generation: "19"
     controller-gen.kubebuilder.io/version: v0.22.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -395,6 +395,27 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              machineRestartBaseline:
+                description: |-
+                  MachineRestartBaseline is the vm runner's restart count for the Agent's
+                  machine when the controller first read it at a spec generation. The
+                  runner's count is cumulative and names no spec, so ReasonCrashLoop counts
+                  the restarts since this baseline; kept here so a controller restart does
+                  not start the count again. Absent on the container backend.
+                properties:
+                  generation:
+                    description: Generation is the Agent's spec generation the count
+                      was read at.
+                    format: int64
+                    type: integer
+                  restarts:
+                    description: Restarts is the runner's restart count at that read.
+                    format: int32
+                    type: integer
+                required:
+                - generation
+                - restarts
+                type: object
               observedGeneration:
                 description: ObservedGeneration is the spec generation last reconciled.
                 format: int64

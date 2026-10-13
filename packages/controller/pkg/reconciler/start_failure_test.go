@@ -161,3 +161,33 @@ func TestPublishVMReadinessReportsACrashLoopOnThisGeneration(t *testing.T) {
 	assert.Equal(t, apiv1.ReasonCrashLoop, cond["reason"])
 	assert.EqualValues(t, 2, cond["observedGeneration"])
 }
+
+// TEST_SCENARIO: a controller restart between the guest's restarts, as every deploy brings. The machine's restart count at the generation's first read is kept on the Agent's status, so the controller that starts with no memory counts from it and still reports the third restart on this generation as a crash loop. A baseline kept for an earlier generation is not used.
+func TestVMRestartBaselineSurvivesAControllerRestart(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	agent.Generation = 2
+	r, _ := setupReconciler(t, agent, readyPod("my-agent-gateway-0"))
+	restarted := func() *apiv1.Agent {
+		t.Helper()
+		u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+		require.NoError(t, err)
+		var a apiv1.Agent
+		require.NoError(t, runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &a))
+		a.Generation = agent.Generation
+		r.vmStartClocks.Delete(a.Name)
+		return &a
+	}
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent, vmrunner.MachineStatus{State: vmrunner.StateRunning, Restarts: 1}, true))
+	require.NoError(t, r.publishVMReadiness(ctx, restarted(), vmrunner.MachineStatus{State: vmrunner.StateRunning, Restarts: 3}, true))
+	assert.Nil(t, startFailedCondition(t, r))
+	require.NoError(t, r.publishVMReadiness(ctx, restarted(), vmrunner.MachineStatus{State: vmrunner.StateRunning, Restarts: 4}, true))
+	cond := startFailedCondition(t, r)
+	require.NotNil(t, cond, "three restarts since the generation's first read, across two controller restarts")
+	assert.Equal(t, apiv1.ReasonCrashLoop, cond["reason"])
+
+	agent.Generation = 3
+	require.NoError(t, r.publishVMReadiness(ctx, restarted(), vmrunner.MachineStatus{State: vmrunner.StateRunning, Restarts: 5}, true))
+	assert.Nil(t, startFailedCondition(t, r), "the earlier generation's baseline does not count for this one")
+}

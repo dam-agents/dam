@@ -555,6 +555,8 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	var clock vmStartClock
 	if v, ok := r.vmStartClocks.Load(agent.Name); ok {
 		clock = v.(vmStartClock)
+	} else if b := agent.Status.MachineRestartBaseline; b != nil {
+		clock = vmStartClock{generation: b.Generation, restartsAtGen: b.Restarts}
 	}
 	clock, failure := vmStartFailure(clock, agent.Generation, st, time.Now())
 	if runnerReached {
@@ -565,6 +567,7 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 			nestingCondition(s, agent, st, r.config.AgentTemplateDefaults, r.config.VM.Runner.NestedVirtualization)
 			if runnerReached {
 				setStartFailure(s, failure, agent.Generation)
+				s.MachineRestartBaseline = &apiv1.MachineRestartBaseline{Generation: clock.generation, Restarts: clock.restartsAtGen}
 			}
 		})
 }

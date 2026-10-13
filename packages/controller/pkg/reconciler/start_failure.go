@@ -50,7 +50,7 @@ func podStartFailure(ss *appsv1.StatefulSet, pod *corev1.Pod, now time.Time) (fa
 	return startFailure{}, 0
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the controller remembers of a vm machine on one spec generation, since the runner's status names no spec: the restart count the runner reported when the generation was first seen, and since when the machine has been running without being ready. A status read after an Ensure with a new spec is the new spec's, because the runner reports a restart in flight as not ready. It lives in memory only, so a controller restart starts the clock again and delays a report by at most the bound.
+// UNIT_BOUNDARY_DESCRIPTION: what the controller remembers of a vm machine on one spec generation, since the runner's status names no spec: the restart count the runner reported when the generation was first seen, and since when the machine has been running without being ready. A status read after an Ensure with a new spec is the new spec's, because the runner reports a restart in flight as not ready. The restart count is also kept on the Agent's status and read back when memory has none: a deploy restarts the controller more often than a guest restarts three times, so a count kept in memory only would never reach a crash loop. The not-ready clock lives in memory only, so a controller restart starts it again and delays a report by at most the bound.
 type vmStartClock struct {
 	generation    int64
 	restartsAtGen int32

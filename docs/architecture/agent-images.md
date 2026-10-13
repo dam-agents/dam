@@ -139,6 +139,7 @@ The failures are: the image cannot be pulled or unpacked, the machine cannot boo
 The controller sets `StartFailed` only from the pod or machine that runs the current spec, never from the pod a roll replaces, which exits too.
 On the container backend that is a pod of the agent StatefulSet's update revision, once the StatefulSet has observed its generation.
 On the vm backend the runner's status names no spec, but a restart in flight reads not ready, so the controller counts from the first read at the current generation.
+It keeps the restart count of that first read in the Agent's status, so a controller restart, which every deploy brings, does not start the count again.
 The controller sets `StartFailed` for one of two reasons.
 Either the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now.
 Or it ran on this spec and never became ready, not counting the time an image pull takes: for ten minutes in a container, or for two minutes in a vm machine.
