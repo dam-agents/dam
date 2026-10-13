@@ -72,6 +72,12 @@ The source names the variables that hold the connection's credential placeholder
 Once the env rail has materialized, no connection supplying a URL means the agent has no provider to list, so the read reports no list at all and one an earlier provider established is cleared rather than left offering models the agent can no longer reach; before that first materialization a missing URL says nothing about the grant.
 A source may also name a second listing on the same endpoint, asked only when the provider refuses the first: a LiteLLM key can be barred from the model-information route yet allowed the OpenAI model list, which says nothing of what a model is for, so there only the name keeps an embedding model out.
 A provider that refuses every listing or cannot be reached and a listing with no conversational model in it are one outcome — *unavailable* — which leaves whatever list was last established in place and never fails the read; the first read of a pod's life pays DNS and a TLS handshake before any of that, so it is retried once rather than being written off on a merely slow cold path.
+The runtime keeps the last list each provider endpoint gave a harness, in memory and on the agent's home volume, and answers the model list and the current-values read from it at once, asking the provider again behind the answer, so a slow listing through the gateway never holds the picker or the defaults label; the next read sees what that listing found.
+Reads that overlap share one listing.
+With no kept list, on the first read for an endpoint, the read waits for the listing.
+The seed and a lease's model never answer from the kept list: they ask the provider, and what it answers refreshes the list.
+A kept list can offer a model the provider has since retired.
+On Claude Code a name the gateway published for a tier, or one naming a tier, then goes to that tier's current model; any other name, on any harness, reaches the provider unchanged and the turn reports its refusal, so a stale list never runs a turn on a model nobody picked.
 Which choices a harness offers is its catalog's to say: Codex's offers no mode, because its image runs it never asking for approval, so there is no permission mode to pick and nothing for a [channel turn](channel-turns.md) to refuse.
 
 ## Model discovery and the seeded model
