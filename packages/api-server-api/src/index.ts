@@ -528,6 +528,7 @@ export type {
   ApprovalsService,
   ApprovalListOptions,
   ApprovalActionOutcome,
+  ApprovalDismissManyOutcome,
 } from "./modules/approvals/types.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
 export { acpNativeRowId } from "./modules/approvals/format.js";
