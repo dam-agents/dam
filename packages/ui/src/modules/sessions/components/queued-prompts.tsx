@@ -50,8 +50,14 @@ function reportEditFailure(err: unknown): void {
 
 const noop = () => {};
 
-function pendingMessage({ at: _at, ...message }: Message): Message {
-  return message;
+function pendingMessage(message: Message): Message {
+  return {
+    id: message.id,
+    role: message.role,
+    parts: message.parts,
+    streaming: false,
+    queued: true,
+  };
 }
 
 function QueuedPromptItem({
