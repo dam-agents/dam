@@ -101,13 +101,12 @@ See [connections](connections.md) and [runtime delivery](runtime-delivery.md).
 
 ### Template upgrade
 
-Templates are captured at create time; an install upgrade does not reconfigure existing Agents.
-The api-server reports an update when an Agent's image differs from its Template's current image.
-Retired per-harness templates resolve to the default Template even when an install retains their old definitions, so their Agents [move](agent-images.md#retired-images) to it.
+Templates are captured at create time; an install upgrade reconfigures no existing Agent beyond its image.
+The api-server reports an update when an Agent's image differs from its Template's current image, and [moves](agent-images.md#image-updates) the Agent there by itself, never during work.
+Retired per-harness templates resolve to the default Template even when an install retains their old definitions.
 The upgrade preserves the Agent's chosen harness; when an older Agent has no explicit choice, its retired template identifies the harness to carry forward.
 
-Users apply upgrades individually or in a batch, confirming the target images and restart cost.
-The api-server refuses a target that changed since confirmation.
+A user may apply an upgrade sooner, confirming the target image and restart cost; the api-server refuses a target that changed since confirmation.
 A running pair or vm machine restarts; a hibernated Agent takes the image on its next wake.
 No configuration is re-seeded: template env stays frozen to preserve user edits, and mount/storage changes still require recreating the Agent.
 A runtime advertising kinds its predecessor did not is re-delivered the Contributions the old image refused, closing the capability gap ([runtime-delivery](runtime-delivery.md#capability-negotiation)).

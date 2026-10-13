@@ -56,6 +56,8 @@ import {
   ANN_STARTER_KIT_SEED,
   ANN_KIT_UPDATE_PENDING,
   ANN_KIT_UPDATE_SKIPPED,
+  ANN_IMAGE_UPDATE_FROM,
+  ANN_IMAGE_UPDATE_REFUSED,
 } from "./labels.js";
 import {
   type IdleTimeoutMinutes,
@@ -96,6 +98,7 @@ interface AgentStatusObject {
     reason?: string;
     message?: string;
     lastTransitionTime?: string;
+    observedGeneration?: number;
   }>;
   agentPodRestarts?: number;
   agentPodRestartReason?: string;
@@ -120,6 +123,9 @@ export interface InfraAgent {
   starterKitSeed?: SeedStamp;
   kitUpdatePending?: KitUpdatePending;
   kitUpdateSkipped?: string;
+  imageUpdateFrom?: string;
+  imageUpdateRefused?: string;
+  specStart?: "ready" | "failed";
   hibernatedSince?: Date;
   quietSince?: Date;
   ready: boolean;
@@ -143,6 +149,17 @@ export interface InfraAgent {
   gatewayPodReady?: boolean;
   gatewayPodNotReadyReason?: string;
   gatewayFailure?: string;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the start failures a new image can cause: it cannot be pulled or unpacked, or its process keeps exiting. A full home volume, memory and runner placement fail on any image, so they say nothing about the image. An exit counts only once the container has also been restarted twice, because the pod a roll replaces exits too.
+function imageStartFailed(reason: string | undefined, restarts = 0): boolean {
+  return (
+    reason === "ImagePullFailure" ||
+    reason === "InvalidImageName" ||
+    reason === "MachineBootFailed" ||
+    reason === "MachineImageUnavailable" ||
+    (reason === "ContainerTerminated" && restarts >= 2)
+  );
 }
 
 const TERMINAL_MACHINE_REASONS = new Set(
@@ -246,6 +263,17 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     vm: crSpec.backend?.type === "vm",
   });
   const resourceVersion = obj.metadata?.resourceVersion;
+  const generation = obj.metadata?.generation;
+  const specStart =
+    generation === undefined
+      ? undefined
+      : ready?.status === "True" && ready.observedGeneration === generation
+        ? "ready"
+        : agentPod?.status === "False" &&
+            agentPod.observedGeneration === generation &&
+            imageStartFailed(agentPod.reason, restarts)
+          ? "failed"
+          : undefined;
   const quietSince =
     annotations[ACTIVE_SESSION_KEY] === "true" ||
     annotations[INVOCATIONS_ACTIVE_KEY] === "true"
@@ -285,6 +313,13 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ...(annotations[ANN_KIT_UPDATE_SKIPPED]
       ? { kitUpdateSkipped: annotations[ANN_KIT_UPDATE_SKIPPED] }
       : {}),
+    ...(annotations[ANN_IMAGE_UPDATE_FROM]
+      ? { imageUpdateFrom: annotations[ANN_IMAGE_UPDATE_FROM] }
+      : {}),
+    ...(annotations[ANN_IMAGE_UPDATE_REFUSED]
+      ? { imageUpdateRefused: annotations[ANN_IMAGE_UPDATE_REFUSED] }
+      : {}),
+    ...(specStart ? { specStart } : {}),
     ...(hibernatedSince ? { hibernatedSince } : {}),
     ...(quietSince ? { quietSince } : {}),
     ready: ready?.status === "True",

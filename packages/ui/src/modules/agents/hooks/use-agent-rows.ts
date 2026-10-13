@@ -78,7 +78,7 @@ export function useAgentRows() {
     deletePending:
       deleteAgent.isPending && deleteAgent.variables?.id === agent.id,
     updatePending: update.updatingId === agent.id,
-    updateBusy: update.updatingId !== null || update.updatingAll,
+    updateBusy: update.updatingId !== null,
     onUpdate: () => void update.updateOne(agent),
     migratePending: migrate.isMigrating(agent.id),
     onMigrate: () => void migrate.migrateOne(agent),
