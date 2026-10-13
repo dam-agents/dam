@@ -38,7 +38,7 @@ A refused machine is not parked: parking halts a running machine, and the decisi
 | 01  | [x] A `MachineStorageFull` reason and honest out-of-space labels | vocabulary, runner classification, controller constant                 | —          |
 | 02  | [x] The runner guards its claim                                  | statvfs guard, refusals, cache shedding, seed refusal, gauges, docs    | 01         |
 | 03  | [x] Guests free scratch while the claim is short                 | share flag, platform-init eviction trigger                             | 02         |
-| 04  | [ ] Users read why storage stopped their agent                   | api-server classification and copy                                     | 01         |
+| 04  | [x] Users read why storage stopped their agent                   | api-server classification and copy                                     | 01         |
 | 05  | [ ] A full home inside a guest is named                          | platform-init marker, runner reason, controller maps to HomeVolumeFull | 02         |
 
 ## Conventions & glossary
