@@ -104,24 +104,11 @@ describe("workspace-seed plugin", () => {
     expect(clone).not.toHaveBeenCalled();
   });
 
-  it("seeds the agent's home in place, on the branch pinned to the commit", async () => {
-    const clone = okClone();
-    const fetchInto = okFetch();
-    const { seed, home } = setup(clone, fetchInto);
-    writeFileSync(join(home, ".gitconfig"), "[user]");
-    await seed({ url: URL, branch: "main", commit: SHA, into: "home" });
-    expect(fetchInto).toHaveBeenCalledWith(URL, home, {
-      ref: undefined,
-      commit: SHA,
-      branch: "main",
-    });
-    expect(clone).not.toHaveBeenCalled();
-  });
-
-  it("seeds the home and the work directory apart, each marked once", async () => {
+  it("seeds a non-empty home in place on the pinned commit, and the work directory apart, each marked once", async () => {
     const clone = okClone();
     const fetchInto = okFetch();
     const { seed, workDir, stateDir, home } = setup(clone, fetchInto);
+    writeFileSync(join(home, ".gitconfig"), "[user]");
     await seed({ url: URL, branch: "main", commit: SHA, into: "home" });
     await seed({ url: "https://github.com/acme/app", ref: "main" });
     expect(fetchInto).toHaveBeenCalledWith(URL, home, {

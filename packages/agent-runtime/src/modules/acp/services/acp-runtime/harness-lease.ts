@@ -47,7 +47,8 @@ export interface HarnessLeaseDeps {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Holds the harness child process on loan. Spawns
- * it when the first client needs it, holds early callers back until the env
+ * it when the first client needs it, or before that when the runtime
+ * prestarts it, holds early callers back until the env
  * is ready at boot and the spawn work that has to precede the first spawn has
  * landed (each bounded by a timeout of its own; the spawn work's is the
  * shorter, because a caller waiting on it is a person opening a chat), and takes the process back when the env or the

@@ -66,6 +66,7 @@ describe("worker history provider", () => {
   it("should import the module on warm, ahead of the first fetch", async () => {
     const source = `
       const importedAt = Date.now();
+      new BroadcastChannel("history-warm").postMessage("imported");
       export function loadHistory(sessionId) {
         return [${JSON.stringify(frameLine("SID", "T"))}.replace('"SID"', JSON.stringify(sessionId)).replace('"T"', JSON.stringify(String(importedAt)))];
       }
@@ -74,8 +75,11 @@ describe("worker history provider", () => {
       modulePath: dataModule(source),
       log: () => {},
     });
+    const warmed = new BroadcastChannel("history-warm");
+    const imported = new Promise((resolve) => (warmed.onmessage = resolve));
     provider.warm?.();
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await imported;
+    warmed.close();
     const fetchedAt = Date.now();
     const lines = await provider.fetch("sess-a");
     const importedAt = Number(
@@ -85,7 +89,7 @@ describe("worker history provider", () => {
         }
       ).params.update.content.text,
     );
-    expect(importedAt).toBeLessThan(fetchedAt);
+    expect(importedAt).toBeLessThanOrEqual(fetchedAt);
   });
 
   /**

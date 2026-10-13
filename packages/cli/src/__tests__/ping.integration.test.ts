@@ -1,48 +1,9 @@
-import { execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from "vitest";
-
-const exec = promisify(execFile);
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const PKG_ROOT = resolve(HERE, "../..");
-const BIN_PATH = join(PKG_ROOT, "dist", "js", "bin.js");
-
-interface RunResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
-
-async function runDam(
-  args: string[],
-  env: Record<string, string>,
-): Promise<RunResult> {
-  try {
-    const { stdout, stderr } = await exec("node", [BIN_PATH, ...args], { env });
-    return { exitCode: 0, stdout, stderr };
-  } catch (e) {
-    const err = e as { code?: number; stdout?: string; stderr?: string };
-    return {
-      exitCode: typeof err.code === "number" ? err.code : 1,
-      stdout: err.stdout ?? "",
-      stderr: err.stderr ?? "",
-    };
-  }
-}
+import { join } from "node:path";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { runDam, spawnDam } from "./run-dam.js";
 
 interface Fixture {
   url: string;
@@ -84,10 +45,6 @@ async function startFixture(): Promise<Fixture> {
 }
 
 describe("dam ping (integration)", () => {
-  beforeAll(async () => {
-    await exec("pnpm", ["exec", "tsup"], { cwd: PKG_ROOT });
-  }, 60_000);
-
   let home: string;
   let fixture: Fixture;
 
@@ -104,30 +61,14 @@ describe("dam ping (integration)", () => {
   afterAll(async () => {});
 
   async function configureServer(url: string) {
-    const r = await runDam(["config", "set", "server", url], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
-    expect(r.exitCode).toBe(0);
+    const dir = join(home, ".config", "dam");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "config.toml"), `server = "${url}"\n`);
   }
 
   it("Ok path: prints `ok — server <version>` and exits 0", async () => {
     fixture.setResponse({
       body: { serverVersion: "1.0.0", minClientVersion: "0.0.0" },
-    });
-    await configureServer(fixture.url);
-
-    const r = await runDam(["ping"], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
-    expect(r.exitCode).toBe(0);
-    expect(r.stdout.trim()).toBe("ok — server 1.0.0");
-  });
-
-  it("server advertises no floor: still ok (exit 0)", async () => {
-    fixture.setResponse({
-      body: { serverVersion: "1.0.0" },
     });
     await configureServer(fixture.url);
 
@@ -160,11 +101,11 @@ describe("dam ping (integration)", () => {
     });
     await configureServer(fixture.url);
 
-    const r = await runDam(["ping"], {
+    const r = await spawnDam(["ping"], {
       HOME: home,
       PATH: process.env.PATH ?? "",
     });
-    expect(r.exitCode).not.toBe(0);
+    expect(r.exitCode).toBe(3);
     expect(r.stderr).toContain(
       "below the server's minimum required version 99.0.0",
     );

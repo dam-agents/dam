@@ -84,6 +84,7 @@ function serviceFor(relay: FakeRelay): {
       Promise.resolve(ok({ host: relay.host, token: "t", agentId: "agent-1" })),
     out: (text) => out.push(text),
     errOut: (text) => errors.push(text),
+    reconnectBackoffMs: [10],
   });
   return { service, printed: () => out.join(""), errors };
 }

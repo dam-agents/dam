@@ -195,7 +195,8 @@ describe("acp-runtime: history replay", () => {
   /**
    * TEST_SCENARIO: A conversation short enough to fit under the cap replays
    * whole even for an opted-in viewer, with no clip metadata — the cap must
-   * be invisible until it actually cuts something.
+   * be invisible until it actually cuts something. A load without a
+   * loadToken gets its frames verbatim, with no replayFor invented on them.
    */
   it("should replay a short conversation in full without clip metadata", () => {
     const world = createWorld({ replayTailEvents: 3 });
@@ -206,6 +207,7 @@ describe("acp-runtime: history replay", () => {
 
     expect(replayedUpdates(bob).map((u) => u.text)).toEqual(["m1", "m2"]);
     expect(clippedOf(bob, 1)).toBeUndefined();
+    expect(replayForsOf(bob)).toEqual([undefined, undefined]);
   });
 
   /**
@@ -373,21 +375,6 @@ describe("acp-runtime: history replay", () => {
   });
 
   /**
-   * TEST_SCENARIO: A load without a loadToken is an ordinary client; its
-   * replayed frames must pass through verbatim, with no platform metadata
-   * invented on them.
-   */
-  it("should not stamp replayed frames when the load carries no token", () => {
-    const world = createWorld({ replayTailEvents: 3 });
-    warmTranscript(world, ["m1", "m2"]);
-
-    const bob = world.connect();
-    bob.send(loadTail(1, SESSION));
-
-    expect(replayForsOf(bob)).toEqual([undefined, undefined]);
-  });
-
-  /**
    * TEST_SCENARIO: The transcript evicts oldest entries past its byte cap.
    * When paging bottoms out at the eviction floor, the last page's response
    * reports clipped without a cursor: older history existed but is gone, and
@@ -461,36 +448,21 @@ describe("acp-runtime: history replay", () => {
    * harness still owes a response for a load nobody is waiting for, and its
    * replay would carry no request correlation, so the runtime must not send
    * a second load for that session — it recycles the unresponsive harness
-   * instead, which makes the abandoned load unanswerable by construction.
+   * instead. When the abandoned load does answer late, its replay must never
+   * be reclassified as live activity, or a client that retried would watch
+   * its whole history arrive as if the agent were speaking now.
    */
-  it("should time out a cold fill the harness never answers and recycle it", async () => {
-    const world = createWorld({ harnessLoadTimeoutMs: 1 });
-    const bob = world.connect();
-    const wedged = world.harness();
-    bob.send(loadTail(1, SESSION));
-    expect(wedged.received("session/load")).toHaveLength(1);
-    await settle();
-
-    expect(bob.reply(1)).toMatchObject({ error: { code: -32000 } });
-    expect(wedged.received("session/load")).toHaveLength(1);
-    expect(wedged.killed()).toBe(true);
-  });
-
-  /**
-   * TEST_SCENARIO: The abandoned load answers late, after its waiters were
-   * already failed. Its replay must never be reclassified as live activity
-   * and its response must never serve a later request's waiters — otherwise
-   * a client that retried would be handed an empty conversation and then
-   * watch its whole history arrive as if the agent were speaking now.
-   */
-  it("should suppress an abandoned load's late replay and answer", async () => {
+  it("should time out a cold fill the harness never answers, recycle it, and suppress its late replay", async () => {
     const world = createWorld({ harnessLoadTimeoutMs: 1 });
     const bob = world.connect();
     const wedged = world.harness();
     bob.send(loadTail(1, SESSION));
     const abandoned = wedged.received("session/load")[0]!.id;
     await settle();
+
     expect(bob.reply(1)).toMatchObject({ error: { code: -32000 } });
+    expect(wedged.received("session/load")).toHaveLength(1);
+    expect(wedged.killed()).toBe(true);
 
     wedged.emit(frames.agentMessage(SESSION, "m1"));
     wedged.emit(frames.agentMessage(SESSION, "m2"));

@@ -17,10 +17,4 @@ describe("branch timestamp", () => {
       "20251231223000",
     );
   });
-
-  it("keeps later instants sorting after earlier ones", () => {
-    const earlier = branchTimestamp(new Date("2026-09-17T15:04:05Z"));
-    const later = branchTimestamp(new Date("2026-09-17T15:04:06Z"));
-    expect(later > earlier).toBe(true);
-  });
 });

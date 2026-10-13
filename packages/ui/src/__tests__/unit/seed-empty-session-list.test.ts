@@ -36,7 +36,9 @@ it("lists nothing at once, then reads the agent's real list", async () => {
     staleTime: 5_000,
   });
   const unsubscribe = observer.subscribe(() => {});
-  await vi.waitFor(() => expect(queryClient.getQueryData(key)).toEqual(real));
+  await vi.waitFor(() => expect(queryClient.getQueryData(key)).toEqual(real), {
+    interval: 1,
+  });
   expect(queryFn).toHaveBeenCalledOnce();
   unsubscribe();
 });

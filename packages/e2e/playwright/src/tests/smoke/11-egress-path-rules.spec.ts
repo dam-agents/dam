@@ -109,7 +109,29 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
       "approving a narrow prompt must not write a host-wide rule",
     ).toBe(false);
 
-    expect(await fetchStatus(api, agentId, stillGatedUrl)).not.toBe(200);
+    const stillGated = fetchStatus(api, agentId, stillGatedUrl);
+    let held = "";
+    await expect
+      .poll(
+        async () => {
+          held =
+            (await api.approvals.listForInstance.query({ agentId })).find(
+              (a) =>
+                a.status === "pending" &&
+                a.payload.kind === "ext_authz" &&
+                a.payload.path === new URL(stillGatedUrl).pathname,
+            )?.id ?? "";
+          return held;
+        },
+        {
+          timeout: 30_000,
+          message:
+            "another path on the approved host was not held for approval",
+        },
+      )
+      .not.toBe("");
+    await api.approvals.dismiss.mutate({ id: held });
+    expect(await stillGated).not.toBe(200);
   });
 });
 

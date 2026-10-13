@@ -484,6 +484,13 @@
       "when": 1791791144250,
       "tag": "0068_raise_ibm_litellm_output_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1791873901439,
+      "tag": "0069_getting_started_checklist",
+      "breakpoints": true
     }
   ]
 }

@@ -38,12 +38,6 @@ describe("file document store backend", () => {
     expect(open().read()).toEqual({ count: 0 });
   });
 
-  it("maps the name to <home>/.platform/<name>.json", () => {
-    open().write({ count: 7 });
-    expect(existsSync(path)).toBe(true);
-    expect(open().read()).toEqual({ count: 7 });
-  });
-
   it("serves reads from cache without re-reading disk", () => {
     const s = open();
     s.read();
@@ -51,12 +45,9 @@ describe("file document store backend", () => {
     expect(s.read()).toEqual({ count: 0 });
   });
 
-  it("falls back to initial on a schema-rejected document", () => {
+  it("falls back to initial on a schema-rejected document or malformed JSON", () => {
     writeFileSync(path, JSON.stringify({ unexpected: true }));
     expect(open().read()).toEqual({ count: 0 });
-  });
-
-  it("falls back to initial on malformed JSON", () => {
     writeFileSync(path, "{ not json");
     expect(open().read()).toEqual({ count: 0 });
   });

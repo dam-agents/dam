@@ -48,47 +48,22 @@ describe("import finalize", () => {
     return { status: res.status, body: await res.json() };
   }
 
-  // TEST_SCENARIO: Uploading a folder with the same name merges the contents — new files are added, existing files are kept.
-  it("merges a folder that already exists, keeping existing files", async () => {
-    const res = await post({ "données/new.txt": "new" });
+  // TEST_SCENARIO: Uploading a folder with the same name merges the contents — new files are added, a same-named file replaces the existing one at any depth, existing files not in the bundle are kept, and a new entry leaves the others alone.
+  it("merges folders and replaces same-named files, keeping the rest", async () => {
+    writeFileSync(join(workDir, "données", "sub dir", "keep.txt"), "keep");
+    const res = await post({
+      "données/new.txt": "new",
+      "données/sub dir/old.txt": "updated",
+      "notes.txt": "new notes",
+      "other/a.txt": "a",
+    });
     expect(res.status).toBe(200);
-    expect(existsSync(join(workDir, "données", "sub dir", "old.txt"))).toBe(
-      true,
-    );
-    expect(await readFile(join(workDir, "données", "new.txt"), "utf8")).toBe(
-      "new",
-    );
-  });
-
-  // TEST_SCENARIO: A file with the same name as an existing file replaces it.
-  it("replaces an existing file with the same name", async () => {
-    const res = await post({ "notes.txt": "new notes" });
-    expect(res.status).toBe(200);
-    expect(await readFile(join(workDir, "notes.txt"), "utf8")).toBe(
-      "new notes",
-    );
-  });
-
-  // TEST_SCENARIO: A file in the bundle replaces an existing file in a nested folder.
-  it("replaces a file in a nested folder", async () => {
-    const res = await post({ "données/sub dir/old.txt": "updated" });
-    expect(res.status).toBe(200);
-    expect(
-      await readFile(join(workDir, "données", "sub dir", "old.txt"), "utf8"),
-    ).toBe("updated");
-  });
-
-  // TEST_SCENARIO: An entry with a new name is added without affecting existing entries.
-  it("imports a new entry without affecting existing entries", async () => {
-    const res = await post({ "other/a.txt": "a" });
-    expect(res.status).toBe(200);
-    expect(await readFile(join(workDir, "other", "a.txt"), "utf8")).toBe("a");
-    expect(existsSync(join(workDir, "données", "sub dir", "old.txt"))).toBe(
-      true,
-    );
-    expect(await readFile(join(workDir, "notes.txt"), "utf8")).toBe(
-      "old notes",
-    );
+    const read = (...p: string[]) => readFile(join(workDir, ...p), "utf8");
+    expect(await read("données", "new.txt")).toBe("new");
+    expect(await read("données", "sub dir", "old.txt")).toBe("updated");
+    expect(await read("données", "sub dir", "keep.txt")).toBe("keep");
+    expect(await read("notes.txt")).toBe("new notes");
+    expect(await read("other", "a.txt")).toBe("a");
   });
 
   // TEST_SCENARIO: Directory collisions must reject the whole import before any workspace entry changes.

@@ -12,25 +12,16 @@ function reportThrough(sessionId: string, body: unknown) {
 }
 
 describe("the background-work report contract", () => {
-  it("holds despite an over-long command, clamping instead of rejecting", () => {
+  it("holds despite an over-long command or description, clamping instead of rejecting", () => {
     const command = `python train.py ${"--flag x ".repeat(200)}`;
-    expect(command.length).toBeGreaterThan(500);
 
     const { accepted, registry } = reportThrough("s1", {
-      items: [{ id: "t1", command }],
+      items: [{ id: "t1", command, description: "x".repeat(5_000) }],
     });
 
     expect(accepted).toBe(true);
     expect(registry.hasWork("s1")).toBe(true);
     expect(registry.held()[0]!.items[0]!.command).toHaveLength(500);
-  });
-
-  it("clamps an over-long description too", () => {
-    const { accepted, registry } = reportThrough("s1", {
-      items: [{ id: "t1", description: "x".repeat(5_000) }],
-    });
-
-    expect(accepted).toBe(true);
     expect(registry.held()[0]!.items[0]!.description).toHaveLength(200);
   });
 

@@ -353,6 +353,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		slog.Warn("force-rolling stuck gateway pod failed; rollout may be deadlocked",
 			"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
 	}
+	if running {
+		if err := r.refreshGatewayCredentials(ctx, gatewaySS.Name, credentialSecrets); err != nil {
+			slog.Warn("asking the kubelet to refresh gateway credentials failed; the periodic refresh still applies",
+				"agent", name, "error", err)
+		}
+	}
 	timer.mark("gatewayStatefulSet")
 
 	if hardStop {
