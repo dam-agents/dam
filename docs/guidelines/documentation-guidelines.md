@@ -54,7 +54,7 @@ Make drift the harder path, not the default.
 - One page per subsystem under [`docs/architecture/`](../architecture/), indexed from [`docs/architecture.md`](../architecture.md).
 - Adding a new subsystem means adding a new page and linking it from the landing page.
 - No shared template.
-  Free-form per page, under a per-page character cap (enforced by `mise run check` and a write-time hook).
+  Free-form per page, under a per-page cap on its letters and digits — whitespace, punctuation and Markdown syntax do not count (enforced by `mise run check` and a write-time hook).
   The cap is a forcing function, not a style rule: going over means the page dropped to the level of the code, or grew to cover more than one subsystem.
   Reconcile by raising the level and cutting volatile detail, or by splitting the subsystem and reconsidering its boundaries — not by rewording to fit.
   Do not offload description into an ADR to relieve size: the log holds decisions authored when they were made, not documentation spillover.
