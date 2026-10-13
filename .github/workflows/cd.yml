@@ -527,7 +527,8 @@ jobs:
     name: detect docs-only change
     # A PR that changes only docs/ and Markdown outside packages/ skips both
     # e2e lanes. Markdown under packages/ ships in agent images, so it counts
-    # as code.
+    # as code. The lanes run when it fails, so a broken detection never skips
+    # them.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -561,7 +562,7 @@ jobs:
     # The steps e2e-vm shares are anchored here (&e2e-*), so the two lanes
     # bring their clusters up the same way.
     needs: [docs-only]
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') && needs.docs-only.outputs.docs != 'true' }}
+    if: ${{ !cancelled() && !startsWith(github.ref, 'refs/tags/v') && needs.docs-only.outputs.docs != 'true' }}
     runs-on: ubuntu-latest
     # The builds' own time now counts against this budget.
     timeout-minutes: 45
@@ -732,7 +733,7 @@ jobs:
     # The job summary carries the lane's per-phase timings (e2e:timings), from
     # the marks E2E_TIMINGS collects and the Playwright JSON report.
     needs: [docs-only]
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') && needs.docs-only.outputs.docs != 'true' }}
+    if: ${{ !cancelled() && !startsWith(github.ref, 'refs/tags/v') && needs.docs-only.outputs.docs != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
