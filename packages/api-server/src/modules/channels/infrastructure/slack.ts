@@ -1030,6 +1030,7 @@ export interface SlackWorker {
     instanceName: string,
     query: AttachmentQuery,
   ): Promise<AttachmentResult | { error: string }>;
+  notifyPerson(keycloakSub: string, text: string): Promise<{ sent: number }>;
 }
 
 export interface SlackOAuthPending {
@@ -6341,6 +6342,46 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       } finally {
         fetched.release();
       }
+    },
+
+    async notifyPerson(keycloakSub: string, text: string) {
+      const links = await identityLinks.externalLinksOf("slack", keycloakSub);
+      if (links.length === 0) return { sent: 0 };
+      const gw = await ensureGateway();
+      if (!gw) return { sent: 0 };
+      const active = await listWorkspaces();
+      let sent = 0;
+      for (const link of links) {
+        const teamId =
+          link.teamId ?? (active.length === 1 ? active[0] : undefined);
+        if (
+          teamId === undefined ||
+          (teamId !== "" && !active.includes(teamId))
+        ) {
+          process.stderr.write(
+            `[slack] no workspace to notify ${link.externalUserId} in\n`,
+          );
+          continue;
+        }
+        if (!(await hasScope(gw, teamId, "im:write"))) {
+          process.stderr.write(
+            `[slack] workspace ${teamId} did not grant im:write; cannot notify ${link.externalUserId}\n`,
+          );
+          continue;
+        }
+        try {
+          const channel = await gw.openDirectMessage(
+            link.externalUserId,
+            teamId,
+          );
+          if (await gw.postMessage({ channel, text, teamId })) sent++;
+        } catch (err) {
+          process.stderr.write(
+            `[slack] could not notify ${link.externalUserId}: ${formatError(err)}\n`,
+          );
+        }
+      }
+      return { sent };
     },
   };
 }

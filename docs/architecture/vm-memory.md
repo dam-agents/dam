@@ -60,7 +60,7 @@ A cluster without in-place resize keeps the install's request.
 
 **Room is freed from the owner's own idle agents.** A start the runner refused, and an owner whose counted memory passes 90% of the runner's limit, hibernate that owner's vm agents under the rules a blocked start reclaims by in [budgets](budgets.md): unattended, hibernation enabled, idle past the floor, longest-idle first, and only when the agents chosen cover the whole shortfall; under pressure the target is 80%.
 A refused start is retried once their machines have stopped.
-No other owner's agent is touched.
+No other owner's agent is touched, and an agent hibernated this way says it was put to sleep early to free memory ([budgets](budgets.md)).
 Because a running machine's use reaches the controller only when its agent reconciles, the controller also asks each owner's runner about its running machines every 30 seconds, which is what pressure is judged from and what moves the request between reconciles.
 That pass reconciles one of the owner's agents only when the request their counts call for differs from the runner pod's, so a count held within its step wakes nothing.
 The runner's own pressure signal runs the same pass for that owner at once, without waiting for the counted threshold, since the kernel's view is the one that kills the runner.
@@ -75,4 +75,5 @@ Guests have no swap, so only file pages go.
 **What can still go wrong.** Guests that grow faster than a second's sample and the seconds a hibernation takes can still take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
 The pressure signal makes that rarer; it cannot rule it out.
 When it happens, each agent that was ready before the kill says that its owner's memory ran out, read off the runner pod's last termination, through the runner's restart and its machine's boot, until it is ready again or a more specific reason, such as a failed boot, replaces it; the owner sees it as a crash notice that asks them to stop agents they are not using.
-An agent woken after the kill carries nothing, and nothing records the kill once its agents are ready.
+An agent woken after the kill carries nothing, and nothing on the agents records the kill once they are ready.
+The owner also gets one Slack direct message naming the agents that restarted, the [resource alert](budgets.md#resource-alerts) for the kill.

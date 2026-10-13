@@ -10,6 +10,16 @@ export interface RunnerUsage {
 
 // UNIT_BOUNDARY_DESCRIPTION: the same threshold the runner refuses a new disk at, so the api-server's refusal is the runner's, said before an Agent is written rather than after its machine is refused.
 export const STORAGE_FULL_PERCENT = 90;
+export const POOL_WARNING_PERCENT = 75;
+
+export type PoolLevel = "ok" | "warning" | "critical";
+
+// UNIT_BOUNDARY_DESCRIPTION: the one definition of how full a pool is. The create refusal, the resource alerts and the usage the web app shows all read their thresholds here, so they cannot disagree about when a pool is critical.
+export function poolLevel(percent: number): PoolLevel {
+  if (percent >= STORAGE_FULL_PERCENT) return "critical";
+  if (percent >= POOL_WARNING_PERCENT) return "warning";
+  return "ok";
+}
 
 const MIB = 1024 ** 2;
 
@@ -43,7 +53,7 @@ export function storagePercent(usage: RunnerUsage): number | null {
 export function storageRefusal(usage: RunnerUsage | null): TRPCError | null {
   if (!usage) return null;
   const percent = storagePercent(usage);
-  if (percent === null || percent < STORAGE_FULL_PERCENT) return null;
+  if (percent === null || poolLevel(percent) !== "critical") return null;
   const { usedBytes, usableBytes } = usage.storage;
   return new TRPCError({
     code: "PRECONDITION_FAILED",
