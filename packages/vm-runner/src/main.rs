@@ -274,6 +274,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             runtime: std::env::current_exe()
                 .ok()
                 .and_then(|exe| exe.parent().and_then(vm_runner::release::runtime_id)),
+            cgroup_dir: cfg!(target_os = "linux").then(|| PathBuf::from("/sys/fs/cgroup")),
         },
         runtime,
     )?;

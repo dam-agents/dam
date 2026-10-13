@@ -129,6 +129,14 @@ type RunnerRelease struct {
 	Message string `json:"message,omitempty"`
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit: the working set the kernel kills the runner by, read off its cgroup, and whether it is past the pressure threshold. Version moves when pressure starts or ends and again while it lasts.
+type RunnerPressure struct {
+	Version       uint64 `json:"version,omitempty"`
+	Pressured     bool   `json:"pressured"`
+	LimitMiB      int    `json:"limitMiB,omitempty"`
+	WorkingSetMiB int    `json:"workingSetMiB,omitempty"`
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other two never pass in that pod, so only a new pod takes the release.
 const (
 	HeldUnstaged = "unstaged"
