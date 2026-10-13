@@ -234,6 +234,7 @@ describe("kept model listing", () => {
   const plugin = (
     discoverModels: ModelDiscovery,
     env: Record<string, string> = { U: "https://proxy" },
+    onListingChanged?: () => void,
   ) =>
     createHarnessConfigPlugin({
       harness: "test",
@@ -242,6 +243,7 @@ describe("kept model listing", () => {
       envReader: asLease({ current: () => env, ready: () => true }),
       seedListingRetry: { attempts: 1, delayMs: 0 },
       discoverModels,
+      onListingChanged,
       log: noop,
     });
 
@@ -262,6 +264,27 @@ describe("kept model listing", () => {
     expect(calls).toHaveLength(2);
     answer(listed("b"));
     await new Promise((resolve) => setImmediate(resolve));
+    expect(await hc.models(null)).toEqual(listed("b").models);
+  });
+
+  // TEST_SCENARIO: a picker already showing the kept listing learns that the refresh behind it found a different one, and only then; a first listing or an unchanged one answered the read itself.
+  it("announces a refresh only when it changes a kept listing", async () => {
+    const answers = [listed("a"), listed("a"), listed("b")];
+    let changes = 0;
+    const hc = plugin(
+      async () => answers.shift() ?? listed("b"),
+      undefined,
+      () => changes++,
+    );
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+    await hc.models(null);
+    expect(changes).toBe(0);
+    expect(await hc.models(null)).toEqual(listed("a").models);
+    await settle();
+    expect(changes).toBe(0);
+    expect(await hc.models(null)).toEqual(listed("a").models);
+    await settle();
+    expect(changes).toBe(1);
     expect(await hc.models(null)).toEqual(listed("b").models);
   });
 

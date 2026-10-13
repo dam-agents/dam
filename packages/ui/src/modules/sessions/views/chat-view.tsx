@@ -71,6 +71,7 @@ import { VmRuntimeBadge } from "../../agents/components/vm-runtime-badge.js";
 import { WorkspaceFailureNotice } from "../../agents/components/workspace-failure-notice.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
+import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-watch.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js";
 import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
@@ -199,6 +200,7 @@ export function ChatView() {
   const slowStartIds = useSlowStartIds();
   useAgentReachability(selectedAgent);
   useSessionWatch(selectedAgent);
+  useHarnessConfigWatch(selectedAgent);
   useAutoWakeOnOpen(selectedAgent);
   const restartingAgents = useStore((s) => s.restartingAgents);
   const restartingIds = useMemo(

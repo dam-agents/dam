@@ -64,6 +64,7 @@ export function createHarnessConfigPlugin(deps: {
   discoverModels: ModelDiscovery;
   seedListingRetry: SeedListingRetry;
   onApplied?: () => void;
+  onListingChanged?: () => void;
   log: (msg: string) => void;
 }): HarnessConfigPlugin {
   const { binding, agentHome, envReader, log } = deps;
@@ -86,8 +87,10 @@ export function createHarnessConfigPlugin(deps: {
     const key = listingKey(env);
     if (outcome.status !== "observed" || !key) return outcome;
     const entry = { via: outcome.via, models: outcome.models };
-    if (JSON.stringify(listings.read()[key]) !== JSON.stringify(entry))
-      listings.write({ ...listings.read(), [key]: entry });
+    const kept = listings.read()[key];
+    if (JSON.stringify(kept) === JSON.stringify(entry)) return outcome;
+    listings.write({ ...listings.read(), [key]: entry });
+    if (kept) deps.onListingChanged?.();
     return outcome;
   };
   const refreshing = new Map<string, Promise<ModelDiscoveryOutcome>>();
