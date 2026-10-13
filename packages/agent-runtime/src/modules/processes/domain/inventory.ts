@@ -139,7 +139,9 @@ export function assembleInventory(input: {
       outputPath: tree.shown?.outputPath ?? tree.root?.outputPath ?? null,
       keepsAwake,
       keepSource,
-      container: tree.shown ? containerOf(commandLabel(tree.shown.cmdline)) : null,
+      container: tree.shown
+        ? containerOf(commandLabel(tree.shown.cmdline))
+        : null,
     };
     running.push(row);
     if (tree.kind === "turn") continue;

@@ -84,7 +84,11 @@ describe("container rows", () => {
   it("marks dockerd, containerd and the k3s server as runtimes", () => {
     const containers = containersOf([
       proc(400, 1, "dockerd"),
-      proc(401, 400, "containerd --config /var/run/docker/containerd/containerd.toml"),
+      proc(
+        401,
+        400,
+        "containerd --config /var/run/docker/containerd/containerd.toml",
+      ),
       proc(500, 1, "/usr/local/bin/k3s server"),
       proc(
         501,
