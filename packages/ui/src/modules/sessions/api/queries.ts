@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import type { SessionListCursor, SessionListQuery } from "agent-runtime-api";
 import {
+  type AttentionItem,
   SESSION_CATEGORIES,
   type SessionCategory,
   type SessionMode,
@@ -16,6 +17,7 @@ import { useMemo } from "react";
 
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
+import { trpc } from "../../../trpc.js";
 import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
 import {
   findAgentSession,
@@ -265,4 +267,36 @@ export function listedSessionRunning(
         p.sessions.some((s) => s.sessionId === sessionId && s.running),
       ),
     );
+}
+
+export function provisionalSessionView(item: AttentionItem): SessionView {
+  return {
+    sessionId: item.sessionId,
+    agentId: item.agentId,
+    type: item.type,
+    mode: item.mode,
+    createdAt: item.createdAt,
+    scheduleId: item.scheduleId,
+    title: item.title,
+    updatedAt: item.activityAt,
+    running: item.working,
+    seenAt: item.seenAt,
+  };
+}
+
+export function useProvisionalSessions(
+  agentId: string | null,
+  enabled: boolean,
+): SessionView[] | undefined {
+  const { data } = useQuery({
+    ...trpc.attention.sessionsForAgent.queryOptions(
+      agentId && enabled ? { agentId } : skipToken,
+    ),
+    staleTime: 5_000,
+    retry: false,
+  });
+  return useMemo(
+    () => (enabled ? data?.map(provisionalSessionView) : undefined),
+    [data, enabled],
+  );
 }

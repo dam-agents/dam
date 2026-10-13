@@ -1,13 +1,36 @@
 import http from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { Readable } from "node:stream";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const HOST = "127.0.0.1";
 const PORT = 24180;
 const SNAPSHOT_FILE = `${process.env.HOME}/.platform/pod-service-env.json`;
+const CATALOG_FILE = `${process.env.HOME}/.platform/model-gateway-catalog.json`;
+const FIRST_LISTING_WAIT_MS = 3_000;
 const PREFIX = "claude/";
 
 const log = (msg) => process.stderr.write(`model-gateway: ${msg}\n`);
+
+const catalogs = (() => {
+  try {
+    return JSON.parse(readFileSync(CATALOG_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+})();
+
+function saveCatalog(upstream, ids) {
+  const entry = { base: upstream.base, ids };
+  if (JSON.stringify(catalogs[upstream.key]) === JSON.stringify(entry)) return;
+  catalogs[upstream.key] = entry;
+  try {
+    writeFileSync(`${CATALOG_FILE}.tmp`, JSON.stringify(catalogs));
+    renameSync(`${CATALOG_FILE}.tmp`, CATALOG_FILE);
+  } catch (err) {
+    log(`model list not kept for the next start (${err.message})`);
+  }
+}
 
 function customUpstream(raw) {
   const base = (raw ?? "").replace(/\/+$/, "");
@@ -24,7 +47,16 @@ function front(key, env) {
   const current = upstreams.get(key);
   if (!base) return upstreams.delete(key);
   if (current?.base === base && current.token === token) return false;
-  const next = { key, base, token, knownModels: new Map() };
+  const kept = catalogs[key];
+  const cached =
+    kept?.base === base && Array.isArray(kept.ids) ? kept.ids.map(String) : [];
+  const next = {
+    key,
+    base,
+    token,
+    knownModels: new Map(cached.map((id) => [publicName(id), id])),
+    publishedTiers: new Map(),
+  };
   upstreams.set(key, next);
   log(`fronting ${base}${key ? ` for provider ${key}` : ""}`);
   next.ready = refreshCatalog(next);
@@ -54,10 +86,10 @@ if (upstreams.size === 0) {
   process.exit(0);
 }
 
-const publicName = (id) => {
+function publicName(id) {
   const name = id.toLowerCase();
   return name.startsWith(PREFIX) ? name : PREFIX + name;
-};
+}
 
 const TIERS = ["fable", "opus", "sonnet", "haiku"];
 
@@ -69,7 +101,9 @@ const resolveModel = (upstream, name) => {
     : name;
   const models = [...upstream.knownModels.values()];
   if (!models.length || models.includes(bare)) return bare;
-  const tier = TIERS.find((t) => bare.toLowerCase().includes(t));
+  const tier =
+    upstream.publishedTiers.get(name) ??
+    TIERS.find((t) => bare.toLowerCase().includes(t));
   return tier ? tierModels(models)[tier] : bare;
 };
 
@@ -112,6 +146,7 @@ async function refreshCatalog(upstream) {
     if (ids.join("\n") !== [...upstream.knownModels.values()].join("\n"))
       log(`serving ${ids.length} model(s)${upstream.key ? ` for provider ${upstream.key}` : ""}`);
     upstream.knownModels = new Map(ids.map((id) => [publicName(id), id]));
+    saveCatalog(upstream, ids);
   }
   return ids;
 }
@@ -157,7 +192,10 @@ function tierModels(models) {
 function envLines(upstream) {
   const models = [...upstream.knownModels.values()];
   if (!models.length) return "";
-  return Object.entries(tierModels(models))
+  const tiers = Object.entries(tierModels(models));
+  for (const [tier, model] of tiers)
+    upstream.publishedTiers.set(publicName(model), tier);
+  return tiers
     .map(([tier, model]) => [`ANTHROPIC_DEFAULT_${tier.toUpperCase()}_MODEL`, publicName(model)])
     .map(([k, v]) => `[ -n "\${${k}:-}" ] || export ${k}=${shQuote(v)}\n`)
     .join("");
@@ -311,7 +349,11 @@ process.on("SIGHUP", () => {
 });
 
 const discovered = await Promise.all(
-  [...upstreams.values()].map((u) => u.ready),
+  [...upstreams.values()].map((u) =>
+    u.knownModels.size
+      ? true
+      : Promise.race([u.ready, sleep(FIRST_LISTING_WAIT_MS, null)]),
+  ),
 );
 if (!discovered.some(Boolean))
   log(

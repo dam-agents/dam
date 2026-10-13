@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+export const attentionSessionsForAgentInputSchema = z.object({
+  agentId: z.string().min(1),
+});
+
 export const attentionDismissInputSchema = z.object({
   items: z
     .array(

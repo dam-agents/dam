@@ -11,6 +11,7 @@ import type { AttentionRecordRow } from "../domain/types.js";
 import type { AttentionRepository } from "../infrastructure/attention-repository.js";
 
 const FEED_LIMIT = 200;
+const AGENT_SESSIONS_LIMIT = 50;
 
 function toItem(row: AttentionRecordRow): AttentionItem {
   return {
@@ -31,6 +32,7 @@ export function createAttentionService(deps: {
   repo: AttentionRepository;
   ownerSub: string;
   ownsApproval: (approvalId: string) => Promise<boolean>;
+  ownsAgent: (agentId: string) => Promise<boolean>;
 }): AttentionService {
   return {
     async listForOwner(): Promise<AttentionList> {
@@ -46,6 +48,16 @@ export function createAttentionService(deps: {
           at: d.dismissedAt.toISOString(),
         })),
       };
+    },
+
+    async sessionsForAgent(agentId) {
+      if (!(await deps.ownsAgent(agentId))) return [];
+      const records = await deps.repo.listForOwnerAgent(
+        deps.ownerSub,
+        agentId,
+        AGENT_SESSIONS_LIMIT,
+      );
+      return records.map(toItem);
     },
 
     async dismiss({ items }) {

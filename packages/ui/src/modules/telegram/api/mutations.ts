@@ -19,7 +19,6 @@ export function useBindTelegramChat() {
     meta: {
       invalidates: [
         agentsKeys.listWithChannels(),
-        trpc.agents.list.queryKey(),
         trpc.agents.listTelegramChats.queryKey(),
       ],
     },

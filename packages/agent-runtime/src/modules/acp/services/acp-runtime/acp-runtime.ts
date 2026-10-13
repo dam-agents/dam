@@ -70,6 +70,7 @@ const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_ENV_FORCE_RECYCLE_MS = 60 * 1000;
 
 const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
+const DEFAULT_SPAWN_WORK_TIMEOUT_MS = 5 * 1000;
 
 const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
 
@@ -127,6 +128,7 @@ export interface AcpRuntimeDeps {
   idleReapDelayMs?: number;
   envReadyAtBoot?: boolean;
   warmStartTimeoutMs?: number;
+  spawnWorkTimeoutMs?: number;
   beforeSpawn?: () => Promise<void>;
   logBytesCap?: number;
   replayTailEvents?: number;
@@ -679,6 +681,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     describeBusy,
     envReadyAtBoot: deps.envReadyAtBoot ?? true,
     warmStartTimeoutMs,
+    spawnWorkTimeoutMs:
+      deps.spawnWorkTimeoutMs ?? DEFAULT_SPAWN_WORK_TIMEOUT_MS,
     envForceRecycleMs,
     keptTasks: keptTaskCount,
     onPendingChange: () => checkPendingRestart(),
