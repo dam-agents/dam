@@ -568,11 +568,13 @@ function buildAgentsNow(facts: AnalyticsFacts): AnalyticsReport["agentsNow"] {
     total: agents.length,
     sizes,
     disk: bucketCounts(
-      agents.map((a) =>
-        Math.round(
-          parseMemoryBytes(a.storageSize || facts.sizing.defaultStorage) / gi,
+      agents
+        .filter((a) => !a.vm)
+        .map((a) =>
+          Math.round(
+            parseMemoryBytes(a.storageSize || facts.sizing.defaultStorage) / gi,
+          ),
         ),
-      ),
       [
         { label: "≤ 4 Gi", max: 4 },
         { label: "5 Gi", max: 5 },

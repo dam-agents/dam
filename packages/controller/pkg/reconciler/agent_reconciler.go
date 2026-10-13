@@ -64,10 +64,11 @@ type AgentReconciler struct {
 	runnerPodCache  corelisters.PodLister
 	vmRunning       sync.Map
 	vmLive          sync.Map
+	vmPools         sync.Map
+	usageSecrets    sync.Map
 	resizeNotices   sync.Map
 	notReadyPolls   sync.Map
 	vmStartClocks   sync.Map
-	claimCapNotices sync.Map
 	ownerless       sync.Map
 	machineWatchMu  sync.Mutex
 	machineWatches  map[string]*machineWatch
@@ -439,15 +440,17 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			}
 		}
 		timer.mark("agentStatefulSet")
-		if err := r.applyService(ctx, BuildAgentService(name, r.config, ownerRef)); err != nil {
-			return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
+		if !migration.vmSideRuns() {
+			if err := r.applyService(ctx, BuildAgentService(name, r.config, ownerRef)); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("applying agent service: %v", err))
+			}
 		}
 		timer.mark("agentService")
 		if migration.active() && migration.phase != apiv1.ReasonRuntimeMigrationFailed && r.requeue != nil {
 			r.requeue(name, runtimeMigrationPoll)
 		}
 		if migration.requested {
-			machine, runnerReached, migrationVMErr = r.reconcileMigrationMachine(ctx, agent, ownerRef, gatewayIP, running && migration.machineMayRun())
+			machine, runnerReached, migrationVMErr = r.reconcileMigrationMachine(ctx, agent, ownerRef, gatewayIP, running && migration.machineMayRun(), migration.vmSideRuns())
 			timer.mark("migrationMachine")
 		}
 		if migration.active() {
@@ -1062,10 +1065,17 @@ func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, stat
 	return nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: creates the Service once and leaves it as it is, except that a headless one replaces one with a cluster address: a runtime migration that is aborted after its boot leaves the Service a machine needs, and a Service's cluster address cannot be changed in place.
 func (r *AgentReconciler) applyService(ctx context.Context, desired *corev1.Service) error {
-	_, err := r.client.CoreV1().Services(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+	cli := r.client.CoreV1().Services(desired.Namespace)
+	existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
+	if err == nil && desired.Spec.ClusterIP == corev1.ClusterIPNone && existing.Spec.ClusterIP != corev1.ClusterIPNone {
+		if err = cli.Delete(ctx, desired.Name, metav1.DeleteOptions{}); err == nil || errors.IsNotFound(err) {
+			err = errors.NewNotFound(corev1.Resource("services"), desired.Name)
+		}
+	}
 	if errors.IsNotFound(err) {
-		_, err = r.client.CoreV1().Services(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
+		_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
 		return err
 	}
 	return err

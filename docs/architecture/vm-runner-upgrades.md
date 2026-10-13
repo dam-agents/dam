@@ -7,7 +7,7 @@ How a change to the [runner](vm-runner.md) reaches owners whose machines are run
 ## Rolls
 
 **A change to the runner pod rolls across owners, not all at once.** Because a pod restart reboots every machine of that owner, a new runner image or a controller release that renders the pod differently would otherwise reboot every vm machine in the install together, where container agents roll one at a time.
-The controller records a hash of the pod it rendered on each runner, leaves a runner alone while that hash is unchanged, and lets a changed one roll only while fewer than the install's roll width (one by default) are mid-roll.
+The controller records a hash of the pod it rendered on each runner — less its memory limit, the owner's pool, and its memory request, both of which it changes in place ([vm-memory](vm-memory.md)) — leaves a runner alone while that hash is unchanged, and lets a changed one roll only while fewer than the install's roll width (one by default) are mid-roll.
 A runner is mid-roll from that moment until its new pod is ready and every machine that was ready before is ready again, or its agent is gone; a settle timeout bounds the wait for machines, so one that never comes back does not stall everyone else.
 A new pod that is still not ready at the timeout is a broken runner release, not a slow machine: that roll keeps its place, so the release goes no further, and is marked stalled and reported as an error until its pod becomes ready or the pod changes again.
 A runner whose pod is unchanged is not rolled, but labels or owner references that drifted on it are put back without touching the pod.

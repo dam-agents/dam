@@ -349,7 +349,7 @@ func (r *AgentReconciler) prepareRuntimeMigration(ctx context.Context, agent *ap
 const runtimeMigrationPoll = 5 * time.Second
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine a container Agent's migration builds beside it, in the shape the request recorded. A wait on the runner or its certificate, or a refusal, is returned for the migration to show rather than failing the reconcile of a container that is still serving.
-func (r *AgentReconciler) reconcileMigrationMachine(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running bool) (vmrunner.MachineStatus, bool, error) {
+func (r *AgentReconciler) reconcileMigrationMachine(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running, publish bool) (vmrunner.MachineStatus, bool, error) {
 	if !r.config.VM.Enabled {
 		return vmrunner.MachineStatus{}, false, errors.New("virtualization is disabled in this install (virtualization.enabled)")
 	}
@@ -357,39 +357,7 @@ func (r *AgentReconciler) reconcileMigrationMachine(ctx context.Context, agent *
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, err
 	}
-	if agent.Annotations[annRuntimeMigrationSource] == "" {
-		if err := r.raiseRuntimeMigrationDisk(ctx, agent, target); err != nil {
-			return vmrunner.MachineStatus{}, false, err
-		}
-	}
-	return r.reconcileVMAgent(ctx, target, ownerRef, gatewayIP, running, false)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a home volume never shrinks when the Agent's storageSize is lowered, and a pool can hand out a larger one, so the volume the copy reads can be larger than the disk the request asked for. Before the machine and its disk are made, the target is raised to the volume's capacity and recorded, so the disk holds what the volume could and the switch keeps that size. Only until the source is recorded: the machine exists by then, and a retry clears the source and starts with a fresh one.
-func (r *AgentReconciler) raiseRuntimeMigrationDisk(ctx context.Context, agent, target *apiv1.Agent) error {
-	source, err := r.runtimeMigrationVolume(ctx, agent, agentHomeDir)
-	if err != nil || source == "" {
-		return err
-	}
-	pvc, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Get(ctx, source, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("reading the home volume %s to size the disk: %w", source, err)
-	}
-	disk, err := resolveVMDiskGiB(&target.Spec, r.config.AgentTemplateDefaults)
-	if err != nil {
-		return err
-	}
-	size := pvcSize(pvc)
-	if size.Cmp(resource.MustParse(fmt.Sprintf("%dGi", disk))) <= 0 {
-		return nil
-	}
-	target.Spec.StorageSize = size.String()
-	raw, err := json.Marshal(runtimeMigrationTarget{StorageSize: target.Spec.StorageSize})
-	if err != nil {
-		return err
-	}
-	slog.Info("runtime migration: raising the disk to the home volume's size", "agent", agent.Name, "pvc", source, "size", target.Spec.StorageSize)
-	return patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, agent.Name, map[string]*string{annRuntimeMigrationTarget: new(string(raw))})
+	return r.reconcileVMAgent(ctx, target, ownerRef, gatewayIP, running, publish)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a volume can hold: its capacity when the backend gave it more than it asked for.
@@ -1626,23 +1594,4 @@ func migrationAgentIdentity(cfg *config.Config) (int64, int64) {
 		}
 	}
 	return uid, gid
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the seed sits on the owner's runner claim from the moment the copy starts until the guest has booted from it, beside the disk it is restored into, so the claim needs room for both at once. The seed is never larger than the home volume it was read from, so that volume's capacity bounds it.
-func (r *AgentReconciler) runtimeMigrationSeedBytes(ctx context.Context, agent *apiv1.Agent) int64 {
-	switch runtimeMigrationOf(agent.Annotations, agent.Status).phase {
-	case apiv1.ReasonRuntimeMigrationCopying, apiv1.ReasonRuntimeMigrationBooting:
-	default:
-		return 0
-	}
-	source := agent.Annotations[annRuntimeMigrationSource]
-	if source == "" {
-		return 0
-	}
-	pvc, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Get(ctx, source, metav1.GetOptions{})
-	if err != nil {
-		return 0
-	}
-	size := pvcSize(pvc)
-	return size.Value()
 }

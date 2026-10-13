@@ -40,7 +40,7 @@ export function concreteResources(
     : { limits };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the backend is the one field a caller chooses independently of the image, and no template declares one — the same image boots either way. The template's harness is written to the spec, because one image serves every harness and the controller sets PLATFORM_HARNESS from it on both backends. runtimeClassName selects a container runtime and nodeSelector places a pod; the CRD rejects both on the vm backend, so neither survives the choice.
+// UNIT_BOUNDARY_DESCRIPTION: the backend is the one field a caller chooses independently of the image, and no template declares one — the same image boots either way. A vm agent gets no storage size: its disk grows inside its owner's storage pool, so a template's or kit's size sizes container volumes only. The template's harness is written to the spec, because one image serves every harness and the controller sets PLATFORM_HARNESS from it on both backends. runtimeClassName selects a container runtime and nodeSelector places a pod; the CRD rejects both on the vm backend, so neither survives the choice.
 export function assembleSpecFromTemplate(
   name: string,
   tmplSpec: TemplateSpec,
@@ -63,7 +63,7 @@ export function assembleSpecFromTemplate(
     imagePullPolicy: tmplSpec.imagePullPolicy,
     imagePullSecretRef: tmplSpec.imagePullSecretRef,
     hibernationTimeout: tmplSpec.hibernationTimeout,
-    storageSize: opts.storage ?? tmplSpec.storageSize,
+    storageSize: opts.vm ? undefined : (opts.storage ?? tmplSpec.storageSize),
     storageClass: tmplSpec.storageClass,
     backend: opts.vm ? { type: "vm" } : undefined,
     runtimeClassName: opts.vm ? undefined : tmplSpec.runtimeClassName,
@@ -88,6 +88,6 @@ export function assembleSpecFromImage(
     description: opts.description,
     resources: concreteResources(undefined, opts.size, defaultLimits),
     backend: opts.vm ? { type: "vm" } : undefined,
-    storageSize: opts.storage,
+    storageSize: opts.vm ? undefined : opts.storage,
   };
 }

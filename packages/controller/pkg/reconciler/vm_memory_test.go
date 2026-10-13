@@ -127,7 +127,7 @@ func TestAHostRunnerMachineTakesItsMemoryFromTheSpec(t *testing.T) {
 	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("12Gi")}}
 	r.config.VM.Runner.HostAddress = "192.168.5.2"
 
-	assert.Equal(t, 3072, r.machineMemoryMiB(&agent.Spec), "the host runner's machine was sized from the chart's pod limit")
+	assert.Equal(t, 3072, r.machineMemoryMiB(context.Background(), testOwner, &agent.Spec), "the host runner's machine was sized from the chart's pod limit")
 }
 
 // TEST_SCENARIO: a new size reaches a running machine only at its next start, so until then the machine may hold more than its new size says. Memory and vCPUs count it at the larger of the size it runs at and the one it will start with, so a shrink never lowers the request or the CPU limit under a guest still running large.
@@ -165,6 +165,11 @@ func TestTheMemoryPassReconcilesOnlyWhenThePodRequestWouldMove(t *testing.T) {
 	}
 	clusterResizesPods(r, true)
 	runnerPod(t, r, "2560Mi", "8Gi")
+	pod, err := r.client.CoreV1().Pods("test-agents").Get(context.Background(), r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	pod.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU] = resource.MustParse("8")
+	_, err = r.client.CoreV1().Pods("test-agents").Update(context.Background(), pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
 	r.vmRunning.Store(agent.Name, true)
 	ctx := context.Background()
 	pass := func(usedMiB int) bool {
