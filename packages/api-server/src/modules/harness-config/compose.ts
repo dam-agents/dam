@@ -22,6 +22,7 @@ export function composeHarnessConfigModule(deps: {
   ownerSub: string;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
   getCapabilities: (agentId: string) => Promise<unknown>;
+  specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
 }): { service: HarnessConfigService } {
   const { db, ...serviceDeps } = deps;
@@ -58,6 +59,7 @@ export function composeFirePair(deps: {
   db: Db;
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
+  specHarness: (agentId: string) => Promise<string | undefined>;
 }): FirePair {
   const resolver = { ...deps, pairRepo: createSessionPairRepo(deps.db) };
   return (agentId, preferred) => resolveFirePair(resolver, agentId, preferred);
