@@ -1,4 +1,3 @@
-import { Information } from "@carbon/icons-react";
 import type {
   ConnectionTemplateView,
   ConnectionView,
@@ -27,23 +26,11 @@ export function KitRequirementsCard({
   onRevoke,
   onConnect,
 }: Props) {
-  const why = kit.connections.find((c) => c.required && c.note)?.note;
   const maintenance = useConnectionMaintenance();
 
   return (
-    <div className="overflow-hidden rounded-lg border border-kit-line bg-kit-surface">
-      {why && (
-        <div className="px-4 py-3">
-          <div className="flex items-start gap-2.5 rounded-lg bg-kit-tint px-3 py-2.5">
-            <Information size={16} className="mt-0.5 shrink-0 text-kit" />
-            <p className="text-sm text-foreground/80">
-              {kit.name} needs {why}
-            </p>
-          </div>
-        </div>
-      )}
-
-      <ul>
+    <>
+      <ul className="flex flex-col gap-3">
         {connectionRequirements(kit).map((requirement) => (
           <KitRequirementRow
             key={requirement.accepts.join("|")}
@@ -60,6 +47,6 @@ export function KitRequirementsCard({
         ))}
       </ul>
       <ConnectionMaintenanceDialog maintenance={maintenance} />
-    </div>
+    </>
   );
 }
