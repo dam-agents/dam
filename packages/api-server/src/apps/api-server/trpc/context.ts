@@ -295,6 +295,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       runtimeMutator,
       isOwnedAgent,
       getCapabilities: getAgentCapabilities,
+      specHarness: async (agentId) =>
+        (await agentsRepo.get(agentId))?.spec.harness,
       isSettled: (agentId) =>
         contributionsProgress.progress(agentId).then((p) => p.settled),
     });

@@ -556,6 +556,8 @@ export async function bootstrap() {
     getCapabilities: async (agentId) =>
       (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
         ?.runtimeCapabilities ?? null,
+    specHarness: async (agentId) =>
+      (await agentsRepo.get(agentId))?.spec.harness,
   });
   await periodicJobs.register("starter-kits-refresh", 600_000, () =>
     starterKitsRefresh.run(),

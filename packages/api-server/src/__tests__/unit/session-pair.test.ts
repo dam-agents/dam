@@ -154,6 +154,7 @@ describe("resolveFirePair", () => {
           ],
           telemetryEnv: () => [],
         },
+        specHarness: async () => undefined,
         getCapabilities: async () => ({
           defaultHarness: "claude-code",
           harnesses: [
@@ -177,6 +178,50 @@ describe("resolveFirePair", () => {
   });
 });
 
+describe("resolveRememberedPair before the agent's first hello", () => {
+  /** TEST_SCENARIO: A new agent from a template whose harness is not the
+   * catalog default has reported no capabilities yet. Its expected pair is
+   * that harness on a provider it fits, not the catalog default's. */
+  it("starts on the Agent's own harness", async () => {
+    expect(
+      await resolveRememberedPair(
+        {
+          pairRepo: {
+            read: async () => null,
+            write: async () => {},
+            grantedProviders: async () => [
+              { id: "claude", type: "anthropic" },
+              { id: "oai", type: "openai" },
+            ],
+          },
+          catalog: {
+            default: "claude-code",
+            harnesses: [
+              {
+                name: "claude-code",
+                displayName: "Claude",
+                providers: ["anthropic"],
+                tags: [],
+                experimental: false,
+              },
+              {
+                name: "codex",
+                displayName: "Codex",
+                providers: ["openai"],
+                tags: [],
+                experimental: false,
+              },
+            ],
+            telemetryEnv: () => [],
+          },
+          specHarness: async () => "codex",
+          getCapabilities: async () => null,
+        },
+        "agent-1",
+      ),
+    ).toEqual({ harness: "codex", provider: "oai", model: null });
+  });
+});
 describe("resolveFirePair on an agent too old for session pairs", () => {
   /** TEST_SCENARIO: An image built before session settings carries Pi with a
    * harness config but drops a lease's model, so Pi would fall back to its
@@ -207,6 +252,7 @@ describe("resolveFirePair on an agent too old for session pairs", () => {
           ],
           telemetryEnv: () => [],
         },
+        specHarness: async () => undefined,
         getCapabilities: async () => ({
           defaultHarness: "pi",
           harnesses: [{ name: "pi", harnessConfig: true, sessionModel: false }],
@@ -236,6 +282,7 @@ describe("resolveFirePair on a harness outside the catalog", () => {
           harnesses: [],
           telemetryEnv: () => [],
         },
+        specHarness: async () => undefined,
         getCapabilities: async () => ({
           defaultHarness: "mock",
           harnesses: [
@@ -273,6 +320,7 @@ describe("resolveFirePair on a harness outside the catalog", () => {
             ],
             telemetryEnv: () => [],
           },
+          specHarness: async () => undefined,
           getCapabilities: async () => ({
             defaultHarness: "mock",
             harnesses: [
