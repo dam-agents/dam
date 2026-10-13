@@ -18,7 +18,8 @@ built against another runtime than a pod's image brings its own.
 It runs wherever a runner can, on the runner's own nodeSelector and
 tolerations. A runner on a node it has not reached yet keeps its release until
 it does. It is root writing a directory root owns, and holds DAC_READ_SEARCH
-alone, to read guest-agent files whose mode keeps even their owner out.
+alone (DAC_OVERRIDE on OpenShift), to read guest-agent files whose mode keeps
+even their owner out.
 */}}
 {{- $name := printf "%s-vm-runner-releases" (include "platform.fullname" .) }}
 {{- $openshift := .Values.openshift.scc.anyuidCapNet.enabled }}
