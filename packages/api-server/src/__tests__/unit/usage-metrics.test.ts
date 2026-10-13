@@ -531,7 +531,11 @@ describe("usage metrics", () => {
       surface: "ui",
       skillCount: 2,
     });
-    emit({ type: EventType.SkillSetDeleted, actorSub: "user-1", surface: "ui" });
+    emit({
+      type: EventType.SkillSetDeleted,
+      actorSub: "user-1",
+      surface: "ui",
+    });
 
     expect(
       await seriesOf(

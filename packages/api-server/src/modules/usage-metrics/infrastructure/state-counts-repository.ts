@@ -1,5 +1,17 @@
-import { agents, eq, isNull, kbShares, skillSets, slackInstalls, sql, type Db } from "db";
-import type { LiveAgentRow, StateCountsReader } from "../domain/state-snapshot.js";
+import {
+  agents,
+  eq,
+  isNull,
+  kbShares,
+  skillSets,
+  slackInstalls,
+  sql,
+  type Db,
+} from "db";
+import type {
+  LiveAgentRow,
+  StateCountsReader,
+} from "../domain/state-snapshot.js";
 
 export function createStateCountsRepository(db: Db): StateCountsReader {
   return {
