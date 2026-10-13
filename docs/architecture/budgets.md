@@ -48,12 +48,12 @@ spec:
   owner: "<keycloak-sub>"        # exact plaintext sub, as on the agent owner label
   cpu: "16"
   memory: "32Gi"
-  storage: "500Gi"               # vm only: the ceiling of the user's VM runner claim
+  storage: "500Gi"               # vm only: the user's storage pool, and their VM runner claim's size
 ```
 
 Every field but `owner` is optional, and each falls back on its own.
 For container agents `cpu` and `memory` are the Ceiling, else the chart defaults.
-For vm agents the same UserBudget sets the user's VM pool ([vm-memory](vm-memory.md)): `memory` is their VM runner's memory limit, `cpu` caps its CPU limit and `storage` caps its claim ([persistence](persistence.md)), else `virtualization.runner`.
+For vm agents the same UserBudget sets the user's VM pool ([vm-memory](vm-memory.md)): `memory` is their VM runner's memory limit, `cpu` caps its CPU limit and `storage` is their storage pool, which every VM disk may grow into and which their claim is created at and grows to ([persistence](persistence.md)), else `virtualization.runner`.
 One number therefore raises both kinds of agent for a user who has both.
 
 The name↔owner pin makes one-budget-per-user structural (a second budget is a name collision), and the schema validates quantities at admission, so a malformed ceiling is rejected rather than silently parsed to zero.
