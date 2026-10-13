@@ -156,9 +156,8 @@ ACP channels attach concurrently and engage sessions by the `sessionId` each fra
 Each lease is the unchanged ACP runtime this section describes, behind a **lease router**.
 `session/new` names the session's harness, provider and model; the runtime persists that pair in its session-metadata store, so later frames, and a load or resume after a restart, route back to the same lease.
 A session naming none runs on the default harness and first granted provider, and keeps that pair.
-Leases spawn lazily, each told about the client as the first was, and an agent's question is answered to the lease that asked.
+Leases spawn lazily, except the default one, which starts once the server listens so a waking chat finds it loaded; each is told about the client as the first was, and an agent's question is answered to the lease that asked.
 The default lease stays; any other shuts down once it holds no session, and one whose harness crashes is dropped for the next session to respawn.
-The session list draws on the metadata store too, so a harness not running still lists its sessions.
 
 A lease spawns with the agent-wide env, its own provider's layer and its harness's layer ([connections](connections.md#contribution-fan-out)), then the pod's process env, then its harness, provider and model.
 Revoking a provider recycles only the leases on it; a prompt or setting sent to a session on a removed provider fails with a structured *provider removed* error naming it, and granting it again resumes the session.

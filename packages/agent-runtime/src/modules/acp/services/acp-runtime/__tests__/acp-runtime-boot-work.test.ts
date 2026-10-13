@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { createWorld } from "./acp-world.js";
+import { createWorld, frames } from "./acp-world.js";
 
 /**
  * TEST_OVERVIEW: spawn work that has to land before the harness starts.
@@ -191,5 +191,35 @@ describe("acp-runtime: spawn work before the harness starts", () => {
 
     vi.advanceTimersByTime(1);
     expect(world.harnessStarted()).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A wake: the runtime prestarts the harness once its server
+   * listens, because the harness takes about a second to answer initialize and
+   * the person who woke the agent connects only after that. The prestart waits
+   * for the same spawn work a client would, so the harness reads the seeded
+   * config, and the first client then uses that process instead of a second.
+   */
+  it("prestarts the harness after the spawn work, and the first client uses it", async () => {
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const world = createWorld({
+      envReadyAtBoot: true,
+      beforeSpawn: () => held,
+    });
+
+    world.runtime.prestart();
+    expect(world.harnessStarted()).toBe(false);
+
+    release();
+    await held;
+    await Promise.resolve();
+    expect(world.harnessCount()).toBe(1);
+
+    world.connect().send(frames.initialize(1));
+    expect(world.harnessCount()).toBe(1);
+    expect(world.harness().receivedMethods()).toEqual(["initialize"]);
   });
 });

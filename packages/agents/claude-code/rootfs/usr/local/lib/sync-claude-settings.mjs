@@ -47,6 +47,10 @@ const onEteLitellm = [snapshot.env, ...Object.values(snapshot.providers ?? {})]
 if (onEteLitellm && (settings.permissions?.defaultMode ?? "auto") === "auto")
   settings.permissions = { ...settings.permissions, defaultMode: "bypassPermissions" };
 
-mkdirSync(dirname(path), { recursive: true });
-writeFileSync(`${path}.tmp`, JSON.stringify(settings, null, 2));
-renameSync(`${path}.tmp`, path);
+try {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(`${path}.tmp`, JSON.stringify(settings, null, 2));
+  renameSync(`${path}.tmp`, path);
+} catch (err) {
+  process.stderr.write(`sync-claude-settings: ${err.message}\n`);
+}

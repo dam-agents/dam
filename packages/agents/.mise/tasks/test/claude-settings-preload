@@ -1,0 +1,51 @@
+#!/usr/bin/env node
+//MISE description="Test that Claude Code's settings sync, preloaded into the ACP adapter's node, runs before the adapter and never stops it"
+//MISE sources=["claude-code/rootfs/usr/local/lib/sync-claude-settings.mjs", "claude-code/rootfs/usr/local/bin/harness-chat", ".mise/tasks/test/claude-settings-preload"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const script = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/sync-claude-settings.mjs", import.meta.url));
+const harnessChat = readFileSync(new URL("../../../claude-code/rootfs/usr/local/bin/harness-chat", import.meta.url), "utf8");
+
+// TEST_SCENARIO: harness-chat preloads this very script into the adapter's node, so the test runs the line it ships.
+assert.match(harnessChat, /exec node --import \/usr\/local\/lib\/sync-claude-settings\.mjs/);
+
+const run = (prepare) => {
+  const home = mkdtempSync(join(tmpdir(), "claude-settings-preload-"));
+  try {
+    prepare?.(home);
+    const entry = join(home, "adapter.mjs");
+    writeFileSync(
+      entry,
+      `import { readFileSync } from "node:fs";
+let settings = null;
+try { settings = JSON.parse(readFileSync(process.env.HOME + "/.claude/settings.json", "utf8")); } catch {}
+process.stdout.write(JSON.stringify({ argv: process.argv.slice(1), stop: settings?.hooks?.Stop?.length ?? 0 }));
+`,
+    );
+    const r = spawnSync(process.execPath, ["--import", script, entry, "--flag"], {
+      env: { PATH: process.env.PATH, HOME: home },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    return { entry, ...JSON.parse(r.stdout), stderr: r.stderr };
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+};
+
+// TEST_SCENARIO: The adapter reads the settings the sync wrote, so the sync finishes before the adapter's first line, and the adapter sees its own argv.
+const synced = run();
+assert.deepEqual(synced.argv, [synced.entry, "--flag"]);
+assert.equal(synced.stop, 1);
+
+// TEST_SCENARIO: A home where the settings cannot be written still starts the adapter: the sync says why on stderr and the chat runs on the settings it has.
+const unwritable = run((home) => writeFileSync(join(home, ".claude"), ""));
+assert.equal(unwritable.stop, 0);
+assert.match(unwritable.stderr, /sync-claude-settings: /);
+console.log("Claude Code's settings sync runs before the ACP adapter in its node and never stops it");
