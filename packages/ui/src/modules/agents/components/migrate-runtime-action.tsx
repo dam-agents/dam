@@ -1,6 +1,6 @@
 import { Migrate, Renew, Undo, WarningAlt } from "@carbon/icons-react";
 import type * as React from "react";
-import { type SyntheticEvent, useState } from "react";
+import { type SyntheticEvent, useId, useState } from "react";
 import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
@@ -87,6 +87,8 @@ export function MigrateRuntimeAction({
     .exhaustive(() => null);
 }
 
+const OLD_RUNTIME = "This agent runs on the old container runtime.";
+
 function OfferButton({
   onMigrate,
   stop,
@@ -94,6 +96,7 @@ function OfferButton({
   onMigrate: () => void;
   stop: (e: React.MouseEvent) => void;
 }) {
+  const describedBy = useId();
   return (
     <span onClick={stop}>
       <HoverCard>
@@ -104,9 +107,14 @@ function OfferButton({
             tone="accent"
             className="shrink-0"
             onClick={onMigrate}
+            aria-label="Migrate to the new runtime"
+            aria-describedby={describedBy}
           >
             <Migrate size={16} />
             Migrate
+            <span id={describedBy} className="sr-only">
+              {OLD_RUNTIME}
+            </span>
           </Button>
         </HoverCardTrigger>
         <HoverCardContent
@@ -116,11 +124,11 @@ function OfferButton({
         >
           <p className="font-bold text-foreground">Move to the new runtime</p>
           <p className="text-muted-foreground">
-            The agent restarts on the new sandbox runtime. Its home directory,
-            with the workspace and settings, is copied over, and the agent is
-            unavailable while the copy runs. The next step shows exactly what
-            moves. The move can be undone until the agent first starts on the
-            new runtime.
+            {OLD_RUNTIME} The agent restarts on the new sandbox runtime. Its
+            home directory, with the workspace and settings, is copied over, and
+            the agent is unavailable while the copy runs. The next step shows
+            exactly what moves. The move can be undone until the agent first
+            starts on the new runtime.
           </p>
         </HoverCardContent>
       </HoverCard>
@@ -143,7 +151,7 @@ function RefusedMigrate({ agentId }: { agentId: string }) {
             role="button"
             tabIndex={0}
             aria-expanded={open}
-            aria-label="Why this agent can't migrate"
+            aria-label="Migrate: why this agent on the old container runtime can't move yet"
             data-testid="migrate-refused"
             onClick={toggle}
             onKeyDown={(e) => {

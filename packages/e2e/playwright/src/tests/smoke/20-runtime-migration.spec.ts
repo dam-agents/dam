@@ -129,9 +129,7 @@ test("offers no Migrate button with the experiment off", async ({ page }) => {
   ).toBeVisible({ timeout: 30_000 });
   const row = agentRow(page, agentName);
   await expect(row).toBeVisible();
-  await expect(
-    row.getByRole("button", { name: "Migrate", exact: true }),
-  ).toHaveCount(0);
+  await expect(row.getByRole("button", { name: /^Migrate/ })).toHaveCount(0);
 });
 
 // TEST_SCENARIO: the user opts in and migrates through the Migrate button and its confirm dialog, which shows the plan, retention window included. The request switches nothing: the Agent keeps reading as a container Agent with a migration under way, which can still be aborted, while the controller prepares the machine beside it. It is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, the migration's state is cleared, and the machine is running.
@@ -140,10 +138,16 @@ test("migrates to the vm Backend from the Migrate button", async ({ page }) => {
   await setVmSandboxes(api, true);
   await page.goto(baseUrl);
   const row = agentRow(page, agentName);
-  await expect(row.getByText("Old runtime", { exact: true })).toBeVisible({
-    timeout: 30_000,
+  const migrate = row.getByRole("button", {
+    name: "Migrate to the new runtime",
+    exact: true,
   });
-  await row.getByRole("button", { name: "Migrate", exact: true }).click();
+  await expect(migrate).toBeVisible({ timeout: 30_000 });
+  await expect(migrate).toHaveAccessibleDescription(
+    "This agent runs on the old container runtime.",
+  );
+  await expect(row.getByText("Old runtime", { exact: true })).toHaveCount(0);
+  await migrate.click();
   await expect(page.getByRole("alertdialog")).toContainText(
     "The old volumes are kept for",
   );
