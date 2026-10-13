@@ -9,5 +9,7 @@ export interface AgentView {
   env?: EnvVar[];
   state: AgentState;
   error?: string;
+  overBudgetMessage?: string;
+  podTerminationReason?: string;
   channels: ChannelConfig[];
 }
