@@ -15,7 +15,7 @@ The runner drops every other capability, cannot gain one through exec, and runs 
 Only AppArmor stays unconfined, because the runtime's default profile keeps every guest from booting.
 A change to that shape changes the runner pod, so it rolls across owners like any other.
 On a node cache the image cache service does that unpack, holding DAC_OVERRIDE, CHOWN, FOWNER and FSETID and nothing else, and its runners only read; a staged tree boots in place, and a staged archive is flattened inside the guest.
-That, and on OpenShift the SELinux type the node cache service picks for itself ([vm-image-cache](vm-image-cache.md)), is the whole of what the install's SCC has to permit beyond the agent's iptables init.
+That, and on OpenShift the SELinux type the node cache service and the release stager ([upgrades](vm-runner-upgrades.md)) pick for themselves ([vm-image-cache](vm-image-cache.md)), is the whole of what the install's SCC has to permit beyond the agent's iptables init.
 An agent's own container takes none of them — it is pinned to dropping all, and the controller refuses a configuration that says otherwise.
 Its own NetworkPolicy admits the proxy and resolver ports of gateway pods carrying its owner's label and whatever the install names in `egressCidrs`, less the cloud metadata ranges, which the controller subtracts from every range that holds one.
 DNS is admitted only for a runner that resolves its registry itself — one caching on its own claim — and only to the resolver it uses, named by the install: port 53 open to every address would be a two-way channel from an escaped guest to any host.

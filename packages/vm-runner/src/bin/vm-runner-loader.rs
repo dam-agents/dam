@@ -44,6 +44,9 @@ enum Mode {
         release: String,
         #[arg(long, default_value_t = 3)]
         keep: usize,
+        // UNIT_BOUNDARY_DESCRIPTION: the SELinux context to put on the release directory and everything in it, on a host that confines its containers: the directory the kubelet creates for a hostPath carries the host's own label, which a confined runner may not read its release from. Empty leaves the labels alone.
+        #[arg(long = "selinux-label", default_value = "")]
+        selinux_label: String,
     },
 }
 
@@ -72,8 +75,15 @@ async fn main() -> anyhow::Result<()> {
             into,
             release,
             keep,
+            selinux_label,
         } => {
+            if !selinux_label.is_empty() {
+                release::relabel_tree(&into, &selinux_label)?;
+            }
             let dest = release::stage(&builtin, &runtime, &into, &release, keep)?;
+            if !selinux_label.is_empty() {
+                release::relabel_tree(&into, &selinux_label)?;
+            }
             tracing::info!(release, dir = %dest.display(), "staged the runner release");
             signal(SignalKind::terminate())?.recv().await;
             Ok(())

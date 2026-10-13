@@ -346,8 +346,9 @@ virtualization:
     # hand-off boot the new one. Only a release that cannot load in the pod
     # (a newer base image's libc) still rolls the pods, through `rollout`, as
     # every runner image does when this is empty. The stager is the only
-    # writer; runners mount it read-only. Not supported on OpenShift yet: the
-    # directory would need an SELinux label the confined runners can read.
+    # writer; runners mount it read-only. On OpenShift it needs `scc`, as
+    # `imageCache.hostPath` does: the stager labels the directory for
+    # containers, as spc_t, so the confined runners can read it.
     releaseHostPath: ""
     # Roll the pods for every release built against another VM runtime, rather
     # than letting a new runtime manage machines an older one started. The
