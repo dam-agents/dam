@@ -4,13 +4,18 @@
 import {
   AggregationTemporality,
   InMemoryMetricExporter,
+  InstrumentType,
   MeterProvider,
   PeriodicExportingMetricReader,
 } from "@opentelemetry/sdk-metrics";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { emit, EventType } from "../../events.js";
 import { composeUsageMetricsModule } from "../../modules/usage-metrics/index.js";
-import type { AgentHarness } from "../../modules/usage-metrics/index.js";
+import { withGaugeDeltaTemporality } from "../../telemetry-temporality.js";
+import type {
+  AgentHarness,
+  StateCountsReader,
+} from "../../modules/usage-metrics/index.js";
 
 const DAY_ONE = Date.parse("2026-09-14T09:00:00Z");
 const DAY_TWO = Date.parse("2026-09-15T01:00:00Z");
@@ -18,13 +23,15 @@ const DAY_TWO = Date.parse("2026-09-15T01:00:00Z");
 describe("usage metrics", () => {
   let reader: PeriodicExportingMetricReader;
   let meterProvider: MeterProvider;
-  let usageMetrics: { start(): void; stop(): void };
+  let usageMetrics: ReturnType<typeof composeUsageMetricsModule>;
   let clock = DAY_ONE;
   let harnesses = new Map<string, AgentHarness>();
+  let stateCounts: StateCountsReader;
 
   function start(knownHarnesses: string[] = ["claude-code", "codex"]): void {
     usageMetrics = composeUsageMetricsModule({
       meter: meterProvider.getMeter("test"),
+      stateCounts,
       harnessOf: (agentId) => harnesses.get(agentId) ?? { agent: "unresolved" },
       knownHarnesses: new Set(knownHarnesses),
       now: () => clock,
@@ -66,8 +73,21 @@ describe("usage metrics", () => {
     harnesses = new Map<string, AgentHarness>([
       ["agent-1", { agent: "resolved", harness: "claude-code" }],
     ]);
+    stateCounts = {
+      liveAgents: async () => [
+        { id: "agent-1", starterKit: "kit-a", spawnedByAgentId: null },
+        { id: "agent-2", starterKit: null, spawnedByAgentId: null },
+        { id: "agent-3", starterKit: null, spawnedByAgentId: "agent-1" },
+      ],
+      slackWorkspacesByState: async () => [{ state: "active", count: 2 }],
+      activeKbShares: async () => 3,
+      skillSets: async () => 4,
+    };
     reader = new PeriodicExportingMetricReader({
-      exporter: new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE),
+      exporter: withGaugeDeltaTemporality(
+        new InMemoryMetricExporter(AggregationTemporality.CUMULATIVE),
+        { InstrumentType, AggregationTemporality },
+      ),
       exportIntervalMillis: 3_600_000,
     });
     meterProvider = new MeterProvider({ readers: [reader] });
@@ -461,6 +481,139 @@ describe("usage metrics", () => {
     ).toEqual(new Map([["sandbox", 1]]));
   });
 
+  /** TEST_SCENARIO: an approval closes in one of a fixed set of ways, and an
+   *  expiry must stay apart from a decision so unanswered requests are visible. */
+  it("counts approval resolutions by how they closed", async () => {
+    start();
+
+    for (const resolution of ["allow_once", "deny", "expired"] as const)
+      emit({
+        type: EventType.ApprovalResolved,
+        approvalId: `approval-${resolution}`,
+        agentId: "agent-1",
+        ownerSub: "user-1",
+        resolution,
+      });
+
+    expect(
+      await seriesOf(
+        "platform.approval.resolution.total",
+        "platform.approval.resolution",
+      ),
+    ).toEqual(
+      new Map([
+        ["allow_once", 1],
+        ["deny", 1],
+        ["expired", 1],
+      ]),
+    );
+  });
+
+  /** TEST_SCENARIO: knowledge base sharing and skill sets had no counter, so
+   *  their use was only guessable from request volume. */
+  it("counts knowledge base share publishes and skill set changes", async () => {
+    start();
+
+    emit({
+      type: EventType.KbSharePublished,
+      agentId: "agent-1",
+      ownerSub: "user-1",
+    });
+    emit({
+      type: EventType.KbSharePublishFailed,
+      agentId: "agent-1",
+      ownerSub: "user-1",
+      reason: "free-form text that must not become a dimension",
+    });
+    emit({
+      type: EventType.SkillSetSaved,
+      actorSub: "user-1",
+      surface: "ui",
+      skillCount: 2,
+    });
+    emit({ type: EventType.SkillSetDeleted, actorSub: "user-1", surface: "ui" });
+
+    expect(
+      await seriesOf(
+        "platform.kb_share.publish.total",
+        "platform.kb_share.outcome",
+      ),
+    ).toEqual(
+      new Map([
+        ["success", 1],
+        ["failure", 1],
+      ]),
+    );
+    expect(
+      await seriesOf(
+        "platform.skill_set.change.total",
+        "platform.skill_set.action",
+      ),
+    ).toEqual(
+      new Map([
+        ["saved", 1],
+        ["deleted", 1],
+      ]),
+    );
+  });
+
+  /** TEST_SCENARIO: state gauges describe the whole install, so only the
+   *  replica holding the role reports them, and it stops when the role goes. */
+  it("reports state gauges only while holding the role", async () => {
+    start();
+
+    expect(await points("platform.skill_sets")).toEqual([]);
+
+    await usageMetrics.stateGaugesRole.onAcquired();
+
+    expect(await points("platform.skill_sets")).toEqual([
+      { attributes: {}, value: 4 },
+    ]);
+    expect(await points("platform.knowledge_bases.shared")).toEqual([
+      { attributes: {}, value: 3 },
+    ]);
+
+    await usageMetrics.stateGaugesRole.onLost();
+
+    const { resourceMetrics } = await reader.collect();
+    const skillSets = resourceMetrics.scopeMetrics
+      .flatMap((scope) => scope.metrics)
+      .find((m) => m.descriptor.name === "platform.skill_sets");
+    expect(skillSets?.dataPoints ?? []).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: every label set is closed, so every series is reported
+   *  with an explicit zero rather than vanishing when its count drops. */
+  it("reports every agent and workspace series, zeros included", async () => {
+    start(["claude-code"]);
+    await usageMetrics.stateGaugesRole.onAcquired();
+
+    const agents = await points("platform.agents");
+    const count = (harness: string, origin: string) =>
+      agents.find(
+        (p) =>
+          p.attributes["platform.agent.harness"] === harness &&
+          p.attributes["platform.agent.origin"] === origin,
+      )?.value;
+
+    expect(agents).toHaveLength(4 * 3);
+    expect(count("claude-code", "starter_kit")).toBe(1);
+    expect(count("unknown", "blank")).toBe(1);
+    expect(count("unknown", "invocation")).toBe(1);
+    expect(count("claude-code", "blank")).toBe(0);
+    expect(
+      await seriesOf(
+        "platform.slack.workspaces",
+        "platform.slack.credential_state",
+      ),
+    ).toEqual(
+      new Map([
+        ["active", 2],
+        ["rejected", 0],
+      ]),
+    );
+  });
+
   /** TEST_SCENARIO: the whole set is identity-free by construction, so both
    *  the measurements and their attribute keys are pinned here — a new counter
    *  fed from these events, or a dimension naming a person, an agent or
@@ -468,6 +621,7 @@ describe("usage metrics", () => {
    *  telemetry store unnoticed. */
   it("exports only the measurements and attribute keys declared here", async () => {
     start();
+    await usageMetrics.stateGaugesRole.onAcquired();
 
     emit({
       type: EventType.SessionTurnRelayed,
@@ -532,6 +686,24 @@ describe("usage metrics", () => {
       actorSub: "user-1",
       choice: "sandbox",
     });
+    emit({
+      type: EventType.ApprovalResolved,
+      approvalId: "approval-1",
+      agentId: "agent-1",
+      ownerSub: "user-1",
+      resolution: "allow",
+    });
+    emit({
+      type: EventType.KbSharePublished,
+      agentId: "agent-1",
+      ownerSub: "user-1",
+    });
+    emit({
+      type: EventType.SkillSetSaved,
+      actorSub: "user-1",
+      surface: "ui",
+      skillCount: 1,
+    });
 
     const declared: Record<string, string[]> = {
       "platform.turn.total": ["platform.turn.harness", "platform.turn.surface"],
@@ -561,14 +733,20 @@ describe("usage metrics", () => {
       ],
       "platform.invocation.spawn.total": [],
       "platform.entry_point.choice.total": ["platform.entry_point.choice"],
+      "platform.approval.resolution.total": ["platform.approval.resolution"],
+      "platform.kb_share.publish.total": ["platform.kb_share.outcome"],
+      "platform.skill_set.change.total": ["platform.skill_set.action"],
+      "platform.agents": ["platform.agent.harness", "platform.agent.origin"],
+      "platform.slack.workspaces": ["platform.slack.credential_state"],
+      "platform.knowledge_bases.shared": [],
+      "platform.skill_sets": [],
     };
 
     expect(await exportedNames()).toEqual(Object.keys(declared).sort());
 
     for (const [name, keys] of Object.entries(declared)) {
-      const seen = await attributeKeys(name);
-      expect(seen, name).toHaveLength(1);
-      expect(seen[0], name).toEqual(keys);
+      const seen = new Set((await attributeKeys(name)).map((k) => k.join()));
+      expect([...seen], name).toEqual([keys.join()]);
     }
   });
 });

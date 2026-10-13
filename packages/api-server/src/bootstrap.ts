@@ -165,7 +165,10 @@ import { configureLogger, getLogger } from "./core/logger.js";
 import { reconcileUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants.js";
 import { reportUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants-report.js";
 import { metrics } from "@opentelemetry/api";
-import { composeUsageMetricsModule } from "./modules/usage-metrics/index.js";
+import {
+  composeUsageMetricsModule,
+  createStateCountsRepository,
+} from "./modules/usage-metrics/index.js";
 import { formatError } from "./core/format-error.js";
 import type { ApiServerDeps } from "./apps/api-server/deps.js";
 import {
@@ -760,6 +763,7 @@ export async function bootstrap() {
   });
   const usageMetrics = composeUsageMetricsModule({
     meter: metrics.getMeter("platform-apiserver"),
+    stateCounts: createStateCountsRepository(db),
     harnessOf: (agentId) => {
       const agent = agentsRepo.peekCached(agentId);
       return agent
@@ -1114,6 +1118,7 @@ export async function bootstrap() {
       },
       agentWatchRole,
       sessionWatcherRole,
+      usageMetrics.stateGaugesRole,
     ],
     log: (m) => getLogger().info(`[leader] ${m}`),
   });
