@@ -267,6 +267,42 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 
 	hardStop := migration.stopHolds(agent.Annotations) || agent.Annotations[annStorageMigration] != ""
+	applyGateway := func() error {
+		machineGatewayIP := ""
+		if agentSpec.IsVM() {
+			machineGatewayIP = gatewayIP
+		}
+		gatewaySS := BuildGatewayStatefulSet(name, owner, !running, machineGatewayIP, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, agentSpec.RequireConnectionAddress)
+		stampRollRev(gatewaySS, rollRev)
+		if err := r.applyStatefulSet(ctx, gatewaySS, running); err != nil {
+			return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))
+		}
+		if err := r.forceRollStuckPod(ctx, gatewaySS.Namespace, gatewaySS.Name); err != nil {
+			slog.Warn("force-rolling stuck gateway pod failed; rollout may be deadlocked",
+				"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
+		}
+		if running {
+			if err := r.refreshGatewayCredentials(ctx, gatewaySS.Name, credentialSecrets); err != nil {
+				slog.Warn("asking the kubelet to refresh gateway credentials failed; the periodic refresh still applies",
+					"agent", name, "error", err)
+			}
+		}
+		timer.mark("gatewayStatefulSet")
+		return nil
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: a waking gateway pod takes longer to start than the machine or agent pod beside it, mostly for the pod network and the kubelet's relist once a second, so it is scaled up before the agent side rather than after the runner call. The runner can still refuse a vm machine for lack of room, so a vm agent whose last start was refused, or one with no status yet, keeps the old order: a parked agent retried every 30 s must not start and stop a gateway pod each time. A runtime migration and a gateway going down also keep their place after the agent side, because a vm agent that is not running reads from its gateway whether it was hibernated.
+	lastReady := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionReady)
+	runnerAccepted := !agentSpec.IsVM() || (lastReady != nil && lastReady.Reason != apiv1.ReasonOverBudget)
+	gatewayUp := running && !hardStop && !migration.active() && runnerAccepted
+	if gatewayUp {
+		if err := applyGateway(); err != nil {
+			return err
+		}
+		if err := r.publishGatewayTurnedReady(ctx, agent); err != nil {
+			return fmt.Errorf("agent %s: publishing gateway readiness: %w", name, err)
+		}
+		timer.mark("gatewayReadiness")
+	}
 	var machine vmrunner.MachineStatus
 	var runnerReached bool
 	var migrationVMErr error
@@ -360,26 +396,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		}
 	}
 
-	machineGatewayIP := ""
-	if agentSpec.IsVM() {
-		machineGatewayIP = gatewayIP
-	}
-	gatewaySS := BuildGatewayStatefulSet(name, owner, !running, machineGatewayIP, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts, agentSpec.RequireConnectionAddress)
-	stampRollRev(gatewaySS, rollRev)
-	if err := r.applyStatefulSet(ctx, gatewaySS, running); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying gateway statefulset: %v", err))
-	}
-	if err := r.forceRollStuckPod(ctx, gatewaySS.Namespace, gatewaySS.Name); err != nil {
-		slog.Warn("force-rolling stuck gateway pod failed; rollout may be deadlocked",
-			"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
-	}
-	if running {
-		if err := r.refreshGatewayCredentials(ctx, gatewaySS.Name, credentialSecrets); err != nil {
-			slog.Warn("asking the kubelet to refresh gateway credentials failed; the periodic refresh still applies",
-				"agent", name, "error", err)
+	if !gatewayUp || !running {
+		if err := applyGateway(); err != nil {
+			return err
 		}
 	}
-	timer.mark("gatewayStatefulSet")
 
 	if hardStop {
 		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, name); err != nil {
@@ -475,6 +496,26 @@ func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.A
 			mutate(s)
 		}
 		s.ObservedGeneration = gen
+	})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: on a wake the gateway pod is usually the last of the pair to turn ready, and the reconcile its readiness starts spends 100-300 ms on the runner call and the remaining applies before the full readiness publish. When the status already holds the agent side ready for this generation and only the gateway is missing, the gateway turning ready is published as soon as its StatefulSet is applied, by the same check the full publish makes; the rest of the reconcile then confirms or corrects it. The status is checked again as read for the write, so a reconcile working from a stale cache never publishes over a newer status.
+func (r *AgentReconciler) publishGatewayTurnedReady(ctx context.Context, agent *apiv1.Agent) error {
+	gen := agent.Generation
+	pending := func(s *apiv1.AgentStatus) bool {
+		agentSide := apimeta.FindStatusCondition(s.Conditions, apiv1.ConditionAgentPodReady)
+		return s.ObservedGeneration == gen && agentSide != nil && agentSide.Status == metav1.ConditionTrue && agentSide.ObservedGeneration == gen &&
+			apimeta.IsStatusConditionTrue(s.Conditions, apiv1.ConditionReconciled) &&
+			!apimeta.IsStatusConditionTrue(s.Conditions, apiv1.ConditionGatewayPodReady)
+	}
+	if !pending(&agent.Status) || !r.podCurrentAndReady(ctx, GatewayName(agent.Name)) {
+		return nil
+	}
+	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
+		if pending(s) {
+			setStatusCondition(s, apiv1.ConditionGatewayPodReady, true, "PodReady", "", "", gen)
+			setStatusCondition(s, apiv1.ConditionReady, true, "AllPodsReady", "", "", gen)
+		}
 	})
 }
 
