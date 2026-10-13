@@ -173,8 +173,7 @@ export function startAgentStateCache(deps: {
         const cached = deps.informer.get(id, deps.namespace);
         const left = deadline - Date.now();
         if (
-          !cached ||
-          atLeast(cached.metadata?.resourceVersion, resourceVersion) ||
+          atLeast(cached?.metadata?.resourceVersion, resourceVersion) ||
           left <= 0
         ) {
           sub.cancel();
