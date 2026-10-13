@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  sandboxSubtitle,
-  type SandboxSubtitleLookup,
-  sandboxSubtitleParts,
-} from "../../modules/agents/utils/sandbox-subtitle.js";
+import { sandboxSubtitle } from "../../modules/agents/utils/sandbox-subtitle.js";
 import { findTemplate } from "../../modules/templates/lib/find-template.js";
 import type { AgentView, TemplateView } from "../../types.js";
 
@@ -47,47 +43,31 @@ const agent: AgentView = {
   runtimeMigratable: false,
 };
 
-const lookup: SandboxSubtitleLookup = {
-  templates: [template],
-  slotUnit: { cpuMilli: 1000, memoryMi: 1024 },
-};
+const slotUnit = { cpuMilli: 1000, memoryMi: 1024 };
 
 describe("agent card subtitle", () => {
   const sized = { ...agent, size: { cpu: "2", memory: "2Gi" } };
 
   it("names the resource class of a container agent, never its provider", () => {
-    expect(sandboxSubtitle(sized, lookup)).not.toMatch(/LiteLLM/);
-    expect(sandboxSubtitle(sized, lookup)).toBeTruthy();
+    expect(sandboxSubtitle(sized, slotUnit)).not.toMatch(/LiteLLM/);
+    expect(sandboxSubtitle(sized, slotUnit)).toBeTruthy();
   });
 
   it("is empty for a vm agent", () => {
-    expect(sandboxSubtitle({ ...sized, vm: true }, lookup)).toBeNull();
+    expect(sandboxSubtitle({ ...sized, vm: true }, slotUnit)).toBeNull();
   });
 });
 
-describe("agent template display names", () => {
+describe("findTemplate", () => {
   it.each(["default", "claude-code", "codex", "pi-agent", "bob"])(
-    "shows the name for %s even on an older image",
+    "resolves %s, an id or an alias of an older image",
     (templateId) => {
-      expect(
-        sandboxSubtitleParts({ ...agent, templateId }, lookup).harness,
-      ).toBe("Coding agent");
+      expect(findTemplate([template], templateId)).toBe(template);
     },
   );
 
-  it.each([null, "unknown"])(
-    "keeps the image fallback for template %s",
-    (templateId) => {
-      expect(
-        sandboxSubtitleParts({ ...agent, templateId }, lookup).harness,
-      ).toBe(agent.image);
-    },
-  );
-
-  it("keeps the image fallback while the catalogue is loading", () => {
-    expect(
-      sandboxSubtitleParts(agent, { ...lookup, templates: [] }).harness,
-    ).toBe(agent.image);
+  it.each([null, "unknown"])("finds nothing for template %s", (templateId) => {
+    expect(findTemplate([template], templateId)).toBeUndefined();
   });
 
   it("prefers a real template id over an alias regardless of list order", () => {
@@ -102,9 +82,6 @@ describe("agent template display names", () => {
       [custom, template],
     ]) {
       expect(findTemplate(templates, "claude-code")).toBe(custom);
-      expect(
-        sandboxSubtitleParts(agent, { ...lookup, templates }).harness,
-      ).toBe("Custom Claude");
     }
   });
 });

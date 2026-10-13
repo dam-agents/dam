@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { clickableProps } from "@/lib/clickable";
+import { cn } from "@/lib/utils";
 
 import {
   AlwaysOnTag,
@@ -152,7 +153,11 @@ export function AgentRow({
               state={display.state}
               working={working}
               keptWork={keptWork}
-              className={SECOND_LINE_ITEM}
+              className={cn(
+                SECOND_LINE_ITEM,
+                display.state === "error" && "text-danger",
+                display.state === "over_budget" && "text-warning-fg",
+              )}
             />
           </span>
         </div>

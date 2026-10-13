@@ -1,17 +1,13 @@
 import { useMemo } from "react";
 
 import { useStore } from "../../../store.js";
-import type { AgentView, TemplateView } from "../../../types.js";
+import type { AgentView } from "../../../types.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import { slotUnitOf } from "../../budgets/lib/slots.js";
-import { useTemplates } from "../../templates/api/queries.js";
 import { useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
-import {
-  sandboxSubtitle,
-  type SandboxSubtitleLookup,
-} from "../utils/sandbox-subtitle.js";
+import { sandboxSubtitle } from "../utils/sandbox-subtitle.js";
 import { useMigrateRuntime } from "./use-migrate-runtime.js";
 import {
   useRestartAgent,
@@ -23,11 +19,7 @@ import { useSuspendAgent, useSyncPausingAgents } from "./use-suspend-agent.js";
 import { useUpdateSandbox } from "./use-update-sandbox.js";
 import { useWakeAgent } from "./use-wake-agent.js";
 
-const NO_TEMPLATES: TemplateView[] = [];
-
 export function useAgentRows() {
-  const { data: templatesData } = useTemplates();
-  const templates = templatesData ?? NO_TEMPLATES;
   const { data: agentsData } = useAgents();
 
   const { data: budget } = useBudgetReserved();
@@ -54,13 +46,7 @@ export function useAgentRows() {
     [pausingAgents],
   );
 
-  const subtitleLookup = useMemo<SandboxSubtitleLookup>(
-    () => ({
-      templates,
-      slotUnit: budget ? slotUnitOf(budget) : null,
-    }),
-    [templates, budget],
-  );
+  const slotUnit = budget ? slotUnitOf(budget) : null;
 
   const rowProps = (agent: AgentView) => ({
     agent,
@@ -70,7 +56,7 @@ export function useAgentRows() {
       pausingIds,
       slowStartIds,
     ),
-    subtitle: sandboxSubtitle(agent, subtitleLookup),
+    subtitle: sandboxSubtitle(agent, slotUnit),
     deletePending:
       deleteAgent.isPending && deleteAgent.variables?.id === agent.id,
     updatePending: update.updatingId === agent.id,
