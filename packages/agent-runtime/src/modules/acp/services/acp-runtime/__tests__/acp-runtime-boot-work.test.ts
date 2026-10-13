@@ -83,7 +83,7 @@ describe("acp-runtime: spawn work before the harness starts", () => {
 
   /**
    * TEST_SCENARIO: The spawn work of the previous cycle is still pending when
-   * an env change re-arms it — the listing hung past the warm-start ceiling
+   * an env change re-arms it — the listing hung past the spawn-work ceiling
    * and the harness started without it. When that old hold finally settles,
    * it must not count as the new cycle's work: the gate stays shut until the
    * new hold lands.
