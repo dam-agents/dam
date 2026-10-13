@@ -1,5 +1,5 @@
 ---
-id: 098
+id: 099
 title: "A waking Agent's session list shows the attention record's rows, display-only"
 status: accepted
 supersedes:
@@ -8,7 +8,7 @@ tags: [sessions, home, latency]
 summary: While an Agent cannot answer for its sessions, its owner's session list shows the attention record's rows for it as a provisional, display-only list, replaced by the Agent's own list when it answers; the Agent still decides which sessions exist.
 ---
 
-# ADR-098: A waking Agent's session list shows the attention record's rows, display-only
+# ADR-099: A waking Agent's session list shows the attention record's rows, display-only
 
 **Date:** 2026-10-13 **Status:** Accepted **Owner:** @JanPokorny
 
