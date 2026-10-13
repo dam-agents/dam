@@ -1333,7 +1333,7 @@ func TestHibernatingAVMAgentStopsItsMachine(t *testing.T) {
 	assert.False(t, node.puts[len(node.puts)-1].Running, "the last thing the controller asked for is a stopped machine")
 }
 
-// TEST_SCENARIO: a vm agent whose idle timeout lapsed may still be busy, say a Browser Terminal running a long job. Only the idle checker asks agent-runtime, so the reconcile must leave the machine running until the checker has hibernated the pair. Once the gateway is at zero, a machine the checker could not stop is stopped by the next reconcile.
+// TEST_SCENARIO: a vm agent whose idle timeout lapsed may still be busy, say a Browser Terminal running a long job. Only the idle checker asks agent-runtime, so the reconcile must leave the machine running until the checker has hibernated the pair. Once the checker has stamped the hibernation, a machine it could not stop is stopped by the next reconcile.
 func TestALapsedIdleTimeoutLeavesTheMachineToTheIdleChecker(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
