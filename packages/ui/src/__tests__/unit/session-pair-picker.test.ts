@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ModelIndicator } from "../../modules/sessions/components/model-indicator.js";
 import { SessionPairPicker } from "../../modules/sessions/components/session-pair-picker.js";
+import { SessionPairPlaceholder } from "../../modules/sessions/components/session-pair-placeholder.js";
 
 const carried: HarnessCapability[] = [
   {
@@ -43,6 +44,7 @@ const state = vi.hoisted(() => ({
   loading: false,
   fetching: false,
   operable: true,
+  answerable: undefined as boolean | undefined,
   refetch: vi.fn(),
   providersAsked: [] as string[],
   owned: [] as { id: string; name: string; type: string }[],
@@ -141,6 +143,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
       isFetching: state.loading || state.fetching,
       isError: false,
       operable: state.operable,
+      answerable: state.answerable ?? state.operable,
       refetch: state.refetch,
     };
   },
@@ -163,6 +166,7 @@ describe("session pair model choices", () => {
     state.loading = false;
     state.fetching = false;
     state.operable = true;
+    state.answerable = undefined;
     state.providersAsked = [];
     state.owned = [];
     state.noProviders = false;
@@ -270,6 +274,43 @@ describe("session pair model choices", () => {
     expect(renderPicker()).toContain(
       "Start the agent to list this provider&#x27;s models.",
     );
+  });
+
+  // TEST_SCENARIO: A waking agent lists its models once it answers, so the picker shows them loading rather than asking for a start that is already under way.
+  it("shows a waking agent's models as loading", () => {
+    state.operable = false;
+    state.answerable = true;
+    const html = renderPicker();
+    expect(html).toContain("Loading models…");
+    expect(html).not.toContain("Start the agent");
+  });
+
+  // TEST_SCENARIO: Before the agent reports the harnesses it carries, the composer shows the pair a new session would run on, and the popover a loader.
+  it("shows the expected pair and a loader before the agent answers", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPlaceholder, {
+        agentId: "agent",
+        agentHarness: "pi",
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain(">Pi · IBM</button>");
+    expect(html).toContain("Loading models…");
+    expect(html).not.toContain("Configure");
+    expect(html).not.toContain("Connect an LLM provider");
+  });
+
+  it("warns before the agent answers when no provider is connected", () => {
+    state.noProviders = true;
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPlaceholder, {
+        agentId: "agent",
+        agentHarness: "pi",
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain("Connect an LLM provider</span> first.");
+    expect(html).not.toContain("Loading models…");
   });
 
   it("keeps failure, empty state and Retry visible during background polls", () => {

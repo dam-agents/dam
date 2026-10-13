@@ -72,7 +72,6 @@ features:
   vm-sandboxes: experimental
   interactive-artifacts: experimental
   agent-telemetry: experimental
-  strict-connection-addressing: experimental
 
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
@@ -324,9 +323,14 @@ virtualization:
     # A pass visits each runner about once a minute while its agents run, and
     # on the controller's ten-minute sweep otherwise, so a full roll takes
     # roughly owners / maxConcurrent × (runner restart + machine boot).
+    # A runner whose owner has an agent in the middle of a turn does not take
+    # a free place in the roll: it is offered again on the next pass, and
+    # other owners roll meanwhile. `idleWait` bounds that wait; past it, the
+    # runner rolls even with an agent busy.
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m
+      idleWait: 1h
     # A directory on the node holding pre-flattened image trees (each with
     # its launch record; `mise run image:stage-vm` makes one) or `docker save`
     # archives, named after the image reference and mounted read-only into
@@ -346,8 +350,9 @@ virtualization:
     # hand-off boot the new one. Only a release that cannot load in the pod
     # (a newer base image's libc) still rolls the pods, through `rollout`, as
     # every runner image does when this is empty. The stager is the only
-    # writer; runners mount it read-only. Not supported on OpenShift yet: the
-    # directory would need an SELinux label the confined runners can read.
+    # writer; runners mount it read-only. On OpenShift it needs `scc`, as
+    # `imageCache.hostPath` does: the stager labels the directory for
+    # containers, as spc_t, so the confined runners can read it.
     releaseHostPath: ""
     # Roll the pods for every release built against another VM runtime, rather
     # than letting a new runtime manage machines an older one started. The

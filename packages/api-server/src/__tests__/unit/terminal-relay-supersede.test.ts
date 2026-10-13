@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
-import { WebSocket } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 import { createTerminalRelay } from "../../apps/api-server/agent-proxies/terminal-relay.js";
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import type { SessionPresence } from "../../apps/api-server/agent-proxies/session-presence.js";
@@ -24,6 +24,7 @@ function fakeBus(): RedisBus {
 
 const repo = {
   ensureReady: () => new Promise<void>(() => {}),
+  peekCached: () => null,
   patchAnnotation: async () => {},
 } as unknown as AgentsRepository;
 
@@ -110,5 +111,60 @@ describe("terminal relay supersede", () => {
     await a.attach("agent-1", "s1");
 
     expect(await closedWithin(first, 5_000)).toBe(1000);
+  });
+});
+
+describe("terminal relay during a wake", () => {
+  // TEST_SCENARIO: Ready reaches the api-server only after a full controller reconcile, about half a second after the guest answers. On a wake from hibernation, the terminal opens its upstream as soon as the agent answers its health check while its gateway is ready, without waiting for Ready.
+  it("opens the terminal on a wake from hibernation once the agent answers its health check with its gateway ready", async () => {
+    let healthy = false;
+    const agent = createServer((req, res) => {
+      res.writeHead(req.url === "/healthz" && healthy ? 200 : 503);
+      res.end();
+    });
+    servers.push(agent);
+    const received: string[] = [];
+    const wss = new WebSocketServer({ server: agent });
+    wss.on("connection", (ws) =>
+      ws.on("message", (d) => received.push(d.toString())),
+    );
+    await new Promise<void>((r) => agent.listen(0, "127.0.0.1", r));
+    const relay = createTerminalRelay(
+      "ns",
+      {
+        ...repo,
+        peekCached: () => ({ hibernated: true, gatewayPodReady: true }),
+      } as unknown as AgentsRepository,
+      presence,
+      fakeBus(),
+      () => `ws://127.0.0.1:${(agent.address() as { port: number }).port}`,
+    );
+    const server = createServer();
+    servers.push(server);
+    server.on("upgrade", (req, socket, head) =>
+      relay.handleUpgrade(req, socket, head, "agent-1", {
+        sub: "u",
+        surface: "ui",
+        attached: () => {},
+      }),
+    );
+    await new Promise<void>((r) => server.listen(0, r));
+    const ws = new WebSocket(
+      `ws://127.0.0.1:${(server.address() as { port: number }).port}/`,
+    );
+    sockets.push(ws);
+    await new Promise<void>((r) => ws.once("open", () => r()));
+
+    ws.send("first");
+    await new Promise((r) => setTimeout(r, 250));
+    expect(received).toEqual([]);
+    healthy = true;
+    const start = Date.now();
+    while (!received.includes("first")) {
+      if (Date.now() - start > 2_000) throw new Error("timed out");
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    agent.closeAllConnections();
+    wss.close();
   });
 });

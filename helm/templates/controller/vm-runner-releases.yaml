@@ -18,9 +18,21 @@ built against another runtime than a pod's image brings its own.
 It runs wherever a runner can, on the runner's own nodeSelector and
 tolerations. A runner on a node it has not reached yet keeps its release until
 it does. It is root writing a directory root owns, and holds DAC_READ_SEARCH
-alone, to read guest-agent files whose mode keeps even their owner out.
+alone (DAC_OVERRIDE on OpenShift), to read guest-agent files whose mode keeps
+even their owner out.
 */}}
 {{- $name := printf "%s-vm-runner-releases" (include "platform.fullname" .) }}
+{{- $openshift := .Values.openshift.scc.anyuidCapNet.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-runner-releases
+automountServiceAccountToken: false
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -43,6 +55,7 @@ spec:
     spec:
       enableServiceLinks: false
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ $name }}
       automountServiceAccountToken: false
       {{- with $v.runner.nodeSelector }}
       nodeSelector:
@@ -68,13 +81,38 @@ spec:
             - --runtime=/opt/smolvm
             - --into=/var/lib/platform/releases
             - --release={{ include "platform.vmRunner.image" $ }}
+            {{- if $openshift }}
+            {{- /*
+            As the image cache does: the directory the kubelet creates carries
+            the host's own label, which confined runners may not read, so the
+            stager labels it and everything it stages for containers, at the
+            plain s0 that every runner's own category pair can read.
+            */}}
+            - --selinux-label=system_u:object_r:container_file_t:s0
+            {{- end }}
           securityContext:
             runAsUser: 0
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+              {{- if $openshift }}
+              {{- /*
+              DAC_OVERRIDE reads what DAC_READ_SEARCH would, and is one the
+              runners' own SCC already grants; an SCC that admits a runner may
+              grant no DAC_READ_SEARCH. The label is set from inside the
+              container, which container_t may not do to a host directory, so
+              the stager runs as spc_t, as the image cache does.
+              */}}
+              add: ["DAC_OVERRIDE"]
+              {{- else }}
               add: ["DAC_READ_SEARCH"]
+              {{- end }}
+            {{- if $openshift }}
+            seLinuxOptions:
+              type: spc_t
+              level: s0
+            {{- end }}
             seccompProfile:
               type: RuntimeDefault
           resources:
@@ -91,4 +129,12 @@ spec:
           hostPath:
             path: {{ $v.runner.releaseHostPath }}
             type: DirectoryOrCreate
+{{- with $v.runner.scc }}
+---
+{{- /*
+The SCC the runners that mount this directory already need on OpenShift: this
+pod mounts the same host directory, as uid 0 and spc_t.
+*/}}
+{{ include "platform.sccRoleBinding" (dict "root" $ "namespace" $.Values.agentNamespace "name" $name "component" "vm-runner-releases" "scc" .) }}
+{{- end }}
 {{- end }}

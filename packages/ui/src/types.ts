@@ -153,6 +153,7 @@ export interface AgentView {
   } | null;
   features: { liveUpdates: boolean | null };
   image: string;
+  harness?: string;
   description?: string;
   avatar: string | null;
   env?: EnvVar[];

@@ -12,6 +12,10 @@ A runner is mid-roll from that moment until its new pod is ready and every machi
 A new pod that is still not ready at the timeout is a broken runner release, not a slow machine: that roll keeps its place, so the release goes no further, and is marked stalled and reported as an error until its pod becomes ready or the pod changes again.
 A runner whose pod is unchanged is not rolled, but labels or owner references that drifted on it are put back without touching the pod.
 A new owner's runner is created at once, since there is nothing of theirs to protect.
+A changed runner also waits for its owner's agents to be idle, since a roll ends the turn an agent is in.
+Before it takes a place in the roll, the controller asks each of the owner's ready machines the idle checker's own question, whether its agent's status says idle, and an agent that does not answer counts as idle.
+A runner with a busy agent holds no place, so other owners roll meanwhile, and the next pass offers it again.
+The install's idle wait, an hour by default, bounds this from the first pass that found the owner busy, and is recorded on the runner so a controller restart does not start it over; past it, the runner rolls with the agent busy, so an owner who is never idle still gets the release.
 Rolls advance as agents reconcile and on the periodic sweep, which offers every runner its turn in name order so owners whose agents all sleep still roll; which runners are mid-roll is read once every few seconds rather than on every turn, and a roll the controller starts counts at once.
 The sweep only ever updates a runner that exists — creating one is an agent's reconcile's alone.
 A roll still reboots each owner's machines once: nothing checkpoints them across it, and the VMM host is the same pod as the machine API it serves.
@@ -23,7 +27,7 @@ A [runner](vm-runner.md) pod's machines are its processes, so restarting the pod
 Most runner changes do not need the pod restarted: what changes is the runner process, not the VMMs it started.
 An install that names a node directory for runner releases ([values](../../helm/values.yaml)) therefore takes a new runner image into each pod in place, without rebooting a machine.
 An install that names none rolls the pod for every runner image.
-Not supported on OpenShift yet: the directory would need an SELinux label the confined runners can read.
+On OpenShift the directory the kubelet creates carries the host's own SELinux label, which a confined runner may not read, so the stager labels it, and everything it stages, for containers at the plain level every runner's own categories can read; to set that label it runs as the unconfined container type, as the [image cache](vm-image-cache.md) service does, under the SCC the install names for its runners.
 
 **A runner release** is the runner with the two guest binaries it copies into every machine's share, platform-init and platform-runc, so the side that writes a share and the side that reads it stay one version.
 Each release also records the **runtime** it was built against: the smolvm release with its guest agent, the guest kernel and the libkrun the platform patches, the image tooling, and the base image's libc.

@@ -27,7 +27,7 @@ import {
 import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
-import { readNextSessionPair } from "../api/session-pair.js";
+import { settledNextSessionPair } from "../api/session-pair.js";
 import { draftKey } from "../lib/draft-key.js";
 import {
   type PromptDelivery,
@@ -214,7 +214,7 @@ export function useAcpConnection(
 
       let startedSessionId: string;
       try {
-        const next = readNextSessionPair(agentId);
+        const next = await settledNextSessionPair(agentId);
         const session = await connection.agent.request("session/new", {
           cwd: ".",
           mcpServers: [],
