@@ -550,8 +550,8 @@ jobs:
     # The container lane: the smoke suite on an install without
     # virtualization, so every agent is a pod. e2e-vm is the vm lane, the same
     # suite with every agent on the vm Backend; the two run side by side on
-    # every run but a tag, each on its own runner, and the Playwright config
-    # picks each lane's specs from E2E_VIRTUALIZATION (see
+    # every run but a tag and a docs-only PR, each on its own runner, and the
+    # Playwright config picks each lane's specs from E2E_VIRTUALIZATION (see
     # packages/e2e/playwright/src/lib/lane.ts).
     # No `needs` on the builds: bringing the cluster up takes minutes and needs
     # no image, so it runs while they build. e2e:ci-images builds them here on
