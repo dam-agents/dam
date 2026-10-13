@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The per-agent tRPC relay holds a browser's socket while the agent wakes, so the session list can be asked for while the agent starts. It never wakes an agent itself and records no activity while it waits: one that is hibernated with no wake asked for is refused as before. While it holds, it answers the client's keep-alive, and it forwards what the client sent once the agent is ready. A wake that fails closes the socket with the wake's cause.
+// TEST_OVERVIEW: The per-agent tRPC relay holds a browser's socket while the agent wakes, so the session list can be asked for while the agent starts. It never wakes an agent itself and records no activity while it waits: one that is hibernated with no wake asked for is refused as before. While it holds, it answers the client's keep-alive, and it forwards what the client sent once the agent is ready, or once the agent answers its health check while its gateway is ready. A wake that fails closes the socket with the wake's cause.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
@@ -19,16 +19,25 @@ afterEach(async () => {
 });
 
 async function fakeAgent() {
-  const wss = new WebSocketServer({ port: 0 });
-  await new Promise<void>((r) => wss.once("listening", () => r()));
-  closers.push(() => new Promise<void>((r) => wss.close(() => r())));
+  const state = { healthy: false };
+  const http = createServer((req, res) => {
+    res.writeHead(req.url === "/healthz" && state.healthy ? 200 : 503);
+    res.end();
+  });
+  const wss = new WebSocketServer({ server: http });
+  await new Promise<void>((r) => http.listen(0, "127.0.0.1", r));
+  closers.push(() => {
+    http.closeAllConnections();
+    return new Promise<void>((r) => wss.close(() => http.close(() => r())));
+  });
   const received: string[] = [];
   wss.on("connection", (ws) =>
     ws.on("message", (d) => received.push(d.toString())),
   );
   return {
-    base: `ws://127.0.0.1:${(wss.address() as { port: number }).port}`,
+    base: `ws://127.0.0.1:${(http.address() as { port: number }).port}`,
     received,
+    state,
   };
 }
 
@@ -48,6 +57,7 @@ async function harness(agent: Partial<InfraAgent> | null) {
   const ensureReady = vi.fn((_id: string, _opts?: object) => wake.promise);
   const repo = {
     get: vi.fn(async () => agent as InfraAgent | null),
+    peekCached: vi.fn(() => agent as InfraAgent | null),
     ensureReady,
     patchAnnotation: vi.fn(async () => {}),
   };
@@ -149,6 +159,27 @@ describe("agent tRPC relay during a wake", () => {
     const { code, reason } = await h.closed;
     expect(code).toBe(1011);
     expect(reason).toBe("agent not ready: agent-pod-not-ready");
+  });
+
+  // TEST_SCENARIO: Ready reaches the api-server only after a full controller reconcile, about half a second after the guest answers. The hold opens the upstream as soon as the agent answers its health check while its gateway is ready, without waiting for Ready.
+  it("forwards once the agent answers its health check with its gateway ready", async () => {
+    const h = await harness({ ready: false, gatewayPodReady: true });
+    h.ws.send("first");
+    await new Promise((r) => setTimeout(r, 250));
+    expect(h.upstream.received).toEqual([]);
+    h.upstream.state.healthy = true;
+    await until(() => h.upstream.received.includes("first"));
+  });
+
+  // TEST_SCENARIO: an agent that answers while its gateway is not ready yet has no egress, so the hold keeps waiting for Ready.
+  it("keeps holding while the gateway is not ready, even when the agent answers", async () => {
+    const h = await harness({ ready: false, gatewayPodReady: false });
+    h.upstream.state.healthy = true;
+    h.ws.send("first");
+    await new Promise((r) => setTimeout(r, 400));
+    expect(h.upstream.received).toEqual([]);
+    h.wake.resolve();
+    await until(() => h.upstream.received.includes("first"));
   });
 
   it("refuses a stopped agent as before", async () => {
