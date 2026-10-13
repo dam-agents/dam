@@ -230,6 +230,7 @@ const {
   activeTurns,
   subAgentSessions,
   platformMcpEntry,
+  warmHistory,
 } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
@@ -984,6 +985,8 @@ server.listen(config.PORT, () => {
   }
 
   setTimeout(startDisplay, DISPLAY_IDLE_START_MS).unref();
+
+  warmHistory();
 
   void sweepStaging(homeDir, (msg) =>
     process.stderr.write(`[import] ${msg}\n`),
