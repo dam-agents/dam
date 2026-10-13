@@ -98,6 +98,11 @@ checksum = "sha256:847831323de932155b226ab60ee4a180e13e5d007a019f0d4b7b4d89a6de2
 url = "https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-apple-darwin-v0.22.2.tgz"
 url_api = "https://api.github.com/repos/rustsec/rustsec/releases/assets/439292734"
 
+[[tools."cargo:https://github.com/razziel89/mdslw"]]
+version = "tag:0.18.0"
+backend = "cargo:https://github.com/razziel89/mdslw"
+specifiers = ["tag:0.18.0"]
+
 [[tools."conda:bash"]]
 version = "5.2.37"
 backend = "conda:bash"

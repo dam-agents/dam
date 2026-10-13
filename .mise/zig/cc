@@ -2,6 +2,9 @@
 set -euo pipefail
 args=()
 for a; do
-  case $a in --target=*) ;; *) args+=("$a") ;; esac
+  # rustc passes the Cortex-A53 erratum fix on aarch64; zig's linker rejects it.
+  case $a in --target=* | -Wl,--fix-cortex-a53-843419) ;; *) args+=("$a") ;; esac
 done
-exec zig cc -target "$(uname -m)-linux-gnu" "${args[@]}"
+# mise builds a cargo: tool without its other tools on PATH, so ask it for zig.
+zig=$(command -v zig || mise -C "$(dirname "$0")/../.." which zig)
+exec "$zig" cc -target "$(uname -m)-linux-gnu" "${args[@]}"

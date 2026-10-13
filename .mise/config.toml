@@ -35,8 +35,10 @@ auto = true
 "github:Boshen/cargo-shear" = "latest"
 # mdslw 0.18.0 (2026-10-08) is under the 7-day floor: its never-break-code-spans
 # keeps sentence breaks out of inline code. Floor passes 2026-10-15. It ships
-# no linux-arm64 asset, so check:markdown cannot run there.
+# no linux-arm64 asset (its 32-bit armv7 build cannot run on Apple Silicon), so
+# linux/arm64 builds the same tag from source; the link goes through .mise/zig.
 "github:razziel89/mdslw" = { version = "0.18.0", os = ["macos", "linux/x64"] }
+"cargo:https://github.com/razziel89/mdslw" = { version = "tag:0.18.0", os = ["linux/arm64"] }
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 # Staticcheck 0.8.1 cannot read go1.27.2's export data (dominikh/go-tools#1832).
 # The pin is its unreleased fix, commit f1838cc3 (2026-10-09), under the
