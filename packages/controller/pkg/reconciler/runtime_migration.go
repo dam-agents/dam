@@ -1495,6 +1495,10 @@ func sanitizeMigrationMessage(msg, runnerHost string) string {
 // UNIT_BOUNDARY_DESCRIPTION: each migration step the controller takes is also an Event on the Agent, and counted, so an operator can follow a migration in `kubectl get events` and across the fleet without reading annotations. An Event that cannot be written is logged and never fails the step.
 func (r *AgentReconciler) migrationEvent(ctx context.Context, agent *apiv1.Agent, eventType, reason, message string) {
 	telemetry.RuntimeMigrationEvent(ctx, reason)
+	r.agentEvent(ctx, agent, eventType, reason, message)
+}
+
+func (r *AgentReconciler) agentEvent(ctx context.Context, agent *apiv1.Agent, eventType, reason, message string) {
 	now := metav1.Now()
 	event := &corev1.Event{
 		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("%s.%x", agent.Name, now.UnixNano()), Namespace: r.config.Namespace},
@@ -1514,7 +1518,7 @@ func (r *AgentReconciler) migrationEvent(ctx context.Context, agent *apiv1.Agent
 		Count:          1,
 	}
 	if _, err := r.client.CoreV1().Events(r.config.Namespace).Create(ctx, event, metav1.CreateOptions{}); err != nil {
-		slog.Warn("runtime migration: writing an event on the agent failed", "agent", agent.Name, "reason", reason, "error", err)
+		slog.Warn("writing an event on the agent failed", "agent", agent.Name, "reason", reason, "error", err)
 	}
 }
 

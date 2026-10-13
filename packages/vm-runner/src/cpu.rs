@@ -3,41 +3,47 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-// UNIT_BOUNDARY_DESCRIPTION: how far back the runner's CPU figures look. A guest's burst of a few seconds is not what the user should act on; a minute of being held back is.
-pub const WINDOW: Duration = Duration::from_secs(60);
+use anyhow::Context;
 
-// UNIT_BOUNDARY_DESCRIPTION: one reading of the runner's cgroup cpu.stat: the CPU time its processes used, the scheduler periods in which any of them ran, and the periods in which the CPU limit held them back.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Stat {
+// UNIT_BOUNDARY_DESCRIPTION: the runner's own CPU, read off its cgroup. Every guest's vCPUs are threads of the runner, so one cgroup counts them all: the time they ran, the scheduler periods they ran in, and the periods the CPU limit throttled them in. Reaching the limit breaks nothing, it slows every guest of the owner at once, so throttled periods over periods is the figure that says a pool is short of CPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CpuStat {
     pub usage_usec: u64,
     pub nr_periods: u64,
     pub nr_throttled: u64,
 }
 
-pub fn stat(cgroup: &Path) -> Option<Stat> {
-    let text = fs::read_to_string(cgroup.join("cpu.stat")).ok()?;
-    let field = |name: &str| -> Option<u64> {
-        text.lines()
-            .find_map(|line| line.strip_prefix(name)?.strip_prefix(' '))?
-            .trim()
-            .parse()
-            .ok()
+pub fn stat(cgroup: &Path) -> anyhow::Result<CpuStat> {
+    let text = read(cgroup, "cpu.stat")?;
+    let field = |name: &str| -> anyhow::Result<u64> {
+        let value = text
+            .lines()
+            .find_map(|line| line.strip_prefix(name)?.strip_prefix(' '))
+            .with_context(|| format!("cpu.stat names no {name}"))?;
+        Ok(value.trim().parse()?)
     };
-    Some(Stat {
+    Ok(CpuStat {
         usage_usec: field("usage_usec")?,
-        nr_periods: field("nr_periods").unwrap_or(0),
-        nr_throttled: field("nr_throttled").unwrap_or(0),
+        nr_periods: field("nr_periods")?,
+        nr_throttled: field("nr_throttled")?,
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the CPU limit the kernel holds the runner to, in milli-CPUs, from the cgroup's cpu.max. The controller resizes it in place as machines start and stop. No limit, or none to read, gives None.
-pub fn limit_milli(cgroup: &Path) -> Option<u64> {
-    let text = fs::read_to_string(cgroup.join("cpu.max")).ok()?;
-    let mut words = text.split_whitespace();
-    let quota: u64 = words.next()?.parse().ok()?;
-    let period: u64 = words.next()?.parse().ok()?;
-    (period > 0).then(|| quota * 1000 / period)
+// UNIT_BOUNDARY_DESCRIPTION: the CPU limit in millicores, from `cpu.max`'s quota over its period; None where the cgroup sets no limit, which a cluster without in-place resize leaves the runner with.
+pub fn limit_milli(cgroup: &Path) -> anyhow::Result<Option<u64>> {
+    let text = read(cgroup, "cpu.max")?;
+    let mut parts = text.split_whitespace();
+    let quota = parts.next().context("cpu.max is empty")?;
+    if quota == "max" {
+        return Ok(None);
+    }
+    let period: u64 = parts.next().context("cpu.max names no period")?.parse()?;
+    anyhow::ensure!(period > 0, "cpu.max names a zero period");
+    Ok(Some(quota.parse::<u64>()? * 1000 / period))
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: how far back the runner's CPU figures look. A guest's burst of a few seconds is not what the user should act on; a minute of being held back is.
+pub const WINDOW: Duration = Duration::from_secs(60);
 
 // UNIT_BOUNDARY_DESCRIPTION: the share of the last minute in which some of the runner's processes waited for a CPU, rounded to a whole percent, from the `some avg60` of the cgroup's cpu.pressure. Whether time a task spends held back by its cgroup's CPU limit counts as waiting here was not verified on the kernels the runner runs on, so the usage read reports the higher of this and the throttling, and a pool at its limit shows either way. No cpu.pressure, as on a kernel built without pressure stall information, gives None.
 pub fn pressure_percent(cgroup: &Path) -> Option<u32> {
@@ -55,11 +61,11 @@ pub fn pressure_percent(cgroup: &Path) -> Option<u32> {
 // UNIT_BOUNDARY_DESCRIPTION: the readings of the last WINDOW, from which the runner's CPU use and how often its limit held it back are taken. A runner with fewer than two readings, or whose counters went backwards (a new cgroup), reports nothing yet.
 #[derive(Default)]
 pub struct Window {
-    samples: VecDeque<(Instant, Stat)>,
+    samples: VecDeque<(Instant, CpuStat)>,
 }
 
 impl Window {
-    pub fn push(&mut self, at: Instant, stat: Stat) {
+    pub fn push(&mut self, at: Instant, stat: CpuStat) {
         if self
             .samples
             .back()
@@ -92,33 +98,50 @@ impl Window {
     }
 }
 
+fn read(cgroup: &Path, file: &str) -> anyhow::Result<String> {
+    let path = cgroup.join(file);
+    fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testdir::TempDir;
 
-    // TEST_SCENARIO: cpu.stat lists more counters than the runner reads, and a cgroup that never had a limit has no throttling counters at all; both must still read.
+    // TEST_SCENARIO: cpu.stat carries more fields than the three the runner reads, some sharing a prefix with them (`nr_throttled` and `nr_bursts` beside `nr_periods`), so each is matched by its whole name.
     #[test]
-    fn cpu_stat_and_cpu_max_read_off_the_cgroup() {
+    fn the_stat_reads_the_runners_cpu_time_and_its_throttled_periods() {
         let dir = TempDir::new("cpu");
         fs::write(
             dir.path().join("cpu.stat"),
-            "usage_usec 5000\nuser_usec 3000\nsystem_usec 2000\nnr_periods 40\nnr_throttled 10\nthrottled_usec 99\n",
+            "usage_usec 5000000\nuser_usec 4000000\nsystem_usec 1000000\nnr_periods 100\nnr_throttled 25\nthrottled_usec 900\nnr_bursts 0\n",
         )
         .unwrap();
         assert_eq!(
-            stat(dir.path()),
-            Some(Stat {
-                usage_usec: 5000,
-                nr_periods: 40,
-                nr_throttled: 10
-            })
+            stat(dir.path()).unwrap(),
+            CpuStat {
+                usage_usec: 5_000_000,
+                nr_periods: 100,
+                nr_throttled: 25
+            }
         );
+        assert!(stat(&dir.path().join("absent")).is_err());
+    }
+
+    // TEST_SCENARIO: a limit is a quota per period, so 250 ms in every 100 ms is two and a half CPUs; `max` is no limit at all rather than a number.
+    #[test]
+    fn the_limit_is_the_quota_over_the_period_and_max_is_none() {
+        let dir = TempDir::new("cpu");
         fs::write(dir.path().join("cpu.max"), "250000 100000\n").unwrap();
-        assert_eq!(limit_milli(dir.path()), Some(2500));
+        assert_eq!(limit_milli(dir.path()).unwrap(), Some(2500));
         fs::write(dir.path().join("cpu.max"), "max 100000\n").unwrap();
-        assert_eq!(limit_milli(dir.path()), None);
-        assert_eq!(stat(&dir.path().join("absent")), None);
+        assert_eq!(limit_milli(dir.path()).unwrap(), None);
+    }
+
+    // TEST_SCENARIO: no cpu.pressure, as on a kernel without pressure stall information, is no pressure at all rather than zero.
+    #[test]
+    fn the_pressure_is_some_avg60_rounded() {
+        let dir = TempDir::new("cpu-pressure");
         fs::write(
             dir.path().join("cpu.pressure"),
             "some avg10=80.00 avg60=37.62 avg300=5.00 total=123\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
@@ -133,50 +156,20 @@ mod tests {
     fn the_window_gives_use_and_throttling_over_its_span() {
         let start = Instant::now();
         let at = |s: u64| start + Duration::from_secs(s);
+        let stat = |usage_usec, nr_periods, nr_throttled| CpuStat {
+            usage_usec,
+            nr_periods,
+            nr_throttled,
+        };
         let mut window = Window::default();
         assert_eq!(window.figures(), None);
-        window.push(
-            at(0),
-            Stat {
-                usage_usec: 0,
-                nr_periods: 0,
-                nr_throttled: 0,
-            },
-        );
-        window.push(
-            at(10),
-            Stat {
-                usage_usec: 20_000_000,
-                nr_periods: 100,
-                nr_throttled: 25,
-            },
-        );
+        window.push(at(0), stat(0, 0, 0));
+        window.push(at(10), stat(20_000_000, 100, 25));
         assert_eq!(window.figures(), Some((2000, 25)));
-        window.push(
-            at(70),
-            Stat {
-                usage_usec: 20_000_000,
-                nr_periods: 100,
-                nr_throttled: 25,
-            },
-        );
-        window.push(
-            at(75),
-            Stat {
-                usage_usec: 20_000_000,
-                nr_periods: 100,
-                nr_throttled: 25,
-            },
-        );
+        window.push(at(70), stat(20_000_000, 100, 25));
+        window.push(at(75), stat(20_000_000, 100, 25));
         assert_eq!(window.figures(), Some((0, 0)));
-        window.push(
-            at(76),
-            Stat {
-                usage_usec: 10,
-                nr_periods: 1,
-                nr_throttled: 0,
-            },
-        );
+        window.push(at(76), stat(10, 1, 0));
         assert_eq!(window.figures(), None);
     }
 }

@@ -722,6 +722,28 @@ seaweedfs:
       cpu: 500m
       memory: 1Gi
 
+# Alert rules for operators on the users' VM pools and on what the cluster
+# holds for them. Needs clickstack.enabled: the platform collector exports the
+# pool series in Prometheus form on port 9464, and a ServiceMonitor and a
+# PrometheusRule render when the cluster serves monitoring.coreos.com/v1
+# (prometheus-operator, OpenShift user-workload monitoring); without that API
+# nothing renders. No series names a user; the alerts point at the Warning
+# Events on the user's vm Agents for that.
+monitoring:
+  enabled: false
+  # Extra labels on the ServiceMonitor and PrometheusRule, for a Prometheus
+  # whose rule or monitor selector needs them.
+  labels: {}
+  thresholds:
+    # Share of a user's pool (memory committed, claim used).
+    warning: 0.75
+    critical: 0.9
+    # Share of scheduler periods the runner's CPU limit throttled.
+    throttled: 0.2
+    # The users' pools against what the nodes (memory) or the storage driver
+    # (storage) hold.
+    overcommit: 1.5
+
 # -- Agent-telemetry backend (ClickStack). Off by default. Requires the ClickHouse and MongoDB
 # operator charts installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.
 # Keys other than `enabled`/`collector` are forwarded to the clickstack subchart.

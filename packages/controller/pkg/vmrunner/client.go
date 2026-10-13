@@ -88,6 +88,14 @@ func (c *Client) WaitPressure(ctx context.Context, since uint64, wait time.Durat
 	}
 	return pressure, json.Unmarshal(raw, &pressure)
 }
+func (c *Client) Usage(ctx context.Context) (RunnerUsage, error) {
+	var usage RunnerUsage
+	raw, err := c.call(ctx, c.HTTP, http.MethodGet, "/usage", nil)
+	if err != nil {
+		return usage, fmt.Errorf("VM runner: usage: %w", err)
+	}
+	return usage, json.Unmarshal(raw, &usage)
+}
 func (c *Client) List(ctx context.Context) ([]string, error) {
 	raw, err := c.call(ctx, c.HTTP, http.MethodGet, "/machines", nil)
 	if err != nil {

@@ -370,7 +370,7 @@ impl Server {
                     let Some(server) = sampler.upgrade() else {
                         return;
                     };
-                    if let Some(stat) = crate::cpu::stat(&cgroup) {
+                    if let Ok(stat) = crate::cpu::stat(&cgroup) {
                         locked(&server.machines).cpu.push(Instant::now(), stat);
                     }
                     match crate::pressure::working_set_mib(&cgroup) {
@@ -1337,12 +1337,27 @@ impl Server {
                 &|other| self.resident(other),
             )
             .ok();
+        let cgroup = self.config.cgroup_dir.as_deref();
+        // UNIT_BOUNDARY_DESCRIPTION: the sampler's last reading, absent until its first sample and wherever there is no cgroup to sample.
+        let sampled = cgroup.and_then(|_| {
+            let machines = locked(&self.machines);
+            (machines.pressure.working_set_mib > 0).then(|| {
+                (
+                    machines.pressure.working_set_mib,
+                    machines.pressure.pressured,
+                )
+            })
+        });
         self.metrics.render(&Gauges {
             budget_bytes: self.config.image_budget,
             limit_mib: self.memory_limit_mib(),
             reserve_mib: self.config.reserve_mib,
             committed_mib: committed,
             storage: (self.config.measure_storage)(),
+            cpu: cgroup.and_then(|c| crate::cpu::stat(c).ok()),
+            cpu_limit_milli: cgroup.and_then(|c| crate::cpu::limit_milli(c).ok().flatten()),
+            working_set_mib: sampled.map(|p| p.0),
+            pressured: sampled.map(|p| p.1),
         })
     }
 
@@ -1376,7 +1391,7 @@ impl Server {
             })
             .collect();
         let cpu = self.config.cgroup_dir.as_deref().and_then(|cgroup| {
-            let limit_milli = crate::cpu::limit_milli(cgroup);
+            let limit_milli = crate::cpu::limit_milli(cgroup).ok().flatten();
             let stall = crate::cpu::pressure_percent(cgroup);
             if limit_milli.is_none() && stall.is_none() {
                 return None;
