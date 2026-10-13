@@ -1057,7 +1057,8 @@ export function createAgentsService(deps: {
         );
       if (input.telemetryAttributionId !== undefined)
         spec.telemetryAttributionId = input.telemetryAttributionId;
-      if (input.requireConnectionAddress) spec.requireConnectionAddress = true;
+      if (input.requireConnectionAddress !== false)
+        spec.requireConnectionAddress = true;
 
       const providerConnectionId =
         input.providerConnectionId ??

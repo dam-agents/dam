@@ -2,7 +2,6 @@ import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import { useUpdateAgent } from "../../agents/api/mutations.js";
-import { useFeatures } from "../../features/api/queries.js";
 import { confirmHibernationChange } from "../lib/hibernation.js";
 import { parseCpuMilli, parseMemoryMi } from "../lib/quantity.js";
 import { HarnessSettingsSections } from "./harness-settings-sections.js";
@@ -15,7 +14,6 @@ export function SandboxSetupSection({ agent }: { agent: AgentView }) {
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: harnessStatus } = useHarnessConfigStatus(agent.id);
   const carriedHarnesses = harnessStatus?.harnesses ?? null;
-  const features = useFeatures();
   const updateSleep = useUpdateAgent();
   const updateSize = useUpdateAgent();
   const updateAddressing = useUpdateAgent();
@@ -82,25 +80,22 @@ export function SandboxSetupSection({ agent }: { agent: AgentView }) {
         currentSize={sizeRestartsAgent ? agent.size : undefined}
       />
 
-      {(features.data?.["strict-connection-addressing"] === true ||
-        agent.requireConnectionAddress) && (
-        <ConnectionAddressingSetupSection
-          value={requireConnectionAddress}
-          onChange={async (next) => {
-            if (
-              await showConfirm(
-                "This restarts the agent's gateway to change how it injects credentials — requests in flight through it fail.",
-                "Restart gateway?",
-                { confirmLabel: "Change & restart" },
-              )
+      <ConnectionAddressingSetupSection
+        value={requireConnectionAddress}
+        onChange={async (next) => {
+          if (
+            await showConfirm(
+              "This restarts the agent's gateway to change how it injects credentials — requests in flight through it fail.",
+              "Restart gateway?",
+              { confirmLabel: "Change & restart" },
             )
-              updateAddressing.mutate({
-                id: agent.id,
-                requireConnectionAddress: next,
-              });
-          }}
-        />
-      )}
+          )
+            updateAddressing.mutate({
+              id: agent.id,
+              requireConnectionAddress: next,
+            });
+        }}
+      />
 
       {!carriedHarnesses ? (
         <SandboxModelSettings agentId={agent.id} />
