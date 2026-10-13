@@ -208,7 +208,7 @@ Together these hold:
 
 PVCs survive hibernation — when a StatefulSet scales to zero replicas, the volume detaches but is retained.
 The controller explicitly deletes PVCs on Agent deletion (the standard StatefulSet behavior is to retain them to prevent data loss; Platform opts back into reclamation because Agent deletion is intentional).
-The volumes a [runtime migration](vm-runner.md#runtime-migration) copied from are the one kind kept past their use: they lose the agent and mount labels, so nothing that lists an agent's volumes counts or mounts them, and are deleted when their retention window passes or the Agent is deleted.
+The volumes a [runtime migration](vm-runtime-migration.md) copied from are the one kind kept past their use: they lose the agent and mount labels, so nothing that lists an agent's volumes counts or mounts them, and are deleted when their retention window passes or the Agent is deleted.
 
 What does **not** survive hibernation: anything written to the container's ephemeral filesystem outside the persisted mounts — OS-level changes, packages installed at runtime, files in `/tmp`.
 `$HOME/.cache` is deliberately in this category: the base-image entrypoint redirects it to node-local disk (`/tmp/agent-cache`) so churn-heavy tool caches don't load the persistent volume, npm's cache with it.
@@ -234,7 +234,7 @@ They share the disk with the agent's work, so when it runs short platform-init d
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
 
 Mounting the disk is the platform's job rather than the image's.
-The runner hands every machine a read-only share holding the MITM CA and **platform-init** (and, for a migrated machine until its migration completes, the copied home), and runs platform-init as the machine's entrypoint; it claims the disk, refuses to boot when the disk did not attach, moves the image onto its fresh root, seeds `HOME` once from whatever the image ships there — or, on a machine a [runtime migration](vm-runner.md#runtime-migration) made, from the copy of the old volume the runner holds for it — bind-mounts it, and starts the image's own entrypoint, which it then supervises ([vm-runner](vm-runner.md)).
+The runner hands every machine a read-only share holding the MITM CA and **platform-init** (and, for a migrated machine until its migration completes, the copied home), and runs platform-init as the machine's entrypoint; it claims the disk, refuses to boot when the disk did not attach, moves the image onto its fresh root, seeds `HOME` once from whatever the image ships there — or, on a machine a [runtime migration](vm-runtime-migration.md) made, from the copy of the old volume the runner holds for it — bind-mounts it, and starts the image's own entrypoint, which it then supervises ([vm-runner](vm-runner.md)).
 Any image therefore keeps its agent's home, even one that has never heard of this platform: platform-init is linked statically and needs nothing from the image.
 The storage model is a constant; what varies is a migration's copy, whose entries the guest refuses when they would land outside `HOME`.
 **Nothing from `HOME` is ever run.** The home is the agent's to write, so every step platform-init takes as root comes from the share or from platform-init itself: neither an image that drops to an unprivileged user nor an old volume carried across can plant one, and a `.platform/boot.d` an older home carries is ignored.
@@ -244,13 +244,13 @@ Both are rebuilt or resumed by the next boot rather than being state an Agent ca
 **A disk that has lost its home fails the boot.** smolvm formats a storage disk it cannot mount even after its own repair, and a formatted disk looks exactly like one never seeded.
 So the runner records in the machine's share, the first time its guest answers — which it does only once platform-init has put the home on the disk, from the image or from a migration's copy — that the disk holds a home, and keeps the record for as long as the machine exists.
 A boot that finds the record but no home stops, with the reason on the machine's console, rather than seeding a fresh home that would look healthy.
-A migrated machine is held to its copy the same way: while a seed is expected, its home comes from exactly that seed or the boot fails, never from the image, and the record names the seed ([vm-runner](vm-runner.md#runtime-migration)).
+A migrated machine is held to its copy the same way: while a seed is expected, its home comes from exactly that seed or the boot fails, never from the image, and the record names the seed ([vm-runtime-migration](vm-runtime-migration.md)).
 The record is learned from the answer rather than read off the disk, because the host does not parse a filesystem a guest has had root on.
 The storage template every new disk is copied from carries a journal; a disk smolvm formats itself has none, so an unclean stop — a killed runner — is what brings that repair on there.
 The loss is refused, not prevented.
 
 
-**The claim those disks sit on is sized from demand.** One claim per owner holds every machine disk they have, so it is sized from those disks, some headroom beside each, the image cache budget when the cache lives there, and, while a [runtime migration](vm-runner.md#runtime-migration) is in flight, the capacity of the home volume its seed was copied from, since the seed waits there beside the disk it is restored into; the install's value is the ceiling, not the size.
+**The claim those disks sit on is sized from demand.** One claim per owner holds every machine disk they have, so it is sized from those disks, some headroom beside each, the image cache budget when the cache lives there, and, while a [runtime migration](vm-runtime-migration.md) is in flight, the capacity of the home volume its seed was copied from, since the seed waits there beside the disk it is restored into; the install's value is the ceiling, not the size.
 The runtime's disk templates live there too, sparse enough to need no share of it.
 It grows in place as agents are added, up to that ceiling, and is never shrunk.
 On a storage class that cannot expand, or one the controller cannot read, it is created at the ceiling, since it could not grow later.
@@ -280,7 +280,7 @@ The claim decision is made once at create and reconstructed from the live Statef
 Workspace volumes created before the ReadWriteOnce cutover live on shared-writable (`ReadWriteMany`) storage — historically required so a second pod (the since-removed Slack per-person fork and `dam-run` executor) could write into a live agent's workspace.
 Both writers are gone, and an access mode cannot change in place, so the controller runs a one-time, interrupt-safe **storage migration**: for each agent still on an RWX volume it forces the pair down (a hard-stop-strength gate — in-flight work is interrupted by design), copies the quiesced volume onto a fresh RWO PVC in a Job, verifies the copy by checksum, re-points the agent at the new volume through the same by-name claim mechanism the warm pool uses, deletes the old volume, and restores the agent's prior run state; an Agent the runtime migration takes over instead has its gate released and that copy abandoned.
 Every step is derived from cluster state, so a controller restart resumes where it left off, and an agent can never wake against a half-copied volume.
-Throttled fleet-wide, skipping an Agent mid-way through a [runtime migration](vm-runner.md#runtime-migration); a no-op once no RWX workspace volume remains.
+Throttled fleet-wide, skipping an Agent mid-way through a [runtime migration](vm-runtime-migration.md); a no-op once no RWX workspace volume remains.
 The same machinery also drains workspaces whose class is not the configured destination, and an Agent's storage-class pin overrides that destination for its own volumes — pinning the class a workspace already sits on exempts that Agent from the drain, which is how part of a fleet stays on a faster class while the rest moves.
 Operators keep the old shared filesystem available until the last RWX volume drains, then decommission it.
 
