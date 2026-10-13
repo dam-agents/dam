@@ -136,6 +136,7 @@ export const ChatMessage = memo(function ChatMessage({
   const isAssistant = role === "assistant";
   const undelivered = !isAssistant && error !== undefined;
   if (isAssistant && streaming && queued && parts.length === 0) return null;
+  const working = isAssistant && streaming && !queued && !hasPendingPermission;
 
   return (
     <div
@@ -192,10 +193,17 @@ export const ChatMessage = memo(function ChatMessage({
             />
           ))}
           {isAssistant && isLast && !readOnly && <PermissionStatusLine />}
-          {isAssistant && streaming && !queued && !hasPendingPermission && (
-            <span role="status" className="inline-flex items-center py-1">
+          {isAssistant && (streaming || isLast) && (
+            <span
+              role={working ? "status" : undefined}
+              aria-hidden={!working}
+              className={cn(
+                "inline-flex items-center py-1",
+                !working && "invisible",
+              )}
+            >
               <WorkingDots size="md" className="text-accent" />
-              <span className="sr-only">Working</span>
+              {working && <span className="sr-only">Working</span>}
             </span>
           )}
           {isAssistant && streaming && parts.length === 0 && pendingNotice}
