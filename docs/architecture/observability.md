@@ -23,6 +23,7 @@ flowchart LR
   end
   exporters -->|OTLP| collector
   collector -->|scrape| runners[VM runners]
+  prometheus[cluster Prometheus] -.->|scrape, optional| collector
   collector -->|write| store
   ui -->|read| store
   ui --> appstate
@@ -31,6 +32,7 @@ flowchart LR
 - **Collector** — an OpenTelemetry collector that receives OTLP and writes the signals into the telemetry store.
   It is platform-owned (deliberately not the collector ClickStack bundles — see *Access control*) and holds no upstream credentials.
   Its one pull path is the [VM runners](#vm-runner), which it scrapes because they cannot push; finding them is its only Kubernetes access, read-only pods in the agent namespace.
+  With `monitoring.enabled` it is also scraped: it exports the VM pool series for the cluster's Prometheus to read ([alerts](#alerts)).
 - **Telemetry store** — a columnar analytical database built for high-volume, high-cardinality, time-series telemetry.
   It is the only place telemetry lives.
   Retention is bounded: when the collector first creates the telemetry tables it stamps them with a TTL — 30 days by default, overridable per install through the chart — so signals age out instead of accumulating until the volume fills.
@@ -51,6 +53,7 @@ The chart ships only the custom resources and the platform-owned collector, whic
 ClickStack's default posture secures the collector with an ingestion key the UI issues and manages — application-layer, token-based access control.
 The platform deliberately does **not** rely on that.
 The collector is gated the same way as the rest of the platform: by the **service mesh**, through an authorization policy that admits only the platform's own namespaces — the release namespace and the agent namespace — and denies everything else.
+The one exception is the [alerts](#alerts) export: with `monitoring.enabled` the policy also admits any source to that one port, because the cluster's Prometheus has no mesh identity, and the port serves only the VM pool series of the runners and the controller.
 This keeps telemetry access on the same SPIFFE-principal model as the rest of the system (see [security-and-credentials](security-and-credentials.md)) rather than introducing a parallel token scheme.
 
 Making the mesh the sole gate is why the collector is platform-owned.
