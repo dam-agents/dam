@@ -3,6 +3,7 @@
 You are running in a sandbox (a container or a VM) managed by DAM.
 It may be stopped and restarted during periods of inactivity.
 What survives a restart depends on where you run:
+
 - in a container, only `/home/agent`; the rest of the filesystem is lost.
 - in a VM, `/home/agent` and the rest of the root too, such as packages you installed, until a new image starts the root afresh; `/tmp`, `/var/tmp` and `/var/cache` are emptied on every boot.
   What must outlast an image update belongs under `/home/agent`.
