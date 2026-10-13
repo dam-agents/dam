@@ -269,7 +269,7 @@ The differences are transport, identity model, and where the bot token comes fro
   Being private is also what makes a whisper an easy place to hide a prompt injection, so it carries **no more trust** than the same message sent openly by someone who is not the owner — the same gates, the same permission mode — and the prompt tells the Agent as much, and never to hide a whisper from its owner.
   Whispers are a **per-binding switch**, on by default on every connect path, because putting an Agent in a shared conversation already opens it to everyone there.
   The switch exists because a whisper removes the peer check a shared conversation gives: someone can ask the Agent to change its instructions, memory or settings, and nobody else sees the request.
-  The binder or the Agent's owner flips it with `/platform whisper <agent> on|off` (the ambient command's authorization), from the binding's settings in the UI, or on the page an in-chat bind ends on, next to ambient.
+  The Agent's owner flips it with `/platform whisper <agent> on|off` (the ambient command's authorization), from the binding's settings in the UI, or on the page an in-chat bind ends on, next to ambient.
   Binding an Agent to a shared conversation warns, before the bind, that whispers will be on.
   A connect that leaves it unset keeps the binding's current value.
   With whispers off, a whisper to that Agent is refused before anything is relayed, and an open whisper thread ends at its next message, the same re-check that ends one whose Agent was disconnected.

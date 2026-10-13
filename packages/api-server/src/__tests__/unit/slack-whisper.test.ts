@@ -575,7 +575,7 @@ describe("/dam whisper on|off", () => {
     );
   });
 
-  it("refuses someone who is neither the binder nor the owner", async () => {
+  it("refuses someone who is not the agent's owner", async () => {
     const h = harness(team, { linkedAs: "kc|someone-else" });
     const ack = await h.command("whisper Reviewer off");
 

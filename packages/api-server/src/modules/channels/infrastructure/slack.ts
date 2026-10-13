@@ -4368,8 +4368,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   function whisperOffText(name: string): string {
     return (
-      `Whispers to \`${name}\` are turned off in this conversation, so ` +
-      "everything said to it here happens where everyone can see it. " +
+      `Whispers to \`${name}\` are turned off in this conversation. ` +
       "Mention it in the conversation instead."
     );
   }
