@@ -97,6 +97,7 @@ export interface AcpRuntimeStatus {
 
 export interface AcpRuntime {
   attach(channel: ClientChannel, opts?: { viewer?: boolean }): void;
+  prestart(): void;
   status(): AcpRuntimeStatus;
   isSessionRunning(sessionId: string): boolean;
   sessionFrames(sessionId: string): { frames: string[]; truncated: boolean };
@@ -1414,6 +1415,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         detach(channel);
       });
       cancelReady = lease.whenReady(release);
+    },
+
+    prestart() {
+      lease.whenReady(() => lease.ensure());
     },
 
     status() {

@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -38,7 +38,8 @@ Safe Browsing and the component updater stay on: the updater is how Chrome gets 
 ## The display
 
 `platform-display` is the display stack: Xvfb (the virtual display), i3 keeping every window full-screen, PipeWire with its PulseAudio server for sound, and **[Selkies](https://github.com/selkies-project/selkies)**, a stream server for Linux displays.
-agent-runtime does not start it at boot, where it would take the CPU a small machine needs to come up and run the first turn: it starts it on first use — a harness, terminal or SSH session starting, which is how the agent's own `agent-browser` finds a display, or the panel asking for its browser or its stream — or ten seconds after it starts answering its health check, whichever comes first, and keeps it running from then on.
+agent-runtime does not start it before it answers its health check, where it would take the CPU a small machine needs to come up: it starts it on first use — a harness, terminal or SSH session starting, which is how the agent's own `agent-browser` finds a display, or the panel asking for its browser or its stream — or ten seconds after it starts answering its health check, whichever comes first, and keeps it running from then on.
+The default harness starts as soon as the health check answers ([agent-lifecycle](agent-lifecycle.md#session-inside-the-pod)), so the display usually starts then too.
 That delay is the limit: a command run by anything else in those ten seconds finds no display yet.
 It exits as soon as any part of it dies, and agent-runtime kills what it left and starts it again, with a growing delay while it keeps failing, so a crashed stream server or display comes back by itself.
 

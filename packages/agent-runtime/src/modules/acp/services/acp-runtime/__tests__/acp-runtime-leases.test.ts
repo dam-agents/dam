@@ -190,6 +190,22 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     });
   });
 
+  /** TEST_SCENARIO: A prestart starts only the default pair's process, which
+   * every client's initialize reaches, so the first client finds it running
+   * and no other process is started before a session asks for one. */
+  it("prestarts the default pair's process only", () => {
+    const world = createLeaseWorld({ providers: ["conn-a", "conn-b"] });
+    world.router.prestart();
+    expect(world.harnessCount("claude-code/conn-a")).toBe(1);
+    expect(world.harnessCount("claude-code/conn-b")).toBe(0);
+
+    world.connect().send(frames.initialize(1));
+    expect(world.harnessCount("claude-code/conn-a")).toBe(1);
+    expect(world.harness("claude-code/conn-a").receivedMethods()).toEqual([
+      "initialize",
+    ]);
+  });
+
   /** TEST_SCENARIO: The second process is told about the client the same way
    * the first was, so it answers with the same client capabilities, and its
    * own initialize answer never reaches the client a second time. */

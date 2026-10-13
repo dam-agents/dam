@@ -42,4 +42,7 @@ assert.equal(modeAfter("acceptEdits", ete), "acceptEdits");
 assert.equal(modeAfter("auto", other), "auto");
 assert.equal(modeAfter("auto", null), "auto");
 assert.equal(modeAfter(undefined, other), undefined);
+// TEST_SCENARIO: Only ETE's own host counts: a URL that merely contains its name, in another host or in the path, keeps auto.
+assert.equal(modeAfter("auto", { env: { ANTHROPIC_BASE_URL: `${ETE}.example.com` } }), "auto");
+assert.equal(modeAfter("auto", { env: { ANTHROPIC_BASE_URL: `${OTHER}/${ETE}` } }), "auto");
 console.log("Claude Code with ETE LiteLLM starts in bypassPermissions instead of auto");

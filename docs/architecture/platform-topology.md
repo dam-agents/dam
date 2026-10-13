@@ -146,7 +146,7 @@ Its responsibilities are:
   A bundle file colliding with an existing directory rejects the import before workspace changes, naming the paths.
   Merging is not transactional against concurrent workspace writes or I/O failures.
   One import per agent at a time; a boot sweeper reclaims staging dirs orphaned by crashes (see [persistence](persistence.md)).
-- Answer its health check (what makes the Agent Ready) once its channels are composed; the pod service, image-skill reconcile, sshd and [display stack](browser-panel.md#the-display) start after it or on first use.
+- Answer its health check (what makes the Agent Ready) once its channels are composed; the pod service, the default harness, image-skill reconcile, sshd and [display stack](browser-panel.md#the-display) start after it or on first use.
 - Keep the agent alive under memory pressure and recover from it: near the agent's memory ceiling — its pod cgroup, or the machine's own memory where there is no cgroup to cap it — SIGKILL the largest tool process under the harness, sparing the harness and any conversation process its manifest names, so the agent is not OOM-killed whole; when the harness stays up but answers that it lost a session, as after its conversation process died, load the session back into the harness on its next prompt; and mark each running turn on the PVC so the next boot resumes a turn an out-of-memory kill or eviction cut short.
   See [agent-lifecycle](agent-lifecycle.md).
 
