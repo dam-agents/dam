@@ -157,6 +157,7 @@ export function SessionsSidebar({
         needsApproval={needsApproval}
         unread={unread}
         draft={draft}
+        provisional={provisional}
         backgroundWork={backgroundWorkBySession.get(s.sessionId)}
         cost={sessionCosts.get(s.sessionId)}
         conversation={conversationOf(s)}

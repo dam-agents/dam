@@ -48,6 +48,7 @@ interface Props {
   needsApproval: boolean;
   unread?: boolean;
   draft?: boolean;
+  provisional?: boolean;
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
   conversation?: string;
@@ -65,6 +66,7 @@ export function SessionRow({
   needsApproval,
   unread = false,
   draft = false,
+  provisional = false,
   backgroundWork = NO_WORK,
   cost,
   conversation,
@@ -220,6 +222,7 @@ export function SessionRow({
             {onExportTimeline && (
               <DropdownMenuItem
                 data-testid="session-export-timeline-button"
+                disabled={provisional}
                 onSelect={onExportTimeline}
               >
                 <Download size={14} /> Export telemetry
@@ -227,12 +230,14 @@ export function SessionRow({
             )}
             <DropdownMenuItem
               data-testid="session-rename-button"
+              disabled={provisional}
               onSelect={onRename}
             >
               <Edit size={14} /> Rename session
             </DropdownMenuItem>
             <DropdownMenuItem
               data-testid="session-delete-button"
+              disabled={provisional}
               tone="danger"
               onSelect={onDelete}
             >
@@ -278,6 +283,7 @@ export function SessionRow({
             variant="ghost"
             size="sm"
             className="w-full justify-start"
+            disabled={provisional}
             onClick={(e) => {
               e.stopPropagation();
               setMenuOpen(false);
@@ -291,6 +297,7 @@ export function SessionRow({
             tone="danger"
             size="sm"
             className="w-full justify-start"
+            disabled={provisional}
             onClick={(e) => {
               e.stopPropagation();
               setMenuOpen(false);
