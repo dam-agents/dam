@@ -711,6 +711,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return (
       `${promptScheduler.activeTurnCount()} turn(s), ` +
       `${pendingRequests.size()} pending request(s), ` +
+      `${unansweredCalls().length} call(s) in flight, ` +
       `${deps.backgroundWork.held().length} background hold(s)`
     );
   }
