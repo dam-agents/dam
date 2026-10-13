@@ -2076,6 +2076,9 @@ harnessTools:
   nodeSelector: {}
   tolerations: []
   scc: ""
+  # A GitHub token for the installer's API lookups, which otherwise share the
+  # node address's anonymous limit. Any token works; it needs no scope.
+  githubToken: ""
   # The installer's; the idling container that keeps the pod scheduled asks
   # for almost nothing.
   resources:

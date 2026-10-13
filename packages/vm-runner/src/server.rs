@@ -26,8 +26,7 @@ use crate::launch::{launch_from_archive, read_launch, ImageLaunch};
 use crate::locked;
 use crate::metrics::{Gauges, Metrics};
 use crate::plan::{
-    admissible, gateway_port_admissible, reads_ready, step, Action, Health,
-    FOREIGN_UNHEALTHY_RESTART, UNHEALTHY_RESTART,
+    admissible, gateway_port_admissible, quiet_limit, reads_ready, step, Action, Health,
 };
 use crate::runtime::{redact, Machine, Runtime, Update};
 use crate::share::{self, write_share, SeedFile, SHARE_DIR};
@@ -37,7 +36,7 @@ use crate::state::{
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine API behind the HTTP layer: one persistent microVM per vm Agent, converged on the latest spec the controller sent. A PUT stores that spec and makes sure one worker is converging the machine; the worker takes one whole action at a time, and GET reports the action in flight as the machine's state. What a machine is survives the runner on disk — its spec, its port, its share. What the runner is doing to it lives in one entry per machine here and is lost with the process.
 
-// UNIT_BOUNDARY_DESCRIPTION: how often the health prober asks the runtime and the guest about a machine. A machine on its way up is asked often, because the time between its guest answering and the controller hearing of it is the last part of a wake the user waits for. A boot younger than SLOW_BOOT_AFTER is asked every FRESH_BOOT_PROBE: the probe is a connect to a loopback port, and each probe the guest sees is one console line, so the tight cadence is kept to the minute in which a guest normally answers. An older boot, or an action that has not started a boot yet, is asked every BOOT_PROBE. A steady one is asked rarely: a missed answer there only counts towards an unhealthy restart minutes away. A stopped or absent machine is not asked at all, since only an action changes it.
+// UNIT_BOUNDARY_DESCRIPTION: how often the health prober asks the runtime and the guest about a machine. A machine on its way up is asked often, because the time between its guest answering and the controller hearing of it is the last part of a wake the user waits for. A boot younger than SLOW_BOOT_AFTER is asked every FRESH_BOOT_PROBE: the probe is a connect to a loopback port, and each probe the guest sees is one console line, so the tight cadence is kept to the minute in which a guest normally answers. An older boot, or an action that has not started a boot yet, is asked every BOOT_PROBE. A steady one is asked every STEADY_PROBE: a missed answer there only counts towards an unhealthy restart, the soonest of them several misses away (see plan::quiet_limit). A stopped or absent machine is not asked at all, since only an action changes it.
 pub const FRESH_BOOT_PROBE: Duration = Duration::from_millis(100);
 pub const BOOT_PROBE: Duration = Duration::from_millis(500);
 pub const STEADY_PROBE: Duration = Duration::from_secs(10);
@@ -103,7 +102,7 @@ struct Seen {
     error: Option<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, so the worker still takes no further action.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, so the worker still takes no further action. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -115,6 +114,7 @@ struct MachineEntry {
     failure: Option<Failed>,
     health: Health,
     restarts: i32,
+    gave_up: Option<Instant>,
     boot: Option<Boot>,
     secrets: Vec<String>,
     seen: Option<Seen>,
@@ -886,6 +886,12 @@ impl Server {
             if unhealthy {
                 if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
                     entry.restarts += 1;
+                    entry.gave_up = Some(Instant::now());
+                    let quiet = entry
+                        .health
+                        .quiet_since
+                        .and_then(|since| since.elapsed().ok());
+                    tracing::warn!(machine = %id, restarts = entry.restarts, quiet_secs = quiet.map_or(0, |q| q.as_secs()), "guest stopped answering; restarting the machine");
                     self.bump(entry);
                 }
                 self.metrics.unhealthy_restart();
@@ -1287,18 +1293,14 @@ impl Server {
     }
 
     fn dead_for_long(&self, id: &str) -> bool {
-        let limit = if self.foreign(id) {
-            FOREIGN_UNHEALTHY_RESTART
-        } else {
-            UNHEALTHY_RESTART
-        };
-        locked(&self.machines)
-            .entries
-            .get(id)
-            .is_some_and(|e| e.health.quiet_beyond(SystemTime::now(), limit))
+        let foreign = self.foreign(id);
+        locked(&self.machines).entries.get(id).is_some_and(|e| {
+            let limit = quiet_limit(foreign, e.boot.is_none(), e.gave_up.map(|at| at.elapsed()));
+            e.health.quiet_beyond(SystemTime::now(), limit)
+        })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether the machine's running VMM was booted by another VM runtime than this runner's — an older release's, which handed the machine over. A machine with no record of its runtime was started before runtimes were recorded, and counts as foreign. Such a machine is managed as if the two runtimes were compatible; a runtime error on it, or a guest gone quiet past FOREIGN_UNHEALTHY_RESTART, reboots it onto this runner's runtime instead of waiting.
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine's running VMM was booted by another VM runtime than this runner's — an older release's, which handed the machine over. A machine with no record of its runtime was started before runtimes were recorded, and counts as foreign. Such a machine is managed as if the two runtimes were compatible; a runtime error on it, or a guest gone quiet past plan::FOREIGN_UNHEALTHY_RESTART, reboots it onto this runner's runtime instead of waiting.
     fn foreign(&self, id: &str) -> bool {
         self.config
             .runtime
@@ -1383,8 +1385,8 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one probe of one machine. While an action is in flight the runtime is not asked — the action is the state — but the guest is, because it can answer before the start call that booted it returns.
-    fn probe(&self, id: &str) {
+    // UNIT_BOUNDARY_DESCRIPTION: one probe of one machine. While an action is in flight the runtime is not asked — the action is the state — but the guest is, because it can answer before the start call that booted it returns. A probe that finds the machine quiet past its limit restarts it at once, by ensuring the latest spec the controller sent, rather than waiting up to a minute for the controller's next reconcile to do the same.
+    fn probe(self: &Arc<Self>, id: &str) {
         let Some((action, looked)) = locked(&self.machines)
             .entries
             .get(id)
@@ -1409,6 +1411,17 @@ impl Server {
             entry.resident_mib = resident;
         }
         self.note_slow_boot(id);
+        if !self.dead_for_long(id) {
+            return;
+        }
+        let desired = locked(&self.machines)
+            .entries
+            .get(id)
+            .filter(|e| !e.converging && !e.deleting)
+            .and_then(|e| e.desired.clone());
+        if let Some(spec) = desired {
+            let _ = self.put(id, spec);
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: starts a probe of each machine that is due and has none in flight, up to PROBES_IN_FLIGHT at once. Each runs on its own blocking thread, so a guest that hangs its health check costs its own probe the timeout and does not stretch the cadence of every other machine on its way up.

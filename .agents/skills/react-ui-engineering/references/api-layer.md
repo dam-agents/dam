@@ -4,7 +4,8 @@
 
 ## Principles
 
-**[CRITICAL] Server I/O is isolated from UI.** Components never call `fetch`, `authFetch` or tRPC procedures; they import a query/mutation hook from their module's `api/`. The fetcher layer knows URLs, auth, parsing and typed errors; the UI knows hooks returning `{ data, isLoading, error, mutate }`.
+**[CRITICAL] Server I/O is isolated from UI.** Components never call `fetch`, `authFetch` or tRPC procedures; they import a query/mutation hook from their module's `api/`.
+The fetcher layer knows URLs, auth, parsing and typed errors; the UI knows hooks returning `{ data, isLoading, error, mutate }`.
 
 **[HIGH] Every non-tRPC response is Zod-validated** before reaching application code; tRPC is typed end to end, raw `fetch` is not.
 
@@ -88,7 +89,8 @@ export function isUnauthorized(err: unknown): err is ApiError {
 }
 ```
 
-Messages for toasts and inline errors come from `getErrorMessage(err, fallback?)` in `src/lib/errors.ts`, which the QueryClient's central error handlers use; status-specific titles (403 "Permission denied", 404 "Not found", 401 "Session expired") belong in one `getErrorTitle(err)` beside it, not at call sites. Distinguish domain errors worth branching on by extending `ApiError` (`class QuotaExceededError extends ApiError`), thrown from the fetcher when the body matches, so consumers can `instanceof`.
+Messages for toasts and inline errors come from `getErrorMessage(err, fallback?)` in `src/lib/errors.ts`, which the QueryClient's central error handlers use; status-specific titles (403 "Permission denied", 404 "Not found", 401 "Session expired") belong in one `getErrorTitle(err)` beside it, not at call sites.
+Distinguish domain errors worth branching on by extending `ApiError` (`class QuotaExceededError extends ApiError`), thrown from the fetcher when the body matches, so consumers can `instanceof`.
 
 ## tRPC
 
@@ -102,7 +104,8 @@ const createAgent = useMutation({
 });
 ```
 
-tRPC throws `TRPCClientError`, carrying `shape` and `data` (with status info). Branch on it with a helper, and route its message through `getErrorMessage` so the app doesn't care whether an error came from tRPC or `fetch`:
+tRPC throws `TRPCClientError`, carrying `shape` and `data` (with status info).
+Branch on it with a helper, and route its message through `getErrorMessage` so the app doesn't care whether an error came from tRPC or `fetch`:
 
 ```ts
 export function isTrpcUnauthorized(err: unknown): boolean {

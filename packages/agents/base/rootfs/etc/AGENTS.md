@@ -1,8 +1,11 @@
 # DAM sandboxed runtime
 
-You are running in a sandbox (a container or a VM) managed by DAM. It may be stopped and restarted during periods of inactivity. Only `/home/agent` is persisted after restart, rest of the filesystem is lost.
+You are running in a sandbox (a container or a VM) managed by DAM.
+It may be stopped and restarted during periods of inactivity.
+Only `/home/agent` is persisted after restart, rest of the filesystem is lost.
 
-Caches in the home that no tool here reads are removed at boot: a Go module cache (no Go is shipped) and pnpm's own store layouts (`pnpm` is aube). In a container, `~/.cache` and npm's cache live on local disk and reset on restart.
+Caches in the home that no tool here reads are removed at boot: a Go module cache (no Go is shipped) and pnpm's own store layouts (`pnpm` is aube).
+In a container, `~/.cache` and npm's cache live on local disk and reset on restart.
 
 Available:
 - usual Linux tools
@@ -10,7 +13,9 @@ Available:
 - `python` (3.12), `pip`, `uv`, `uvx`
 - `gh`, `rg`, `fd`, `jq`, `kubectl`
 - a C/C++ toolchain (`gcc`/`cc`, `g++`, `make`, libc headers), for native dependencies such as node-gyp addons, cgo, Python sdists and cargo build scripts
-- `agent-browser` for any browser task, before Playwright. Its one browser is the one the user sees in the browser panel beside the chat, so the user watches what you do and shares its sign-ins: run it without `--session` or `--profile`, which would start another browser the user cannot see, and without `set viewport`, which squeezes the page into part of the panel. To show the user a page, open it and put a button for it in your reply; see the `agent-browser` skill
+- `agent-browser` for any browser task, before Playwright.
+  Its one browser is the one the user sees in the browser panel beside the chat, so the user watches what you do and shares its sign-ins: run it without `--session` or `--profile`, which would start another browser the user cannot see, and without `set viewport`, which squeezes the page into part of the panel.
+  To show the user a page, open it and put a button for it in your reply; see the `agent-browser` skill
 - Playwright (`playwright`, `npx playwright`), sharing agent-browser's bundled Chromium in the read-only `/opt/ms-playwright`; a project's own Playwright of another version needs its browsers in the home: set `PLAYWRIGHT_BROWSERS_PATH=~/.local/share/ms-playwright` for both its `playwright install` and its runs
 - `mise` to install extra software: tools it installs are lost on restart, so declare them in a `mise.toml` in a folder of your own under `~/work` (`mise use <tool>` there), run them there with `mise exec -- <command>` or after `eval "$(mise env)"`, and run `mise install` in that folder again after a restart
 
@@ -19,6 +24,11 @@ Additionally available if running in a root VM:
 - `k3s`: start with `k3s server >/var/log/k3s.log 2>&1 &`, use `k3s kubectl`, stops on restart; cluster state is kept in `~/.local/share/k3s`; pods trust the gateway's CA the same way
 - `apt-get` to install extra software
 
-Long jobs: work you start keeps running after the user leaves, but stops when the agent hibernates. For a long job that must finish after your turn ends, start it with `platform-keep -- <command>` (it prints the pid and the log file; `--log FILE` picks the file), or keep one that already runs detached (started with `nohup` or `setsid`) with `platform-keep --pid <pid>`. A background task your harness runs for you is kept already and needs no mark. Kept work holds the agent awake until it exits, and the user sees it and can stop it. Never keep helper daemons (servers, watchers, bridges); plain `nohup … &` is right for those.
+Long jobs: work you start keeps running after the user leaves, but stops when the agent hibernates.
+For a long job that must finish after your turn ends, start it with `platform-keep -- <command>` (it prints the pid and the log file; `--log FILE` picks the file), or keep one that already runs detached (started with `nohup` or `setsid`) with `platform-keep --pid <pid>`.
+A background task your harness runs for you is kept already and needs no mark.
+Kept work holds the agent awake until it exits, and the user sees it and can stop it.
+Never keep helper daemons (servers, watchers, bridges); plain `nohup … &` is right for those.
 
-Delegation: your harness's own subagent does work in this sandbox. The platform's `spawn_subagent` tool starts a separate agent in a new sandbox; use it only when the task needs another harness, its own setup, more resources, isolation from this workspace, or a schema-checked result.
+Delegation: your harness's own subagent does work in this sandbox.
+The platform's `spawn_subagent` tool starts a separate agent in a new sandbox; use it only when the task needs another harness, its own setup, more resources, isolation from this workspace, or a schema-checked result.

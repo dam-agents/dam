@@ -2,18 +2,31 @@
 
 Last verified: 2026-10-12
 
-Companion to [channels](channels.md) and [channel-turns](channel-turns.md). Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup. A change to Slack behavior updates all three in the same PR. It also serves as the source for a shareable page or deck: the "decided by" and drawback columns map to colored labels, and the two diagrams render as they are.
+Companion to [channels](channels.md) and [channel-turns](channel-turns.md).
+Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
+A change to Slack behavior updates all three in the same PR.
+It also serves as the source for a shareable page or deck: the "decided by" and drawback columns map to colored labels, and the two diagrams render as they are.
 
-- [0. Ways to slack](#0-ways-to-slack)
-- [1. Usage modes](#1-usage-modes)
-- [2. Reach: bot vs. owner's account](#2-reach-bot-vs-owners-account)
-- [3. Who decides what](#3-who-decides-what)
-- [4. "It looks broken"](#4-it-looks-broken)
-- [5. Reach the owner may not expect](#5-reach-the-owner-may-not-expect)
-- [6. Settings that change behavior](#6-settings-that-change-behavior)
-- [7. Several workspaces](#7-several-workspaces)
+- [0.
+  Ways to slack](#0-ways-to-slack)
+- [1.
+  Usage modes](#1-usage-modes)
+- [2.
+  Reach: bot vs. owner's account](#2-reach-bot-vs-owners-account)
+- [3.
+  Who decides what](#3-who-decides-what)
+- [4.
+  "It looks broken"](#4-it-looks-broken)
+- [5.
+  Reach the owner may not expect](#5-reach-the-owner-may-not-expect)
+- [6.
+  Settings that change behavior](#6-settings-that-change-behavior)
+- [7.
+  Several workspaces](#7-several-workspaces)
 
-"Decided by": **Platform** = code guarantees it. **Agent** = the model's judgement, steered by the prompt. **Setup** = the owner's configuration.
+"Decided by": **Platform** = code guarantees it.
+**Agent** = the model's judgement, steered by the prompt.
+**Setup** = the owner's configuration.
 
 ---
 
@@ -21,18 +34,26 @@ Companion to [channels](channels.md) and [channel-turns](channel-turns.md). Thos
 
 A single Slack bot per install. 
 
-A **binding** puts one Agent into one conversation; whoever Slack lets into that conversation drives the Agent, with the Agent's own credentials. The platform never asks who is typing. 
+A **binding** puts one Agent into one conversation; whoever Slack lets into that conversation drives the Agent, with the Agent's own credentials.
+The platform never asks who is typing. 
 
-The owner's **Slack Account Connection** is a separate thing: it gives the Agent the owner's personal Slack access as an MCP server. On a bound Agent, channel members get that access too unless the harness refuses the calls (§3 safety gates).
+The owner's **Slack Account Connection** is a separate thing: it gives the Agent the owner's personal Slack access as an MCP server.
+On a bound Agent, channel members get that access too unless the harness refuses the calls (§3 safety gates).
 
-`/dam login` links a Slack user to a platform user. It authorizes `/dam bind|unbind|ambient|ignore|unignore|default|delete`, never who may talk to the Agent.
+`/dam login` links a Slack user to a platform user.
+It authorizes `/dam bind|unbind|ambient|ignore|unignore|default|delete`, never who may talk to the Agent.
 
 ### How the agent reaches Slack
 
 Two paths, both by tool call; plain assistant text is never posted.
 
-- **As the bot**, through the platform's MCP server. Four tools dispose of the turn being answered: `reply`, `react`, `no_reply_needed`, `hand_off_to_agent`. Six work from any session, UI or scheduled included: `send_channel_message`, `describe_channel`, `describe_channel_users`, `read_thread`, `fetch_message_attachment`, `describe_message_reactions`. Every post carries a footer naming the Agent and linking to the session that wrote it. The owner removes one with `/dam delete <message link> [reason]`: confirmation dialog, post and files go, the agent's session is told.
-- **As the owner**, through Slack's own MCP server, when the Agent holds the owner's Slack Account Connection. Posts carry no footer, `/dam delete` doesn't apply, and the platform doesn't see them (§2).
+- **As the bot**, through the platform's MCP server.
+  Four tools dispose of the turn being answered: `reply`, `react`, `no_reply_needed`, `hand_off_to_agent`.
+  Six work from any session, UI or scheduled included: `send_channel_message`, `describe_channel`, `describe_channel_users`, `read_thread`, `fetch_message_attachment`, `describe_message_reactions`.
+  Every post carries a footer naming the Agent and linking to the session that wrote it.
+  The owner removes one with `/dam delete <message link> [reason]`: confirmation dialog, post and files go, the agent's session is told.
+- **As the owner**, through Slack's own MCP server, when the Agent holds the owner's Slack Account Connection.
+  Posts carry no footer, `/dam delete` doesn't apply, and the platform doesn't see them (§2).
 
 A message sent from the UI carries no Slack framing, so the agent answers in the UI and posts to Slack only if asked.
 
@@ -112,7 +133,8 @@ flowchart TD
 
 ### 1.6 Proactive and cross-channel posts
 
-As the bot. Through the owner's Slack Account Connection the Agent posts wherever the owner can (§2).
+As the bot.
+Through the owner's Slack Account Connection the Agent posts wherever the owner can (§2).
 
 | Situation | What happens | Drawback |
 |---|---|---|
@@ -122,7 +144,8 @@ As the bot. Through the owner's Slack Account Connection the Agent posts whereve
 
 ### 1.7 What the agent is handed, per case
 
-Every Slack turn carries: how to respond (tools, the thread to reply into, "plain text is not delivered"), a note that unallowed hosts are refused, and with several Agents who else is here and who is default. **Catch-up**: what arrived since the agent's last delivered turn there, as a backlog ("act only on what is still open"); nothing when nothing is new.
+Every Slack turn carries: how to respond (tools, the thread to reply into, "plain text is not delivered"), a note that unallowed hosts are refused, and with several Agents who else is here and who is default.
+**Catch-up**: what arrived since the agent's last delivered turn there, as a backlog ("act only on what is still open"); nothing when nothing is new.
 
 | Case | History injected | Extra framing |
 |---|---|---|
@@ -244,13 +267,17 @@ A revoked bot token or uninstalled app silences every conversation, and nothing 
 
 ### Notices
 
-Addressed turns get a plain-language notice for: unbound conversation, no default Agent, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, migrating, lost contact, stalled, terms not accepted, hand-off failed, a refused attachment. Ambient turns get none.
+Addressed turns get a plain-language notice for: unbound conversation, no default Agent, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, migrating, lost contact, stalled, terms not accepted, hand-off failed, a refused attachment.
+Ambient turns get none.
 
 ---
 
 ## 5. Reach the owner may not expect
 
-One case: an Agent with both the owner's Slack Account Connection and a channel binding lets channel members act through the owner's Slack account. Nothing warns the owner. Open on Codex. On Claude Code: open in `auto` (the classifier approves most calls), in `bypassPermissions`, or with an allow rule for the Connection's tools; `default` and `dontAsk` refuse those calls on a channel turn.
+One case: an Agent with both the owner's Slack Account Connection and a channel binding lets channel members act through the owner's Slack account.
+Nothing warns the owner.
+Open on Codex.
+On Claude Code: open in `auto` (the classifier approves most calls), in `bypassPermissions`, or with an allow rule for the Connection's tools; `default` and `dontAsk` refuse those calls on a channel turn.
 
 Everything else (DM people, attach files, look people up, react) is within the owner's own reach.
 
@@ -272,7 +299,10 @@ Everything else (DM people, attach files, look people up, react) is within the o
 
 ## 7. Several workspaces
 
-- A binding belongs to the workspace whose bot is a member of the conversation. A pasted DM id resolves to the workspace whose bot is in that DM.
-- An Agent in **two** workspaces: `describe_channel_users` looks in the workspace of the conversation being answered, or of a passed chat; outside a turn with no chat it refuses and says to pass one. `send_channel_message` outside a turn must name the conversation.
-- Optional scopes a workspace withheld degrade quietly: no channel list, no emails, raw ids for people and for connected 1:1 DMs. Without the persona scope an Agent's post goes out as the app and opens with an emoji and the Agent's name; the emoji is the robot face unless the connection names custom emoji for the Agents.
+- A binding belongs to the workspace whose bot is a member of the conversation.
+  A pasted DM id resolves to the workspace whose bot is in that DM.
+- An Agent in **two** workspaces: `describe_channel_users` looks in the workspace of the conversation being answered, or of a passed chat; outside a turn with no chat it refuses and says to pass one.
+  `send_channel_message` outside a turn must name the conversation.
+- Optional scopes a workspace withheld degrade quietly: no channel list, no emails, raw ids for people and for connected 1:1 DMs.
+  Without the persona scope an Agent's post goes out as the app and opens with an emoji and the Agent's name; the emoji is the robot face unless the connection names custom emoji for the Agents.
 - A revoked workspace credential is marked, never cleaned up: bindings stay, everything goes silent until re-install.

@@ -21,17 +21,32 @@ fi
 # which a host the gateway passes through can still be intercepted by.
 ca_dir=/etc/platform/ca
 ca_files=$(find "$ca_dir" -maxdepth 1 -name '*.crt' -size +0 2>/dev/null | sort)
-if [ -n "$ca_files" ]; then
-	rm -f /usr/local/share/ca-certificates/platform-*.crt
+# Each store records what it was last built from, and is rebuilt only when that
+# differs: a machine's root and every home outlive a boot, and
+# update-ca-certificates forks per bundled root, seconds on a machine. A
+# machine's root also outlives a new image, so the system record holds the
+# image's distribution roots as well.
+ca_set() { for f in $ca_files; do echo "$f"; cat "$f"; done; }
+system_inputs() {
+	ca_set
+	cat /etc/ca-certificates.conf
+	find /usr/share/ca-certificates -type f -print0 | sort -z | xargs -0r cat
+} 2>/dev/null
+system_set=/usr/local/share/ca-certificates/.platform-ca-set
+nssdb="$home/.pki/nssdb"
+if [ -n "$ca_files" ] && ! system_inputs | cmp -s - "$system_set"; then
+	rm -f /usr/local/share/ca-certificates/platform-*.crt "$system_set"
 	trusted=true
 	for f in $ca_files; do
 		cp "$f" "/usr/local/share/ca-certificates/platform-${f##*/}" || trusted=false
 	done
-	{ $trusted && update-ca-certificates >/dev/null 2>&1; } ||
+	{ $trusted && update-ca-certificates >/dev/null 2>&1 && system_inputs >"$system_set"; } ||
 		echo "agent-entrypoint: WARNING: could not trust the platform CAs; intercepted hosts may fail TLS" >&2
-	# Chromium trusts its own NSS store in the home, not the system bundle, and
-	# certutil imports one certificate per file, so each bundle is split.
-	nssdb="$home/.pki/nssdb"
+fi
+# Chromium trusts its own NSS store in the home, not the system bundle, and
+# certutil imports one certificate per file, so each bundle is split.
+if [ -n "$ca_files" ] && ! { [ -f "$nssdb/cert9.db" ] && ca_set | cmp -s - "$nssdb/platform-ca-set"; }; then
+	rm -f "$nssdb/platform-ca-set"
 	split="$(mktemp -d)"
 	if ! (mkdir -p "$nssdb" && { [ -f "$nssdb/cert9.db" ] || certutil -d "sql:$nssdb" -N --empty-password; } &&
 		for nick in $(certutil -d "sql:$nssdb" -L | sed -n 's/^\(platform-[^ ]*\) .*/\1/p'); do
@@ -40,7 +55,7 @@ if [ -n "$ca_files" ]; then
 		cat $ca_files | awk -v dir="$split" '/-----BEGIN CERTIFICATE-----/ { n++ } n { print > (dir "/" n ".pem") }' &&
 		for pem in "$split"/*.pem; do
 			certutil -d "sql:$nssdb" -A -t "C,," -n "platform-ca-$(basename "$pem" .pem)" -i "$pem" || exit 1
-		done) 2>/dev/null; then
+		done && ca_set >"$nssdb/platform-ca-set") 2>/dev/null; then
 		echo "agent-entrypoint: WARNING: could not trust the platform CAs in Chromium; its intercepted hosts may fail TLS" >&2
 	fi
 	rm -rf "$split"

@@ -1,6 +1,8 @@
 # Code Rules
 
-Language-level rules for writing code in this repo. Each rule lives on its own page. Read a page when its trigger matches the code in front of you.
+Language-level rules for writing code in this repo.
+Each rule lives on its own page.
+Read a page when its trigger matches the code in front of you.
 
 | Rule | Trigger |
 |---|---|
