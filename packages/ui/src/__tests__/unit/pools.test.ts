@@ -2,6 +2,8 @@ import type { BudgetVmUsage } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import {
+  idleVmAgents,
+  largestVmAgents,
   memoryBar,
   storageBar,
   topCpuAgents,
@@ -86,6 +88,17 @@ describe("pool bars", () => {
   it("names the agents using the most CPU", () => {
     expect(topCpuAgents(usage, agents).map((t) => t.agent.id)).toEqual([
       "b",
+      "a",
+    ]);
+  });
+
+  it("offers the idle running agents largest first, and the largest disks, hibernated ones included", () => {
+    expect(
+      idleVmAgents(usage, agents, new Set(["a"])).map((s) => s.agent.id),
+    ).toEqual(["b", "tiny"]);
+    expect(largestVmAgents(usage, agents).map((s) => s.agent.id)).toEqual([
+      "b",
+      "asleep",
       "a",
     ]);
   });

@@ -154,3 +154,4 @@ Deliberately local to the api-server: the alternative — echoing the denied act
 
 Users free capacity by stopping a running agent (see [agent-lifecycle](agent-lifecycle.md) for the hard-stop mechanics) or letting it hibernate — and, for a start they are blocked on, the gate frees it for them where it can ([above](#reclaiming-room-for-a-blocked-start)).
 Reserved is computed from live state and never persisted, so a hibernate, stop, or delete credits the budget back with nothing to reconcile.
+A vm pool at warning or critical offers its fix on the home dashboard itself: memory lists the idle running agents largest first, each paused in one click — an agent that never hibernates is stopped instead, after a confirmation — with one action to pause them all; storage lists the largest agents, hibernated ones included, each deleted after a confirmation, and points at the caches inside the agents.

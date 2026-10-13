@@ -122,3 +122,32 @@ export function formatBytes(bytes: number): string {
   if (gib >= 1) return `${gib.toFixed(1)} GiB`;
   return `${Math.round(bytes / 1024 ** 2)} MiB`;
 }
+
+export interface AgentShare {
+  agent: AgentView;
+  bytes: number;
+}
+
+export function idleVmAgents(
+  usage: BudgetVmUsage,
+  agents: readonly AgentView[],
+  busyIds: ReadonlySet<string>,
+): AgentShare[] {
+  return vmShares(
+    usage,
+    agents,
+    "memoryUsedBytes",
+    (a) => a.state === "running" && !a.stopRequested && !busyIds.has(a.id),
+  ).sort((a, b) => b.bytes - a.bytes);
+}
+
+export function largestVmAgents(
+  usage: BudgetVmUsage,
+  agents: readonly AgentView[],
+  limit = 3,
+): AgentShare[] {
+  return vmShares(usage, agents, "storageUsedBytes", (a) => !a.stopRequested)
+    .filter((s) => s.bytes > 0)
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, limit);
+}

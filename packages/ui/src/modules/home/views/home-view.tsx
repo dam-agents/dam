@@ -55,7 +55,13 @@ export function HomeView() {
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="flex flex-col gap-6 rounded-lg border border-border bg-card p-6">
           {allAgents.some((agent) => agent.vm) && (
-            <PoolUsage agents={allAgents} />
+            <PoolUsage
+              agents={allAgents}
+              workingAgentIds={workingAgentIds}
+              onPause={(agent) => suspend.pause(agent.id)}
+              onStop={(agent) => void stopSandbox(agent)}
+              onDelete={(agent) => void deleteSandbox(agent)}
+            />
           )}
           {allAgents.some((agent) => !agent.vm) && (
             <ComputeUsage

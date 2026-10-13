@@ -64,7 +64,7 @@ export function PoolBar({ title, bar }: Props) {
               <button
                 type="button"
                 aria-label={share}
-                disabled={!segment.agentId}
+                aria-disabled={!segment.agentId}
                 onClick={() =>
                   segment.agentId &&
                   navigateToSandboxHome(segment.agentId, "setup")
