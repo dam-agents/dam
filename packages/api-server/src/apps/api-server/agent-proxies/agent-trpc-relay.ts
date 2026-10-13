@@ -10,6 +10,7 @@ import {
   isAgentWakeTimeoutError,
 } from "../../../modules/agents/index.js";
 import { createActivityStamper } from "./activity-stamper.js";
+import { readyOrAnswering } from "./ready-or-answering.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 const ACTIVITY_INTERVAL_MS = 30_000;
@@ -39,7 +40,10 @@ function wakeFailureReason(err: unknown): string {
 
 export function createAgentTrpcRelay(
   namespace: string,
-  repo: Pick<AgentsRepository, "get" | "ensureReady" | "patchAnnotation">,
+  repo: Pick<
+    AgentsRepository,
+    "get" | "ensureReady" | "patchAnnotation" | "peekCached"
+  >,
   upstreamBase: (agentId: string) => string = (agentId) =>
     `ws://${podBaseUrl(agentId, namespace)}`,
 ): AgentTrpcRelay {
@@ -136,7 +140,13 @@ export function createAgentTrpcRelay(
           client.close(1011, "agent not ready");
           return;
         }
-        await repo.ensureReady(agentId, { waitOnly: true });
+        await readyOrAnswering(
+          repo,
+          agentId,
+          repo.ensureReady(agentId, { waitOnly: true }),
+          `${upstreamBase(agentId).replace(/^ws/, "http")}/healthz`,
+          () => clientGone,
+        );
       } catch (err) {
         if (client.readyState === WebSocket.OPEN)
           client.close(1011, wakeFailureReason(err));
