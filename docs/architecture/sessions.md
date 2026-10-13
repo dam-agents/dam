@@ -64,7 +64,8 @@ Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api
 A harness that can **steer** takes a prompt into the turn it is running rather than after it.
 A web UI prompt sent mid-turn is then **steered** — a fourth fate, reported in place of a start — and queued prompts drain into a running turn the same way.
 The harness takes a steer by aborting whatever the agent is generating, so a steer waits for a **steer point** — the agent neither writing nor running a tool, which is right after its tool calls finish — and the agent reads the prompt beside their results instead of having a reply cut off.
-A steer starts the agent generating again, so a steer point takes one prompt and the next waits for the next point — steered together, the harness would merge them into one message. A turn that ends first starts the prompt as the next turn; a prompt never waits longer than a minute for a steer point.
+A steer starts the agent generating again, so a steer point takes one prompt and the next waits for the next point — steered together, the harness would merge them into one message.
+A turn that ends first starts the prompt as the next turn; a prompt never waits longer than a minute for a steer point.
 Until then it is an ordinary queued prompt the user can still change.
 A refused steer queues again at the head, so the agent receives each prompt once and in order.
 Scheduled fires, invocation outcomes and CLI runs always queue.
