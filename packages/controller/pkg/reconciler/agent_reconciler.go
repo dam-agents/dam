@@ -118,53 +118,68 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
-	if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying envoy bootstrap: %v", err))
-	}
-	timer.mark("envoyBootstrap")
-	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts); cert != nil {
-		if err := r.applyCertificate(ctx, cert); err != nil {
-			return r.setError(ctx, name, fmt.Sprintf("applying envoy leaf certificate: %v", err))
-		}
-		if err := r.ensureSecretOwnerReference(ctx, EnvoyLeafSecretName(name), ownerRef); err != nil {
-			slog.Warn("setting owner ref on envoy leaf TLS Secret; will retry on next reconcile",
-				"agent", name, "error", err)
-		}
-	}
-	timer.mark("leafCert")
-
-	if err := r.ensureServiceAccount(ctx, name, ownerRef); err != nil {
-		return r.setError(ctx, name, err.Error())
-	}
-	timer.mark("serviceAccount")
-
-	extAuthzSvc := BuildExtAuthzService(name, r.config)
-	if err := r.applyExtAuthzService(ctx, extAuthzSvc); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz service: %v", err))
-	}
-	timer.mark("extAuthzService")
-
-	if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying harness authz policy: %v", err))
-	}
-	if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz authz policy: %v", err))
-	}
-	timer.mark("authzPolicies")
-
-	if err := applyNetworkPolicy(ctx, r.client, BuildAgentEgressNetworkPolicy(name, r.config, ownerRef)); err != nil {
-		return r.setError(ctx, name, err.Error())
-	}
-	timer.mark("egressNetworkPolicy")
 	migration := runtimeMigrationOf(agent.Annotations, agent.Status)
-	if err := applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, agentSpec.IsVM() || migration.vmSideRuns(), r.config, ownerRef)); err != nil {
+	var liveGatewaySvc *corev1.Service
+	err = concurrently(
+		func() error {
+			if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
+				return fmt.Errorf("applying envoy bootstrap: %v", err)
+			}
+			return nil
+		},
+		func() error {
+			cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
+			if cert == nil {
+				return nil
+			}
+			if err := r.applyCertificate(ctx, cert); err != nil {
+				return fmt.Errorf("applying envoy leaf certificate: %v", err)
+			}
+			if err := r.ensureSecretOwnerReference(ctx, EnvoyLeafSecretName(name), ownerRef); err != nil {
+				slog.Warn("setting owner ref on envoy leaf TLS Secret; will retry on next reconcile",
+					"agent", name, "error", err)
+			}
+			return nil
+		},
+		func() error { return r.ensureServiceAccount(ctx, name, ownerRef) },
+		func() error {
+			if err := r.applyExtAuthzService(ctx, BuildExtAuthzService(name, r.config)); err != nil {
+				return fmt.Errorf("applying ext-authz service: %v", err)
+			}
+			return nil
+		},
+		func() error {
+			if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
+				return fmt.Errorf("applying harness authz policy: %v", err)
+			}
+			return nil
+		},
+		func() error {
+			if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
+				return fmt.Errorf("applying ext-authz authz policy: %v", err)
+			}
+			return nil
+		},
+		func() error {
+			return applyNetworkPolicy(ctx, r.client, BuildAgentEgressNetworkPolicy(name, r.config, ownerRef))
+		},
+		func() error {
+			return applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, agentSpec.IsVM() || migration.vmSideRuns(), r.config, ownerRef))
+		},
+		func() error {
+			return applyNetworkPolicy(ctx, r.client, BuildGatewayEgressNetworkPolicy(name, r.config, ownerRef))
+		},
+		func() (err error) {
+			if liveGatewaySvc, err = ensureGatewayService(ctx, r.client, BuildGatewayService(name, agentSpec.IsVM(), r.config, ownerRef), "agent", name); err != nil {
+				return fmt.Errorf("ensuring gateway service: %v", err)
+			}
+			return nil
+		},
+	)
+	if err != nil {
 		return r.setError(ctx, name, err.Error())
 	}
-	timer.mark("gatewayIngressNetworkPolicy")
-	if err := applyNetworkPolicy(ctx, r.client, BuildGatewayEgressNetworkPolicy(name, r.config, ownerRef)); err != nil {
-		return r.setError(ctx, name, err.Error())
-	}
-	timer.mark("gatewayEgressNetworkPolicy")
+	timer.mark("agentObjects")
 
 	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, agent.Spec.IsVM(), r.config.AgentBase)
 	running := shouldRunMigrating(agent.Annotations, migration, idleTimeout, time.Now().UTC())
@@ -233,13 +248,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 
 	rollRev := agent.Annotations[annRollRev]
 
-	gatewaySvc := BuildGatewayService(name, agentSpec.IsVM(), r.config, ownerRef)
-	liveGatewaySvc, err := ensureGatewayService(ctx, r.client, gatewaySvc, "agent", name)
-	if err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("ensuring gateway service: %v", err))
-	}
 	gatewayIP := liveGatewaySvc.Spec.ClusterIP
-	timer.mark("gatewayService")
 
 	if gatewayIP == "" || gatewayIP == corev1.ClusterIPNone {
 		return fmt.Errorf("agent %s: gateway Service ClusterIP not yet assigned, requeuing", name)
@@ -944,4 +953,19 @@ func (r *AgentReconciler) applyConfigMap(ctx context.Context, desired *corev1.Co
 		_, err = r.client.CoreV1().ConfigMaps(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	})
+}
+
+func concurrently(steps ...func() error) error {
+	errs := make([]error, len(steps))
+	var wg sync.WaitGroup
+	for i, step := range steps {
+		wg.Go(func() { errs[i] = step() })
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

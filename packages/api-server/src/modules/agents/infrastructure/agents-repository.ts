@@ -170,7 +170,10 @@ export function createAgentsRepository(
         AGENTS_PLURAL,
         buildAgentObject(spec, owner, name, templateId, annotations),
       );
-      return parseInfraAgent(created);
+      const infra = parseInfraAgent(created);
+      const written = created.metadata?.resourceVersion;
+      if (written) await cache.awaitObserved(infra.id, written);
+      return infra;
     },
 
     async updateSpec(id, owner, patch) {

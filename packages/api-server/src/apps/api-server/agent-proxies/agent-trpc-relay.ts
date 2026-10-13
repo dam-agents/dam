@@ -23,6 +23,7 @@ export interface AgentTrpcRelay {
     agentId: string,
     actor: RelayActor,
   ): void;
+  close(): void;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the tRPC client's keep-alive ping. While the relay holds a socket for a waking agent it answers the ping itself, so the client does not drop and redial a socket that is only waiting.
@@ -166,5 +167,16 @@ export function createAgentTrpcRelay(
     });
   }
 
-  return { handleUpgrade };
+  return {
+    handleUpgrade,
+    close() {
+      for (const client of wss.clients) {
+        try {
+          client.close(1001, "server shutting down");
+        } catch {
+          client.terminate();
+        }
+      }
+    },
+  };
 }
