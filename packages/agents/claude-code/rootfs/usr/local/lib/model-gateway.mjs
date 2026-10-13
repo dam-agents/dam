@@ -41,6 +41,7 @@ function customUpstream(raw) {
 }
 
 const upstreams = new Map();
+const listings = new Map();
 
 function front(key, env) {
   const base = customUpstream(env.ANTHROPIC_BASE_URL);
@@ -141,8 +142,15 @@ async function fetchCatalog(upstream) {
   }
 }
 
+function sharedListing(upstream) {
+  const key = `${upstream.base}\n${upstream.token}`;
+  if (!listings.has(key))
+    listings.set(key, fetchCatalog(upstream).finally(() => listings.delete(key)));
+  return listings.get(key);
+}
+
 async function refreshCatalog(upstream) {
-  const ids = await fetchCatalog(upstream);
+  const ids = await sharedListing(upstream);
   if (ids && upstreams.get(upstream.key) === upstream) {
     if (ids.join("\n") !== [...upstream.knownModels.values()].join("\n"))
       log(`serving ${ids.length} model(s)${upstream.key ? ` for provider ${upstream.key}` : ""}`);

@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 const gateway = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/model-gateway.mjs", import.meta.url));
 let listing = null;
 let listingHeld = Promise.resolve();
+let listingsAsked = 0;
 const forwarded = [];
 const upstream = createServer((req, res) => {
   let body = "";
@@ -21,6 +22,7 @@ const upstream = createServer((req, res) => {
   req.on("end", () => {
     res.setHeader("content-type", "application/json");
     if (req.url.startsWith("/v1/models")) {
+      listingsAsked++;
       void listingHeld.then(() => { if (listing) res.end(JSON.stringify({ data: listing.map((id) => ({ id })) })); });
       return;
     }
@@ -32,10 +34,10 @@ upstream.listen(0, "::1");
 await once(upstream, "listening");
 const base = `http://[::1]:${upstream.address().port}`;
 
-async function withGateway(catalog, run) {
+async function withGateway(catalog, run, defaultEnv = {}) {
   const home = mkdtempSync(join(tmpdir(), "claude-gateway-catalog-"));
   mkdirSync(join(home, ".platform"));
-  writeFileSync(join(home, ".platform/pod-service-env.json"), JSON.stringify({ env: {}, providers: { cb: { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: "t" } } }));
+  writeFileSync(join(home, ".platform/pod-service-env.json"), JSON.stringify({ env: defaultEnv, providers: { cb: { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: "t" } } }));
   if (catalog) writeFileSync(join(home, ".platform/model-gateway-catalog.json"), JSON.stringify({ cb: { base, ids: catalog } }));
   const started = Date.now();
   const child = spawn(process.execPath, [gateway], { env: { ...process.env, HOME: home, MODEL_GATEWAY_PORT: "0" }, stdio: ["ignore", "ignore", "pipe"] });
@@ -87,6 +89,15 @@ try {
     assert.ok(listenedAfterMs < 5_000, `listened after ${listenedAfterMs} ms`);
   });
   console.log("with no kept list the gateway waits for the listing only briefly");
+
+  // TEST_SCENARIO: A first start where the agent's default env and its provider name the same endpoint and credential, as a new agent's do. The gateway asks the provider for one listing, not one per upstream, so Claude Code waits for one slow listing instead of the slowest of two.
+  listing = ["rits/zai-org/glm-5-4"];
+  listingsAsked = 0;
+  await withGateway(null, async ({ port }) => {
+    assert.equal(listingsAsked, 1);
+    assert.match(await envSh(port), /claude\/rits\/zai-org\/glm-5-4/);
+  }, { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: "t" });
+  console.log("upstreams on one endpoint and credential share one listing");
 } finally {
   upstream.closeAllConnections();
   upstream.close();
