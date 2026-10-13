@@ -24,6 +24,7 @@ declare module "@tanstack/react-query" {
     };
     queryMeta: {
       errorToast?: string;
+      homeSpend?: string;
     };
   }
 }

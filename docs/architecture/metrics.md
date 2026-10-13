@@ -1,12 +1,13 @@
 # Metrics (spend read path)
 
-Last verified: 2026-10-08
+Last verified: 2026-10-13
 
 ## Overview
 
 The **metrics** subsystem is the user-facing read path over agent telemetry: it answers *how much have my agents spent, and where* for the signed-in user.
 It backs the two **Usage** surfaces — the Settings tab spanning every agent the user owns, and the per-agent section narrowed to one — with per-model token/cost aggregates, monthly spend per day, spend per session kind, and (unnarrowed) a per-agent spend breakdown, reading live from the columnar telemetry store that [observability](observability.md) fills.
 Home's spend widget reads the same unnarrowed breakdown over a period the user picks.
+It asks for a fresh window every 30 seconds and keeps the last breakdown it has for the period on screen while one loads, so a return to Home shows numbers at once.
 A separate **Session costs** read serves a different consumer — the chat sessions sidebar's cost-per-session line — not either Usage surface.
 It is almost entirely a query surface: it mutates nothing and emits no events.
 Spend is the only question it answers; the raw traces and log records behind those numbers are read by [agent-telemetry](agent-telemetry.md), which opens its own connection to the same store and shares this subsystem's owner scoping but inverts its fail-closed posture on an empty result.
