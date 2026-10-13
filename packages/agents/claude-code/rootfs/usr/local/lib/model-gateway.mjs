@@ -4,7 +4,7 @@ import { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const HOST = "127.0.0.1";
-// 24180 is the image ABI; the override is for tests, 0 meaning any free port.
+// UNIT_BOUNDARY_DESCRIPTION: the gateway listens on 24180, the port the image ABI fixes (ADR 067). MODEL_GATEWAY_PORT overrides it for tests, 0 meaning any free port, and the listening line names the port bound.
 const PORT = Number(process.env.MODEL_GATEWAY_PORT ?? 24180);
 const SNAPSHOT_FILE = `${process.env.HOME}/.platform/pod-service-env.json`;
 const CATALOG_FILE = `${process.env.HOME}/.platform/model-gateway-catalog.json`;
