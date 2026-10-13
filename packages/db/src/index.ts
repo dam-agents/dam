@@ -27,6 +27,8 @@ export {
   termsAcceptances,
   apiKeys,
   userFeatures,
+  gettingStartedChecklists,
+  avatarUnlocks,
   artifactFolders,
   libraryArtifacts,
   libraryArtifactVersions,

@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -57,6 +57,7 @@ Role-based budgets and approval flows are out of scope — when they arrive, ric
 
 On each reconcile that wants to scale an agent up (`shouldRun` true) where the pair is currently at zero, the controller sums the owner's Reserved, adds the candidate's footprint, and compares against the Ceiling (UserBudget, else default, both read live; no informer lag on the enforcement path).
 The read-decide-scale sequence cannot interleave for two same-owner agents because agent reconciles are drained by a **single worker goroutine** on the leader-elected instance — an invariant pinned in code at the worker spawn and in the check itself; a per-owner mutex backs it up.
+The worker orders its queue instead of adding workers: a change a person is waiting on — a wake bumping last-activity, a new Agent, a spec or annotation edit, a pod or machine moving — goes ahead of background re-checks (the startup list after a controller restart, the drift sweep, the retry and memory ticks, the controller's own status writes echoing back), so a wake waits behind at most the reconcile already running, never behind the whole fleet.
 Outcomes:
 
 - **Fits** — the pair scales up exactly as before.
@@ -70,7 +71,7 @@ Consumers must therefore treat the condition message as the explanation, not der
 A denial is **remembered per wake attempt** (keyed by the `last-activity` value it was denied under, in leader memory): a parked agent does **not** start by itself when room frees — a spontaneous start would surprise the user and grab the freed room out from under whoever freed it.
 Only a *new deliberate start* (a fresh activity bump: the Start button, opening the sandbox, a schedule fire) retries the gate.
 Two kinds of agent are exempt from the memo and auto-start within ~30s of room freeing (a dedicated retry tick re-enqueues parked exempt agents on that cadence): a **never-hibernate** agent (effective timeout `0`, which declares "always run"), and a **sweepable** agent — an ephemeral Invocation target, whose driver is blocked polling for its result: the freed room belongs to the same owner and starting is exactly what that owner is waiting for, so an over-budget spawn simply queues until room frees (e.g. earlier invocations completing), bounded by the Invocation's own liveness deadline.
-A third is an Agent whose [runtime migration](vm-runner.md#runtime-migration) is booting its new machine: only a guest that answered finishes the move, so its boot keeps retrying, with the refusal on its migration message, rather than wait for a start nobody will make.
+A third is an Agent whose [runtime migration](vm-runtime-migration.md) is booting its new machine: only a guest that answered finishes the move, so its boot keeps retrying, with the refusal on its migration message, rather than wait for a start nobody will make.
 That queue only helps a spawn that *can* fit: a target whose Size alone exceeds the Ceiling would park until its deadline reaped it hours later, so the spawn route rejects it synchronously with both figures — the one admission the api-server refuses up front, because no amount of freed room ever admits it.
 If a parked agent's activity window lapses, the idle checker's sweep restamps plain `Hibernated` and it becomes an ordinary sleeping agent.
 Already-running agents are never re-checked by resyncs or ceiling changes: budget-check reads happen only on a real 0→1 or on a **grown Size** (the live-resize gate below).

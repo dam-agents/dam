@@ -11,17 +11,17 @@ You are here when `CLAUDE_CODE_REMOTE=true`, PID 1 is `process_api`, and `/run/s
 
 ## What is different, and what handles it
 
-| Property of the container | Consequence | Handled by |
-|---|---|---|
-| No systemd (a `systemctl` binary exists, PID 1 is not systemd) | k3s runs as a plain process | `cluster:install` sandbox branch (installs the pinned k3s itself) |
-| `/` mounted private | istio-cni cannot mount the netns dir | `cluster:install` makes `/` rshared |
-| HTTPS goes through an agent proxy (`HTTPS_PROXY`) | API server → kubelet calls (logs, exec) hit the proxy | `cluster:install` adds node IPs to `NO_PROXY` for k3s |
-| No IPv6 in the kernel | ztunnel crash-loops on its dual-stack bind | `cluster:install` installs the mesh IPv4-only |
-| No `CAP_SYS_RESOURCE` | every pod sandbox fails: `oom_score_adj: Permission denied` | [`k3s-launcher`](scripts/k3s-launcher): containerd `restrict_oom_score_adj` |
-| PID 1 not inspectable | istio-cni: `Statfs /host/proc/1/ns/net: permission denied` | `k3s-launcher`: k3s in its own PID namespace |
-| cgroup v1 | kubelet ≥ 1.35 refuses to start | `k3s-launcher`: `fail-cgroupv1=false` |
-| Fixed disk allowance far below the 252G the device reports | kubelet's 5% threshold evicts everything, then GCs images | `k3s-launcher`: absolute 2Gi eviction thresholds |
-| No `/dev/kvm` | no vm backend | nothing; `virtualization.enabled` stays off, and the vm lane runs in CI only ([cluster-ops](../cluster-ops/SKILL.md)) |
+| Property of the container                                      | Consequence                                                 | Handled by                                                                                                            |
+| -------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| No systemd (a `systemctl` binary exists, PID 1 is not systemd) | k3s runs as a plain process                                 | `cluster:install` sandbox branch (installs the pinned k3s itself)                                                     |
+| `/` mounted private                                            | istio-cni cannot mount the netns dir                        | `cluster:install` makes `/` rshared                                                                                   |
+| HTTPS goes through an agent proxy (`HTTPS_PROXY`)              | API server → kubelet calls (logs, exec) hit the proxy       | `cluster:install` adds node IPs to `NO_PROXY` for k3s                                                                 |
+| No IPv6 in the kernel                                          | ztunnel crash-loops on its dual-stack bind                  | `cluster:install` installs the mesh IPv4-only                                                                         |
+| No `CAP_SYS_RESOURCE`                                          | every pod sandbox fails: `oom_score_adj: Permission denied` | [`k3s-launcher`](scripts/k3s-launcher): containerd `restrict_oom_score_adj`                                           |
+| PID 1 not inspectable                                          | istio-cni: `Statfs /host/proc/1/ns/net: permission denied`  | `k3s-launcher`: k3s in its own PID namespace                                                                          |
+| cgroup v1                                                      | kubelet ≥ 1.35 refuses to start                             | `k3s-launcher`: `fail-cgroupv1=false`                                                                                 |
+| Fixed disk allowance far below the 252G the device reports     | kubelet's 5% threshold evicts everything, then GCs images   | `k3s-launcher`: absolute 2Gi eviction thresholds                                                                      |
+| No `/dev/kvm`                                                  | no vm backend                                               | nothing; `virtualization.enabled` stays off, and the vm lane runs in CI only ([cluster-ops](../cluster-ops/SKILL.md)) |
 
 The launcher's workarounds are sandbox-only on purpose: each turns on only when its probe says so, because clamping OOM scores or lowering eviction thresholds would change behavior on a real host.
 

@@ -270,6 +270,8 @@ func (c envoyHostChain) CredentialsDisabledAt(connectionID, scope string) []envo
 
 const envoySecretTypeAllowOnly = "allow-only"
 
+const CredentialSecretSelector = envoyManagedByLabel + "=api-server"
+
 func listAgentCredentialSecrets(ctx context.Context, client kubernetes.Interface, namespace, agent, owner string, grantedSecretIDs, grantedConnectionIDs []string) ([]corev1.Secret, error) {
 	all, err := listOwnerCredentialSecrets(ctx, client, namespace, owner)
 	if err != nil {
@@ -393,7 +395,7 @@ func listOwnerCredentialSecrets(ctx context.Context, client kubernetes.Interface
 	if owner == "" {
 		return nil, nil
 	}
-	selector := fmt.Sprintf("%s=%s,%s=api-server", envoyOwnerLabel, owner, envoyManagedByLabel)
+	selector := fmt.Sprintf("%s=%s,%s", envoyOwnerLabel, owner, CredentialSecretSelector)
 	list, err := client.CoreV1().Secrets(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
 	if err != nil {
 		return nil, fmt.Errorf("listing owner credential secrets: %w", err)

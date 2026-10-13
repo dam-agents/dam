@@ -73,6 +73,7 @@ export interface RunServiceDeps {
   out: (text: string) => void;
   errOut: (line: string) => void;
   onInterrupt?: (handler: () => void) => () => void;
+  reconnectBackoffMs?: number[];
 }
 
 type RunEvent =
@@ -332,8 +333,9 @@ export function createRunService(deps: RunServiceDeps): RunService {
     for (;;) {
       if (Date.now() >= deadlineAt)
         return ok({ kind: "timed-out" as const, sessionId });
-      const delay = RECONNECT_BACKOFF_MS[
-        Math.min(backoffStep, RECONNECT_BACKOFF_MS.length - 1)
+      const backoff = deps.reconnectBackoffMs ?? RECONNECT_BACKOFF_MS;
+      const delay = backoff[
+        Math.min(backoffStep, backoff.length - 1)
       ] as number;
       backoffStep += 1;
       await new Promise((resolve) => setTimeout(resolve, delay));

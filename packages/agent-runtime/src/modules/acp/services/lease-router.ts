@@ -634,6 +634,10 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       });
     },
 
+    prestart() {
+      leaseFor(defaultPair()).runtime.prestart();
+    },
+
     status() {
       const all = [...leases.values()].map((l) => l.runtime.status());
       const keptProcesses = deps.keepPolicy.keptProcessCount();

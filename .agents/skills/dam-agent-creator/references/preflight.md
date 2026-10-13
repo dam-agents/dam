@@ -47,7 +47,8 @@ The runtime contract (`scripts/precheck.sh` implements it; the template states i
 - **stderr is not appended**, except that a broken Precheck's recorded reason carries its tail to the owner's panel, so the adapter passes that tail through the log's secret masking before printing it.
 - The adapter also sweeps its own scratch (worklist files older than 3 h): a declined fire has no session to clean up after it.
 - Runs under `bash -lc`, cwd = the work directory, with `PLATFORM_SCHEDULE_ID`, `PLATFORM_FIRE_AT` and **`PLATFORM_LAST_RUN_AT`** set.
-  The last is the last fire that *actually ran* (declines don't move it): the right "changed since?" watermark, better than a timestamp the agent keeps.
+  The last is the last fire that *actually ran* (declines don't move it): the right "changed since?"
+  watermark, better than a timestamp the agent keeps.
   It is an empty string until the first run; treat that as "everything is new", or the first fire misbehaves.
 
 Two design consequences for the pre-flight:

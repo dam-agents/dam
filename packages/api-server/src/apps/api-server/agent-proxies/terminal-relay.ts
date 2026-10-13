@@ -1,4 +1,4 @@
-import { addUpgradeSecurityHeaders } from "./upgrade.js";
+import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
@@ -7,6 +7,7 @@ import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { createActivityStamper } from "./activity-stamper.js";
+import { readyOrAnswering } from "./ready-or-answering.js";
 import type { SessionPresence } from "./session-presence.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
 import { sanitizeCloseCode } from "./acp-relay.js";
@@ -20,6 +21,7 @@ export interface TerminalRelay {
     socket: Duplex,
     head: Buffer,
     agentId: string,
+    actor: RelayActor,
   ): void;
   close(): void;
 }
@@ -29,6 +31,8 @@ export function createTerminalRelay(
   repo: AgentsRepository,
   presence: SessionPresence,
   bus: RedisBus,
+  upstreamBase: (agentId: string) => string = (agentId) =>
+    `ws://${podBaseUrl(agentId, namespace)}`,
 ): TerminalRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   addUpgradeSecurityHeaders(wss);
@@ -67,6 +71,7 @@ export function createTerminalRelay(
     socket: Duplex,
     head: Buffer,
     agentId: string,
+    actor: RelayActor,
   ) {
     const url = new URL(req.url!, `http://${req.headers.host}`);
     const sessionId = url.searchParams.get("sessionId") ?? "default";
@@ -116,13 +121,18 @@ export function createTerminalRelay(
       };
       client.on("message", buffer);
 
-      repo
-        .ensureReady(agentId)
+      readyOrAnswering(
+        repo,
+        agentId,
+        repo.ensureReady(agentId),
+        `${upstreamBase(agentId).replace(/^ws/, "http")}/healthz`,
+        () => clientGone,
+      )
         .then(
           () =>
             new Promise<WebSocket>((resolve, reject) => {
               const ws = new WebSocket(
-                `ws://${podBaseUrl(agentId, namespace)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}${lease.size > 0 ? `&${lease.toString()}` : ""}`,
+                `${upstreamBase(agentId)}/api/terminal?sessionId=${encodeURIComponent(sessionId)}${reset ? "&reset=1" : ""}${lease.size > 0 ? `&${lease.toString()}` : ""}`,
               );
               ws.on("open", () => resolve(ws));
               ws.on("error", (err) => {
@@ -138,6 +148,7 @@ export function createTerminalRelay(
             } catch {}
             return;
           }
+          actor.attached();
           client.off("message", buffer);
           for (const { data, isBinary } of pending)
             upstream.send(data, { binary: isBinary });

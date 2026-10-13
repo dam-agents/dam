@@ -44,10 +44,13 @@ enum Mode {
         release: String,
         #[arg(long, default_value_t = 3)]
         keep: usize,
+        // UNIT_BOUNDARY_DESCRIPTION: the SELinux context to put on the release directory and everything in it, on a host that confines its containers: the directory the kubelet creates for a hostPath carries the host's own label, which a confined runner may not read its release from. Empty leaves the labels alone.
+        #[arg(long = "selinux-label", default_value = "")]
+        selinux_label: String,
     },
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how often the loader reads the release the controller names. The kubelet refreshes a mounted ConfigMap within about a minute, so a faster read buys nothing.
+// UNIT_BOUNDARY_DESCRIPTION: how often the loader reads the release the controller names. The kubelet refreshes a mounted ConfigMap within about a minute, so a faster read buys nothing. VM_RUNNER_LOADER_POLL_MS overrides it so the hand-off test does not wait out five seconds per release.
 const POLL: Duration = Duration::from_secs(5);
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a runner that took over must keep running before the loader trusts the release. One that exits sooner is a broken release, and the loader goes back to the one it replaced rather than restarting the broken one in a loop.
@@ -72,8 +75,15 @@ async fn main() -> anyhow::Result<()> {
             into,
             release,
             keep,
+            selinux_label,
         } => {
+            if !selinux_label.is_empty() {
+                release::relabel_tree(&into, &selinux_label)?;
+            }
             let dest = release::stage(&builtin, &runtime, &into, &release, keep)?;
+            if !selinux_label.is_empty() {
+                release::relabel_tree(&into, &selinux_label)?;
+            }
             tracing::info!(release, dir = %dest.display(), "staged the runner release");
             signal(SignalKind::terminate())?.recv().await;
             Ok(())
@@ -301,7 +311,11 @@ impl Loader {
             _ => self.spawn(builtin, None)?,
         };
         let mut backoff = Duration::from_secs(1);
-        let mut tick = tokio::time::interval(POLL);
+        let mut tick = tokio::time::interval(
+            env("VM_RUNNER_LOADER_POLL_MS")
+                .parse()
+                .map_or(POLL, Duration::from_millis),
+        );
         loop {
             tokio::select! {
                 exited = running.child.wait() => {

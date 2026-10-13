@@ -1,4 +1,8 @@
 import type { TtlStore } from "../../../core/ttl-store.js";
+import {
+  annotateSpan,
+  inBackgroundSpan,
+} from "../../../core/background-span.js";
 import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
 import {
   Actions,
@@ -476,7 +480,17 @@ export function createTelegramWorker(deps: {
     return sessions.find((s) => s.platform?.threadTs === threadId) ?? null;
   }
 
-  async function relayToInstance(
+  function relayToInstance(
+    ...args: Parameters<typeof runTelegramTurn>
+  ): ReturnType<typeof runTelegramTurn> {
+    return inBackgroundSpan(
+      "channel.turn",
+      { "platform.channel": "telegram", "platform.channel.ambient": false },
+      () => runTelegramTurn(...args),
+    );
+  }
+
+  async function runTelegramTurn(
     agentId: string,
     thread: ThreadLike,
     messages: TelegramPendingMessage[],
@@ -557,6 +571,12 @@ export function createTelegramWorker(deps: {
       }
     } finally {
       releaseAttendance();
+      annotateSpan({
+        "platform.channel.outcome": outcome,
+        ...(failureReason !== undefined && {
+          "platform.channel.failure_reason": failureReason,
+        }),
+      });
       emitTurn(agentId, outcome, author.userId, failureReason);
     }
   }

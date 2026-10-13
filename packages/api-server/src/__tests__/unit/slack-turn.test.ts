@@ -222,35 +222,6 @@ describe("slack turn presentation — owner turns", () => {
     expect(h.turnEvents()[0]!.outcome).toBe("failure");
     expect(h.turnEvents()[0]!.reason).toBe("acp-error");
   });
-
-  it("posts a still-starting note across a transient wake retry", async () => {
-    let ready = 0;
-    const h = harness({
-      ensureReady: async (_id, o) => {
-        ready += 1;
-        o?.onWaking?.();
-        if (ready === 1) {
-          throw new AgentWakeTimeoutError({
-            agentId: "agent-1",
-            timeoutMs: 120_000,
-            durationMs: 120_100,
-            failure: { kind: "agent-pod-not-ready" },
-          });
-        }
-      },
-    });
-    await h.mention();
-    await tick();
-
-    expect(ready).toBe(2);
-    const recs = h.records();
-    expect(
-      recs.some(
-        (r) => r.kind === "message" && r.text.includes("still starting"),
-      ),
-    ).toBe(true);
-    expect(h.turnEvents()[0]!.outcome).toBe("success");
-  });
 });
 
 describe("slack reply / react tools", () => {

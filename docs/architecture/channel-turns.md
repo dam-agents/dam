@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -67,7 +67,7 @@ A few observations the diagram glosses over:
 - **Wake failures are surfaced in human terms.** A cold start announces itself to the Slack sender (requester-only notice); a wake that misses its budget while the pods are still progressing posts a still-starting note once and keeps waiting while the cause stays transient, bounded by elapsed time, so a healthy-but-slow start never loses the turn.
   A hard failure (pod crash, bad image, a wedged gateway, reconcile error) replies with copy derived from the classified wake-failure cause — never the internal error string.
   The one message passed through verbatim is a refusal to start: the controller's text names what is full and what to stop, which no copy written here could reproduce; a cause the platform is itself repairing still invites a retry.
-  An Agent a [runtime migration](vm-runner.md#runtime-migration) holds down is refused a wake at once: the sender is told it is moving to the new runtime and to try again in a few minutes, or, when the move failed after stopping it, that it waits on its owner.
+  An Agent a [runtime migration](vm-runtime-migration.md) holds down is refused a wake at once: the sender is told it is moving to the new runtime and to try again in a few minutes, or, when the move failed after stopping it, that it waits on its owner.
   Telegram replies with the same copy on wake failures (no early notice, no extended wait).
 - **The agent posts by calling a tool — plain assistant text is never delivered.** A Slack turn's reply reaches the channel only when the agent calls one of its outbound tools (see [Outbound](#outbound--agent-to-channel)), mirroring how Telegram already works.
   The relay hands the message to the pod and waits for the turn to finish, but the assistant's generated text is discarded — nothing is auto-posted, and an addressed turn that ends having posted nothing is nudged to deliver it (see [the turn watch](#the-turn-watch--liveness-not-duration)).
@@ -75,7 +75,7 @@ A few observations the diagram glosses over:
   It also situates the turn: the bot's identity, when the message was sent, which kind of conversation it is, and a permalink where Slack resolves one.
   A mention or DM turn is marked addressed, and the contract names the ways people reach an agent — the bot's tag, the agent's signed name, and (only where plain messages reach it) the bot name with no tag.
 - **The contract speaks for its own message.** A session continued in the UI carries this text with it, so the contract scopes itself to its own message and says what an unframed one means: not from Slack, answered where it arrived, reaching Slack on request ([platform-topology](platform-topology.md), §ui).
-- **A working status is the one thing the platform presents on the agent's behalf.** On mention turns a per-turn _presenter_ drives Slack's assistant-status surface — thinking, the current tool as it changes, waking during a cold start — cleared on every turn-exit path.
+- **A working status is the one thing the platform presents on the agent's behalf.** On mention turns a per-turn *presenter* drives Slack's assistant-status surface — thinking, the current tool as it changes, waking during a cold start — cleared on every turn-exit path.
   Thought and tool notifications feed it; assistant text is ignored.
   The status degrades to nothing where the workspace can't show it.
   Ambient turns present no status — nobody summoned the agent.
@@ -286,7 +286,7 @@ This is the deliberate trade-off: keep outbound simple and stateless at the cost
 The two messengers diverge slightly on what a top-level post means:
 
 - **Slack:** the worker posts outside any thread, producing a new top-level message.
-  A reply to it is routed by the _reply conversation's own_ bindings like any inbound message — so it reaches whoever that conversation's routing resolves, which need not be the Agent that posted, and nobody where none is connected.
+  A reply to it is routed by the *reply conversation's own* bindings like any inbound message — so it reaches whoever that conversation's routing resolves, which need not be the Agent that posted, and nobody where none is connected.
   An Agent-initiated DM lands in the person's DM regardless of any binding but does not itself bind it: for their replies to reach the Agent, the DM must be connected like any other conversation.
 - **Telegram:** there is no thread primitive in DMs and only weak threading in groups.
   The worker posts to the chat id; if the agent's prompt was triggered by a previous message in the same chat, that chat is still the conversation.

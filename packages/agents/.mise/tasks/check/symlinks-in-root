@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+#MISE description="No relative symlink in an image's rootfs climbs past the root"
+#MISE sources=["*/rootfs/**/*", ".mise/tasks/check/symlinks-in-root"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+# A container kernel clamps `..` at `/`, so such a link works in a pod, but
+# crane export drops it, and a vm guest booted from a crane-flattened tree
+# misses the file.
+set -euo pipefail
+cd "$(dirname "$0")/../../.."
+bad=()
+while IFS= read -r link; do
+  target="$(readlink "$link")"
+  case "$target" in /*) continue ;; esac
+  rel="${link#*/rootfs/}"
+  depth="$(($(tr -cd / <<< "$rel" | wc -c)))"
+  IFS=/ read -ra parts <<< "$target"
+  for p in "${parts[@]}"; do
+    case "$p" in
+      .. ) depth=$((depth - 1)) ;;
+      . | "" ) ;;
+      * ) depth=$((depth + 1)) ;;
+    esac
+    [ "$depth" -ge 0 ] || { bad+=("$link -> $target"); break; }
+  done
+done < <(git ls-files -s -- '*/rootfs/*' | awk -F '\t' '$1 ~ /^120000 / { print $2 }')
+if [ ${#bad[@]} -gt 0 ]; then
+  echo "symlinks-in-root: these climb past / (crane export drops them, so vm guests miss them):" >&2
+  printf '  %s\n' "${bad[@]}" >&2
+  exit 1
+fi
+echo "symlinks-in-root: ok"

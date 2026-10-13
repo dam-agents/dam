@@ -79,12 +79,13 @@ async function expireSupersededRows(
       row.payload.toolCallId !== input.toolCallId
     )
       continue;
-    await repo.expirePending(row.id);
+    if (!(await repo.expirePending(row.id))) continue;
     emit({
       type: EventType.ApprovalResolved,
       approvalId: row.id,
       agentId: row.agentId,
       ownerSub: row.ownerSub,
+      resolution: "superseded",
     });
   }
 }
@@ -140,9 +141,10 @@ export function createApprovalsRelayService(
       const row = await deps.repo.getPending(rowId);
       if (!row || row.status !== "pending" || row.payload.kind !== "acp_native")
         return;
+      const verdict = verdictOfOutcome(row.payload.options ?? [], outcome);
       const casWon = await deps.repo.resolvePending(
         row.id,
-        verdictOfOutcome(row.payload.options ?? [], outcome),
+        verdict,
         "in-session",
         { markDelivered: true },
       );
@@ -152,6 +154,7 @@ export function createApprovalsRelayService(
           approvalId: row.id,
           agentId: row.agentId,
           ownerSub: row.ownerSub,
+          resolution: verdict,
         });
       }
     },

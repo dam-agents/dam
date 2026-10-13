@@ -1,11 +1,11 @@
 # Browser panel
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 ## Overview
 
 The **Browser Panel** lets a user see and use a web app their agent runs — a dev server, a quick HTTP server, a whole nested platform — from a panel beside the chat, without SSH port-forwarding.
-It is experimental: it shows only to a user with the addressed-credential-injection flag ([features](features.md)), and only on an agent that requires named connections ([connections](connections.md#addressing-a-connection)).
+It shows only on an agent that requires named connections, which a new agent does by default ([connections](connections.md#addressing-a-connection)).
 
 The app never runs in the user's browser.
 A Chromium **inside the agent's sandbox** loads it, and the panel shows that browser's screen as a video stream and sends the user's pointer and keys back.
@@ -38,7 +38,9 @@ Safe Browsing and the component updater stay on: the updater is how Chrome gets 
 ## The display
 
 `platform-display` is the display stack: Xvfb (the virtual display), i3 keeping every window full-screen, PipeWire with its PulseAudio server for sound, and **[Selkies](https://github.com/selkies-project/selkies)**, a stream server for Linux displays.
-agent-runtime does not start it at boot, where it would take the CPU a small machine needs to come up and run the first turn: it starts it on first use — a harness, terminal or SSH session starting, which is how the agent's own `agent-browser` finds a display, or the panel asking for its browser or its stream — or ten seconds after it starts answering its health check, whichever comes first, and keeps it running from then on.
+agent-runtime does not start it before it answers its health check, where it would take the CPU a small machine needs to come up: it starts it on first use — a prompt to any harness, or a terminal or SSH session starting, which is how the agent's own `agent-browser` finds a display, or the panel asking for its browser or its stream — or ten seconds after it starts answering its health check, whichever comes first, and keeps it running from then on.
+It does not start with a harness: the default harness starts as soon as the health check answers ([agent-lifecycle](agent-lifecycle.md#session-inside-the-pod)), and Selkies' few seconds of start-up CPU made the first session open about 0.15 s later.
+A prompt is early enough for a tool call: the virtual display is up about 0.1 s after the start, before the model's first answer.
 That delay is the limit: a command run by anything else in those ten seconds finds no display yet.
 It exits as soon as any part of it dies, and agent-runtime kills what it left and starts it again, with a growing delay while it keeps failing, so a crashed stream server or display comes back by itself.
 

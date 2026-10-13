@@ -72,7 +72,6 @@ features:
   vm-sandboxes: experimental
   interactive-artifacts: experimental
   agent-telemetry: experimental
-  strict-connection-addressing: experimental
 
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
@@ -172,12 +171,13 @@ istio:
 # persistent microVM (smolvm) instead of as a pod, hosted by the **VM
 # runner** — one pod per owner, created by the controller, that holds /dev/kvm
 # and runs the platform's
-# vm-runner agent plus smolvm. A machine persists the agent's home and nothing
-# else, bind-mounted from its one storage disk by platform-init, which the
-# runner runs as every machine's entrypoint; the rest of the guest is a root
-# overlay the machine discards each time it stops, so anything installed
-# outside HOME is gone on the next boot. An Agent whose mounts ask to persist
-# a path outside HOME is refused rather than silently losing it. The controller drives its machine API over TLS
+# vm-runner agent plus smolvm. A machine persists the agent's home,
+# bind-mounted from its one storage disk by platform-init, which the runner
+# runs as every machine's entrypoint; the rest of the guest is a root overlay
+# whose upper layer is on that disk too, kept across stops until an image of
+# another root generation boots, with /tmp, /var/tmp and /var/cache emptied on
+# every boot. An Agent whose mounts ask to persist a path outside HOME is
+# refused rather than silently losing it. The controller drives its machine API over TLS
 # and a bearer token: the controller mints the token, and cert-manager issues
 # the runner's certificate from the runners' own CA (`runnerCA` below), so
 # virtualization needs cert-manager; the agent Service resolves to the
@@ -286,11 +286,12 @@ virtualization:
     # measured using, for its guest to grow into before the controller acts.
     headroomMiB: 256
     # Memory a machine is counted at until the runner first measures it,
-    # about ten seconds into its boot, when that is less than its size.
+    # usually about 100 ms after its start returns and before the agent's
+    # harness has started, when that is less than its size.
     # Counting a boot at its full size, half the pool, would let only two
     # machines boot at once, so a runner roll or a few wakes together would
-    # refuse the rest. A guest that touches more than this before its first
-    # measurement is under-counted until then. Each machine also boots with
+    # refuse the rest. A harness that is still starting at the first
+    # measurement is under-counted until later probes see it grow. Each machine also boots with
     # this much RAM, or its size when that is less, and is grown to its size
     # once the guest is up: a boot costs time for every GiB it starts with.
     bootMiB: 2048
@@ -322,9 +323,14 @@ virtualization:
     # A pass visits each runner about once a minute while its agents run, and
     # on the controller's ten-minute sweep otherwise, so a full roll takes
     # roughly owners / maxConcurrent × (runner restart + machine boot).
+    # A runner whose owner has an agent in the middle of a turn does not take
+    # a free place in the roll: it is offered again on the next pass, and
+    # other owners roll meanwhile. `idleWait` bounds that wait; past it, the
+    # runner rolls even with an agent busy.
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m
+      idleWait: 1h
     # A directory on the node holding pre-flattened image trees (each with
     # its launch record; `mise run image:stage-vm` makes one) or `docker save`
     # archives, named after the image reference and mounted read-only into
@@ -344,8 +350,9 @@ virtualization:
     # hand-off boot the new one. Only a release that cannot load in the pod
     # (a newer base image's libc) still rolls the pods, through `rollout`, as
     # every runner image does when this is empty. The stager is the only
-    # writer; runners mount it read-only. Not supported on OpenShift yet: the
-    # directory would need an SELinux label the confined runners can read.
+    # writer; runners mount it read-only. On OpenShift it needs `scc`, as
+    # `imageCache.hostPath` does: the stager labels the directory for
+    # containers, as spc_t, so the confined runners can read it.
     releaseHostPath: ""
     # Roll the pods for every release built against another VM runtime, rather
     # than letting a new runtime manage machines an older one started. The

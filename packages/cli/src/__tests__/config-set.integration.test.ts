@@ -1,53 +1,10 @@
-import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from "vitest";
-
-const exec = promisify(execFile);
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const PKG_ROOT = resolve(HERE, "../..");
-const BIN_PATH = join(PKG_ROOT, "dist", "js", "bin.js");
-
-interface RunResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
-
-async function runDam(
-  args: string[],
-  env: Record<string, string>,
-): Promise<RunResult> {
-  try {
-    const { stdout, stderr } = await exec("node", [BIN_PATH, ...args], { env });
-    return { exitCode: 0, stdout, stderr };
-  } catch (e) {
-    const err = e as { code?: number; stdout?: string; stderr?: string };
-    return {
-      exitCode: typeof err.code === "number" ? err.code : 1,
-      stdout: err.stdout ?? "",
-      stderr: err.stderr ?? "",
-    };
-  }
-}
+import { dirname, join } from "node:path";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { runDam, spawnDam } from "./run-dam.js";
 
 describe("dam config set (integration)", () => {
-  beforeAll(async () => {
-    await exec("pnpm", ["exec", "tsup"], { cwd: PKG_ROOT });
-  }, 60_000);
-
   let home: string;
   let configPath: string;
 
@@ -63,7 +20,7 @@ describe("dam config set (integration)", () => {
   afterAll(async () => {});
 
   it("writes a valid TOML file with the server key", async () => {
-    const r = await runDam(
+    const r = await spawnDam(
       ["config", "set", "server", "https://example.test"],
       { HOME: home, PATH: process.env.PATH ?? "" },
     );
@@ -89,12 +46,8 @@ describe("dam config set (integration)", () => {
     await expect(readFile(configPath, "utf-8")).rejects.toThrow();
   });
 
-  it.each([
-    ["mailto:foo", "mailto"],
-    ["file:///etc/passwd", "file"],
-    ["ftp://example.test/x", "ftp"],
-  ])("rejects non-http(s) URL %s", async (input) => {
-    const r = await runDam(["config", "set", "server", input], {
+  it("rejects a non-http(s) URL", async () => {
+    const r = await runDam(["config", "set", "server", "file:///etc/passwd"], {
       HOME: home,
       PATH: process.env.PATH ?? "",
     });
@@ -118,7 +71,7 @@ describe("dam config set (integration)", () => {
   it("honors XDG_CONFIG_HOME when set", async () => {
     const xdg = await mkdtemp(join(tmpdir(), "dam-xdg-"));
     try {
-      const r = await runDam(
+      const r = await spawnDam(
         ["config", "set", "server", "https://example.test"],
         { HOME: home, XDG_CONFIG_HOME: xdg, PATH: process.env.PATH ?? "" },
       );

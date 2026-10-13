@@ -9,7 +9,7 @@ argument-hint: "[PR number or branch]"
 
 # PR Review Artifact
 
-Produce one **self-contained Artifact** (hosted HTML page) that guides a reviewer through a pull request as a narrative, not a diff dump: _what_ changed, _why_ each decision was made, _what problems came up and how they were solved_, ordered so understanding builds as they scroll.
+Produce one **self-contained Artifact** (hosted HTML page) that guides a reviewer through a pull request as a narrative, not a diff dump: *what* changed, *why* each decision was made, *what problems came up and how they were solved*, ordered so understanding builds as they scroll.
 Someone who never saw the branch should land in the diff already knowing what to look at and why.
 The reader is usually technical and knows the application, so tie explanations to how it works, not to abstract principles.
 

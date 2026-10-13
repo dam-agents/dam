@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -47,12 +47,12 @@ Three display-axis attributes drive UI grouping.
 `category` and `isCustom` place a template in a section; an optional **family** (`github`, `github-enterprise`, `kubernetes`, `modal`, `mcp-server`, `custom-header`) groups templates the catalog shows as one connect page with several methods, and is what a [starter kit](starter-kits.md) names when it accepts any method of a provider.
 Families are declared on the templates themselves and carried on the template view, so nothing else keeps a copy of the membership.
 
-| `category` | `isCustom` | Where the user encounters it |
-|---|---|---|
-| `app` | `false` | Apps section: GitHub, Spotify, Anthropic, OpenAI, Google services, GitHub Enterprise, … |
-| `mcp` | `false` | MCP servers section: Linear MCP, Atlassian MCP, … (as added) |
-| `mcp` | `true` | Custom Connection → "Add MCP server" |
-| `other` | `true` | Custom Connection → "Add OAuth credential" / "Add Header credential" |
+| `category` | `isCustom` | Where the user encounters it                                                            |
+| ---------- | ---------- | --------------------------------------------------------------------------------------- |
+| `app`      | `false`    | Apps section: GitHub, Spotify, Anthropic, OpenAI, Google services, GitHub Enterprise, … |
+| `mcp`      | `false`    | MCP servers section: Linear MCP, Atlassian MCP, … (as added)                            |
+| `mcp`      | `true`     | Custom Connection → "Add MCP server"                                                    |
+| `other`    | `true`     | Custom Connection → "Add OAuth credential" / "Add Header credential"                    |
 
 Templates are registered in code; adding a new integration is one entry.
 Schemas validate user input; the template's `build()` function projects inputs into the concrete `auth` + `contributions[]` of the Connection record.
@@ -163,11 +163,12 @@ Naming a Connection is only *required* where two of them genuinely collide: the 
 Connections that scope themselves to different parts of one service — one per Google Workspace service on `www.googleapis.com` — are not rivals, and each keeps being injected on its own paths without any address.
 Where the scopes do overlap, an unaddressed request fails closed at the gateway, because the alternative, serving it from whichever credential sorted first, is the silent wrong-account failure this addressing exists to end.
 
-An Agent can make naming *required* for every one of its Connections.
-The Agent's spec says so, set at create by a starter kit, or later in agent settings (behind a feature flag).
+An Agent can make naming *required* for every one of its Connections; a new one does unless its create or starter kit says otherwise.
+The Agent's spec says so, and agent settings change it later.
 Its gateway then injects a Connection's credential only into a request that names it, and sends any other request upstream with the credential it already carries, rather than replacing it.
 Contested scopes still fail closed.
-The case it serves is an agent whose tools — Docker containers, nested agents — call the same hosts with their own credentials or none: their requests name none of the agent's Connections, so the gateway leaves them alone.
+It serves an agent whose tools — Docker containers, nested agents, a browser its user drives — call the same hosts with their own credentials or none: their requests name none of the agent's Connections, so the gateway leaves them alone.
+Off serves the opposite: tools that need a credential added to a request naming no Connection.
 Platform-written values already carry an address, so the agent's own clients are unaffected.
 A Connection with no credential of the agent's own is reachable only through its path prefix.
 Only such an agent offers the [browser panel](browser-panel.md), whose user browses through the agent's gateway.
@@ -363,28 +364,27 @@ Every agent gets the platform MCP entry; a sandbox holding at least one shared-k
 The api-server's contribution-fanout layer routes each Contribution kind to the rail that delivers it.
 Different rails because the kinds have genuinely different delivery semantics:
 
-| Kind | Rail | Delivery semantics | Note |
-|---|---|---|---|
-| `env` | Runtime channel `applyState` (state slice) | Sub-second push; applied at next harness spawn | Written to a JSON file the harness spawn path merges into the process env. Two sources feed it — user-typed env (the Environment editor) and connection-derived env — user env ordered first so it wins on name collision (first-occurrence-wins). A change recycles the harness at an idle turn boundary; only a variable-set change may force one mid-turn, never past a kept [Harness Task](agent-processes.md#reported-background-work) — value-only changes spare in-flight runs. No pod roll. |
-| `egress-allow` | Postgres `egress_rules` → Envoy `ext_authz` | Live read; no pod involvement | Joined per-grant; revoke sweeps rows. Agent never sees these. |
-| `egress-inject` | Postgres `egress_rules` → Envoy `ext_authz`, plus a wire-injected credential at the gateway | Live read; no pod involvement | Same `egress_rules` row as `egress-allow`; the gateway also injects `headerName`/`valueFormat` on the wire (mechanics in [credential gateway](credential-gateway.md)). Agent never sees these. |
-| `egress-sign` | Postgres `egress_rules` → Envoy `ext_authz`, plus a signing step at the gateway | Live read; no pod involvement | Same `egress_rules` row as `egress-allow`, path-scoped to the bucket when one is set; the gateway re-signs requests naming the Connection with its key pair (mechanics in [credential gateway](credential-gateway.md#request-signing)). Agent never sees the keys. |
-| `file` | Runtime channel `applyState` (state slice) | Sub-second push; idempotent reconciliation | Per-format + per-mergeMode driver materializes. |
-| `mcp-entry` | Runtime channel `applyState` (state slice) | Sub-second push; idempotent reconciliation | Driver dispatches to harness-specific path. |
-| `skill-ref` | Runtime channel `applyState` (state slice) | Sub-second push; per-version installer | Driver wraps existing skill-fetch helpers. |
+| Kind            | Rail                                                                                        | Delivery semantics                             | Note                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `env`           | Runtime channel `applyState` (state slice)                                                  | Sub-second push; applied at next harness spawn | Written to a JSON file the harness spawn path merges into the process env. Two sources feed it — user-typed env (the Environment editor) and connection-derived env — user env ordered first so it wins on name collision (first-occurrence-wins). A change recycles the harness at an idle turn boundary; only a variable-set change may force one mid-turn, never past a kept [Harness Task](agent-processes.md#reported-background-work) — value-only changes spare in-flight runs. No pod roll. |
+| `egress-allow`  | Postgres `egress_rules` → Envoy `ext_authz`                                                 | Live read; no pod involvement                  | Joined per-grant; revoke sweeps rows. Agent never sees these.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `egress-inject` | Postgres `egress_rules` → Envoy `ext_authz`, plus a wire-injected credential at the gateway | Live read; no pod involvement                  | Same `egress_rules` row as `egress-allow`; the gateway also injects `headerName`/`valueFormat` on the wire (mechanics in [credential gateway](credential-gateway.md)). Agent never sees these.                                                                                                                                                                                                                                                                                                      |
+| `egress-sign`   | Postgres `egress_rules` → Envoy `ext_authz`, plus a signing step at the gateway             | Live read; no pod involvement                  | Same `egress_rules` row as `egress-allow`, path-scoped to the bucket when one is set; the gateway re-signs requests naming the Connection with its key pair (mechanics in [credential gateway](credential-gateway.md#request-signing)). Agent never sees the keys.                                                                                                                                                                                                                                  |
+| `file`          | Runtime channel `applyState` (state slice)                                                  | Sub-second push; idempotent reconciliation     | Per-format + per-mergeMode driver materializes.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `mcp-entry`     | Runtime channel `applyState` (state slice)                                                  | Sub-second push; idempotent reconciliation     | Driver dispatches to harness-specific path.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `skill-ref`     | Runtime channel `applyState` (state slice)                                                  | Sub-second push; per-version installer         | Driver wraps existing skill-fetch helpers.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 The rail choice is a property of the kind, not of the Connection.
 A single grant of GitHub Enterprise produces Contributions on both rails: `egress-allow` (egress_rules → Envoy live), and `env` + `file` (runtime channel push).
 They flow independently.
 
-
 ## Persistence touchpoints
 
-| Substrate | What lives there | Notes |
-|---|---|---|
-| Postgres `connections` | Connection records | The unified model's own table. |
-| Postgres `egress_rules` | `egress-allow`, `egress-inject` and `egress-sign` Contributions joined per grant | Existing table; same as today. All three kinds produce the same allow row; `egress-inject`'s credential and `egress-sign`'s signing step ride a separate gateway-side rail. |
-| K8s Secret per Connection | Auth credentials (refresh tokens, api-keys, HMAC key pairs) | Owner-label-scoped; mounted into the paired gateway pod, never into the agent pod. |
+| Substrate                 | What lives there                                                                 | Notes                                                                                                                                                                       |
+| ------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Postgres `connections`    | Connection records                                                               | The unified model's own table.                                                                                                                                              |
+| Postgres `egress_rules`   | `egress-allow`, `egress-inject` and `egress-sign` Contributions joined per grant | Existing table; same as today. All three kinds produce the same allow row; `egress-inject`'s credential and `egress-sign`'s signing step ride a separate gateway-side rail. |
+| K8s Secret per Connection | Auth credentials (refresh tokens, api-keys, HMAC key pairs)                      | Owner-label-scoped; mounted into the paired gateway pod, never into the agent pod.                                                                                          |
 
 ## Invariants
 

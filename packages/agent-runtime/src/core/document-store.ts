@@ -3,6 +3,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -56,10 +57,18 @@ export function openJsonFile<T>(
       return cache;
     },
     write(next) {
-      mkdirSync(dirname(path), { recursive: true });
       const tmp = `${path}.tmp`;
-      writeFileSync(tmp, JSON.stringify(next, null, 2));
-      renameSync(tmp, path);
+      try {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(tmp, JSON.stringify(next, null, 2));
+        renameSync(tmp, path);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOSPC") throw err;
+        rmSync(tmp, { force: true });
+        process.stderr.write(
+          `[store] ${path} kept in memory only: no space left on device\n`,
+        );
+      }
       cache = next;
       loaded = true;
     },

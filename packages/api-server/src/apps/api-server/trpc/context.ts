@@ -67,6 +67,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     runtimeMutator,
     contributionsProgress,
     onboardingChecklists,
+    gettingStarted,
     getAgentCapabilities,
     schedulesBoot,
     listRegisteredAgentIds,
@@ -273,6 +274,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ownsApproval: async (approvalId) =>
         (await createApprovalsRepository(db).getPending(approvalId))
           ?.ownerSub === user.sub,
+      ownsAgent: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
     });
     const files = composeFilesModule(
       agentsRepo,
@@ -360,6 +362,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       artifactLibrary,
       caseStudies,
       features,
+      gettingStarted: gettingStarted.forOwner(user.sub),
       files,
       harnessConfig,
       links: config.links,

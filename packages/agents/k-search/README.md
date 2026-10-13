@@ -29,15 +29,15 @@ Both are the same image — only the eval backend (env) and GPU request differ.
 
 ## Configuration (env)
 
-| Variable | Default | Notes |
-|----------|---------|-------|
-| `KSEARCH_TASK_SOURCE` | `kernelbench` | Only `kernelbench` supports Modal eval |
-| `KSEARCH_EVAL_MODE` | `modal` | Switch to `local` on a GPU node |
-| `KSEARCH_TARGET_GPU` | `H100` | Modal GPU type |
-| `KSEARCH_KERNELBENCH_LEVEL` | `1` | KernelBench difficulty (1–4) |
-| `KSEARCH_KERNELBENCH_PROBLEM_ID` | `1` | Problem within the level |
-| `KSEARCH_MAX_OPT_ROUNDS` | `50` | Optimization rounds |
-| `KSEARCH_LANGUAGE` | `triton` | `triton` or `cuda` |
+| Variable                         | Default       | Notes                                  |
+| -------------------------------- | ------------- | -------------------------------------- |
+| `KSEARCH_TASK_SOURCE`            | `kernelbench` | Only `kernelbench` supports Modal eval |
+| `KSEARCH_EVAL_MODE`              | `modal`       | Switch to `local` on a GPU node        |
+| `KSEARCH_TARGET_GPU`             | `H100`        | Modal GPU type                         |
+| `KSEARCH_KERNELBENCH_LEVEL`      | `1`           | KernelBench difficulty (1–4)           |
+| `KSEARCH_KERNELBENCH_PROBLEM_ID` | `1`           | Problem within the level               |
+| `KSEARCH_MAX_OPT_ROUNDS`         | `50`          | Optimization rounds                    |
+| `KSEARCH_LANGUAGE`               | `triton`      | `triton` or `cuda`                     |
 
 ## Modal through the DAM gateway
 
@@ -46,6 +46,7 @@ The modal client is installed with its `api-proxy-support` extra, so both its tr
 All modal traffic then flows through the gateway.
 
 Requirements — supplied by the **Modal connection** granted to the agent:
+
 - `MODAL_TOKEN_SECRET` — the secret; gateway-injected into the `x-modal-token-secret` header over the HTTP/2 chain (the pod env holds only a placeholder, never the real value).
 - `MODAL_TOKEN_ID` — non-secret identifier, delivered as a plain pod env.
 - Egress allow-rules for `api.modal.com` (control plane) plus the blob hosts `storage.googleapis.com` and `s3.amazonaws.com`.

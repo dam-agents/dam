@@ -37,6 +37,7 @@ export interface HarnessLeaseDeps {
   describeBusy: () => string;
   envReadyAtBoot: boolean;
   warmStartTimeoutMs: number;
+  spawnWorkTimeoutMs: number;
   beforeSpawn?: () => Promise<void>;
   envForceRecycleMs: number;
   keptTasks: () => number;
@@ -46,9 +47,11 @@ export interface HarnessLeaseDeps {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Holds the harness child process on loan. Spawns
- * it when the first client needs it, holds early callers back until the env
- * is ready at boot (bounded by a timeout, and covering the spawn work that has
- * to precede the first spawn), and takes the process back when the env or the
+ * it when the first client needs it, or before that when the runtime
+ * prestarts it, holds early callers back until the env
+ * is ready at boot and the spawn work that has to precede the first spawn has
+ * landed (each bounded by a timeout of its own; the spawn work's is the
+ * shorter, because a caller waiting on it is a person opening a chat), and takes the process back when the env or the
  * harness's own config changes, or when a caller reports the process
  * unresponsive: right away when idle, after work drains when busy, or after a
  * grace period when forced. An env change may have moved the agent to another
@@ -125,7 +128,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
       finishBootWork();
       return;
     }
-    bootTimer = setTimeout(openGate, deps.warmStartTimeoutMs);
+    bootTimer = setTimeout(openGate, deps.spawnWorkTimeoutMs);
     void hold
       .catch(() => {})
       .then(() => {

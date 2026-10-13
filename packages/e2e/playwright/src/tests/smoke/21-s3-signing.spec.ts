@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A sigv4 Connection is re-signed at the gateway, and only when the request names it. The agent holds the Connection's placeholder as its access key ID (an AWS profile named after the Connection, AWS_PROFILE pointing at it). A request whose SigV4 Credential carries that placeholder reaches the public echo signed with the real key ID from the Connection's Secret and a fresh signature over an unsigned payload; a request carrying a foreign key ID on the same host arrives byte-for-byte as sent. Rotating the key pair changes the key ID the next request is signed with, without any restart. The e2e api-server accepts any key pair at create and rotation, since the echo is not an S3 endpoint.
+// TEST_OVERVIEW: A sigv4 Connection is re-signed at the gateway, and only when the request names it. The agent holds the Connection's placeholder as its access key ID (an AWS profile named after the Connection, AWS_PROFILE pointing at it). A request whose SigV4 Credential carries that placeholder reaches the public echo signed with the real key ID from the Connection's Secret and a fresh signature over an unsigned payload; a request carrying a foreign key ID on the same host arrives byte-for-byte as sent. Rotating the key pair changes the key ID the next request is signed with within seconds, without any restart. The e2e api-server accepts any key pair at create and rotation, since the echo is not an S3 endpoint.
 import { expect, test } from "@playwright/test";
 import {
   AWS_PROFILE_ENV,
@@ -68,6 +68,7 @@ async function pollSignedWith(
   placeholder: string,
   keyId: string,
   message: string,
+  timeout = 180_000,
 ): Promise<EchoedHeaders> {
   let last: EchoedHeaders | undefined;
   await expect
@@ -80,7 +81,7 @@ async function pollSignedWith(
         );
         return last?.authorization ?? "";
       },
-      { timeout: 180_000, intervals: [3_000], message },
+      { timeout, intervals: [3_000], message },
     )
     .toMatch(signedWith(keyId));
   return last!;
@@ -132,6 +133,7 @@ test("sigv4 connection: addressed requests are re-signed, foreign ones pass unch
       AWS_PROFILE_ENV,
       awsProfileSlug(s3ConnectionName),
       `env ${AWS_PROFILE_ENV} did not converge to the connection's profile`,
+      30_000,
     );
   });
 
@@ -180,6 +182,7 @@ test("sigv4 connection: addressed requests are re-signed, foreign ones pass unch
       placeholder,
       rotatedKeyId,
       "echo endpoint did not return a request signed with the rotated key ID",
+      30_000,
     );
   });
 

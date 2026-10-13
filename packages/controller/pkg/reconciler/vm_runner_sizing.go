@@ -166,9 +166,14 @@ func (r *AgentReconciler) runnerClassExpands(ctx context.Context) bool {
 	return false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills the runner with every machine of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.
-func runnerMemoryRequest(demandMiB, reserveMiB int, floor, limit resource.Quantity) resource.Quantity {
-	want := *resource.NewQuantity(int64(roundedMiB(demandMiB+reserveMiB))<<20, resource.BinarySI)
+// UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills the runner with every machine of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It rises at once, but falls only once that has dropped a quarter step below the step under the current request, so a guest whose use sits on a step boundary does not resize the pod at every pass. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.
+func runnerMemoryRequest(demandMiB, reserveMiB int, current, floor, limit resource.Quantity) resource.Quantity {
+	needMiB := demandMiB + reserveMiB
+	wantMiB := roundedMiB(needMiB)
+	if currentMiB := int(current.Value() >> 20); wantMiB < currentMiB && needMiB > currentMiB-memoryRequestStepMiB-memoryRequestStepMiB/4 {
+		wantMiB = currentMiB
+	}
+	want := *resource.NewQuantity(int64(wantMiB)<<20, resource.BinarySI)
 	if want.Cmp(floor) < 0 {
 		want = floor
 	}
@@ -202,32 +207,18 @@ func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, dem
 		slog.Warn("vm runner: listing the runner pod to resize it", "owner", owner, "error", err)
 		return
 	}
+	var cpuCeiling *resource.Quantity
+	if cfg := r.config.VM.Runner.Resources; cfg != nil {
+		if q, ok := cfg.Limits[corev1.ResourceCPU]; ok {
+			cpuCeiling = &q
+		}
+	}
 	for i := range pods.Items {
 		pod := &pods.Items[i]
-		if pod.DeletionTimestamp != nil || pod.Spec.NodeName == "" {
+		res, current, want, ok := r.runnerPodMemoryRequest(pod, demand.memoryMiB)
+		if !ok {
 			continue
 		}
-		c := slices.IndexFunc(pod.Spec.Containers, func(c corev1.Container) bool { return c.Name == vmRunnerComponent })
-		if c < 0 {
-			continue
-		}
-		res := &pod.Spec.Containers[c].Resources
-		limit, ok := res.Limits[corev1.ResourceMemory]
-		if !ok || limit.IsZero() {
-			continue
-		}
-		floor := limit
-		var cpuCeiling *resource.Quantity
-		if cfg := r.config.VM.Runner.Resources; cfg != nil {
-			if q, ok := cfg.Requests[corev1.ResourceMemory]; ok {
-				floor = q
-			}
-			if q, ok := cfg.Limits[corev1.ResourceCPU]; ok {
-				cpuCeiling = &q
-			}
-		}
-		want := runnerMemoryRequest(demand.memoryMiB, r.config.VM.Runner.ReserveMiB, floor, limit)
-		current := res.Requests[corev1.ResourceMemory]
 		cpuRequest, hasCPURequest := res.Requests[corev1.ResourceCPU]
 		wantCPU := runnerCPULimit(demand.vCPUs, r.config.VM.Runner.MachineCPUs, cpuRequest, cpuCeiling)
 		currentCPU, hasCPULimit := res.Limits[corev1.ResourceCPU]
@@ -254,6 +245,48 @@ func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, dem
 		}
 		slog.Info("vm runner: asked the node for a new memory request and CPU limit on the runner pod", "owner", owner, "pod", pod.Name, "from", current.String(), "to", want.String(), "cpuLimitFrom", currentCPU.String(), "cpuLimitTo", wantCPU.String())
 	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the runner container of a scheduled, live runner pod, with the memory request it has and the one runnerMemoryRequest wants for it. A pod being deleted or not yet placed, or a container without a memory limit, is not resized.
+func (r *AgentReconciler) runnerPodMemoryRequest(pod *corev1.Pod, demandMiB int) (*corev1.ResourceRequirements, resource.Quantity, resource.Quantity, bool) {
+	if pod.DeletionTimestamp != nil || pod.Spec.NodeName == "" {
+		return nil, resource.Quantity{}, resource.Quantity{}, false
+	}
+	c := slices.IndexFunc(pod.Spec.Containers, func(c corev1.Container) bool { return c.Name == vmRunnerComponent })
+	if c < 0 {
+		return nil, resource.Quantity{}, resource.Quantity{}, false
+	}
+	res := &pod.Spec.Containers[c].Resources
+	limit, ok := res.Limits[corev1.ResourceMemory]
+	if !ok || limit.IsZero() {
+		return nil, resource.Quantity{}, resource.Quantity{}, false
+	}
+	floor := limit
+	if cfg := r.config.VM.Runner.Resources; cfg != nil {
+		if q, ok := cfg.Requests[corev1.ResourceMemory]; ok {
+			floor = q
+		}
+	}
+	current := res.Requests[corev1.ResourceMemory]
+	return res, current, runnerMemoryRequest(demandMiB, r.config.VM.Runner.ReserveMiB, current, floor, limit), true
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a reconcile would change the memory request of the owner's runner pod. The request holds within a step, so a count that crosses a step boundary and back does not change it; a cluster without in-place resize never changes it.
+func (r *AgentReconciler) runnerRequestMoves(ctx context.Context, owner string, demandMiB int) bool {
+	if !r.podResizeAvailable(ctx) {
+		return false
+	}
+	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labels.Set(vmRunnerSelector(owner)).String(),
+	})
+	if err != nil {
+		slog.Warn("vm runner: listing the runner pod to check its memory request", "owner", owner, "error", err)
+		return false
+	}
+	return slices.ContainsFunc(pods.Items, func(pod corev1.Pod) bool {
+		_, current, want, ok := r.runnerPodMemoryRequest(&pod, demandMiB)
+		return ok && current.Cmp(want) != 0
+	})
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an accepted resize is a request to the node, not an allocation. The kubelet reports what it did with it on the pod: deferred while the node has no room right now, infeasible when it never will. Either way the scheduler has not accounted for that memory, so it is reported once per pod and size rather than read as done — the runner's own admission against its limit is what still stands between the owner's machines and the node.

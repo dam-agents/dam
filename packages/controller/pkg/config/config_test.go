@@ -398,12 +398,13 @@ func TestLoadFromEnv_RejectsARunnerRolloutOutOfRange(t *testing.T) {
 		assert.Error(t, err, bad)
 	}
 
-	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,"rollout":{"maxConcurrent":2,"settleTimeout":"15m"}}}`
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,"rollout":{"maxConcurrent":2,"settleTimeout":"15m","idleWait":"2h"}}}`
 	setEnv(t, base)
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
 	assert.Equal(t, 2, cfg.VM.Runner.Rollout.MaxConcurrent)
 	assert.Equal(t, 15*time.Minute, cfg.VM.Runner.Rollout.SettleTimeout.AsDuration())
+	assert.Equal(t, 2*time.Hour, cfg.VM.Runner.Rollout.IdleWait.AsDuration())
 }
 
 // TEST_SCENARIO: the runtime migration's retention window comes from the chart as a duration. A negative one is a values typo, refused at start rather than read as "delete at once"; a set one is read as given.

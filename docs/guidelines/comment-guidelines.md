@@ -11,11 +11,11 @@ The one exception is a **typed comment**: prose prefixed with a type from the `C
 
 ## Typed comments
 
-| Type | Where it goes | What it says |
-|---|---|---|
-| `TEST_OVERVIEW:` | Top of a spec file | The feature under test: what the module must do, in the same terms the specs assert |
-| `TEST_SCENARIO:` | Above an `it()` | Why the scenario exists: the situation, and what must hold in it |
-| `UNIT_BOUNDARY_DESCRIPTION:` | Above a file's single exported unit | What the unit does and why it exists as its own module |
+| Type                         | Where it goes                       | What it says                                                                        |
+| ---------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------- |
+| `TEST_OVERVIEW:`             | Top of a spec file                  | The feature under test: what the module must do, in the same terms the specs assert |
+| `TEST_SCENARIO:`             | Above an `it()`                     | Why the scenario exists: the situation, and what must hold in it                    |
+| `UNIT_BOUNDARY_DESCRIPTION:` | Above a file's single exported unit | What the unit does and why it exists as its own module                              |
 
 A new kind of comment starts by registering its type in `COMMENT_TYPES` — an unregistered prefix is stripped like any other prose.
 

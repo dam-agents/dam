@@ -2,7 +2,8 @@
 name: shinkaevolve
 description: >-
   Run ShinkaEvolve, the sample-efficient evolutionary program-optimization
-  framework, via the `shinka_run` CLI. Use when the user wants to evolve /
+  framework, via the `shinka_run` CLI.
+  Use when the user wants to evolve /
   optimize a function, program, or algorithm in a target repo to improve a
   metric (speed, accuracy, size, error rate), author the ShinkaEvolve task
   inputs (initial program + EVOLVE-BLOCK, evaluate.py), pick the evolution
@@ -147,14 +148,14 @@ shinka_run --task-dir <dir> --results_dir <dir> --num_generations <N> \
   [--max-evaluation-jobs <n>] [--max-proposal-jobs <n>] [--max-db-workers <n>]
 ```
 
-| Flag | Meaning |
-|---|---|
-| `--task-dir` | dir containing `evaluate.py` + `initial.<ext>` |
-| `--results_dir` | output dir — **always** an explicit path on `$SHINKA_OUTPUT_ROOT`, outside the target repo; reusing it **resumes** the run |
-| `--num_generations` | the run's **total** generation budget (`0..N-1`) — always bound; authoritative over any config |
-| `--set ns.field=value` | repeatable overrides; namespaces `evo` / `db` / `job`; lists/dicts as JSON, `null` clears an optional field |
-| `--config-fname` | YAML with the same `evo`/`db`/`job` namespaces — use for long values (e.g. a multiline `evo.task_sys_msg`) instead of shell-escaping |
-| `--max-evaluation-jobs` / `--max-proposal-jobs` | concurrency of evaluations / LLM proposals |
+| Flag                                            | Meaning                                                                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `--task-dir`                                    | dir containing `evaluate.py` + `initial.<ext>`                                                                                       |
+| `--results_dir`                                 | output dir — **always** an explicit path on `$SHINKA_OUTPUT_ROOT`, outside the target repo; reusing it **resumes** the run           |
+| `--num_generations`                             | the run's **total** generation budget (`0..N-1`) — always bound; authoritative over any config                                       |
+| `--set ns.field=value`                          | repeatable overrides; namespaces `evo` / `db` / `job`; lists/dicts as JSON, `null` clears an optional field                          |
+| `--config-fname`                                | YAML with the same `evo`/`db`/`job` namespaces — use for long values (e.g. a multiline `evo.task_sys_msg`) instead of shell-escaping |
+| `--max-evaluation-jobs` / `--max-proposal-jobs` | concurrency of evaluations / LLM proposals                                                                                           |
 
 Precedence: YAML < `--set` < `--results_dir` / `--num_generations` (always authoritative).
 
@@ -168,6 +169,7 @@ A run doesn't advance faster because you look at it — poll infrequently, and i
 ## Outputs
 
 Under `--results_dir`:
+
 - `programs.sqlite` — the population: every candidate with its metrics and lineage.
   The best program = the row with the highest `combined_score`.
 - Per-generation folders — each holds the candidate `main.<ext>` and its evaluation `results/` (metrics, correctness).

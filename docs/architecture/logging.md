@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-10-02
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -50,7 +50,7 @@ Two disjoint mechanisms feed the one logger:
 | Surface | Representative events |
 |---|---|
 | Auth edge | `authn.deny` (bad/missing token), `authz.deny` (missing role), `authn.unavailable` (JWKS unreachable — request denied 503 without an authn verdict, no `decision` field). Successful logins are not logged here — the api-server only ever sees already-issued tokens on per-request verification; Keycloak's authentication-event log is the authoritative record of logins. |
-| HTTP / WS edge | `authz.owner_mismatch` (cross-tenant agent access), `ws.authn_deny` / `ws.authn_unavailable` / `ws.owner_mismatch` / `ws.terms_block`, `relay.attach` (terminal/ACP attach to a credentialed pod) |
+| HTTP / WS edge | `authz.owner_mismatch` (cross-tenant agent access), `ws.authn_deny` / `ws.authn_unavailable` / `ws.owner_mismatch` / `ws.terms_block`, `relay.attach` (a relay reached a credentialed pod: logged when the agent end opens, with `sinceConnectMs` from the browser connecting) |
 | Credentialed egress (HITL) | `egress.decision` (every allow/deny/expired), `egress.hold`; identity-unresolved and ext-authz transport denials |
 | Approvals | `approval.verdict` (approve/deny once/permanent/host), `approval.verdict_conflict` (permanent verdict refused because an equivalent rule with the opposite verdict exists — the approval stays unresolved, so no `approval.verdict` line follows), `approval.unattended_deny` (a harness permission prompt raised on a channel turn, refused because no one is there to answer it — carries the tool asked about and the session, never the tool's input), `approval.platform_tool_allow` (the same prompt, asked about the platform's own MCP surface and answered yes for that one call — same fields) |
 | Authorization lists | `egress_rule.create|update|revoke|preset`, `secret.grants_set`, `connection.grants_set` |
@@ -75,7 +75,7 @@ The controller logs to stderr rather than stdout because its lines are pure diag
 
 The controller carries **no audit trail**.
 It acts only under its own ServiceAccount against the K8s API, never on behalf of a user, so there is no real actor to attribute — the audit trail is solely an api-server concern.
-The one security record written elsewhere is the VM runner's: it logs each seed a [runtime migration](vm-runner.md#runtime-migration) stores (`seed.accept`) and each seed capability it refuses (`seed.deny`), with the machine and a fingerprint of the capability, never the capability itself.
+The one security record written elsewhere is the VM runner's: it logs each seed a [runtime migration](vm-runtime-migration.md) stores (`seed.accept`) and each seed capability it refuses (`seed.deny`), with the machine and a fingerprint of the capability, never the capability itself.
 
 When operational telemetry is enabled (see [observability](observability.md)), the controller runs an **in-process OpenTelemetry SDK** and its `slog` records fan out to two destinations at the same level: the stderr JSON stream stays byte-identical (gaining `trace_id`/`span_id` fields on lines logged inside a reconcile span), and each record is additionally exported over OTLP with trace correlation.
 The SDK activates only when the standard `OTEL_EXPORTER_OTLP_ENDPOINT` environment is present — without it the logger is exactly the plain stderr handler and no OTel component exists in the process.

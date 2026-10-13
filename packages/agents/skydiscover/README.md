@@ -31,6 +31,7 @@ SkyDiscover's Synthesize module (`skydiscover init`) ships in the same package b
 Both harnesses (chat and terminal) are inherited unchanged from the base; SkyDiscover customizes behavior via `AGENTS.md` + the `skydiscover` skill, not the harness scripts.
 
 How the pod reaches models without holding keys (`openai/`-prefixed model ids
+
 + `--api-base`, the placeholder-key idiom) is defined once in the `skydiscover` skill's Step 1.
 
 ## Build

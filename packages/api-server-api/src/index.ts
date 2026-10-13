@@ -256,6 +256,16 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
+export type {
+  AvatarUnlock,
+  GettingStartedProgress,
+  GettingStartedService,
+  GettingStartedTask,
+} from "./modules/getting-started/types.js";
+export {
+  GETTING_STARTED_TASKS,
+  gettingStartedTaskSchema,
+} from "./modules/getting-started/schemas.js";
 export { quietWindowSchema } from "./modules/schedules/schemas.js";
 export {
   ONCE_DELIVERY_WINDOW_MS,

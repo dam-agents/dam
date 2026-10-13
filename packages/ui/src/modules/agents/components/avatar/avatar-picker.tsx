@@ -12,7 +12,15 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
+import { useMarkAvatarPicked } from "../../../getting-started/api/mutations.js";
+import { AvatarEgg } from "../../../getting-started/components/avatar-egg.js";
+import { useOpenChecklist } from "../../../getting-started/hooks/use-open-checklist.js";
+import {
+  useFreshAvatars,
+  useUnlockedAvatars,
+} from "../../../getting-started/hooks/use-unlocked-avatars.js";
 import { AgentAvatar } from "./agent-avatar.js";
+import { NewAvatarDot } from "./new-avatar-dot.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The owner chooses one of the fixed avatar
@@ -30,6 +38,7 @@ export function AvatarPicker({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const hasNew = useFreshAvatars().length > 0;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -43,6 +52,7 @@ export function AvatarPicker({
         <span className="absolute -right-1.5 -bottom-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm group-hover:text-foreground">
           <Edit size={12} />
         </span>
+        {hasNew && <NewAvatarDot className="-top-1 -right-1" />}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto p-3">
         <AvatarGrid
@@ -51,38 +61,89 @@ export function AvatarPicker({
             onChange(character);
             setOpen(false);
           }}
+          onLeave={() => setOpen(false)}
         />
       </PopoverContent>
     </Popover>
   );
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The grid of avatar characters. A user picks from
+ * the characters they unlocked on the Get started checklist, plus the one the
+ * agent already shows; the rest are eggs. A character stays marked with a dot
+ * until the user picks it once. While any are locked, a link opens the
+ * checklist so the user can see how to unlock them.
+ */
 export function AvatarGrid({
   value,
   onPick,
+  onLeave,
 }: {
   value: AvatarCharacter;
   onPick: (character: AvatarCharacter) => void;
+  onLeave: () => void;
 }) {
+  const unlocked = useUnlockedAvatars();
+  const fresh = useFreshAvatars();
+  const markPicked = useMarkAvatarPicked();
+  const openChecklist = useOpenChecklist();
+  const usable = AVATAR_CHARACTERS.filter(
+    (c) => unlocked === null || c === value || unlocked.includes(c),
+  );
+  const locked = AVATAR_CHARACTERS.filter((c) => !usable.includes(c));
   return (
-    <div role="group" aria-label="Avatar" className="grid grid-cols-4 gap-2">
-      {AVATAR_CHARACTERS.map((character) => (
+    <div className="flex flex-col gap-3">
+      <div role="group" aria-label="Avatar" className="grid grid-cols-4 gap-2">
+        {usable.map((character) => (
+          <button
+            key={character}
+            type="button"
+            aria-pressed={character === value}
+            aria-label={character}
+            onClick={() => {
+              if (fresh.includes(character)) markPicked.mutate({ character });
+              onPick(character);
+            }}
+            className={cn(
+              "group relative flex size-14 items-center justify-center rounded-lg border transition-colors",
+              character === value
+                ? "border-primary bg-primary/5"
+                : "border-border hover:bg-muted/40",
+            )}
+          >
+            <AgentAvatar name="" avatar={character} size={36} />
+            {fresh.includes(character) && (
+              <>
+                <NewAvatarDot className="top-1.5 right-1.5" />
+                <span className="sr-only">New</span>
+              </>
+            )}
+          </button>
+        ))}
+        {locked.map((character) => (
+          <span
+            key={character}
+            role="img"
+            aria-label="Locked avatar"
+            className="flex size-14 items-center justify-center rounded-lg border border-dashed border-border bg-muted/30"
+          >
+            <AvatarEgg className="size-7" />
+          </span>
+        ))}
+      </div>
+      {locked.length > 0 && (
         <button
-          key={character}
           type="button"
-          aria-pressed={character === value}
-          aria-label={character}
-          onClick={() => onPick(character)}
-          className={cn(
-            "group flex size-14 items-center justify-center rounded-lg border transition-colors",
-            character === value
-              ? "border-primary bg-primary/5"
-              : "border-border hover:bg-muted/40",
-          )}
+          onClick={() => {
+            onLeave();
+            openChecklist();
+          }}
+          className="self-start text-sm text-primary hover:underline"
         >
-          <AgentAvatar name="" avatar={character} size={36} />
+          See how to unlock the rest
         </button>
-      ))}
+      )}
     </div>
   );
 }

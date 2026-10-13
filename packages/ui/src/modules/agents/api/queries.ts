@@ -93,6 +93,21 @@ export function useIsAgentOperable(agentId: string | null): boolean {
   return useStore((s) => operableIn(s, agentId, runState));
 }
 
+export function useIsAgentAnswerableSoon(agentId: string | null): boolean {
+  const operable = useIsAgentOperable(agentId);
+  const runState = useAgentRunState(agentId);
+  const compat = useAgentLacksLiveUpdates(agentId);
+  const unreachable = useStore((s) =>
+    agentId ? s.unreachableAgents.has(agentId) : false,
+  );
+  return (
+    operable ||
+    (!compat &&
+      !unreachable &&
+      (runState === "starting" || runState === "preparing_workspace"))
+  );
+}
+
 export function untilAgentOperable(agentId: string): Promise<void> | null {
   const read = () => {
     const agent = queryClient

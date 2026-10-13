@@ -8,7 +8,7 @@ Which Slack outcomes are guaranteed, which are the agent's judgement, and which 
 
 A **channel** is a messenger surface (Slack, Telegram) that lets users drive an Agent from outside the UI.
 Channels are pluggable adapters that live inside the api-server process — no separate Deployment, no sidecar in the agent pod.
-Each adapter (the _worker_) owns its inbound socket, its outbound API, and its thread-to-session bookkeeping; a channel manager composes the workers and reacts to lifecycle events on the in-process event bus.
+Each adapter (the *worker*) owns its inbound socket, its outbound API, and its thread-to-session bookkeeping; a channel manager composes the workers and reacts to lifecycle events on the in-process event bus.
 
 The workers are **single-holder across the deployment**: both transports admit one consumer per install, and a worker's turn bookkeeping lives in its process.
 One replica runs them, elected on a Kubernetes Lease; the rest run none, and take over within a lease TTL if it dies.
@@ -42,18 +42,20 @@ Multiple bindings share the Agent but never each other's conversations: routing 
 Channels split along a structural axis that has real consequences for secrets and identity:
 
 - **Platform channel** — one app serves the whole install.
-  The operator configures the app once via Helm values; on Slack each workspace adds its own bot token by completing the install handshake, and per-Agent config stays just _which conversation this Agent listens to_.
+  The operator configures the app once via Helm values; on Slack each workspace adds its own bot token by completing the install handshake, and per-Agent config stays just *which conversation this Agent listens to*.
   Both messengers are platform channels today.
   On Slack, identity linking ties messenger users to Keycloak subs at the workspace level.
-- Telegram's variant: there is no workspace to anchor per-user identity in, so a Telegram _conversation_ binds to exactly one Agent — the owner consents by completing an in-chat `/bind` plus a web agent-picker flow — and anyone in the bound chat may drive that Agent.
+- Telegram's variant: there is no workspace to anchor per-user identity in, so a Telegram *conversation* binds to exactly one Agent — the owner consents by completing an in-chat `/bind` plus a web agent-picker flow — and anyone in the bound chat may drive that Agent.
 
 ### Shared access — the one model
 
 The binding itself is the authorization: anyone the messenger admits to the conversation drives the Agent under the Agent's own credentials.
 There is no per-person access mode, no identity link required to drive a turn, and no allow-list.
-Every turn relays single-track to the main agent pod; the **binding owner's** Terms-of-Use acceptance gates each turn (the terms bind the party whose credentials run it, not the member who typed); the security log records each allow with basis _place_ and the sender's Slack user id, or for a bot post which Agent or app wrote it; and the prompt text is speaker-labelled with the sender's Slack mention, or the Agent's or app's name, so a multi-speaker session stays attributable inside the conversation itself.
+Every turn relays single-track to the main agent pod; the **binding owner's** Terms-of-Use acceptance gates each turn (the terms bind the party whose credentials run it, not the member who typed); the security log records each allow with basis *place* and the sender's Slack user id, or for a bot post which Agent or app wrote it; and the prompt text is speaker-labelled with the sender's Slack mention, or the Agent's or app's name, so a multi-speaker session stays attributable inside the conversation itself.
 
 Telegram is structurally identical — with no workspace to anchor per-user identity, consent attaches to the conversation and everyone in the bound chat drives the Agent.
+
+Members use every granted Connection and Satellite; the UI warns, never blocks, when a group binding and grants meet.
 
 #### Ambient mode
 
@@ -237,7 +239,7 @@ The differences are transport, identity model, and where the bot token comes fro
 - **Identity linking.** A `/platform login` slash command starts a Keycloak OAuth flow; on callback the api-server stores `slack_user_id ↔ keycloak_sub`.
   The link table is the source of truth for "who is this Slack user in Platform terms" — consulted only to authorize the in-chat `bind`, `unbind`, `ambient`, `ignore`, `unignore`, `default` and `delete` commands, never to admit a turn.
   `login`/`logout` stay working but are not listed in the bare-`/platform` usage help (which advertises the other eight); the flows that need a linked identity still point users at `/platform login` in context.
-- **In-chat binding.** Beyond the platform UI and CLI, a channel can be bound from inside Slack, mirroring Telegram: anyone runs `/platform bind`, authenticates through the same Keycloak OAuth flow, and picks one of _their own_ Agents on a web picker — the binding lends that Agent, under its own credentials, to the whole channel, exactly like every binding.
+- **In-chat binding.** Beyond the platform UI and CLI, a channel can be bound from inside Slack, mirroring Telegram: anyone runs `/platform bind`, authenticates through the same Keycloak OAuth flow, and picks one of *their own* Agents on a web picker — the binding lends that Agent, under its own credentials, to the whole channel, exactly like every binding.
   Being invited offers the same link without the command: when the bot itself is added to a conversation, it answers the inviter alone, privately, with the bind link, so nobody has to discover the slash command first.
   The binding is created ambient-off; an in-chat ambient command reports and flips the binding's ambient mode afterward under the same binder-or-owner authorization as unbind.
   There is no admin gate (unlike Telegram's group-admin check); the ownership check on the picked Agent is the control, and the bind also links the initiator's identity so they can later release it.
@@ -246,11 +248,11 @@ The differences are transport, identity model, and where the bot token comes fro
   Changing the default is **in-chat only** — choosing well means seeing who else is connected, and only the channel shows that — and only its Agent's **owner** may take it, since the default absorbs every unnamed mention and that load runs on their credentials.
   The owner can also disconnect from the platform UI/CLI as an escape hatch.
 - **DMs and group DMs** reuse the in-chat bind verbatim — the conversation id (`D…` for a 1:1 DM, an `mpim` id for a group DM) is the binding key, so `/platform bind` connects one of the binder's own Agents to the DM or group, exactly as it binds a channel.
-  Only the _trigger_ differs: a bound **1:1 DM** relays every plain message, because every DM message is addressed to the bot — no `@mention`, and the prompt isn't speaker-labelled (a single human).
+  Only the *trigger* differs: a bound **1:1 DM** relays every plain message, because every DM message is addressed to the bot — no `@mention`, and the prompt isn't speaker-labelled (a single human).
   A bound **group DM** stays mention-driven like a channel.
   Slack admits an app to a group DM only at its start, so `/platform bind` in a group DM without the bot is refused with that reason rather than creating a binding nothing reaches.
   If Slack cannot answer, the bind goes ahead.
-  A message into an _unbound_ DM or group is declined with an ephemeral pointing at `/platform bind` — the app's DM surface must be turned on first, or Slack refuses to send at all.
+  A message into an *unbound* DM or group is declined with an ephemeral pointing at `/platform bind` — the app's DM surface must be turned on first, or Slack refuses to send at all.
   Channels, DMs and groups mix freely in an Agent's binding set; each is just another conversation id.
 - **Whispering.** Anyone in a connected conversation can reach one of its Agents privately with `/platform whisper`, whose text Slack never shows the conversation.
   It needs no identity link — being in the conversation admits it, as it admits a mention — and it names the Agent as the other commands do: the default where none is named, and a name it cannot match is refused rather than handed to the default as the message.
@@ -301,7 +303,7 @@ Which of two strategies an optional scope gets follows from what its absence mea
 - **Omit the capability entirely**, when no partial answer is possible: checked once proactively, not per call, and the affordance drops out of the tool list rather than staying registered to fail forever.
   **No Slack capability takes this path.** It is the tool list that would have to carry the verdict, and a tool list is per Agent while a grant is per workspace — so with several installed there is always a partial answer to give, and the rule above selects the first strategy for every one of them.
 
-Either way an unreachable bot or unanswered check counts as _unknown_, never _missing_, and fails open, so a transient hiccup never hides a working capability.
+Either way an unreachable bot or unanswered check counts as *unknown*, never *missing*, and fails open, so a transient hiccup never hides a working capability.
 The agent persona above is the one exception and fails closed: the cost of guessing wrong there is a refused post, while the cost of not guessing is only the app's own name.
 
 ### Telegram — platform channel
@@ -310,7 +312,7 @@ The agent persona above is the one exception and fails closed: the cost of guess
   The same boot step advertises the command list to the Bot API, which is what makes the commands offered when someone types `/`.
 - **Token provenance.** The operator creates one bot via `@BotFather` and sets the token in Helm values; it reaches the api-server as env.
   No per-Agent Secrets, no token at rest in Postgres.
-- **Identity model — there is none per user.** Telegram has no workspace to anchor a user-to-Keycloak link against, so consent attaches to the _conversation_: someone sends `/bind` (in groups, only chat admins; `/start` counts as bind intent too, so deep links and the Start button work), the bot replies with a Keycloak OAuth link, and after authenticating the user lands on the UI's agent picker listing _their own_ Agents.
+- **Identity model — there is none per user.** Telegram has no workspace to anchor a user-to-Keycloak link against, so consent attaches to the *conversation*: someone sends `/bind` (in groups, only chat admins; `/start` counts as bind intent too, so deep links and the Start button work), the bot replies with a Keycloak OAuth link, and after authenticating the user lands on the UI's agent picker listing *their own* Agents.
   The bot posts a confirmation in the chat.
   The chat's members never authenticate.
   `/unbind` releases the binding, and the owner can also disconnect a bound chat from the web UI — the bot posts a farewell note in the chat before the binding is released.

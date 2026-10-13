@@ -60,6 +60,7 @@ import type { startJwksWarmup } from "./admission/jwks-warmup.js";
 import type { SessionPresence } from "./agent-proxies/session-presence.js";
 
 import type { ApiVariables } from "../../core/http-context.js";
+import type { GettingStartedModule } from "../../modules/getting-started/index.js";
 export type { ApiVariables };
 
 export interface ApiServerDeps {
@@ -128,6 +129,7 @@ export interface ApiServerDeps {
   slackOauthCallbackUrl: string;
   shareHostGate: MiddlewareHandler;
   publicAgentPageService: PublicAgentPageService;
+  gettingStarted: GettingStartedModule;
   sessionPresence: SessionPresence;
   wakeAgent: (agentId: string) => Promise<void>;
   artifactLibraryFor: ArtifactLibraryFor;

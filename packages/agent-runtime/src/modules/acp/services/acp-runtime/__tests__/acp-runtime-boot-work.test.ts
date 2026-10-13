@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { createWorld } from "./acp-world.js";
+import { createWorld, frames } from "./acp-world.js";
 
 /**
  * TEST_OVERVIEW: spawn work that has to land before the harness starts.
@@ -12,6 +12,10 @@ import { createWorld } from "./acp-world.js";
  * cannot hang that work on the moment it first learns the environment is
  * ready: on every boot after the first that moment never comes. It also cannot wait forever, or a hook that never
  * settles would leave the pod unable to start at all.
+ *
+ * Work that only a turn needs, such as the browser panel's display, which the
+ * agent's own browser draws on, waits for a prompt instead: started with the
+ * harness, it slows the harness's start and the opening of the first session.
  */
 describe("acp-runtime: spawn work before the harness starts", () => {
   afterEach(() => {
@@ -83,7 +87,7 @@ describe("acp-runtime: spawn work before the harness starts", () => {
 
   /**
    * TEST_SCENARIO: The spawn work of the previous cycle is still pending when
-   * an env change re-arms it — the listing hung past the warm-start ceiling
+   * an env change re-arms it — the listing hung past the spawn-work ceiling
    * and the harness started without it. When that old hold finally settles,
    * it must not count as the new cycle's work: the gate stays shut until the
    * new hold lands.
@@ -93,7 +97,7 @@ describe("acp-runtime: spawn work before the harness starts", () => {
     const holds: (() => void)[] = [];
     const world = createWorld({
       envReadyAtBoot: true,
-      warmStartTimeoutMs: 1_000,
+      spawnWorkTimeoutMs: 1_000,
       beforeSpawn: () =>
         new Promise<void>((resolve) => {
           holds.push(resolve);
@@ -151,23 +155,81 @@ describe("acp-runtime: spawn work before the harness starts", () => {
   });
 
   /**
-   * TEST_SCENARIO: The boot work never settles — an unreachable provider with
-   * no timeout of its own. The warm-start ceiling releases the caller so the
-   * harness still starts; the agent then runs without the seeded value rather
-   * than not running at all.
+   * TEST_SCENARIO: The boot work never settles — an unreachable provider, or a
+   * listing through a gateway pod that has only just started. The person
+   * opening the chat is the caller held, so the spawn work gets a ceiling of
+   * five seconds, well short of the fifteen the env may take to arrive, and
+   * the harness then starts without the seeded value rather than not at all;
+   * a seed that lands later recycles the harness onto it.
    */
-  it("starts the harness anyway when boot work never settles", () => {
+  it("starts the harness anyway after holding the first caller at most five seconds", () => {
     vi.useFakeTimers();
     const world = createWorld({
       envReadyAtBoot: true,
-      warmStartTimeoutMs: 1_000,
       beforeSpawn: () => new Promise<void>(() => {}),
     });
 
     world.connect();
+    vi.advanceTimersByTime(4_999);
     expect(world.harnessStarted()).toBe(false);
 
-    vi.advanceTimersByTime(1_000);
+    vi.advanceTimersByTime(1);
     expect(world.harnessStarted()).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A wake: the runtime prestarts the harness once its server
+   * listens, because the harness takes about a second to answer initialize and
+   * the person who woke the agent connects only after that. The prestart waits
+   * for the same spawn work a client would, so the harness reads the seeded
+   * config, and the first client then uses that process instead of a second.
+   */
+  it("prestarts the harness after the spawn work, and the first client uses it", async () => {
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const world = createWorld({
+      envReadyAtBoot: true,
+      beforeSpawn: () => held,
+    });
+
+    world.runtime.prestart();
+    expect(world.harnessStarted()).toBe(false);
+
+    release();
+    await held;
+    await Promise.resolve();
+    expect(world.harnessCount()).toBe(1);
+
+    world.connect().send(frames.initialize(1));
+    expect(world.harnessCount()).toBe(1);
+    expect(world.harness().receivedMethods()).toEqual(["initialize"]);
+  });
+
+  /**
+   * TEST_SCENARIO: A wake opens a session and sends a prompt. The prompt work
+   * must not run for the prestart, initialize or session/new, which it would
+   * slow, and must run for the prompt, before the harness can call a tool.
+   */
+  it("runs the prompt work for a prompt, not for the harness's start or a new session", async () => {
+    let prompts = 0;
+    const world = createWorld({
+      envReadyAtBoot: true,
+      onPrompt: () => {
+        prompts += 1;
+      },
+    });
+
+    world.runtime.prestart();
+    await Promise.resolve();
+    const client = world.connect();
+    client.send(frames.initialize(1));
+    client.send(frames.newSession(2));
+    world.harness().replyTo("session/new", { sessionId: "sess-boot" });
+    expect(prompts).toBe(0);
+
+    client.send(frames.prompt(3, "sess-boot", "open the docs"));
+    expect(prompts).toBe(1);
   });
 });

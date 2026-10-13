@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: an agent can ask its gateway to inject a Connection's credential only into requests that name that Connection. The choice is made at create, by the create form or a starter kit, or later from the agent's settings, and travels to the controller on the Agent's spec. An agent that does not ask keeps no trace of the field, so its gateway renders as before.
+// TEST_OVERVIEW: an agent's gateway injects a Connection's credential only into requests that name that Connection, unless the agent declines it. A new agent requires it unless its create, or the starter kit behind it, says no; its settings change it later. The choice travels to the controller on the Agent's spec, and an agent that declines keeps no trace of the field, so its gateway renders as an unaddressed one.
 import { describe, expect, it, vi } from "vitest";
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
 import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
@@ -89,26 +89,26 @@ function setup() {
 const create = { name: "test-agent", image: "example.com/agent:latest" };
 
 describe("an agent's connection addressing", () => {
-  // TEST_SCENARIO: an agent created asking for addressed injection carries the field on its spec, which is all the controller reads.
-  it("reaches the spec when the create asks for it", async () => {
-    const { agents, persist } = setup();
-    await agents.create({ ...create, requireConnectionAddress: true });
-    expect(persist.mock.calls[0]![0]).toMatchObject({
-      requireConnectionAddress: true,
-    });
-  });
-
-  // TEST_SCENARIO: an agent that does not ask, or explicitly declines, has no field at all, so nothing about its gateway changes.
-  it.each([undefined, false])(
-    "is absent from the spec when %s",
+  // TEST_SCENARIO: a new agent requires named connections whether its create asks for it or says nothing, and carries the field on its spec, which is all the controller reads.
+  it.each([undefined, true])(
+    "reaches the spec when the create says %s",
     async (value) => {
       const { agents, persist } = setup();
       await agents.create({ ...create, requireConnectionAddress: value });
-      expect(persist.mock.calls[0]![0]).not.toHaveProperty(
-        "requireConnectionAddress",
-      );
+      expect(persist.mock.calls[0]![0]).toMatchObject({
+        requireConnectionAddress: true,
+      });
     },
   );
+
+  // TEST_SCENARIO: an agent whose create explicitly declines has no field at all, so its gateway injects every request to a Connection's host.
+  it("is absent from the spec when the create declines it", async () => {
+    const { agents, persist } = setup();
+    await agents.create({ ...create, requireConnectionAddress: false });
+    expect(persist.mock.calls[0]![0]).not.toHaveProperty(
+      "requireConnectionAddress",
+    );
+  });
 
   // TEST_SCENARIO: the settings switch turns the mode on for an existing agent by setting the field, and off by removing it, so an agent switched off looks like one that never asked.
   it.each([

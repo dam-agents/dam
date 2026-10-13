@@ -34,7 +34,8 @@ Three rules define the split:
 Which side of the split a reader sits on is a property of the reader, decided at its call site and visible there.
 The cache is not a global switch and does not change what a read means.
 
-This refines ADR-032 rather than replacing it: observed `Ready` remains the authoritative answer to "can I call this pod?" — only the observation's source changes.
+This refines ADR-032 rather than replacing it: observed `Ready` remains the authoritative answer to "can I call this pod?"
+— only the observation's source changes.
 
 ## Alternatives Considered
 

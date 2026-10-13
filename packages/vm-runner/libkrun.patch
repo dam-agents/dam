@@ -1143,7 +1143,7 @@ index e2159a6..2d99a40 100644
 +    }
 +}
 diff --git i/src/vmm/src/builder.rs w/src/vmm/src/builder.rs
-index 1c4bb62..e006cc9 100644
+index 1c4bb62..5bbbd93 100644
 --- i/src/vmm/src/builder.rs
 +++ w/src/vmm/src/builder.rs
 @@ -118,9 +118,9 @@ use vm_memory::Bytes;
@@ -1186,7 +1186,16 @@ index 1c4bb62..e006cc9 100644
                  let region = unsafe {
                      MmapRegion::build_raw(kernel_host_addr as *mut u8, kernel_size, 0, 0)
                          .map_err(StartMicrovmError::InvalidKernelBundle)?
-@@ -2263,6 +2280,70 @@ fn advise_huge_pages(memory: &GuestMemoryMmap) {
+@@ -2239,7 +2256,7 @@ pub struct PayloadConfig {
+ /// (for fast VM fork): a `memfd` on Linux, a regular temp file on macOS (which
+ /// has no `memfd`, but a file mmap'd `MAP_PRIVATE` gives the same cross-process
+ /// CoW — validated against HVF). Gated on the per-VM `SMOLVM_FORKABLE` opt-in.
+-fn memfd_backed_ram_enabled() -> bool {
++pub(crate) fn memfd_backed_ram_enabled() -> bool {
+     (cfg!(target_os = "linux") || cfg!(target_os = "macos") || cfg!(target_os = "windows"))
+         && std::env::var_os("SMOLVM_FORKABLE").is_some_and(|v| v == "1")
+ }
+@@ -2263,6 +2280,74 @@ fn advise_huge_pages(memory: &GuestMemoryMmap) {
  #[cfg(not(target_os = "linux"))]
  fn advise_huge_pages(_memory: &GuestMemoryMmap) {}
  
@@ -1200,7 +1209,7 @@ index 1c4bb62..e006cc9 100644
 +/// with huge pages, but KVM still maps, and under nested virtualization
 +/// faults, every guest page 4 KiB at a time.
 +#[cfg(target_os = "linux")]
-+fn map_aligned_guest_ram(
++pub(crate) fn map_aligned_guest_ram(
 +    gpa: GuestAddress,
 +    size: usize,
 +) -> std::result::Result<MmapRegion, String> {
@@ -1223,6 +1232,10 @@ index 1c4bb62..e006cc9 100644
 +            (start + size) as *mut libc::c_void,
 +            base + len - start - size,
 +        );
++        // Keep this although upstream (libkrun#186) dropped it: on nested hosts
++        // with defrag=madvise, compaction (~1-2 ms per 2 MiB) is cheaper than
++        // falling back to 4 KiB pages (~10 ms per 2 MiB); measured on dam-cl,
++        // a busy node filled 4 GiB in 4.1 s with it and 8.3 s without.
 +        libc::madvise(start as *mut libc::c_void, size, libc::MADV_HUGEPAGE);
 +    }
 +    // Safety: [start, start + size) is a live, page-aligned mapping made here,
@@ -1257,7 +1270,7 @@ index 1c4bb62..e006cc9 100644
  /// Create an anonymous, RAM-backed `memfd` of `size` bytes to back a guest-RAM
  /// region. Being a real file object, it can later be CoW-cloned with
  /// `mmap(MAP_PRIVATE)` for fast, dense VM fork.
-@@ -2664,8 +2745,11 @@ pub fn create_guest_memory(
+@@ -2664,8 +2749,11 @@ pub fn create_guest_memory(
          advise_huge_pages(&memory);
          memory
      } else {
@@ -1271,7 +1284,7 @@ index 1c4bb62..e006cc9 100644
      };
  
      let LoadedPayload {
-@@ -3912,6 +3996,36 @@ pub mod tests {
+@@ -3912,6 +4000,36 @@ pub mod tests {
      use super::*;
      use crate::vmm_config::kernel_bundle::KernelBundle;
  
@@ -1308,3 +1321,23 @@ index 1c4bb62..e006cc9 100644
      #[cfg(target_os = "macos")]
      #[test]
      fn reaps_dead_pid_guest_ram_keeps_live_and_legacy() {
+diff --git i/src/vmm/src/memory_growth.rs w/src/vmm/src/memory_growth.rs
+index ef2d6ee..24592f0 100644
+--- i/src/vmm/src/memory_growth.rs
++++ w/src/vmm/src/memory_growth.rs
+@@ -36,6 +36,15 @@ impl Vmm {
+                     .with_zero_region(base + mapped, size)
+                     .map_err(|error| format!("prepare added RAM generation: {error}"))?;
+                 (Some(next), region)
++            } else if !builder::memfd_backed_ram_enabled() {
++                // Anonymous and placed for huge pages like the boot RAM: a
++                // shared-memory file gets 4 KiB host pages wherever the host
++                // turns shmem huge pages off. Only a branchable machine needs
++                // a file its clones can map.
++                let gpa = GuestAddress(base + mapped);
++                let region = GuestRegionMmap::new(builder::map_aligned_guest_ram(gpa, size)?, gpa)
++                    .ok_or("added RAM region overflows")?;
++                (None, Arc::new(region))
+             } else {
+                 let backing = builder::create_guest_ram_memfd(size)?;
+                 let region = Arc::new(

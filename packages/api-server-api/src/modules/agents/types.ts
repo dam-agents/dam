@@ -58,6 +58,7 @@ export type AgentSpec = AgentSpecCR & { name: string };
 export interface TemplateUpdate {
   fromImage: string;
   toImage: string;
+  startFailed?: boolean;
 }
 
 export type RuntimeMigrationPhase =
@@ -255,6 +256,7 @@ export type ListTelegramChatsError =
 export interface TelegramChatView {
   conversationId: string;
   title: string;
+  direct: boolean;
 }
 
 export type ListTelegramChatsResult =
@@ -310,7 +312,7 @@ export interface AgentsService {
   ) => Promise<{ slackChannelId: string; name?: string } | null>;
   peekTelegramBindFlow: (
     flowId: string,
-  ) => Promise<{ chatTitle: string | null } | null>;
+  ) => Promise<{ chatTitle: string | null; direct: boolean } | null>;
   bindTelegramChat: (
     agentId: string,
     flowId: string,

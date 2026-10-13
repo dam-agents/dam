@@ -417,7 +417,7 @@ mod tests {
         let port = probe.local_addr().unwrap().port();
         drop(probe);
         let opener = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(700)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
             let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
                 .await
                 .unwrap();
@@ -461,7 +461,7 @@ mod tests {
     }
 
     // TEST_SCENARIO: a runner that accepts the connection and then neither reads the upload nor answers fails the upload once the stall limit passes, instead of holding the Job until its deadline.
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn an_upload_the_runner_never_reads_is_given_up() {
         let handed = Instant::now()
             .checked_sub(STALL + Duration::from_secs(1))
@@ -477,19 +477,15 @@ mod tests {
     #[tokio::test]
     async fn a_walk_blocked_on_the_volume_is_not_awaited() {
         let archiving = tokio::task::spawn_blocking(|| -> io::Result<SeedResult> {
-            std::thread::sleep(Duration::from_secs(2));
+            std::thread::sleep(Duration::from_millis(300));
             Err(io::Error::other("unreachable"))
         });
         let started = Instant::now();
-        let err = walk_ended(
-            archiving,
-            Path::new("/mnt/home"),
-            Duration::from_millis(100),
-        )
-        .await
-        .unwrap()
-        .unwrap_err();
-        assert!(started.elapsed() < Duration::from_secs(1));
+        let err = walk_ended(archiving, Path::new("/mnt/home"), Duration::from_millis(20))
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(started.elapsed() < Duration::from_millis(250));
         assert_eq!(err.kind(), io::ErrorKind::TimedOut);
         assert!(err.to_string().contains("/mnt/home is blocked"), "{err}");
     }

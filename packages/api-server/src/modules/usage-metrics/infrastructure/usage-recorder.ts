@@ -1,6 +1,7 @@
 import type { Meter } from "@opentelemetry/api";
 import type { EntryPointChoice } from "api-server-api";
 import type {
+  ApprovalResolution,
   ConnectionKind,
   ScheduleFired,
   SkillChangeAction,
@@ -9,6 +10,7 @@ import type {
 import type {
   ConnectionChangeAction,
   RelayKind,
+  SkillSetChangeAction,
   UsageOutcome,
   UsageSurface,
 } from "../domain/vocabulary.js";
@@ -37,6 +39,9 @@ export interface UsageRecorder {
   relayAttach(input: { relay: RelayKind; surface: UsageSurface }): void;
   invocationSpawn(): void;
   entryPointChoice(input: { choice: EntryPointChoice }): void;
+  approvalResolution(input: { resolution: ApprovalResolution }): void;
+  kbShare(input: { outcome: UsageOutcome }): void;
+  skillSetChange(input: { action: SkillSetChangeAction }): void;
 }
 
 export function createOtelUsageRecorder(meter: Meter): UsageRecorder {
@@ -75,6 +80,18 @@ export function createOtelUsageRecorder(meter: Meter): UsageRecorder {
   const entryPointChoices = meter.createCounter(
     "platform.entry_point.choice.total",
     { description: "Ways in chosen from the empty home screen" },
+  );
+
+  const approvalResolutions = meter.createCounter(
+    "platform.approval.resolution.total",
+    { description: "Approval requests closed, by how they were closed" },
+  );
+  const kbShares = meter.createCounter("platform.kb_share.publish.total", {
+    description: "Knowledge base share publishes, by outcome",
+  });
+  const skillSetChanges = meter.createCounter(
+    "platform.skill_set.change.total",
+    { description: "Skill sets saved and deleted" },
   );
 
   return {
@@ -126,6 +143,17 @@ export function createOtelUsageRecorder(meter: Meter): UsageRecorder {
     },
     entryPointChoice({ choice }) {
       entryPointChoices.add(1, { "platform.entry_point.choice": choice });
+    },
+    approvalResolution({ resolution }) {
+      approvalResolutions.add(1, {
+        "platform.approval.resolution": resolution,
+      });
+    },
+    kbShare({ outcome }) {
+      kbShares.add(1, { "platform.kb_share.outcome": outcome });
+    },
+    skillSetChange({ action }) {
+      skillSetChanges.add(1, { "platform.skill_set.action": action });
     },
   };
 }

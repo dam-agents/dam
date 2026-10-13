@@ -70,6 +70,7 @@ const DEFAULT_ORPHAN_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_ENV_FORCE_RECYCLE_MS = 60 * 1000;
 
 const DEFAULT_WARM_START_TIMEOUT_MS = 15 * 1000;
+const DEFAULT_SPAWN_WORK_TIMEOUT_MS = 5 * 1000;
 
 const DEFAULT_LOG_BYTES_CAP = 2 * 1024 * 1024;
 
@@ -96,6 +97,7 @@ export interface AcpRuntimeStatus {
 
 export interface AcpRuntime {
   attach(channel: ClientChannel, opts?: { viewer?: boolean }): void;
+  prestart(): void;
   status(): AcpRuntimeStatus;
   isSessionRunning(sessionId: string): boolean;
   sessionFrames(sessionId: string): { frames: string[]; truncated: boolean };
@@ -127,7 +129,9 @@ export interface AcpRuntimeDeps {
   idleReapDelayMs?: number;
   envReadyAtBoot?: boolean;
   warmStartTimeoutMs?: number;
+  spawnWorkTimeoutMs?: number;
   beforeSpawn?: () => Promise<void>;
+  onPrompt?: () => void;
   logBytesCap?: number;
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
@@ -275,7 +279,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.log?.(
         `${String(dropped.length)} queued prompt(s) for ${sessionId} undelivered: ${cause}`,
       );
-      if (cause === "park-expired") maybeCloseIdleSession(sessionId);
+      if (cause !== "park-expired") return;
+      maybeCloseIdleSession(sessionId);
+      lease.maybeRecycle();
     },
     ...(deps.queueParkMs !== undefined
       ? { queueParkMs: deps.queueParkMs }
@@ -679,6 +685,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     describeBusy,
     envReadyAtBoot: deps.envReadyAtBoot ?? true,
     warmStartTimeoutMs,
+    spawnWorkTimeoutMs:
+      deps.spawnWorkTimeoutMs ?? DEFAULT_SPAWN_WORK_TIMEOUT_MS,
     envForceRecycleMs,
     keptTasks: keptTaskCount,
     onPendingChange: () => checkPendingRestart(),
@@ -1022,8 +1030,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             reportTurnEnd(sid, buffer);
           }
           maybeCloseIdleSession(sid);
-          if (turnEnded) lease.maybeRecycle();
         }
+        lease.maybeRecycle();
       }
       return;
     }
@@ -1091,7 +1099,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
 
     if (isResponse(frame)) {
-      pendingRequests.answer(frame);
+      if (pendingRequests.answer(frame)) lease.maybeRecycle();
       return;
     }
 
@@ -1256,6 +1264,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (paramsSid !== null) engage(channel, paramsSid);
 
       const promptSessionId = method === "session/prompt" ? paramsSid : null;
+      if (promptSessionId !== null) deps.onPrompt?.();
 
       const platformMeta =
         method === "session/new"
@@ -1410,6 +1419,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         detach(channel);
       });
       cancelReady = lease.whenReady(release);
+    },
+
+    prestart() {
+      lease.whenReady(() => lease.ensure());
     },
 
     status() {

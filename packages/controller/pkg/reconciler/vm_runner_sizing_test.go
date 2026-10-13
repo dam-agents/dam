@@ -115,7 +115,7 @@ func runnerClaim(t *testing.T, r *AgentReconciler) string {
 	return pvc.Spec.Resources.Requests.Storage().String()
 }
 
-// TEST_SCENARIO: the runner admits machines against its memory limit while the scheduler sees only the request. A machine that wakes must raise the request before the runner admits it, by the machine's memory on top of the runner's reserve, and a stop must hand that memory back — so a busy node does not OOM-kill the runner and every machine of this owner with it.
+// TEST_SCENARIO: the runner admits machines against its memory limit while the scheduler sees only the request. A machine that wakes must raise the request in the reconcile that starts it, by the machine's memory on top of the runner's reserve, and a stop must hand that memory back — so a busy node does not OOM-kill the runner and every machine of this owner with it.
 func TestTheRunnerRequestFollowsTheMachinesThatShouldRun(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -144,6 +144,31 @@ func TestTheRunnerRequestFollowsTheMachinesThatShouldRun(t *testing.T) {
 	assert.Equal(t, "1Gi", runnerPodRequest(t, r), "a stopped machine gives its memory back, down to the install's own request")
 }
 
+// TEST_SCENARIO: a wake is timed to the machine's start, and the resize is a list of the runner's pods and a write to one, about 30 ms on dev, that the machine's start does not read: the request only tells the scheduler what the runner already admits against its limit, and the node applies it on its own time. So the machine is asked for first, and the request is raised in the same reconcile right after.
+func TestTheMachineIsAskedForBeforeTheRunnerPodIsResized(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	machinesBeforeResize := -1
+	r.client.(*fake.Clientset).PrependReactor("update", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.GetSubresource() == "resize" {
+			node.mu.Lock()
+			machinesBeforeResize = len(node.puts)
+			node.mu.Unlock()
+		}
+		return false, nil, nil
+	})
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.Equal(t, 1, machinesBeforeResize, "the runner had the machine before the pod's resize was sent")
+	assert.Equal(t, "8704Mi", runnerPodRequest(t, r), "the resize still lands in the same reconcile")
+}
+
 // TEST_SCENARIO: the owner's other vm agents share the runner. A peer whose gateway is up should be running and counts toward the request; a peer that is stopped keeps only its disk, so it counts toward the claim but not the request.
 func TestPeersCountByWhetherTheyShouldRun(t *testing.T) {
 	agent := vmAgentCR()
@@ -163,12 +188,24 @@ func TestPeersCountByWhetherTheyShouldRun(t *testing.T) {
 // TEST_SCENARIO: the request is held between two bounds. It never falls below the request the install set, and never rises above the limit, which the API refuses and which the runner would refuse to admit past anyway.
 func TestTheRunnerRequestStaysBetweenTheInstallsRequestAndTheLimit(t *testing.T) {
 	floor, limit := resource.MustParse("2Gi"), resource.MustParse("8Gi")
-	low := runnerMemoryRequest(0, 512, floor, limit)
+	low := runnerMemoryRequest(0, 512, resource.Quantity{}, floor, limit)
 	assert.Equal(t, "2Gi", low.String())
-	mid := runnerMemoryRequest(4096, 512, floor, limit)
+	mid := runnerMemoryRequest(4096, 512, resource.Quantity{}, floor, limit)
 	assert.Equal(t, "4608Mi", mid.String())
-	high := runnerMemoryRequest(16384, 512, floor, limit)
+	high := runnerMemoryRequest(16384, 512, resource.Quantity{}, floor, limit)
 	assert.Equal(t, "8Gi", high.String())
+}
+
+// TEST_SCENARIO: a guest whose use sits on a 512 MiB step boundary must not flip the request between two steps at every pass. The request rises as soon as the need passes the current step, and falls only once the need is a quarter step below the step under it.
+func TestTheRunnerRequestFallsOnlyClearlyBelowTheCurrentStep(t *testing.T) {
+	floor, limit, current := resource.MustParse("1Gi"), resource.MustParse("8Gi"), resource.MustParse("2Gi")
+	up := runnerMemoryRequest(2049-512, 512, current, floor, limit)
+	assert.Equal(t, "2560Mi", up.String())
+	current = up
+	held := runnerMemoryRequest(2040-512, 512, current, floor, limit)
+	assert.Equal(t, "2560Mi", held.String())
+	down := runnerMemoryRequest(1920-512, 512, current, floor, limit)
+	assert.Equal(t, "2Gi", down.String())
 }
 
 // TEST_SCENARIO: an install that sets only the limit gets a pod whose request Kubernetes defaulted to the limit. That is already the safest request there is, so nothing is lowered.

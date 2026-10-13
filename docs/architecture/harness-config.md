@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -19,6 +19,9 @@ The catalog remains usable where discovery is not configured.
 Before a session starts, the picker lists every provider the harness accepts in one stable order: an attached provider shows its models and a disconnect action, and one not attached offers to attach it, so a provider never carries another provider's model.
 It grays out a harness that no provider the owner holds accepts.
 With no provider at all, the chat opens the provider list in a modal, and the picker's place holds a link that reopens it.
+Until the agent has reported the harnesses it carries, as a new agent has not before it first answers, the picker shows the pair a new session is expected to run on, from the Agent's own harness, its granted providers and the harness catalog: the remembered pair when it names that harness, otherwise the harness on the first granted provider it accepts, with its default model.
+Opened then, it shows a loader until the list arrives, and a session started meanwhile names its pair only after the harnesses and the remembered pair are read again.
+While a sleeping agent wakes, the picker shows each provider's models as loading rather than asking for a start.
 In an existing session, the picker shows its harness and only its active provider's models: another harness or provider needs a new session, which the picker links to, and context moves over only through a file the agent saves.
 
 ## Session settings
@@ -75,7 +78,11 @@ Which choices a harness offers is its catalog's to say: Codex's offers no mode, 
 A discovery source is also what lets a **seeded model** exist, and it is the one write to that file no user action is behind.
 A harness pointed at somebody else's provider cannot rely on its own built-in default: the model it would name need not exist upstream, and a listing that does not know it refuses the turn outright rather than substituting anything — so an agent nobody has configured yet fails its very first prompt.
 The seed closes that: with nothing set and nothing pinned on the provider, agent-runtime writes the first of the discovered names — the list is ordered, so the pick is stable rather than whatever the provider happened to return first — before the default lease's harness spawns: at boot, and again before the spawn that follows an env change, since a provider switch reaches the pod as one.
-The boot gate holds early callers until it lands under a ceiling of its own, and a listing that cannot be reached is asked again for a while first, because the gateway fronting a newly granted provider is still rolling when its env lands.
+The boot gate holds early callers until it lands under a ceiling of its own, five seconds, well short of the env's, because the caller held is usually a person opening a chat; a listing that cannot be reached is asked again for a while first, because the gateway fronting a newly granted provider is still rolling when its env lands.
+Only a spawn with no model to stand on waits for it.
+When the file names a model, or the provider pins one, and the provider has not changed since that model was last checked, the harness starts on it at once and the listing runs after the spawn, so a wake and a past session's history never wait for a listing through a gateway pod that has only just started.
+That check corrects the file the same way the seed would, and the write recycles the harness like any other config write: at once when idle, after the work drains otherwise; a turn sent in between runs on the old model and gets the provider's own refusal.
+A boot counts as checked against the provider the agent had before it slept; a provider switch while running is not, so the spawn that follows it waits for the new provider's listing.
 It never speaks over a value somebody chose that the provider lists: a hand-edit the listing knows stays, and a session that picks its model never needs the seed, and with nothing in the file a provider pin the listing knows is the default.
 A model the listing does not know — in the file, or pinned by a connection whose catalogue has moved on — is not left to fail every turn: a file model is cleared when the provider lists the pin, and otherwise the first listed name takes its place, which is how a model chosen on one provider does not outlive a switch to another and a retired pin does not stop an agent.
 Between a pin and the file, the file wins: a connection's model pin is only a default, checked against the live listing each time it would apply, and a model in the file that the provider offers outranks it, so a choice is never silently overridden by the connection it rides on.
@@ -92,6 +99,9 @@ What no listing can say is whether the account has been granted a model: that is
 Claude Code's catalog is model tiers, which Claude Code itself resolves to the region's Bedrock profiles ([connections](connections.md#app-preset-aws-bedrock)), so its source asks only the LiteLLM-shaped endpoint a connection points it at, and extends the tiers rather than replacing them.
 There its in-pod model gateway defaults every tier to the newest model the provider has for it, which on a provider that serves no Claude model is one model for all of them unless the Connection pins the slots; the provider's other models are reachable only by name, so the panel lists them after the tiers, under the lowercased, `claude/`-prefixed names the gateway publishes to Claude Code itself, so a choice made in the panel and one made in Claude Code's own model picker are the same value.
 Nothing is seeded: the tiers already resolve on any provider.
+Claude Code starts only once the gateway answers with the tier models, so the gateway keeps the last list each provider gave it on the agent's home volume and answers from that list at once on the next start, refreshing it from the provider afterwards.
+A name it gave Claude Code for a tier that the provider has since retired goes to that tier's current model, so a kept list that is out of date costs nothing.
+With no kept list, on the agent's first start or a new provider, it waits for the listing at most three seconds; a provider still unlisted then leaves the tiers to the request-time mapping above.
 
 CurveBender pins Claude Code's Sonnet slot to its non-reasoning Nemotron model for the auto-permission classifier, and every work slot and the default conversation to GLM.
 It also turns off the server-side auto-mode check: GLM cannot answer the classifier's non-thinking request within its deadline, so the model pin and that flag are needed together.

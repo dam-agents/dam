@@ -37,6 +37,8 @@ export type SessionListQuery = NonNullable<
 export interface SessionPage {
   sessions: PodSession[];
   nextCursor: SessionListCursor | null;
+  // UNIT_BOUNDARY_DESCRIPTION: set when the harness had not answered in time, so sessions only the harness knows may be missing; a reader must not take a session's absence from this page as its removal. A notice follows once the full list is ready.
+  incomplete?: true;
 }
 
 export type SetSessionTitleInput = z.infer<typeof setSessionTitleInputSchema>;
@@ -51,7 +53,10 @@ export type DelegationFrames = z.infer<typeof delegationFramesSchema>;
 export interface SessionsService {
   list(query?: SessionListQuery): Promise<SessionPage>;
   watch(signal?: AbortSignal): AsyncIterable<PodSessionNotice>;
-  history(sessionId: string): Promise<SessionHistory>;
+  history(
+    sessionId: string,
+    opts?: Pick<SessionHistoryInput, "tail">,
+  ): Promise<SessionHistory>;
   setTitle(input: SetSessionTitleInput): Promise<boolean>;
   storeDelegationFrames(
     input: StoreDelegationFramesInput,

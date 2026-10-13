@@ -1,12 +1,13 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChannelType, type SlackChannel } from "api-server-api";
+import type { SlackChannel } from "api-server-api";
 import { useForm } from "react-hook-form";
-import { match } from "ts-pattern";
 import { z } from "zod";
 
 import { getBrand } from "../../../brand.js";
 import type { AgentView } from "../../../types.js";
 import { useConnectSlack } from "../../agents/api/mutations.js";
+import { useBindSharingConfirm } from "../../agents/hooks/use-bind-sharing-confirm.js";
+import { isSlackDirectMessageId } from "../lib/shared-channels.js";
 import { planSlackChannelSave } from "../lib/slack-channel-save.js";
 
 export type { SlackChannel };
@@ -33,32 +34,6 @@ const slackChannelFormSchema = z
 
 type SlackChannelFormValues = z.infer<typeof slackChannelFormSchema>;
 
-export function findSlackChannels(
-  agent: AgentView | undefined,
-): SlackChannel[] {
-  return agent?.channels.filter((c) => c.type === ChannelType.Slack) ?? [];
-}
-
-export function slackChannelLabel(channel: SlackChannel): string {
-  if (!channel.label) return channel.slackChannelId;
-  return match(channel.label)
-    .with({ kind: "channel" }, (l) => `#${l.name}`)
-    .with({ kind: "direct-message" }, (l) =>
-      l.with ? `DM with ${l.with}` : "Direct message",
-    )
-    .with({ kind: "group-direct-message" }, (l) =>
-      l.members.length > 0
-        ? `Group DM with ${l.members.join(", ")}`
-        : "Group DM",
-    )
-    .with({ kind: "gone" }, () => channel.slackChannelId)
-    .exhaustive(() => channel.slackChannelId);
-}
-
-export function isSlackConversationGone(channel: SlackChannel): boolean {
-  return channel.label?.kind === "gone";
-}
-
 export function useSlackChannelForm(
   agent: AgentView,
   channel: SlackChannel | undefined,
@@ -67,6 +42,7 @@ export function useSlackChannelForm(
   const editing = !!channel;
 
   const connectSlack = useConnectSlack();
+  const bindConfirm = useBindSharingConfirm(editing ? null : agent);
 
   const form = useForm<SlackChannelFormValues>({
     resolver: zodResolver(slackChannelFormSchema),
@@ -84,6 +60,11 @@ export function useSlackChannelForm(
   });
 
   const onSubmit = form.handleSubmit(async (values) => {
+    const audience =
+      editing || isSlackDirectMessageId(values.channelId)
+        ? null
+        : { kind: "slack-channel" as const, name: null };
+    if (!(await bindConfirm.confirm(audience, "Connect"))) return;
     const connect = planSlackChannelSave({
       agentId: agent.id,
       channel,

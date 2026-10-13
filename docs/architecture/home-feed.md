@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-09-16
+Last verified: 2026-10-13
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -23,10 +23,15 @@ One row per session, filed under the owner who should see it.
 The row carries enough to render a feed card and to decide whether it is unread: when the session was last active, when it was last seen, whether it was working at capture time, and how it was started.
 
 The boundary matters more than the contents.
-**The Agent remains the sole source of truth for which sessions exist** — the record is never consulted to answer that, and nothing reads it to decide whether a session is real.
+**The Agent remains the sole source of truth for which sessions exist** — the record is never consulted to decide that, and nothing reads it to decide whether a session is real.
 It is a notification ledger, not a session store.
 A missing row therefore means only one thing: nobody was told about that session.
 It never means the session is gone.
+
+One reader outside Home shows the rows: an Agent's session list, while that Agent cannot answer for itself — asleep, or still waking.
+It shows its owner the rows filed for that Agent as a **provisional** list, display-only, and replaces it with the Agent's own list the moment the Agent answers.
+The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
+Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
 
 That boundary is what makes the record safe to rebuild or discard.
 Dropping it costs a user their feed history and nothing else; the next capture refills it from the pods.

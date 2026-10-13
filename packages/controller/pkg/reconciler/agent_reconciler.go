@@ -1,8 +1,13 @@
 package reconciler
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -13,6 +18,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"log/slog"
@@ -50,11 +57,12 @@ type AgentReconciler struct {
 	lifetime        context.Context
 	podResize       atomic.Int32
 	agentCache      cache.GenericLister
+	podCache        corelisters.PodLister
 	vmRunning       sync.Map
 	vmLive          sync.Map
-	ownerDemandMiB  sync.Map
 	resizeNotices   sync.Map
 	notReadyPolls   sync.Map
+	vmStartClocks   sync.Map
 	claimCapNotices sync.Map
 	ownerless       sync.Map
 	machineWatchMu  sync.Mutex
@@ -78,7 +86,13 @@ func (r *AgentReconciler) WithAgentCache(lister cache.GenericLister) *AgentRecon
 	return r
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how work the reconciler starts outside a reconcile — a machine watch — puts an Agent back on the queue, and the lifetime that work is bound to: the leader context, so it ends with the leadership that owns the queue.
+// UNIT_BOUNDARY_DESCRIPTION: a reconcile reads an agent's pods up to three times, and every change to those pods already requeues the agent through the pod informer, so the informer's cache answers instead of the API server. A reconciler built without the cache — the tests — reads them live.
+func (r *AgentReconciler) WithPodCache(lister corelisters.PodLister) *AgentReconciler {
+	r.podCache = lister
+	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how work the reconciler starts outside a reconcile — a machine watch — puts an Agent back on the queue, and the lifetime that work is bound to: the leader context, so it ends with the leadership that owns the queue. A requeue with no delay says the machine moved, which a person waiting on a wake needs now; a delayed one is a poll and can wait its turn.
 func (r *AgentReconciler) WithRequeue(lifetime context.Context, fn func(name string, after time.Duration)) *AgentReconciler {
 	r.lifetime = lifetime
 	r.requeue = fn
@@ -116,53 +130,68 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("rendering envoy bootstrap: %v", err))
 	}
-	if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying envoy bootstrap: %v", err))
-	}
-	timer.mark("envoyBootstrap")
-	if cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts); cert != nil {
-		if err := r.applyCertificate(ctx, cert); err != nil {
-			return r.setError(ctx, name, fmt.Sprintf("applying envoy leaf certificate: %v", err))
-		}
-		if err := r.ensureSecretOwnerReference(ctx, EnvoyLeafSecretName(name), ownerRef); err != nil {
-			slog.Warn("setting owner ref on envoy leaf TLS Secret; will retry on next reconcile",
-				"agent", name, "error", err)
-		}
-	}
-	timer.mark("leafCert")
-
-	if err := r.ensureServiceAccount(ctx, name, ownerRef); err != nil {
-		return r.setError(ctx, name, err.Error())
-	}
-	timer.mark("serviceAccount")
-
-	extAuthzSvc := BuildExtAuthzService(name, r.config)
-	if err := r.applyExtAuthzService(ctx, extAuthzSvc); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz service: %v", err))
-	}
-	timer.mark("extAuthzService")
-
-	if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying harness authz policy: %v", err))
-	}
-	if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("applying ext-authz authz policy: %v", err))
-	}
-	timer.mark("authzPolicies")
-
-	if err := applyNetworkPolicy(ctx, r.client, BuildAgentEgressNetworkPolicy(name, r.config, ownerRef)); err != nil {
-		return r.setError(ctx, name, err.Error())
-	}
-	timer.mark("egressNetworkPolicy")
 	migration := runtimeMigrationOf(agent.Annotations, agent.Status)
-	if err := applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, agentSpec.IsVM() || migration.vmSideRuns(), r.config, ownerRef)); err != nil {
+	var liveGatewaySvc *corev1.Service
+	err = concurrently(
+		func() error {
+			if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
+				return fmt.Errorf("applying envoy bootstrap: %v", err)
+			}
+			return nil
+		},
+		func() error {
+			cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
+			if cert == nil {
+				return nil
+			}
+			if err := r.applyCertificate(ctx, cert); err != nil {
+				return fmt.Errorf("applying envoy leaf certificate: %v", err)
+			}
+			if err := r.ensureSecretOwnerReference(ctx, EnvoyLeafSecretName(name), ownerRef); err != nil {
+				slog.Warn("setting owner ref on envoy leaf TLS Secret; will retry on next reconcile",
+					"agent", name, "error", err)
+			}
+			return nil
+		},
+		func() error { return r.ensureServiceAccount(ctx, name, ownerRef) },
+		func() error {
+			if err := r.applyExtAuthzService(ctx, BuildExtAuthzService(name, r.config)); err != nil {
+				return fmt.Errorf("applying ext-authz service: %v", err)
+			}
+			return nil
+		},
+		func() error {
+			if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
+				return fmt.Errorf("applying harness authz policy: %v", err)
+			}
+			return nil
+		},
+		func() error {
+			if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
+				return fmt.Errorf("applying ext-authz authz policy: %v", err)
+			}
+			return nil
+		},
+		func() error {
+			return applyNetworkPolicy(ctx, r.client, BuildAgentEgressNetworkPolicy(name, r.config, ownerRef))
+		},
+		func() error {
+			return applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, agentSpec.IsVM() || migration.vmSideRuns(), r.config, ownerRef))
+		},
+		func() error {
+			return applyNetworkPolicy(ctx, r.client, BuildGatewayEgressNetworkPolicy(name, r.config, ownerRef))
+		},
+		func() (err error) {
+			if liveGatewaySvc, err = ensureGatewayService(ctx, r.client, BuildGatewayService(name, agentSpec.IsVM(), r.config, ownerRef), "agent", name); err != nil {
+				return fmt.Errorf("ensuring gateway service: %v", err)
+			}
+			return nil
+		},
+	)
+	if err != nil {
 		return r.setError(ctx, name, err.Error())
 	}
-	timer.mark("gatewayIngressNetworkPolicy")
-	if err := applyNetworkPolicy(ctx, r.client, BuildGatewayEgressNetworkPolicy(name, r.config, ownerRef)); err != nil {
-		return r.setError(ctx, name, err.Error())
-	}
-	timer.mark("gatewayEgressNetworkPolicy")
+	timer.mark("agentObjects")
 
 	idleTimeout := effectiveIdleTimeout(agent.Spec.HibernationTimeout, agent.Spec.IsVM(), r.config.AgentBase)
 	running := shouldRunMigrating(agent.Annotations, migration, idleTimeout, time.Now().UTC())
@@ -231,13 +260,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 
 	rollRev := agent.Annotations[annRollRev]
 
-	gatewaySvc := BuildGatewayService(name, agentSpec.IsVM(), r.config, ownerRef)
-	liveGatewaySvc, err := ensureGatewayService(ctx, r.client, gatewaySvc, "agent", name)
-	if err != nil {
-		return r.setError(ctx, name, fmt.Sprintf("ensuring gateway service: %v", err))
-	}
 	gatewayIP := liveGatewaySvc.Spec.ClusterIP
-	timer.mark("gatewayService")
 
 	if gatewayIP == "" || gatewayIP == corev1.ClusterIPNone {
 		return fmt.Errorf("agent %s: gateway Service ClusterIP not yet assigned, requeuing", name)
@@ -350,6 +373,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		slog.Warn("force-rolling stuck gateway pod failed; rollout may be deadlocked",
 			"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
 	}
+	if running {
+		if err := r.refreshGatewayCredentials(ctx, gatewaySS.Name, credentialSecrets); err != nil {
+			slog.Warn("asking the kubelet to refresh gateway credentials failed; the periodic refresh still applies",
+				"agent", name, "error", err)
+		}
+	}
 	timer.mark("gatewayStatefulSet")
 
 	if hardStop {
@@ -409,7 +438,17 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 		}
 	}
 	agentRestarts, agentRestartReason := podRestarts(agentPod)
-	return r.publishReadinessOf(ctx, agent, agentReady, agentFailReason, agentFailMsg, podReadErr == nil, agentRestarts, agentRestartReason)
+	ss, ssReadErr := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	failure, recheck := podStartFailure(ss, agentPod, time.Now())
+	if recheck > 0 && r.requeue != nil {
+		r.requeue(name, recheck)
+	}
+	return r.publishReadinessOf(ctx, agent, agentReady, agentFailReason, agentFailMsg, podReadErr == nil, agentRestarts, agentRestartReason,
+		func(s *apiv1.AgentStatus) {
+			if podReadErr == nil && (ssReadErr == nil || errors.IsNotFound(ssReadErr)) {
+				setStartFailure(s, failure, agent.Generation)
+			}
+		})
 }
 
 func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.Agent, agentReady bool, agentFailReason, agentFailMsg string, restartsObserved bool, agentRestarts int32, agentRestartReason string, also ...func(*apiv1.AgentStatus)) error {
@@ -491,7 +530,13 @@ func (r *AgentReconciler) podCurrentAndReady(ctx context.Context, ssName string)
 }
 
 func (r *AgentReconciler) readPod(ctx context.Context, ssName string) (*corev1.Pod, error) {
-	pod, err := r.client.CoreV1().Pods(r.config.Namespace).Get(ctx, ssName+"-0", metav1.GetOptions{})
+	var pod *corev1.Pod
+	var err error
+	if r.podCache != nil {
+		pod, err = r.podCache.Pods(r.config.Namespace).Get(ssName + "-0")
+	} else {
+		pod, err = r.client.CoreV1().Pods(r.config.Namespace).Get(ctx, ssName+"-0", metav1.GetOptions{})
+	}
 	if errors.IsNotFound(err) {
 		return nil, nil
 	}
@@ -535,6 +580,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string) error 
 	}
 	r.vmRunning.Delete(name)
 	r.notReadyPolls.Delete(name)
+	r.vmStartClocks.Delete(name)
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)
@@ -801,7 +847,14 @@ func stampRollRev(ss *appsv1.StatefulSet, rollRev string) {
 	ss.Spec.Template.Annotations[annRollRev] = rollRev
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: writes an agent's or gateway's StatefulSet only when it would change. Every reconcile renders both, and the agent reconciles run on one worker for the whole install, so an update that waits holds up every other agent's start. An update waits for every admission webhook that matches StatefulSets, even when it changes nothing, and a webhook whose service has no ready endpoint can hold it until the webhook's timeout (10-12 s measured). The stored template carries the API server's defaults and never equals the rendered one, so the rendered template and update strategy are hashed onto the StatefulSet, and an unchanged hash with the right replica count sends nothing. The cost: a hand edit to the template stays until the rendered template next changes.
 func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.StatefulSet, running bool) error {
+	raw, err := json.Marshal([]any{desired.Spec.Template, desired.Spec.UpdateStrategy})
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(raw)
+	hash := hex.EncodeToString(sum[:8])
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		existing, err := r.client.AppsV1().StatefulSets(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
 		if errors.IsNotFound(err) {
@@ -810,11 +863,16 @@ func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.
 				replicas = 1
 			}
 			desired.Spec.Replicas = &replicas
+			metav1.SetMetaDataAnnotation(&desired.ObjectMeta, annStatefulSetTemplate, hash)
 			_, err = r.client.AppsV1().StatefulSets(desired.Namespace).Create(ctx, desired, metav1.CreateOptions{})
 			return err
 		}
 		if err != nil {
 			return err
+		}
+		scaled := !running || (existing.Spec.Replicas != nil && *existing.Spec.Replicas == 1)
+		if scaled && existing.Annotations[annStatefulSetTemplate] == hash {
+			return nil
 		}
 		if running {
 			one := int32(1)
@@ -822,6 +880,7 @@ func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.
 		}
 		existing.Spec.Template = desired.Spec.Template
 		existing.Spec.UpdateStrategy = desired.Spec.UpdateStrategy
+		metav1.SetMetaDataAnnotation(&existing.ObjectMeta, annStatefulSetTemplate, hash)
 		_, err = r.client.AppsV1().StatefulSets(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	})
@@ -842,12 +901,22 @@ func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, stat
 	if err != nil {
 		return fmt.Errorf("building selector: %w", err)
 	}
-	pods, err := r.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
+	var pods []*corev1.Pod
+	if r.podCache != nil {
+		pods, err = r.podCache.Pods(namespace).List(sel)
+	} else {
+		var list *corev1.PodList
+		if list, err = r.client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: sel.String()}); err == nil {
+			for i := range list.Items {
+				pods = append(pods, &list.Items[i])
+			}
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("listing pods: %w", err)
 	}
-	for _, p := range pods.Items {
-		if !podStuckOnSupersededRevision(ss, &p) {
+	for _, p := range pods {
+		if !podStuckOnSupersededRevision(ss, p) {
 			continue
 		}
 		if p.DeletionTimestamp != nil {
@@ -857,7 +926,7 @@ func (r *AgentReconciler) forceRollStuckPod(ctx context.Context, namespace, stat
 			"namespace", namespace, "statefulset", statefulSetName, "pod", p.Name,
 			"podRev", p.Labels["controller-revision-hash"],
 			"currentRev", ss.Status.CurrentRevision, "targetRev", ss.Status.UpdateRevision)
-		if err := r.client.CoreV1().Pods(namespace).Delete(ctx, p.Name, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+		if err := r.client.CoreV1().Pods(namespace).Delete(ctx, p.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &p.UID, ResourceVersion: &p.ResourceVersion}}); err != nil && !errors.IsNotFound(err) && !errors.IsConflict(err) {
 			return fmt.Errorf("deleting stuck pod %s: %w", p.Name, err)
 		}
 	}
@@ -901,10 +970,26 @@ func (r *AgentReconciler) applyUnstructured(ctx context.Context, gvr schema.Grou
 		if err != nil {
 			return err
 		}
+		if unstructuredCurrent(existing, desired) {
+			return nil
+		}
 		desired.SetResourceVersion(existing.GetResourceVersion())
 		_, err = cli.Update(ctx, desired, metav1.UpdateOptions{})
 		return err
 	})
+}
+
+func unstructuredCurrent(existing, desired *unstructured.Unstructured) bool {
+	for _, field := range [][]string{{"spec"}, {"metadata", "labels"}, {"metadata", "annotations"}, {"metadata", "ownerReferences"}} {
+		have, _, _ := unstructured.NestedFieldNoCopy(existing.Object, field...)
+		want, _, _ := unstructured.NestedFieldNoCopy(desired.Object, field...)
+		haveJSON, errHave := json.Marshal(have)
+		wantJSON, errWant := json.Marshal(want)
+		if errHave != nil || errWant != nil || !bytes.Equal(haveJSON, wantJSON) {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *AgentReconciler) applyConfigMap(ctx context.Context, desired *corev1.ConfigMap) error {
@@ -917,10 +1002,29 @@ func (r *AgentReconciler) applyConfigMap(ctx context.Context, desired *corev1.Co
 		if err != nil {
 			return err
 		}
+		if maps.Equal(existing.Data, desired.Data) && maps.Equal(existing.Labels, desired.Labels) &&
+			equality.Semantic.DeepEqual(existing.OwnerReferences, desired.OwnerReferences) {
+			return nil
+		}
 		existing.Data = desired.Data
 		existing.OwnerReferences = desired.OwnerReferences
 		existing.Labels = desired.Labels
 		_, err = r.client.CoreV1().ConfigMaps(desired.Namespace).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	})
+}
+
+func concurrently(steps ...func() error) error {
+	errs := make([]error, len(steps))
+	var wg sync.WaitGroup
+	for i, step := range steps {
+		wg.Go(func() { errs[i] = step() })
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

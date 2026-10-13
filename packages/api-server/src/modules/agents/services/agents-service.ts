@@ -1,3 +1,4 @@
+import { avatarCharacter } from "api-server-api/avatar/svg";
 import {
   DEFAULT_TEMPLATE_ID,
   RETIRED_TEMPLATE_HARNESS,
@@ -67,6 +68,7 @@ import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
 } from "../domain/telemetry-env.js";
+import { isTelegramDirectConversation } from "../domain/telegram-conversation.js";
 import { templateImageUpdate } from "../domain/template-update.js";
 import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
@@ -721,7 +723,11 @@ export function createAgentsService(deps: {
     if (!infra.templateId) return undefined;
     const tmpl = await deps.readTemplateSpec(infra.templateId);
     if (!tmpl) return undefined;
-    return templateImageUpdate(infra.spec.image, tmpl.spec.image);
+    return templateImageUpdate(
+      infra.spec.image,
+      tmpl.spec.image,
+      infra.imageUpdateRefused,
+    );
   }
 
   async function project(
@@ -958,7 +964,11 @@ export function createAgentsService(deps: {
           deps.agentIdleTimeoutMinutes,
           status?.preparingWorkspace ?? false,
           templateImage
-            ? templateImageUpdate(infra.spec.image, templateImage)
+            ? templateImageUpdate(
+                infra.spec.image,
+                templateImage,
+                infra.imageUpdateRefused,
+              )
             : undefined,
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],
@@ -1056,7 +1066,8 @@ export function createAgentsService(deps: {
         );
       if (input.telemetryAttributionId !== undefined)
         spec.telemetryAttributionId = input.telemetryAttributionId;
-      if (input.requireConnectionAddress) spec.requireConnectionAddress = true;
+      if (input.requireConnectionAddress !== false)
+        spec.requireConnectionAddress = true;
 
       const providerConnectionId =
         input.providerConnectionId ??
@@ -1217,6 +1228,7 @@ export function createAgentsService(deps: {
         type: EventType.AgentCreated,
         agentId: agent.id,
         ownerSub: owner,
+        character: avatarCharacter(agent.spec.avatar, owner, agent.name),
       });
       return agent;
     },
@@ -1552,7 +1564,11 @@ export function createAgentsService(deps: {
       if (!infra) return err({ type: "AgentNotFound" as const });
       const chats = await binding.listConversations(infra.id);
       return ok({
-        chats: chats.map((c) => ({ conversationId: c.id, title: c.title })),
+        chats: chats.map((c) => ({
+          conversationId: c.id,
+          title: c.title,
+          direct: isTelegramDirectConversation(c.id),
+        })),
       });
     },
 
@@ -1612,7 +1628,10 @@ export function createAgentsService(deps: {
       const flow = await binding.peekFlow(flowId);
       if (!flow) return null;
       if (!deps.owner || flow.keycloakSub !== deps.owner) return null;
-      return { chatTitle: flow.chatTitle ?? null };
+      return {
+        chatTitle: flow.chatTitle ?? null,
+        direct: isTelegramDirectConversation(flow.conversationId),
+      };
     },
 
     async bindSlackChannel(agentId, flowId) {

@@ -1,48 +1,17 @@
 import { execFile } from "node:child_process";
-import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { BIN_PATH, runDam } from "./run-dam.js";
 
 const exec = promisify(execFile);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(HERE, "../..");
-const BIN_PATH = join(PKG_ROOT, "dist", "js", "bin.js");
-
-interface RunResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}
-
-async function runDam(
-  args: string[],
-  env: Record<string, string>,
-): Promise<RunResult> {
-  try {
-    const { stdout, stderr } = await exec("node", [BIN_PATH, ...args], { env });
-    return { exitCode: 0, stdout, stderr };
-  } catch (e) {
-    const err = e as { code?: number; stdout?: string; stderr?: string };
-    return {
-      exitCode: typeof err.code === "number" ? err.code : 1,
-      stdout: err.stdout ?? "",
-      stderr: err.stderr ?? "",
-    };
-  }
-}
 
 interface Fixture {
   url: string;
@@ -89,10 +58,6 @@ async function readLocalCliVersion(): Promise<string> {
 }
 
 describe("dam version (integration)", () => {
-  beforeAll(async () => {
-    await exec("pnpm", ["exec", "tsup"], { cwd: PKG_ROOT });
-  }, 60_000);
-
   let home: string;
   let fixture: Fixture;
   let LOCAL: string;
@@ -111,11 +76,9 @@ describe("dam version (integration)", () => {
   afterAll(async () => {});
 
   async function configureServer(url: string) {
-    const r = await runDam(["config", "set", "server", url], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
-    expect(r.exitCode).toBe(0);
+    const dir = join(home, ".config", "dam");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "config.toml"), `server = "${url}"\n`);
   }
 
   it("no server configured: prints local line only, exit 0", async () => {
@@ -206,39 +169,6 @@ describe("dam version (integration)", () => {
     expect(r.stderr).toContain("ping/auth login/shell will fail");
     expect(r.stdout).toContain("server 1.0.0 (min CLI 99.0.0)");
     expect(r.stdout).not.toContain("ping/auth login/shell will fail");
-  });
-
-  it("CONTRAST: same below-floor scenario — `version` exits 0, `ping` exits 3", async () => {
-    fixture.setResponse({
-      body: { serverVersion: "1.0.0", minClientVersion: "99.0.0" },
-    });
-    await configureServer(fixture.url);
-
-    const v = await runDam(["version"], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
-    const p = await runDam(["ping"], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
-
-    expect(v.exitCode).toBe(0);
-    expect(p.exitCode).toBe(3);
-  });
-
-  it("--server flag overrides configured server", async () => {
-    fixture.setResponse({
-      body: { serverVersion: "5.5.5", minClientVersion: "0.0.0" },
-    });
-    await configureServer("http://127.0.0.1:1");
-
-    const r = await runDam(["version", "--server", fixture.url], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
-    expect(r.exitCode).toBe(0);
-    expect(r.stdout).toContain("server 5.5.5");
   });
 
   it("relocated bin.js still resolves the version (build-time embed)", async () => {

@@ -4,6 +4,7 @@ status: proposed
 subsystem: agent-lifecycle
 summary: Each agent is its own pod and Agent resource, fully isolated by default, collaborating only through explicitly declared shared artifacts rather than shared workspaces.
 ---
+
 # DRAFT: Multi-agent collaboration — isolated Agents with shared artifacts
 
 **Date:** 2026-04-07 **Status:** Proposed **Owner:** @tomkis
@@ -35,11 +36,13 @@ Inter-agent communication uses a platform-level **shared artifact mechanism**: t
 This is analogous to sharing a Google Drive folder between employees rather than giving them access to each other's computers.
 
 The platform DOES:
+
 - Allow the user to declare shared artifact mounts between Agents
 - Enforce per-Agent credential scoping (credentials are per-Agent, not per-Template)
 - Maintain full isolation between Agents by default — sharing is opt-in
 
 The platform does NOT:
+
 - Run multiple agents inside a single Agent/pod
 - Allow Agents to mount each other's full workspaces
 - Rely on prompt-level enforcement for inter-agent boundaries

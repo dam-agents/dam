@@ -141,18 +141,19 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	if err := r.ensureRunnerToken(ctx, owner, refs); err != nil {
 		return nil, false, err
 	}
-	if err := r.applyCertificate(ctx, r.buildRunnerCertificate(owner, refs)); err != nil {
-		return nil, false, fmt.Errorf("applying the runner's certificate: %w", err)
-	}
-	if err := r.applyRunnerPVC(ctx, owner, demand, refs); err != nil {
-		return nil, false, err
-	}
-	if err := r.applyService(ctx, r.buildRunnerService(owner, refs)); err != nil {
-		return nil, false, err
-	}
 	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.EnvoyPort, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs, runnerDNSRule(r.config.VM.Runner))
 	np.OwnerReferences = refs
-	if err := applyNetworkPolicy(ctx, r.client, np); err != nil {
+	if err := concurrently(
+		func() error {
+			if err := r.applyCertificate(ctx, r.buildRunnerCertificate(owner, refs)); err != nil {
+				return fmt.Errorf("applying the runner's certificate: %w", err)
+			}
+			return nil
+		},
+		func() error { return r.applyRunnerPVC(ctx, owner, demand, refs) },
+		func() error { return r.applyService(ctx, r.buildRunnerService(owner, refs)) },
+		func() error { return applyNetworkPolicy(ctx, r.client, np) },
+	); err != nil {
 		return nil, false, err
 	}
 	if err := r.applyRunnerDeployment(ctx, owner, refs, true); err != nil {
@@ -171,11 +172,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string, demand
 	if err != nil {
 		return client, false, err
 	}
-	ready := dep.Status.ReadyReplicas > 0
-	if ready {
-		r.resizeRunnerPod(ctx, owner, demand)
-	}
-	return client, ready, nil
+	return client, dep.Status.ReadyReplicas > 0, nil
 }
 
 func (r *AgentReconciler) runnerTLSName(owner string) string {

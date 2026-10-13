@@ -9,7 +9,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
-import type { EgressPreset, EnvVar } from "../../../types.js";
+import type { AgentView, EgressPreset, EnvVar } from "../../../types.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import {
   type BundleEntry,
@@ -18,10 +18,11 @@ import {
 } from "../../files/api/import-bundle.js";
 import { trackImport } from "../../files/track-import.js";
 import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
+import { seedEmptySessionList } from "../../sessions/api/queries.js";
 import { agentsKeys } from "./queries.js";
 
 const invalidatesAgentsList = {
-  invalidates: [agentsKeys.listWithChannels(), trpc.agents.list.queryKey()],
+  invalidates: [agentsKeys.listWithChannels()],
 };
 
 const invalidatesAgentsAndBudget = {
@@ -64,12 +65,15 @@ export function useCreateAgent() {
         egressPreset,
         connectionIds: appConnectionIds,
       });
-      void queryClient.invalidateQueries({
-        queryKey: trpc.agents.list.queryKey(),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: agentsKeys.listWithChannels(),
-      });
+      queryClient.setQueryData<{ list: readonly AgentView[] }>(
+        agentsKeys.listWithChannels(),
+        (prev) =>
+          prev && !prev.list.some((a) => a.id === agent.id)
+            ? { ...prev, list: [...prev.list, agent] }
+            : prev,
+      );
+      for (const queryKey of invalidatesAgentsAndBudget.invalidates)
+        void queryClient.invalidateQueries({ queryKey });
 
       let runImport: (() => Promise<unknown>) | undefined;
       let importLabel = "";
@@ -88,6 +92,8 @@ export function useCreateAgent() {
             agentId: agent.id,
             entries: importEntries,
           });
+      } else {
+        seedEmptySessionList(agent.id, useStore.getState().sessionFilter);
       }
 
       if (runImport) {
@@ -107,10 +113,8 @@ export function useCreateAgent() {
 
       return agent;
     },
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't create agent",
-    },
+    // UNIT_BOUNDARY_DESCRIPTION: no `invalidates` meta: the global onSuccess would hold the result until the agent list refetched, so the new agent is seeded into the list and the refetches run without being awaited.
+    meta: { errorToast: "Couldn't create agent" },
   });
 }
 
@@ -194,14 +198,12 @@ export function useRestartAgentMutation() {
   });
 }
 
-export function useUpgradeAgentMutation(opts?: { silent?: boolean }) {
+export function useUpgradeAgentMutation() {
   return useMutation({
     ...trpc.agents.upgrade.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      ...(opts?.silent
-        ? { suppressErrorToast: true }
-        : { errorToast: "Couldn't update agent" }),
+      errorToast: "Couldn't update agent",
     },
   });
 }

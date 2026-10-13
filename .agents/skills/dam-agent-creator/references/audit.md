@@ -71,7 +71,7 @@ Include what applies; add domain checks from the design's effects list.
 - Feedback on own output where the surface shows it (reactions, replies): read what a negative signal points at, route a real correction into memory per its rules, report one line per recorded lesson.
   A negative signal with no readable reason is reported as-is, never guessed at.
 - Trends: throughput vs last week, outcome extremes (100% one verdict = suspicious), backlog age, idle-run ratio (falling ratio = rising bill; the gate's measure, never spend's, which task "cost reconciliation" owns).
-- **Outcome shifts against the recorded baseline** (Trend history below): a share that moved 20 pp or more against the four recorded weeks, or a rate that halved or doubled, which a z-test (|z| ≥ 2) does not explain as noise → warn naming the **definition versions on both sides** (every output row records the `def` that wrote it) and, after reading two or three outputs of the moved side, whether the agent changed or the inputs did.
+- **Outcome shifts against the recorded baseline** (Trend history below): a share that moved 20 pp or more against the four recorded weeks, or a rate that halved or doubled, which a z-test (\|z\| ≥ 2) does not explain as noise → warn naming the **definition versions on both sides** (every output row records the `def` that wrote it) and, after reading two or three outputs of the moved side, whether the agent changed or the inputs did.
 - **A human overruled the agent's verdict** (a change request after the agent's approve, a reverted item it passed): each is a defect the agent let through; read it, name the missed class, record the lesson, list the items under *Action needed*.
 - Config validity: required keys present and parseable; roster integrity when one exists.
 
@@ -116,7 +116,8 @@ Then append `<ISO> ok=<n> warn=<n> red=<n> sent=<channel|chat>` to `work/AUDIT.l
 
 ## Optional: a periodic quality benchmark
 
-For agents whose output quality is a judgment call (reviews, classifications, summaries): a rarer run (monthly, off by default, own config key) replays fixed synthetic fixtures through the full pipeline and scores output against seeded ground truth, recording time and token cost per item, so "did the model upgrade help?" gets an answer.
+For agents whose output quality is a judgment call (reviews, classifications, summaries): a rarer run (monthly, off by default, own config key) replays fixed synthetic fixtures through the full pipeline and scores output against seeded ground truth, recording time and token cost per item, so "did the model upgrade help?"
+gets an answer.
 Trust invariants: ground truth lives **outside** the pipeline's inputs (a set naming its own answers is never scored); fixture creation and scored runs never share a session; one scored run at a time behind a lock; results append-only and validated before entering the history; nothing in the production domain touched beyond its own report.
 Propose it only where the operator would act on the numbers: it costs real tokens.
 

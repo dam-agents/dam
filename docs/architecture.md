@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-10-07
+Last verified: 2026-10-13
 
 ## System context
 
@@ -62,7 +62,7 @@ The agent pod has no service-account credentials and no upstream tokens of its o
 Each page is the authoritative, self-contained description of its subsystem.
 
 - [platform-topology](architecture/platform-topology.md) — the long-lived components, the protocols between them, and the K8s resource model; the [images](architecture/agent-images.md) agents run in.
-- [vm-runner](architecture/vm-runner.md) — `vm` hosts; [Mac](architecture/vm-host-runner.md), [image cache](architecture/vm-image-cache.md), [upgrades](architecture/vm-runner-upgrades.md).
+- [vm-runner](architecture/vm-runner.md) — `vm` hosts; [Mac](architecture/vm-host-runner.md), [image cache](architecture/vm-image-cache.md), [upgrades](architecture/vm-runner-upgrades.md), [runtime migration](architecture/vm-runtime-migration.md).
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; the [processes](architecture/agent-processes.md) inside.
 - [schedules](architecture/schedules.md) — recurring and one-time work on an Agent: arming and firing occurrences, the Precheck that declines a fire before any model wakes, and the Session each fire opens.
 - [budgets](architecture/budgets.md) — per-user ceiling on concurrently reserved compute, enforced by the controller at the 0→1 scale transition; UserBudget CRs for privileged users.
@@ -85,6 +85,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [home-feed](architecture/home-feed.md) — what Home shows since you last looked: a per-owner attention record kept server-side, so hibernated agents still report.
 - [artifact-library](architecture/artifact-library.md) — agents and users publish work products into an owner-scoped library and share them by link — with anyone, or with a named list of viewers who sign in.
 - [case-studies](architecture/case-studies.md) — agents write sanitized weekly accounts of their own use case: the skill that produces them, and the edition store the owner releases them from.
+- [getting-started](architecture/getting-started.md) — a per-user first-run checklist; each task done unlocks an avatar.
 - [features](architecture/features.md) — per-user experimental-feature flags: server-stored, default off, gating pre-release surfaces (progressive disclosure, not authorization).
 - [usage-tracking](architecture/usage-tracking.md) — append-only activity log in Postgres, SQL views as the read interface, HMAC-pseudonymized identifiers, the inspector-gated analytics dashboard.
 - [agent-telemetry](architecture/agent-telemetry.md) — the user-facing read path over raw agent traces and log records, scoped to the agents you own.

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
+import { framesToMessages } from "../../acp/frames-to-messages.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { ChatMessage } from "../../sessions/components/chat-message.js";
@@ -16,7 +17,6 @@ import {
   useInvocationTurns,
 } from "../api/queries.js";
 import { delegationState, firstLine } from "../lib/delegation-state.js";
-import { framesToMessages } from "../lib/frames-to-messages.js";
 import {
   DelegationOwnersProvider,
   useDelegationOwners,

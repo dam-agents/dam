@@ -317,8 +317,8 @@ export function createStarterKitsService(
         ...(kit.hibernationTimeoutMin !== undefined
           ? { hibernationTimeoutMin: kit.hibernationTimeoutMin }
           : {}),
-        ...(kit.requireConnectionAddress
-          ? { requireConnectionAddress: true }
+        ...(kit.requireConnectionAddress !== undefined
+          ? { requireConnectionAddress: kit.requireConnectionAddress }
           : {}),
         starterKit: kitRef(loaded.catalog, kit.id, version),
       };

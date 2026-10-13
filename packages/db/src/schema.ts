@@ -679,6 +679,39 @@ export const userFeatures = pgTable(
   (table) => [primaryKey({ columns: [table.owner, table.feature] })],
 );
 
+export const gettingStartedChecklists = pgTable("getting_started_checklists", {
+  owner: text("owner").primaryKey(),
+  dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const avatarUnlocks = pgTable(
+  "avatar_unlocks",
+  {
+    owner: text("owner")
+      .notNull()
+      .references(() => gettingStartedChecklists.owner, {
+        onDelete: "cascade",
+      }),
+    task: text("task").notNull(),
+    character: text("character").notNull(),
+    unlockedAt: timestamp("unlocked_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    seenAt: timestamp("seen_at", { withTimezone: true }),
+    pickedAt: timestamp("picked_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.owner, table.task] }),
+    uniqueIndex("avatar_unlocks_owner_character_idx").on(
+      table.owner,
+      table.character,
+    ),
+  ],
+);
+
 export const artifactFolders = pgTable(
   "artifact_folders",
   {

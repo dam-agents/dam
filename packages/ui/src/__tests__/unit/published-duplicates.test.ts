@@ -49,20 +49,10 @@ const publish = (
 });
 
 describe("publishedDuplicatesBySource (#3019)", () => {
-  it("suppresses the source row when the publish record and the hash both match", () => {
+  it("suppresses the source row when the publish record and the hash both match, even with an unresolved prState", () => {
     const out = publishedDuplicatesBySource(
       [local("websearch", "h1")],
       [publish("websearch", "src-1")],
-      sources,
-      { "src-1": [scanned("websearch", "h1")] },
-    );
-    expect(out.get("src-1")).toEqual(new Set(["websearch"]));
-  });
-
-  it("does not gate on prState — an unresolved record still suppresses on hash proof", () => {
-    const out = publishedDuplicatesBySource(
-      [local("websearch", "h1")],
-      [publish("websearch", "src-1", null)],
       sources,
       { "src-1": [scanned("websearch", "h1")] },
     );

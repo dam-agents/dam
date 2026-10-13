@@ -84,6 +84,7 @@ import {
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
 import { leaseSpawnEnv } from "./core/runtime-env.js";
+import { reportHomeVolumeFullOnCrash } from "./core/home-volume-full.js";
 import {
   PROVIDER_REMOVED_REASON,
   type LeasePair,
@@ -96,6 +97,8 @@ const homeDir = config.PLATFORM_DEV
 const workDir = config.PLATFORM_DEV
   ? join(__dir, "../working-dir")
   : AGENT_WORK_DIR;
+
+reportHomeVolumeFullOnCrash(homeDir);
 
 try {
   mkdirSync(workDir, { recursive: true });
@@ -227,6 +230,7 @@ const {
   activeTurns,
   subAgentSessions,
   platformMcpEntry,
+  warmHistory,
 } = composeAcp({
   command: config.PLATFORM_DEV
     ? ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
@@ -258,8 +262,8 @@ const {
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
+  onPrompt: startDisplay,
   beforeSpawn: () => {
-    startDisplay();
     if (seedHarnessModel) return seedHarnessModel();
     process.stderr.write(
       "[acp] first spawn reached before the runtime channel was composed — no model seeded\n",
@@ -967,6 +971,8 @@ server.listen(config.PORT, () => {
 
   if (envStore.ready()) podService?.refreshEnv();
 
+  acpRuntime.prestart();
+
   if (imageSkillReconciler) {
     const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));
     if (bootState.kind === "corrupt") {
@@ -981,6 +987,8 @@ server.listen(config.PORT, () => {
   }
 
   setTimeout(startDisplay, DISPLAY_IDLE_START_MS).unref();
+
+  warmHistory();
 
   void sweepStaging(homeDir, (msg) =>
     process.stderr.write(`[import] ${msg}\n`),

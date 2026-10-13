@@ -7,6 +7,7 @@ import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { GettingStartedDock } from "./modules/getting-started/components/getting-started-dock.js";
 import {
   ActivityButton,
   NotificationsPanel,
@@ -49,8 +50,20 @@ export default function App() {
   }, [theme]);
 
   if (view === "terms") return <TermsView />;
-  if (view === "telegram-bind") return <TelegramBindView />;
-  if (view === "slack-bind") return <SlackBindView />;
+  if (view === "telegram-bind")
+    return (
+      <>
+        <TelegramBindView />
+        <DialogOverlay />
+      </>
+    );
+  if (view === "slack-bind")
+    return (
+      <>
+        <SlackBindView />
+        <DialogOverlay />
+      </>
+    );
   if (view === "analytics") return <UsageReportView />;
   return <MainApp />;
 }
@@ -153,6 +166,7 @@ function MainApp() {
       {kitBrowserOpen && <BrowseKitsModal />}
       <DialogOverlay />
       <ConnectionBanner />
+      <GettingStartedDock placement="page" />
     </div>
   );
 }

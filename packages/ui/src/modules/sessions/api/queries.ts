@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import type { SessionListCursor, SessionListQuery } from "agent-runtime-api";
 import {
+  type AttentionItem,
   SESSION_CATEGORIES,
   type SessionCategory,
   type SessionMode,
@@ -16,15 +17,23 @@ import { useMemo } from "react";
 
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
+import { trpc } from "../../../trpc.js";
+import {
+  untilAgentOperable,
+  useAgentLacksLiveUpdates,
+} from "../../agents/api/queries.js";
+import { askAgainWhenReady } from "../../agents/lib/agent-start.js";
 import {
   findAgentSession,
   listAgentSessionPage,
+  readSessionHistory,
   type SessionViewPage,
 } from "./acp-session-ops.js";
 import { acpSessionsKeys } from "./keys.js";
 
 const SESSION_PAGE_SIZE = 50;
+const SESSION_HISTORY_STALE_MS = 5_000;
+export const SESSION_HISTORY_TAIL = 200;
 
 type SessionPages = InfiniteData<SessionViewPage, SessionListCursor | null>;
 
@@ -42,6 +51,17 @@ function updateListedSessions(
           sessions: update(page.sessions, i),
         })),
       },
+  );
+}
+
+export function seedEmptySessionList(
+  agentId: string,
+  categories: readonly SessionCategory[],
+): void {
+  queryClient.setQueryData<SessionPages>(
+    acpSessionsKeys.pagesOf(agentId, categories),
+    { pages: [{ sessions: [], nextCursor: null }], pageParams: [null] },
+    { updatedAt: 0 },
   );
 }
 
@@ -150,11 +170,15 @@ export function useSessionPages(
     queryKey,
     queryFn: live
       ? async ({ pageParam }) => {
-          const page = await listAgentSessionPage(agentId, {
-            categories: [...categories],
-            ...(pageParam && { after: pageParam }),
-            limit: SESSION_PAGE_SIZE,
-          });
+          const page = await askAgainWhenReady(
+            () =>
+              listAgentSessionPage(agentId, {
+                categories: [...categories],
+                ...(pageParam && { after: pageParam }),
+                limit: SESSION_PAGE_SIZE,
+              }),
+            () => untilAgentOperable(agentId),
+          );
           if (pageParam) return page;
           const coversAll =
             categories.length === SESSION_CATEGORIES.length &&
@@ -216,4 +240,72 @@ export function useAgentSession(
         : skipToken,
     staleTime: 5_000,
   });
+}
+
+function sessionHistoryQuery(agentId: string, sessionId: string) {
+  return {
+    queryKey: acpSessionsKeys.history(agentId, sessionId),
+    queryFn: () => readSessionHistory(agentId, sessionId, SESSION_HISTORY_TAIL),
+    staleTime: SESSION_HISTORY_STALE_MS,
+    retry: false,
+  };
+}
+
+export function fetchSessionHistory(
+  agentId: string,
+  sessionId: string,
+): Promise<readonly string[]> {
+  return queryClient.fetchQuery(sessionHistoryQuery(agentId, sessionId));
+}
+
+export function prefetchSessionHistory(
+  agentId: string,
+  sessionId: string,
+): void {
+  void queryClient.prefetchQuery(sessionHistoryQuery(agentId, sessionId));
+}
+
+export function listedSessionRunning(
+  agentId: string,
+  sessionId: string,
+): boolean {
+  return queryClient
+    .getQueriesData<SessionPages>({ queryKey: acpSessionsKeys.pages(agentId) })
+    .some(([, data]) =>
+      data?.pages.some((p) =>
+        p.sessions.some((s) => s.sessionId === sessionId && s.running),
+      ),
+    );
+}
+
+export function provisionalSessionView(item: AttentionItem): SessionView {
+  return {
+    sessionId: item.sessionId,
+    agentId: item.agentId,
+    type: item.type,
+    mode: item.mode,
+    createdAt: item.createdAt,
+    scheduleId: item.scheduleId,
+    title: item.title,
+    updatedAt: item.activityAt,
+    running: item.working,
+    seenAt: item.seenAt,
+  };
+}
+
+export function useProvisionalSessions(
+  agentId: string | null,
+  enabled: boolean,
+): SessionView[] | undefined {
+  const { data } = useQuery({
+    ...trpc.attention.sessionsForAgent.queryOptions(
+      agentId && enabled ? { agentId } : skipToken,
+    ),
+    staleTime: 5_000,
+    retry: false,
+  });
+  return useMemo(
+    () => (enabled ? data?.map(provisionalSessionView) : undefined),
+    [data, enabled],
+  );
 }

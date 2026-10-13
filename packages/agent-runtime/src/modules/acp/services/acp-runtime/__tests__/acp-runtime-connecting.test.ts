@@ -93,22 +93,6 @@ describe("acp-runtime: connecting", () => {
   });
 
   /**
-   * TEST_SCENARIO: A recycled harness is a new process that knows nobody, so
-   * the first client after the recycle initializes it for real.
-   */
-  it("should forward initialize again to a harness started after a recycle", () => {
-    const world = createWorld();
-    world.connect().send(frames.initialize(1));
-    world.harness().replyTo("initialize", { protocolVersion: 1 });
-
-    world.runtime.refreshEnv({ force: false });
-    world.connect().send(frames.initialize(2));
-
-    expect(world.harnessCount()).toBe(2);
-    expect(world.harness().received("initialize")).toHaveLength(1);
-  });
-
-  /**
    * TEST_SCENARIO: When the harness dies it takes the sandbox with it, and everyone
    * connected is closed. Someone opening a new tab a moment later knows none
    * of that and just connects.

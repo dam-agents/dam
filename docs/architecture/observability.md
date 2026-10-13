@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-10-08
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -69,6 +69,7 @@ Two rails exist today — Claude Code's and Bob Shell's — and both point at th
   No new network path, and no credential is injected into the export.
   This is a **precondition, not a convenience**: for a correctly configured rail the collector is reachable no other way, and an exporter that ignored the proxy would also miss the attribution stamp, so its records could never be attributed to a user.
   Honouring it is not automatic: Bob Shell's OTLP exporter builds its own HTTP agent, which the runtime's env-proxy support does not cover, so on the platform its export is attempted directly and dies at the agent's egress policy, silently — today Bob's spend reaches no collector, and the Bob rail is wired for the day its export goes through the proxy.
+
 - **A malformed rail can redirect telemetry outward.** Bob's rail is the case that makes this explicit: its provider selection validates a key pair the platform's collector ignores but the harness insists on, and a rail that fails that validation is discarded whole — the harness then falls back to its **vendor's own external endpoint** rather than exporting nothing.
   So a rail value is not merely inert when wrong; for this harness a missing or malformed one changes *where the telemetry goes*.
   The rail therefore carries the placeholder credentials the validation demands, and the export is otherwise credential-free — no upstream secret is injected into it.
@@ -77,22 +78,27 @@ Two rails exist today — Claude Code's and Bob Shell's — and both point at th
 - **Config travels the harness env rail.** Each rail's export environment — the standard OTLP set on the Claude Code rail, the `BOB_TELEMETRY_*` set on Bob's — reaches the harness through the same runtime channel that carries connection env — not a pod-level Secret or env.
   The api-server delivers it tagged with its harness, and only to a runtime that advertises the harnesses it carries, so each [Harness Lease](agent-lifecycle.md#session-inside-the-pod) reads its own harness's rail.
   A harness's layer owns its variables over an agent-wide copy, so the rail an older agent was seeded from its Template never leaks into another harness: Bob never sees the Claude Code rail's OTLP protocol.
+
 - **Signals.** Claude Code exports metrics, logs, and traces (the last via the enhanced-telemetry beta) over OTLP/HTTP, with one **log record per LLM call**.
   Bob Shell exports **traces only**, and its per-call counters ride a generation span under GenAI semantic-convention names — there is no log-record equivalent to fall back to.
   The [metrics](metrics.md) read path takes its **spend** from Claude Code's log records only, so even once Bob's export reaches the collector no Usage surface reads it yet; normalizing the two shapes is separate work.
   That path does also read the trace store, for the agent-facing span read alone — which is therefore the one read that answers something for a traces-only harness, though what it answers is span shape, not spend.
   Bob additionally gates those spans behind its own agent-operations switch, so the rail turns it on explicitly; without it the harness exports its lifecycle spans and none of the spend.
+
 - **Content bodies are not exported** — prompt text, tool arguments, and raw API bodies stay off; only structural telemetry (durations, model/tool names, token and cost counters, span shape) leaves the agent.
   Claude Code omits them by default.
   Bob **includes** them by default, so its image writes the payload-exclusion setting into the harness's own configuration at startup rather than relying on the env rail: the invariant is the platform's, and a harness that defaults the other way must be corrected where it reads its settings.
+
 - **Self-declared identity for exploration.** On the Claude Code rail the export env names the OTel service after the **harness** the session ran on, and seeds the user-declared agent name as a `platform.agent.name` resource attribute, kept current on rename.
   Both are exported by the harness itself and exist for finding an instance in the exploration UI — they are **display-only**; attribution rests solely on the gateway-stamped `platform.agent.id` below.
   Bob supplies **neither**: it fixes its own service name and builds its resource attributes internally, reading no standard OTel resource environment, so its signals are findable by service and by trusted agent id but not by the user's name for the agent.
   That the gap is tolerable is the same point — nothing but exploration ever depended on those two.
   This split is what lets an Invocation target keep its own name in the UI while its spend merges into the Driver that drove it (see [trusted attribution](#trusted-attribution)).
+
 - **Trace-context propagation stays on.** The harness keeps W3C trace-context propagation on even when it fronts a custom model upstream — a case where it would otherwise switch it off — so its subprocesses inherit the session's trace context and its requests carry the `traceparent` header.
   The gateway's TLS-intercepting chains that see the decrypted header join their spans — and the egress-approval check's api-server spans — to that same trace, so a model request reads as one trace across harness, gateway, and api-server.
   See [logging — gateway telemetry](logging.md#gateway-telemetry) for which chains are traced and what never reaches a span.
+
 - **Child harness runs fold into their session.** A harness run the session spawns rather than serves — a `claude -p` in a subshell, a command under the `dam-run` shell shim — mints its own OTel `session.id` but inherits the session's trace context, so its records carry the parent trace's `TraceId`.
   The session-scoped metrics read path folds in every session that shares a trace with the queried one — whole sessions, since a child's warmup calls carry no trace — so "this session" covers the runs the session spawned, not only its own API calls.
   One wrinkle makes the subshell case work at all: the harness scrubs `OTEL_*` from the env it hands Bash-tool subprocesses (while forwarding `TRACEPARENT`), so the Claude Code image mirrors the `OTEL_*` env into the harness settings file at spawn, where a child `claude -p` re-applies it at startup.
@@ -104,8 +110,9 @@ Enabling the backend sets the standard OTLP endpoint environment on each deploym
 Unlike agent telemetry, this export does not ride a gateway: it arrives without the trusted attribution header, so it carries no `platform.agent.id` and is never attributed to a user — which is exactly how the read path distinguishes platform telemetry from agent telemetry.
 
 - The **controller** emits one trace per reconcile pass and background sweep (with spans for each Kubernetes API call), reconcile and workqueue metrics, and its structured logs with trace correlation.
-- The **api-server** emits one trace per incoming request with a child span per tRPC procedure (and spans for outbound calls: agents, Keycloak, channels, Redis, the ext-authz gRPC checks), per-procedure duration/outcome metrics plus Node runtime health (event loop, GC, heap), the **usage counters** below, and its structured logs with trace correlation.
+- The **api-server** emits one trace per incoming request with a child span per tRPC procedure (and spans for outbound calls: agents, Keycloak, channels, Redis, the ext-authz gRPC checks), per-procedure duration/outcome metrics plus Node runtime health (event loop, GC, heap), the **usage counters** and **state gauges** below, and its structured logs with trace correlation.
   Health-probe requests are not traced.
+  Background work gets [traces of its own](#background-traces).
   The primary Postgres pool is not yet instrumented (no driver instrumentation exists for it); that gap is tracked as follow-up work.
 
 ### Usage counters
@@ -147,6 +154,12 @@ What each measurement counts, and what it cannot answer:
   Delegation volume is the question it answers.
 - **Entry-point choices** — one per way-in chosen on the empty home screen, by **choice**.
   It counts clicks rather than people: the activity log keeps one row per person and so answers *how many chose*, while this answers *how often it was chosen*.
+- **Approval resolutions** — one per approval request closed, by how it closed: the owner's verdict, an **expiry** nobody answered, or **superseded** by a newer request for the same tool call.
+  Expiry stays apart from a decision so unanswered requests are visible; only the actor that actually flipped the request announces it, so a hold timing out against a concurrent answer does not count twice.
+  A rule written after expiry closes the request a second time, so this counts closings, not requests.
+- **Knowledge base share publishes** — one per publish attempt that settled, by **outcome**; the failure reason is free text and stays in the logs.
+  Most publishes are the automatic republish after a shared folder changes, so this measures publishing activity; how many knowledge bases are shared is a [state gauge](#state-gauges).
+- **Skill set changes** — one per skill set saved or deleted, by **action**.
 
 **The harness** a turn or fire ran on is the one dimension that had to be collected rather than exported.
 A UI turn names its Session's harness; anything else — a channel turn, a schedule fire, a client that names none — falls back to the agent's own harness, read from the api-server's in-process replica of the agent records, so it costs no call to the cluster.
@@ -162,11 +175,28 @@ No group reaches the api-server — a Keycloak group is not claimed into the tok
 Which groups use the platform for what therefore stays unanswerable from either store.
 
 And **core-team exclusion** has no counterpart here: the activity log's inspector-facing aggregates filter the platform team's own traffic out — its analytics passthroughs leave that to their consumer — while these counters filter nothing, so a number read from the store includes the people who built it.
-Several recorded interactions have no counter at all, among them artifact publishing, sharing, viewing and deletion, skill publishing and skill sets, agents created under a Kind, feature flags, API keys, harness-config edits and contribution-delivery health; those remain answerable only through the activity log.
+Several recorded interactions have no counter at all, among them artifact publishing, sharing, viewing and deletion, skill publishing, agents created under a Kind, feature flags, API keys, harness-config edits and contribution-delivery health; those remain answerable only through the activity log.
 
 Reading them takes one property into account: each process exports its own cumulative series, so a restart resets it and replicas do not collide but do partition.
 Rates and increments summed across series are the honest read; raw values are not.
 There is no platform-owned read path over metrics — [metrics](metrics.md) reads agent log records and spans, not these — so today they are reached through the exploration UI or the store directly.
+
+### State gauges
+
+Counters answer *how often*; a few questions are about *how many exist now*, which no sum of events answers past the store's retention.
+The api-server reports those as gauges read from the platform's own records: **agents** by harness — folded as above — and by how they were made (from a Starter Kit, blank, or spawned by another agent), **Slack workspaces** by whether their credential still works, **knowledge bases** with an active share, and saved **skill sets**.
+They follow the counters' rule — bounded dimensions, no identity — and, like the counters, filter nothing, core team included.
+Every combination of their bounded values is reported, zeros included, so a count that drops to nothing reads as zero rather than as a gap.
+
+They describe the whole install, so exactly one replica reports them: the holder of the api-server's [leader lease](platform-topology.md), which refreshes them on a minutes-long interval and stops when it loses the lease.
+Gauges export without carrying earlier observations forward, so a former holder's series ends instead of repeating a stale value; read the latest point, never a sum across replicas.
+
+### Background traces
+
+Work that runs outside any request — each attempt at a schedule fire and each Slack or Telegram turn — opens a trace of its own, linked to whatever started it rather than nested under it, so its outbound calls (database, Redis, the agent, the cluster) group under one root.
+Its attributes follow the counters' rule: a fire carries its type, mode, attempt, outcome, the stage that failed and why it was held; a turn carries its channel, whether it was read-along, its outcome and its failure reason token.
+A failure records its error type and never its message, since a message is free text.
+Traces are sampled, so they explain individual fires and turns; counting stays with the counters and the activity log.
 
 ### VM runner
 
@@ -201,7 +231,7 @@ The runner's health prober writes the note for a quiet guest and refreshes it ab
 
 ### Runtime migration
 
-A [runtime migration](vm-runner.md#runtime-migration) reports on the Agent rather than as a signal.
+A [runtime migration](vm-runtime-migration.md) reports on the Agent rather than as a signal.
 Its condition's message says what holds the current phase up, written from what is true now and cleared once nothing does: a pod stuck terminating, named with its node; a copy pod's latest warning, an admission refusal included; a copy waiting for a slot; what the runner reports; a boot held by a stop or the owner's budget.
 vm-seed names the agent's own files in its errors, so the text is escaped, stripped of in-cluster addresses and cut to a status line, any advice ahead of the copied error.
 Each phase entered, copy failure, copy given up for a pod that never started (`RuntimeMigrationCopyStuck`), abort, retry and finish is also an Event on the Agent, as is each retained volume the sweep deletes, and the controller counts them by reason alone.
