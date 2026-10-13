@@ -268,6 +268,27 @@ describe("agent state cache", () => {
     expect((await repo.get("a1"))?.spec.description).toBe("new");
   });
 
+  // TEST_SCENARIO: An agent just created is not in the cache until the informer delivers its add, and the create's connection grant checks ownership against the cache right after. The wait covers an agent the cache has not seen yet, so that check finds it.
+  it("waits for an agent the cache has not seen yet", async () => {
+    const created = {
+      ...agent("a1"),
+      metadata: { ...agent("a1").metadata, resourceVersion: "3" },
+    };
+    const f = cacheOver([]);
+    await settled(null);
+
+    let observed = false;
+    const waited = f.cache.awaitObserved("a1", "3").then(() => {
+      observed = true;
+    });
+    await settled(null);
+    expect(observed).toBe(false);
+
+    f.cached.set("a1", created);
+    f.fire("add", created);
+    await waited;
+    expect(await f.cache.get("a1")).not.toBeNull();
+  });
   // TEST_SCENARIO: A controller status write can land between the update and the informer's delivery of it, so the cache holds a later version than the one written. That later version also carries the write, and the wait ends.
   it("ends the wait on a later version than the one written", async () => {
     const at = (rv: string) => ({
