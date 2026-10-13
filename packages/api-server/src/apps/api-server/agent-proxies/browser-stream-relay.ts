@@ -5,6 +5,7 @@ import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
+import { readyOrAnswering } from "./ready-or-answering.js";
 import type { SessionPresence } from "./session-presence.js";
 import { sanitizeCloseCode } from "./acp-relay.js";
 
@@ -41,7 +42,7 @@ export async function requiresConnectionAddress(
  */
 export function createBrowserStreamRelay(
   namespace: string,
-  repo: Pick<AgentsRepository, "ensureReady">,
+  repo: Pick<AgentsRepository, "ensureReady" | "peekCached">,
   presence: SessionPresence,
   upstreamPath: string,
   upstreamBase: (agentId: string) => string = (agentId) =>
@@ -108,7 +109,13 @@ export function createBrowserStreamRelay(
       client.on("message", buffer);
 
       try {
-        await repo.ensureReady(agentId);
+        await readyOrAnswering(
+          repo,
+          agentId,
+          repo.ensureReady(agentId),
+          `${upstreamBase(agentId).replace(/^ws/, "http")}/healthz`,
+          () => clientGone,
+        );
       } catch (err) {
         const reason = isAgentWakeTimeoutError(err)
           ? `agent not ready: ${err.failure.kind}`
