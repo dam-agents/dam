@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
+	typednetworkingv1 "k8s.io/client-go/kubernetes/typed/networking/v1"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
@@ -1035,5 +1038,72 @@ func TestPodsAreReadFromTheInformerCache(t *testing.T) {
 	assert.Equal(t, string(metav1.ConditionTrue), st, "the cached pods are ready")
 	for _, a := range cs.Actions() {
 		assert.False(t, a.GetResource().Resource == "pods" && (a.GetVerb() == "get" || a.GetVerb() == "list"), "%s pods", a.GetVerb())
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: holds each caller until `want` callers are inside at once, or a second has passed. The fake clientset answers one call at a time under its own lock, so the wait happens before the call reaches it.
+type overlapBarrier struct {
+	mu       sync.Mutex
+	want     int
+	arrived  int
+	all      chan struct{}
+	timedOut bool
+}
+
+func (b *overlapBarrier) arrive() {
+	b.mu.Lock()
+	if b.arrived++; b.arrived == b.want {
+		close(b.all)
+	}
+	b.mu.Unlock()
+	select {
+	case <-b.all:
+	case <-time.After(time.Second):
+		b.mu.Lock()
+		b.timedOut = true
+		b.mu.Unlock()
+	}
+}
+
+type overlappingNetworkPolicies struct {
+	*fake.Clientset
+	reads *overlapBarrier
+}
+
+func (c overlappingNetworkPolicies) NetworkingV1() typednetworkingv1.NetworkingV1Interface {
+	return overlapNetworking{c.Clientset.NetworkingV1(), c.reads}
+}
+
+type overlapNetworking struct {
+	typednetworkingv1.NetworkingV1Interface
+	reads *overlapBarrier
+}
+
+func (n overlapNetworking) NetworkPolicies(ns string) typednetworkingv1.NetworkPolicyInterface {
+	return overlapNetworkPolicyReads{n.NetworkingV1Interface.NetworkPolicies(ns), n.reads}
+}
+
+type overlapNetworkPolicyReads struct {
+	typednetworkingv1.NetworkPolicyInterface
+	reads *overlapBarrier
+}
+
+func (p overlapNetworkPolicyReads) Get(ctx context.Context, name string, opts metav1.GetOptions) (*networkingv1.NetworkPolicy, error) {
+	p.reads.arrive()
+	return p.NetworkPolicyInterface.Get(ctx, name, opts)
+}
+
+// TEST_SCENARIO: every reconcile applies the Agent's own objects — envoy bootstrap, leaf certificate, ServiceAccount, ext-authz Service, two AuthorizationPolicies, three NetworkPolicies and the gateway Service — before it starts the pod or the machine. None of them reads another, so they are applied at once: one after the other, they took about 130 ms of every wake of a vm agent on dev, and the single agent worker spent them on every reconcile that a wake had to wait behind.
+func TestTheAgentsOwnObjectsAreAppliedAtOnce(t *testing.T) {
+	agent := agentCR()
+	r, cs := setupReconciler(t, agent)
+	reads := &overlapBarrier{want: 3, all: make(chan struct{})}
+	r.client = overlappingNetworkPolicies{cs, reads}
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.False(t, reads.timedOut, "the three NetworkPolicies are read at the same time")
+	for _, np := range []string{agent.Name + "-agent-egress", agent.Name + "-gateway-ingress", agent.Name + "-gateway-egress"} {
+		_, err := cs.NetworkingV1().NetworkPolicies("test-agents").Get(context.Background(), np, metav1.GetOptions{})
+		assert.NoError(t, err, np)
 	}
 }

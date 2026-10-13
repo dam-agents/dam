@@ -3,8 +3,10 @@ description: >-
   Every mise image's tools and Chromium for this arch, which the lockfile and
   the image files fix; each build installs only what it lacks. A miss restores
   the newest older entry, so a lockfile change reinstalls only the tools it
-  changed, and then writes the entry: any job that misses writes it, since each
-  may run without the others. Needs mise with node, pnpm, crane and usage.
+  changed, and then writes the entry: any job on main that misses writes it,
+  since each may run without the others. A PR or a tag never writes one: at
+  over a gigabyte, its entry would count against the repo's 10 GB and evict
+  main's. Needs mise with node, pnpm, crane and usage.
 runs:
   using: composite
   steps:
@@ -19,7 +21,7 @@ runs:
     - if: steps.restore.outputs.cache-hit != 'true'
       shell: bash
       run: packages/agents/.mise/tasks/oci --warm
-    - if: steps.restore.outputs.cache-hit != 'true'
+    - if: steps.restore.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |

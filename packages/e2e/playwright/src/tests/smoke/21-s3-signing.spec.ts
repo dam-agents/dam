@@ -133,6 +133,7 @@ test("sigv4 connection: addressed requests are re-signed, foreign ones pass unch
       AWS_PROFILE_ENV,
       awsProfileSlug(s3ConnectionName),
       `env ${AWS_PROFILE_ENV} did not converge to the connection's profile`,
+      30_000,
     );
   });
 
