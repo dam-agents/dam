@@ -131,7 +131,7 @@ flowchart LR
   It is stated in the user-facing vocabulary and nothing else: limits are what an agent's power and its owner's Ceiling are measured in, so a kit never states requests — the controller derives those from the limits.
   Each dimension is independent and a stated one wins over the harness Template's own value, so a kit sizes its workload whether it brings an image or runs on a harness Template; an omitted dimension inherits the Template's, then the install default.
   CPU and memory stay editable on the Agent afterwards like any other Size; disk is fixed at create.
-  A kit on the `vm` backend gets only its disk: a machine has no CPU or memory size of its own and shares its owner's [pool](vm-memory.md).
+  A kit on the `vm` backend gets none of it: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](persistence.md) pools.
   This is where the sizing the `preconfigured` Templates used to carry now lives.
 - **Seed** — optional `seed: { url, ref, into }`: the kit's definition repository.
   The catalog refresh resolves the ref to a commit and records it beside the declared ref (`seed.commit`), and apply hands both to the agent create as its workspace seed, so the `workspace-seed` event brings the repository in at that commit **on that branch**, tracking `origin/<ref>` — the same rail a plain create's `gitRepo` rides — ahead of `install` and the initialization session.

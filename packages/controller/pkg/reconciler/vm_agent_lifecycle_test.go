@@ -209,21 +209,6 @@ func TestAFailedEnsureTakesReadinessDown(t *testing.T) {
 	assert.NotContains(t, msg, strings.TrimPrefix(gone.URL, "http://"))
 }
 
-// TEST_SCENARIO: an owner's disks outgrow runner.storage. The claim is capped at the ceiling — the install's choice — and that is said once for the owner, not on every reconcile of every agent they have.
-func TestACappedClaimIsReportedOncePerOwner(t *testing.T) {
-	agent := vmAgentCR()
-	r, _, _ := setupVMReconciler(t, agent)
-	big := runnerDemand{diskGiB: 500, machines: 5}
-	for range 3 {
-		size, ceiling, err := r.runnerClaimSize(context.Background(), testOwner, big)
-		require.NoError(t, err)
-		assert.Equal(t, 0, size.Cmp(ceiling))
-	}
-	notices := 0
-	r.claimCapNotices.Range(func(any, any) bool { notices++; return true })
-	assert.Equal(t, 1, notices)
-}
-
 // TEST_SCENARIO: an owner's first vm agent dials a runner that has just become ready, before its headless Service's name resolves. The agent waits on the runner as one still starting, with no reconcile error, so it is not shown as failed, and is looked at again after three seconds.
 func TestARunnerWhoseAddressDoesNotResolveYetIsStillStarting(t *testing.T) {
 	ctx := context.Background()

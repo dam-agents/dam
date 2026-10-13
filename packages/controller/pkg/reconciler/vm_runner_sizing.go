@@ -16,22 +16,16 @@ import (
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: what each machine may write on the claim beyond its disk: the root overlay it runs on, which is thrown away at every stop but grows while the guest runs, and the bookkeeping under machines/.
-const runnerClaimHeadroomGiB = 1
-
 const (
 	resizeSupportUnknown int32 = iota
 	resizeSupported
 	resizeUnsupported
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: what an owner's vm agents ask of their runner, as the controller intends it rather than as the runner last saw it. Memory counts only the machines that should be running, because that is what the runner admits against its memory limit; disk counts every machine, because a stopped machine keeps its disk on the claim, and every runtime migration's seed until its guest has booted from it.
+// UNIT_BOUNDARY_DESCRIPTION: what an owner's vm agents ask of their runner's memory and CPU, as the controller intends it rather than as the runner last saw it. It counts only the machines that should be running, because that is what the runner admits against its limits.
 type runnerDemand struct {
 	memoryMiB int
-	diskGiB   int
-	machines  int
 	vCPUs     int
-	seedBytes int64
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a vm agent has no size of its own: every machine may grow to half of what its owner's runner hands out — their pool, from their UserBudget's `memory`, else the install's runner limit — so one agent can use most of the pool while a runaway guest meets its own OOM killer before it takes the runner, and every sibling, over the limit. The host runner admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the agent's spec still sets its machine's memory.
@@ -61,13 +55,9 @@ func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, s
 	}
 	var d runnerDemand
 	for _, a := range agents {
-		disk, err := resolveVMDiskGiB(&a.Spec, r.config.AgentTemplateDefaults)
-		if err != nil {
+		if _, err := resolveVMDiskGiB(&a.Spec, r.config.AgentTemplateDefaults); err != nil {
 			continue
 		}
-		d.diskGiB += disk
-		d.machines++
-		d.seedBytes += r.runtimeMigrationSeedBytes(ctx, a)
 		running := selfRunning
 		if a.Name != self.Name {
 			if running, err = r.peerShouldRun(ctx, a.Name); err != nil {
@@ -109,61 +99,6 @@ func (r *AgentReconciler) peerShouldRun(ctx context.Context, name string) (bool,
 		return running.(bool), nil
 	}
 	return r.agentDesiredUp(ctx, name, true)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the claim holds every machine disk of the owner, the headroom each machine writes beside its disk, the seed of each migration still in flight, and the image cache when the install left the cache on the claim. The owner's storage pool — their UserBudget's `storage`, else `runner.storage` — is the ceiling, not the size: a claim sized for a fleet the owner does not have reserves storage nobody uses, and a single 10Gi agent would otherwise cost a 100Gi volume.
-func (r *AgentReconciler) runnerClaimSize(ctx context.Context, owner string, demand runnerDemand) (resource.Quantity, resource.Quantity, error) {
-	ceiling, err := r.runnerStorageCeiling(ctx, owner)
-	if err != nil {
-		return resource.Quantity{}, resource.Quantity{}, err
-	}
-	need := int64(demand.diskGiB+demand.machines*runnerClaimHeadroomGiB)<<30 + demand.seedBytes
-	if spec := r.config.VM.Runner; runnerOwnsImageCache(spec) {
-		budget, err := imageBudgetBytes(spec)
-		if err != nil {
-			return resource.Quantity{}, resource.Quantity{}, err
-		}
-		need += budget
-	}
-	gib := max((need+(1<<30)-1)>>30, 1)
-	size := *resource.NewQuantity(gib<<30, resource.BinarySI)
-	if size.Cmp(ceiling) > 0 {
-		r.noteClaimCapped(owner, size, ceiling)
-		return ceiling, ceiling, nil
-	}
-	return size, ceiling, nil
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: an owner whose disks and cache outgrow `runner.storage` gets a claim at the ceiling, and the machines on it can fill it. That is the install's choice, not an error, so it is said once per owner and ceiling rather than on every reconcile of every one of their agents.
-func (r *AgentReconciler) noteClaimCapped(owner string, need, ceiling resource.Quantity) {
-	if _, seen := r.claimCapNotices.LoadOrStore(owner+"/"+ceiling.String(), struct{}{}); seen {
-		return
-	}
-	slog.Warn("vm runner: the owner's machines need more than runner.storage, so the claim is capped there and can fill up", "owner", owner, "need", need.String(), "ceiling", ceiling.String())
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a claim sized to today's demand is only safe where it can grow with tomorrow's, so a claim on a class that does not allow expansion is created at the ceiling, as every claim was before. A class the controller cannot read counts as one that does not expand — the cost of guessing wrong that way is unused storage, the cost the other way is an owner whose next agent does not fit.
-func (r *AgentReconciler) runnerClassExpands(ctx context.Context) bool {
-	classes := r.client.StorageV1().StorageClasses()
-	if name := r.config.VM.Runner.StorageClass; name != "" {
-		sc, err := classes.Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			slog.Warn("vm runner: cannot read the claim's storage class, the claim is created at runner.storage", "class", name, "error", err)
-			return false
-		}
-		return sc.AllowVolumeExpansion != nil && *sc.AllowVolumeExpansion
-	}
-	list, err := classes.List(ctx, metav1.ListOptions{})
-	if err != nil {
-		slog.Warn("vm runner: cannot read the default storage class, the claim is created at runner.storage", "error", err)
-		return false
-	}
-	for _, sc := range list.Items {
-		if sc.Annotations["storageclass.kubernetes.io/is-default-class"] == "true" || sc.Annotations["storageclass.beta.kubernetes.io/is-default-class"] == "true" {
-			return sc.AllowVolumeExpansion != nil && *sc.AllowVolumeExpansion
-		}
-	}
-	return false
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills the runner with every machine of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It rises at once, but falls only once that has dropped a quarter step below the step under the current request, so a guest whose use sits on a step boundary does not resize the pod at every pass. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.

@@ -13,7 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -424,36 +423,6 @@ func TestAMigrationMessageIsSafeToShow(t *testing.T) {
 
 	long := sanitizeMigrationMessage(strings.Repeat("é", 1000)+"\xff", "")
 	assert.Equal(t, runtimeMigrationMessageMax+1, len([]rune(long)), "cut by characters, never inside one")
-}
-
-// TEST_SCENARIO: the seed waits on the owner's runner claim beside the disk it is restored into, so from the copy until the guest has booted from it, the claim counts the size of the home volume it was read from. Before the copy and once the boot is verified it counts nothing.
-func TestTheRunnerClaimHoldsRoomForAMigrationsSeed(t *testing.T) {
-	ctx := context.Background()
-	agent := copyingAgentCR()
-	r, _, _ := setupMigrationReconciler(t, agent)
-	pvc := homePVC("home-agent-my-agent-0")
-	pvc.Spec.Resources.Requests = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")}
-	createAll(t, r, pvc)
-	for phase, seed := range map[string]int64{
-		apiv1.ReasonRuntimeMigrationCopying:   10 << 30,
-		apiv1.ReasonRuntimeMigrationBooting:   10 << 30,
-		apiv1.ReasonRuntimeMigrationStopping:  0,
-		apiv1.ReasonRuntimeMigrationVerified:  0,
-		apiv1.ReasonRuntimeMigrationRequested: 0,
-	} {
-		a := migratingAgentIn(phase, time.Now())
-		a.Annotations = agent.Annotations
-		target, err := runtimeMigrationTargetAgent(a)
-		require.NoError(t, err)
-		d, err := r.ownerRunnerDemand(ctx, testOwner, target, false)
-		require.NoError(t, err)
-		assert.Equal(t, seed, d.seedBytes, "phase %q", phase)
-	}
-
-	expandableDefaultClass(t, r, true)
-	r.config.VM.Runner.ImageCacheHostPath = "/var/lib/platform-images"
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 20, machines: 1, seedBytes: 15 << 30}, nil))
-	assert.Equal(t, "36Gi", runnerClaim(t, r), "20Gi of disk, 1Gi of headroom and the 15Gi seed beside it")
 }
 
 // TEST_SCENARIO: `Booting` is proven only by a guest that answers, so until then nothing that parks an idle agent may stop it: not the idle timeout, not a reclaim stamp, and a migrating agent is never picked to make room for another. A boot whose seed is not recorded is still held down. A stop the user asks for wins, and is said on the Agent.

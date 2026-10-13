@@ -861,9 +861,9 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	r, _, _ := setupVMReconciler(t, agent)
 	ctx := context.Background()
 
-	_, _, err := r.ensureRunner(ctx, "owner-a", runnerDemand{})
+	_, _, err := r.ensureRunner(ctx, "owner-a")
 	require.ErrorIs(t, err, errRunnerTLSPending, "a runner is not dialled before cert-manager issues its certificate")
-	_, _, err = r.ensureRunner(ctx, "owner-b", runnerDemand{})
+	_, _, err = r.ensureRunner(ctx, "owner-b")
 	require.ErrorIs(t, err, errRunnerTLSPending)
 
 	a, b := r.runnerName("owner-a"), r.runnerName("owner-b")
@@ -936,6 +936,42 @@ func TestVMBackendSizesOneDiskRatherThanSummingMounts(t *testing.T) {
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
 	assert.Equal(t, 10, node.spec("my-agent").StorageGiB, "the Agent's storage size, not 4+4")
+}
+
+// TEST_SCENARIO: a vm agent has no disk size of its own: once its runner reports the machine's disk, which only a runner that grows a disk at the next start does, the machine is asked for the owner's whole storage pool. Before that the runner may be an older release that would reboot a running machine to grow it, so the Agent's own size is kept.
+func TestTheMachineDiskIsTheOwnersPoolOnceTheRunnerReportsDisks(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, 10, node.spec("my-agent").StorageGiB, "no disk reported yet: the Agent's own size")
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, Port: 31000, DiskGiB: 10})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, 100, node.spec("my-agent").StorageGiB, "the owner's pool, runner.storage")
+}
+
+// TEST_SCENARIO: the api-server reads an owner's runner with what the usage Secret holds: the runner's URL, the CA its certificate chains to, and a usage capability. It must never hold the token, which drives every route of the machine API, nor the runner's TLS key.
+func TestTheUsageSecretHoldsACapabilityAndNeverTheToken(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	secrets := r.client.CoreV1().Secrets(r.config.Namespace)
+	usage, err := secrets.Get(ctx, r.runnerUsageName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	token, err := secrets.Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "true", usage.Labels[vmRunnerUsageLabel])
+	assert.Equal(t, testOwner, usage.Labels[envoyOwnerLabel])
+	assert.Equal(t, vmrunner.MintUsageCapability(string(token.Data["token"])), string(usage.Data["capability"]))
+	assert.Equal(t, fmt.Sprintf("https://%s:%d", r.runnerHost(testOwner), vmRunnerPort), string(usage.Data["url"]))
+	assert.ElementsMatch(t, []string{"url", "ca.crt", "capability"}, slices.Collect(maps.Keys(usage.Data)))
+	for _, v := range usage.Data {
+		assert.NotContains(t, string(v), string(token.Data["token"]))
+	}
 }
 
 // TEST_SCENARIO: the default template's mounts — HOME persisted, /tmp not — are what every shipped template and starter kit declares, and they are exactly what a machine already does: HOME on the disk, everything else discarded with the root at the next stop. So the common case reconciles with nothing to decide.
