@@ -59,6 +59,12 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
             "This agent failed to start: the cluster has no node that can " +
             "run its sandbox VMs right now. Tell an admin."
           );
+        case "RunnerOutOfMemory":
+          return (
+            "This agent restarted: its owner's agents ran out of memory " +
+            "together. Contact its owner — stopping agents that aren't in " +
+            "use frees memory."
+          );
         default:
           return (
             "This agent failed to start: it crashed while starting. " +

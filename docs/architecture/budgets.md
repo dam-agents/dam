@@ -120,6 +120,7 @@ Four rules bound it:
 - **An idle floor** (3 minutes) beneath which nothing is reclaimed.
   Besides sparing an agent its user may be moments from returning to, the floor is what makes reclaim **non-recursive**: an agent admitted this way carries fresh activity and so cannot be the next start's victim, which is what stops A-evicting-B-evicting-A from cycling.
 - **Provably sufficient, or nothing.** The candidates' summed Sizes must cover the shortfall in both dimensions before any of them is touched, so no agent is ever hibernated for a start that was going to be refused regardless.
+  The one exception is a vm runner's own memory pressure signal, which hibernates what it can rather than nothing, since an OOM kill would take every machine of the owner ([vm-memory](vm-memory.md)).
 - **A reclaimed agent stays down.** Its activity stamp is still inside its own timeout — that is the premise of reclaiming it early — so it is marked as having *spent* that stamp and only a **newer** activity bump revives it, back through the gate like any other start.
   Without that, the victim's own next reconcile would take the room straight back.
   The mark is self-clearing: a deliberate touch outdates it.

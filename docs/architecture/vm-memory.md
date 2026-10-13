@@ -33,6 +33,11 @@ The guest writes the page descriptors of added RAM into that RAM itself, so huge
 **The runner measures every running machine.** Its health prober reads the resident memory of each running machine's VMM at every probe and reports it in the machine's status.
 The figure is kept out of what moves the status version, so it never wakes a waiting status read on its own.
 
+**The runner watches its own memory.** Every second it reads its working set off its cgroup — what the cgroup charges less the file cache the kernel can drop, the figure the kubelet reads — against its limit.
+At 95% the runner is under pressure, and it stays so until the working set falls below 90%.
+A pressure read waits on a version of its own, which moves when pressure starts or ends and every ten seconds while it lasts; before it moves, the runner measures every running machine again, so the statuses read on it are current.
+A runner with no cgroup v2 to read — the host runner, a cgroup v1 node — never reports pressure.
+
 **A running machine is counted at its use plus headroom.** That is its measured use plus a per-machine headroom (`virtualization.runner.headroomMiB`), never more than its size.
 A machine not yet measured, and every machine an action is bringing up, counts at a boot estimate (`virtualization.runner.bootMiB`), or its size when that is smaller, until the runner first measures it.
 That is about 100 ms after its start returns, before the agent's harness has started; only a guest whose harness answered during the start waits for the steady probe, about ten seconds on.
@@ -51,10 +56,16 @@ A refused start is retried once their machines have stopped.
 No other owner's agent is touched.
 Because a running machine's use reaches the controller only when its agent reconciles, the controller also asks each owner's runner about its running machines every 30 seconds, which is what pressure is judged from and what moves the request between reconciles.
 That pass reconciles one of the owner's agents only when the request their counts call for differs from the runner pod's, so a count held within its step wakes nothing.
+The runner's own pressure signal runs the same pass for that owner at once, without waiting for the counted threshold, since the kernel's view is the one that kills the runner.
+Its need is the larger of the counted and the measured overshoot of the 80% target, and it may hibernate fewer agents than cover it: near an OOM kill, freeing some memory beats freeing none.
+The controller holds one watch on each owner's pressure, and a pass on it hibernates nothing more for fifteen seconds after one that did, because the machines it hibernated still count until they have stopped.
+The two passes never run together for one owner.
 
 **Guests give back cold page cache.** A guest keeps the files it read cached until something needs the memory, and the host counts that cache as the machine's.
 Every minute platform-init hands the cache on the kernel's inactive list to cgroup v2 proactive reclaim, and the freed pages return to the host within seconds.
 Guests have no swap, so only file pages go.
 
-**What can still go wrong.** Guests that grow together past their headroom between two passes can take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
-Headroom and the pressure threshold make that rarer; they cannot rule it out.
+**What can still go wrong.** Guests that grow faster than a second's sample and the seconds a hibernation takes can still take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
+The pressure signal makes that rarer; it cannot rule it out.
+When it happens, each agent that was ready before the kill says that its owner's memory ran out, read off the runner pod's last termination, through the runner's restart and its machine's boot, until it is ready again or a more specific reason, such as a failed boot, replaces it; the owner sees it as a crash notice that asks them to stop agents they are not using.
+An agent woken after the kill carries nothing, and nothing records the kill once its agents are ready.

@@ -183,6 +183,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if err != nil {
 		return st, false, err
 	}
+	r.watchRunnerPressure(runner, owner)
 
 	if publish && st.Port > 0 {
 		if err := r.applyVMAgentService(ctx, name, owner, st.Port, ownerRef); err != nil {
@@ -564,6 +565,12 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	case vmrunner.ReasonHomeFull:
 		reason = apiv1.ReasonHomeVolumeFull
 	}
+	running, _ := r.vmRunning.Load(agent.Name)
+	killedAt := func() time.Time { return r.runnerOOMKilledAt(ctx, agent.Labels[envoyOwnerLabel]) }
+	if reason == vmrunner.ReasonNotReady && runnerOOMTookDown(apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionAgentPodReady), running == true, st.Ready, killedAt) {
+		reason = apiv1.ReasonRunnerOutOfMemory
+		msg = "its owner's VM memory ran out, so every VM agent of theirs that was running restarted; stop agents you are not using to free memory"
+	}
 	restartReason := ""
 	if st.Restarts > 0 {
 		restartReason = "GuestStoppedAnswering"
@@ -583,6 +590,21 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 				setStartFailure(s, failure, agent.Generation)
 			}
 		})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the runner's OOM kill is what keeps this agent down: it should run and is not ready, and it was ready at or before the kill, or already carries the reason, which then lasts through the runner's restart and the machine's boot. An agent woken after the kill was not taken down by it. The caller asks only while nothing more specific explains the wait: a reason of the runner's own, such as a failed boot, or a runner the scheduler cannot place, wins over the kill. The runner pod is read only when a ready agent goes down, so a booting agent costs no read.
+func runnerOOMTookDown(prev *metav1.Condition, running, ready bool, killedAt func() time.Time) bool {
+	if !running || ready || prev == nil {
+		return false
+	}
+	if prev.Reason == apiv1.ReasonRunnerOutOfMemory {
+		return true
+	}
+	if prev.Status != metav1.ConditionTrue {
+		return false
+	}
+	at := killedAt()
+	return !at.IsZero() && !prev.LastTransitionTime.After(at)
 }
 
 func wantsNesting(agent *apiv1.Agent, defaults config.AgentTemplateDefaults) bool {

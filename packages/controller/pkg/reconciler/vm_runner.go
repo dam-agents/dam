@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -813,6 +814,7 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 
 // UNIT_BOUNDARY_DESCRIPTION: everything a runner owns is named after it, so this removes the lot. The caller holds the owner's lock and has just found the runner holding no machine. The Deployment goes first and only if it is still the one the caller checked — its UID and resourceVersion are preconditions — so a runner that a roll or a reconcile changed since is kept, with its claim, and looked at again on the next sweep.
 func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) bool {
+	r.unwatchRunnerPressure(owner)
 	name, ns := r.runnerName(owner), r.config.Namespace
 	opts := metav1.DeleteOptions{}
 	deps := r.client.AppsV1().Deployments(ns)
@@ -876,6 +878,23 @@ func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (str
 		}
 	}
 	return vmrunner.ReasonNotReady, starting
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: when the kernel last OOM-killed the owner's runner, from its pods' container statuses; zero when it never did or the pods cannot be read. A pod keeps only its container's last termination, so a kill older than the restart after it is forgotten, which the rule that reads this allows for.
+func (r *AgentReconciler) runnerOOMKilledAt(ctx context.Context, owner string) time.Time {
+	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labels.Set(vmRunnerSelector(owner)).String(),
+	})
+	if err != nil {
+		return time.Time{}
+	}
+	var at time.Time
+	for i := range pods.Items {
+		if killed := runnerOOMKilledAt(&pods.Items[i]); killed.After(at) {
+			at = killed
+		}
+	}
+	return at
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what cert-manager says about a Certificate it has not issued yet — a missing issuer, a CA that is not ready, a rate limit — from its Ready condition. Empty when it says nothing, or the Certificate cannot be read.

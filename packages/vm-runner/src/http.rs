@@ -24,6 +24,7 @@ pub fn router(server: Arc<Server>, token: Arc<Token>) -> Router {
     let machines = Router::new()
         .route("/release", get(release))
         .route("/machines", get(list))
+        .route("/pressure", get(pressure))
         .route("/machines/{id}", get(status).put(ensure).delete(remove))
         .route(
             "/machines/{id}/seed",
@@ -285,6 +286,23 @@ async fn status(
     .await
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner's memory pressure, read with `wait` and `since` as a machine's status is, against the pressure version.
+async fn pressure(
+    State(server): State<Arc<Server>>,
+    query: Result<Query<StatusWait>, QueryRejection>,
+) -> Response {
+    let Ok(Query(asked)) = query else {
+        return plain(StatusCode::BAD_REQUEST, "invalid wait or since");
+    };
+    blocking(move || {
+        let read = match asked.wait {
+            0 => server.pressure(),
+            wait => server.wait_pressure(asked.since, Duration::from_secs(wait)),
+        };
+        Json(read).into_response()
+    })
+    .await
+}
 async fn ensure(
     State(server): State<Arc<Server>>,
     Path(id): Path<String>,
@@ -529,6 +547,7 @@ mod tests {
                 boot_mib: 0,
                 listen: Some(Arc::new(|_| std::net::TcpListener::bind("127.0.0.1:0"))),
                 runtime: None,
+                cgroup_dir: None,
                 measure_storage: Arc::new(|| None),
             },
             runtime,

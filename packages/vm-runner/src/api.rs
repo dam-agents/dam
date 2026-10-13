@@ -97,6 +97,18 @@ pub struct RunnerRelease {
     pub message: String,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit, as its cgroup last read: the working set the kernel kills the runner by, and whether that is past the pressure threshold. `version` moves when pressure starts or ends, and again while it lasts, so the controller can wait on it and reclaim at once. A runner with no cgroup to read never moves it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct RunnerPressure {
+    #[serde(skip_serializing_if = "is_zero")]
+    pub version: u64,
+    pub pressured: bool,
+    #[serde(rename = "limitMiB", skip_serializing_if = "is_zero")]
+    pub limit_mib: i32,
+    #[serde(rename = "workingSetMiB", skip_serializing_if = "is_zero")]
+    pub working_set_mib: i32,
+}
 // UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Not yet staged passes once the node's stager has copied the release. The other two never pass in this pod: a release built for another pod — one whose runner does not load against this pod's libc, or one built against another VM runtime where the install keeps one runtime per pod — runs only in a new pod, and one that exited right after it took over is not tried again until the controller names another.
 pub const HELD_UNSTAGED: &str = "unstaged";
 pub const HELD_RUNTIME: &str = "runtime";
@@ -256,6 +268,15 @@ mod tests {
                 target: "quay.io/x/vm-runner@sha256:2".into(),
                 held: HELD_RUNTIME.into(),
                 message: "built against another runtime".into(),
+            },
+        );
+        matches_the_contract(
+            "runner-pressure",
+            &RunnerPressure {
+                version: 7,
+                pressured: true,
+                limit_mib: 12288,
+                working_set_mib: 11800,
             },
         );
         matches_the_contract(
