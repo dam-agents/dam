@@ -12,6 +12,7 @@ import { useNow } from "../../../hooks/use-now.js";
 import { useStore } from "../../../store.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
+import { useDenyApprovals } from "../../approvals/hooks/use-deny-approvals.js";
 import { egressApprovalsWaiting } from "../../approvals/lib/waiting-egress.js";
 import { approvalDetail } from "../../home/lib/approval-copy.js";
 import { ChatColumn } from "./chat-column.js";
@@ -20,13 +21,15 @@ const EXPIRY_TICK_MS = 15_000;
 
 function EgressApprovalCard({
   approval,
-  queued,
+  waiting,
 }: {
   approval: ApprovalView;
-  queued: number;
+  waiting: readonly ApprovalView[];
 }) {
   const { actions, inflight, hostLabel, openSettings } =
     useApprovalActions(approval);
+  const { denyAll, denying } = useDenyApprovals();
+  const queued = waiting.length - 1;
   const allowOnce = actions.find((a) => a.id === "allow-once");
   const denyOnce = actions.find((a) => a.id === "dismiss");
   const rest = actions.filter((a) => a !== allowOnce && a !== denyOnce);
@@ -98,8 +101,20 @@ function EgressApprovalCard({
         </RowActionsMenu>
       </div>
       {queued > 0 && (
-        <div className="text-2xs text-muted-foreground">
-          {queued} more request{queued === 1 ? "" : "s"} queued
+        <div className="flex flex-wrap items-center gap-x-2 text-2xs text-muted-foreground">
+          <span>
+            {queued} more request{queued === 1 ? "" : "s"} queued
+          </span>
+          <Button
+            variant="link"
+            size="inline"
+            disabled={inflight || denying}
+            onClick={() => void denyAll(waiting)}
+            data-testid="deny-all-egress-approvals"
+            className="text-2xs"
+          >
+            Deny all {waiting.length}
+          </Button>
         </div>
       )}
     </div>
@@ -122,7 +137,7 @@ export function EgressApprovalPrompt() {
         <EgressApprovalCard
           key={current.id}
           approval={current}
-          queued={waiting.length - 1}
+          waiting={waiting}
         />
       </ChatColumn>
     </div>

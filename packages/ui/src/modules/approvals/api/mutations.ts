@@ -52,3 +52,13 @@ export function useDismissApproval() {
     },
   });
 }
+
+export function useDismissApprovals() {
+  return useMutation({
+    ...trpc.approvals.dismissMany.mutationOptions(),
+    meta: {
+      invalidates: [approvalsKeys.all],
+      errorToast: "Couldn't deny the requests",
+    },
+  });
+}

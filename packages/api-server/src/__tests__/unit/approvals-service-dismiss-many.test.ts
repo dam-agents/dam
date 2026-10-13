@@ -81,11 +81,7 @@ function makeService(rows: PendingApprovalRow[]) {
 describe("approvals dismissMany (#4716)", () => {
   // TEST_SCENARIO: the issue's case. Many queued copies of one request are denied in one call, each once, and no deny rule is written, so a later request asks again.
   test("denies every listed pending approval once", async () => {
-    const { service, resolved } = makeService([
-      row("a"),
-      row("b"),
-      row("c"),
-    ]);
+    const { service, resolved } = makeService([row("a"), row("b"), row("c")]);
     const outcome = await service.dismissMany(["a", "b", "c"]);
     expect(outcome).toEqual({ applied: 3 });
     expect(resolved).toEqual([

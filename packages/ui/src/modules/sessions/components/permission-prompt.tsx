@@ -8,7 +8,12 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { VerdictPart } from "../../../types.js";
-import type { PermissionOption } from "../store/permissions.js";
+import { denyAllPrompt } from "../../approvals/lib/deny-all.js";
+import { denyOnceOption } from "../lib/permission-deny-all.js";
+import type {
+  PendingPermission,
+  PermissionOption,
+} from "../store/permissions.js";
 import { ChatColumn } from "./chat-column.js";
 
 export type PermissionVerdict = Omit<VerdictPart, "kind">;
@@ -113,6 +118,7 @@ export function PermissionPrompt({
   const sessionId = useStore((s) => s.sessionId);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const resolve = useStore((s) => s.resolvePendingPermission);
+  const showConfirm = useStore((s) => s.showConfirm);
   const pending = sessionId
     ? pendingPermissions.filter((p) => p.sessionId === sessionId)
     : [];
@@ -130,23 +136,44 @@ export function PermissionPrompt({
     setClampable(!!el && el.scrollHeight > el.clientHeight + 1);
   }, [expanded, current?.toolCallId]);
 
-  const pick = useCallback(
-    (opt: PermissionOption) => {
-      if (!current) return;
+  const answer = useCallback(
+    (entry: PendingPermission, opt: PermissionOption) => {
       onResolved?.(
         {
           label: verdictLabel(opt),
-          subject: toolTitle(current.toolCall),
+          subject: toolTitle(entry.toolCall),
           allowed: opt.kind?.startsWith("allow") ?? false,
         },
-        current.toolCallId,
+        entry.toolCallId,
       );
-      resolve(current.toolCallId, {
+      resolve(entry.toolCallId, {
         outcome: { outcome: "selected", optionId: opt.optionId },
       });
     },
-    [current, resolve, onResolved],
+    [resolve, onResolved],
   );
+
+  const pick = useCallback(
+    (opt: PermissionOption) => {
+      if (current) answer(current, opt);
+    },
+    [current, answer],
+  );
+
+  const deniable = pending.filter((p) => denyOnceOption(p.options));
+  const denyAll = async () => {
+    const prompt = denyAllPrompt(deniable.length);
+    const ok = await showConfirm(prompt.message, prompt.title, {
+      kind: "destructive",
+      confirmLabel: prompt.confirmLabel,
+    });
+    if (!ok) return;
+    for (const entry of useStore.getState().pendingPermissions) {
+      if (entry.sessionId !== sessionId) continue;
+      const opt = denyOnceOption(entry.options);
+      if (opt) answer(entry, opt);
+    }
+  };
 
   useEffect(() => {
     if (!current) return;
@@ -216,9 +243,22 @@ export function PermissionPrompt({
             ))}
           </div>
           {pending.length > 1 && (
-            <div className="text-2xs text-muted-foreground">
-              {pending.length - 1} more request
-              {pending.length - 1 === 1 ? "" : "s"} queued
+            <div className="flex flex-wrap items-center gap-x-2 text-2xs text-muted-foreground">
+              <span>
+                {pending.length - 1} more request
+                {pending.length - 1 === 1 ? "" : "s"} queued
+              </span>
+              {deniable.length > 1 && (
+                <Button
+                  variant="link"
+                  size="inline"
+                  onClick={() => void denyAll()}
+                  data-testid="deny-all-permissions"
+                  className="text-2xs"
+                >
+                  Deny all {deniable.length}
+                </Button>
+              )}
             </div>
           )}
         </div>
