@@ -330,7 +330,7 @@ fn fresh_reason(booting: Option<&str>, recorded: Option<&str>) -> Option<&'stati
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm starts this process in the image's WORKDIR, and the image's command counts on that: `node dist/server.js` under WORKDIR /app names a file that exists only relative to /app. pivot_root leaves the process in a directory of the old root, so fresh_root has to enter the new root's "/", and nothing else would ever leave it — so the directory saved before the pivot is entered again here. The path is absolute, and the platform root's merged view carries the whole image tree, so it resolves to the same directory of the same image. It is entered only once every mount is in place: a WORKDIR under HOME entered before the home is mounted is the image's copy, which the mount then hides, and the entrypoint would work in a directory nothing keeps. One the platform's root somehow lacks is a warning and a start at "/", not a failed boot: the entrypoint may not need it at all.
+// UNIT_BOUNDARY_DESCRIPTION: smolvm starts this process in the image's WORKDIR, and the image's command counts on that: `node dist/main.js` under WORKDIR /app names a file that exists only relative to /app. pivot_root leaves the process in a directory of the old root, so fresh_root has to enter the new root's "/", and nothing else would ever leave it — so the directory saved before the pivot is entered again here. The path is absolute, and the platform root's merged view carries the whole image tree, so it resolves to the same directory of the same image. It is entered only once every mount is in place: a WORKDIR under HOME entered before the home is mounted is the image's copy, which the mount then hides, and the entrypoint would work in a directory nothing keeps. One the platform's root somehow lacks is a warning and a start at "/", not a failed boot: the entrypoint may not need it at all.
 fn enter_workdir(saved: &Path) {
     if let Err(e) = std::env::set_current_dir(saved) {
         logf!(
@@ -2414,7 +2414,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: smolvm starts platform-init in the image's WORKDIR, and pivoting into the platform's root leaves the process at "/", where `node dist/server.js` under WORKDIR /app finds nothing. The directory saved before the pivot is entered again once the platform's root is in place; one the platform's root lacks leaves the process where the pivot left it rather than failing the boot.
+    // TEST_SCENARIO: smolvm starts platform-init in the image's WORKDIR, and pivoting into the platform's root leaves the process at "/", where `node dist/main.js` under WORKDIR /app finds nothing. The directory saved before the pivot is entered again once the platform's root is in place; one the platform's root lacks leaves the process where the pivot left it rather than failing the boot.
     #[test]
     fn the_image_working_directory_survives_the_pivot() {
         let before = std::env::current_dir().unwrap();
