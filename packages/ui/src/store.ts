@@ -15,6 +15,10 @@ import {
 } from "./modules/features/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
 import {
+  createGettingStartedSlice,
+  type GettingStartedSlice,
+} from "./modules/getting-started/store.js";
+import {
   createInvocationsSlice,
   type InvocationsSlice,
 } from "./modules/invocations/store.js";
@@ -65,7 +69,8 @@ export type PlatformStore = DialogSlice &
   BrowserSlice &
   FeaturesSlice &
   PermissionsSlice &
-  ProcessesSlice;
+  ProcessesSlice &
+  GettingStartedSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
@@ -81,6 +86,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createFeaturesSlice(...a),
   ...createPermissionsSlice(...a),
   ...createProcessesSlice(...a),
+  ...createGettingStartedSlice(...a),
 }));
 
 let draftSyncStarted = false;

@@ -1,4 +1,4 @@
-import { addUpgradeSecurityHeaders } from "./upgrade.js";
+import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
@@ -20,6 +20,7 @@ export interface TerminalRelay {
     socket: Duplex,
     head: Buffer,
     agentId: string,
+    actor: RelayActor,
   ): void;
   close(): void;
 }
@@ -67,6 +68,7 @@ export function createTerminalRelay(
     socket: Duplex,
     head: Buffer,
     agentId: string,
+    actor: RelayActor,
   ) {
     const url = new URL(req.url!, `http://${req.headers.host}`);
     const sessionId = url.searchParams.get("sessionId") ?? "default";
@@ -138,6 +140,7 @@ export function createTerminalRelay(
             } catch {}
             return;
           }
+          actor.attached();
           client.off("message", buffer);
           for (const { data, isBinary } of pending)
             upstream.send(data, { binary: isBinary });

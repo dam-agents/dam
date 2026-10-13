@@ -10,9 +10,11 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
+import { useFreshAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { useUpdateAgent } from "../api/mutations.js";
 import { AgentAvatar, resolveCharacter } from "./avatar/agent-avatar.js";
 import { AvatarGrid } from "./avatar/avatar-picker.js";
+import { NewAvatarDot } from "./avatar/new-avatar-dot.js";
 
 const PENCIL_BADGE =
   "flex shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:text-foreground";
@@ -86,6 +88,7 @@ export function EditableIdentity({
   onAvatarChange: (avatar: AvatarCharacter) => void;
 } & IdentityDisplay) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const hasNewAvatar = useFreshAvatars().length > 0;
   const [draft, setDraft] = useState<string | null>(null);
   const editEnded = useRef(false);
   const character = resolveCharacter(name, avatar);
@@ -129,6 +132,7 @@ export function EditableIdentity({
           >
             <Edit size={10} />
           </span>
+          {hasNewAvatar && <NewAvatarDot className="-top-1 -right-1" />}
         </PopoverTrigger>
         <PopoverContent align="start" className="w-auto p-3">
           <AvatarGrid
@@ -137,6 +141,7 @@ export function EditableIdentity({
               setPickerOpen(false);
               if (next !== character) onAvatarChange(next);
             }}
+            onLeave={() => setPickerOpen(false)}
           />
         </PopoverContent>
       </Popover>

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 	"time"
 
@@ -156,6 +157,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		machine.Migration = &vmrunner.MachineMigration{}
 	}
 	st, err := runner.Ensure(ctx, name, machine)
+	// UNIT_BOUNDARY_DESCRIPTION: the runner's Service is headless, so its name resolves only once the ready pod's endpoint is published and the cluster DNS has read it, which trails the Deployment's ready count by a few seconds. A fresh runner, an owner's first vm agent, is dialled inside that gap; it is still starting, not failing, so the agent waits on it rather than going into error.
+	var unresolved *net.DNSError
+	if errors.As(err, &unresolved) {
+		return vmrunner.MachineStatus{Reason: vmrunner.ReasonNotReady, Message: "the owner's VM runner is still starting: its address does not resolve yet"}, false, nil
+	}
 	if err != nil {
 		return st, false, err
 	}
@@ -460,7 +466,7 @@ func (r *AgentReconciler) deleteMachineEverywhere(ctx context.Context, name stri
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the vm agents of one owner, from the informer cache, for requeueing them when their runner's Deployment changes — its pod becoming ready is what they are waiting for, and nothing about the Agents themselves changes then.
-func (r *AgentReconciler) OwnerVMAgents(owner string) []string {
+func (r *AgentReconciler) OwnerAgents(owner string) []unstructured.Unstructured {
 	if r.agentCache == nil || owner == "" {
 		return nil
 	}
@@ -468,9 +474,19 @@ func (r *AgentReconciler) OwnerVMAgents(owner string) []string {
 	if err != nil {
 		return nil
 	}
-	var names []string
+	var agents []unstructured.Unstructured
 	for _, obj := range items {
-		if u, ok := obj.(*unstructured.Unstructured); ok && anyVMAgent([]unstructured.Unstructured{*u}) {
+		if u, ok := obj.(*unstructured.Unstructured); ok {
+			agents = append(agents, *u)
+		}
+	}
+	return agents
+}
+
+func (r *AgentReconciler) OwnerVMAgents(owner string) []string {
+	var names []string
+	for _, u := range r.OwnerAgents(owner) {
+		if anyVMAgent([]unstructured.Unstructured{u}) {
 			names = append(names, u.GetName())
 		}
 	}

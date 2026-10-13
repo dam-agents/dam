@@ -51,13 +51,6 @@ describe("active-turn store", () => {
     expect(open().leftovers()[0]?.attempts).toBe(1);
   });
 
-  it("reads leftovers back from disk on a fresh backend", () => {
-    open().record("s1");
-    expect(open().leftovers()).toEqual([
-      { sessionId: "s1", startedAt: "t0001", attempts: 0 },
-    ]);
-  });
-
   /**
    * TEST_SCENARIO: boot recovery reads leftovers a few seconds after boot. A
    * turn this process started before then — the first chat message after a

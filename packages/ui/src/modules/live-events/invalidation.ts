@@ -28,6 +28,7 @@ const invalidations: Record<Topic, (agentId?: string) => readonly QueryKey[]> =
     kbShares: () => [trpc.kbShares.pathKey()],
     artifacts: () => [trpc.artifactLibrary.pathKey()],
     attention: () => [trpc.attention.pathKey()],
+    gettingStarted: () => [trpc.gettingStarted.pathKey()],
   };
 
 const refreshing = new Map<string, { again: boolean }>();
@@ -53,6 +54,8 @@ export function invalidateForLiveEvent(event: LiveEvent): Promise<unknown> {
   const families =
     event.topic === "sync"
       ? Object.values(invalidations).flatMap((familiesOf) => familiesOf())
-      : invalidations[event.topic](event.agentId);
+      : invalidations[event.topic](
+          "agentId" in event ? event.agentId : undefined,
+        );
   return Promise.all(families.map(refresh));
 }

@@ -5,21 +5,14 @@ import {
 } from "../../modules/runtime-channel/infrastructure/file-codec.js";
 
 describe("file-codec", () => {
-  it("round-trips json (2-space, trailing newline)", () => {
+  it("round-trips json, toml and yaml, and keeps text opaque", () => {
     const obj = { a: 1, b: { c: "x" } };
-    const s = serializeFile("json", obj);
-    expect(s.endsWith("\n")).toBe(true);
-    expect(parseFile("json", s)).toEqual(obj);
-  });
-
-  it("round-trips toml, including nested tables", () => {
-    const obj = { model: "gpt", nested: { effort: "high" } };
+    const json = serializeFile("json", obj);
+    expect(json.endsWith("\n")).toBe(true);
+    expect(parseFile("json", json)).toEqual(obj);
     expect(parseFile("toml", serializeFile("toml", obj))).toEqual(obj);
-  });
-
-  it("round-trips yaml", () => {
-    const obj = { a: 1, list: [1, 2] };
     expect(parseFile("yaml", serializeFile("yaml", obj))).toEqual(obj);
+    expect(parseFile("text", "hello")).toBe("hello");
   });
 
   it("parses empty content as an empty object for structured formats", () => {
@@ -34,10 +27,6 @@ describe("file-codec", () => {
 
   it("throws on a yaml file with more than one document", () => {
     expect(() => parseFile("yaml", "a: 1\n---\nb: 2\n")).toThrow();
-  });
-
-  it("treats text as an opaque string on parse", () => {
-    expect(parseFile("text", "hello")).toBe("hello");
   });
 
   /** TEST_SCENARIO: An AWS config names its sections `profile <name>` and

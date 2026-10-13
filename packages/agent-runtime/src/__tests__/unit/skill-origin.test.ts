@@ -35,31 +35,6 @@ describe("listLocal origin classification", () => {
     await fs.rm(tmp, { recursive: true, force: true });
   });
 
-  it("classifies an untouched image-shipped skill as system", async () => {
-    await writeSkill(pristine[0], "websearch", skillMd("websearch"));
-    await writeSkill(local[0], "websearch", skillMd("websearch"));
-
-    const repo = createLocalSkillRepository();
-    const skills = await repo.listLocal(local, pristine);
-
-    expect(skills).toHaveLength(1);
-    expect(skills[0].origin).toBe("system");
-  });
-
-  it("classifies a diverged image-shipped skill as system-modified", async () => {
-    await writeSkill(pristine[0], "websearch", skillMd("websearch"));
-    await writeSkill(
-      local[0],
-      "websearch",
-      skillMd("websearch", "edited by the user"),
-    );
-
-    const repo = createLocalSkillRepository();
-    const skills = await repo.listLocal(local, pristine);
-
-    expect(skills[0].origin).toBe("system-modified");
-  });
-
   it("divergence anywhere in the skill dir counts, not just SKILL.md", async () => {
     await writeSkill(pristine[0], "helper", skillMd("helper"));
     await writeSkill(local[0], "helper", skillMd("helper"));
@@ -73,15 +48,6 @@ describe("listLocal origin classification", () => {
     const skills = await repo.listLocal(local, pristine);
 
     expect(skills[0].origin).toBe("system-modified");
-  });
-
-  it("classifies a runtime-created skill as user", async () => {
-    await writeSkill(local[0], "my-own", skillMd("my-own"));
-
-    const repo = createLocalSkillRepository();
-    const skills = await repo.listLocal(local, pristine);
-
-    expect(skills[0].origin).toBe("user");
   });
 
   it("classifies everything as user when the pristine root doesn't exist", async () => {

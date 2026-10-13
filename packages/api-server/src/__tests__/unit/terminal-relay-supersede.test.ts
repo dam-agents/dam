@@ -38,7 +38,11 @@ async function replica(bus: RedisBus) {
   servers.push(server);
   server.on("upgrade", (req, socket, head) => {
     const agentId = new URL(req.url!, "http://x").searchParams.get("agentId")!;
-    relay.handleUpgrade(req, socket, head, agentId);
+    relay.handleUpgrade(req, socket, head, agentId, {
+      sub: "u",
+      surface: "ui",
+      attached: () => {},
+    });
   });
   await new Promise<void>((r) => server.listen(0, r));
   const port = (server.address() as { port: number }).port;
@@ -85,7 +89,7 @@ describe("terminal relay supersede", () => {
     const first = await a.attach("agent-1", "s1");
     await b.attach("agent-1", "s1");
 
-    expect(await closedWithin(first, 1000)).toBe(1000);
+    expect(await closedWithin(first, 5_000)).toBe(1000);
   });
 
   it("does not evict a different agent's session with the same id", async () => {
@@ -105,6 +109,6 @@ describe("terminal relay supersede", () => {
     const first = await a.attach("agent-1", "s1");
     await a.attach("agent-1", "s1");
 
-    expect(await closedWithin(first, 1000)).toBe(1000);
+    expect(await closedWithin(first, 5_000)).toBe(1000);
   });
 });

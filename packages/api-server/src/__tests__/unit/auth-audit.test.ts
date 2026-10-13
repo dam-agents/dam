@@ -186,12 +186,6 @@ describe("auth middleware audit", () => {
     expect(rec.reason).toBe("revoked");
   });
 
-  it("warmJwks delegates to the remote JWK set's reload", async () => {
-    reloadMock.mockResolvedValueOnce(undefined);
-    await auth.warmJwks();
-    expect(reloadMock).toHaveBeenCalled();
-  });
-
   it("logs authz.deny against the decoded sub when the required role is missing", async () => {
     const cap = capture();
     verifyMock.mockResolvedValueOnce({

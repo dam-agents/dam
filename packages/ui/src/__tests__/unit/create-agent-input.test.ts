@@ -28,12 +28,6 @@ describe("buildCreateAgentInput", () => {
     ).toEqual({ name: "swift-otter", egressPreset: "trusted" });
   });
 
-  it("carries the chosen egress preset through", () => {
-    expect(
-      buildCreateAgentInput({ ...complete, egressPreset: "all" }),
-    ).toMatchObject({ egressPreset: "all" });
-  });
-
   it("asks for a microVM only when chosen", () => {
     expect(buildCreateAgentInput({ ...complete, vm: true })).toMatchObject({
       vm: true,

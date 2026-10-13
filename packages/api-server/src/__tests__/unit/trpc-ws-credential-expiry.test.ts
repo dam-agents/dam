@@ -1,7 +1,7 @@
 // TEST_OVERVIEW: An admitted tRPC WebSocket lives only as long as its credential. The door nudges the client to reconnect shortly before the credential expires and closes the socket at expiry. A connection admitted with less than the nudge lead left must not be nudged at once: the client would reconnect with the same token and be nudged again, in a tight loop until the token expires.
 import { createServer, type Server } from "node:http";
 import type { ApiContext } from "api-server-api";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 
 import { createTrpcWsEndpoint } from "../../apps/api-server/trpc/ws.js";
@@ -72,7 +72,8 @@ describe("tRPC WebSocket door, credential expiry", () => {
     const { messages } = await admit(30_200);
     await pause(50);
     expect(nudges(messages)).toBe(0);
-    await pause(400);
-    expect(nudges(messages)).toBe(1);
+    await vi.waitFor(() => expect(nudges(messages)).toBe(1), {
+      timeout: 5_000,
+    });
   });
 });

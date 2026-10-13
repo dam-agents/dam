@@ -52,7 +52,11 @@ export function paramsForExpanded(expanded: ReadonlySet<string>): string[] {
   return ["", ...expanded].sort();
 }
 
-export function useDirSnapshot(agentId: string | null, path: string) {
+export function useDirSnapshot(
+  agentId: string | null,
+  path: string,
+  enabled = true,
+) {
   const expanded = useExpandedDirs(agentId);
   const paths = paramsForExpanded(expanded);
   const operable = useIsAgentOperable(agentId);
@@ -63,7 +67,7 @@ export function useDirSnapshot(agentId: string | null, path: string) {
       const trpc = clientFor(agentId!);
       return trpc.files.listDirs.query({ paths });
     },
-    enabled: !!agentId && operable,
+    enabled: enabled && !!agentId && operable,
     refetchInterval: compat ? COMPAT_POLL_MS : false,
     staleTime: 2000,
     placeholderData: keepPreviousData,

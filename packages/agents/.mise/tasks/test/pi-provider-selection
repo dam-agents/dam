@@ -84,6 +84,7 @@ try {
     ANTHROPIC_API_KEY: "dummy-placeholder",
   });
   child = pi.child;
+  fallback = startPi({ ANTHROPIC_AUTH_TOKEN: "sk-dummy-placeholder" });
   const state = await pi.state;
   const errors = pi.errors();
   assert.equal(state.success, true, JSON.stringify(state));
@@ -105,8 +106,6 @@ try {
     assert.equal(request.max_output_tokens, 16384);
     assert.equal(request.reasoning?.effort, "low", JSON.stringify(request));
   } finally { clearTimeout(timeout); }
-  await stop(child);
-  fallback = startPi({ ANTHROPIC_AUTH_TOKEN: "sk-dummy-placeholder" });
   const unselected = await fallback.state;
   assert.equal(unselected.success, true, JSON.stringify(unselected));
   assert.notEqual(unselected.data.model?.provider, "anthropic", JSON.stringify(unselected.data.model));

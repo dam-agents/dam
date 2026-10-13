@@ -26,6 +26,7 @@ import {
   hasStreamingAssistant,
 } from "../../acp/session-projection.js";
 import {
+  untilAgentOperable,
   useAgentRunState,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
@@ -34,6 +35,7 @@ import { acpSessionsKeys } from "../api/keys.js";
 import {
   fetchSessionHistory,
   listedSessionRunning,
+  SESSION_HISTORY_TAIL,
   setSessionRunning,
 } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
@@ -44,8 +46,6 @@ import { useAcpConnection } from "./use-acp-connection.js";
 import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
-
-const PREVIEW_TAIL_FRAMES = 200;
 
 async function classifyResumeFailure(
   agentId: string,
@@ -163,17 +163,21 @@ export function useAcpSession(
       setSessionId(sid);
 
       let loaded = false;
-      if (agentOperable)
-        fetchSessionHistory(selectedAgent, sid)
-          .then((frames) => {
-            if (loaded || useStore.getState().sessionId !== sid) return;
-            const preview = framesToMessages(frames, {
-              tail: PREVIEW_TAIL_FRAMES,
-              turnInFlight: listedSessionRunning(selectedAgent, sid),
-            });
-            if (preview.length > 0) setMessages(preview);
-          })
-          .catch(() => {});
+      const operable = agentOperable
+        ? Promise.resolve()
+        : untilAgentOperable(selectedAgent);
+      operable
+        ?.then(() => (loaded ? null : fetchSessionHistory(selectedAgent, sid)))
+        .then((frames) => {
+          if (!frames || loaded || useStore.getState().sessionId !== sid)
+            return;
+          const preview = framesToMessages(frames, {
+            tail: SESSION_HISTORY_TAIL,
+            turnInFlight: listedSessionRunning(selectedAgent, sid),
+          });
+          if (preview.length > 0) setMessages(preview);
+        })
+        .catch(() => {});
 
       try {
         const fresh = await loadSessionHistory(sid).finally(() => {

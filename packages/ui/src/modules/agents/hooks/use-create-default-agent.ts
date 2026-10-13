@@ -1,7 +1,6 @@
-import { leastUsedCharacter } from "api-server-api/avatar/svg";
-
 import { useStore } from "../../../store.js";
 import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
+import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import {
   defaultHarnessId,
   imageCatalogue,
@@ -9,7 +8,7 @@ import {
 import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
-import { resolveCharacter } from "../components/avatar/agent-avatar.js";
+import { defaultAvatar } from "../lib/default-avatar.js";
 import { AGENT_NAME_PREFIX, nextSandboxName } from "../lib/sandbox-name.js";
 
 export function useCreateDefaultAgent() {
@@ -17,6 +16,7 @@ export function useCreateDefaultAgent() {
   const templates = useTemplates().data;
   const vmRuntime = useVmRuntime();
   const createAgent = useCreateAgent();
+  const unlocked = useUnlockedAvatars();
   const selectAgent = useStore((s) => s.selectAgent);
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   return {
@@ -29,17 +29,16 @@ export function useCreateDefaultAgent() {
       if (!list || !templates) return;
       const templateId = defaultHarnessId(imageCatalogue(templates).harnesses);
       try {
+        const name = nextSandboxName(
+          AGENT_NAME_PREFIX,
+          list.map((a) => a.name),
+        );
         const agent = await createAgent.mutateAsync({
-          name: nextSandboxName(
-            AGENT_NAME_PREFIX,
-            list.map((a) => a.name),
-          ),
+          name,
           egressPreset: "trusted",
           ...(templateId ? { templateId } : {}),
           ...(vmRuntime.vm ? { vm: true } : {}),
-          avatar: leastUsedCharacter(
-            list.map((a) => resolveCharacter(a.name, a.avatar)),
-          ),
+          avatar: defaultAvatar(name, unlocked, list),
         });
         setKitBrowserOpen(false);
         selectAgent(agent.id);

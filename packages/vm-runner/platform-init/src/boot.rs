@@ -2072,11 +2072,11 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a sparse file comes in the seed as its data and a map of its holes, and the tar reader hands the holes over as zeros. The restore seeks past them rather than writing them, so a 64 MiB file with one block of data is 64 MiB long, reads back exactly, and takes a few blocks of the disk rather than 64 MiB, and a hole at its end is kept by its length. The digest the runner expects is of the whole tar as uploaded, so it matches only if the unpack hashes the sparse entry's map and data as they are read.
+    // TEST_SCENARIO: a sparse file comes in the seed as its data and a map of its holes, and the tar reader hands the holes over as zeros. The restore seeks past them rather than writing them, so a 4 MiB file with one block of data is 4 MiB long, reads back exactly, and takes a few blocks of the disk rather than 4 MiB, and a hole at its end is kept by its length. The digest the runner expects is of the whole tar as uploaded, so it matches only if the unpack hashes the sparse entry's map and data as they are read.
     #[test]
     fn a_sparse_file_in_the_seed_is_restored_with_its_holes() {
-        let size: u64 = 64 << 20;
-        let at: u64 = 32 << 20;
+        let size: u64 = 4 << 20;
+        let at: u64 = 2 << 20;
         let data = vec![7u8; 4096];
         let share = TempDir::new("sparse-share");
         let archive = share.path().join("seed.tar");

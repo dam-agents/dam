@@ -265,9 +265,34 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		},
 	})
 
+	secretFactory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
+		informers.WithNamespace(cfg.Namespace),
+		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+			opts.LabelSelector = reconciler.CredentialSecretSelector
+		}),
+		informers.WithTransform(func(obj interface{}) (interface{}, error) {
+			if s, ok := obj.(*corev1.Secret); ok {
+				s.Data, s.StringData = nil, nil
+			}
+			return obj, nil
+		}),
+	)
+	secretInformer := secretFactory.Core().V1().Secrets()
+	secretInformer.TypedInformer().AddTypedEventHandler(cache.TypedResourceEventHandlerDetailedFuncs[*corev1.Secret]{
+		UpdateFunc: func(oldSecret, newSecret *corev1.Secret) {
+			if oldSecret.ResourceVersion == newSecret.ResourceVersion {
+				return
+			}
+			for _, a := range agentReconciler.OwnerAgents(reconciler.AgentOwner(newSecret.Labels)) {
+				agentQueue.add(false, a.GetName())
+			}
+		},
+	})
+
 	dynFactory.Start(ctx.Done())
 	podFactory.Start(ctx.Done())
-	synced := []cache.InformerSynced{agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced}
+	secretFactory.Start(ctx.Done())
+	synced := []cache.InformerSynced{agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced, secretInformer.Informer().HasSynced}
 	if runnerInformer != nil {
 		synced = append(synced, runnerInformer.HasSynced)
 	}
