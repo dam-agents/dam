@@ -14,7 +14,12 @@ import type { AgentState } from "../../../types.js";
 import { ToolContentBlock } from "../../sessions/components/tool-chip.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { useStopDelegation } from "../api/mutations.js";
-import { delegationState, firstLine } from "../lib/delegation-state.js";
+import {
+  type DelegationModel,
+  delegationModel,
+  delegationState,
+  firstLine,
+} from "../lib/delegation-state.js";
 import { DelegationStatePill } from "./delegation-state-pill.js";
 
 interface Props {
@@ -41,6 +46,7 @@ export function DelegationCard({
   const state = delegationState(node, agentStates.get(node.id));
   const failed = state === "failed";
   const turn = turns?.[node.id];
+  const model = delegationModel(node.requestedModel, turn?.models);
 
   return (
     <div className={cn(CARD_SURFACE, "border-border px-3 mt-2")}>
@@ -85,6 +91,7 @@ export function DelegationCard({
           triggerClassName="ml-[58px]"
         />
       )}
+      <ModelLine model={model} />
 
       {open && (
         <div className="-mx-3 flex flex-col gap-2.5 border-t border-border/40 px-3 py-2.5">
@@ -188,5 +195,32 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <div className="text-2xs text-placeholder">{label}</div>
       {children}
     </div>
+  );
+}
+
+function ModelLine({ model }: { model: DelegationModel }) {
+  if (model.ran === null && model.requested === null) return null;
+  return (
+    <p
+      data-testid="delegation-model"
+      className="-mt-1 mb-1.5 ml-[58px] truncate text-xs text-muted-foreground"
+    >
+      {model.ran === null ? (
+        <>Asked for {model.requested}</>
+      ) : (
+        <>
+          Model {model.ran}
+          {model.substituted && (
+            <span
+              className="text-warning"
+              title="The sub-agent ran another model than the one its driver asked for."
+            >
+              {" "}
+              · asked for {model.requested}
+            </span>
+          )}
+        </>
+      )}
+    </p>
   );
 }
