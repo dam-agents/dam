@@ -19,7 +19,8 @@ import {
   useRememberedPair,
 } from "../api/session-pair.js";
 import { harnessDisplayName } from "../lib/session-pair-options.js";
-import { SessionPairTrigger, SetAsDefault } from "./session-pair-picker.js";
+import { SetAsDefault } from "./session-pair-picker.js";
+import { SessionPairTrigger } from "./session-pair-trigger.js";
 import {
   SessionSettingsControls,
   settingDefaults,
