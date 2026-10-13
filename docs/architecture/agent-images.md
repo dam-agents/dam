@@ -40,6 +40,7 @@ DAX is safe only on the pinned Linux 6.12 guest kernel ([vm-runner-upgrades](vm-
 A deploy with a new image rolls the DaemonSet on every node at once, which installs the new versions **in place**, beside the old ones: an agent still on an older image keeps the versions it names, and nothing is pruned.
 Playwright's browsers sit there too, each image naming its own.
 An install cut short (the installer killed, a node drained) is redone on the next run rather than taken as done: mise records a version as mid-install only in its cache, so the installer keeps that cache in the node directory too, and it removes any version directory left empty.
+On OpenShift, the node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/) has the nodes create the directory with the label confined pods can read.
 
 The directory is in the boot path: an agent that starts on a node before its installer has finished has no harness until its next start.
 A download host that stalls or trickles fails the install in bounded time, after mise's own retries, and the kubelet restarts the installer until it succeeds, each run keeping what the last one installed.
