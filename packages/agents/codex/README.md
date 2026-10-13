@@ -14,7 +14,7 @@ The harness ships in the default image every harness Template boots, built by `/
 ## Authentication
 
 Codex requires an OpenAI API key.
-On the platform, the actual credential is never stored in the pod -- the Envoy sidecar injects it on the wire (see [ADR-033](../../../docs/adrs/033-envoy-credential-gateway.md)).
+On the platform, the actual credential is never stored in the pod -- the Envoy sidecar injects it on the wire (see [credential-gateway](../../../docs/architecture/credential-gateway.md)).
 
 Create a **generic secret** on the platform with:
 

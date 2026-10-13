@@ -49,7 +49,7 @@ Should the pod restart for another reason (image upgrade, node eviction, OOM, cr
 
 [`nous-channel-bridge.py`](./rootfs/usr/local/bin/nous-channel-bridge) (shipped to `/usr/local/bin/nous-channel-bridge`) lets a campaign report into the agent's bound Slack/Telegram thread using Nous's **own** `channels:` feature — without external egress or a webhook secret on disk.
 Nous's gate notifier POSTs each DESIGN/FINDINGS summary (it fires even under `--auto-approve`) to a `webhook` channel at `http://127.0.0.1:8765/gate?channel=slack`; the bridge relays it to the platform's per-agent `send_channel_message` MCP tool.
-It works because the image sets `NO_PROXY=127.0.0.1` (so Nous's POST stays local), the bridge's MCP call routes back through the egress gateway like the harness's own MCP calls, and the per-agent MCP endpoint authorizes by the pod's **mesh identity** (no token — ADR-041).
+It works because the image sets `NO_PROXY=127.0.0.1` (so Nous's POST stays local), the bridge's MCP call routes back through the egress gateway like the harness's own MCP calls, and the per-agent MCP endpoint authorizes by the pod's **mesh identity** (no token).
 Stdlib-only; the agent launches it on demand (see `AGENTS.md`).
 Needs a channel bound to the agent; delivery is best-effort.
 

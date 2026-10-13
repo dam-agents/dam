@@ -57,7 +57,7 @@ On the platform the agent only ever sees a **placeholder** — the real key is m
    The next pod restart picks up `BOBSHELL_API_KEY` and any pinned `BOB_*` envs along with the Envoy filter chain.
 
 The flow per request: Bob's `fetch()` sets `Authorization: Apikey dummy-placeholder` and tunnels through `HTTPS_PROXY` → Envoy terminates TLS using the platform CA → `credential_injector` rewrites the header to `Apikey bob_prod_…` from the K8s Secret → upstream sees the valid token.
-See [`docs/architecture/security-and-credentials.md`](../../../docs/architecture/security-and-credentials.md) and [ADR-033](../../../docs/adrs/033-envoy-credential-gateway.md).
+See [`docs/architecture/security-and-credentials.md`](../../../docs/architecture/security-and-credentials.md) and [`docs/architecture/credential-gateway.md`](../../../docs/architecture/credential-gateway.md).
 
 With the API key present Bob never asks to authenticate, so the `sso` auth method it advertises is dead weight here — an agent whose secret was never granted fails `session/new` with `auth_required` instead.
 
@@ -65,7 +65,7 @@ With the API key present Bob never asks to authenticate, so the `sso` auth metho
 
 Some Bob backends (`/key/info?key=<value>`) read the credential from a URL query parameter.
 The Bob Connection Template therefore carries a second `egress-inject` Contribution on the same host with `queryParamName: key`, so the gateway injects the same credential there too.
-See [ADR-033 §Credential injection](../../../docs/adrs/033-envoy-credential-gateway.md#credential-injection) for the Envoy URL-rewrite path.
+See [credential-gateway](../../../docs/architecture/credential-gateway.md#envoy-credential-injection) for the Envoy URL-rewrite path.
 
 ## Autonomy posture
 
