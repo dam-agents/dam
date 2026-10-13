@@ -406,6 +406,42 @@ describe("image update tick", () => {
     expect(m.writeSpec).not.toHaveBeenCalled();
   });
 
+  // TEST_SCENARIO: a ready read whose transition time is missing or
+  // TEST_SCENARIO: unreadable says nothing about how long the agent has been
+  // TEST_SCENARIO: ready. The hold counts from the first tick that sees it,
+  // TEST_SCENARIO: so the move is proven after READY_HOLD_MS and not before,
+  // TEST_SCENARIO: and a not-ready read in between starts the hold again.
+  it("holds a ready agent without a ready time from the first tick that sees it", async () => {
+    vi.useFakeTimers({ now: NOW });
+    try {
+      const moved = agent({
+        spec: { name: "a", image: DEFAULT_IMAGE },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "ready",
+      });
+      const agents = [moved];
+      const m = update(agents, { live: () => agents[0]! });
+      const tickAt = async (minutes: number, a: InfraAgent) => {
+        vi.setSystemTime(NOW.getTime() + minutes * 60_000);
+        agents[0] = a;
+        await m.tick();
+      };
+      await m.tick();
+      await tickAt(4, moved);
+      expect(m.writeSpec).not.toHaveBeenCalled();
+      await tickAt(4.5, { ...moved, specStart: undefined });
+      await tickAt(6, moved);
+      await tickAt(10, moved);
+      expect(m.writeSpec).not.toHaveBeenCalled();
+      await tickAt(11, moved);
+      expect(m.writeSpec).toHaveBeenCalledExactlyOnceWith("agent-1", {
+        annotations: { [FROM]: null },
+        resourceVersion: "7",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   // TEST_SCENARIO: a new image that cannot be pulled, unpacked or kept
   // TEST_SCENARIO: running would leave the agent unable to start; it goes
   // TEST_SCENARIO: back to the image it last ran, and the new one is refused.
@@ -526,6 +562,23 @@ describe("parseInfraAgent", () => {
       },
     );
     expect(parsed.readySince).toEqual(TWO_HOURS_AGO);
+  });
+  it("reads no ready time from an unreadable transition time", () => {
+    const parsed = parse(
+      {},
+      {
+        conditions: [
+          {
+            type: "Ready",
+            status: "True",
+            observedGeneration: 3,
+            lastTransitionTime: "garbage",
+          },
+        ],
+      },
+    );
+    expect(parsed.specStart).toBe("ready");
+    expect(parsed.readySince).toBeUndefined();
   });
 
   it.each(["ImagePullFailure", "MachineImageUnavailable", "MachineBootFailed"])(

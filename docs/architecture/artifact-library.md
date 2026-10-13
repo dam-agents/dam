@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-11
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -80,6 +80,7 @@ Retention remains available, and a separate static copy can be shared.
   Here the slug only *locates* the artifact — the share session authorizes.
   Only a person sets restricted, in the Share dialog: agent tools offer private and public, and refuse any sharing change on an artifact that is already restricted, so an agent can neither widen a restricted link nor edit who is on it.
   Agent responses omit the viewer allowlist.
+  An artifact an agent creates is private unless the agent passes public, and the agent tools tell it to do that only when the user asks for a public link.
 - **Public** opens the link to anyone.
   For a public artifact the slug is the *entire* access control: there is no account, token, or password on the public side — whoever holds the link may view, and guarding the link is the sharer's responsibility (deliberately: a second factor sent alongside a leaked link leaks with it).
 - An optional **retention** date bounds the *artifact's* lifetime — it schedules permanent deletion, not link expiry, and applies regardless of visibility (a private artifact is deleted the same way; storage lifecycle is a separate concern from sharing).

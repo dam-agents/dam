@@ -560,18 +560,17 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
 
 {{/* Bob Shell builds its own tracer from BOB_TELEMETRY_* and posts OTLP/HTTP
      JSON to {URL}{SERVICE_PATH}. Only traces exist; there are no per-call log
-     records. Since 2.0.3 it also reads OTEL_EXPORTER_OTLP_{ENDPOINT,TRACES_ENDPOINT,
-     HEADERS,PROTOCOL}: when an endpoint is set it ignores BOB_TELEMETRY_PROVIDER
-     and exports to that endpoint and to IBM's own at once, and it accepts only
-     http/json — the Claude Code rail's http/protobuf fails its env parse, which
-     drops the whole rail and sends the export to IBM. So a Bob image belongs on
-     this rail, never on the Claude Code one.
+     records. It also reads the standard OTEL_EXPORTER_OTLP_* env: when an
+     endpoint is set it ignores BOB_TELEMETRY_PROVIDER and exports to that
+     endpoint and to IBM's own at once, and a value it cannot parse drops the
+     whole rail and sends the export to IBM only. So a Bob image belongs on this
+     rail, never on the Claude Code one.
      Three of these are load-bearing rather than cosmetic:
        - the LF key pair is validated even though the collector ignores it, and
          a failed parse silently falls back to Bob's own IBM endpoint;
        - AGENT_OPS gates the LLM Generation span, which carries every counter;
-       - the service name is hardcoded to "bob-shell" (OTEL_SERVICE_NAME is not
-         read), so templates off this image share one name in the UI. */}}
+       - the service name is hardcoded to "bob-shell" (OTEL_SERVICE_NAME is read
+         only on the standard OTLP env), so templates off this image share one name in the UI. */}}
 {{- define "platform.agentTelemetry.env.bob" -}}
 {{- $host := include "platform.clickstack.collector.host" .root }}
 - name: BOB_TELEMETRY_PROVIDER

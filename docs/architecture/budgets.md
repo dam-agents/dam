@@ -84,10 +84,10 @@ This also means the whole enforcement path is invisible on the happy path: under
 **Slots** are how the UI presents all of this.
 One slot is the chart default Size, and the budget endpoint publishes that unit next to Reserved and Ceiling.
 An agent occupies as many slots as its larger dimension needs, rounded up; the Ceiling holds as many slots as its tighter dimension allows, rounded down.
-Users never touch CPU or memory directly: the Size picker offers a small fixed set of slot multiples (a legacy Size outside the presets stays selectable as its own multiple), each agent row carries its multiple, and every place that shows compute usage — the agent list and the home dashboard — shows the same slot meter: one cell per slot, colored working / idle / free, carrying a marker on the slots of agents that never hibernate, with the operator's budget-request link in the meter's header.
-Hovering a held slot names the agent behind it, its size and state, and offers a way into that agent's settings; the agent list shows the meter without the headline slot count.
+Users never touch CPU or memory directly: the Size picker offers a small fixed set of slot multiples (a legacy Size outside the presets stays selectable as its own multiple), each agent row carries its multiple, and the home dashboard shows compute usage as a slot meter: one cell per slot, colored working / idle / free, carrying a marker on the slots of agents that never hibernate, with the operator's budget-request link in the meter's header.
+Hovering a held slot names the agent behind it, its size and state, and offers a way into that agent's settings.
 The multiples and copy live in the UI budgets module.
-A start the controller parks raises a dialog that names the cause and sends the user to that list to free room; the settings picker warns inline when the chosen Size needs more free slots than remain.
+A start the controller parks raises a dialog that names the cause and sends the user to the agent list on the home dashboard to free room; the settings picker warns inline when the chosen Size needs more free slots than remain.
 First-time users with no agents see none of it.
 
 **Resizing** changes an Agent's Size in the agent settings and always restarts the pod (the CR patch re-renders the pair — a "live" resize does not exist in Kubernetes terms).

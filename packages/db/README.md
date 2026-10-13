@@ -10,7 +10,7 @@ Two artifacts:
 
 ## The split: tables are generated, views are hand-written
 
-Two kinds of migration, by what's changing (#739, [ADR-063](../../docs/adrs/063-hand-written-migrations.md)):
+Two kinds of migration, by what's changing (#739):
 
 - **Tables / columns / indexes / enums** live in `schema.ts` and are **generated** with `drizzle-kit generate`.
   Never hand-write these — `db:check:generated` fails the build if you do (see below).

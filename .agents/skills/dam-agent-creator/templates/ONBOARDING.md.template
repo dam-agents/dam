@@ -129,6 +129,22 @@ Then confirm nothing leaks: `git status --porcelain` **must be clean** — if an
 under `work/`, `.ssh`, `.claude`, or `.config` shows up, stop and fix `.gitignore`
 before continuing; do not write the sentinel.
 
+<!-- TODO(creator): keep Step 1b only when the design has a harness adapter
+     (scripts/harness/<harness>/); adjust the harness path. -->
+## Step 1b — Harness adapter
+
+Register the harness hooks (failed tool calls, per-run token usage, the outage
+witnesses), the auto-mode classifier rules for this agent's documented writes, the deny
+list of unused tools and the lean subagent type:
+
+```bash
+bash "$HOME/scripts/harness/claude-code/install.sh"
+```
+
+Idempotent, effective from the next session; on another harness it prints a notice and
+exits 0, and the agent then logs tool failures manually. Re-run it after every definition
+update that changes the adapter (the monitor reports `harness_drift` until then).
+
 ## Step 2 — Provision `work/` (runtime state)
 
 **2a — state repo env var set** → restore prior state from the backup remote. `work/`
@@ -203,7 +219,20 @@ immutable keys).
      state when asking (e.g. "this account posts publicly as X", "this value is immutable
      once used — changing it later orphans past outputs"). Opt-in questions for anything
      people-facing, default off. End with the full example CONFIG.md block the operator
-     sees. -->
+     sees. With scheduled runs, three items are always there:
+     - `run_model` — ask which model every scheduled session runs on (default: the
+       harness default, written as `default`); a schedule without a model does NOT run
+       on the agent's current model. Always write the key.
+     - `definition_issues` — read the definition repo's visibility first
+       (`gh api --hostname "$DEF_HOST" "repos/$DEFINITION_REPO" --jq .private`) and ask,
+       with it filled in: "When my weekly audit finds a bug in my own definition, I can
+       open a tracking issue on <definition_repo> (<public|private>). Every such issue is
+       anonymous — only the part of my definition that fails and the fix, never this
+       installation's data — and a script blocks any draft that names one. Turn it on?
+       (Default: off.)" Always write `enabled` or `disabled`.
+     - the monitor thresholds keep their defaults and are never asked; a dashboard or a
+       direct-delivery opt-in is a message of its own, default off.
+     Each is a checklist item only when it needs the operator's answer. -->
 
 <!-- TODO(creator): when the design includes a roster (agents that @-mention people),
      add the roster-building sub-step here: import candidate people from the integration,
@@ -224,33 +253,43 @@ immutable keys).
 
 **Kit path: the platform already created these** from `kit.yaml`, so this step is a
 reconciliation, not a creation. Either way, start from
-`mcp__platform-outbound__list_schedules`:
+`mcp__platform-outbound__list_schedules` and compare **full names**. Every schedule here
+also carries `model: <run_model>` (none under `default`) and the `sessionTitle` its
+sub-step names; the kit cannot declare those two yet, so a kit-created schedule is
+re-registered with them here. For each schedule this step defines:
 
-- A schedule with the expected name exists → **leave it alone**, including its cadence and
-  its enabled state. A suggested one arrives switched off on purpose; offer to turn it on,
-  never flip it unasked.
-- Missing → create it, as below.
-- Present but not in the design (renamed run type, an older definition version) → report
-  it to the operator and let them decide. Never delete a schedule on your own.
+| Registered state | Action |
+| --- | --- |
+| absent | create it |
+| same `name`, same cron, `task`, `precheck`, `model` and `sessionTitle` as this step derives | keep it; a suggested one stays off until the operator asks |
+| same `name`, different cron, `task`, `precheck`, `model` or `sessionTitle` | create the corrected one, then `delete_schedule` the old id — `create_schedule` never updates |
 
-Report the resulting list in the Step 6 summary — cadences and which are disabled.
+A registered schedule this step does **not** define (a renamed run type, an older
+definition version) → report it to the operator and let them decide; never delete it on
+your own. Report the resulting list in the Step 6 summary — cadences, models, and which
+are disabled.
 
-<!-- TODO(creator): one sub-step per scheduled run type from the design (including the
-     weekly audit), each naming its expected schedule name. For a hand-created agent:
-     ask for the cadence (offer the design default) before creating. Delete only for
-     designs with zero scheduled runs (rare — the audit is recommended for every agent). -->
+<!-- TODO(creator): one sub-step per scheduled run type from the design (the weekly
+     audit and the monitor included), each naming its schedule name, cron default,
+     precheck, sessionTitle (`<Verb> <object>`) and its task text as a `> ` blockquote
+     VERBATIM equal to the kit.yaml entry — the validator compares the two. Ask the
+     cadence only where the design leaves it to the operator (people-facing runs); the
+     work heartbeat defaults to around the clock, the monitor is created without a
+     question. Delete only for designs with zero scheduled runs (rare — the audit is
+     recommended for every agent). -->
 
 Never use an in-process cron — only platform schedules survive restarts and are visible to
 the operator.
 
 Create each missing schedule with `name: {{AGENT_NAME}}-<runtype>-<cadence-shorthand>`,
-`sessionMode: fresh`, the same `precheck` its `kit.yaml` entry declares, and the task text
-pattern from CLAUDE.md's run-types table:
+`sessionMode: fresh`, the same `precheck` its `kit.yaml` entry declares, `model` and
+`sessionTitle` as above, and this task text pattern:
 
-> <Run name>. Run `bash "$HOME/scripts/preflight.sh" <mode>` first. If its JSON says
-> nothing_to_do, report its logs in one line and end the run. Otherwise follow
-> CLAUDE.md → "<run section>": read exactly the worklist's read_set, <the run's action
-> summary>, and back up work/ at the end with
+> <Run name>. The precheck already ran the pre-flight and found work: read the worklist
+> JSON at the path its output names, and never run preflight.sh again this run. If the
+> prompt carries no worklist path, run `bash "$HOME/scripts/preflight.sh" <mode>`
+> yourself. Then follow CLAUDE.md → "<run section>": read exactly the worklist's
+> read_set, <the run's action summary>, and back up work/ at the end with
 > `bash "$HOME/scripts/work-backup.sh" persist` when $GITHUB_REPO_WORK is set.
 
 ## Step 6 — Record the version, write the sentinel, verify, release, report
@@ -287,7 +326,8 @@ so never make it to move a stuck run along.
 Then give the operator a short **onboarding summary** in the chat UI:
 
 1. The final `work/CONFIG.md` (verbatim).
-2. What runs where: schedules and cadences, state persistence mode.
+2. What runs where: schedules and cadences, the model every scheduled session runs on,
+   whether anonymous issues go to the definition repo, state persistence mode.
 3. Day-to-day usage: <!-- TODO(creator): 3-5 bullets — how work gets triggered, how a
    human requests a re-run, how feedback is given, what can be changed later in chat
    (and which keys cannot). -->

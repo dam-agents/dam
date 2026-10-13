@@ -251,15 +251,29 @@ export function createApprovalsService(
       return resolveAndDeliverAcpNative(deps, row, "deny");
     },
 
-    async dismiss(id) {
-      const row = await loadOwned(deps, id);
-      if (!row || row.status !== "pending") return NOT_ACTIONABLE;
-      if (row.type === "ext_authz") {
-        return resolveOnce(deps, row, "deny_once", "deny");
+    dismiss: (id) => dismissOne(deps, id),
+
+    async dismissMany(ids) {
+      let applied = 0;
+      for (const id of new Set(ids)) {
+        const { outcome } = await dismissOne(deps, id);
+        if (outcome === "applied") applied += 1;
       }
-      return resolveAndDeliverAcpNative(deps, row, "deny_once");
+      return { applied };
     },
   };
+}
+
+async function dismissOne(
+  deps: CreateApprovalsServiceDeps,
+  id: string,
+): Promise<ApprovalActionOutcome> {
+  const row = await loadOwned(deps, id);
+  if (!row || row.status !== "pending") return NOT_ACTIONABLE;
+  if (row.type === "ext_authz") {
+    return resolveOnce(deps, row, "deny_once", "deny");
+  }
+  return resolveAndDeliverAcpNative(deps, row, "deny_once");
 }
 
 async function resolveOnce(

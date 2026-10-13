@@ -20,7 +20,7 @@ writeFileSync(join(dir, "passwd"), "agent:x:0:0::/home/agent:/bin/sh\n");
 writeFileSync(
   join(dir, "agent-entrypoint"),
   readFileSync(entrypoint, "utf8")
-    .replaceAll('"$(id -u)" = 0', "0 = 0")
+    .replaceAll("uid=$(id -u)", "uid=0")
     .replaceAll("sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd", ":")
     .replaceAll("/etc/passwd", join(dir, "passwd"))
     .replaceAll("/run/sshd", join(dir, "sshd"))

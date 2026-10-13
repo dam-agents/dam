@@ -51,7 +51,7 @@ Pi natively supports a long list of API-key providers (OpenAI, Mistral, Groq, De
 Authoritative reference: [pi providers](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md) for env-var names, auth-file shape, and resolution order; [pi models](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md) for the `models.json` schema and `compat` flags.
 
 On the platform the actual credential never lives in pod env.
-The pod carries a placeholder; the in-pod Envoy sidecar terminates outbound TLS and rewrites the auth header using a [generic secret](../../../docs/architecture/security-and-credentials.md) ([ADR-033](../../../docs/adrs/033-envoy-credential-gateway.md)) scoped to the provider's host.
+The pod carries a placeholder; the in-pod Envoy sidecar terminates outbound TLS and rewrites the auth header using a [generic secret](../../../docs/architecture/security-and-credentials.md) scoped to the provider's host.
 The flow is the same for every provider — only the host pattern and (occasionally) the injection header change.
 
 ### Built-in API-key providers
@@ -102,7 +102,7 @@ Sourced from pi-mono [`env-api-keys.ts`](https://github.com/badlogic/pi-mono/blo
 > **Anthropic — prefer the dedicated provider.** Platform ships a first-class Anthropic provider that handles the OAuth-vs-API-key shape and is wired into the Configure Agent UI as the *Anthropic secret* type.
 > The plain env-var path above does work, but the dedicated provider is the recommended way and the tRPC router rejects `hostPattern` / `pathPattern` / `injectionConfig` on Anthropic secrets to keep the two paths from drifting.
 
-> When two providers share a host (OpenCode Zen vs Go) or a single host serves several pi providers, scope the secret with `pathPattern` ([ADR-028](../../../docs/adrs/028-generic-secret-injection-config.md)) so each credential matches only its own sub-path.
+> When two providers share a host (OpenCode Zen vs Go) or a single host serves several pi providers, scope the secret with `pathPattern` so each credential matches only its own sub-path.
 
 #### Provider errors in the chat
 

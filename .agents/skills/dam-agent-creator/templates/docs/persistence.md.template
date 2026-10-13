@@ -124,7 +124,10 @@ gh pr create --repo "$DEFINITION_REPO" --base main --head "fix/<short-slug>" \
 ```
 
 The agent's job ends at "PR opened". Use fresh descriptive branch names; runtime state
-never goes to this repo.
+never goes to this repo. The PR body says what and why, declares the scope, and records
+the decisions the operator made on purpose (so a reviewer does not raise them again); a
+step only the operator can take — a push under `.github/workflows/`, which needs the
+`workflow` scope — is named there as **operator-only**.
 
 <!-- TODO(creator): keep this paragraph only when the design supports multiple GitHub
      hosts; delete it otherwise. -->
