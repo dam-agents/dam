@@ -74,6 +74,7 @@ import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js";
 import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
+import { startsInChat } from "../../agents/lib/agent-start.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
@@ -1211,7 +1212,11 @@ export function ChatView() {
       ) : selectedAgent &&
         !agentInaccessible &&
         !agentOperable &&
-        !agentStarting ? (
+        !(
+          agentView &&
+          agentDisplay &&
+          startsInChat(agentView, agentDisplay.state)
+        ) ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}
