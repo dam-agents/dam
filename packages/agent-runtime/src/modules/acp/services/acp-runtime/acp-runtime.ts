@@ -922,7 +922,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           prompt: params?.prompt ?? [],
           _meta: { steering: { idleBehavior: "promptRequired" } },
         },
-        (frame) => resolve(steerOutcomeOf(frame)),
+        (frame) => {
+          const outcome = steerOutcomeOf(frame);
+          if (outcome === "injected") generating.add(entry.sessionId);
+          resolve(outcome);
+        },
       );
     });
   }

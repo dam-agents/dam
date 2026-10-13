@@ -116,4 +116,36 @@ describe("acp-runtime: steer points", () => {
     await settle();
     expect(world.harness().received(STEER_METHOD)).toEqual([]);
   });
+
+  /**
+   * TEST_SCENARIO: Two messages wait while a tool runs. Steered together at
+   * one steer point, the harness merges them into a single user message —
+   * once even in the wrong order. A steer starts the agent generating again,
+   * so only the first is steered there; the second waits for the next steer
+   * point and reaches the agent on its own.
+   */
+  it("steers one message per steer point", async () => {
+    const { world, bob } = await turnRunning();
+    const tool = (id: string, status: string, kind = "tool_call_update") =>
+      world
+        .harness()
+        .emit(update({ sessionUpdate: kind, toolCallId: id, status }));
+    tool("t1", "in_progress", "tool_call");
+
+    bob.send(uiPrompt(4, "be grumpy"));
+    bob.send(uiPrompt(5, "be funny"));
+    await settle();
+    tool("t1", "completed");
+    await settle();
+    expect(world.harness().received(STEER_METHOD)).toHaveLength(1);
+
+    world.harness().replyTo(STEER_METHOD, { outcome: "injected" });
+    await settle();
+    expect(world.harness().received(STEER_METHOD)).toHaveLength(1);
+
+    tool("t2", "in_progress", "tool_call");
+    tool("t2", "completed");
+    await settle();
+    expect(world.harness().received(STEER_METHOD)).toHaveLength(2);
+  });
 });
