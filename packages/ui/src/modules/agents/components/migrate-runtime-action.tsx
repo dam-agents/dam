@@ -1,6 +1,6 @@
 import { Migrate, Renew, Undo, WarningAlt } from "@carbon/icons-react";
 import type * as React from "react";
-import { type SyntheticEvent, useId, useState } from "react";
+import { type SyntheticEvent, useId, useRef, useState } from "react";
 import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
@@ -89,6 +89,7 @@ export function MigrateRuntimeAction({
 
 const OLD_RUNTIME = "This agent runs on the old container runtime.";
 
+// UNIT_BOUNDARY_DESCRIPTION: the Migrate button that opens the confirm dialog. Its hover card sits above dialogs, so it must not open once the button was clicked: a hover that began just before the click still has its open delay running, and the card would then cover the dialog's own Migrate button until the pointer moved. A new hover or focus arms the card again.
 function OfferButton({
   onMigrate,
   stop,
@@ -97,16 +98,30 @@ function OfferButton({
   stop: (e: React.MouseEvent) => void;
 }) {
   const describedBy = useId();
+  const [open, setOpen] = useState(false);
+  const clicked = useRef(false);
+  const rearm = () => {
+    clicked.current = false;
+  };
   return (
     <span onClick={stop}>
-      <HoverCard>
+      <HoverCard
+        open={open}
+        onOpenChange={(o) => setOpen(o && !clicked.current)}
+      >
         <HoverCardTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
             tone="accent"
             className="shrink-0"
-            onClick={onMigrate}
+            onPointerEnter={rearm}
+            onFocus={rearm}
+            onClick={() => {
+              clicked.current = true;
+              setOpen(false);
+              onMigrate();
+            }}
             aria-label="Migrate to the new runtime"
             aria-describedby={describedBy}
           >
