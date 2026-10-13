@@ -1551,7 +1551,7 @@ export async function bootstrap() {
       liveAgentsRepo.writeRuntimeMigration(id, undefined, patch),
     log: (message) => process.stderr.write(`${message}\n`),
   });
-  await periodicJobs.register("runtime-migration-switch", 15_000, () =>
+  await periodicJobs.register("runtime-migration-switch", 2_000, () =>
     runtimeMigrationSwitch.tick(),
   );
 
