@@ -770,6 +770,19 @@ jobs:
       - *e2e-ci-images
       - *e2e-playwright-version
       - *e2e-playwright-cache
+      # The node directory the harness tools installer fills, so on a hit it
+      # finds every version installed and reaches no download host: one host
+      # that stalled for minutes failed this lane. Keyed by what fixes the
+      # versions, the installer included. Restored as the runner's user, then
+      # given to root, who owns every install there.
+      - name: Create the node's harness tools directory
+        run: sudo install -d -o "$USER" /var/lib/platform-harness-tools
+      - id: harness-tools-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /var/lib/platform-harness-tools
+          key: &harness-tools-key harness-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/base.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/default/rootfs/usr/local/bin/install-harness-tools') }}
+      - run: sudo chown -R root:root /var/lib/platform-harness-tools
       # Twice the container lane's budget: the vm-runner build above on a PR,
       # the node staging of the mock image, every agent's boots, each a machine
       # start under nested virtualization, and the backend and runtime
@@ -777,6 +790,16 @@ jobs:
       - run: *e2e-run
         timeout-minutes: 70
         env: *e2e-run-env
+      # Only main writes it, and only once the suite passed, which waits for the
+      # installer: an entry is a whole install of one lockfile. It is about the
+      # size of the agent-tools entry, and a PR reads main's.
+      - if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
+        run: sudo chown -R "$USER" /var/lib/platform-harness-tools
+      - if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /var/lib/platform-harness-tools
+          key: *harness-tools-key
       - *e2e-image-log
       - *e2e-provision-log
       # The background provision and image fetch each end by writing their
