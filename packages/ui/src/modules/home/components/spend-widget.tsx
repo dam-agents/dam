@@ -42,8 +42,12 @@ export function SpendWidget() {
     () => spendRange(period, new Date(now)),
     [period, now],
   );
-  const query = useSpendBreakdown(from, to, timeZone);
-  const data = query.data ?? cachedSpend(queryClient, period, timeZone);
+  const homeSpend = `${period} ${timeZone}`;
+  const query = useSpendBreakdown(from, to, timeZone, undefined, { homeSpend });
+  const cached = cachedSpend(queryClient, homeSpend);
+  const data = query.isPlaceholderData
+    ? (cached ?? query.data)
+    : (query.data ?? cached);
 
   if (query.isUnavailable) return null;
 
