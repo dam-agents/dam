@@ -31,7 +31,7 @@ vm-runner owns a machine API — one persistent microVM per vm Agent — and tak
 The runner keeps only the latest ensure for each machine and one worker converging it, one whole action at a time, so a spec that arrives mid-action — a stop sent while a machine boots — replaces any not yet acted on and is honoured when that action returns.
 A guest starting to answer changes nothing the cluster can watch, so the runner watches for it: a **health prober** asks each machine on its way up often, most in the first minute of its boot, and a steady one rarely, and a status is built from what it last heard rather than probing on the read.
 An ensure that reaches a runner already closing is refused, not stored.
-A live VMM whose guest agent is slow to answer smolvm's ping reads as running, not stopped: a busy guest looks the same as a dead agent there, so only the prober's silence restarts it: the prober itself, within a minute after an answer, ten for slow boots and repeat stalls.
+A live VMM reads as running, not stopped, whatever its guest is doing, and a probe never pings the guest agent, so only the prober's silence restarts it: the prober itself, within a minute after an answer, ten for slow boots and repeat stalls.
 Its memory stays counted meanwhile.
 A failure stays on the status until an action succeeds or a spec arrives that needs none.
 Each status carries a version that moves whenever the status does, and a status read may name the version it last saw and wait, up to half a minute, for it to move.
