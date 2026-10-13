@@ -110,7 +110,10 @@ tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${
 # the mappings of a large file that another process opens, and guests of 6 GiB
 # or more die of SIGBUS (smol-machines/smolvm#1741). Both libraries have the
 # same ABI. One whose kernel is not Linux 6.12 is refused. Drop this once a
-# smolvm release ships a kernel with the fix.
+# smolvm release ships a kernel with the fix: libkrunfw commit 4ba2c55
+# (smol-machines/libkrunfw#31) fixes it, verified on 6.18.55. Then remove the
+# libkrunfw-* lines from smolvm.pin and this swap and check; the vm e2e lane's
+# DAX checks prove the new kernel without further change.
 fw_version="$(sed -n 's/^libkrunfw-tag=v//p' smolvm.pin)"
 fw_sha="$(sed -n "s/^libkrunfw-sha256-linux-${arch}=//p" smolvm.pin)"
 [ -n "$fw_version" ] && [ -n "$fw_sha" ] || { echo "smolvm.pin names no libkrunfw release for linux-${arch}" >&2; exit 1; }
@@ -127,7 +130,10 @@ LC_ALL=C grep -aq 'Linux version 6\.12\.' "$b/opt/smolvm/lib/libkrunfw.so.5.5.0"
 # NEEDED) but with mise.lock's compiler, on this host, like the runner. A build
 # that exports a different set of krun_* symbols than the release lib is
 # refused, since smolvm resolves them at runtime and a missing one fails a boot.
-# Drop this once a smolvm release ships these fixes.
+# Drop this once a smolvm release ships these fixes. smol-machines/libkrun#186
+# maps guest RAM 2 MiB-congruent upstream, so the RAM-mapping hunks go then;
+# keep the MADV_HUGEPAGE call, which #186 omits but nested hosts need (a busy
+# dam-cl node filled 4 GiB in 4.1 s with it and 8.3 s without).
 lk_deps="clang libclang-dev patchelf pkg-config libvirglrenderer-dev libepoxy-dev libdrm-dev libgbm-dev"
 lk_missing=$(for p in $lk_deps; do dpkg -s "$p" >/dev/null 2>&1 || echo "$p"; done)
 # Unattended and bounded: CI runs this in the background beside a starting k3s,
