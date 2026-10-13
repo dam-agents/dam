@@ -79,7 +79,10 @@ Reads that overlap share one listing.
 With no kept list, on the first read for an endpoint, the read waits for the listing.
 The seed and a lease's model never answer from the kept list: they ask the provider, and what it answers refreshes the list.
 A kept list can offer a model the provider has since retired.
-On Claude Code a name the gateway published for a tier, or one naming a tier, then goes to that tier's current model; any other name, on any harness, reaches the provider unchanged and the turn reports its refusal, so a stale list never runs a turn on a model nobody picked.
+On Claude Code a name the gateway published for a tier, or one naming a tier, then goes to that tier's current model.
+Any other name reaches the provider unchanged, so a model the provider serves without listing it still runs.
+When the provider refuses a name it does not list, Claude Code's gateway sends the turn again on the model its opus tier maps to, Claude Code's default, and logs the remap; on other harnesses the turn reports the refusal.
+An existing session's label marks a model its provider no longer lists, so a turn that runs on another model than the pick never does so unseen.
 Which choices a harness offers is its catalog's to say: Codex's offers no mode, because its image runs it never asking for approval, so there is no permission mode to pick and nothing for a [channel turn](channel-turns.md) to refuse.
 
 ## Model discovery and the seeded model
@@ -108,9 +111,11 @@ What no listing can say is whether the account has been granted a model: that is
 Claude Code's catalog is model tiers, which Claude Code itself resolves to the region's Bedrock profiles ([connections](connections.md#app-preset-aws-bedrock)), so its source asks only the LiteLLM-shaped endpoint a connection points it at, and extends the tiers rather than replacing them.
 There its in-pod model gateway defaults every tier to the newest model the provider has for it, which on a provider that serves no Claude model is one model for all of them unless the Connection pins the slots; the provider's other models are reachable only by name, so the panel lists them after the tiers, under the lowercased, `claude/`-prefixed names the gateway publishes to Claude Code itself, so a choice made in the panel and one made in Claude Code's own model picker are the same value.
 Nothing is seeded: the tiers already resolve on any provider.
-Claude Code starts only once the gateway answers with the tier models, so the gateway keeps the last list each provider gave it on the agent's home volume and answers from that list at once on the next start, refreshing it from the provider afterwards.
+Claude Code reads its tier models only at start, from the gateway, so the gateway keeps the last list each provider gave it on the agent's home volume and answers from that list at once on the next start, refreshing it from the provider afterwards.
 A name it gave Claude Code for a tier that the provider has since retired goes to that tier's current model, so a kept list that is out of date costs nothing.
-With no kept list, on the agent's first start or a new provider, it waits for the listing at most three seconds; a provider still unlisted then leaves the tiers to the request-time mapping above.
+With no kept list, on the agent's first start or a new provider, the gateway does not wait for the listing: it listens at once and gives Claude Code its own tier names, `claude/opus` and the like, which each request maps to that tier's model once the listing is in, the request waiting for it.
+Claude Code knows those names no better than a provider's own, so it sizes the request as for any model it does not know; the next start gets the listed names.
+A provider that never lists then receives the bare tier name and refuses the turn.
 
 CurveBender pins Claude Code's Sonnet slot to its non-reasoning Nemotron model for the auto-permission classifier, and every work slot and the default conversation to GLM.
 It also turns off the server-side auto-mode check: GLM cannot answer the classifier's non-thinking request within its deadline, so the model pin and that flag are needed together.

@@ -74,6 +74,10 @@ export function ModelIndicator({
           ?.choices ?? [])
       : (data?.availableModels ?? []);
   const modelName = models.find((m) => m.value === model)?.name ?? model;
+  const unlisted =
+    model !== null &&
+    !!data?.availableModels?.length &&
+    !data.availableModels.some((m) => m.value === model);
 
   return (
     <Popover>
@@ -87,6 +91,7 @@ export function ModelIndicator({
               harnessName,
               activeProvider?.name,
               removed ? "Provider removed" : null,
+              unlisted ? "Model not offered" : null,
             ]
               .filter(Boolean)
               .join(" · ")
