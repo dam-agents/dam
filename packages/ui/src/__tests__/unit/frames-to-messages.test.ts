@@ -1,7 +1,7 @@
-// TEST_OVERVIEW: A past session opens on the runtime's own copy of its log, projected the way a replay is, before the chat protocol has loaded it. A long log shows only its newest turns, cut where a turn starts.
+// TEST_OVERVIEW: A session's log read as data is projected the way a replay is. A past session opens on it before the chat protocol has loaded the session, showing a long log only from its newest turns, cut where a turn starts.
 import { describe, expect, it } from "vitest";
 
-import { previewFromHistory } from "../../modules/sessions/lib/history-preview.js";
+import { framesToMessages } from "../../modules/acp/frames-to-messages.js";
 
 const frame = (
   sessionUpdate: "user_message_chunk" | "agent_message_chunk",
@@ -23,14 +23,14 @@ const turn = (n: number, replyChunks = 1) => [
   ),
 ];
 
-const texts = (lines: string[], turnInFlight = false) =>
-  previewFromHistory(lines, { turnInFlight }).map((m) => ({
+const texts = (lines: string[], turnInFlight = false, tail = 200) =>
+  framesToMessages(lines, { tail, turnInFlight }).map((m) => ({
     role: m.role,
     text: m.parts.map((p) => (p.kind === "text" ? p.text : "")).join(""),
     streaming: m.streaming,
   }));
 
-describe("previewFromHistory", () => {
+describe("framesToMessages", () => {
   it("projects a short log whole, with the reply settled", () => {
     expect(texts([...turn(1), ...turn(2, 2)])).toEqual([
       { role: "user", text: "ask 1", streaming: false },
@@ -53,6 +53,11 @@ describe("previewFromHistory", () => {
       streaming: false,
     });
     expect(shown.filter((m) => m.role === "user")).toHaveLength(20);
+  });
+
+  it("projects the whole log when no tail is asked for", () => {
+    const lines = Array.from({ length: 30 }, (_, n) => turn(n, 9)).flat();
+    expect(framesToMessages(lines)).toHaveLength(60);
   });
 
   it("skips frames it cannot read", () => {

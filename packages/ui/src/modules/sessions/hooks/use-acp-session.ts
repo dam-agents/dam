@@ -19,6 +19,7 @@ import {
   type SessionFailureKind,
   type SessionListing,
 } from "../../acp/errors.js";
+import { framesToMessages } from "../../acp/frames-to-messages.js";
 import {
   appendUndelivered,
   finalizeAllStreaming,
@@ -36,13 +37,14 @@ import {
   setSessionRunning,
 } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
-import { previewFromHistory } from "../lib/history-preview.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
+
+const PREVIEW_TAIL_FRAMES = 200;
 
 async function classifyResumeFailure(
   agentId: string,
@@ -161,7 +163,8 @@ export function useAcpSession(
         fetchSessionHistory(selectedAgent, sid)
           .then((frames) => {
             if (loaded || useStore.getState().sessionId !== sid) return;
-            const preview = previewFromHistory(frames, {
+            const preview = framesToMessages(frames, {
+              tail: PREVIEW_TAIL_FRAMES,
               turnInFlight: listedSessionRunning(selectedAgent, sid),
             });
             if (preview.length > 0) setMessages(preview);
@@ -183,6 +186,7 @@ export function useAcpSession(
         } catch {}
       } catch (e) {
         if (useStore.getState().sessionId !== sid) return;
+        setMessages([]);
         const kind = await classifyResumeFailure(selectedAgent, sid, e);
         if (useStore.getState().sessionId !== sid) return;
         useStore.getState().setSessionError({ sessionId: sid, kind });
