@@ -51,7 +51,7 @@ const (
 
 var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
 
-// UNIT_BOUNDARY_DESCRIPTION: ensures the Agent's machine on its owner's runner. `publish` points the agent Service at the machine; a machine a runtime migration builds beside a container that still serves leaves the Service to the container.
+// UNIT_BOUNDARY_DESCRIPTION: ensures the Agent's machine on its owner's runner. `publish` points the agent Service at the machine; a machine a runtime migration builds beside a container that still serves leaves the Service to the container, and takes it from its boot on, while the container is down, so the api-server can push the machine's env before the Backend switches.
 func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running, publish bool) (vmrunner.MachineStatus, bool, error) {
 	name, spec := agent.Name, &agent.Spec
 	owner := agent.Labels[envoyOwnerLabel]
@@ -214,7 +214,7 @@ func (r *AgentReconciler) exposeGatewayOnHost(ctx context.Context, agentName str
 	return int(svc.Spec.Ports[0].NodePort), nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no pod, so its Service selects the owner's runner and maps the agent port onto the one that machine publishes there — which needs a ClusterIP, since a headless Service hands back the pod address without remapping the port. Selecting works only because the runner shares this namespace; a selector never reaches across one. It is applied rather than created once, because the published port moves when a machine is recreated.
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no pod, so its Service selects the owner's runner and maps the agent port onto the one that machine publishes there — which needs a ClusterIP, since a headless Service hands back the pod address without remapping the port. Selecting works only because the runner shares this namespace; a selector never reaches across one. It is applied rather than created once, because the published port moves when a machine is recreated, and a headless one, the container's, is replaced, since a cluster address cannot be given to a Service in place.
 func (r *AgentReconciler) applyVMAgentService(ctx context.Context, name, owner string, port int, ownerRef metav1.OwnerReference) error {
 	desired := BuildAgentService(name, r.config, ownerRef)
 	desired.Spec.ClusterIP = ""
@@ -229,6 +229,11 @@ func (r *AgentReconciler) applyVMAgentService(ctx context.Context, name, owner s
 
 	cli := r.client.CoreV1().Services(r.config.Namespace)
 	existing, err := cli.Get(ctx, name, metav1.GetOptions{})
+	if err == nil && existing.Spec.ClusterIP == corev1.ClusterIPNone {
+		if err = cli.Delete(ctx, name, metav1.DeleteOptions{}); err == nil || k8serrors.IsNotFound(err) {
+			err = k8serrors.NewNotFound(corev1.Resource("services"), name)
+		}
+	}
 	if k8serrors.IsNotFound(err) {
 		_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
 		return err

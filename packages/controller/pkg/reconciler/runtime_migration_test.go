@@ -173,7 +173,7 @@ func createAll(t *testing.T, r *AgentReconciler, objs ...any) {
 	}
 }
 
-// TEST_SCENARIO: a migration walks every phase. While the preflight makes the owner's runner and the machine, stopped, the container keeps running and keeps its Service. Only once the machine exists is the container scaled down and its home volume recorded; the Job streams that volume to the runner once the pod is gone, and only then may the machine boot. A guest that answers makes the migration Verified, and that alone changes nothing: the spec is still the container's and the old volume is still its own, until the api-server switches the Backend. Then the StatefulSet and headless Service go, the seed is removed, and the old volume is retained rather than deleted.
+// TEST_SCENARIO: a migration walks every phase. While the preflight makes the owner's runner and the machine, stopped, the container keeps running and keeps its Service. Only once the machine exists is the container scaled down and its home volume recorded; the Job streams that volume to the runner once the pod is gone, and only then may the machine boot. A guest that answers makes the migration Verified, and that alone changes nothing: the spec is still the container's and the old volume is still its own, until the api-server switches the Backend. Then the StatefulSet goes, the seed is removed, and the old volume is retained rather than deleted.
 func TestARuntimeMigrationPreparesTheMachineBeforeTheContainerStopsAndSwitchesOnlyAfterABoot(t *testing.T) {
 	ctx := context.Background()
 	agent := migratingAgentCR()
@@ -782,6 +782,34 @@ func bootingAgentCR(t *testing.T) *apiv1.Agent {
 	agent.Annotations[annRuntimeMigrationSeed] = testSeedAnnotation(t)
 	agent.Status.RuntimeMigrationAttempts = 1
 	return agent
+}
+
+// TEST_SCENARIO: from the boot on the container is down, so the Agent's Service routes to the machine rather than to nothing: the api-server pushes the env the copy left behind as soon as the guest is verified, without waiting for the Backend to switch. An abort before the verified boot gives the container its headless Service back.
+func TestABootingMigrationRoutesTheAgentServiceToTheMachineUntilAnAbort(t *testing.T) {
+	ctx := context.Background()
+	agent := bootingAgentCR(t)
+	r, node, _ := setupVMReconciler(t, agent)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+	_, err := r.client.CoreV1().Services("test-agents").Create(ctx, BuildAgentService("my-agent", r.config, metav1.OwnerReference{}), metav1.CreateOptions{})
+	require.NoError(t, err)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationBooting)
+	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEqual(t, corev1.ClusterIPNone, svc.Spec.ClusterIP, "a headless Service cannot remap the port the machine publishes")
+	assert.Equal(t, vmRunnerSelector(testOwner), svc.Spec.Selector)
+	assert.Equal(t, 31000, svc.Spec.Ports[0].TargetPort.IntValue())
+
+	agent = editStoredAgent(t, r, agent, withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
+	svc, err = r.client.CoreV1().Services("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, corev1.ClusterIPNone, svc.Spec.ClusterIP, "the container is reached through its headless Service again")
+	assert.Equal(t, BuildAgentService("my-agent", r.config, metav1.OwnerReference{}).Spec.Selector, svc.Spec.Selector)
 }
 
 // TEST_SCENARIO: the seed can go missing between the copy and the boot — a lost runner claim, a crash, an operator — and the runner then refuses to start the machine rather than boot the image's home. The controller does not wait on a boot that cannot succeed: it deletes the machine and goes back to copying, which is safe because the old volume keeps its labels until the switch, and it says why.
