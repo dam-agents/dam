@@ -63,7 +63,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 
 - [platform-topology](architecture/platform-topology.md) — the long-lived components, the protocols between them, and the K8s resource model; the [images](architecture/agent-images.md) agents run in.
 - [vm-runner](architecture/vm-runner.md) — `vm` hosts; [Mac](architecture/vm-host-runner.md), [image cache](architecture/vm-image-cache.md), [upgrades](architecture/vm-runner-upgrades.md), [runtime migration](architecture/vm-runtime-migration.md).
-- [agent-lifecycle](architecture/agent-lifecycle.md) — create → delete; [processes](architecture/agent-processes.md), [sessions](architecture/sessions.md).
+- [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; the [processes](architecture/agent-processes.md) inside; [sessions](architecture/sessions.md).
 - [schedules](architecture/schedules.md) — recurring and one-time work on an Agent: arming and firing occurrences, the Precheck that declines a fire before any model wakes, and the Session each fire opens.
 - [budgets](architecture/budgets.md) — per-user ceiling on concurrently reserved compute, enforced by the controller at the 0→1 scale transition; UserBudget CRs for privileged users.
 - [persistence](architecture/persistence.md) — the storage substrates (Postgres, custom resources, per-Agent PVC, the VM runner volume) and what survives each lifecycle event.
@@ -99,7 +99,4 @@ Each page is the authoritative, self-contained description of its subsystem.
 
 ## Strategy
 
-Higher-level documents that frame *what* Platform is trying to be, separate from how the current system is built:
-
-- [Multiplayer model](strategy/multi-player.md) — what's private to each user, what's shared via channels, and what's install-wide plumbing.
-- [Security model](strategy/security-model.md) — the three structural risks of running AI agents, and which ones Platform addresses today.
+[Strategy](strategy.md) — what Platform is trying to be, apart from how the current system is built.

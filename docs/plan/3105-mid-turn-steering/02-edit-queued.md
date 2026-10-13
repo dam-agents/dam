@@ -24,7 +24,8 @@ Apply `/typescript-engineering` (runtime, contract) and `/react-ui-engineering` 
    On a queued bubble (`chat-message.tsx`) add Edit and Delete actions (Carbon `Edit`, `TrashCan`).
    Edit swaps the bubble into an inline editor (reuse the composer's text area behavior: Enter saves, Escape cancels).
    Images in a queued prompt are kept; only text blocks are edited.
-   A `PROMPT_NOT_QUEUED` answer shows "Already sent — it can no longer be changed." and closes the editor.
+   A `PROMPT_NOT_QUEUED` answer shows "Already sent — it can no longer be changed."
+   and closes the editor.
 5. **Docs** — `agent-lifecycle.md` "Prompt delivery": a queued prompt can be changed or removed until it starts.
 
 ## Acceptance criteria

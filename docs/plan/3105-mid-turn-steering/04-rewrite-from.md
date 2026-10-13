@@ -51,7 +51,8 @@ Apply `/typescript-engineering` (runtime, contract) and `/react-ui-engineering` 
 ## Smoke test
 
 On a Claude Code agent: send "my name is Ann", then "what is my name?", then "my favourite colour is red".
-Edit the second message to "what is my favourite colour?" — the reply says it does not know (message 3 is gone).
+Edit the second message to "what is my favourite colour?"
+— the reply says it does not know (message 3 is gone).
 Reload: three messages are not there, the list has one session.
 
 ## Rework after review (operator)

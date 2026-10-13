@@ -46,15 +46,15 @@ Moved out of this feature: steering on Pi, Codex and Bob (#4474, under #4458), a
 
 Add to `packages/api-server-api/src/modules/acp/types.ts` (schemas + builders, like the existing `platformPromptAccepted*`):
 
-| Frame | Direction | Shape | Slice |
-|---|---|---|---|
-| `platform/queueChanged` | runtime → all engaged channels of the session (notification, ephemeral) | `{ sessionId, items: QueuedPrompt[] }` | 01 |
-| `session/load` result `_meta.platform.queue` | runtime → loader | `QueuedPrompt[]` | 01 |
-| `platform/updateQueued` | client → runtime (request) | `{ sessionId, promptId, prompt: PromptBlock[] }` → `{}` or error `data.code = "PROMPT_NOT_QUEUED"` | 02 |
-| `platform/removeQueued` | client → runtime (request) | `{ sessionId, promptId }` → `{}` or error `data.code = "PROMPT_NOT_QUEUED"` | 02 |
-| `platform/promptAccepted` | runtime → sender | adds `steered?: true` (then no `promptStarted` follows) | 03 |
-| user echo `_meta` | transcript | `{ steered: true }` on a steered echo; `queued` no longer written | 01, 03 |
-| `platform/rewriteFrom` | client → runtime (request) | `{ sessionId, mode: "rewind" \| "fork", upToMessageId: string \| null, prompt: PromptBlock[], promptId, title? }` → `{ sessionId: newId }`, answered before the new session's first frame | 04 |
+| Frame                                        | Direction                                                               | Shape                                                                                                                                                                                     | Slice  |
+| -------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `platform/queueChanged`                      | runtime → all engaged channels of the session (notification, ephemeral) | `{ sessionId, items: QueuedPrompt[] }`                                                                                                                                                    | 01     |
+| `session/load` result `_meta.platform.queue` | runtime → loader                                                        | `QueuedPrompt[]`                                                                                                                                                                          | 01     |
+| `platform/updateQueued`                      | client → runtime (request)                                              | `{ sessionId, promptId, prompt: PromptBlock[] }` → `{}` or error `data.code = "PROMPT_NOT_QUEUED"`                                                                                        | 02     |
+| `platform/removeQueued`                      | client → runtime (request)                                              | `{ sessionId, promptId }` → `{}` or error `data.code = "PROMPT_NOT_QUEUED"`                                                                                                               | 02     |
+| `platform/promptAccepted`                    | runtime → sender                                                        | adds `steered?: true` (then no `promptStarted` follows)                                                                                                                                   | 03     |
+| user echo `_meta`                            | transcript                                                              | `{ steered: true }` on a steered echo; `queued` no longer written                                                                                                                         | 01, 03 |
+| `platform/rewriteFrom`                       | client → runtime (request)                                              | `{ sessionId, mode: "rewind" \| "fork", upToMessageId: string \| null, prompt: PromptBlock[], promptId, title? }` → `{ sessionId: newId }`, answered before the new session's first frame | 04     |
 
 `QueuedPrompt = { promptId: string | null, blocks: PromptBlock[], queuedAt: string, editable: boolean }` — `editable` is true only for prompts with a `promptId` sent from the UI surface.
 
@@ -73,13 +73,13 @@ Add to `packages/api-server-api/src/modules/acp/types.ts` (schemas + builders, l
 
 ## Sub-issues
 
-| #  | Title | Scope | Depends on | Done |
-|----|-------|-------|------------|------|
-| 01 | [The queue is shared and truthful](01-shared-queue.md) | Broadcast + load snapshot of the queue, echo at start, UI renders queue state inline, Stop/disconnect stop ending queued bubbles | — | ✓ |
-| 02 | [Edit and delete a queued message](02-edit-queued.md) | `updateQueued`/`removeQueued`, inline Edit/Delete on a queued bubble | 01 | ✓ |
-| 03 | [Steer a mid-turn message](03-native-steer.md) | Runtime steers UI prompts via `_session/steering`, steered echo, composer wording | 01 | ✓ |
-| 04 | [Rewind or fork from an earlier message](04-rewrite-from.md) | `rewriteFrom` via harness fork; Rewind replaces in place, Fork keeps the original; actions chosen up front | 01 | ✓ |
-| 07 | [Chat UI bug bash on both Backends](07-chat-bug-bash.md) | Smoke the whole chat on the vm Backend (virtualization + sandbox runtime) and on container; reproduce and fix message-handling bugs | 01–04 | |
+| #   | Title                                                        | Scope                                                                                                                               | Depends on | Done |
+| --- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---- |
+| 01  | [The queue is shared and truthful](01-shared-queue.md)       | Broadcast + load snapshot of the queue, echo at start, UI renders queue state inline, Stop/disconnect stop ending queued bubbles    | —          | ✓    |
+| 02  | [Edit and delete a queued message](02-edit-queued.md)        | `updateQueued`/`removeQueued`, inline Edit/Delete on a queued bubble                                                                | 01         | ✓    |
+| 03  | [Steer a mid-turn message](03-native-steer.md)               | Runtime steers UI prompts via `_session/steering`, steered echo, composer wording                                                   | 01         | ✓    |
+| 04  | [Rewind or fork from an earlier message](04-rewrite-from.md) | `rewriteFrom` via harness fork; Rewind replaces in place, Fork keeps the original; actions chosen up front                          | 01         | ✓    |
+| 07  | [Chat UI bug bash on both Backends](07-chat-bug-bash.md)     | Smoke the whole chat on the vm Backend (virtualization + sandbox runtime) and on container; reproduce and fix message-handling bugs | 01–04      |      |
 
 ```mermaid
 graph LR
