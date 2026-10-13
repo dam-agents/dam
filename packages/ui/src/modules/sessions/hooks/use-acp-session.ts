@@ -26,6 +26,7 @@ import {
   hasStreamingAssistant,
 } from "../../acp/session-projection.js";
 import {
+  untilAgentOperable,
   useAgentRunState,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
@@ -158,17 +159,21 @@ export function useAcpSession(
       setSessionId(sid);
 
       let loaded = false;
-      if (agentOperable)
-        fetchSessionHistory(selectedAgent, sid)
-          .then((frames) => {
-            if (loaded || useStore.getState().sessionId !== sid) return;
-            const preview = framesToMessages(frames, {
-              tail: SESSION_HISTORY_TAIL,
-              turnInFlight: listedSessionRunning(selectedAgent, sid),
-            });
-            if (preview.length > 0) setMessages(preview);
-          })
-          .catch(() => {});
+      const operable = agentOperable
+        ? Promise.resolve()
+        : untilAgentOperable(selectedAgent);
+      operable
+        ?.then(() => (loaded ? null : fetchSessionHistory(selectedAgent, sid)))
+        .then((frames) => {
+          if (!frames || loaded || useStore.getState().sessionId !== sid)
+            return;
+          const preview = framesToMessages(frames, {
+            tail: SESSION_HISTORY_TAIL,
+            turnInFlight: listedSessionRunning(selectedAgent, sid),
+          });
+          if (preview.length > 0) setMessages(preview);
+        })
+        .catch(() => {});
 
       try {
         const fresh = await loadSessionHistory(sid).finally(() => {
