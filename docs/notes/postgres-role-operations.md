@@ -2,8 +2,8 @@
 
 Last verified: 2026-08-24
 
-Operational runbook for the three-role Postgres split decided in [ADR-071](../adrs/071-postgres-role-separation.md).
-The ADR carries the *why*; this note carries the *how* — the parts that move when the chart changes.
+Operational runbook for the three-role Postgres split.
+This note carries the *how* — the parts that move when the chart changes.
 
 The bundled Postgres ends up with three login roles:
 
