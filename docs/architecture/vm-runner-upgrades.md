@@ -43,6 +43,7 @@ The pod's libc does not: a release whose runner does not load in the pod can tak
 **The stager** is a DaemonSet on the runners' nodes, and the only writer of the release directory.
 It runs the chart's runner image and copies the release that image carries under the image reference, with the runtime it names once per runtime, each appearing whole or not at all, and keeps the newest few releases and the runtimes they name.
 Runner pods mount the directory read-only, so a guest that escapes into its runner cannot replace a release another owner's runner takes next.
+It runs as root with no capability: root owns every file it copies and prunes, and the image build gives root read access to each of them, and write and search access to each directory.
 A chart upgrade rolls the stager, which stages the new release.
 
 **The loader** is the runner pod's entrypoint.

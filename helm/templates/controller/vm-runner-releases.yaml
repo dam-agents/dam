@@ -17,9 +17,9 @@ built against another runtime than a pod's image brings its own.
 
 It runs wherever a runner can, on the runner's own nodeSelector and
 tolerations. A runner on a node it has not reached yet keeps its release until
-it does. It is root writing a directory root owns, and holds DAC_READ_SEARCH
-alone (DAC_OVERRIDE on OpenShift), to read guest-agent files whose mode keeps
-even their owner out.
+it does. It needs no capability: it is root writing a directory root owns,
+and the image build leaves root, the owner of every file it copies, able to
+read them.
 */}}
 {{- $name := printf "%s-vm-runner-releases" (include "platform.fullname" .) }}
 {{- $openshift := .Values.openshift.scc.anyuidCapNet.enabled }}
@@ -96,19 +96,12 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
-              {{- if $openshift }}
-              {{- /*
-              DAC_OVERRIDE reads what DAC_READ_SEARCH would, and is one the
-              runners' own SCC already grants; an SCC that admits a runner may
-              grant no DAC_READ_SEARCH. The label is set from inside the
-              container, which container_t may not do to a host directory, so
-              the stager runs as spc_t, as the image cache does.
-              */}}
-              add: ["DAC_OVERRIDE"]
-              {{- else }}
-              add: ["DAC_READ_SEARCH"]
-              {{- end }}
             {{- if $openshift }}
+            {{- /*
+            The label is set from inside the container, which container_t may
+            not do to a host directory, so the stager runs as spc_t, as the
+            image cache does.
+            */}}
             seLinuxOptions:
               type: spc_t
               level: s0

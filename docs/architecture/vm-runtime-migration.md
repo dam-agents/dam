@@ -73,7 +73,7 @@ An operator recovers from a retained volume as the runbook below says, and ends 
 Owners stay numeric, except that the uid and gid the install runs agent containers as become root's, the user a machine's harness runs as, so git and ssh accept what the agent owned; every other owner is kept.
 Extended attributes, ACLs, sockets, fifos and devices are not carried.
 What only the container used stays behind: the runtime's env file, which the platform pushes again when the machine's runtime first says hello, so no stale credentials land on the disk, and the container's link from `~/.cache` to pod-local scratch, so a machine keeps its caches in `HOME`.
-The machine's runtime waits for the env file for 15 seconds before it starts the harness without it, and a harness that started without its env is recycled when the push lands, which fails any call to it in flight.
+The machine's runtime waits for the env file for 15 seconds before it starts the harness without it, and a harness that started without its env is recycled when the push lands, which waits up to 10 seconds for a call in flight and then fails it.
 An Agent is ready only after the switch, so the push does not wait for that: it goes out once the migration is verified, which the guest's first answer makes it, through the Service that already routes to the machine.
 Only a verified machine gets it, because a machine whose home is not the copy is deleted, and the env holds the Agent's credentials.
 The api-server looks for verified Agents every 2 seconds, so the switch follows soon after.

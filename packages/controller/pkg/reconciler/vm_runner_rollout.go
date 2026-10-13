@@ -60,13 +60,22 @@ func runnerRolloutLimits(spec config.VMRunnerSpec) (int, time.Duration) {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner's machines are its processes, so every change to its pod reboots every machine the owner has. Applied as it is rendered, one runner image bump or one controller release that renders the pod differently would reboot every vm machine in the install at the same moment. So a runner is created at once, and left alone while what it would be rendered as is what it was, but a changed pod waits for a free place in the roll: at most `rollout.maxConcurrent` runners are mid-roll at once, and a runner stays mid-roll until its new pod is ready and every machine that was ready before the roll is ready again. The rendered spec is hashed onto the Deployment, because the stored spec carries the API server's defaults and never equals the rendered one. Where releases are staged on the node, a new runner image alone is not a changed pod (runnerRollSpec): the pod's loader takes it in place, and the pod rolls only for a release its loader can never take.
+// UNIT_BOUNDARY_DESCRIPTION: a reconcile reads the Deployment from the cache first. A cache that is behind sends a create for a Deployment that exists or an update from an old resourceVersion, and the API server refuses both, so the roll is then decided again from a live read. The rollout sweep, the one caller that never creates, reads live: it first runs before the caches sync, and a runner it cannot see is skipped until the next sweep.
 func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string, dep *appsv1.Deployment, create bool) error {
+	err := r.rollRunnerDeploymentFrom(ctx, owner, dep, create, create)
+	if r.runnerDeploys != nil && (k8serrors.IsConflict(err) || k8serrors.IsAlreadyExists(err)) {
+		err = r.rollRunnerDeploymentFrom(ctx, owner, dep, create, false)
+	}
+	return err
+}
+
+func (r *AgentReconciler) rollRunnerDeploymentFrom(ctx context.Context, owner string, dep *appsv1.Deployment, create, fromCache bool) error {
 	hash, err := runnerTemplateHash(runnerRollSpec(dep.Spec, r.config.VM.Runner.ReleaseHostPath != ""))
 	if err != nil {
 		return err
 	}
 	cli := r.client.AppsV1().Deployments(dep.Namespace)
-	existing, err := cli.Get(ctx, dep.Name, metav1.GetOptions{})
+	existing, err := r.runnerDeployment(ctx, dep.Name, fromCache)
 	if k8serrors.IsNotFound(err) {
 		if !create {
 			return nil
@@ -113,8 +122,12 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 		dep.Annotations[annRunnerAwaiting] = strings.Join(ready, ",")
 	}
 	dep.ResourceVersion, dep.Status = existing.ResourceVersion, existing.Status
-	if _, err := cli.Update(ctx, dep, metav1.UpdateOptions{}); err != nil {
+	updated, err := cli.Update(ctx, dep, metav1.UpdateOptions{})
+	if err != nil {
 		return err
+	}
+	if r.runnerDeploys != nil {
+		r.runnerDeploys.Mutation(updated)
 	}
 	if !slices.Contains(rolling, dep.Name) {
 		r.runnerRoll.rolling = append(rolling, dep.Name)
