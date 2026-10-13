@@ -17,7 +17,6 @@ import {
   fileChipOf,
   finalizeRunningReply,
   hasAgentContent,
-  hasStreamingAssistant,
 } from "../../acp/session-projection.js";
 import { buildPromptBlocks } from "../../acp/utils.js";
 import { untilAgentOperable } from "../../agents/api/queries.js";
@@ -215,16 +214,13 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         );
       let delivered = false;
 
-      const startingQueued = hasStreamingAssistant(
-        useStore.getState().messages,
-      );
       const uMsg: Message = {
         id: uId,
         role: "user",
         parts: userParts,
         streaming: false,
         at: new Date().toISOString(),
-        ...(startingQueued && { queued: true }),
+        queued: true,
       };
       const aMsg: Message = {
         id: aId,
@@ -232,7 +228,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         parts: [],
         streaming: true,
         promptId,
-        ...(startingQueued && { queued: true }),
+        queued: true,
         ...(hidden ? {} : { retryWith: retryPayload }),
       };
       if (retryOf !== undefined) {
@@ -352,7 +348,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
         const outcome = classifySendOutcome({
           connectionClosed: isConnectionClosed(err),
           delivered,
-          queued: bubble?.queued ?? startingQueued,
+          queued: bubble?.queued ?? false,
           queueFull: isQueueFullError(err),
           closeReason: connectionCloseReason(err),
           errorMessage: extractErrorMessage(err),

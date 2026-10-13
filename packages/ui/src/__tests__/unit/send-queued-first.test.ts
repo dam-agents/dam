@@ -8,14 +8,14 @@ import type { AcpUpdate } from "../../modules/acp/types.js";
 import type { Message } from "../../types.js";
 
 /**
- * TEST_OVERVIEW: A message sent while the agent is still answering.
+ * TEST_OVERVIEW: What happens to a message the user sends.
  *
- * The chat cannot know for half a second whether the runtime queues such a
- * message, steers it into the running turn, or starts it. Shown as an ordinary
- * message meanwhile, its reply placeholder took the working indicator from
- * the running reply and gave it back once the queue arrived. So it is shown
- * queued from the start, and the runtime's answer only takes that back when
- * the message was started or steered instead.
+ * Two steps: every message is queued, then sent when the runtime can take
+ * it. The chat cannot tell reliably whether the agent is busy, so it never
+ * guesses: a sent message joins the queue below the conversation at once,
+ * and moves into the conversation only when the runtime starts it or steers
+ * it into the running turn. While it waits, the running reply stays the last
+ * message and keeps the working indicator.
  */
 
 const PROMPT = "p2";
@@ -59,7 +59,7 @@ function user(messages: Message[]): Message | undefined {
   return messages.find((m) => m.id === PROMPT);
 }
 
-describe("a message sent while the agent answers", () => {
+describe("a sent message: queued, then sent", () => {
   /**
    * TEST_SCENARIO: The runtime confirms the queue. Nothing changes on screen:
    * the message stays queued, and its placeholder never takes the working
