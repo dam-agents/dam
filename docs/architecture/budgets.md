@@ -160,7 +160,7 @@ Each message gives the figures or the agents affected, and what to do.
 Lower levels show only in the web app.
 
 The api-server evaluates them unattended, on one replica at a time.
-Storage is read every five minutes from each owner's runner, through the same read-only usage read the create refusal uses; a runner it cannot read changes nothing.
+Storage is read every five minutes from each owner's runner, through the same read-only usage read the create refusal uses, ten runners at a time so a pass over many unreachable runners still ends well inside its interval; a runner it cannot read changes nothing.
 An out-of-memory kill is seen on the agents the controller marks with it, collected over a short window so one message names every affected agent.
 
 Messages are limited so an owner near a threshold is not messaged at every reading:

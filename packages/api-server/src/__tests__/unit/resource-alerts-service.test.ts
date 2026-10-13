@@ -75,6 +75,32 @@ describe("resource alerts service", () => {
     expect(notify.mock.calls[0]![1]).toContain("92% full (92.0 of 100.0 GiB)");
   });
 
+  // TEST_SCENARIO: Many owners' runners answer slowly, as unreachable ones do at the read timeout; the pass reads them a bounded number at a time, so it finishes in a fraction of its tick without opening a read to every runner at once, and still reads every owner.
+  it("reads owners' runners a bounded number at a time", async () => {
+    const owners = Array.from({ length: 25 }, (_, i) => `kc|${i}`);
+    let inFlight = 0;
+    let peak = 0;
+    const read: string[] = [];
+    const svc = createResourceAlertsService({
+      repo: memoryRepo(),
+      notify: async () => ({ sent: 1 }),
+      listStorageOwners: async () => owners,
+      readStorage: async (ownerSub) => {
+        peak = Math.max(peak, ++inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight--;
+        read.push(ownerSub);
+        return null;
+      },
+      listOwnerAgents: async () => [],
+      homeUrl: "http://ui",
+      log: () => {},
+      collectMs: 0,
+    });
+    await svc.evaluateStorage();
+    expect(peak).toBe(10);
+    expect(read.sort()).toEqual([...owners].sort());
+  });
   it("leaves an owner alone whose runner cannot be read", async () => {
     const { svc, notify } = service({ storage: null });
     await svc.evaluateStorage();
