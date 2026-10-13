@@ -77,6 +77,7 @@ import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
+import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import {
@@ -937,6 +938,7 @@ export function ChatView() {
                   agentId={selectedAgent}
                 />
                 <KitUpdateBar agentId={selectedAgent} />
+                <HomeVolumeBar agentId={selectedAgent} />
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}

@@ -38,6 +38,8 @@ function toTrpcError(error: FilesDomainError): TRPCError {
 }
 
 export const filesRouter = t.router({
+  volume: t.procedure.query(async ({ ctx }) => ctx.files.volume()),
+
   listDirs: t.procedure
     .input(fileListDirsInputSchema)
     .query(async ({ ctx, input }) => ({
