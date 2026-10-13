@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 ## Overview
 
@@ -112,9 +112,9 @@ flowchart LR
   The rules are then written with source `kit`, before anything else the apply queues, so the first session already runs under them.
   A kit rule on a tuple the preset already holds takes that row over, so switching presets later never drops it; a rule whose verdict contradicts the row already there fails the apply, which then deletes the Agent, because the kit's intent would otherwise be lost without a word.
   Both are a create-time seed, not a lock: the rules are the owner's from then on and are edited like any agent's ([security-and-credentials](security-and-credentials.md)).
-- **Kit Credential Injection** — optional `requireConnectionAddress: true`: the Agent's gateway injects a Connection's credential only into a request that names that Connection, and leaves every other request with the credential it carries ([connections](connections.md)).
-  It is for a kit whose agent runs tools, like Docker containers or nested agents, that call the same services with their own credentials or none.
-  A kit sets it whatever the creating user's feature flags say; agent settings show the same switch only behind one.
+- **Kit Credential Injection** — optional `requireConnectionAddress`: with it on, the Agent's gateway injects a Connection's credential only into a request that names that Connection, and leaves every other request with the credential it carries ([connections](connections.md)).
+  A new agent has it on by default, so a kit that names nothing gets that; `true` says so explicitly, and `false` turns it off for an agent whose tools need credentials added to requests that name no Connection.
+  Agent settings show the same switch, so the owner can change it later.
 - **Install Command** — optional `install.command`: shell the agent-runtime runs once in the new agent's workspace, queued as a `workspace-command` event right after create and before anything else the apply queues, so a bootstrap has run by the time the initialization session opens.
   The command runs as the kit wrote it: every harness image states the family it runs in `PLATFORM_HARNESS` (`claude-code`, `codex`, `pi`, `bob`), set as an image `ENV` so the harness, the install command and terminal shells all inherit it; a bootstrap reads that instead of being told, and detects the harness itself on an image that carries none.
   The command runs **inside the agent's own sandbox** — the same pod, grants and egress rules under which the harness already executes whatever the kit's `ONBOARDING.md` asks of it — so a kit from any catalog may declare one; what it can never do is widen the platform-enforced boundary (the invariant below).
