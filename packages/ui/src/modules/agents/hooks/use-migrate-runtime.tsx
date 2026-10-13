@@ -3,16 +3,12 @@ import { useCallback, useState } from "react";
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import { trpc } from "../../../trpc.js";
 import type { AgentView } from "../../../types.js";
 import { useMigrateRuntimeMutation } from "../api/mutations.js";
 import { agentsKeys, runtimeMigrationPlanOptions } from "../api/queries.js";
 import { MigrationPlanSummary } from "../components/migration-plan-summary.js";
 
-const AGENT_LISTS = [
-  agentsKeys.listWithChannels(),
-  trpc.agents.list.queryKey(),
-];
+const AGENT_LISTS = [agentsKeys.listWithChannels()];
 
 export function useMigrateRuntime() {
   const showConfirm = useStore((s) => s.showConfirm);
