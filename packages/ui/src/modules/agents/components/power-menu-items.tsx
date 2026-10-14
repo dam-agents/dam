@@ -18,10 +18,10 @@ export function FreeUpComputeItems({
 }) {
   const neverHibernates = agent.hibernationTimeoutMin === 0;
   const pauseUnavailableReason =
-    "This agent is set to never hibernate, so pausing it would wake itself. Change its idle timeout in Sandbox settings.";
+    "This agent is set to never pause on its own, so pausing it would wake it again. Change its idle timeout in Sandbox settings.";
   return (
     <>
-      <DropdownMenuLabel>Free up compute</DropdownMenuLabel>
+      <DropdownMenuLabel>Free up resources</DropdownMenuLabel>
       <DropdownMenuItem
         className="h-auto py-2"
         onSelect={onStop}

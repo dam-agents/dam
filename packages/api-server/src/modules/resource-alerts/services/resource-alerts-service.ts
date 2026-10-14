@@ -157,7 +157,7 @@ export function oomMessage(agents: readonly string[], homeUrl: string): string {
   const names = agents.length > 0 ? `: ${agents.join(", ")}` : "";
   return [
     `Your VM agents ran out of memory together, so every one that was running restarted${names}.`,
-    "Stop agents you are not using to free memory, or ask an admin for a larger memory pool.",
+    "Pause agents you aren't using to free memory, or ask an admin for a larger memory pool.",
     homeUrl,
   ].join(" ");
 }

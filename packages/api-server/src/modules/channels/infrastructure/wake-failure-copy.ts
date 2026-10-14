@@ -10,7 +10,11 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         "Try again; if this keeps happening, contact an admin."
       );
     case "over-budget":
-      return `This agent can't start right now: ${c.message}.`;
+      return (
+        "This agent can't start right now: its owner's agents are using all " +
+        "the room they have. It may start by itself once room frees up; if it " +
+        "doesn't, contact its owner."
+      );
     case "migrating":
       return "This agent is moving to the new runtime — try again in a few minutes.";
     case "migration-failed":
@@ -62,7 +66,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         case "RunnerOutOfMemory":
           return (
             "This agent restarted: its owner's agents ran out of memory " +
-            "together. Contact its owner — stopping agents that aren't in " +
+            "together. Contact its owner — pausing agents that aren't in " +
             "use frees memory."
           );
         default:

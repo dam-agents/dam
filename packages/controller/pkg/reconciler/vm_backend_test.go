@@ -1355,7 +1355,7 @@ func TestOrphanSweepKeepsARunnerThatStillHoldsAMachine(t *testing.T) {
 	require.NoError(t, err, "the runner's disk survives a sweep that raced a machine")
 }
 
-// TEST_SCENARIO: the runner refuses a machine for want of memory; the agent parks instead of spinning — the gateway scales to zero so the owner stops being charged for an agent that does not exist, and the status carries the runner's own explanation of what to free.
+// TEST_SCENARIO: the runner refuses a machine for want of memory; the agent parks instead of spinning — the gateway scales to zero so the owner stops being charged for an agent that does not exist, and the status says in the owner's terms that their VM agents' memory is full and what frees it, not the runner's own accounting.
 func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -1373,7 +1373,34 @@ func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	cond := readyCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
-	assert.Contains(t, cond.Message, "does not fit", "the runner's own explanation reaches the user")
+	assert.Contains(t, cond.Message, "Your VM agents' memory is full", "the user reads what is full")
+	assert.Contains(t, cond.Message, "pause one yourself", "the user reads what frees it")
+	assert.NotContains(t, cond.Message, "MiB", "the runner's accounting stays out of the user's copy")
+}
+
+// TEST_SCENARIO: a runner outside the cluster refuses a machine for memory; its limit is a share of its host's memory the controller never learns, so the refusal names no figures rather than quote the chart's limit.
+func TestAHostRunnerMemoryRefusalNamesNoFigures(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.HostAddress = "192.168.5.2"
+	for _, sec := range []*corev1.Secret{runnerSecret(), runnerTLSSecret()} {
+		sec.Name = strings.Replace(sec.Name, runnerSuffix(testOwner), "host", 1)
+		_, err := r.client.CoreV1().Secrets("test-agents").Create(ctx, sec, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateCreating,
+		Reason:  vmrunner.ReasonOutOfCapacity,
+		Message: "this machine's 1024 MiB does not fit",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Contains(t, cond.Message, "Your VM agents' memory is full, so this agent can't start yet.")
+	assert.NotContains(t, cond.Message, "GiB", "the host runner's share is unknown here")
 }
 
 // TEST_SCENARIO: a runner whose claim is full refuses a machine under MachineStorageFull, which is not the memory refusal. The Agent is not parked, since parking halts a machine, and the runner's explanation reaches the AgentPodReady condition the api-server classifies a wake by.
