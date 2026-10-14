@@ -85,7 +85,6 @@ export function SlackBindView() {
       pending={bind.isPending}
       onPick={pick}
       onAgentCreated={() => setError(null)}
-      whisper={copy.audience !== null}
     />
   );
 }

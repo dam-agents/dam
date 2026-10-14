@@ -121,9 +121,9 @@ function SlackChannelRow({
       subtitle={
         isSlackConversationGone(channel)
           ? "No longer available in Slack. Disconnect to remove it."
-          : `Ambient ${channel.ambient ? "on" : "off"} · Whispers ${
-              channel.whisper === false ? "off" : "on"
-            }`
+          : channel.ambient
+            ? "Ambient on"
+            : "Ambient off"
       }
       actionsLabel={`Slack channel ${label} actions`}
       menuTestId="slack-channel-menu"

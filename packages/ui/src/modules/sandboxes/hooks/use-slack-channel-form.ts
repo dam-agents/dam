@@ -16,7 +16,6 @@ const slackChannelFormSchema = z
   .object({
     channelId: z.string().trim().min(1, "Enter the Slack channel ID."),
     ambient: z.boolean(),
-    whisper: z.boolean(),
     customEmojiEnabled: z.boolean(),
     customEmoji: z.array(z.string()),
   })
@@ -50,7 +49,6 @@ export function useSlackChannelForm(
     defaultValues: {
       channelId: channel?.slackChannelId ?? "",
       ambient: channel?.ambient ?? false,
-      whisper: channel?.whisper ?? true,
       customEmojiEnabled: !!channel?.customEmoji,
       customEmoji:
         channel?.customEmoji ??
@@ -66,7 +64,7 @@ export function useSlackChannelForm(
       editing || isSlackDirectMessageId(values.channelId)
         ? null
         : { kind: "slack-channel" as const, name: null };
-    if (!(await bindConfirm.confirm(audience, "Connect", values.whisper)))
+    if (!(await bindConfirm.confirm(audience, "Connect", agent.whisper)))
       return;
     const connect = planSlackChannelSave({
       agentId: agent.id,

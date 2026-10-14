@@ -91,7 +91,7 @@ function harness(opts: { steer?: () => SteerOutcome; settleMs?: number } = {}) {
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
-    setSlackChannelWhisper: async () => {},
+    agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
       ignore: async () => true,

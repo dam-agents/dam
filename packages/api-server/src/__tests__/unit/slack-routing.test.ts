@@ -24,7 +24,6 @@ function entry(
     name,
     owner: "owner-sub",
     ambient: false,
-    whisper: true,
     isDefault: opts.isDefault ?? false,
   };
 }

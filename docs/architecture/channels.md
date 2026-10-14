@@ -267,12 +267,15 @@ The differences are transport, identity model, and where the bot token comes fro
   Every turn re-checks the consent it borrows: the Agent must still be connected where the whisper started, and where that is a channel the person must still be a member, asked of that workspace — in an enterprise organization a DM reply arrives tagged with the person's home workspace, which may not see the channel; otherwise the whisper ends.
   A whisper is private from the conversation, never from the Agent's owner: each runs as an ordinary session the owner can open, naming who whispered and what they wrote, and the copy says so.
   Being private is also what makes a whisper an easy place to hide a prompt injection, so it carries **no more trust** than the same message sent openly by someone who is not the owner — the same gates, the same permission mode — and the prompt tells the Agent as much, and never to hide a whisper from its owner.
-  Whispers are a **per-binding switch**, on by default on every connect path, because putting an Agent in a shared conversation already opens it to everyone there.
-  The switch exists because a whisper removes the peer check a shared conversation gives: someone can ask the Agent to change its instructions, memory or settings, and nobody else sees the request.
-  The Agent's owner flips it with `/platform whisper <agent> on|off` (the ambient command's authorization), from the binding's settings in the UI, or on the page an in-chat bind ends on, next to ambient.
-  Binding an Agent to a shared conversation warns, before the bind, that whispers will be on.
+  Whispers are a **per-Agent switch**, on by default, because putting an Agent in a shared conversation already opens it to everyone there.
+  It belongs to the Agent, not to a binding, because what a whisper puts at risk is the Agent itself: someone can ask it to change its instructions, memory or settings, nobody else in the conversation sees the request, and the change then holds everywhere the Agent is connected.
+  It is stored in the Agent's spec, and the controller does not act on it.
+  Only the Agent's owner flips it: with `/platform whisper <agent> on|off` from any conversation (the command looks the name up among the invoker's own Agents), in the Agent's channel settings in the UI, or on the page an in-chat bind ends on.
+  While whispers are on, the bind warning says so, before the bind.
   A connect that leaves it unset keeps the binding's current value.
   With whispers off, a whisper to that Agent is refused before anything is relayed, and an open whisper thread ends at its next message, the same re-check that ends one whose Agent was disconnected.
+  Both checks read the Agent's current setting, never a cached one.
+  A whisper turn already running when whispers go off finishes, and the whisperer is told right after it that the whisper has ended.
 - **Access control.** Channel membership is the only per-person gate, and Slack owns it — the platform never resolves who is typing; binding the channel is the consent that lends the Agent to the channel.
 - **Agent resolution.** A mention (channel, group DM) or a plain 1:1-DM message resolves to exactly one Agent: the one whose name opens the message, else the conversation's default.
   Name matching is over the Agents connected to that conversation only, whole-name and case-insensitive, longest name first — Agent names are not unique, so a name matching two of them resolves to the default rather than a guess.

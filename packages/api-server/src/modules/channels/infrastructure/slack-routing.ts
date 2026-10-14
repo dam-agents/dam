@@ -7,7 +7,6 @@ export interface RosterEntry {
   name: string;
   owner: string;
   ambient: boolean;
-  whisper: boolean;
   isDefault: boolean;
 }
 
@@ -27,6 +26,11 @@ export function stripLeadingMentions(text: string): string {
 
 function normalize(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export function sameAgentName(a: string, b: string): boolean {
+  const wanted = normalize(b);
+  return wanted.length > 0 && normalize(a) === wanted;
 }
 
 function startsWithName(body: string, name: string): boolean {

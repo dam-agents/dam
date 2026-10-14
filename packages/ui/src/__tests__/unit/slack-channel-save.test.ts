@@ -5,7 +5,6 @@ import { planSlackChannelSave } from "../../modules/sandboxes/lib/slack-channel-
 type Binding = {
   slackChannelId: string;
   ambient?: boolean;
-  whisper?: boolean;
   customEmoji?: string[] | null;
 };
 
@@ -20,7 +19,6 @@ const plan = (
   values: {
     channelId: string;
     ambient: boolean;
-    whisper?: boolean;
     customEmoji?: string[] | null;
   },
 ) => planSlackChannelSave({ agentId: AGENT, channel, values });
@@ -111,37 +109,5 @@ describe("planSlackChannelSave — custom emoji", () => {
     expect(
       plan(withNames, { channelId: "C-1", ambient: false, customEmoji: names }),
     ).toBeNull();
-  });
-});
-
-describe("planSlackChannelSave — whispers", () => {
-  it("leaves whispers at their default on a new connection that keeps them on", () => {
-    expect(
-      plan(undefined, { channelId: "C-NEW", ambient: false, whisper: true }),
-    ).toEqual({ id: AGENT, slackChannelId: "C-NEW" });
-  });
-
-  it("carries whispers off on a new connection", () => {
-    expect(
-      plan(undefined, { channelId: "C-NEW", ambient: false, whisper: false }),
-    ).toEqual({ id: AGENT, slackChannelId: "C-NEW", whisper: false });
-  });
-
-  it("writes only when the switch moves", () => {
-    expect(
-      plan(bound("C-1"), { channelId: "C-1", ambient: false, whisper: true }),
-    ).toBeNull();
-    expect(
-      plan(
-        { slackChannelId: "C-1", whisper: false },
-        { channelId: "C-1", ambient: false, whisper: false },
-      ),
-    ).toBeNull();
-    expect(
-      plan(
-        { slackChannelId: "C-1", whisper: false },
-        { channelId: "C-1", ambient: false, whisper: true },
-      ),
-    ).toEqual({ id: AGENT, slackChannelId: "C-1", whisper: true });
   });
 });

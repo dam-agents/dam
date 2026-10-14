@@ -24,6 +24,7 @@ import {
   slackThreadKey,
   ChannelType,
   SessionType,
+  type Agent,
   type AgentsService,
   type SlackConversationLabel,
 } from "api-server-api";
@@ -172,6 +173,7 @@ import {
   matchRosterName,
   orderAmbientReaders,
   parseWhisperRequest,
+  sameAgentName,
   peerTaggedBy,
   routeMention,
   senderReaches,
@@ -967,7 +969,6 @@ export interface SlackBindingInfo {
   owner: string;
   teamId: SlackWorkspace;
   ambient: boolean;
-  whisper?: boolean;
   isDefault: boolean;
 }
 
@@ -1318,11 +1319,7 @@ export type SlackWorkerDeps = {
     slackChannelId: string,
     ambient: boolean,
   ) => Promise<void>;
-  setSlackChannelWhisper: (
-    agentId: string,
-    slackChannelId: string,
-    whisper: boolean,
-  ) => Promise<void>;
+  agentsFor: (owner: string) => AgentsService;
   ignoredApps: SlackIgnoredApps;
   setSlackDefault: (
     agentId: string,
@@ -1353,7 +1350,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     channelRegistry,
     unbindSlackChannel,
     setSlackChannelAmbient,
-    setSlackChannelWhisper,
+    agentsFor,
     ignoredApps,
     setSlackDefault,
     brand,
@@ -2059,7 +2056,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         owner: binding.owner,
         teamId: binding.teamId,
         ambient: binding.ambient,
-        whisper: binding.whisper !== false,
         isDefault: binding.isDefault,
       })),
     );
@@ -3707,7 +3703,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return;
     }
     const target = picked.entry;
-    if (!target.whisper) {
+    const takes = await takesWhispers(target.instanceName);
+    if (takes === null) {
+      await ack({
+        text: `Couldn't check whether \`${target.name}\` takes whispers. Try again in a moment.`,
+      });
+      return;
+    }
+    if (!takes) {
       securityLog("warn", "channel.authz_deny", {
         category: "channel",
         actor: null,
@@ -3752,6 +3755,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           privateReply: true,
           command: usage,
         },
+      });
+      await noticeWhispersTurnedOff(target.instanceName, {
+        channel: command.channelId,
+        teamId: command.teamId,
+        whisperer: command.userId,
+        origin: command.channelId,
+        threadTs: undefined,
       });
       return;
     }
@@ -3899,10 +3909,25 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       await ended(`its agent is no longer connected to <#${session.origin}>`);
       return;
     }
-    if (!entry.whisper) {
+    const takes = await takesWhispers(entry.instanceName);
+    if (takes === null) {
+      await ephemeral(
+        event.channel,
+        slackUserId,
+        threadTs,
+        "Couldn't check whether this agent still takes whispers, so this message wasn't passed on. Send it again in a moment.",
+        event.teamId,
+      );
+      return;
+    }
+    if (!takes) {
       deny("whisper-off");
-      await ended(
-        `whispers to its agent are turned off in <#${session.origin}>`,
+      await ephemeral(
+        event.channel,
+        slackUserId,
+        threadTs,
+        whispersOffEndedText(session.origin),
+        event.teamId,
       );
       return;
     }
@@ -4368,9 +4393,49 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   function whisperOffText(name: string): string {
     return (
-      `Whispers to \`${name}\` are turned off in this conversation. ` +
+      `Whispers to \`${name}\` are turned off. ` +
       "Mention it in the conversation instead."
     );
+  }
+
+  function whispersOffEndedText(origin: string): string {
+    return (
+      "This whisper has ended: the agent's owner turned whispers off. " +
+      `To keep talking to it, mention it in <#${origin}>.`
+    );
+  }
+
+  async function noticeWhispersTurnedOff(
+    instanceName: string,
+    where: {
+      channel: string;
+      teamId: SlackWorkspace;
+      whisperer: string;
+      origin: string;
+      threadTs: string | undefined;
+    },
+  ) {
+    if ((await takesWhispers(instanceName)) !== false) return;
+    await ephemeral(
+      where.channel,
+      where.whisperer,
+      where.threadTs,
+      whispersOffEndedText(where.origin),
+      where.teamId,
+    );
+  }
+
+  async function takesWhispers(instanceName: string): Promise<boolean | null> {
+    try {
+      const agent = await agents().get(instanceName);
+      return agent !== null && agent.spec.whispersOff !== true;
+    } catch (err) {
+      getLogger().warn(
+        { agentId: instanceName, error: formatError(err) },
+        "slack.whisper.setting_unread",
+      );
+      return null;
+    }
   }
 
   async function handleWhisperSwitchCommand(
@@ -4379,46 +4444,90 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     command: SlackSlashCommand,
     ack: SlackAck,
   ) {
-    const subcommand = `whisper ${action}`;
-    const picked = await pickRosterAgent(
-      command.channelId,
-      nameArg,
-      (name) => `/${brandShort} whisper ${name} ${action}`,
-    );
-    if (!picked.ok) {
-      await ack({ text: picked.text });
-      return;
-    }
-    const binding = picked.entry;
-
-    const invoker = await authorizeBindingSwitch(
-      command,
-      ack,
-      binding,
-      subcommand,
-      "whispers",
-    );
-    if (!invoker) return;
-
-    const enable = action === "on";
-    if (enable === binding.whisper) {
+    const usage = `/${brandShort} whisper <agent> ${action}`;
+    const invoker = await identityLinks.resolve("slack", command.userId);
+    if (!invoker) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: null,
+        actorKind: "external",
+        surface: "slack",
+        decision: "deny",
+        reason: "unlinked",
+        detail: { slackUserId: command.userId, channelId: command.channelId },
+      });
       await ack({
-        text: `Whispers to \`${binding.name}\` are already ${action}.`,
+        text: `Link your account first: run \`/${brandShort} login\`, then \`${usage}\` again.`,
       });
       return;
     }
 
-    await setSlackChannelWhisper(
-      binding.instanceName,
-      command.channelId,
-      enable,
-    );
+    const owned = agentsFor(invoker);
+    let candidates: Agent[];
+    try {
+      const mine = await owned.list();
+      if (nameArg) {
+        candidates = mine.filter((agent) => sameAgentName(agent.name, nameArg));
+      } else {
+        const here = new Set(
+          (await resolveRoster(command.channelId)).map((e) => e.instanceName),
+        );
+        candidates = mine.filter((agent) => here.has(agent.id));
+      }
+    } catch (err) {
+      getLogger().warn(
+        { error: formatError(err) },
+        "slack.whisper.switch_lookup_failed",
+      );
+      await ack({
+        text: "Couldn't look up your agents. Try again in a moment.",
+      });
+      return;
+    }
+    if (candidates.length !== 1) {
+      const names = candidates.map((agent) => `\`${agent.name}\``).join(", ");
+      await ack({
+        text:
+          candidates.length > 1
+            ? `More than one of your agents matches: ${names}. Name one, or use the platform UI.`
+            : nameArg
+              ? `You have no agent called \`${nameArg}\`. Only an agent's owner can change its whispers.`
+              : `Name one of your agents: \`${usage}\`.`,
+      });
+      return;
+    }
+    const target = candidates[0]!;
+
+    const enable = action === "on";
+    if (enable === (target.spec.whispersOff !== true)) {
+      await ack({
+        text: `Whispers to \`${target.name}\` are already ${action}.`,
+      });
+      return;
+    }
+
+    let updated: Agent | null;
+    try {
+      updated = await owned.update({ id: target.id, whisper: enable });
+    } catch (err) {
+      getLogger().warn(
+        { agentId: target.id, error: formatError(err) },
+        "slack.whisper.switch_failed",
+      );
+      updated = null;
+    }
+    if (!updated) {
+      await ack({
+        text: `Couldn't change whispers for \`${target.name}\`. Try again in a moment.`,
+      });
+      return;
+    }
     securityLog("info", "channel.whisper_toggled", {
       category: "authz-list",
       actor: invoker,
       actorKind: "user",
       surface: "slack",
-      agentId: binding.instanceName,
+      agentId: target.id,
       result: "success",
       detail: {
         slackUserId: command.userId,
@@ -4429,8 +4538,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     await ack({
       text: enable
-        ? `Whispers turned on. Anyone here can now talk to \`${binding.name}\` privately with \`/${brandShort} whisper\`; nobody else in this conversation sees it, but the agent's owner can read every whisper. Run \`/${brandShort} whisper ${binding.name} off\` to turn them off again.`
-        : `Whispers turned off. \`${binding.name}\` no longer takes whispers from this conversation, and open whisper threads with it end at their next message.`,
+        ? `Whispers to \`${target.name}\` turned on. Anyone in a conversation it is connected to can talk to it privately with \`/${brandShort} whisper\`, and you can read every whisper in its sessions. Run \`/${brandShort} whisper ${target.name} off\` to turn them off again.`
+        : `Whispers to \`${target.name}\` turned off in every conversation it is connected to. Open whisper threads with it end at their next message.`,
     });
   }
 
@@ -4858,6 +4967,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           siblingRefs: () => steeredRefs,
           onSession,
         });
+        if (conversation.whisper)
+          await noticeWhispersTurnedOff(conversation.instanceName, {
+            channel: conversation.channelId,
+            teamId: conversation.teamId,
+            whisperer: conversation.whisper.whisperer,
+            origin: conversation.whisper.origin,
+            threadTs: conversation.threadTs,
+          });
       },
       steer: async (sessionId, batch) => {
         const outcome = await makeAcpClient(conversation.instanceName).steer(

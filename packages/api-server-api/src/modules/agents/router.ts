@@ -261,7 +261,6 @@ export const agentsRouter = t.router({
         input.slackChannelId,
         input.ambient,
         input.customEmoji,
-        input.whisper,
       );
       if (res.ok) return toAgentView(res.value);
       switch (res.error.type) {

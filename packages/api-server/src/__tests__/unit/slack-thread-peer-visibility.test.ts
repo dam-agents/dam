@@ -126,7 +126,7 @@ function harness(existingSessions: AcpSessionInfo[] = [], soleAgent = false) {
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
-    setSlackChannelWhisper: async () => {},
+    agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
       ignore: async () => true,

@@ -258,16 +258,6 @@ export function useSetSlackAmbient() {
   });
 }
 
-export function useSetSlackWhisper() {
-  return useMutation({
-    ...trpc.agents.connectSlack.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsList,
-      errorToast: "Couldn't change whispers",
-    },
-  });
-}
-
 export function useDisconnectSlack() {
   return useMutation({
     ...trpc.agents.disconnectSlack.mutationOptions(),
