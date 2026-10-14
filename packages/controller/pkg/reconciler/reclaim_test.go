@@ -31,7 +31,7 @@ func TestReclaimAdmitsBlockedStartByHibernatingIdlePeer(t *testing.T) {
 	peerU, err := agentToUnstructured(peer)
 	require.NoError(t, err)
 	r, _ := setupReconciler(t, agent, peerSS)
-	r.busyProbe = func(context.Context, string) bool { return false }
+	r.saidIdle = func(context.Context, string) bool { return true }
 	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(context.Background(), peerU, metav1.CreateOptions{})
 	require.NoError(t, err)
 
@@ -68,7 +68,7 @@ func TestReclaimedVictimStaysDownOnItsOwnNextReconcile(t *testing.T) {
 	peerU, err := agentToUnstructured(peer)
 	require.NoError(t, err)
 	r, _ := setupReconciler(t, agent, peerSS)
-	r.busyProbe = func(context.Context, string) bool { return false }
+	r.saidIdle = func(context.Context, string) bool { return true }
 	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(context.Background(), peerU, metav1.CreateOptions{})
 	require.NoError(t, err)
 
@@ -92,7 +92,7 @@ func TestReclaimHibernatesNothingWhenRoomIsInsufficient(t *testing.T) {
 	agent := ownedAgentCR("my-agent", "1", "512Mi")
 
 	r, _ := setupReconciler(t, agent, smallSS, bigSS)
-	r.busyProbe = func(context.Context, string) bool { return false }
+	r.saidIdle = func(context.Context, string) bool { return true }
 	for _, p := range []*apiv1.Agent{small, big} {
 		u, err := agentToUnstructured(p)
 		require.NoError(t, err)
@@ -116,7 +116,7 @@ func TestReclaimSkipsBusyPeer(t *testing.T) {
 	peerU, err := agentToUnstructured(peer)
 	require.NoError(t, err)
 	r, _ := setupReconciler(t, agent, peerSS)
-	r.busyProbe = func(context.Context, string) bool { return true }
+	r.saidIdle = func(context.Context, string) bool { return false }
 	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(context.Background(), peerU, metav1.CreateOptions{})
 	require.NoError(t, err)
 
@@ -161,7 +161,7 @@ func TestReclaimPrefersLongestIdlePeer(t *testing.T) {
 	agent := ownedAgentCR("my-agent", "250m", "512Mi")
 
 	r, _ := setupReconciler(t, agent, recentSS, staleSS)
-	r.busyProbe = func(context.Context, string) bool { return false }
+	r.saidIdle = func(context.Context, string) bool { return true }
 	for _, p := range []*apiv1.Agent{recent, stale} {
 		u, err := agentToUnstructured(p)
 		require.NoError(t, err)

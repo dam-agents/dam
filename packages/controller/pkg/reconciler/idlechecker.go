@@ -45,7 +45,8 @@ func (c *IdleChecker) WithMachineHalt(halt MachineHalt) *IdleChecker {
 func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *IdleChecker {
 	c := &IdleChecker{client: client, dynamic: dyn, config: cfg}
 	c.busyProbe = func(ctx context.Context, name string) bool {
-		return agentPodIsBusy(ctx, c.config.Namespace, name)
+		idle, answered := agentPodStatus(ctx, c.config.Namespace, name)
+		return answered && !idle
 	}
 	return c
 }
@@ -201,29 +202,30 @@ func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
 	return &metav1.Duration{Duration: d}
 }
 
-func agentPodIsBusy(ctx context.Context, namespace, agentName string) bool {
+// UNIT_BOUNDARY_DESCRIPTION: reports whether the agent's `/api/status` says `idle`, and whether it answered at all within three seconds. The idle checker and a runner roll take a silence as idle, so an agent that is down still hibernates and a stuck guest does not hold up the roll that would replace it; a reclaim does not, since a guest saturated by a long turn is silent too.
+func agentPodStatus(ctx context.Context, namespace, agentName string) (idle, answered bool) {
 	url := fmt.Sprintf("http://%s.%s.svc:8080/api/status", agentName, namespace)
 	client := &http.Client{Timeout: 3 * time.Second, Transport: telemetry.WrapTransport(nil)}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return false
+		return false, false
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return false
+		return false, false
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return false
+		return false, false
 	}
 	var status struct {
 		Idle bool `json:"idle"`
 	}
 	if err := json.Unmarshal(body, &status); err != nil {
-		return false
+		return false, false
 	}
-	return !status.Idle
+	return status.Idle, true
 }
 
 func (c *IdleChecker) hibernate(ctx context.Context, owner, name string) error {

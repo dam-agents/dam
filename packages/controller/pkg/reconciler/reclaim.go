@@ -75,7 +75,7 @@ func (r *AgentReconciler) pickReclaimCandidates(ctx context.Context, agent *apiv
 		if needCPU.Sign() <= 0 && needMem.Sign() <= 0 {
 			break
 		}
-		if c.vmMiB > 0 || r.busyProbe(ctx, c.name) {
+		if c.vmMiB > 0 || !r.saidIdle(ctx, c.name) {
 			continue
 		}
 		needCPU.Sub(c.cpu)
