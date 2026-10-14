@@ -54,7 +54,7 @@ if [ ! -f "$tree/.pinned" ]; then
   # is a few microseconds, and losing it nests a spare clone inside the tree,
   # which nothing reads and which goes when that tree is pruned.
   [ -e "$tree" ] || mv "$clone" "$tree"
-  ls -td "$store"/*/ | tail -n +4 | xargs rm -rf
+  ls -td "$store"/*/ | tail -n +4 | while IFS= read -r old; do rm -rf "$old"; done
 fi
 
 rm -rf .smolvm
