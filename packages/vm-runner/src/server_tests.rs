@@ -2664,3 +2664,19 @@ async fn a_stopped_machine_reports_no_cpu() {
     h.settle("m1").await;
     assert_eq!(cpu(&h), Some(0), "a stopped machine reports none");
 }
+
+// TEST_SCENARIO: a machine just booted reports itself warming up, which is what the controller counts it at the warm-up floor by, as admission here does; a machine that is not running reports no warm-up.
+#[tokio::test]
+async fn a_booted_machine_reports_its_warm_up() {
+    let h = Harness::new("warming");
+    h.server.put("m1", spec(true)).unwrap();
+    assert!(
+        h.settle("m1").await.warming,
+        "a machine just booted was not warming up"
+    );
+    h.server.put("m1", spec(false)).unwrap();
+    assert!(
+        !h.settle("m1").await.warming,
+        "a stopped machine reported a warm-up"
+    );
+}

@@ -1800,6 +1800,26 @@ func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
 	assert.True(t, queued, "and the agent is queued to try again when room frees")
 }
 
+// TEST_SCENARIO: a runner roll, a controller restart or a schedule retry brings an owner's agents back with no fresh activity bump, and the runner refuses the ones that do not fit while the others warm up. Nobody presses Start again for those, so the refusal is not remembered against the wake: the retry tick reconciles the agent under the same activity, and it starts once room has freed.
+func TestASweepWakeRefusedForMemoryStartsOnTheRetryTick(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Contains(t, r.ParkedForRetry(), "my-agent", "the refused wake is queued for the retry tick")
+
+	node.mu.Lock()
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped}
+	node.puts = nil
+	node.mu.Unlock()
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.True(t, node.spec("my-agent").Running, "the retry under the same activity asked the runner to start the machine")
+	assert.NotContains(t, r.ParkedForRetry(), "my-agent", "and the agent left the retry queue")
+}
+
 // TEST_SCENARIO: a runner that caches images on its own claim unpacks them itself, and tar restores each file's owner and then sets a mode on a file it no longer owns, keeping a setgid bit only with FSETID — so that runner holds CHOWN, FOWNER and FSETID. A runner on the node cache or on staged archives unpacks nothing, so it holds neither. Every runner holds DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.
 func TestOnlyARunnerThatUnpacksImagesCanChownThem(t *testing.T) {
 	capsFor := func(configure func(*config.VMRunnerSpec)) []corev1.Capability {
