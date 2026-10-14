@@ -669,3 +669,42 @@ fn a_resolve_that_fails_holds_nothing() {
     assert!(locked(&cache.memory).holds.is_empty());
     assert_eq!(scratch_trees(&cache), 0);
 }
+
+// TEST_SCENARIO: on a node cache a private image's boot asked the registry twice — an anonymous read, then the caller's credential — on every create, under the entry's gate, so a fleet of creates waited on each other's probes. A grant is remembered per digest and credential for the freshness window, as is an anonymous read that failed, so the next create of that image asks nothing. Another credential is still checked, and still refused when the registry refuses it.
+#[test]
+fn a_private_entry_granted_once_boots_again_without_asking() {
+    let f = Fixture::new("private-memo", PRIVATE_CRANE);
+    let cache = f.cache(|_| {});
+    let credential = [CREDENTIAL.to_string()];
+    let digest = resolved(cache.resolve(IMAGE, &credential)).digest;
+    let pinned = format!("quay.io/x/vm@{digest}");
+    let probes = f.calls("digest");
+    assert!(cache.resolve(&pinned, &credential).resolved.is_ok());
+    let first = f.calls("digest") - probes;
+    assert_eq!(first, 2, "an anonymous read, then the credential");
+    assert!(cache.resolve(&pinned, &credential).resolved.is_ok());
+    assert_eq!(
+        f.calls("digest") - probes,
+        first,
+        "a remembered grant asked the registry again"
+    );
+
+    assert!(cache
+        .resolve(&pinned, &[OTHER.to_string()])
+        .resolved
+        .is_err());
+    assert_eq!(
+        f.calls("digest") - probes,
+        first + 1,
+        "the known-private entry was read anonymously again"
+    );
+
+    let stale = f.cache(|c| c.ref_fresh = Duration::ZERO);
+    assert!(stale.resolve(&pinned, &credential).resolved.is_ok());
+    assert!(stale.resolve(&pinned, &credential).resolved.is_ok());
+    assert_eq!(
+        f.calls("digest") - probes,
+        first + 1 + 4,
+        "a lapsed grant was not asked again"
+    );
+}

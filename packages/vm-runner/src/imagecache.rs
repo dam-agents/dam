@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::cache::{
@@ -69,6 +70,8 @@ pub struct CacheConfig {
 struct Memory {
     refs: HashMap<String, (String, Instant)>,
     public: HashSet<String>,
+    private: HashMap<String, Instant>,
+    granted: HashMap<(String, String), Instant>,
     holds: HashMap<String, Instant>,
     entries: HashMap<PathBuf, Entry>,
     in_flight: u64,
@@ -355,7 +358,7 @@ impl ImageCache {
         Ok(Some((launch, origin)))
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a cache hit is a boot the registry never saw, so on a shared cache an entry that is not known to be public is served only after a registry still gives it to the caller where it came from: an anonymous read of one of its origin repositories first, which marks it public, then each of the caller's credentials against each origin in turn. The repository the caller names is never what is asked, because anyone can name any digest under a registry of their own that answers every read. A caller whose repository is not an origin and whose credentials read none is unproven rather than refused, and fetches the digest itself. It fails closed: a registry that cannot be reached refuses the boot. What is known to be public is kept in memory only, so after a restart every entry is checked once again.
+    // UNIT_BOUNDARY_DESCRIPTION: a cache hit is a boot the registry never saw, so on a shared cache an entry that is not known to be public is served only after a registry still gives it to the caller where it came from: an anonymous read of one of its origin repositories first, which marks it public, then each of the caller's credentials against each origin in turn. The repository the caller names is never what is asked, because anyone can name any digest under a registry of their own that answers every read. A caller whose repository is not an origin and whose credentials read none is unproven rather than refused, and fetches the digest itself. It fails closed: a registry that cannot be reached refuses the boot. What is known to be public is kept in memory only, so after a restart every entry is checked once again. A boot the registry granted is remembered per digest and credential, and an anonymous read that failed per digest, each for `ref_fresh`: a fleet of creates on one private image then asks the registry once, and a revoked pull secret still boots a tree it was granted for that long, as a tag boots what it last resolved to.
     fn may_reuse(
         &self,
         caller_repo: &str,
@@ -367,6 +370,25 @@ impl ImageCache {
         if !self.config.check_access || locked(&self.memory).public.contains(digest) {
             return Ok(Reuse::Granted);
         }
+        let fresh = self.config.ref_fresh;
+        let keys: Vec<(String, String)> = auths
+            .iter()
+            .map(|auth| {
+                (
+                    digest.to_string(),
+                    hex::encode(Sha256::digest(auth.as_bytes())),
+                )
+            })
+            .collect();
+        let known_private = {
+            let mut memory = locked(&self.memory);
+            memory.granted.retain(|_, at| at.elapsed() < fresh);
+            memory.private.retain(|_, at| at.elapsed() < fresh);
+            if keys.iter().any(|key| memory.granted.contains_key(key)) {
+                return Ok(Reuse::Granted);
+            }
+            memory.private.contains_key(digest)
+        };
         let crane = &self.config.crane;
         let lifetime = &self.config.lifetime;
         let named = format!("{caller_repo}@{digest}");
@@ -380,18 +402,25 @@ impl ImageCache {
             .iter()
             .map(|repo| format!("{repo}@{digest}"))
             .collect();
-        if origins
-            .iter()
-            .any(|at| fetch::readable(crane, at, ANONYMOUS, deadline, lifetime))
-        {
-            locked(&self.memory).public.insert(digest.to_string());
-            return Ok(Reuse::Granted);
+        if !known_private {
+            if origins
+                .iter()
+                .any(|at| fetch::readable(crane, at, ANONYMOUS, deadline, lifetime))
+            {
+                locked(&self.memory).public.insert(digest.to_string());
+                return Ok(Reuse::Granted);
+            }
+            locked(&self.memory)
+                .private
+                .insert(digest.to_string(), Instant::now());
         }
-        if auths.iter().any(|auth| {
+        if let Some(key) = auths.iter().zip(keys).find_map(|(auth, key)| {
             origins
                 .iter()
                 .any(|at| fetch::readable(crane, at, auth, deadline, lifetime))
+                .then_some(key)
         }) {
+            locked(&self.memory).granted.insert(key, Instant::now());
             return Ok(Reuse::Granted);
         }
         if origin.repositories.contains(caller_repo) {
@@ -712,6 +741,8 @@ impl ImageCache {
             let mut memory = locked(&self.memory);
             memory.entries.remove(&victim.path);
             memory.public.remove(&digest);
+            memory.private.remove(&digest);
+            memory.granted.retain(|(granted, _), _| *granted != digest);
         }
         drop(resolving);
         drop(aside);
