@@ -673,6 +673,41 @@ fn a_resolve_that_fails_holds_nothing() {
     assert_eq!(scratch_trees(&cache), 0);
 }
 
+// TEST_SCENARIO: a tree is no longer flushed as it is unpacked, because a flush of the whole filesystem stalls every machine disk on it. What keeps a host crash from serving a tree cut short is the boot its origin records: a tree recorded as unflushed in another boot is fetched again, never booted. On a host with a boot ID a fetch records its own boot, and the flush at close clears the record, so a clean reboot keeps the tree.
+#[test]
+fn a_tree_never_flushed_before_a_host_crash_is_fetched_again() {
+    let f = Fixture::new("unflushed", PUBLIC_CRANE);
+    let cache = f.cache(|_| {});
+    let digest = digest_of(&cache, IMAGE);
+    let entry = cache.digest_entry(&digest);
+    if let Some(boot) = boot_id() {
+        assert_eq!(read_origin(&entry).unwrap().unflushed, Some(boot));
+        cache.flush();
+        assert_eq!(
+            read_origin(&entry).unwrap().unflushed,
+            None,
+            "the flush left the tree unflushed"
+        );
+    }
+    let mut origin = read_origin(&entry).unwrap();
+    origin.unflushed = Some("a boot before the host crashed".into());
+    fs::write(
+        entry.join(ORIGIN_FILE),
+        serde_json::to_vec(&origin).unwrap(),
+    )
+    .unwrap();
+    let pinned = format!("quay.io/x/vm@{digest}");
+    let again = cache.resolve(&pinned, &[]);
+    assert!(
+        again.fetched.is_some_and(|f| f.ok),
+        "a tree a crash may have cut short was booted"
+    );
+    assert_ne!(
+        read_origin(&entry).unwrap().unflushed.as_deref(),
+        Some("a boot before the host crashed")
+    );
+}
+
 // TEST_SCENARIO: on a node cache a private image's boot asked the registry twice — an anonymous read, then the caller's credential — on every create, under the entry's gate, so a fleet of creates waited on each other's probes. A grant is remembered per digest and credential for the freshness window, as is an anonymous read that failed, so the next create of that image asks nothing. Another credential is still checked, and still refused when the registry refuses it.
 #[test]
 fn a_private_entry_granted_once_boots_again_without_asking() {

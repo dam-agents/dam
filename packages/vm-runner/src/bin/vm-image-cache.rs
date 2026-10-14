@@ -96,6 +96,7 @@ fn main() -> anyhow::Result<()> {
             let stop = lifetime.clone();
             let serving = tokio::spawn({
                 let socket = args.socket.clone();
+                let cache = cache.clone();
                 async move {
                     cacheapi::serve(&socket, cache, async move { stop.cancelled().await }).await
                 }
@@ -108,7 +109,9 @@ fn main() -> anyhow::Result<()> {
             }
             lifetime.cancel();
             let _ = preloading.await;
-            serving.await??;
+            let served = serving.await?;
+            tokio::task::spawn_blocking(move || cache.flush()).await?;
+            served?;
             anyhow::Ok(())
         })
 }
