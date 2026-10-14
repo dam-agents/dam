@@ -34,13 +34,13 @@ export function StatusBadge({
   working,
   keptWork = 0,
   vm,
-  refused = false,
+  refused,
   className,
 }: {
   state: AgentDisplayState;
   working?: boolean;
   vm: boolean;
-  refused?: boolean;
+  refused: boolean;
   keptWork?: number;
   className?: string;
 }) {

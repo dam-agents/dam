@@ -156,7 +156,7 @@ export function AgentRow({
               refused={isStartRefusal(agent.podTerminationCode)}
               className={cn(
                 SECOND_LINE_ITEM,
-                statusTone(display.state, working),
+                statusTone(display.state, working, keptWork),
               )}
             />
           </span>

@@ -15,7 +15,7 @@ const STATE_LABEL: Record<AgentDisplayState, string> = {
 export function badgeLabel(
   state: AgentDisplayState,
   vm: boolean,
-  refused = false,
+  refused: boolean,
 ): string {
   if (state === "error" && refused) return "Can't start";
   return vm && state === "over_budget"

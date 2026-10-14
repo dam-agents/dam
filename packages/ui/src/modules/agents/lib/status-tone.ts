@@ -13,11 +13,14 @@ export const STATUS_TONE = {
 export function statusTone(
   state: AgentDisplayState,
   working: boolean | undefined,
+  keptWork: number,
 ): string {
   if (state === "error") return STATUS_TONE.failed;
   if (state === "over_budget") return STATUS_TONE.waiting;
   if (state === "running") {
-    return working === false ? STATUS_TONE.idle : STATUS_TONE.working;
+    return working === false && keptWork === 0
+      ? STATUS_TONE.idle
+      : STATUS_TONE.working;
   }
   return "";
 }
