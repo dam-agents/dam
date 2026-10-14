@@ -64,6 +64,7 @@ type AgentReconciler struct {
 	runnerPodCache  corelisters.PodLister
 	vmRunning       sync.Map
 	vmLive          sync.Map
+	vmDiskGrows     sync.Map
 	vmPools         sync.Map
 	usageSecrets    sync.Map
 	resizeNotices   sync.Map
@@ -692,6 +693,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string) error 
 		return err
 	}
 	r.vmRunning.Delete(name)
+	r.vmDiskGrows.Delete(name)
 	r.notReadyPolls.Delete(name)
 	r.vmStartClocks.Delete(name)
 

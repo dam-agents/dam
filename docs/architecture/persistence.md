@@ -222,7 +222,8 @@ Toolchains the agent installed for itself are never touched; on the vm Backend o
 
 **The `vm` Backend has no PVCs, and one disk.** A pod attaches a volume per path, so a mount there is a size and a placement at once.
 A machine has a single disk, and it has no size of its own: it is sparse and may grow to the owner's whole storage pool — their [UserBudget](budgets.md#the-ceiling)'s `storage`, else the install's value — so what the owner's disks take is what they write, and an Agent's `storageSize`, a mount's size and a starter kit's storage size only containers.
-Only a runner that has reported the machine's disk is sent the pool, since an older runner would restart a running machine to grow it; until then the machine keeps the size the Agent's spec gives, and a new machine boots once at that size.
+A new machine is created at the pool, since every runner release creates a disk at the size it is asked for.
+An existing machine is sent the pool only once its runner has reported the machine's disk, since an older runner would restart a running machine to grow it; until then it keeps the size the Agent's spec gives.
 The path the disk holds apart from the root is `HOME`.
 That is not a field an Agent sets: `HOME` is fixed on both backends, and it is already the only path every template and starter kit in the chart persists.
 The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size at the machine's next start and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete.

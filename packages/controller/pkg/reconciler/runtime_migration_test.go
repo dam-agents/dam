@@ -285,7 +285,7 @@ func TestThePreflightMachineTakesTheTargetShapeAndReportsWhyItIsNotReady(t *test
 	c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationRequested)
 	assert.Equal(t, "pulling ghcr.io/myorg/agent:latest was denied", c.Message)
 	assert.Equal(t, "ghcr.io/myorg/agent:latest", node.spec("my-agent").Image)
-	assert.Equal(t, 25, node.spec("my-agent").StorageGiB)
+	assert.Equal(t, 100, node.spec("my-agent").StorageGiB, "a new machine is created at the owner's pool, which holds the 25Gi copied volume")
 	assert.Equal(t, int32(1), agentReplicas(t, r), "a preflight that cannot pass leaves the container serving")
 }
 
