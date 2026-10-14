@@ -15,6 +15,7 @@ The parts:
 
 The api-server prices each record when it arrives ([Prices](#prices)) and keeps the daily ledger ([Ledger](#ledger)).
 Before a metered call goes out, the ext_authz check refuses it when a spend limit or the user's Spend Ceiling is reached ([Limits](#limits), [Spend ceiling](#spend-ceiling), [Refusal](#refusal)), and at a limit the owner can continue ([Continue](#continue)).
+Work that nobody watches is held before it starts ([Unattended work](#unattended-work)).
 
 ```mermaid
 flowchart LR
@@ -223,8 +224,30 @@ So the gate counts each refusal in the day's rollup, under an unknown model, bec
 ## Continue
 
 At a refusal by a limit, the gate asks the owner on Home with a spend-limit approval, one for each reached limit, on the agent whose call was refused.
+A hold of unattended work asks in the same way ([Unattended work](#unattended-work)).
 A refusal by the ceiling asks nothing.
 There is one question per limit, day and extension count, so further refusals at the same level add no question.
 "Continue" is any allow verdict on it: it adds one extension for that day, so the effective limit is the amount times one plus the extensions, and the gate asks again at the new level.
 A deny stops the agent for the day: the limit stays reached, and the gate does not ask again that day.
 A question expires at the next UTC midnight, when the limit starts again, and no verdict on it writes an egress rule.
+Setting or removing a limit closes its pending question, so a new refusal asks again.
+
+## Unattended work
+
+At a limit or the ceiling, work that nobody watches does not start either, because each of its model calls would only be refused.
+A hold makes the gate's check for the work's payer, its root driver, before the work starts, on the Connection the work would run on: a schedule fire's and a spawn's own, and for a channel turn the agent's default session pair's.
+A channel thread whose session runs on another pair is still checked against the default pair; the gateway stops that session's calls at its own limits.
+
+- **Schedules:** a recurring fire is held, and its next occurrence runs as usual.
+  A one-time fire has no next occurrence, so it waits inside its delivery window: until the next UTC midnight, or until the owner sets or continues a limit ([schedules](schedules.md#one-time-schedules)).
+  An on-demand run is refused.
+- **Sub-agents:** a spawn is refused before anything is created ([invocations](invocations.md#spawning)).
+- **Channels:** a turn does not start, and the agent does not wake.
+  Whoever waits for an answer is told why none comes: a person gets a notice that only they see in Slack, or a chat post in Telegram; an app or another agent that mentioned the agent gets one notice in the thread; an agent that hands a turn over gets the reason as an error.
+  Ambient reading waits for nobody, so it skips the agent silently ([channels](channels.md)).
+
+At a soft limit, a hold also asks the owner whether to continue, so the owner is asked even when the call that reached the limit was the last one of its turn.
+The ceiling asks nothing.
+
+**The agent's view.** Through a platform tool, an agent reads the limits that count its calls, today's spend, what is left, the state of each limit, and when the day resets.
+It has no tool to set, clear or continue a limit.

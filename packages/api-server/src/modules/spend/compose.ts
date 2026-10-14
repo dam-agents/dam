@@ -31,7 +31,10 @@ import {
   type AgentOwners,
   type SpendIngest,
 } from "./services/spend-ingest.js";
-import { createSpendService } from "./services/spend-service.js";
+import {
+  createSpendService,
+  type SpendQuestionCloser,
+} from "./services/spend-service.js";
 
 function composePriceBook(
   priceOverrides: readonly OperatorPriceInput[],
@@ -58,7 +61,7 @@ export function composeSpendSystem(deps: {
   redis: Redis;
   priceOverrides: readonly OperatorPriceInput[];
   owners: AgentOwners;
-  questions: SpendQuestions;
+  questions: SpendQuestions & SpendQuestionCloser;
   connections: GrantedConnections;
   k8s: CustomObjectReader;
   defaultCeilingMicros: number | null;
@@ -102,6 +105,7 @@ export function composeSpendSystem(deps: {
         ceilings,
         totals,
         connections: deps.connections,
+        questions: deps.questions,
         ...owner,
       }),
   };

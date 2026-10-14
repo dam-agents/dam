@@ -87,6 +87,27 @@ export class ProviderMismatchError extends Error {
   }
 }
 
+export type SpendHoldReason = "limit" | "ceiling";
+
+export type SpendHoldGate = (input: {
+  agentId: string;
+  connectionId?: string;
+}) => Promise<SpendHoldReason | null>;
+
+const SPEND_HOLD_MESSAGE: Record<SpendHoldReason, string> = {
+  limit:
+    "the agent reached its spend limit for today, so no sub-agent starts until its owner approves more or the UTC day ends",
+  ceiling:
+    "the agent's owner reached the spend ceiling for today, so no sub-agent starts until the UTC day ends; the platform operator can raise the ceiling",
+};
+
+export class SpendLimitReachedError extends Error {
+  constructor(public readonly reason: SpendHoldReason) {
+    super(SPEND_HOLD_MESSAGE[reason]);
+    this.name = "SpendLimitReachedError";
+  }
+}
+
 export interface SpawnTarget {
   templateId?: string;
   image?: string;
@@ -139,6 +160,7 @@ export function createInvocationsService(deps: {
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   targetAdmission?: TargetAdmission;
+  spendHold?: SpendHoldGate;
   reaper: TargetReaper;
   reportGraceMs?: number;
   skills?: Pick<SkillsService, "applyEntries">;
@@ -222,6 +244,11 @@ export function createInvocationsService(deps: {
       if (rootId === null) {
         throw new UnresolvableDriverError(input.driverAgentId);
       }
+      const held = await deps.spendHold?.({
+        agentId: rootId,
+        ...(provider.kind === "inherited" && { connectionId: provider.id }),
+      });
+      if (held) throw new SpendLimitReachedError(held);
 
       const targetId = generateK8sName("agent");
       const ttlMs =

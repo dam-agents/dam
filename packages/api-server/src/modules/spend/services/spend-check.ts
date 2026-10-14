@@ -55,12 +55,34 @@ export type SpendVerdict =
       readonly questions: readonly SpendLimitQuestion[];
     };
 
+export interface SpendHold {
+  readonly reason: SpendBlock;
+  readonly ownerSub: string;
+  readonly questions: readonly SpendLimitQuestion[];
+}
+
 export interface SpendCheck {
   checkCall(call: CheckedCall): Promise<SpendVerdict>;
-  blockedFor(input: {
+  holdFor(input: {
     payer: string;
     connectionId?: string;
-  }): Promise<SpendBlock | null>;
+  }): Promise<SpendHold | null>;
+}
+
+function questionsOf(
+  limits: readonly LimitReading[],
+  day: string,
+): SpendLimitQuestion[] {
+  return limits
+    .filter((reading) => reading.state === "reached")
+    .map(({ limit }) => ({
+      limitId: limit.id,
+      scope: limit.scope,
+      unit: limit.unit,
+      day,
+      amountMicros: limit.amountMicros,
+      extensions: limit.extensions,
+    }));
 }
 
 export interface DayTotals {
@@ -193,26 +215,18 @@ export function createSpendCheck(deps: {
             softLimitText(deps.brandName),
             call.startedAt,
           ),
-          questions: readings.limits
-            .filter((reading) => reading.state === "reached")
-            .map(({ limit }) => ({
-              limitId: limit.id,
-              scope: limit.scope,
-              unit: limit.unit,
-              day,
-              amountMicros: limit.amountMicros,
-              extensions: limit.extensions,
-            })),
+          questions: questionsOf(readings.limits, day),
         }))
         .exhaustive();
     },
 
-    async blockedFor({ payer, connectionId }) {
+    async holdFor({ payer, connectionId }) {
       const ownerSub = await deps.owners.ownerOf(payer);
       if (!ownerSub) return null;
       const template = connectionId
         ? await deps.connections.templateOf(payer, connectionId)
         : null;
+      const day = utcDay(new Date());
       const readings = await read(
         {
           payer,
@@ -220,9 +234,15 @@ export function createSpendCheck(deps: {
           connectionId: template ? (connectionId ?? null) : null,
           unit: template ? unitOf(template) : "usd",
         },
-        utcDay(new Date()),
+        day,
       );
-      return blockOf(readings.ceiling, readings.limits);
+      const reason = blockOf(readings.ceiling, readings.limits);
+      if (reason === null) return null;
+      return {
+        reason,
+        ownerSub,
+        questions: reason === "limit" ? questionsOf(readings.limits, day) : [],
+      };
     },
   };
 }

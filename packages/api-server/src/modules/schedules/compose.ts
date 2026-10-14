@@ -22,8 +22,10 @@ import { createSchedulesService } from "./services/schedules-service.js";
 import {
   createSchedulerRunner,
   type SchedulerRunner,
+  type SpendHoldGate,
 } from "./services/scheduler-runner.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
+import { startResumeHeldOnceSaga } from "./sagas/resume-held-once.js";
 import type { FirePair } from "../harness-config/index.js";
 
 const ACTIVITY_STAMP_TTL_MS = 60 * 60 * 1000;
@@ -60,6 +62,7 @@ export interface ComposeSchedulesAtBootOpts {
   redis: Redis;
   onboardingPending?: (agentId: string) => Promise<boolean>;
   runtimeMigrating?: (agentId: string) => Promise<boolean>;
+  spendHold?: SpendHoldGate;
 }
 
 export function composeSchedulesAtBoot(
@@ -89,6 +92,7 @@ export function composeSchedulesAtBoot(
     ...(opts.validateSessionChoices
       ? { validateSessionChoices: opts.validateSessionChoices }
       : {}),
+    ...(opts.spendHold ? { spendHold: opts.spendHold } : {}),
     log,
   });
   const worker = startScheduleWorker({
@@ -96,6 +100,7 @@ export function composeSchedulesAtBoot(
     handler: runner.buildFireHandler(),
     log,
   });
+  const resumeHeldOnce = startResumeHeldOnceSaga({ repo, queue });
   return {
     repo,
     queue,
@@ -122,6 +127,7 @@ export function composeSchedulesAtBoot(
       if (pruned.length > 0) log(`pruned ${pruned.length} one-time schedules`);
     },
     async close() {
+      resumeHeldOnce.unsubscribe();
       await worker.close();
       await queue.close();
     },

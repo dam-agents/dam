@@ -8,6 +8,7 @@ import type {
   HarnessCatalog,
   RuntimeDeliveryService,
   SessionDirectoryService,
+  SpendStatus,
 } from "api-server-api";
 import type { Db } from "db";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
@@ -31,6 +32,7 @@ import {
   createTargetAdmission,
   type DelegationFramesPort,
   type ReadHarnessConfigSupport,
+  type SpendHoldGate,
 } from "../../modules/invocations/index.js";
 import {
   composeBudgetsModule,
@@ -98,6 +100,8 @@ export interface HarnessApiServerAppDeps {
   runtimeProgress: RuntimeProgressPort;
   satellitesBoot: SatellitesComposition;
   secretStore: SecretStore;
+  spendHold: SpendHoldGate;
+  spendStatusFor: (agentId: string, owner: string) => Promise<SpendStatus>;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -130,6 +134,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     readHarnessConfigSupport,
     runtimeProgress,
     secretStore,
+    spendHold,
+    spendStatusFor,
   } = deps;
 
   const defaultLimits = {
@@ -174,6 +180,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       wakeAgent,
       frames: deps.delegationFrames,
       readHarnessConfigSupport,
+      spendHold,
       targetAdmission: createTargetAdmission({
         readTemplateResources: async (templateId) =>
           (await templatesRepo.readSpec(templateId))?.spec.resources,
@@ -263,6 +270,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     carriesInspectorRole,
     agentImage: createAgentImageReader(k8sClient),
     agentTelemetry,
+    spendStatusFor,
     satelliteOps: deps.satellitesBoot.agentOps,
     satelliteWaitDeadlineMs: config.satelliteWaitDeadlineMs,
   });

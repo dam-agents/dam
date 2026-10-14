@@ -12,6 +12,24 @@ export interface ListApprovalsRepoOpts {
   status?: ApprovalStatus;
 }
 
+export async function deletePendingSpendQuestions(
+  db: Db,
+  ownerSub: string,
+  limitId: string,
+): Promise<Array<{ id: string; agentId: string }>> {
+  return db
+    .delete(pendingApprovals)
+    .where(
+      and(
+        eq(pendingApprovals.ownerSub, ownerSub),
+        eq(pendingApprovals.type, "spend_limit"),
+        eq(pendingApprovals.status, "pending"),
+        sql`${pendingApprovals.payload}->>'limitId' = ${limitId}`,
+      ),
+    )
+    .returning({ id: pendingApprovals.id, agentId: pendingApprovals.agentId });
+}
+
 export interface ApprovalsRepository {
   insertPending(row: NewPendingApproval): Promise<boolean>;
   insertIfAbsent(row: NewPendingApproval): Promise<boolean>;

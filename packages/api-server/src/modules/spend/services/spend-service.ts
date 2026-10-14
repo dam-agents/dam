@@ -9,6 +9,7 @@ import {
   type SpendTotal,
 } from "api-server-api";
 import { match } from "ts-pattern";
+import { emit, EventType } from "../../../events.js";
 import { utcDay } from "../domain/ledger.js";
 import {
   ceilingCounter,
@@ -25,12 +26,17 @@ import type { SpendLimits } from "../infrastructure/spend-limits.js";
 import type { SpendCeilings } from "../infrastructure/user-spend-ceilings.js";
 import type { DayTotals, GrantedConnections } from "./spend-check.js";
 
+export interface SpendQuestionCloser {
+  closePending(input: { ownerSub: string; limitId: string }): Promise<void>;
+}
+
 export function createSpendService(deps: {
   ledger: SpendLedger;
   limits: SpendLimits;
   ceilings: SpendCeilings;
   totals: DayTotals;
   connections: GrantedConnections;
+  questions: SpendQuestionCloser;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
   agentBinding: readonly string[] | "*";
@@ -158,16 +164,19 @@ export function createSpendService(deps: {
 
     async setLimit({ scope, amountMicros }) {
       if (scope.kind !== "owner") await requireOwned(scope.agentId);
-      if (amountMicros === null) {
-        await deps.limits.clear(deps.ownerSub, scope);
-        return;
+      const limitId =
+        amountMicros === null
+          ? await deps.limits.clear(deps.ownerSub, scope)
+          : await deps.limits.set({
+              ownerSub: deps.ownerSub,
+              scope,
+              unit: await limitUnit(scope),
+              amountMicros,
+            });
+      if (limitId !== null) {
+        await deps.questions.closePending({ ownerSub: deps.ownerSub, limitId });
       }
-      await deps.limits.set({
-        ownerSub: deps.ownerSub,
-        scope,
-        unit: await limitUnit(scope),
-        amountMicros,
-      });
+      emit({ type: EventType.SpendLimitsChanged, ownerSub: deps.ownerSub });
     },
   };
 }

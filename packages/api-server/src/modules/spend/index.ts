@@ -7,6 +7,7 @@ export {
 export type { SpendIngest } from "./services/spend-ingest.js";
 export type {
   SpendCheck,
+  SpendHold,
   SpendLimitQuestion,
   SpendVerdict,
 } from "./services/spend-check.js";

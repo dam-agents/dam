@@ -37,6 +37,7 @@ import {
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
+import { spendHoldUserCopy, type ChannelSpendHold } from "./spend-hold-copy.js";
 import {
   createConversationQueue,
   type ConversationQueue,
@@ -229,7 +230,9 @@ export function createTelegramMessageHandler(deps: {
   oauthConfig: KeycloakOAuthConfig;
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
+  spendHold?: ChannelSpendHold;
   uiBaseUrl: string;
+  brandName: string;
   botUsername: () => string | null;
   relay: (
     agentId: string,
@@ -370,6 +373,11 @@ export function createTelegramMessageHandler(deps: {
       }
       return;
     }
+    const held = await deps.spendHold?.(binding.agentId);
+    if (held) {
+      await thread.post(spendHoldUserCopy(held, "This agent", deps.brandName));
+      return;
+    }
     if (subscribe) await thread.subscribe();
     await deps.relay(binding.agentId, thread, message.text, message.author);
   };
@@ -451,6 +459,7 @@ export function createTelegramWorker(deps: {
   oauthConfig: KeycloakOAuthConfig;
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
+  spendHold?: ChannelSpendHold;
   uiBaseUrl: string;
   brandName: string;
   logLevel?: LogLevel;
@@ -689,7 +698,9 @@ export function createTelegramWorker(deps: {
           oauthConfig: deps.oauthConfig,
           pendingOAuthFlows: deps.pendingOAuthFlows,
           isTermsAccepted: deps.isTermsAccepted,
+          ...(deps.spendHold ? { spendHold: deps.spendHold } : {}),
           uiBaseUrl: deps.uiBaseUrl,
+          brandName,
           botUsername: () => username,
           relay: enqueueTelegramTurn,
         });

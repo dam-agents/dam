@@ -26,6 +26,7 @@ After this feature:
 - The operator sets a spend ceiling for each user.
   At the ceiling, the gateway refuses the next model call and asks nothing.
 - At a limit or the ceiling, schedules do not fire and sub-agents do not start.
+  Slack and Telegram turns do not start, and a person or an agent that waits for an answer gets a short notice.
   The chat send button stays, and the error text tells the user what to do.
 - The screens show the metered spend next to each limit, with a colour warning at 80%.
 
@@ -198,6 +199,27 @@ DAM counts high and marks the cost "estimated":
   Nothing else happens at 80%.
 - The agent can only read its limits, its spend and what is left.
 
+### Holds (slice 06, decided 2026-10-14)
+
+A hold stops work that has not started yet, before it reaches the gateway: a schedule fire, a sub-agent spawn, and a Slack or Telegram turn.
+The rule: when a person or an agent waits for an answer, DAM tells them why no answer comes; when nobody waits, DAM says nothing.
+
+- At a soft limit, a hold also asks the owner "continue?", in the same way as a refused model call.
+  So the owner gets the question also when the last call before the limit was the last call of a turn.
+  DAM asks at most one time for each limit, day and extension.
+  At the ceiling, a hold asks nothing.
+- A person mentions the agent or sends it a direct message: DAM does not wake the agent and starts no turn.
+  In Slack, the person gets a notice that only they see.
+  Telegram has no such notice, so DAM posts the notice in the chat.
+- Ambient mode: DAM skips the agent silently, for posts by persons and by bots.
+- A bot mentions the agent: DAM starts no turn and posts one notice in the thread, because a bot cannot see a notice for one person.
+- An agent hands a turn to an agent at a limit: the hand-off fails with the reason, as it does when the Terms are not accepted.
+- A recurring schedule records the hold, and its next occurrence runs as usual.
+  A one-time schedule has no next occurrence, so it waits inside its 24-hour delivery window: it fires at the next UTC midnight, or at once when the owner sets or continues a limit.
+- A channel turn checks the Connection of the agent's default session pair, the same lookup as a schedule fire (decided 2026-10-14).
+  Without a Connection, a hold would apply the dollar limits to an agent on the Claude subscription or Bob, whose calls the gateway lets pass.
+  A thread whose session runs on another pair is checked against the default pair; the gateway still stops that session's calls.
+
 ### Refusal (by API path, never by harness)
 
 One agent can run several harnesses, so the refusal shape follows the API path of each call.
@@ -312,7 +334,7 @@ Amounts are integers in micro-units of the unit, like the existing `cost_usd_mic
 | 03  | [Receive, price and store usage](./03-receive-and-store.md)                | AccessLogService, identity, Connection, periodic-to-final deltas, pricing at ingest, `spend_daily` and Redis counters, estimates, clean shutdown.   | 01, 02     | ✅   |
 | 04  | [Agent limit, refusal and "continue?"](./04-agent-limit-and-refusal.md)    | Limit tables, `spend` router, gate refusal per API path, `spend_limit` approval, continue, chat error rule, CLI `dam spend`, harness refusal tests. | 03         | ✅   |
 | 05  | [Ceiling, own limit, provider limits](./05-ceiling-and-provider-limits.md) | `UserSpendLimit` CRD and Helm default, own daily limit, Connection limits in their units, ceiling refusal, CLI flags.                               | 04         | ✅   |
-| 06  | [Stop unattended work, agent read](./06-unattended-work.md)                | Schedule holds, sub-agent spawn refusal, read-only MCP tool.                                                                                        | 04         |      |
+| 06  | [Stop unattended work, agent read](./06-unattended-work.md)                | Schedule holds, sub-agent spawn refusal, Slack and Telegram holds, owner question on a hold, read-only MCP tool.                                    | 04         | ✅   |
 | 07  | [Screens](./07-screens.md)                                                 | Limit fields and meters in the agent page, Providers section, Settings and Home; approval card text.                                                | 04, 05     |      |
 
 ```mermaid
@@ -347,7 +369,7 @@ Implement the slices in number order.
 
 Do not use "Budget" or "Ceiling" alone: they mean CPU and memory.
 Do not use "Usage" for money: it means activity analytics.
-"Hard Stop" means that a user stops an agent.
+"Sleep" means that a user stops an agent (it was "Hard Stop" before #4938).
 
 **Skills to apply:**
 
@@ -398,6 +420,8 @@ On the dev cluster, after all slices, with images rebuilt from the branch:
    With the limit reached, the fire is held with the reason "spend limit".
 7. From the limited agent, ask it to spawn a sub-agent.
    The spawn is refused with a clear reason.
+   Mention the limited agent in Slack.
+   You get a notice that only you see, and the agent does not wake.
 8. Apply a `UserSpendLimit` with a ceiling below today's spend.
    The next call is refused with the ceiling text, and no card appears.
 9. Ask the agent to read its spend limits with the MCP tool.

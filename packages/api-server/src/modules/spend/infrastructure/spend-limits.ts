@@ -23,8 +23,8 @@ export interface SpendLimits {
     scope: LimitScope;
     unit: SpendUnit;
     amountMicros: number;
-  }): Promise<void>;
-  clear(ownerSub: string, scope: LimitScope): Promise<void>;
+  }): Promise<string>;
+  clear(ownerSub: string, scope: LimitScope): Promise<string | null>;
   extend(limitId: string, day: string, extensions: number): Promise<void>;
   deleteForAgent(agentId: string): Promise<void>;
   listAgentIds(): Promise<string[]>;
@@ -117,7 +117,7 @@ export function createSpendLimits(db: Db): SpendLimits {
     },
 
     async set({ ownerSub, scope, unit, amountMicros }) {
-      await db
+      const [row] = await db
         .insert(spendLimits)
         .values({
           id: randomUUID(),
@@ -135,12 +135,14 @@ export function createSpendLimits(db: Db): SpendLimits {
             spendLimits.connectionId,
           ],
           set: { unit, amountMicros, updatedAt: sql`now()` },
-        });
+        })
+        .returning({ id: spendLimits.id });
+      return row!.id;
     },
 
     async clear(ownerSub, scope) {
       const { agentId, connectionId } = scopeColumns(scope);
-      await db
+      const [row] = await db
         .delete(spendLimits)
         .where(
           and(
@@ -153,7 +155,9 @@ export function createSpendLimits(db: Db): SpendLimits {
               ? isNull(spendLimits.connectionId)
               : eq(spendLimits.connectionId, connectionId),
           ),
-        );
+        )
+        .returning({ id: spendLimits.id });
+      return row?.id ?? null;
     },
 
     async extend(limitId, day, extensions) {

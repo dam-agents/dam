@@ -4,6 +4,7 @@ import type { SpendLimitPayload } from "api-server-api";
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
 import {
+  emit,
   events$,
   EventType,
   ofType,
@@ -42,6 +43,10 @@ export function startExtendOnContinueSaga(deps: {
             question.day,
             question.extensions + 1,
           );
+          emit({
+            type: EventType.SpendLimitsChanged,
+            ownerSub: event.ownerSub,
+          });
         } catch (err) {
           getLogger().error(
             { approvalId: event.approvalId, reason: formatError(err) },

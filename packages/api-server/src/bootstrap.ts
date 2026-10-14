@@ -245,8 +245,9 @@ import {
 } from "./modules/invocations/index.js";
 import {
   composeApprovalsSystem,
+  composeSpendLimitQuestions,
   createApprovalsCleanupHook,
-  createSpendQuestionReader,
+  createSpendQuestionStore,
   listPendingApprovalAgentIds,
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
@@ -1033,6 +1034,57 @@ export async function bootstrap() {
     ? createPostgresState({ url: chatSdkDatabaseUrl, keyPrefix: "chat-sdk" })
     : undefined;
 
+  const invocationDriverResolution = createDriverResolutionAdapter(db);
+
+  const spend = composeSpendSystem({
+    db,
+    redis: sharedRedis,
+    priceOverrides: config.spendPriceOverrides,
+    owners: {
+      ownerOf: async (agentId) =>
+        (await agentsRepo.resolveIdentity(agentId))?.owner ?? null,
+    },
+    questions: createSpendQuestionStore(db),
+    connections: createGrantedConnectionTemplates(db),
+    k8s: k8sClient,
+    defaultCeilingMicros: config.spendDefaultUserCeilingMicros,
+    brandName: config.brand.name,
+  });
+  await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
+    spend.ingest.settleUnrecordedCalls(),
+  );
+
+  const spendQuestions = composeSpendLimitQuestions(db);
+  const payerOf = async (agentId: string) =>
+    (await invocationDriverResolution.resolveRoot(agentId)) ?? agentId;
+  const spendHold = async ({
+    agentId,
+    connectionId,
+  }: {
+    agentId: string;
+    connectionId?: string;
+  }) => {
+    const payer = await payerOf(agentId);
+    const hold = await spend.check.holdFor({
+      payer,
+      ...(connectionId ? { connectionId } : {}),
+    });
+    if (hold === null) return null;
+    await spendQuestions.ask({
+      agentId: payer,
+      ownerSub: hold.ownerSub,
+      questions: hold.questions,
+    });
+    return hold.reason;
+  };
+  const channelSpendHold = async (agentId: string) => {
+    const provider = (await firePair(agentId, {}))?.provider;
+    return spendHold({
+      agentId,
+      ...(provider ? { connectionId: provider } : {}),
+    });
+  };
+
   const channelRegistry: ChannelRegistry = {
     resolveSlackBindings: async (slackChannelId) => {
       const rows = await findSlackBindingsByChannelId(db)(slackChannelId);
@@ -1106,6 +1158,7 @@ export async function bootstrap() {
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
+        spendHold: channelSpendHold,
         uiBaseUrl: config.uiBaseUrl,
         attendance: turnAttendance,
         workspaceFiles: (agentId) =>
@@ -1156,6 +1209,7 @@ export async function bootstrap() {
           },
           pendingOAuthFlows: pendingTelegramOAuthFlows,
           isTermsAccepted,
+          spendHold: channelSpendHold,
           uiBaseUrl: config.uiBaseUrl,
           brandName: config.brand.name,
           logLevel: config.logLevel,
@@ -1224,30 +1278,10 @@ export async function bootstrap() {
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
   const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
 
-  const invocationDriverResolution = createDriverResolutionAdapter(db);
-
   const wrapperFrameSender = createWrapperFrameSender({
     resolveWrapperUrl: (agentId) =>
       `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
   });
-
-  const spend = composeSpendSystem({
-    db,
-    redis: sharedRedis,
-    priceOverrides: config.spendPriceOverrides,
-    owners: {
-      ownerOf: async (agentId) =>
-        (await agentsRepo.resolveIdentity(agentId))?.owner ?? null,
-    },
-    questions: createSpendQuestionReader(db),
-    connections: createGrantedConnectionTemplates(db),
-    k8s: k8sClient,
-    defaultCeilingMicros: config.spendDefaultUserCeilingMicros,
-    brandName: config.brand.name,
-  });
-  await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
-    spend.ingest.settleUnrecordedCalls(),
-  );
 
   const objectStoreAgentUrl = config.objectStorageAgentEndpoint
     ? new URL(config.objectStorageAgentEndpoint)
@@ -1321,6 +1355,7 @@ export async function bootstrap() {
     runtimeMigrating: async (agentId) =>
       ((await agentsRepo.get(agentId))?.runtimeMigrationHold ?? "none") !==
       "none",
+    spendHold,
   });
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
@@ -1770,6 +1805,15 @@ export async function bootstrap() {
   const harnessDeps = {
     satellitesBoot,
     secretStore,
+    spendHold,
+    spendStatusFor: async (agentId: string, owner: string) =>
+      spend
+        .forOwner({
+          ownerSub: owner,
+          agentBinding: "*",
+          isAgentOwnedBy: (id, ownerSub) => agentsRepo.isOwnedBy(id, ownerSub),
+        })
+        .status({ agentId: await payerOf(agentId) }),
     agentStateCache,
     config,
     api,

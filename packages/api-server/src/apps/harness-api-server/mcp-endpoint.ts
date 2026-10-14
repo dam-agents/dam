@@ -11,7 +11,7 @@ import {
   sessionTitleSchema,
   type AppRouter,
 } from "agent-runtime-api";
-import type { SatelliteView } from "api-server-api";
+import type { SatelliteView, SpendStatus } from "api-server-api";
 import { skillSourcePathSchema } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -40,6 +40,7 @@ import { resolveAgent } from "./agent-auth.js";
 import type { DriverOps, DriverOpsFor } from "./driver-ops.js";
 import { registerSubAgentTools } from "./sub-agent-tools.js";
 import { rejectOversizedArrays } from "../../core/mcp-input-bounds.js";
+import { registerSpendLimitsTool } from "./spend-limits-tool.js";
 import { securityLog } from "../../core/security-log.js";
 import { emit, EventType } from "../../events.js";
 import {
@@ -162,6 +163,7 @@ export interface McpSessionDeps {
   caseStudyInspection: CaseStudyInspectionService | null;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
+  spendStatus?: () => Promise<SpendStatus>;
   sessionRef?: string;
   satellites?: {
     ops: SatelliteAgentOpsImpl;
@@ -1315,6 +1317,9 @@ export function createMcpSession(
     },
   );
 
+  if (deps.spendStatus)
+    registerSpendLimitsTool(server, { status: deps.spendStatus });
+
   registerSubAgentTools(server, {
     ops: deps.driverOps,
     awaits: deps.subAgentAwaits,
@@ -1398,6 +1403,7 @@ export interface MountMcpDeps {
   carriesInspectorRole: (sub: string) => Promise<boolean>;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
+  spendStatusFor?: (agentId: string, owner: string) => Promise<SpendStatus>;
   satelliteOps?: SatelliteAgentOpsImpl;
   satelliteWaitDeadlineMs?: number;
 }
@@ -1436,6 +1442,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       ),
     ]);
     const sessionRef = c.req.header(SESSION_REF_HEADER);
+    const { spendStatusFor } = deps;
     const session = createMcpSession(agentId, {
       owner: verified.owner,
       ...(sessionRef ? { sessionRef } : {}),
@@ -1474,6 +1481,9 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       caseStudyInspection: ownerIsInspector ? deps.caseStudyInspection : null,
       agentImage: deps.agentImage,
       agentTelemetry: deps.agentTelemetry,
+      ...(spendStatusFor
+        ? { spendStatus: () => spendStatusFor(agentId, verified.owner) }
+        : {}),
       satellites:
         deps.satelliteOps && grantedSatellites.length > 0
           ? {
