@@ -25,6 +25,7 @@ interface BudgetsServiceDeps {
   defaultCeiling: { cpu: string; memory: string };
   slotSize: { cpu: string; memory: string };
   readVmUsage(): Promise<RunnerUsage | null>;
+  isSlackUnlinked?(): Promise<boolean>;
 }
 
 export interface ResizeGate {
@@ -128,6 +129,8 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
         deps.readCeilingOverride(),
         deps.readVmUsage(),
       ]);
+      const slackUnlinked =
+        vmUsage && deps.isSlackUnlinked ? await deps.isSlackUnlinked() : false;
       const { cpuMilli, memoryBytes } = reservedBy(agents);
       const ceiling = { ...deps.defaultCeiling, ...override };
       return {
@@ -145,14 +148,17 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
         },
         ...(vmUsage
           ? {
-              vm: vmUsageView(
-                vmUsage,
-                new Set(
-                  agents
-                    .filter((a) => a.spec.backend?.type === "vm")
-                    .map((a) => a.id),
+              vm: {
+                ...vmUsageView(
+                  vmUsage,
+                  new Set(
+                    agents
+                      .filter((a) => a.spec.backend?.type === "vm")
+                      .map((a) => a.id),
+                  ),
                 ),
-              ),
+                ...(slackUnlinked ? { slackUnlinked } : {}),
+              },
             }
           : {}),
       };

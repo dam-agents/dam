@@ -1,5 +1,6 @@
 import type { PoolLevel } from "api-server-api";
 
+import { getBrand } from "../../../brand.js";
 import type { AgentView } from "../../../types.js";
 import { usePoolUsage } from "../api/queries.js";
 import { formatBytes, memoryBar, storageBar } from "../lib/pools.js";
@@ -15,8 +16,18 @@ const LEVEL_WORD: Record<PoolLevel, string> = {
 const percentOf = (used: number, limit: number) =>
   limit > 0 ? Math.min(100, Math.floor((used * 100) / limit)) : 0;
 
-const atCritical = (level: PoolLevel, advice: string, fact: string) =>
-  level === "critical" ? `${advice} ${fact}` : advice;
+const slackInvite = () =>
+  `Run /${getBrand().short} login in Slack to get alerts like this there.`;
+
+const atCritical = (
+  level: PoolLevel,
+  advice: string,
+  fact: string,
+  slackUnlinked = false,
+) =>
+  level === "critical"
+    ? [advice, fact, slackUnlinked && slackInvite()].filter(Boolean).join(" ")
+    : advice;
 
 export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
   const { data: usage, isPending } = usePoolUsage();
@@ -46,6 +57,7 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
           memory.level,
           "Pause agents to free up memory.",
           "Idle agents are paused automatically to make room.",
+          usage.slackUnlinked,
         )}
       />
       <PoolBar
@@ -58,6 +70,7 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
           storage.level,
           "Delete old agents, or ask them to clean up their disks.",
           "New VM agents can't be created until space is freed.",
+          usage.slackUnlinked,
         )}
       />
       {usage.cpu && <CpuRow cpu={usage.cpu} usage={usage} agents={vmAgents} />}
