@@ -1,4 +1,11 @@
-import { Box, Chemistry } from "@carbon/icons-react";
+import {
+  Box,
+  Chemistry,
+  Play,
+  Restart,
+  Tools,
+  TrashCan,
+} from "@carbon/icons-react";
 import { isStartRefusal } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
@@ -209,6 +216,7 @@ export function AgentRow({
         <span onClick={(e) => e.stopPropagation()}>
           <RowActionsMenu label="Agent actions">
             <DropdownMenuItem onSelect={onConfigure}>
+              <Tools />
               {configureLabel}
             </DropdownMenuItem>
             {onAddToChannel && (messengers.slack || messengers.telegram) && (
@@ -234,7 +242,7 @@ export function AgentRow({
             )}
             {display.powerAction === "start" ? (
               <DropdownMenuItem onSelect={onWake}>
-                {}
+                <Play />
                 {display.state === "over_budget" ? "Start" : "Wake"}
               </DropdownMenuItem>
             ) : (
@@ -242,6 +250,7 @@ export function AgentRow({
                 disabled={display.powerAction === null}
                 onSelect={onRestart}
               >
+                <Restart />
                 Restart
               </DropdownMenuItem>
             )}
@@ -251,6 +260,7 @@ export function AgentRow({
               disabled={deletePending}
               onSelect={onDelete}
             >
+              <TrashCan />
               Delete agent
             </DropdownMenuItem>
           </RowActionsMenu>

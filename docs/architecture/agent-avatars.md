@@ -18,8 +18,8 @@ A rename from the settings page stores the character the page shows, so the Agen
 ## State
 
 The eyes follow the [lifecycle](agent-lifecycle.md): open while the Agent runs, working or idle, and closed while it sleeps.
-A sleeping character keeps its colours, breathes, twitches now and then, and lets a small *z* drift up from its head.
-Each awake character makes its own small gesture on hover, and the waking screen of a container Agent loops the gesture while it starts ([lifecycle](agent-lifecycle.md#wake)).
+A sleeping character keeps its colours and twitches now and then.
+Each awake character makes its own small gesture on hover, a sleeping one breathes, and the waking screen of a container Agent loops the gesture while it starts ([lifecycle](agent-lifecycle.md#wake)).
 Motion stops when the user's system asks for reduced motion.
 
 ## One drawing everywhere

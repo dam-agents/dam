@@ -39,8 +39,7 @@ export function SleepMenuItem({
             )}
           </span>
           <span className="whitespace-normal text-xs text-muted-foreground">
-            Frees its resources. Wakes on any action (a schedule firing, a
-            message arriving, or you opening a chat)
+            (wakes up on next message or schedule)
           </span>
         </span>
         {neverSleeps && (
