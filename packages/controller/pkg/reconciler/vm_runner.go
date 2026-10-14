@@ -981,6 +981,7 @@ func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (str
 	}
 	return vmrunner.ReasonNotReady, starting
 }
+
 // UNIT_BOUNDARY_DESCRIPTION: a new owner's runner pod is created with its state claim, so the scheduler first sees the claim unbound while the volume is still provisioned — every first VM agent hit this and read as one that cannot start. Only a claim still unbound past the grace is a storage fault.
 func awaitingVolume(pod *corev1.Pod, msg string) bool {
 	return strings.Contains(msg, "unbound immediate PersistentVolumeClaims") && time.Since(pod.CreationTimestamp.Time) < runnerVolumeBindGrace
