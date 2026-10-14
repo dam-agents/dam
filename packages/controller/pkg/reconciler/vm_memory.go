@@ -254,22 +254,27 @@ func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *api
 	return err
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster admits against a share of its host's memory the controller never learns, so its refusal goes without figures rather than quote the chart's limit.
+// UNIT_BOUNDARY_DESCRIPTION: the refusal quotes the pool out of the same total Home shows, the runner's whole limit, and the room the start itself needs, since a start is refused for that need while the pool can still look half empty. A runner outside the cluster admits against a share of its host's memory the controller never learns, so its refusal goes without figures rather than quote the chart's limit.
 func (r *AgentReconciler) vmMemoryFullMessage(ctx context.Context, agent *apiv1.Agent, owner string) string {
 	const next = "It starts on its own once room frees up, since the platform pauses idle agents to make room when it can, or you can pause one yourself."
 	if r.config.VM.Runner.HostAddress != "" {
 		return "Your VM agents' memory is full, so this agent can't start yet. " + next
 	}
-	limit := r.runnerLimitMiB(ctx, owner) - r.config.VM.Runner.ReserveMiB
+	pool := r.runnerLimitMiB(ctx, owner)
+	limit := pool - r.config.VM.Runner.ReserveMiB
 	demand, err := r.ownerRunnerDemand(ctx, owner, agent, false)
+	var with runnerDemand
+	if err == nil {
+		with, err = r.ownerRunnerDemand(ctx, owner, agent, true)
+	}
 	if err != nil {
 		slog.Warn("reading the owner's VM memory for a refused start's message failed; the message goes without figures", "agent", agent.Name, "error", err)
 	}
 	if limit <= 0 || err != nil {
 		return "Your VM agents' memory is full, so this agent can't start yet. " + next
 	}
-	return fmt.Sprintf("Your VM agents' memory is full (%.1f of %.1f GiB in use), so this agent can't start yet. %s",
-		float64(min(demand.memoryMiB, limit))/1024, float64(limit)/1024, next)
+	return fmt.Sprintf("Your VM agents are using %.1f of %.1f GiB of memory, and starting this agent needs about %.1f GiB more, so it can't start yet. %s",
+		float64(min(demand.memoryMiB, limit))/1024, float64(pool)/1024, float64(max(with.memoryMiB-demand.memoryMiB, 0))/1024, next)
 }
 
 func (r *AgentReconciler) beginMemoryPass(owner string) bool {

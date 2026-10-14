@@ -35,7 +35,7 @@ export function useSyncRestartingAgents() {
       void showConfirm(
         `${reason[0].toUpperCase()}${reason.slice(1)}${reason.endsWith(".") ? "" : "."}`,
         "This agent could not start",
-        { confirmLabel: "Manage sandboxes" },
+        { confirmLabel: "Manage agents" },
       ).then((ok) => ok && setView("home"));
     }
   }, [data, dataUpdatedAt, setRestartingAgents, showConfirm, setView]);

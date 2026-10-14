@@ -72,7 +72,7 @@ Outcomes:
 - **Overflows** — the pair is scaled to zero (healing a gateway a prior admitted-then-failed reconcile may have left up) and the Agent is **parked**: `Ready=False, reason=OverBudget`, with the reserved/ceiling figures in the condition message.
   `Reconciled` stays true — the render succeeded; the start was refused.
 
-`OverBudget` has a second producer that is not a budget at all: a vm Agent whose machine the VM runner refuses for its own memory is parked the same way, carrying the controller's own sentence that the owner's VM agents' memory is full instead of the ceiling figures, and the owner's idle vm agents are hibernated to free the room under the same rules ([vm-memory](vm-memory.md)).
+`OverBudget` has a second producer that is not a budget at all: a vm Agent whose machine the VM runner refuses for its own memory is parked the same way, carrying the controller's own sentence — how much of the owner's VM memory is in use and how much more this start needs — instead of the ceiling figures, and the owner's idle vm agents are hibernated to free the room under the same rules ([vm-memory](vm-memory.md)).
 It is published on this condition because the effect on the user is identical — the agent did not start until room is freed — and because the retry that admits it is the same one.
 Consumers must therefore treat the condition message as the explanation, not derive one from the figures.
 
@@ -145,7 +145,7 @@ The exposure this adds is hibernation's existing blind spot (unreported work, wh
 
 ## Failure semantics upstream
 
-The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays and scheduler all inherit the same message — the figures plus "pause agents you aren't using to free room" for a ceiling, and for a refused machine the controller's own sentence that the owner's VM agents' memory is full, with the figures in GiB, when the controller can read them, rather than the runner's accounting.
+The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays and scheduler all inherit the same message — the figures plus "pause agents you aren't using to free room" for a ceiling, and for a refused machine the controller's own sentence, giving in GiB how much of the pool is in use out of the same total Home shows and how much more the start needs, when the controller can read them, rather than the runner's accounting.
 A channel reply goes to whoever wrote in, who need not be the owner, so it says only that the owner's agents are using all their room, never the owner's figures or what the owner should do.
 A scheduled fire on an over-budget agent records a failed fire; the trigger event is already durably committed to the outbox, so it redelivers once room frees, or expires when the schedule's next occurrence supersedes it.
 
