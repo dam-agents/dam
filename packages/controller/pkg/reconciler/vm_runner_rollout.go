@@ -325,6 +325,7 @@ func (r *AgentReconciler) runnerRollSettled(ctx context.Context, dep *appsv1.Dep
 		if !podReady {
 			if r.runnerPodStuckOnItsOwner(ctx, owner) {
 				slog.Error("vm runner: the rolled pod never started for a reason of its own owner, skipping it so the next runner may roll", "owner", owner, "runner", dep.Name, "timeout", timeout)
+				telemetry.RunnerRollSkipped(ctx)
 				return true, false
 			}
 			return false, true
@@ -355,7 +356,7 @@ func (r *AgentReconciler) runnerRollSettled(ctx context.Context, dep *appsv1.Dep
 	return true, false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a rolled pod that is not ready failed for its owner alone rather than for the release. A pod the scheduler cannot place, a pod still in ContainerCreating with no container ever started (its claim stuck on Multi-Attach), or an old pod that never finishes terminating (its node is gone) says nothing about the release, and holding the roll for it would keep every security fix from every other owner. A started container that is not ready, an image that does not pull, or no pod at all may be the release, so those still halt the roll.
+// UNIT_BOUNDARY_DESCRIPTION: whether a rolled pod that is not ready failed for its owner alone rather than for the release. Only states a release cannot plausibly cause count: a pod still creating its containers, none ever started, whose volume the attach controller refuses as Multi-Attach (the claim is still held on another node), or an old pod that never finishes terminating because its node is gone or not ready. A pod the scheduler cannot place halts the roll, because a release that adds a node selector or raises a request makes every runner unschedulable; so do a started container that is not ready, an image that does not pull, no pod at all, and a failed read.
 func (r *AgentReconciler) runnerPodStuckOnItsOwner(ctx context.Context, owner string) bool {
 	pods, err := r.runnerPods(ctx, owner, true)
 	if err != nil {
@@ -367,11 +368,9 @@ func (r *AgentReconciler) runnerPodStuckOnItsOwner(ctx context.Context, owner st
 	}
 	for _, pod := range pods {
 		if pod.DeletionTimestamp != nil {
-			continue
-		}
-		if slices.ContainsFunc(pod.Status.Conditions, func(c corev1.PodCondition) bool {
-			return c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse
-		}) {
+			if !r.nodeLost(ctx, pod.Spec.NodeName) {
+				return false
+			}
 			continue
 		}
 		for _, c := range slices.Concat(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses) {
@@ -379,9 +378,40 @@ func (r *AgentReconciler) runnerPodStuckOnItsOwner(ctx context.Context, owner st
 				return false
 			}
 		}
+		if pod.Spec.NodeName == "" || !r.multiAttachRefused(ctx, &pod) {
+			return false
+		}
 	}
 	return true
 }
+
+func (r *AgentReconciler) nodeLost(ctx context.Context, name string) bool {
+	if name == "" {
+		return false
+	}
+	nodes, err := r.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{FieldSelector: "metadata.name=" + name})
+	if err != nil {
+		slog.Warn("vm runner: reading the node of a runner pod stuck terminating", "node", name, "error", err)
+		return false
+	}
+	return !slices.ContainsFunc(nodes.Items, func(n corev1.Node) bool {
+		return n.Name == name && slices.ContainsFunc(n.Status.Conditions, func(c corev1.NodeCondition) bool {
+			return c.Type == corev1.NodeReady && c.Status == corev1.ConditionTrue
+		})
+	})
+}
+
+func (r *AgentReconciler) multiAttachRefused(ctx context.Context, pod *corev1.Pod) bool {
+	events, err := r.client.CoreV1().Events(pod.Namespace).List(ctx, metav1.ListOptions{FieldSelector: "involvedObject.name=" + pod.Name})
+	if err != nil {
+		slog.Warn("vm runner: reading the events of a runner pod stuck creating", "pod", pod.Name, "error", err)
+		return false
+	}
+	return slices.ContainsFunc(events.Items, func(e corev1.Event) bool {
+		return e.InvolvedObject.UID == pod.UID && e.Reason == "FailedAttachVolume" && strings.Contains(e.Message, "Multi-Attach")
+	})
+}
+
 func runnerPodRolledOut(dep *appsv1.Deployment) bool {
 	want := int32(1)
 	if dep.Spec.Replicas != nil {
