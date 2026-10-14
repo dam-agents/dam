@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -116,6 +116,7 @@ Unlike agent telemetry, this export does not ride a gateway: it arrives without 
 - The **controller** emits one trace per reconcile pass and background sweep (with spans for each Kubernetes API call), reconcile and workqueue metrics, and its structured logs with trace correlation.
   Its leader also exports the users' **VM pools** for operators, every half minute: what the runners' limits and claims commit against what the scheduler reserves for them and what the nodes able to run a runner hold (storage only where the storage driver publishes its capacity), how many runners sit at each level of their pool (ok, warning from 75%, critical from 90%), and how many runner pods wait on a resize the node deferred or refused.
   The identity rule below holds: none of these names a user, so a user whose pool goes critical, or whose runner the node cannot fit, is named by a Warning Event on their vm Agents, and the second also by their `RunnerCapacity` condition.
+  The critical Event comes once per crossing; a controller restart repeats it only once the cluster has dropped the earlier Event.
 - The **api-server** emits one trace per incoming request with a child span per tRPC procedure (and spans for outbound calls: agents, Keycloak, channels, Redis, the ext-authz gRPC checks), per-procedure duration/outcome metrics plus Node runtime health (event loop, GC, heap), the **usage counters** and **state gauges** below, and its structured logs with trace correlation.
   Health-probe requests are not traced.
   Background work gets [traces of its own](#background-traces).
@@ -207,7 +208,7 @@ Traces are sampled, so they explain individual fires and turns; counting stays w
 ### VM runner
 
 The [VM runner](vm-runner.md) is the one platform service that does not push.
-It stays off the mesh, and the collector admits only mesh identities, so a runner's export would be refused; the collector **scrapes** every runner instead.
+It stays off the mesh, and the collector's export port admits only mesh identities, so a runner's export would be refused; the collector **scrapes** every runner instead.
 A runner serves its metrics on a scrape port apart from the machine API: that API's token creates and deletes machines, and a scraper holding it could too, so the scrape carries no token and the runner's NetworkPolicy, admitting only the collector to that port, is its whole gate.
 The collector finds runners by listing pods in the agent namespace — read-only, granted only when the vm backend is on — and keeps only the port a runner names for metrics.
 The scrape exists when both the telemetry backend and the vm backend are enabled.
