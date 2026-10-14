@@ -21,6 +21,9 @@ export interface PacksSlice {
   completeOnboardingStep: (agentId: string, stepId: string) => void;
   dismissOnboarding: (agentId: string) => void;
   packSkillsByAgent: Map<string, Set<string>>;
+  starterKitMode: boolean;
+  selectedStarterKitId: string | null;
+  setSelectedStarterKitId: (id: string | null) => void;
   realPacks: boolean;
   setRealPacks: (on: boolean) => void;
 }
@@ -96,6 +99,9 @@ export const createPacksSlice: StateCreator<
       next.delete(agentId);
       return { onboardingByAgent: next };
     }),
+  starterKitMode: false,
+  selectedStarterKitId: null,
+  setSelectedStarterKitId: (id) => set({ selectedStarterKitId: id }),
   realPacks: true,
   setRealPacks: (on) => set({ realPacks: on }),
 });

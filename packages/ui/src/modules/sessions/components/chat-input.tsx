@@ -1,4 +1,11 @@
-import { Close, Document, SendAltFilled, Stop } from "@carbon/icons-react";
+import {
+  CheckmarkFilled,
+  Close,
+  Cube,
+  Document,
+  SendAltFilled,
+  Stop,
+} from "@carbon/icons-react";
 import {
   type KeyboardEvent,
   type RefObject,
@@ -8,8 +15,14 @@ import {
   useState,
 } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import { Textarea } from "@/components/ui/textarea";
 import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
@@ -26,8 +39,137 @@ import { PlusMenuPopover } from "./plus-menu-popover.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
+import type { PackIngredientKind, PackSlot } from "../../packs/data/packs.js";
+import { PACKS, REAL_PACKS } from "../../packs/data/packs.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import type { RotatingPlaceholder } from "../../schedules/components/schedule-chat-discovery.js";
+
+interface KitStep {
+  id: string;
+  label: string;
+  done: boolean;
+  section: SandboxSection;
+}
+
+function slotToSection(kind: PackIngredientKind): SandboxSection {
+  switch (kind) {
+    case "connection":
+      return "connections";
+    case "channel":
+      return "channels";
+    case "schedule":
+      return "schedules";
+    case "skill":
+      return "skills";
+    default:
+      return "setup";
+  }
+}
+
+function slotToLabel(slot: PackSlot): string {
+  switch (slot.kind) {
+    case "connection":
+      return `Connect ${slot.label}`;
+    case "channel":
+      return `Add ${slot.label} channel`;
+    case "knowledge-base":
+      return `Add ${slot.label}`;
+    case "schedule":
+      return `Set up ${slot.label}`;
+    case "skill":
+      return `Add ${slot.label}`;
+    default:
+      return `Set up ${slot.label}`;
+  }
+}
+
+function buildKitSteps(required: PackSlot[]): KitStep[] {
+  return required.map((slot) => ({
+    id: `${slot.kind}-${slot.label}`,
+    label: slotToLabel(slot),
+    done: false,
+    section: slotToSection(slot.kind),
+  }));
+}
+
+function StarterKitStrip({
+  onConfigureSection,
+}: {
+  onConfigureSection?: (section: SandboxSection) => void;
+}) {
+  const kitMode = useStore((s) => s.starterKitMode);
+  const selectedKitId = useStore((s) => s.selectedStarterKitId);
+  const realPacks = useStore((s) => s.realPacks);
+
+  if (!kitMode) return null;
+
+  const allPacks = realPacks ? REAL_PACKS : PACKS;
+  const kitsWithSetup = allPacks.filter((p) => p.required.length > 0);
+  const pack =
+    kitsWithSetup.find((p) => p.id === selectedKitId) ?? kitsWithSetup[0];
+  if (!pack) return null;
+
+  const steps = buildKitSteps(pack.required);
+  const done = steps.filter((s) => s.done).length;
+  const remaining = steps.length - done;
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-preset-border/30 bg-preset-light/30 px-3 py-2">
+      <Cube size={16} className="shrink-0 text-preset" />
+      <span className="min-w-0 truncate text-sm font-medium text-foreground">
+        {pack.name}
+      </span>
+      <span className="shrink-0 text-sm text-muted-foreground">
+        &mdash; {remaining} to set up
+      </span>
+      <HoverCard openDelay={150} closeDelay={300}>
+        <HoverCardTrigger asChild>
+          <Badge
+            variant="preset"
+            className="ml-auto shrink-0 cursor-default gap-1"
+          >
+            {remaining} remaining
+          </Badge>
+        </HoverCardTrigger>
+        <HoverCardContent side="top" align="end" className="w-72 p-0">
+          <div className="px-4 pt-3.5 pb-3">
+            <p className="text-sm font-semibold text-foreground">{pack.name}</p>
+            <p className="text-sm text-muted-foreground">
+              {done} of {steps.length} done
+            </p>
+          </div>
+          <ul className="border-t border-border py-1.5">
+            {steps.map((step) => (
+              <li key={step.id}>
+                <button
+                  type="button"
+                  onClick={() => onConfigureSection?.(step.section)}
+                  className="flex w-full items-center gap-3 rounded-md px-4 py-1.5 transition-colors hover:bg-muted/40"
+                >
+                  <span className="flex size-4 shrink-0 items-center justify-center">
+                    {step.done ? (
+                      <CheckmarkFilled size={16} className="text-success" />
+                    ) : (
+                      <span className="size-4 rounded-full border-2 border-border" />
+                    )}
+                  </span>
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-left text-sm",
+                      step.done ? "text-muted-foreground" : "text-foreground",
+                    )}
+                  >
+                    {step.label}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </HoverCardContent>
+      </HoverCard>
+    </div>
+  );
+}
 
 export interface ChatInputProps {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -209,6 +351,7 @@ export function ChatInput({
             e.target.value = "";
           }}
         />
+        <StarterKitStrip onConfigureSection={onConfigureSection} />
         <div
           className={`flex flex-col rounded-xl border bg-background transition-colors focus-within:border-primary ${dragOver ? "border-primary bg-accent-light/30" : "border-border"}`}
         >

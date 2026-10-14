@@ -42,6 +42,7 @@ export type Route =
   | { view: "sidebar-specs" }
   | { view: "nav-flows" }
   | { view: "placeholder-texts" }
+  | { view: "handoff-sheet" }
   | { view: "flow-screen"; flowId: string; screen: number }
   | { view: "agent-landing"; agentId: string };
 
@@ -117,6 +118,7 @@ export function parseRoute(path: string): Route {
   if (path === "/sidebar-specs") return { view: "sidebar-specs" };
   if (path === "/nav-flows") return { view: "nav-flows" };
   if (path === "/placeholder-texts") return { view: "placeholder-texts" };
+  if (path === "/handoff-sheet") return { view: "handoff-sheet" };
   const flowScreenMatch = path.match(/^\/flow-screen\/([^/]+)\/(\d+)$/);
   if (flowScreenMatch) {
     return {
@@ -196,6 +198,8 @@ export function routeToPath(route: Route): string {
       return "/nav-flows";
     case "placeholder-texts":
       return "/placeholder-texts";
+    case "handoff-sheet":
+      return "/handoff-sheet";
     case "flow-screen":
       return `/flow-screen/${encodeURIComponent(route.flowId)}/${route.screen}`;
     case "agent-landing":

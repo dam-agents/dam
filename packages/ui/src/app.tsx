@@ -7,6 +7,7 @@ import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
 import { ComponentShowcase } from "./mock/data/component-showcase.js";
+import { HandoffSheet } from "./mock/handoff-sheet.js";
 import { FlowScreen, NavFlows } from "./mock/nav-flows.js";
 import { PlaceholderTexts } from "./mock/placeholder-texts.js";
 import { SidebarSpecs } from "./mock/sidebar-specs.js";
@@ -62,6 +63,13 @@ export default function App() {
   if (view === "nav-flows") return <NavFlows />;
   if (view === "placeholder-texts") return <PlaceholderTexts />;
   if (view === "flow-screen") return <FlowScreen />;
+  if (view === "handoff-sheet")
+    return (
+      <>
+        <HandoffSheet />
+        {isMock && <MockStateBar />}
+      </>
+    );
   return (
     <>
       <MainApp />

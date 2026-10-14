@@ -9,7 +9,6 @@ import {
 import type { ConnectionTemplateView } from "api-server-api";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CARD_HOVER, CARD_SURFACE } from "@/components/ui/card";
 import {
@@ -29,6 +28,7 @@ import { emitToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 import { schedules as mockSchedules } from "../../../mock/data/schedules.js";
+import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
 import { useSetAgentConnections } from "../../agents/api/mutations.js";
 import { useAgentConnections } from "../../agents/api/queries.js";
@@ -39,6 +39,8 @@ import { ConnectionMaintenanceDialog } from "../../connections/components/connec
 import { useCatalogGroups } from "../../connections/hooks/use-catalog-groups.js";
 import { useConnectionMaintenance } from "../../connections/hooks/use-connection-maintenance.js";
 import type { CatalogProviderGroup } from "../../connections/lib/catalog-providers.js";
+import type { PackIngredientKind } from "../../packs/data/packs.js";
+import { PACKS, REAL_PACKS } from "../../packs/data/packs.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { SkillsSurface } from "../../sandboxes/components/skills/skills-surface.js";
 import { useSkillsDerivations } from "../../sandboxes/hooks/use-skills-derivations.js";
@@ -236,6 +238,40 @@ export function PlusMenuPopover({
   );
 }
 
+function useKitTags(): {
+  skills?: "included" | "setup";
+  schedules?: "included" | "setup";
+  connections?: "included" | "setup";
+} {
+  const kitMode = useStore((s) => s.starterKitMode);
+  const selectedId = useStore((s) => s.selectedStarterKitId);
+  const realPacks = useStore((s) => s.realPacks);
+
+  return useMemo(() => {
+    if (!kitMode) return {};
+    const allPacks = realPacks ? REAL_PACKS : PACKS;
+    const pack = allPacks.find((p) => p.id === selectedId);
+    if (!pack) return {};
+
+    const reqKinds = new Set(pack.required.map((s) => s.kind));
+    const inclKinds = new Set(pack.included.map((s) => s.kind));
+
+    const tag = (
+      ...kinds: PackIngredientKind[]
+    ): "included" | "setup" | undefined => {
+      if (kinds.some((k) => reqKinds.has(k))) return "setup";
+      if (kinds.some((k) => inclKinds.has(k))) return "included";
+      return undefined;
+    };
+
+    return {
+      skills: tag("skill"),
+      schedules: tag("schedule"),
+      connections: tag("connection", "channel"),
+    };
+  }, [kitMode, selectedId, realPacks]);
+}
+
 function MenuRoot({
   agentId,
   onAttachFile,
@@ -253,6 +289,7 @@ function MenuRoot({
 }) {
   const skillCount = useSkillCount(agentId);
   const scheduleCount = useScheduleCount(agentId);
+  const kitTags = useKitTags();
 
   return (
     <div className="py-1">
@@ -262,17 +299,20 @@ function MenuRoot({
           <MenuRow
             label="Skills"
             badge={skillCount > 0 ? `${skillCount} on` : undefined}
+            kitTag={kitTags.skills}
             onClick={() => onOpenPanel("skills")}
           />
           <MenuRow
             label="Schedules"
             badge={scheduleCount > 0 ? `${scheduleCount} active` : undefined}
+            kitTag={kitTags.schedules}
             onClick={() => onOpenPanel("schedules")}
           />
           <MenuRow
             label="Connections"
             badge={connectionCount > 0 ? `${connectionCount}` : undefined}
             badgeDanger={connectionHasBroken}
+            kitTag={kitTags.connections}
             onClick={() => onOpenPanel("connections")}
           />
         </>
@@ -285,11 +325,13 @@ function MenuRow({
   label,
   badge,
   badgeDanger,
+  kitTag,
   onClick,
 }: {
   label: string;
   badge?: string;
   badgeDanger?: boolean;
+  kitTag?: "included" | "setup";
   onClick: () => void;
 }) {
   return (
@@ -299,14 +341,29 @@ function MenuRow({
       className="flex w-full items-center gap-3 px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
     >
       <span className="flex-1 text-left">{label}</span>
+      {kitTag && (
+        <span
+          className={cn(
+            "shrink-0 rounded-md px-2 py-0.5 text-sm",
+            kitTag === "included"
+              ? "bg-success-light text-success"
+              : "bg-warning-light text-warning",
+          )}
+        >
+          {kitTag === "included" ? "Included" : "Set up"}
+        </span>
+      )}
       {badge && (
-        <Badge
-          variant={badgeDanger ? "danger" : "muted"}
-          size="sm"
-          className="shrink-0"
+        <span
+          className={cn(
+            "shrink-0 rounded-md px-2 py-0.5 text-sm",
+            badgeDanger
+              ? "bg-danger-light text-danger"
+              : "bg-muted text-muted-foreground",
+          )}
         >
           {badge}
-        </Badge>
+        </span>
       )}
     </button>
   );

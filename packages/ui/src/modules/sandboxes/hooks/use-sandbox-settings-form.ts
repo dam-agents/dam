@@ -215,6 +215,9 @@ export function useSandboxSettingsForm() {
     harnessDraft,
     dirty,
     isSubmitDisabled,
+    sizeDirty: Boolean(
+      formState.dirtyFields.sizeCpuMilli || formState.dirtyFields.sizeMemoryMi,
+    ),
     wildcardHostInScope:
       net.pendingAdds.some((a) => a.host.trim() === "*") ||
       egressRules.some(

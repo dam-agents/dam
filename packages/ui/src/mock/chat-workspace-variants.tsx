@@ -444,15 +444,16 @@ export function WorkspaceChatHeader({
         active={openPanels?.has("artifacts") ?? false}
         onClick={() => onTogglePanel?.("artifacts")}
       />
-      <div className="flex-1" />
-      <div className="flex items-center gap-2">
-        {chrome.status}
-        {onNewChat && (
-          <Button variant="outline" size="sm" onClick={onNewChat}>
-            <Add size={16} />
-            New chat
-          </Button>
-        )}
+      <div className="flex flex-1 items-center justify-center min-w-0">
+        <div className="flex w-full max-w-[813px] items-center justify-end px-4">
+          {chrome.status}
+          {onNewChat && (
+            <Button variant="outline" size="sm" onClick={onNewChat}>
+              <Add size={16} />
+              New chat
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

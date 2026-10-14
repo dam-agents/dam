@@ -1,4 +1,4 @@
-import { Close } from "@carbon/icons-react";
+import { Close, Renew } from "@carbon/icons-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Modal } from "@/components/modal";
@@ -57,6 +57,8 @@ export function ConfigureAgentModal({
   const agentName = useAgentDisplayName(agentId);
   const { summaries, warnings } = useSectionSummaries(agent);
 
+  const willRestart = f.sizeDirty && f.sizeRestartsAgent;
+
   const footer =
     section === "setup" && f.status === "ready" && (f.dirty || true) ? (
       <div className="flex items-center justify-end gap-3 border-t border-border px-5 py-3">
@@ -70,8 +72,18 @@ export function ConfigureAgentModal({
             wildcard.
           </span>
         )}
+        {willRestart && !f.wildcardHostInScope && (
+          <span className="mr-auto inline-flex items-center gap-1.5 text-sm text-warning">
+            <Renew size={16} className="shrink-0" />
+            Saving will restart the agent to apply its new size.
+          </span>
+        )}
         <Button onClick={f.onSave} disabled={f.isSubmitDisabled}>
-          {f.saving ? "Saving…" : "Submit changes"}
+          {f.saving
+            ? "Saving…"
+            : willRestart
+              ? "Save & restart"
+              : "Submit changes"}
         </Button>
       </div>
     ) : null;

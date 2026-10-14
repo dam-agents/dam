@@ -25,7 +25,8 @@ type ParameterlessView =
   | "component-showcase"
   | "sidebar-specs"
   | "nav-flows"
-  | "placeholder-texts";
+  | "placeholder-texts"
+  | "handoff-sheet";
 
 export interface NavigationSlice {
   view: View;
