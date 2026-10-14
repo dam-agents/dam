@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -19,6 +19,7 @@ The catalog remains usable where discovery is not configured.
 Before a session starts, the picker lists every provider the harness accepts in one stable order: an attached provider shows its models and a disconnect action, and one not attached offers to attach it, so a provider never carries another provider's model.
 It grays out a harness that no provider the owner holds accepts.
 With no provider at all, the chat opens the provider list in a modal, and the picker's place holds a link that reopens it.
+A provider connected in that modal is granted to the agent whose chat opened it; an edit of a connected provider grants nothing.
 Until the agent has reported the harnesses it carries, as a new agent has not before it first answers, the picker shows the pair a new session is expected to run on, from the Agent's own harness, its granted providers and the harness catalog: the pair picked for the next session, else the remembered pair when it names that harness, otherwise the harness on the first granted provider it accepts, with its default model.
 Opened then, it shows a loader until the list arrives, and a session started meanwhile names its pair only after the harnesses and the remembered pair are read again.
 Until the harness catalog arrives, the picker label is a loader, never a raw harness name.
