@@ -35,6 +35,7 @@ const lastList: ProcessList = {
       outputPath: null,
       keepsAwake: true,
       keepSource: "agent",
+      container: null,
     },
   ],
   finished: [],
