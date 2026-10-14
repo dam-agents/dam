@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: what a user reads about a VM agent refused for memory or put to sleep: the badge says "Waiting for memory" rather than "Over budget" for a VM agent and keeps "Over budget" for a container agent, a sleeping agent reads "Pausing" then "Paused", and the overlay falls back to the VM memory sentence when the refusal carries no message of its own.
+// TEST_OVERVIEW: what a user reads about a VM agent refused for memory or put to sleep: the badge says "Waiting for memory" rather than "Over budget" for a VM agent and keeps "Over budget" for a container agent, a sleeping agent reads "Pausing" then "Paused", the overlay falls back to the VM memory sentence when the refusal carries no message of its own, and a start refused for storage reads as one that can't start rather than an error.
 import { describe, expect, it } from "vitest";
 
 import { overlayDescription } from "../../modules/agents/lib/overlay-copy.js";
@@ -35,5 +35,18 @@ describe("memory and paused copy", () => {
         }),
       ),
     ).toBe("Your VM agents' memory is full.");
+  });
+
+  // TEST_SCENARIO: a start the runner refused, such as for full storage, is no error the agent hit; any other error keeps the error sentence.
+  it("says a refused start can't start", () => {
+    expect(
+      overlayDescription(
+        "error",
+        agent({ vm: true, podTerminationCode: "MachineStorageFull" }),
+      ),
+    ).toBe("This agent can't start right now.");
+    expect(overlayDescription("error", agent({ vm: true }))).toBe(
+      "The agent hit an error and isn't running.",
+    );
   });
 });

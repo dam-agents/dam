@@ -1360,6 +1360,9 @@ func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")},
+	}
 	node.statuses["my-agent"] = vmrunner.MachineStatus{
 		State:   vmrunner.StateCreating,
 		Reason:  vmrunner.ReasonOutOfCapacity,
@@ -1373,7 +1376,7 @@ func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	cond := readyCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
-	assert.Contains(t, cond.Message, "Your VM agents' memory is full", "the user reads what is full")
+	assert.Regexp(t, `^Your VM agents are using [0-9.]+ of 8\.0 GiB of memory, and starting this agent needs about [1-9][0-9.]* GiB more`, cond.Message, "the user reads the pool out of the total Home shows, and the room the start itself needs")
 	assert.Contains(t, cond.Message, "pause one yourself", "the user reads what frees it")
 	assert.NotContains(t, cond.Message, "MiB", "the runner's accounting stays out of the user's copy")
 }

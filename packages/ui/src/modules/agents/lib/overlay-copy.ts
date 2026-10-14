@@ -1,3 +1,5 @@
+import { isStartRefusal } from "api-server-api";
+
 import type { AgentView } from "../../../types.js";
 import type { AgentDisplayState } from "../utils/agent-resolver.js";
 import { reclaimSentence } from "./reclaim-notices.js";
@@ -26,6 +28,8 @@ export function overlayDescription(
   agent: AgentView,
 ): string {
   if (state === "error" && agent.error) return agent.error;
+  if (state === "error" && isStartRefusal(agent.podTerminationCode))
+    return "This agent can't start right now.";
   const budget = agent.overBudgetMessage;
   if (state === "over_budget" && budget)
     return `${budget[0].toUpperCase()}${budget.slice(1)}${budget.endsWith(".") ? "" : "."}`;
