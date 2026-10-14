@@ -26,6 +26,7 @@ Every agent of one owner is reconciled by one worker, one at a time, so the budg
 - The worker count is a constant, not a setting.
 - A name the agent cache does not hold is not queued, so one agent never lands on two workers.
 - An Agent's owner label is never changed after create; the routing relies on it.
+  Nothing in the schema enforces this: the api-server never rewrites the label, and a hand relabel is unsupported, since it can put one agent on two workers for a short time.
 - State the workers share across owners is decided under one install-wide lock where it was decided before: the runner roll's places and the runtime migration copy slots.
   The Kubernetes client rate limiter stays shared by all workers.
 - There is no circuit breaker for a hung runner: its owner's agents still wait out the runner client's timeout.
@@ -35,6 +36,7 @@ Every agent of one owner is reconciled by one worker, one at a time, so the budg
 - **Keep one worker and shorten the runner timeout** — a put that probes the guest or a delete that waits out an operation takes seconds legitimately; the fault still costs every user.
 - **A worker per owner** — goroutines and queues grow with the user count for owners that are almost all idle; eight already make a shared worker unlikely.
 - **A configurable worker count** — no install has a reason to tune it, and each value is another configuration to test.
+- **A schema rule that makes the owner label immutable** — a CRD schema change breaks the shared dev cluster, and the CRDs are being removed.
 - **A circuit breaker on a runner that keeps timing out** — a second state machine on the reconcile path, while sharding already confines the cost to the faulty owner's worker.
 
 ## Consequences
@@ -43,6 +45,6 @@ Every agent of one owner is reconciled by one worker, one at a time, so the budg
   Eight reconciles run at once, so the health poll at 120 vm agents spreads over eight workers instead of saturating one.
 - **Harder:** An owner whose hash shares a worker with a hung runner's owner (one in eight on average) still waits behind that reconcile.
   Shared reconciler state is now touched concurrently on every reconcile, not only by the background passes, so every new field shared across owners needs a lock or a concurrent map.
-  The runner roll's lock is held across runner calls while it decides a roll, so during a release that rolls runners a hung runner can still hold every worker that reaches the roll.
+  The runner roll's lock is held across runner calls while it decides a roll, so during a release that rolls runners a hung runner can still hold every worker that reaches the roll; narrowing that lock is follow-up #4939.
   The workers draw on one 200 QPS client limiter: eight reconciles of about thirty calls each fit its burst of 400, but sustained fleet-wide work still queues for the same tokens.
 - **Committed-to:** The owner label as the routing key, immutable after create; the per-owner mutex as the backup to the per-worker serialization; the queue metrics carry one name per worker.
