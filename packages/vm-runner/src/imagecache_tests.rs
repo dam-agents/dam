@@ -448,6 +448,9 @@ async fn a_runner_reaches_the_service_over_its_socket() {
         async move { cacheapi::serve(&socket, cache, async move { stop.cancelled().await }).await }
     });
     while !socket.exists() {
+        if serving.is_finished() {
+            panic!("the service did not start: {:?}", serving.await);
+        }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     let client = CacheClient::new(socket.clone());

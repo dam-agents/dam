@@ -182,6 +182,7 @@ fi
 d=$(mktemp -d); echo rootfs > "$d/hello"; tar -cf - -C "$d" .; rm -rf "$d"
 "#;
 
+// UNIT_BOUNDARY_DESCRIPTION: one server on a fake runtime, in a directory of its own. The name is short for the same reason as testdir's: the node cache's socket sits in it.
 struct Harness {
     dir: PathBuf,
     fake: Arc<Fake>,
@@ -195,8 +196,7 @@ impl Harness {
     }
 
     fn with(name: &str, tune: impl FnOnce(&mut Config)) -> Self {
-        let dir =
-            std::env::temp_dir().join(format!("vm-runner-server-{}-{name}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("vmr-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let crane = dir.join("crane");
@@ -2038,11 +2038,14 @@ async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, Cancell
     }));
     let socket = h.dir.join("images/.cache.sock");
     let stop = CancellationToken::new();
-    tokio::spawn({
+    let served = tokio::spawn({
         let (cache, stop, socket) = (cache.clone(), stop.clone(), socket.clone());
         async move { cacheapi::serve(&socket, cache, async move { stop.cancelled().await }).await }
     });
     while !socket.exists() {
+        if served.is_finished() {
+            panic!("the node's service did not start: {:?}", served.await);
+        }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     (cache, stop)
