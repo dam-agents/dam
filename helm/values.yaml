@@ -176,8 +176,8 @@ istio:
 # bind-mounted from its one storage disk by platform-init, which the runner
 # runs as every machine's entrypoint; the rest of the guest is a root overlay
 # whose upper layer is on that disk too, kept across stops until an image of
-# another root generation boots, with /tmp, /var/tmp and /var/cache emptied on
-# every boot. An Agent whose mounts ask to persist a path outside HOME is
+# another root generation boots, with /tmp and /var/tmp emptied on every
+# boot. An Agent whose mounts ask to persist a path outside HOME is
 # refused rather than silently losing it. The controller drives its machine API over TLS
 # and a bearer token: the controller mints the token, and cert-manager issues
 # the runner's certificate from the runners' own CA (`runnerCA` below), so

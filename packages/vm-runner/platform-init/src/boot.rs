@@ -315,7 +315,7 @@ fn mark_layout(root: &Path) -> io::Result<Option<u32>> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm roots the image on an overlay whose upper layer sits on the storage disk, is named after the machine, and is kept across every stop and every change of image. Left on it, an old image's changes lie over a new one. This mounts the platform's own overlay over that root, with its upper and work layers on the disk, and pivots into it. The upper layer is kept while the machine boots the image that wrote it, as the runner names it in the share, and emptied when the image changed or either side names none, so what the image writes outside HOME lasts exactly as long as that image. The mounts smolvm made move along, except its other binds of the disk and its /tmp, which stay behind with the old root. A failure is fatal: a machine left on smolvm's root would look healthy while it keeps another image's changes.
+// UNIT_BOUNDARY_DESCRIPTION: smolvm roots the image on an overlay whose upper layer sits on the storage disk, is named after the machine, and is kept across every stop and every change of image. Left on it, an old image's changes lie over a new one. This mounts the platform's own overlay over that root, with its upper and work layers on the disk, and pivots into it. The upper layer is kept while the machine boots the image that wrote it, as the runner names it in the share, and emptied when the image changed or either side names none, so what the image writes outside HOME lasts exactly as long as that image. Emptying it is a rename aside, and the old layer is deleted in the background, so a root of a few million files does not hold up the boot. The mounts smolvm made move along, except its other binds of the disk and its /tmp, which stay behind with the old root. A failure is fatal: a machine left on smolvm's root would look healthy while it keeps another image's changes.
 fn fresh_root(disk: &Path) {
     let layers = FreshRoot::on(disk);
     let table = match fs::read_to_string("/proc/self/mountinfo") {
@@ -329,15 +329,27 @@ fn fresh_root(disk: &Path) {
     let booting = image_record(Path::new(guest::IMAGE_PATH));
     let recorded = image_record(&layers.image);
     let fresh = fresh_reason(booting.as_deref(), recorded.as_deref());
-    let mut cleared = vec![&layers.legacy_upper, &layers.work];
+    let stamp = epoch_secs();
+    let mut discarded = vec![&layers.legacy_upper];
+    let mut cleared = vec![&layers.work];
     if fresh.is_some() {
-        cleared.extend([&layers.image, &layers.upper]);
+        cleared.push(&layers.image);
+        discarded.push(&layers.upper);
+    }
+    for dir in discarded {
+        if let Err(e) = discard(dir, stamp) {
+            fatal!("moving {} aside: {e}", dir.display());
+        }
     }
     for dir in cleared {
         if let Err(e) = remove_all(dir) {
             fatal!("clearing {}: {e}", dir.display());
         }
     }
+    purge_later(&[
+        (layers.legacy_upper.clone(), "the old root layout"),
+        (layers.upper.clone(), "the last image's root"),
+    ]);
     for dir in [&layers.upper, &layers.work, &layers.merged] {
         if let Err(e) = mkdir_all(dir) {
             fatal!("creating {}: {e}", dir.display());
@@ -818,21 +830,21 @@ fn bind_ca() {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the folders that only ever hold temporary files or caches. The system ones are each a directory of the disk bound in place, empty on every boot, owned by root with the mode the image expects of them. Being plain directories of the disk rather than part of the root, they are bounded by the disk and not by the guest's memory, and nothing under them is the image's own. In the agent's home, npm's cache directory and the XDG cache directory are ordinary directories of the home and last as it does. evict_scratch deletes from all of them when the disk runs short.
-const SCRATCH_DIRS: [(&str, u32); 3] = [
-    ("/tmp", 0o1777),
-    ("/var/tmp", 0o1777),
-    ("/var/cache", 0o755),
-];
+// UNIT_BOUNDARY_DESCRIPTION: the folders that only ever hold temporary files. The system ones are each a directory of the disk bound in place, empty on every boot, owned by root with the mode the image expects of them. /var/cache is not one of them: it holds the font, package and other caches the image ships, so it is part of the kept root and lasts as long as the image does. Being plain directories of the disk rather than part of the root, they are bounded by the disk and not by the guest's memory, and nothing under them is the image's own. In the agent's home, npm's cache directory and the XDG cache directory are ordinary directories of the home and last as it does. evict_scratch deletes from all of them when the disk runs short.
+const SCRATCH_DIRS: [(&str, u32); 2] = [("/tmp", 0o1777), ("/var/tmp", 0o1777)];
+
+// UNIT_BOUNDARY_DESCRIPTION: the store a platform-init that bound /var/cache from the disk left there. It is discarded and deleted like a last boot's scratch, so a disk from that release gets its space back.
+const LEGACY_SCRATCH: &str = "var-cache";
 const HOME_CACHES: [&str; 2] = [".cache", ".npm"];
 const SCRATCH_STORE: &str = "scratch";
 
-// UNIT_BOUNDARY_DESCRIPTION: binds every system scratch folder from its store on the disk. It runs once the root is in place and the home is mounted, and before the trust cache, which is bound under /var/cache. The last boot's folders are moved aside and deleted in the background, so the disk gets its space back without holding up the boot. A home cache that is a symlink — a home moved here from a container may have ~/.cache pointing at /tmp/agent-cache — is removed, so the tool makes a directory of the home there. Home caches that earlier boots moved aside are deleted the same way. A bind that fails is a warning: the folder then stays on the root, and the agent still runs.
+// UNIT_BOUNDARY_DESCRIPTION: binds every system scratch folder from its store on the disk. It runs once the root is in place and the home is mounted. The last boot's folders are moved aside and deleted in the background, so the disk gets its space back without holding up the boot. A home cache that is a symlink — a home moved here from a container may have ~/.cache pointing at /tmp/agent-cache — is removed, so the tool makes a directory of the home there. Home caches that earlier boots moved aside are deleted the same way. A bind that fails is a warning: the folder then stays on the root, and the agent still runs.
 fn mount_scratch(root: &Path) {
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| since.as_secs());
+    let stamp = epoch_secs();
     let store = guest::system_store(root, SCRATCH_STORE);
+    if let Err(e) = discard(&store.join(LEGACY_SCRATCH), stamp) {
+        logf!("WARNING: moving the old /var/cache store aside ({e}); it stays on the disk");
+    }
     for (dir, mode) in SCRATCH_DIRS {
         let from = store.join(scratch_name(dir));
         match discard(&from, stamp) {
@@ -865,12 +877,48 @@ fn mount_scratch(root: &Path) {
         match store {
             Err(e) => logf!("WARNING: opening the scratch store ({e}); the last boot's folders stay on the disk until a later boot"),
             Ok(store) => {
-            let names = SCRATCH_DIRS.map(|(dir, _)| scratch_name(dir));
+            let mut names: Vec<String> = SCRATCH_DIRS.iter().map(|(dir, _)| scratch_name(dir)).collect();
+            names.push(LEGACY_SCRATCH.to_string());
             purge_discarded(
                 Path::new(&format!("/proc/self/fd/{}", store.as_raw_fd())),
                 &names,
             );
             }
+        }
+    });
+}
+
+fn epoch_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: deletes, on a thread of its own, what discard moved aside from each of `paths`, so a root of a few million files does not hold up the boot. leave_disk detaches the disk before the delete is done, so each parent is reached through a descriptor opened now. One a stop cuts short is found by name and deleted on the next boot.
+fn purge_later(paths: &[(PathBuf, &'static str)]) {
+    let opened: Vec<_> = paths
+        .iter()
+        .filter_map(|(path, what)| {
+            let parent = path.parent()?;
+            let name = path.file_name()?.to_string_lossy().into_owned();
+            match File::open(parent) {
+                Ok(dir) => Some((dir, name)),
+                Err(e) => {
+                    logf!(
+                        "WARNING: opening {} ({e}); {what} stays on the disk until a later boot",
+                        parent.display()
+                    );
+                    None
+                }
+            }
+        })
+        .collect();
+    std::thread::spawn(move || {
+        for (dir, name) in opened {
+            purge_discarded(
+                Path::new(&format!("/proc/self/fd/{}", dir.as_raw_fd())),
+                &[name],
+            );
         }
     });
 }
@@ -913,7 +961,7 @@ fn purge_discarded(dir: &Path, names: &[impl AsRef<str>]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free or the runner marks the owner's claim short of room, the scratch folders lose their files least recently used first, in passes of decreasing age, until EVICT_UNTIL_PERCENT is free and the mark is gone, or only files used within the last pass's age are left — so a file a running tool is writing is never taken. The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Only files on the disk are deleted: the walk stays on the disk's device, follows no symlink and leaves the image's trust cache alone. A deleted file that is still open frees its space only when it is closed.
+// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free or the runner marks the owner's claim short of room, the scratch folders lose their files least recently used first, in passes of decreasing age, until EVICT_UNTIL_PERCENT is free and the mark is gone, or only files used within the last pass's age are left — so a file a running tool is writing is never taken. The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Only files on the disk are deleted: the walk stays on the disk's device and follows no symlink. A deleted file that is still open frees its space only when it is closed.
 const EVICT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const EVICT_BELOW_PERCENT: u64 = 10;
 const EVICT_UNTIL_PERCENT: u64 = 20;
@@ -997,7 +1045,7 @@ fn evict_older(dir: &Path, cutoff: u64, disk: u64) -> u64 {
         let Ok(info) = fs::symlink_metadata(&path) else {
             continue;
         };
-        if info.dev() != disk || path == Path::new(TRUST_CACHE_PATH) {
+        if info.dev() != disk {
             continue;
         }
         let used = [info.atime(), info.mtime(), info.ctime()]
@@ -2684,6 +2732,30 @@ mod tests {
         );
         assert!(store.path().join("tmp.notes").is_file());
         assert!(store.path().join("tmp").is_dir());
+    }
+
+    // TEST_SCENARIO: emptying a kept root of a few million files must not hold up the boot. The old upper layer is renamed aside at once, so the boot gets an empty one, and deleted in the background through a descriptor of its parent, which outlives the disk's mount. The new upper layer and its image record beside it stay.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_discarded_root_is_deleted_off_the_boot_path() {
+        let kept = TempDir::new("kept");
+        let upper = kept.path().join("upper");
+        fs::create_dir_all(upper.join("usr/lib")).unwrap();
+        fs::write(upper.join("usr/lib/tool"), b"x").unwrap();
+        fs::write(kept.path().join("image"), b"img\n").unwrap();
+        let aside = discard(&upper, 9).unwrap().unwrap();
+        fs::create_dir(&upper).unwrap();
+        purge_later(&[(upper.clone(), "the last image's root")]);
+        let started = std::time::Instant::now();
+        while aside.exists() {
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(10),
+                "the old root was never deleted"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(upper.is_dir());
+        assert!(kept.path().join("image").is_file());
     }
 
     // TEST_SCENARIO: under pressure everything unused before the cutoff goes — files and links, and directories emptied — while a link's target, a socket a process may still listen on, and a directory that keeps a file stay. A cutoff in the future stands for files long unused, since a change time cannot be set back.
